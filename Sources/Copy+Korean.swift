@@ -175,6 +175,21 @@ struct Korean: Copy {
     let settingsPushFinishHint = "2분이 넘는 작업만입니다."
     let settingsSmartNotifications = "스마트 알림"
     let settingsSmartNotificationsHint = "Haiku가 완료한 내용을 한 문장으로 알려 줍니다. 실패하면 일반 알림을 보냅니다."
+    func pushCoalesced(count: Int) -> String { "\(count)건의 작업이 한꺼번에 완료" }
+    let settingsSmartHealthIdle = "아직 스마트 알림을 시도한 적이 없습니다."
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(attempts)회 시도 중 \(successes)회가 모델 문장을 전달했습니다."
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "마지막으로 일반 알림으로 대체된 시각 \(time): \(reason)."
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude가 \(seconds)초 제한을 넘겨 중단되었습니다"
+    }
+    let settingsSmartQueueFull = "동시에 끝난 작업이 대기열 용량을 넘었습니다"
+    let settingsSmartModelFailed = "Claude가 쓸 만한 출력을 내지 못했습니다"
+    let settingsSmartNoSource = "요약할 내용이 없었습니다"
+    let settingsSmartMissing = "claude 실행 파일을 찾을 수 없습니다"
     let settingsPushDeploy = "배포가 끝나면 알리기"
     let settingsPushDeployHint = "성공도 실패도 알립니다."
     let settingsAgentNotify = "에이전트가 직접 알림을 보내도록 허용"

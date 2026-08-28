@@ -177,6 +177,21 @@ struct Spanish: Copy {
     let settingsPushFinishHint = "Solo las de más de dos minutos."
     let settingsSmartNotifications = "Notificaciones inteligentes"
     let settingsSmartNotificationsHint = "Haiku resume en una frase el trabajo terminado. Si falla, se envía el aviso normal."
+    func pushCoalesced(count: Int) -> String { "\(count) trabajos terminados a la vez" }
+    let settingsSmartHealthIdle = "Aún no se ha intentado ninguna notificación inteligente."
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(successes) de \(attempts) intentos entregaron una frase del modelo."
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "Último repliegue a las \(time): \(reason)."
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude superó el plazo de \(seconds) s y fue interrumpido"
+    }
+    let settingsSmartQueueFull = "llegaron más finales de los que caben en la cola"
+    let settingsSmartModelFailed = "Claude no devolvió nada utilizable"
+    let settingsSmartNoSource = "no había nada que resumir"
+    let settingsSmartMissing = "no se encontró el ejecutable claude"
     let settingsPushDeploy = "Avisar cuando acabe un deploy"
     let settingsPushDeployHint = "Tanto si sale bien como si falla."
     let settingsAgentNotify = "Permitir que los agentes envíen sus propias notificaciones"

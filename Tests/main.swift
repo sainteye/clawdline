@@ -6392,6 +6392,69 @@ group("smart notifications describe the completed work, not its machinery") {
            "clawdline · 修好重連。")
 }
 
+group("a burst of finishes becomes one push, not one each") {
+    let base = Date(timeIntervalSince1970: 1_000_000)
+    expect("a lone finish waits only for its transcript to settle",
+           SmartNotification.batchReadyAt(oldest: base, newest: base),
+           base.addingTimeInterval(0.35))
+    expect("a steady stream cannot postpone the batch past the cap",
+           SmartNotification.batchReadyAt(oldest: base, newest: base.addingTimeInterval(5)),
+           base.addingTimeInterval(1.0))
+    check("the queue outlasts the worst observed burst (44 finishes in 120 ms)",
+          SmartNotification.maxQueued >= 44)
+
+    let combined = SmartNotification.coalescedSource([
+        (project: "clawdline", source: #"{"request":"fix reconnect","outcome":"Fixed SSE resume."}"#),
+        (project: "parser", source: nil),
+    ]) ?? ""
+    check("each member keeps its project name so one sentence can tell them apart",
+          combined.contains("clawdline") && combined.contains("parser"))
+    check("a member's conversation rides along as data",
+          combined.contains("Fixed SSE resume."))
+    check("an unreadable member still counts as a finish",
+          SmartNotification.coalescedSource([(project: "solo", source: nil)]) != nil)
+
+    expect("in English a coalesced push says how many",
+           English().pushCoalesced(count: 11), "11 jobs finished together")
+    expect("in Traditional Chinese too",
+           TraditionalChinese().pushCoalesced(count: 11), "11 件工作同時完成")
+    expect("the ordinary wording survives coalescing, head first",
+           SmartNotification.coalescedBody(["a · one", "b · two"]), "a · one / b · two")
+}
+
+group("smart notification health is visible where the switch is") {
+    var health = SmartNotification.Health()
+    check("before anything resolves there is no verdict", health.lastResolvedWasSuccess == nil)
+    health.attempt(44)
+    health.failure(.queueFull, at: Date(timeIntervalSince1970: 100))
+    check("a failure is the last word until something works",
+          health.lastResolvedWasSuccess == false)
+    health.success(1, at: Date(timeIntervalSince1970: 200))
+    check("a later success takes the verdict back", health.lastResolvedWasSuccess == true)
+    expect("attempts are counted per finish, drops included", health.attempts, 44)
+    expect("successes only when a model sentence was delivered", health.successes, 1)
+
+    let copy = English()
+    var failing = SmartNotification.Health()
+    failing.attempt(8)
+    failing.failure(.timedOut, at: Date(timeIntervalSince1970: 0))
+    let line = SmartNotification.healthLine(failing, copy: copy)
+    check("a timing-out model is said in words, not folded into a generic failure",
+          line.contains(copy.settingsSmartTimeout(seconds: Int(SmartNotification.timeout))))
+    check("the counts stay beside the reason",
+          line.contains(copy.settingsSmartHealth(attempts: 8, successes: 0)))
+    expect("before the first attempt the row says exactly that",
+           SmartNotification.healthLine(SmartNotification.Health(), copy: copy),
+           copy.settingsSmartHealthIdle)
+    check("the timeout words name the number of seconds a person would raise",
+          copy.settingsSmartTimeout(seconds: 30).contains("30"))
+    check("the deadline clears the slowest measured run (12.9 s) with headroom",
+          SmartNotification.timeout >= 26)
+    expect("in Traditional Chinese the timeout is words a person can act on",
+           TraditionalChinese().settingsSmartTimeout(seconds: 30),
+           "Claude 超過 30 秒沒完成，被中止")
+}
+
 group("a push payload keeps the beginning of a sentence that does not fit") {
     let beginning = "KEEP THE FORECAST: "
     let ending = " THROW THIS TAIL AWAY"

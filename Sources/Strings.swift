@@ -303,10 +303,25 @@ protocol Copy {
     func pushChildWaiting(minutes: Int?) -> String
     /// A whole fan-out has come back — every task under one root, counted once.
     func pushBatchDone(done: Int, failed: Int) -> String
+    /// Several finishes that arrived together, delivered as one push instead of one each.
+    func pushCoalesced(count: Int) -> String
     var settingsPushFinish: String { get }
     var settingsPushFinishHint: String { get }
     var settingsSmartNotifications: String { get }
     var settingsSmartNotificationsHint: String { get }
+    // The health card under the smart-notifications switch. It exists because the feature once
+    // failed 784 times in three hours with the only evidence in a log nobody opens: the card says
+    // what was attempted, what produced a model sentence, and — in words — why the last attempt
+    // fell back. The reason strings are sentences a person can act on, and the timeout one names
+    // the deadline, because "the model is timing out" is what tells somebody to raise it.
+    var settingsSmartHealthIdle: String { get }
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String
+    func settingsSmartHealthFailure(reason: String, time: String) -> String
+    func settingsSmartTimeout(seconds: Int) -> String
+    var settingsSmartQueueFull: String { get }
+    var settingsSmartModelFailed: String { get }
+    var settingsSmartNoSource: String { get }
+    var settingsSmartMissing: String { get }
     var settingsPushDeploy: String { get }
     var settingsPushDeployHint: String { get }
     var settingsAgentNotify: String { get }

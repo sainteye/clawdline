@@ -177,6 +177,21 @@ struct Indonesian: Copy {
     let settingsPushFinishHint = "Hanya yang lebih dari dua menit."
     let settingsSmartNotifications = "Notifikasi pintar"
     let settingsSmartNotificationsHint = "Haiku merangkum pekerjaan yang selesai dalam satu kalimat. Jika gagal, notifikasi biasa tetap dikirim."
+    func pushCoalesced(count: Int) -> String { "\(count) pekerjaan selesai bersamaan" }
+    let settingsSmartHealthIdle = "Belum ada notifikasi pintar yang dicoba."
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(successes) dari \(attempts) percobaan mengirim kalimat model."
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "Terakhir kembali ke notifikasi biasa pukul \(time): \(reason)."
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude melewati batas \(seconds) detik dan dihentikan"
+    }
+    let settingsSmartQueueFull = "lebih banyak pekerjaan selesai daripada daya tampung antrean"
+    let settingsSmartModelFailed = "Claude tidak mengembalikan hasil yang bisa dipakai"
+    let settingsSmartNoSource = "tidak ada yang bisa diringkas"
+    let settingsSmartMissing = "berkas claude tidak ditemukan"
     let settingsPushDeploy = "Beri tahu kalau deploy selesai"
     let settingsPushDeployHint = "Baik berhasil maupun gagal."
     let settingsAgentNotify = "Izinkan agen mengirim notifikasinya sendiri"

@@ -175,6 +175,21 @@ struct Japanese: Copy {
     let settingsPushFinishHint = "2 分を超えたものだけです。"
     let settingsSmartNotifications = "スマート通知"
     let settingsSmartNotificationsHint = "Haiku が完了した内容を一文で伝えます。失敗時は通常の通知に戻ります。"
+    func pushCoalesced(count: Int) -> String { "\(count) 件の作業がまとめて完了" }
+    let settingsSmartHealthIdle = "スマート通知はまだ試行されていません。"
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(attempts) 回の試行のうち \(successes) 回がモデルの文を届けました。"
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "最後に通常の通知へ戻ったのは \(time)：\(reason)。"
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude が \(seconds) 秒の期限を超えたため打ち切られました"
+    }
+    let settingsSmartQueueFull = "同時に完了した数がキューの容量を超えました"
+    let settingsSmartModelFailed = "Claude から使える出力がありませんでした"
+    let settingsSmartNoSource = "要約できる内容がありませんでした"
+    let settingsSmartMissing = "claude の実行ファイルが見つかりません"
     let settingsPushDeploy = "デプロイが終わったら知らせる"
     let settingsPushDeployHint = "成功も失敗も知らせます。"
     let settingsAgentNotify = "エージェントからの通知を許可する"

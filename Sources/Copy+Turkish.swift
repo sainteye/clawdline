@@ -177,6 +177,21 @@ struct Turkish: Copy {
     let settingsPushFinishHint = "Yalnızca iki dakikayı geçenler."
     let settingsSmartNotifications = "Akıllı bildirimler"
     let settingsSmartNotificationsHint = "Haiku biten işi tek cümlede anlatır. Başarısız olursa normal bildirim gönderilir."
+    func pushCoalesced(count: Int) -> String { "\(count) iş birlikte bitti" }
+    let settingsSmartHealthIdle = "Henüz akıllı bildirim denenmedi."
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(attempts) denemeden \(successes) tanesi model cümlesi iletti."
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "Son geri dönüş \(time): \(reason)."
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude \(seconds) saniyelik süreyi aştı ve durduruldu"
+    }
+    let settingsSmartQueueFull = "kuyruğun alacağından fazla iş bitti"
+    let settingsSmartModelFailed = "Claude kullanılabilir bir şey döndürmedi"
+    let settingsSmartNoSource = "özetlenecek bir şey yoktu"
+    let settingsSmartMissing = "claude çalıştırılabilir dosyası bulunamadı"
     let settingsPushDeploy = "Deploy bitince haber ver"
     let settingsPushDeployHint = "Başarı da hata da."
     let settingsAgentNotify = "Ajanların kendi bildirimlerini göndermesine izin ver"

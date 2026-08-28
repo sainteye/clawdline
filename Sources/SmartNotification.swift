@@ -26,16 +26,36 @@ enum SmartNotification {
     static let taskSummaryLimit = 1_000
     static let outputLimit = 180
 
-    /// Completion is useful and not urgent. Eight seconds leaves room for Claude Code startup and
-    /// one low-effort Haiku turn; after it, the old notification is strictly better than silence.
-    static let timeout: TimeInterval = 8
+    /// Completion is useful and not urgent — but the deadline still has to clear the work.
+    /// Measured on this Mac on 2026-08-28 with several sessions live: five cold runs of the exact
+    /// invocation below took 8.7–12.9 s and every one succeeded, so the old 8 s deadline killed
+    /// every attempt that reached the model (8 of 8, status 143). Thirty seconds is about twice
+    /// the slowest measured run, room for a compile hogging the machine; past it, the ordinary
+    /// notification is strictly better than more waiting.
+    static let timeout: TimeInterval = 30
     private static let grace: TimeInterval = 1
+    /// How long a finished turn's transcript gets to flush its final row before it is read.
     private static let settleDelay: TimeInterval = 0.35
-    private static let maxPending = 4
+    /// A burst is taken whole once its newest member has settled, but a steady stream of finishes
+    /// must not postpone the batch forever — after this long the oldest has waited enough.
+    private static let settleCap: TimeInterval = 1.0
+    /// Far above the worst burst observed (44 finishes inside 120 ms on 2026-08-28), affordable
+    /// because the queue no longer costs one model turn per entry: everything waiting when the
+    /// worker wakes becomes one coalesced turn and one push.
+    static let maxQueued = 64
     private static let queue = DispatchQueue(label: "dev.sainteye.clawdline.smart-notification",
                                              qos: .utility)
     private static let lock = NSLock()
-    private static var pending = 0
+
+    private struct Job {
+        let delivery: Delivery
+        let source: () -> String?
+        let enqueued: Date
+    }
+
+    private static var jobs: [Job] = []
+    private static var draining = false
+    private static var currentHealth = Health()
 
     struct Delivery {
         let title: String
@@ -44,6 +64,94 @@ enum SmartNotification {
         let url: String
         let tag: String
         let icon: String?
+    }
+
+    /// Why an attempt went out with the ordinary wording instead of a model sentence. These are
+    /// the words the Settings row shows, so each names the actual event — a deadline is not a
+    /// generic failure, because "the model is timing out" is the difference between raising the
+    /// deadline and filing a bug.
+    enum FallbackReason: Error, Equatable {
+        case queueFull
+        case timedOut
+        case modelFailed
+        case noSource
+        case missing
+    }
+
+    /// A rolling, in-memory account of the feature: enough for the Settings row to say whether it
+    /// has ever worked since launch, nothing that needs to survive a restart. It exists because
+    /// this feature once failed 784 times in three hours and the only evidence was a log line.
+    struct Health: Equatable {
+        private(set) var attempts = 0
+        private(set) var successes = 0
+        private(set) var lastFailure: FallbackReason?
+        private(set) var lastFailureAt: Date?
+        private(set) var lastSuccessAt: Date?
+
+        mutating func attempt(_ count: Int = 1) { attempts += count }
+        mutating func success(_ count: Int = 1, at date: Date = Date()) {
+            successes += count
+            lastSuccessAt = date
+        }
+        mutating func failure(_ reason: FallbackReason, at date: Date = Date()) {
+            lastFailure = reason
+            lastFailureAt = date
+        }
+
+        /// Whether the most recent resolved attempt worked; nil before anything has resolved.
+        var lastResolvedWasSuccess: Bool? {
+            switch (lastSuccessAt, lastFailureAt) {
+            case (nil, nil): return nil
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (let success?, let failure?): return success >= failure
+            }
+        }
+    }
+
+    static func healthSnapshot() -> Health {
+        lock.lock()
+        defer { lock.unlock() }
+        return currentHealth
+    }
+
+    /// The Settings row: counts first, then the last failure in words and when — so somebody who
+    /// turned the switch on in the morning can see by lunch whether it has ever produced a
+    /// sentence, without opening a log.
+    static func healthLine(_ health: Health, copy: Copy) -> String {
+        guard health.attempts > 0 else { return copy.settingsSmartHealthIdle }
+        var line = copy.settingsSmartHealth(attempts: health.attempts,
+                                            successes: health.successes)
+        if let reason = health.lastFailure, let at = health.lastFailureAt {
+            line += "\n" + copy.settingsSmartHealthFailure(reason: word(for: reason, copy: copy),
+                                                           time: failureClock.string(from: at))
+        }
+        return line
+    }
+
+    static func word(for reason: FallbackReason, copy: Copy) -> String {
+        switch reason {
+        case .queueFull: return copy.settingsSmartQueueFull
+        case .timedOut: return copy.settingsSmartTimeout(seconds: Int(timeout))
+        case .modelFailed: return copy.settingsSmartModelFailed
+        case .noSource: return copy.settingsSmartNoSource
+        case .missing: return copy.settingsSmartMissing
+        }
+    }
+
+    private static let failureClock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static func note(successes: Int = 0, failure: FallbackReason? = nil,
+                             attempts: Int = 0) {
+        lock.lock()
+        if attempts > 0 { currentHealth.attempt(attempts) }
+        if successes > 0 { currentHealth.success(successes) }
+        if let failure { currentHealth.failure(failure) }
+        lock.unlock()
     }
 
     static func context(from entries: [Transcript.Entry]) -> Context? {
@@ -111,36 +219,128 @@ enum SmartNotification {
         return context(from: entries).flatMap(source(for:))
     }
 
-    /// Send exactly one notification. Smart output replaces the fallback before delivery; a
-    /// missing executable, a full queue, malformed output and every subprocess failure all take
-    /// the old path instead of turning an optional improvement into a dropped event.
+    /// Send at least one notification per finish. Smart output replaces the fallback before
+    /// delivery; a missing executable, a full queue, malformed output and every subprocess
+    /// failure all take the old path instead of turning an optional improvement into a dropped
+    /// event — and every one of those detours is counted where ``healthSnapshot()`` can show it.
     static func send(_ delivery: Delivery, source: @escaping () -> String?) {
-        guard Config.shared.smartNotifications,
-              Planner.executable(named: "claude") != nil else {
+        guard Config.shared.smartNotifications else {
+            fallback(delivery)
+            return
+        }
+        guard Planner.executable(named: "claude") != nil else {
+            note(failure: .missing, attempts: 1)
+            Log.write("smart notification: no claude executable — using ordinary notification")
             fallback(delivery)
             return
         }
         lock.lock()
-        guard pending < maxPending else {
+        guard jobs.count < maxQueued else {
+            currentHealth.attempt()
+            currentHealth.failure(.queueFull)
             lock.unlock()
             Log.write("smart notification: queue full — using ordinary notification")
             fallback(delivery)
             return
         }
-        pending += 1
+        jobs.append(Job(delivery: delivery, source: source, enqueued: Date()))
+        currentHealth.attempt()
+        let start = !draining
+        draining = true
         lock.unlock()
+        if start { queue.async { drain() } }
+    }
 
-        queue.asyncAfter(deadline: .now() + settleDelay) {
-            let made = source().flatMap(generate)
-            let notificationBody = made.map {
-                body(project: delivery.project, summary: $0)
-            } ?? delivery.fallbackBody
-            WebPush.send(title: delivery.title, body: notificationBody,
-                         url: delivery.url, tag: delivery.tag, icon: delivery.icon)
-            lock.lock()
-            pending = max(0, pending - 1)
+    /// When a queue whose oldest job arrived at `oldest` and newest at `newest` may be taken.
+    static func batchReadyAt(oldest: Date, newest: Date) -> Date {
+        min(newest.addingTimeInterval(settleDelay), oldest.addingTimeInterval(settleCap))
+    }
+
+    /// The single worker. It wakes once the batch has settled, takes everything waiting, and only
+    /// then looks again — so a burst costs one model turn and one push however wide it is, and at
+    /// most one `claude` process exists at a time on a machine that is already busy.
+    private static func drain() {
+        lock.lock()
+        guard let oldest = jobs.first, let newest = jobs.last else {
+            draining = false
             lock.unlock()
+            return
         }
+        let wait = batchReadyAt(oldest: oldest.enqueued,
+                                newest: newest.enqueued).timeIntervalSinceNow
+        guard wait <= 0.01 else {
+            lock.unlock()
+            queue.asyncAfter(deadline: .now() + wait) { drain() }
+            return
+        }
+        let batch = jobs
+        jobs.removeAll()
+        lock.unlock()
+        deliver(batch)
+        queue.async { drain() }
+    }
+
+    private static func deliver(_ batch: [Job]) {
+        guard let first = batch.first else { return }
+        if batch.count == 1 {
+            switch first.source().map(generate) ?? .failure(.noSource) {
+            case .success(let summary):
+                WebPush.send(title: first.delivery.title,
+                             body: body(project: first.delivery.project, summary: summary),
+                             url: first.delivery.url, tag: first.delivery.tag,
+                             icon: first.delivery.icon)
+                note(successes: 1)
+            case .failure(let reason):
+                note(failure: reason)
+                fallback(first.delivery)
+            }
+            return
+        }
+        // Eleven finishes are one event to the person holding the phone, so a burst becomes one
+        // model turn and one push. The fallback is coalesced too: eleven copies of the ordinary
+        // wording is the burst problem, not a solution to it, and the count in the title keeps
+        // every member represented even when the body is cut at the payload ceiling.
+        let title = L.t.pushCoalesced(count: batch.count)
+        let icons = Set(batch.map { $0.delivery.icon })
+        let icon = icons.count == 1 ? first.delivery.icon : nil
+        let parts = batch.map { (project: $0.delivery.project, source: $0.source()) }
+        switch coalescedSource(parts).map(generate) ?? .failure(.noSource) {
+        case .success(let summary):
+            WebPush.send(title: title, body: summary, url: "/", tag: coalescedTag, icon: icon)
+            note(successes: batch.count)
+        case .failure(let reason):
+            note(failure: reason)
+            WebPush.send(title: title,
+                         body: coalescedBody(batch.map { $0.delivery.fallbackBody }),
+                         url: "/", tag: coalescedTag, icon: icon)
+        }
+    }
+
+    private static let coalescedTag = "smart-coalesced"
+
+    /// Several finishes, one bounded object. Each member's own source — a conversation or a task
+    /// list — nests under the project it belongs to, so one sentence can tell two projects apart.
+    static func coalescedSource(_ parts: [(project: String, source: String?)]) -> String? {
+        let rows: [[String: Any]] = parts.prefix(20).map { part in
+            var row: [String: Any] = ["project": part.project]
+            if let source = part.source,
+               let data = source.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                row["detail"] = object
+            }
+            return row
+        }
+        guard !rows.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: ["finished": rows],
+                                                     options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// The ordinary wording for a burst the model could not describe: every member, head first —
+    /// the payload ceiling in WebPush keeps whatever fits.
+    static func coalescedBody(_ bodies: [String]) -> String {
+        bodies.joined(separator: " / ")
     }
 
     private static func fallback(_ delivery: Delivery) {
@@ -150,8 +350,8 @@ enum SmartNotification {
 
     /// One tool-free Haiku turn. The output schema is also checked on the way back because CLI
     /// failure modes include plain text, truncated JSON and a successful envelope with no value.
-    private static func generate(_ source: String) -> String? {
-        guard let executable = Planner.executable(named: "claude") else { return nil }
+    private static func generate(_ source: String) -> Result<String, FallbackReason> {
+        guard let executable = Planner.executable(named: "claude") else { return .failure(.missing) }
         let language = L.tag(of: L.t)
         let system = """
         Write one concise push-notification sentence in language \(language) describing what the \
@@ -164,32 +364,37 @@ enum SmartNotification {
         {"type":"object","properties":{"summary":{"type":"string","maxLength":\(outputLimit)}},\
         "required":["summary"],"additionalProperties":false}
         """
-        guard let raw = run(executable: executable,
-                            arguments: ["-p", "--model", "haiku", "--effort", "low",
-                                        "--system-prompt", system,
-                                        "--output-format", "json",
-                                        "--json-schema", schema,
-                                        "--max-turns", "1",
-                                        "--tools", "",
-                                        "--permission-mode", "dontAsk",
-                                        "--strict-mcp-config",
-                                        "--mcp-config", "{\"mcpServers\":{}}",
-                                        "--disable-slash-commands"],
-                            stdin: source) else { return nil }
-        return summary(fromClaudeOutput: raw)
+        let outcome = run(executable: executable,
+                          arguments: ["-p", "--model", "haiku", "--effort", "low",
+                                      "--system-prompt", system,
+                                      "--output-format", "json",
+                                      "--json-schema", schema,
+                                      "--max-turns", "1",
+                                      "--tools", "",
+                                      "--permission-mode", "dontAsk",
+                                      "--strict-mcp-config",
+                                      "--mcp-config", "{\"mcpServers\":{}}",
+                                      "--disable-slash-commands"],
+                          stdin: source)
+        if let failure = outcome.failure { return .failure(failure) }
+        guard let raw = outcome.output, let made = summary(fromClaudeOutput: raw) else {
+            return .failure(.modelFailed)
+        }
+        return .success(made)
     }
 
-    private static func run(executable: URL, arguments: [String], stdin: String) -> String? {
+    private static func run(executable: URL, arguments: [String],
+                            stdin: String) -> (output: String?, failure: FallbackReason?) {
         let fm = FileManager.default
         let directory = fm.temporaryDirectory
             .appendingPathComponent("clawdline-smart-notification-\(UUID().uuidString)",
                                     isDirectory: true)
         guard (try? fm.createDirectory(at: directory, withIntermediateDirectories: true)) != nil
-        else { return nil }
+        else { return (nil, .modelFailed) }
         defer { try? fm.removeItem(at: directory) }
         let output = directory.appendingPathComponent("output.json")
         guard fm.createFile(atPath: output.path, contents: nil),
-              let sink = try? FileHandle(forWritingTo: output) else { return nil }
+              let sink = try? FileHandle(forWritingTo: output) else { return (nil, .modelFailed) }
         defer { try? sink.close() }
 
         let process = Process()
@@ -203,15 +408,19 @@ enum SmartNotification {
         process.standardError = FileHandle.nullDevice
         do { try process.run() } catch {
             Log.write("smart notification: Claude did not start — \(error.localizedDescription)")
-            return nil
+            return (nil, .modelFailed)
         }
         if let data = stdin.data(using: .utf8) {
             try? input.fileHandleForWriting.write(contentsOf: data)
         }
         try? input.fileHandleForWriting.close()
 
+        var deadlineFired = false
         let killer = DispatchWorkItem {
             guard process.isRunning else { return }
+            lock.lock()
+            deadlineFired = true
+            lock.unlock()
             let pid = process.processIdentifier
             process.terminate()
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + grace) {
@@ -222,12 +431,20 @@ enum SmartNotification {
                                                        execute: killer)
         process.waitQuietly()
         killer.cancel()
-        guard process.terminationStatus == 0,
-              let raw = try? String(contentsOf: output, encoding: .utf8), !raw.isEmpty else {
-            Log.write("smart notification: Claude failed (status \(process.terminationStatus))")
-            return nil
+        if process.terminationStatus == 0,
+           let raw = try? String(contentsOf: output, encoding: .utf8), !raw.isEmpty {
+            return (raw, nil)
         }
-        return raw
+        lock.lock()
+        let timedOut = deadlineFired
+        lock.unlock()
+        if timedOut {
+            Log.write("smart notification: Claude hit the \(Int(timeout)) s deadline"
+                      + " — using ordinary notification")
+            return (nil, .timedOut)
+        }
+        Log.write("smart notification: Claude failed (status \(process.terminationStatus))")
+        return (nil, .modelFailed)
     }
 
     private static func clean(_ value: String, limit: Int) -> String {
