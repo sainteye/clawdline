@@ -202,7 +202,7 @@ enum Assistant: String, CaseIterable {
     /// and everything else a login shell put there: `env -u CLAUDECODE sh -c 'echo
     /// $CLAUDE_CODE_ENTRYPOINT'` still answers `cli`. And `env` execs the program in its own
     /// process, so `ps` shows the program's argv with nothing in front of it — `env -u CLAUDECODE
-    /// sleep 3` lists as `sleep 3` — which is what ``Assistant/running(fromPS:)`` reads a tty's
+    /// sleep 3` lists as `sleep 3` — which is what ``Assistant/reading(ofPS:)`` reads a tty's
     /// session out of. A wrapper that stayed on the command line would have made every running
     /// session unrecognisable.
     ///

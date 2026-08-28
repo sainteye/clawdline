@@ -11634,7 +11634,7 @@ group("a new tab is not handed the identity of whatever launched the terminal") 
     }
 
     // `env` execs the program, so a tty still lists `claude --model haiku` with no wrapper in
-    // front of it — which is what `Assistant.running(fromPS:)` reads a session out of. Checked on
+    // front of it — which is what `Assistant.reading(ofPS:)` reads a session out of. Checked on
     // a real process rather than assumed: `env -u CLAUDECODE sleep 3` lists as `sleep 3`.
     check("the program is the last word of the prefix, so `ps` reads as it always did",
           Assistant.claude.command(model: "haiku").hasSuffix(" claude --model haiku"))
