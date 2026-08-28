@@ -967,6 +967,18 @@ otherwise leave a grandchild belonging to nobody. Cancelling a single task does 
 smaller scale — what that task handed on goes with it, since it is work nobody is waiting for any
 more.
 
+**None of that is a decision the app makes for you, and describing it as a mechanism was not
+enough.** On 2026-08-27, 23:20:37–:51 — fourteen seconds, one close — four briefed tasks under root
+`01a04276` were cancelled together, among them a correction dispatched 75 seconds after the review
+that demanded it and 25 minutes into its run. Nobody adopted them, and one line then sat for
+fourteen hours behind a landing record reading `pending`, which is also the word for work somebody
+is actively doing (`B-PENDING-CANNOT-SEE-ITS-EXECUTOR` in [`backlog.yaml`](backlog.yaml)). So a
+close carries two obligations the cascade cannot carry for it — **read the live list before closing,
+and name who adopts each orphan afterwards** — and both are written down in
+[`AGENTS.md`](../AGENTS.md#closing-a-root-is-an-act-with-victims-look-before-you-do-it). The query
+that answers the first is `GET /v1/orchestrator/tasks` filtered on `root.sessionId` and the three
+unfinished states.
+
 **spawn_failed** — the tab never happened, or never got briefed inside four minutes, or was typed
 into five times without the child ever recording the message, or the app was restarted while the
 task was in `spawning`. That last one is not a bug: once a task starts opening, the recoverable
@@ -984,9 +996,9 @@ isolation does not turn an interrupted spawn into a resumable dispatch.
 
 ### A branch, not a diff
 
-An isolated child's delivery is `clawdline/task/<task-id>`. The child commits early, only on that
-branch, and never pushes or switches branches. Finalize reads git itself and adds this object to the
-record; `head`, `commits`, and `dirty` are best-effort and may be `null`:
+An isolated child's delivery is `clawdline/task/<task-id>`. A Claude child commits early, only on
+that branch, and never pushes or switches branches. Finalize reads git itself and adds this object
+to the record; `head`, `commits`, and `dirty` are best-effort and may be `null`:
 
 ```jsonc
 "worktree": {
@@ -1012,6 +1024,15 @@ git -C <project_dir> branch -d clawdline/task/<id>       # only after landing
 
 Conflicts are the visible cost of parallel work and should be resolved during integration. Review
 the branch before landing it; a child commit has not become trusted merely by being isolated.
+
+**A Codex child in a worktree delivers a dirty tree, not commits, and that is not a failure.** The
+worktree's git metadata lives in `<project_dir>/.git/worktrees/<task-id>/`, outside the directory
+Codex's sandbox may write, so `git commit` there dies on
+`fatal: Unable to create '…/index.lock': Operation not permitted` — after which a child that was
+told to commit reports `failure` holding finished work. Dispatch a Codex worktree task with
+instructions to leave the bytes uncommitted; its receipt then reads `"commits": 0` with
+`"dirty": true`, and root lands it from `worktree.path` instead of from the branch. The generated
+briefing does not yet distinguish the two assistants, so the task's own `instructions` must.
 
 ### Landing is a root obligation, not a child state
 
