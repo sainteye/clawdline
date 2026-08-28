@@ -206,6 +206,16 @@ A new test must be seen red before the change that makes it green. A test born g
 nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
 replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
 
+**Assert on the check count, not on the exit code.** The reason is measured on this repository's own
+guard: `Tests/test-sh-streaming.mjs` says it proves `test.sh` "reports the binary's status", but the
+block it lifts out ends at `set -e`, and the line that actually reports that status — `exit
+"$status"` — is on the far side of it. Delete that line and all five of its checks stay green, while
+the `test.sh` it just approved would report a red suite as `exit 0`. Nothing is broken today, the
+line is still there and I read it; what the day's green lights actually rest on is the check counts
+in the logs, not exit codes. An empty snapshot produces no check count and a trapped log produces no
+check count, which is exactly the difference a status of 0 cannot show you. **This stands even after
+that guard is repaired.**
+
 Do not build from the live working tree, because it may contain another session's partial edits or
 untracked files.
 
@@ -348,13 +358,91 @@ the conclusion built on the coincidence had to be withdrawn. A number that chang
 is indistinguishable from a measurement, and it is the same failure as a count read off a lossy
 rendering.
 
-One caution about the seventh instance, because the fix is cheap and the diagnosis is not: three
-truncated logs were all cut mid-character, and only one of them silenced `grep` — the other two
-were still valid UTF-8 and printed `0` as usual. **The position of the cut decides, not the fact of
-it.** So always pass `-a` when grepping a log that may be truncated, which costs nothing; and
-**never read grep's silence as evidence that a log was truncated.** For that, use `file` or the
-byte count.
+One caution about the seventh instance, because the prescription is cheap and the diagnosis was
+wrong — it was written from three logs nobody had held still beside each other, and it said *three
+truncated logs were all cut mid-character and only one of them silenced grep*, which cannot be true
+of any three files: a prefix ending mid-character is invalid UTF-8, so all three were. What decides
+is not where the cut is but **whether the invalid byte sits in a line that has already ended.** Four
+control files, every one of them cut after the second byte of a `✓`:
 
+| the log | PATH `grep -c '✓'` | `/usr/bin/grep -c` |
+|---|---|---|
+| invalid bytes at EOF, no trailing newline | `1`, rc 0 — speaks | `1` |
+| invalid bytes then `\n` | nothing, rc 1 — **silent** | `1` |
+| invalid bytes mid-line with more after them | nothing, rc 1 — **silent** | `1` |
+| cut on a character boundary, mid-line | `1`, rc 0 | `1` |
+
+The same rule held on two real crash logs from one run: the `tee` copy ended `promoted\n  e2 9c` —
+a `✓` two bytes in, stopped at EOF — and grep answered `282`; the redirected copy had a shell error
+message after its invalid byte and grep said nothing at all, while `/usr/bin/grep` said `287`. **A
+log cut cleanly at EOF, which is what a crashed run usually leaves, is the case that does not go
+silent** — so silence is not a truncation detector in either direction.
+
+**And the missing premise, without which none of this reproduces.** `grep` on this Mac is not BSD
+grep. Claude Code's shell snapshot defines it as a function wrapping **ugrep 7.8.4**, which is what
+goes quiet; `/usr/bin/grep` is BSD grep 2.6.0-FreeBSD and answered correctly in all six readings
+above. Written as a fact about `grep` it is a fact about one shell on one machine, and whoever
+checks it from another shell will report that it does not reproduce.
+
+The prescription is unchanged and still worth following: always pass `-a` when grepping a log that
+may be truncated, which costs nothing; and **never read grep's silence as evidence that a log was
+truncated.** For that, use `file` or the byte count.
+
+### A sample taken along one path measures that path
+
+The same shape turned up four times in one day at three different levels, and it is the reason the
+two rules above keep needing to be rewritten rather than merely obeyed.
+
+| what was sampled | what it measured | what it missed |
+|---|---|---|
+| one block sent to the main queue, asking `Thread.isMainThread` | `true` | after `dispatchMain()` the main thread is parked, and every later block answers `false` |
+| a `dispatchPrecondition` probe entered from main, synchronously | it passed | the off-main path traps |
+| **a review round asking one question** — *is `Row.measurement` the only exit?* | yes, and thoroughly proved | the defect came in through the **write** side: `coverage_reason` overwriting itself |
+| one row's keys, to decide whether a registry stores cost at all | that row does not | other rows do |
+
+So the rule is not about probes:
+
+> **A question sampled along a single path measures that path** — whether the sample is one block,
+> one row, or the scope of one review.
+
+**A scope you set yourself is the dangerous kind, because it looks like care.** The clearest
+statement of it came from the session that caught itself doing it: *the scope I wrote was narrow in
+exactly the way I had spent the afternoon warning other people about.*
+
+The prescription: **send samples across three axes — time, thread, path** — and when that is not
+possible, write *this measured the fast path only* in the report rather than *it does not happen*.
+The fast path is usually the one without the bug in it; the bug is on the slow path, in the race,
+after initialisation has finished.
+
+### A single exit constrains its readers, not what reaches it
+
+> **"This is the only way out" can be true and still not be enough, because the way *in* overwrites
+> itself.**
+
+Measured: `coverage_reason` is a single last-writer-wins slot. `apply()` writes `source_regressed`
+and then, **in the same call**, overwrites it with `sample.coverageReason`; `departed()` overwrites
+it again. Two reachable paths each downgrade the same row, and every reader is told about exactly
+one of them. The exit really is single, and it helps not at all.
+
+So when checking an invariant, ask **whether it covers the exit or the whole journey.** And fix it
+by stating the invariant rather than the mechanism — *coverage marks accumulate rather than
+overwrite; a row that is two things at once reaches every reader as both* — with a standing refusal
+to add a second single slot, which is the same defect in a larger room.
+
+### Measure a constant here; do not recall it
+
+`getconf PAGESIZE` on this Mac is **16384**. 4096 is Intel's number.
+
+One line described its own 16,385-byte truncation point as *a 4 × 4096 block boundary* — the
+arithmetic is right and the unit is wrong: that is not this machine's block, it is exactly one page
+plus one byte. Reasoning from 4096, a second line concluded that *one unflushed block hides 68
+groups*; the real figure is about 269, which is **68% of the whole suite**.
+
+Every "it crashed within N groups of the last tick" interval computed that day is therefore void —
+not to be recomputed, but discarded, because the interval the true value produces is *almost
+anywhere*.
+
+> **That 2^14 was announcing itself as one page, and we read it as four blocks.**
 
 ## Dispatching substantial work with Clawdline
 

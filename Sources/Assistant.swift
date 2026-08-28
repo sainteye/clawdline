@@ -152,8 +152,8 @@ enum Assistant: String, CaseIterable {
     /// some other conversation, and a name is missing because its value is still true in the tab
     /// being opened.
     ///
-    /// Dropped, for Claude Code — the whole set one 2.1.250 session exports, minus the kept ones
-    /// below:
+    /// Dropped, for Claude Code — a 2.1.250 session exports twelve names, and these are the nine
+    /// of them that are not the three kept below:
     /// - `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_BRIDGE_SESSION_ID` — another conversation's ids.
     /// - `CLAUDE_PID` — the pid that names another session's registry file.
     /// - `CLAUDE_CODE_CHILD_SESSION`, `CLAUDECODE` — the two flags that say "you are running
@@ -162,6 +162,23 @@ enum Assistant: String, CaseIterable {
     /// - `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN` — a path to another
     ///   session's IPC socket and the credential for it. A new session speaking on that channel
     ///   is impersonation rather than confusion.
+    /// - `CLAUDE_EFFORT` — the reasoning effort a person chose in *that* conversation. It is
+    ///   neither an id nor an installation fact, which is why the first version of this list left
+    ///   it out of both columns and left this paragraph claiming a set it did not hold. It is
+    ///   dropped because Clawdline has no effort flag for Claude at all — `reasoningEffort` is
+    ///   emitted only as Codex's `--config model_reasoning_effort` — so an inherited value would
+    ///   be the *sole* thing deciding how hard a child thinks, chosen by nobody for that task and
+    ///   recorded nowhere. Dropped, a child runs at its own default, which is more predictable
+    ///   rather than less. The house rules make the same complaint one level up about an
+    ///   inherited model: *a named model can be argued with; an inherited one cannot even be
+    ///   seen.*
+    /// - `AI_AGENT` — `claude-code_2-1-250_agent`, a claim about which assistant is running. It
+    ///   carries no conversation id, so it did not cause the incident this list exists for; it is
+    ///   here because it is the one name that can never correct itself. A Claude tab overwrites
+    ///   it on the way in. **A Codex tab does not** — measured on the live Codex TUI, whose own
+    ///   child process had no `AI_AGENT` of its own — so a Codex session opened from a polluted
+    ///   terminal, and every command it runs, would carry "I am inside Claude Code 2.1.250" for
+    ///   as long as it lives.
     ///
     /// Kept, deliberately: `CLAUDE_CODE_ENTRYPOINT=cli` is true of a tab where `claude` is typed;
     /// `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` is a number this Mac sets in its own settings;
@@ -187,7 +204,7 @@ enum Assistant: String, CaseIterable {
         case .claude:
             return ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
                     "CLAUDE_PID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
-                    "CLAUDE_CODE_BRIDGE_SESSION_ID"]
+                    "CLAUDE_CODE_BRIDGE_SESSION_ID", "CLAUDE_EFFORT", "AI_AGENT"]
         case .codex:
             return ["CODEX_THREAD_ID", "CODEX_SESSION_ID",
                     "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED"]

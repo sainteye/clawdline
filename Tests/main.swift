@@ -11967,7 +11967,7 @@ group("a new tab is not handed the identity of whatever launched the terminal") 
            Assistant.claude.command(model: nil),
            "env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION "
              + "-u CLAUDE_PID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN "
-             + "-u CLAUDE_CODE_BRIDGE_SESSION_ID claude")
+             + "-u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT claude")
     expect("and Codex's drops the rollout id it exports, under both its spellings",
            Assistant.codex.command(model: nil),
            "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX "
@@ -11988,6 +11988,23 @@ group("a new tab is not handed the identity of whatever launched the terminal") 
         check("\(kept) is not swept up with them",
               !Assistant.claude.inheritedIdentityVariables.contains(kept))
     }
+    // The two that belonged to neither column, and were therefore in neither — while the comment
+    // beside the list claimed to have enumerated everything a session exports. Both are dropped
+    // now, and they are here by name because the argument for each is a sentence rather than the
+    // rule: `CLAUDE_EFFORT` is one conversation's chosen reasoning effort and this app has no
+    // other source of one for Claude, so inheriting it would let whoever launched the terminal
+    // decide how hard a child thinks; `AI_AGENT` is the only name here that a Codex tab does not
+    // overwrite, so it would be a false statement about which assistant is running for the whole
+    // life of that session.
+    for unclassified in ["CLAUDE_EFFORT", "AI_AGENT"] {
+        check("\(unclassified), which is neither an id nor an installation fact, is dropped",
+              Assistant.claude.inheritedIdentityVariables.contains(unclassified))
+    }
+    // The claim the comment makes about that list is that it is exhaustive against a measured
+    // session — twelve exported names, three kept. A future version adding a thirteenth has to
+    // come back through here, which is the whole reason the count is written down.
+    expect("the dropped set and the kept set account for every name a 2.1.250 session exports",
+           Assistant.claude.inheritedIdentityVariables.count + 3, 12)
 
     // `env` execs the program, so a tty still lists `claude --model haiku` with no wrapper in
     // front of it — which is what `Assistant.reading(ofPS:)` reads a session out of. Checked on
