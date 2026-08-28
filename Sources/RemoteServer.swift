@@ -27,6 +27,26 @@ enum SessionTitleSync {
             return .localOnly
         }
     }
+
+    /// One look at the actual screen before anything is typed into it.
+    ///
+    /// ``action(assistant:state:clearing:codexThreadID:)`` decides from the session list's
+    /// cached state, and that cache is refreshed every 1.2 seconds while the app is in front and
+    /// **every twenty seconds while it is not** — which is the state the Mac is in whenever
+    /// somebody is renaming a session from their phone. A cached `idle` can therefore be twenty
+    /// seconds behind a Claude that is now showing a menu, and a slash command sent to a menu is
+    /// not typed: the picker discards the bracketed paste and acts on the Return after it. The
+    /// measurement is written up beside `/send`, which pays for the same capture — with the
+    /// caret on the third option, sending the word "Tea" answered "Water".
+    ///
+    /// So the capture is paid here too, and only here: `busy`, `unavailable`, `local_only` and
+    /// the Codex path never reach a keyboard, and a rename is the one operation on this server
+    /// that is never urgent. `showingMenu` is a closure for that reason — an unread one is a
+    /// terminal round trip not made.
+    static func confirmed(_ action: Action, showingMenu: () -> Bool) -> Action {
+        guard action == .renameClaude, showingMenu() else { return action }
+        return .busy
+    }
 }
 
 /// The bar, as something other than a bar.
@@ -1495,14 +1515,20 @@ final class RemoteServer: @unchecked Sendable {
                     : DispatchQueue.main.sync {
                         SessionWatch.shared.states[session.id] ?? .unknown
                     }
-                let action = SessionTitleSync.action(
-                    assistant: session.assistant, state: state, clearing: title == nil,
-                    codexThreadID: CodexNaming.shared.threadID(for: session))
+                let action = SessionTitleSync.confirmed(
+                    SessionTitleSync.action(
+                        assistant: session.assistant, state: state, clearing: title == nil,
+                        codexThreadID: CodexNaming.shared.threadID(for: session)),
+                    showingMenu: { Targets.isChoosing(session) })
                 var downstream = "local_only"
                 var synced = false
                 switch action {
                 case .localOnly:
-                    break
+                    // Clearing has to reach Codex's display cache as well, or it clears nothing
+                    // there: the name a person typed was remembered on the way in and
+                    // `displayLabel` would go on finding it. The thread keeps that name — see
+                    // `CodexNaming.forget(target:)` and `docs/api.md`.
+                    if title == nil { CodexNaming.shared.forget(target: session) }
                 case .busy:
                     downstream = "busy"
                 case .unavailable:

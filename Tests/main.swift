@@ -9742,6 +9742,52 @@ group("a person's session title belongs to the conversation, not to the tab") {
                               conversationStart: { restarted }) == nil)
 }
 
+group("clearing a title takes the Codex name off Clawdline's surfaces too") {
+    let target = TargetSession(backend: .iterm, id: "terminal-codex-clear",
+                               name: "codex", tty: "/dev/ttys077",
+                               windowIndex: 0, tabIndex: 3, assistant: .codex)
+    CodexNaming.shared.rememberForTesting("Release room", threadID: "thread-clear",
+                                          targetID: target.id)
+    expect("the name a person typed is what the label draws",
+           CodexNaming.shared.title(for: target), "Release room")
+    CodexNaming.shared.forget(target: target)
+    check("clearing drops it from the display cache",
+          CodexNaming.shared.title(for: target) == nil)
+    // The half that stays: the thread keeps the name in Codex's own metadata, because
+    // `thread/name/set` has no undo and this app does not know what Codex would have called it.
+    // What has to come back is the automatic label, not the name that was just cleared.
+    expect("so the label falls back to the automatic one",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: "automatic handoff",
+               threadName: CodexNaming.shared.title(for: target), terminalLabel: target.label),
+           "automatic handoff")
+}
+
+group("a rename is not typed into a session that is showing a menu") {
+    var looks = 0
+    let idle = SessionTitleSync.action(assistant: .claude, state: .idle,
+                                       clearing: false, codexThreadID: nil)
+    // The cached `idle` this starts from can be twenty seconds old while the app is in the
+    // background, which is the state the Mac is in whenever somebody renames from a phone. A
+    // slash command sent to a menu confirms whichever row is highlighted; `/send` pays for the
+    // same capture and its comment records what that cost the last time nobody paid it.
+    expect("a screen with a menu on it is busy, whatever the cached state said",
+           SessionTitleSync.confirmed(idle, showingMenu: { looks += 1; return true }), .busy)
+    expect("a screen with no menu on it still receives the rename",
+           SessionTitleSync.confirmed(idle, showingMenu: { looks += 1; return false }),
+           .renameClaude)
+    expect("both of those read the screen", looks, 2)
+
+    let quiet: [SessionTitleSync.Action] = [.localOnly, .busy, .unavailable,
+                                            .renameCodex(threadID: "thread-one")]
+    for action in quiet {
+        expect("an action that types nothing is returned unchanged",
+               SessionTitleSync.confirmed(action, showingMenu: { looks += 1; return true }),
+               action)
+    }
+    expect("and none of them paid for a screen capture", looks, 2)
+}
+
 group("session-title downstream synchronization never interrupts Claude") {
     expect("an idle Claude session receives its rename",
            SessionTitleSync.action(assistant: .claude, state: .idle,

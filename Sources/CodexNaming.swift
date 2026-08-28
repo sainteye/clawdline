@@ -172,6 +172,33 @@ final class CodexNaming {
         }
     }
 
+    /// Test seam. The cache ``forget(target:)`` clears is otherwise only filled by a round trip
+    /// to `codex app-server`, which a suite has no business starting; without this the check that
+    /// clearing a title reaches Codex could only ever be written against a stub of the thing
+    /// being tested.
+    func rememberForTesting(_ title: String, threadID: String, targetID: String) {
+        remember(title, threadID: threadID, targetID: targetID)
+    }
+
+    /// Stop drawing a remembered name for this tab, so the label falls back to whatever the
+    /// automatic sources say now.
+    ///
+    /// Clearing a person's session title is a local operation — nothing is typed at the
+    /// assistant — and without this it was a local operation that cleared nothing on Codex: the
+    /// name went into this cache on the way in (see ``name(_:thread:target:replacingExisting:)``)
+    /// and ``displayLabel`` would go on finding it there.
+    ///
+    /// **The thread's own metadata keeps the name.** `thread/name/set` has no undo and Clawdline
+    /// does not know what Codex would have called the thread, so writing something back would be
+    /// this app inventing a title and persisting it in another program's store. `docs/api.md`
+    /// says so where a caller will read it.
+    func forget(target: TargetSession) {
+        lock.lock()
+        let had = displayedTitles.removeValue(forKey: target.id) != nil
+        lock.unlock()
+        if had { publishTitleChange() }
+    }
+
     /// The title to put on Clawdline surfaces. The terminal's own title remains untouched because
     /// iTerm and tmux use it for navigation, and Codex's supported name lives in thread metadata.
     func title(for target: TargetSession) -> String? {
