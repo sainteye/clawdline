@@ -1164,7 +1164,7 @@ Attached follow-ups add six typed refusals; a client should branch on every appl
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
-| `attach_session_not_found` | 404 | `attach_session` is not an id in the same Session inventory `GET /v1/orchestrator/sessions` publishes; no task is created |
+| `attach_session_not_found` | 404 | no watched session has that id. The resolver sees every session this Mac watches, which is wider than what `GET /v1/orchestrator/sessions` publishes: naming a plain shell resolves and is then refused `attach_unsupported`, not `404`. No task is created |
 | `attach_unsupported` | 409 | the named Session is a plain shell with no assistant to read a briefing |
 | `attach_assistant_mismatch` | 409 | the task's `assistant` differs from the assistant resident in the named Session |
 | `attach_session_occupied` | 409 | the Session already has one live Clawdline task; attached sessions are single-flight |
@@ -1218,6 +1218,22 @@ the base is `HEAD`. A dirty base succeeds with a warning because its uncommitted
 from the isolated checkout. Unknown isolation values are refused rather than silently sharing the
 tree. The checkout lives under `~/Library/Application Support/Clawdline/worktrees/`; `dir` remains
 the task protocol directory under `/tmp/.clawdline`.
+
+**What the broker reclaims when the task ends, and when.** Two directories are heavyweight,
+reproducible and task-owned, and each has its own deadline on the task record:
+`<dir>/work/` — the scratch directory a child is told to build in — falls due at
+`work_cleanup_at`, and the isolated checkout's `<worktree.path>/.build` falls due at
+`build_cleanup_at`. Both deadlines are set the same way from their own setting in
+`~/.config/clawdline/config.json`: `orchestrator_work_grace_minutes` and
+`orchestrator_build_grace_minutes`, each defaulting to `60`, each accepting `-1…1440`. A `success`
+reclaims immediately whatever the setting says; `0` does the same for every terminal outcome; a
+positive number is minutes of diagnostic grace, so the failing build log outlives the child that
+wrote it; `-1` leaves that directory to the ordinary sweep. A directory that is already gone
+settles its deadline as a success, and a removal the filesystem refuses keeps it, so the next beat
+tries again. `build_cleanup_at` is absent on every task without a worktree of its own — a shared
+checkout's build output belongs to whoever is working in it — and, unlike whole-checkout disposal,
+it is **not** deferred by `landing.state == pending`: a landing under review needs the source and
+the delivery branch, both of which this leaves exactly as they were.
 
 An optional `serialize` array in `task.json` makes named operations machine-global mutexes. A task
 leaves `queued` only when it can acquire every name together; shared names are FIFO across roots,
@@ -1732,7 +1748,10 @@ id at all.
 Every run remains visible while its task record is retained. `terminal_id` names the tab Clawdline
 opened and lets a client go to it if it is still on `/v1/sessions`. `session_id` is stricter: it is
 present only for terminal work whose transcript or rollout still exists and is proved to belong to
-that exact task. It may be sent to the place resume route above; a run without it is readable but
+that exact task. A run that was dispatched into a standing session instead of a tab of its own
+carries `attached: true` and `attach_session`, the terminal-neutral id it was typed into — the
+same pair the task record calls `attached` and `attachSession`, spelled the way the rest of a run
+record is spelled. It may be sent to the place resume route above; a run without it is readable but
 not resumable. `runs_may_be_truncated: true` appears when the machine-wide registry has reached its
 200-record retention boundary, because older occurrences may already have lost their schedule
 association.

@@ -457,7 +457,26 @@ returns `502 attach_delivery_failed`.
 The task does not own the tab. Success, failure, timeout, cancellation, root-close cascade and any
 `orchestrator_child_linger` value leave the standing session open. Its briefing says that writing
 `result.json` completes this task but does not end the session, which can then receive a later
-complete follow-up assignment.
+complete follow-up assignment. It also does not own the session's *name*: an attached task
+publishes a live role on that session while it runs, so `GET /v1/orchestrator/sessions` shows the
+`taskId`, but it never renames the session and it leaves no role behind when it ends. A tab this
+app opened keeps its task's name for the life of the record; a standing session is somebody's own
+and keeps its own.
+
+**Clawdline never answers a menu on a session it did not open.** On a fresh tab there is one menu
+to answer — the trusted-folder dialog — and the root answered it by asking for work in that
+directory, so the first row is taken once and audited. An attached task's screen belongs to a
+person, and the menu on it can be a permission prompt, a plan approval or an overwrite
+confirmation, whose first row is usually "yes"; those are left standing and audited as
+`orchestrator.menu.left`.
+
+**So a standing session has to be started somewhere it can read `/tmp/.clawdline`.** A tab the
+broker opens is given `--add-dir` for the task directory (or for `/tmp/.clawdline` itself when the
+child may dispatch), because a child's first act is to read its own briefing across a directory
+boundary. An attached session was started before the task existed and cannot be given that flag
+afterwards, so if it was opened in a project directory its child will be asked for permission on
+that first read — and nothing will press the button for it. Open a session intended for follow-up
+work with that access, or expect to answer that one question yourself.
 
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the
@@ -1101,6 +1120,22 @@ minutes, accepts `0` for immediate reclaim and `-1` to leave `work/` to the ordi
 A child copies any diagnostic log or diff worth keeping to `artifacts/` before it writes
 `result.json`. The existing 24-hour task-root cleanup exempts `landing.state == pending`, because a
 root that has not landed may still need the child's receipts.
+
+Only `success` is reclaimed inside `finalize`. Every other ending waits, so the deadline is carried
+on the record as `work_cleanup_at` and acted on by the five-second beat, which advances a terminal
+task for exactly as long as it still owes one of these directories.
+
+**An isolated checkout's build output is reclaimed the same way, on its own deadline.**
+`orchestrator_build_grace_minutes` is shaped exactly like the `work/` setting — default 60, range
+`-1…1440`, `0` immediate, `-1` deferred — and it names `<worktree.path>/.build`, recorded as
+`build_cleanup_at`. It is set only for a task that has a worktree of its own: a task working in a
+shared tree must never be handed the `.build` of the checkout somebody else is using. It waits for
+neither the 24-hour cutoff nor whole-worktree disposal, and a **pending landing does not exempt
+it** — that was the gap this closed. Disposing a checkout requires `landing.state != pending`, so
+five open landings on this machine were holding 814 MB of object files that no landing has ever
+needed: what a landing needs is the source and the delivery branch, and both are left untouched.
+Removal is `.build` and nothing else; a directory already absent settles the deadline, a refusal
+keeps it for the next beat.
 
 ### File release waits belong to Clawdline
 
