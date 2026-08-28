@@ -8157,14 +8157,36 @@ enum Orchestrator {
             task.completionDelivery.map { (task.id, $0.noticeID) }
         }
         lock.unlock()
+        let inventory = due.isEmpty ? [] : rootTargets()
         for (id, noticeID) in due {
             lock.lock()
             let currentGeneration = completionPumpGeneration
             lock.unlock()
             guard currentGeneration == generation else { break }
-            _ = completionAttempt(taskID: id, now: Date(), expectedNoticeID: noticeID,
-                                  expectedPumpGeneration: generation,
-                                  deliver: productionCompletionDelivery)
+            let attempt = {
+                _ = completionAttempt(
+                    taskID: id, now: Date(), expectedNoticeID: noticeID,
+                    expectedPumpGeneration: generation,
+                    deliver: { productionCompletionDelivery($0, $1, targets: inventory) })
+            }
+            // An attempt that will type into a terminal is admitted by the same bounded lane as
+            // every other terminal write; one that cannot resolve a recipient never reaches a
+            // terminal at all, so it runs here and records its typed refusal without spending a
+            // slot. Admission being refused is backpressure, not a delivery failure: the attempt
+            // is not made, no attempt is counted against the retry budget, and the next beat
+            // brings it back. Counting it would let a busy terminal exhaust the budget of a task
+            // whose root was never even asked.
+            guard let task = held(id),
+                  case .found(let recipient) = completionRecipient(
+                      task, targets: inventory,
+                      identity: RemoteServer.sessionWorkIdentity) else {
+                attempt()
+                continue
+            }
+            if !RemoteServer.shared.enqueueTerminalCommand(channel: recipient.id, attempt) {
+                RemoteAuth.audit("orchestrator.completion.deferred",
+                                 ["task": id, "why": "terminal_busy"])
+            }
         }
     }
 
@@ -8259,36 +8281,63 @@ enum Orchestrator {
 
     private static func productionCompletionDelivery(_ task: Task, _ line: String)
         -> CompletionTransportResult {
+        productionCompletionDelivery(task, line, targets: rootTargets())
+    }
+
+    /// `rootTargets()` hops to the main queue and blocks, so a pump pass reads the inventory once
+    /// and hands the same view to every task it delivers. One snapshot per pass is also the more
+    /// honest subject: the recipient a task is admitted against and the recipient it is typed
+    /// into are then the same reading, and a terminal that appears or leaves mid-pass shows up as
+    /// a typed refusal on the next one rather than as a disagreement inside this one.
+    private static func productionCompletionDelivery(
+        _ task: Task, _ line: String, targets: [TargetSession]
+    ) -> CompletionTransportResult {
         completionDelivery(
-            task, line, targets: rootTargets(), identity: RemoteServer.sessionWorkIdentity,
+            task, line, targets: targets, identity: RemoteServer.sessionWorkIdentity,
             isChoosing: Targets.isChoosing, send: { Targets.send($0, to: $1) })
     }
 
     /// Production-shaped completion seam. Tests supply the observed terminal inventory and
     /// transport, while the live path above supplies those same facts from SessionWatch/Targets.
-    static func completionDelivery(
-        _ task: Task, _ line: String, targets: [TargetSession],
-        identity: (TargetSession) -> SessionWorkIdentity,
-        isChoosing: (TargetSession) -> Bool,
-        send: (String, TargetSession) -> String?
-    ) -> CompletionTransportResult {
+    /// Which terminal this completion is owed to, decided before anything is typed.
+    ///
+    /// Split out of the delivery below because the attempt has to name that terminal as its
+    /// broker channel, and the terminal is not known until the parent/root resolution has run.
+    /// Sending outside the terminal broker would put an Apple Event for a notice beside the
+    /// bounded lane every other terminal write goes through, which is the one thing the lane
+    /// exists to prevent. Pure: it reads the registry and the inventory it is handed, and
+    /// changes neither.
+    /// Not `Result`: a refusal here is not an error to be thrown and handled, it is already the
+    /// transport's own typed answer, and the caller's job is to return it unchanged.
+    enum CompletionRecipient {
+        case found(TargetSession)
+        case refused(CompletionTransportResult)
+    }
+
+    static func completionRecipient(
+        _ task: Task, targets: [TargetSession],
+        identity: (TargetSession) -> SessionWorkIdentity
+    ) -> CompletionRecipient {
         let recipient: TargetSession
         if let parentID = task.parentTaskId {
             guard let parent = held(parentID), !parent.state.isTerminal,
                   let terminalID = parent.childTerminalId else {
-                return .failed(.rootMissing, "The parent task session is no longer available.")
+                return .refused(.failed(.rootMissing,
+                    "The parent task session is no longer available."))
             }
             guard let found = targets.first(where: { $0.id == terminalID }) else {
-                return .failed(.rootMissing, "The parent task terminal is not in inventory.")
+                return .refused(.failed(.rootMissing,
+                    "The parent task terminal is not in inventory."))
             }
             guard taskMatchesCurrentSession(parent, identity: identity(found)) else {
-                return .failed(.identityStale,
-                               "The parent terminal now belongs to a different process.")
+                return .refused(.failed(.identityStale,
+                    "The parent terminal now belongs to a different process."))
             }
             recipient = found
         } else {
             guard let storedRoot = task.rootSessionId else {
-                return .failed(.rootMissing, "This task has no root conversation to notify.")
+                return .refused(.failed(.rootMissing,
+                    "This task has no root conversation to notify."))
             }
             let historicalAssistant = task.rootAssistant ?? .claude
             let rebound = Coordinator.deliveryBinding(
@@ -8305,11 +8354,25 @@ enum Orchestrator {
                     target.id == storedRoot || (identity(target).conversationID == deliveryRoot
                         && target.assistant != deliveryAssistant)
                 }
-                return .failed(physicalCollision ? .identityStale : .rootMissing,
+                return .refused(.failed(physicalCollision ? .identityStale : .rootMissing,
                     physicalCollision
                     ? "The stored root identity is physical, stale, or assistant-mismatched."
-                    : "No active process currently proves the root conversation identity.")
+                    : "No active process currently proves the root conversation identity."))
             }
+        }
+        return .found(recipient)
+    }
+
+    static func completionDelivery(
+        _ task: Task, _ line: String, targets: [TargetSession],
+        identity: (TargetSession) -> SessionWorkIdentity,
+        isChoosing: (TargetSession) -> Bool,
+        send: (String, TargetSession) -> String?
+    ) -> CompletionTransportResult {
+        let recipient: TargetSession
+        switch completionRecipient(task, targets: targets, identity: identity) {
+        case .refused(let result): return result
+        case .found(let found): recipient = found
         }
         guard !isChoosing(recipient) else {
             return .failed(.rootChoosing, "The root is showing a chooser; no text was sent.")

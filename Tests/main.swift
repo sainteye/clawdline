@@ -20673,6 +20673,12 @@ group("dispatch answers an immediate tab refusal; the later pump finalizes its r
         "assistant": "claude", "project_dir": "/tmp", "title": "pumped refusal",
         "instructions": "open after the token", "timeout_minutes": 30,
         "serialize": ["pump-spawn-failure"],
+        // A root to be owed the notice. Without one this fixture had nobody to notify, and the
+        // assertion below it — `rootNotifications.contains(pumpedID)` — passed anyway, because
+        // the testing observer fires on the first line of `notifyRoot`, ahead of every guard
+        // including `guard let rootID = task.rootSessionId`. The check was named for reaching the
+        // boundary and that is exactly all it proved: nothing ever crossed it.
+        "root": ["session_id": "pumped-root-conversation", "assistant": "claude"],
     ]).write(to: pumpedDirectory.appendingPathComponent("task.json"), options: .atomic)
     let pumpedReply = Orchestrator.dispatch(
         taskID: pumpedID, secret: String(repeating: "b2", count: 32))
@@ -20702,8 +20708,32 @@ group("dispatch answers an immediate tab refusal; the later pump finalizes its r
     _ = Orchestrator.drainSerializePumpForTesting(timeout: 5)
     expect("a pumped tab-opening failure cancels work recorded below it",
            Orchestrator.record(id: pumpedChildID)?["state"] as? String, "cancelled")
-    check("and reaches the root-notification boundary because its dispatch reply is long gone",
-          rootNotifications.contains(pumpedID))
+    // The dispatch reply is long gone, so this ending is still owed its notice. What changed is
+    // that the notice is a durable record rather than a send, so "reached the root" is now two
+    // facts and both are asserted here. Checking only the first would pass a rewrite that
+    // enqueues and never delivers — which is the exact failure this feature exists to make
+    // visible, and it would be hiding inside a test that still looked like it covered delivery.
+    let owed = Orchestrator.record(id: pumpedID)?["completion_delivery"] as? [String: Any]
+    check("a pumped tab-opening failure is owed a durable completion notice",
+          owed?["notice_id"] as? String != nil && owed?["state"] as? String == "pending",
+          "got \(owed?["state"] as? String ?? "no envelope")")
+    // Past this envelope's own retry clock, not `Date()`: the pump has already had a pass at it
+    // and there is no terminal in a test to deliver into, so the first failure pushed
+    // `next_retry_at` into the future. Asking before then is answered by the due-time guard, and
+    // the transport is never reached — which looks exactly like a delivery that did not happen.
+    let dueAt = (owed?["next_retry_at"] as? Int).map { Double($0) } ?? 0
+    var typedInto: [String] = []
+    _ = Orchestrator.completionAttempt(
+        taskID: pumpedID, now: Date(timeIntervalSince1970: dueAt + 1),
+        deliver: { task, _ in typedInto.append(task.id); return .delivered })
+    check("and reaches the root because the notice is delivered, not merely enqueued",
+          typedInto == [pumpedID], "typed into \(typedInto)")
+    let sent = Orchestrator.record(id: pumpedID)?["completion_delivery"] as? [String: Any]
+    check("with the transport delivery recorded as a fact of its own",
+          sent?["state"] as? String == "delivered"
+            && sent?["transport_delivered_at"] != nil
+            && !(sent?["transport_delivered_at"] is NSNull),
+          "got \(sent?["state"] as? String ?? "no envelope")")
 
     let reclaimHolderID = UUID().uuidString.lowercased()
     var reclaimHolder = Orchestrator.Task(
