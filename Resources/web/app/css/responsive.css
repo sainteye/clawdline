@@ -23,10 +23,16 @@
            put it — which is behind the keyboard. */
         top: var(--vvt, 0px);
         background: var(--bg);
-        transform: translateX(100%);
-        transition: transform 260ms var(--ease);
+        /* iOS can lose the fixed compositor layer when a transformed pane finishes sliding in:
+           the list has already become hidden, while the detail layer stops painting, leaving the
+           global header over a black page. Swap visibility atomically instead; this screen change
+           is navigation, and reliability is worth more than its 260ms decoration. */
+        transform: none;
+        visibility: hidden;
+        pointer-events: none;
+        transition: none;
     }
-    .app[data-view="detail"] .pane-detail { transform: none; }
+    .app[data-view="detail"] .pane-detail { transform: none; visibility: visible; pointer-events: auto; }
     .app[data-view="detail"] .pane-list { visibility: hidden; }
 
     /* There is one line of header on a phone and three counts will not fit on it. The one that

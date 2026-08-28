@@ -256,6 +256,35 @@ confirmed something, and it is the harder of the two to catch: that one stops an
 source, and this one stops an assertion whose sources are real but not aligned. The second kind
 arrives wearing the shape of an experiment, so nobody thinks to question it.
 
+### A rendering collapses distinctions, and then we reason about the rendering
+
+Three times in one day, on three unrelated questions, somebody printed a summary and then argued
+from the summary rather than from what it was made of.
+
+A script printed `(未宣告)` for both a missing `claims` field and an empty list, and the count built
+on it — "twelve tasks in flight, none declaring claims" — was read as a fact about discipline. It
+was not: the broker discards claims for worktree-isolated tasks, so `[]` there means *declared and
+dropped*. The evidence was in the dispatcher's own response, which had returned
+`claims_ignored_for_worktree` with all eight paths listed, and it still counted its own task as
+undeclared. The instruction that followed — "declare harder" — could not have moved a single cell,
+because for those tasks the declaration had already happened. Earlier the same day, a cost display
+rendered *absent*, *recorded* and *a deliberate zero* identically, and a session concluded the
+registry stores no cost at all.
+
+The shape is always the same: **a rendering is lossy, the loss is silent, and the conclusion is
+about the rendering rather than the world.** It is not carelessness — the summary is what you can
+see, so it is what you think with.
+
+Two habits catch it. **Before counting, ask what different states this cell could be in and whether
+the rendering can tell them apart** — missing, empty, zero, refused, not-yet-known are five states
+that love to share one spelling. And **when a count implies a fix, check that the fix can move the
+count**; if the metric cannot see the discipline it is asking for, the metric is the defect, not
+the people.
+
+Where a field genuinely has to carry several meanings, the repair is to stop overloading it — keep
+the declaration on the record next to a state that says how it was treated — not to remember the
+ambiguity.
+
 ## Dispatching substantial work with Clawdline
 
 Use Clawdline for work that can be split into self-contained tasks and joined later.

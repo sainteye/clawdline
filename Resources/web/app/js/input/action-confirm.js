@@ -1,4 +1,5 @@
 import { phone } from "../core/env.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
@@ -229,6 +230,9 @@ document.addEventListener("keydown", function (ev) {
 
 // Back on a phone: the pushState above put us here, so popping means "list".
 window.addEventListener("popstate", function () {
+    Diagnostics.note("history.popstate.handler", {
+        phone: phone(), agent: !!S.agent, open: !!S.openId, view: els.app.dataset.view
+    });
     if (!phone()) return;
     // Innermost first, and only one step per gesture: the entry pushed when an agent was opened
     // is the one being popped, so it gives back the agent and leaves the session where it was.

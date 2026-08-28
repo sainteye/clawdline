@@ -1,3 +1,5 @@
+import { Diagnostics } from "./layout-diagnostics.js";
+
 /* ==========================================================================
    0. Where the data comes from
    The page is served by the app from the same origin, so every path here is
@@ -120,10 +122,17 @@ export function hasKeyboard() {
         // A page in the background is not laid out, and what `visualViewport` reports about one
         // is the number it will correct on the way back. Writing it now is writing the wrong
         // height at exactly the moment nobody can see it happen.
-        if (document.hidden) return;
+        if (document.hidden) {
+            Diagnostics.note("viewport.apply.hidden");
+            return;
+        }
         var page = window.innerHeight;
         var seen = vv.height;
         var shrunk = focused() && seen > page * FLOOR && (page - seen) > KEYBOARD;
+        Diagnostics.note("viewport.apply", {
+            page: page, seen: seen, top: vv.offsetTop,
+            focused: focused(), shrunk: shrunk
+        });
         if (shrunk) {
             root.style.setProperty("--vvh", seen + "px");
             root.style.setProperty("--vvt", vv.offsetTop + "px");
@@ -148,6 +157,7 @@ export function hasKeyboard() {
      * keyboard adjustment now; it cannot strand the whole document at an obsolete height.
      */
     function recheck() {
+        Diagnostics.note("viewport.recheck");
         clear();
         requestAnimationFrame(function () {
             apply();

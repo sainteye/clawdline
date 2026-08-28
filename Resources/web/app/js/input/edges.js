@@ -1,4 +1,5 @@
 import { phone } from "../core/env.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
@@ -121,6 +122,9 @@ import { renderTranscript } from "../view/transcript.js";
 /* ---- the layout can change under us -------------------------------------- */
 
 window.addEventListener("resize", function () {
+    Diagnostics.note("layout.resize.handler", {
+        phone: phone(), open: !!S.openId, view: els.app.dataset.view
+    });
     // Coming back to a desk with a transcript open on the phone layout would otherwise leave
     // the detail pane sitting off to one side of a two-column grid.
     if (!phone()) els.app.dataset.view = "list";
@@ -129,4 +133,7 @@ window.addEventListener("resize", function () {
     // has a new one.
     render();
     if (S.openId) renderTranscript();
+    Diagnostics.note("layout.resize.rendered", {
+        phone: phone(), open: !!S.openId, view: els.app.dataset.view
+    });
 });

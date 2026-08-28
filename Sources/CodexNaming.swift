@@ -326,7 +326,7 @@ final class CodexNaming {
             "--color", "never", "-m", model, "-C", dir.path,
             "-o", output.path, "-",
         ]
-        var environment = ProcessInfo.processInfo.environment
+        var environment = processEnvironment(for: executable)
         environment["CODEX_HOME"] = codexHome.path
         process.environment = environment
         let input = Pipe()
@@ -362,15 +362,65 @@ final class CodexNaming {
 
     // MARK: - Inputs and protocol shapes
 
+    static func processEnvironment(
+        for executable: URL,
+        inherited: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        var environment = inherited
+        let resolved = executable.resolvingSymlinksInPath()
+        let interpreterDirectories = [
+            executable.deletingLastPathComponent().path,
+            resolved.deletingLastPathComponent().path,
+        ]
+        let inheritedDirectories = (inherited["PATH"] ?? "")
+            .split(separator: ":", omittingEmptySubsequences: true).map(String.init)
+        var seen = Set<String>()
+        let path = (interpreterDirectories + inheritedDirectories).filter {
+            !$0.isEmpty && seen.insert($0).inserted
+        }
+        environment["PATH"] = path.joined(separator: ":")
+        return environment
+    }
+
+    /// The npm entry point is a Node script, but the package beside it carries the native Codex
+    /// executable that the script ultimately spawns. Prefer that executable only when the
+    /// canonical package shape and this Mac's architecture both agree; an arbitrary executable
+    /// named `codex` is left exactly as configured or observed from a running process.
+    static func preferredExecutable(for candidate: URL) -> URL {
+        #if arch(arm64)
+        let vendor: String? = "codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
+        #elseif arch(x86_64)
+        let vendor: String? = "codex-darwin-x64/vendor/x86_64-apple-darwin/bin/codex"
+        #else
+        let vendor: String? = nil
+        #endif
+        guard let vendor = vendor else { return candidate }
+
+        let resolved = candidate.resolvingSymlinksInPath()
+        let bin = resolved.deletingLastPathComponent()
+        let package = bin.deletingLastPathComponent()
+        guard resolved.lastPathComponent == "codex.js", bin.lastPathComponent == "bin",
+              package.lastPathComponent == "codex",
+              package.deletingLastPathComponent().lastPathComponent == "@openai"
+        else { return candidate }
+        let native = package.appendingPathComponent("node_modules/@openai")
+            .appendingPathComponent(vendor)
+        return FileManager.default.isExecutableFile(atPath: native.path) ? native : candidate
+    }
+
     private static func executable(for target: TargetSession?) -> URL? {
         let fm = FileManager.default
         if let configured = Paths.resolve(Config.shared.codexPath),
-           fm.isExecutableFile(atPath: configured.path) { return configured }
+           fm.isExecutableFile(atPath: configured.path) {
+            return preferredExecutable(for: configured)
+        }
         let targets = target.map { [$0] }
             ?? SessionWatch.shared.targets.filter { $0.assistant == .codex }
         for candidate in targets {
             if let pid = Targets.pid(of: candidate), let path = executablePath(ofPID: pid),
-               fm.isExecutableFile(atPath: path) { return URL(fileURLWithPath: path) }
+               fm.isExecutableFile(atPath: path) {
+                return preferredExecutable(for: URL(fileURLWithPath: path))
+            }
         }
 
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -388,7 +438,9 @@ final class CodexNaming {
             nvm.appendingPathComponent($0, isDirectory: true)
                 .appendingPathComponent("bin/codex").path
         }
-        return candidates.first(where: fm.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
+        return candidates.first(where: fm.isExecutableFile(atPath:)).map {
+            preferredExecutable(for: URL(fileURLWithPath: $0))
+        }
     }
 
     static func executablePath(ofPID pid: Int32) -> String? {
@@ -469,7 +521,7 @@ private final class CodexNameServer {
     init?(executable: URL, codexHome: URL) {
         process.executableURL = executable
         process.arguments = ["app-server", "--stdio"]
-        var environment = ProcessInfo.processInfo.environment
+        var environment = CodexNaming.processEnvironment(for: executable)
         environment["CODEX_HOME"] = codexHome.path
         process.environment = environment
         process.standardInput = input

@@ -42,13 +42,32 @@ func runCoordinatorRegistrationWorkerIfRequested() {
 
 runCoordinatorRegistrationWorkerIfRequested()
 
-// The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures out
-// of the installed app's live registry even when the test binary is run outside a sandbox.
-let orchestratorTestStoreDirectory = FileManager.default.temporaryDirectory
-    .appendingPathComponent("clawdline-orchestrator-tests-\(UUID().uuidString)", isDirectory: true)
-try! FileManager.default.createDirectory(at: orchestratorTestStoreDirectory,
+// Do this in the test binary itself, not only in `test.sh`. Contributors sometimes run the
+// already-compiled binary while narrowing a failure; without an in-process boundary that reads
+// the installed app's real push subscriptions and schedule fixtures can notify a real phone.
+let isolatedTestStoreDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("clawdline-test-store-\(UUID().uuidString)", isDirectory: true)
+try! FileManager.default.createDirectory(at: isolatedTestStoreDirectory,
                                          withIntermediateDirectories: true)
-Orchestrator.storeURLOverrideForTesting = orchestratorTestStoreDirectory
+guard setenv("CLAWDLINE_REMOTE_DIR", isolatedTestStoreDirectory.path, 1) == 0 else {
+    fatalError("could not isolate the test remote store")
+}
+
+/// A subprocess-only entry used to prove that the test binary protects the live remote store
+/// even when somebody runs the compiled binary directly instead of entering through `test.sh`.
+func runRemoteDirectoryIsolationProbeIfRequested() {
+    guard ProcessInfo.processInfo.environment["CLAWDLINE_TEST_REMOTE_DIRECTORY_PROBE"] == "1"
+    else { return }
+    print(RemoteAuth.directory.path)
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
+    exit(0)
+}
+
+runRemoteDirectoryIsolationProbeIfRequested()
+
+// The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures in
+// the same process-owned boundary as RemoteAuth and WebPush.
+Orchestrator.storeURLOverrideForTesting = isolatedTestStoreDirectory
     .appendingPathComponent("orchestrator.json")
 
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
@@ -113,6 +132,32 @@ func group(_ title: String, _ body: () -> Void) {
     body()
     let mark = failures.count == before ? "✓" : "✗"
     print("  \(mark) \(title)")
+}
+
+group("the test binary isolates push state even when it is launched directly") {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    process.arguments = Array(CommandLine.arguments.dropFirst())
+    var environment = ProcessInfo.processInfo.environment
+    environment.removeValue(forKey: "CLAWDLINE_REMOTE_DIR")
+    environment["CLAWDLINE_TEST_REMOTE_DIRECTORY_PROBE"] = "1"
+    process.environment = environment
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do {
+        try process.run()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        process.waitQuietly()
+        let live = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/clawdline", isDirectory: true).path
+        check("a direct test process never opens the live remote and push store",
+              process.terminationStatus == 0 && output != live
+                && output.hasPrefix(FileManager.default.temporaryDirectory.path), output)
+    } catch {
+        check("the direct-process isolation probe starts", false, "\(error)")
+    }
 }
 
 /// Keep main available to background work that completes with `DispatchQueue.main.sync`, while
@@ -4659,10 +4704,30 @@ group("remote images survive the terminal handoff") {
           made.stored.allSatisfy { !FileManager.default.fileExists(atPath: $0) })
 }
 
+/// A pasteboard this run alone can see.
+///
+/// **A named pasteboard is not a local object.** It lives in the pasteboard server and the name is
+/// all that identifies it, so two processes asking for the same name are handed the same board —
+/// which is what these two groups were doing every time this machine ran two suites at once, and
+/// this tree is shared by half a dozen sessions that do exactly that. One run's `clearContents()`
+/// then lands between another's write and its read, and the assertion fails holding the *other*
+/// run's value. Measured with a fifteen-line probe: alone, a write reads back; two concurrently,
+/// one process wrote `written-by-B` and read `written-by-A`.
+///
+/// It looked like flakiness in the system clipboard and it is not — `NSPasteboard.general` is never
+/// touched here, so nobody pressing ⌘C could have caused it. It was one suite reading another's
+/// board, at about one run in three, and the failures it produced (`got nil, want …`, `got [], want
+/// …`) are the shape a reader gets when somebody else has just cleared what it wrote.
+func exclusivePasteboard(_ role: String) -> NSPasteboard {
+    NSPasteboard(name: NSPasteboard.Name(
+        "dev.sainteye.clawdline.tests.\(role).\(ProcessInfo.processInfo.processIdentifier)"))
+}
+
 group("giving the pasteboard back") {
     // Borrowing the pasteboard and not returning it costs somebody whatever they copied five
     // minutes ago, for a feature they never asked for.
-    let pb = NSPasteboard(name: NSPasteboard.Name("dev.sainteye.clawdline.tests"))
+    let pb = exclusivePasteboard("restore")
+    defer { pb.releaseGlobally() }
     pb.clearContents()
     pb.setString("something the user copied", forType: .string)
 
@@ -4995,7 +5060,8 @@ group("files and images dropped on the bar") {
     check("the extension is kept", later.hasSuffix(".png"))
 
     // A dragged file offers its bytes as well as its path; taking the path avoids a second copy.
-    let board = NSPasteboard(name: NSPasteboard.Name("clawdline-tests-drop"))
+    let board = exclusivePasteboard("drop")
+    defer { board.releaseGlobally() }
     board.clearContents()
     board.writeObjects([URL(fileURLWithPath: "/tmp/dropped.png") as NSURL])
     expect("a dragged file gives its own path",
@@ -10312,6 +10378,77 @@ group("a Codex session can be named from its first request") {
            CodexNaming.displayLabel(threadName: nil, terminalLabel: "clawdline"), "clawdline")
 }
 
+group("a Codex npm shim starts with Finder's cold PATH") {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-codex-launch-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let node = root.appendingPathComponent("node")
+    let codex = root.appendingPathComponent("codex")
+    try! Data("#!/bin/sh\nprintf 'codex started'\n".utf8).write(to: node)
+    try! Data("#!/usr/bin/env node\n".utf8).write(to: codex)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: codex.path)
+
+    func run(environment: [String: String]) -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = codex
+        process.environment = environment
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        do { try process.run() } catch { return (-1, error.localizedDescription) }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitQuietly()
+        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+    }
+
+    let finder = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+    check("the unprepared npm shim genuinely cannot find node", run(environment: finder).status != 0)
+    let prepared = run(environment: CodexNaming.processEnvironment(for: codex,
+                                                                    inherited: finder))
+    expect("the naming launch boundary supplies the shim's interpreter", prepared.status, 0)
+    expect("the intended Codex shim ran", prepared.output, "codex started")
+}
+
+group("a canonical Codex npm shim resolves to its native vendor executable") {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-codex-package-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let nodeRoot = root.appendingPathComponent("versions/node/v24.1.0", isDirectory: true)
+    let package = nodeRoot.appendingPathComponent("lib/node_modules/@openai/codex",
+                                                   isDirectory: true)
+    let script = package.appendingPathComponent("bin/codex.js")
+    #if arch(arm64)
+    let vendor = "codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
+    #else
+    let vendor = "codex-darwin-x64/vendor/x86_64-apple-darwin/bin/codex"
+    #endif
+    let native = package.appendingPathComponent("node_modules/@openai")
+        .appendingPathComponent(vendor)
+    let shim = nodeRoot.appendingPathComponent("bin/codex")
+    try! FileManager.default.createDirectory(at: script.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: native.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! Data("#!/usr/bin/env node\n".utf8).write(to: script)
+    try! Data("#!/bin/sh\n".utf8).write(to: native)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: native.path)
+    try! FileManager.default.createDirectory(at: shim.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! FileManager.default.createSymbolicLink(
+        atPath: shim.path,
+        withDestinationPath: "../lib/node_modules/@openai/codex/bin/codex.js")
+
+    expect("the architecture-matched native binary is preferred",
+           CodexNaming.preferredExecutable(for: shim), native)
+    expect("an unrelated executable keeps its process-bound identity",
+           CodexNaming.preferredExecutable(for: URL(fileURLWithPath: "/bin/sh")),
+           URL(fileURLWithPath: "/bin/sh"))
+}
+
 group("the fields of a rollout, one at a time") {
     expect("a login shell is unwrapped",
            Codex.command(["/bin/zsh", "-lc", "ls -la"]), "ls -la")
@@ -14707,13 +14844,20 @@ group("the graph and the house rules reach the child that needs them") {
     // they have in common is that a child reading neither writes an essay instead of an answer.
     let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
     let policyFile = Orchestrator.policyURL
+    let localPolicyFile = Orchestrator.localPolicyURL
     let policyBefore = try? Data(contentsOf: policyFile)
+    let localPolicyBefore = try? Data(contentsOf: localPolicyFile)
     defer {
         Config.shared.orchestratorMaxGrandchildren = savedGrandchildren
         if let policyBefore {
             try? policyBefore.write(to: policyFile, options: .atomic)
         } else {
             try? FileManager.default.removeItem(at: policyFile)
+        }
+        if let localPolicyBefore {
+            try? localPolicyBefore.write(to: localPolicyFile, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: localPolicyFile)
         }
     }
     func fixture(plan: String?, allowance: Int) -> Orchestrator.Task {
@@ -14733,6 +14877,7 @@ group("the graph and the house rules reach the child that needs them") {
     }
     try? FileManager.default.createDirectory(at: policyFile.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
+    try? FileManager.default.removeItem(at: localPolicyFile)
     try? Data("Review runs on opus. Breadth before depth.".utf8).write(to: policyFile, options: .atomic)
 
     let both = brief(plan: "root → 3 searchers → this one joins them up", allowance: 3)
@@ -14831,6 +14976,78 @@ group("the graph and the house rules reach the child that needs them") {
           Orchestrator.policy(reading: "  short rules  ") == "short rules")
     check("and an empty one is still nobody having said anything",
           Orchestrator.policy(reading: "   \n  ") == nil)
+
+    // The optional sibling is machine-local: it is read beside the base at dispatch, composed
+    // last so it wins, and never allowed to be the casualty when the pair crosses the limit.
+    let baseOnly = "Base paragraph one.\n\nBase paragraph two."
+    check("no local policy is byte-identical to the old single-file answer",
+          Orchestrator.policy(reading: baseOnly, local: nil)
+            == Orchestrator.policy(reading: baseOnly))
+    check("a whitespace-only local policy behaves as absent too",
+          Orchestrator.policy(reading: baseOnly, local: "  \n\n ")
+            == Orchestrator.policy(reading: baseOnly))
+
+    let local = "This machine permits loopback progress notes."
+    let composed = Orchestrator.policy(reading: baseOnly, local: local)
+    let localHeading = Orchestrator.localPolicyHeading
+    check("local rules follow the base under a visible precedence heading",
+          composed?.range(of: baseOnly) != nil
+            && composed?.range(of: localHeading) != nil
+            && composed?.range(of: local) != nil
+            && composed!.range(of: baseOnly)!.lowerBound
+                < composed!.range(of: localHeading)!.lowerBound
+            && composed!.range(of: localHeading)!.lowerBound
+                < composed!.range(of: local)!.lowerBound)
+
+    let longBase = (0..<400).map { "Base paragraph \($0) must yield before local facts." }
+        .joined(separator: "\n\n")
+    let protectedLocal = (0..<40).map { "Machine fact \($0) survives." }
+        .joined(separator: "\n\n")
+    let protected = Orchestrator.policy(reading: longBase, local: protectedLocal)
+    check("when the pair is too long, the local policy survives whole and last",
+          protected?.hasSuffix(protectedLocal) == true
+            && protected?.contains("Base paragraph 0 must yield before local facts.") == true
+            && protected?.contains("Base paragraph 399 must yield before local facts.") == false)
+    check("cutting the base is announced rather than made to look complete",
+          protected?.contains("This policy was cut here") == true)
+
+    let oversizedLocal = (0..<500).map { "Oversized machine paragraph \($0)." }
+        .joined(separator: "\n\n")
+    let localCut = Orchestrator.policy(reading: nil, local: oversizedLocal)
+    check("a local policy that alone exceeds the limit is cut without crashing",
+          localCut?.contains(localHeading) == true
+            && localCut?.contains("This policy was cut here") == true
+            && localCut?.contains("Oversized machine paragraph 499.") == false)
+    check("a local policy still reaches dispatch when there is no base",
+          Orchestrator.policy(reading: nil, local: local)?.hasSuffix(local) == true)
+
+    // Everything above this line asks *what survives*, and a reader that never spent the local
+    // section's budget satisfies all of it: the local rules are there, the base is shorter, the
+    // cut is announced — and the briefing is a thousand characters over the ceiling the limit
+    // exists to hold. So one check asks *how long*. The notice is deliberately outside the
+    // budget, here as in the single-file cutter, so the allowance is the limit plus one of them.
+    let noticeRoom = 500
+    check("the pair spends the budget rather than overrunning it",
+          protected!.count <= Orchestrator.policyLimit + noticeRoom)
+
+    // A base with no blank line inside the allowance has no paragraph boundary to cut at: a
+    // policy written as one bulleted list, or one saved with CRLF, where Swift reads `\r\n` as a
+    // single Character so a search for `\n\n` can never match. Rules broken mid-word are the
+    // answer there; no rules at all is not, and that is the whole difference between `?? head`
+    // and `?? ""` — measured on a 16,389-character bulleted base, 12,193 characters of rules
+    // against 807.
+    let unbrokenBase = (0..<600).map { "- rule \($0) has no blank line after it." }
+        .joined(separator: "\n")
+    let unbroken = Orchestrator.policy(reading: unbrokenBase, local: local)
+    check("a base with no paragraph break is cut, not deleted",
+          unbroken?.contains("- rule 0 has no blank line after it.") == true
+            && unbroken?.hasSuffix(local) == true
+            && unbroken!.count > Orchestrator.policyLimit / 2)
+
+    try? Data(baseOnly.utf8).write(to: policyFile, options: .atomic)
+    try? Data(local.utf8).write(to: localPolicyFile, options: .atomic)
+    check("the file-reading half reads the optional local sibling fresh",
+          Orchestrator.policy() == composed)
 }
 
 group("a handoff envelope is validated without reading its letter") {
@@ -22555,7 +22772,7 @@ Task {
 
     cloudRunnerWatchdog.cancel()
     Orchestrator.storeURLOverrideForTesting = nil
-    try? FileManager.default.removeItem(at: orchestratorTestStoreDirectory)
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
     print("")
     let finalStatus: Int32
     if failures.isEmpty {

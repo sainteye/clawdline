@@ -94,9 +94,10 @@ is for: a leaf that knows what its output feeds writes a usable output, one that
 essay, and leaves are narrow enough to state in a sentence. **Stagger dispatches 30–45 seconds** or
 they compete, and a tab that has not reached a prompt in four minutes is `spawn_failed`, whose retry
 needs a fresh id and secret. **Say when you did it yourself.**
-- **Ask every task for one progress note in its first three minutes** — a file in its task
-  directory for codex, which has no network, or either channel for claude; its briefing carries the
-  one that works. Say what it has decided
+- **Ask every task for one progress note in its first three minutes** — the task-directory file for
+  a stock codex sandbox, whose outbound connections are blocked, or either channel when this
+  machine's `dispatch-policy.local.md` says network access was opened; its briefing carries the one
+  that works. Say what it has decided
   to do now it has read the briefing. One round, and it is the only thing that lets a wrong
   direction be cancelled at minute three rather than minute twenty-six: the two dearest cancelled
   tasks measured on one machine burned 18.5M and 16.5M tokens before anybody could tell.
