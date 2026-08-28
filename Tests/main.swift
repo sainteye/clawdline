@@ -4694,10 +4694,30 @@ group("remote images survive the terminal handoff") {
           made.stored.allSatisfy { !FileManager.default.fileExists(atPath: $0) })
 }
 
+/// A pasteboard this run alone can see.
+///
+/// **A named pasteboard is not a local object.** It lives in the pasteboard server and the name is
+/// all that identifies it, so two processes asking for the same name are handed the same board —
+/// which is what these two groups were doing every time this machine ran two suites at once, and
+/// this tree is shared by half a dozen sessions that do exactly that. One run's `clearContents()`
+/// then lands between another's write and its read, and the assertion fails holding the *other*
+/// run's value. Measured with a fifteen-line probe: alone, a write reads back; two concurrently,
+/// one process wrote `written-by-B` and read `written-by-A`.
+///
+/// It looked like flakiness in the system clipboard and it is not — `NSPasteboard.general` is never
+/// touched here, so nobody pressing ⌘C could have caused it. It was one suite reading another's
+/// board, at about one run in three, and the failures it produced (`got nil, want …`, `got [], want
+/// …`) are the shape a reader gets when somebody else has just cleared what it wrote.
+func exclusivePasteboard(_ role: String) -> NSPasteboard {
+    NSPasteboard(name: NSPasteboard.Name(
+        "dev.sainteye.clawdline.tests.\(role).\(ProcessInfo.processInfo.processIdentifier)"))
+}
+
 group("giving the pasteboard back") {
     // Borrowing the pasteboard and not returning it costs somebody whatever they copied five
     // minutes ago, for a feature they never asked for.
-    let pb = NSPasteboard(name: NSPasteboard.Name("dev.sainteye.clawdline.tests"))
+    let pb = exclusivePasteboard("restore")
+    defer { pb.releaseGlobally() }
     pb.clearContents()
     pb.setString("something the user copied", forType: .string)
 
@@ -5030,7 +5050,8 @@ group("files and images dropped on the bar") {
     check("the extension is kept", later.hasSuffix(".png"))
 
     // A dragged file offers its bytes as well as its path; taking the path avoids a second copy.
-    let board = NSPasteboard(name: NSPasteboard.Name("clawdline-tests-drop"))
+    let board = exclusivePasteboard("drop")
+    defer { board.releaseGlobally() }
     board.clearContents()
     board.writeObjects([URL(fileURLWithPath: "/tmp/dropped.png") as NSURL])
     expect("a dragged file gives its own path",
