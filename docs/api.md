@@ -126,6 +126,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
 | `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/sessions/:id/state` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
@@ -195,7 +196,7 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
       "id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
       "label": "設計基本問題和股票相關聊天內容",
       "state": "idle",
-      "work_state": "needs_triage",
+      "work_state": "unknown",
       "cwd": "/Users/you/code/cairn"
     },
     {
@@ -238,7 +239,7 @@ kept after the tab is gone.
 ```console
 $ curl -s http://127.0.0.1:7717/v1/sessions/27439AEE-3736-4AC3-BF80-CE63280B5CCD \
     -H "Authorization: Bearer $TOKEN"
-{"session":{"id":"27439AEE-3736-4AC3-BF80-CE63280B5CCD","isClaude":true,"state":"idle","work_state":"needs_triage","icon":{"accent":"#5CBBA1","cells":[["#2F6B5E","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"]]},"tty":"ttys006","backend":"iterm","label":"IG 設定指引改進","sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","cwd":"/Users/you/code/atrium"}}
+{"session":{"id":"27439AEE-3736-4AC3-BF80-CE63280B5CCD","isClaude":true,"state":"idle","work_state":"unknown","icon":{"accent":"#5CBBA1","cells":[["#2F6B5E","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"]]},"tty":"ttys006","backend":"iterm","label":"IG 設定指引改進","sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","cwd":"/Users/you/code/atrium"}}
 ```
 
 Key order is not stable between replies — it comes out of a dictionary. Read by name.
@@ -1059,13 +1060,27 @@ thing that happens when a command is stopped from the Mac.
 
 ### `POST /v1/sessions/:id/end`
 
-Ends the session and closes the terminal tab it occupied. No body.
+Ends the session and closes the terminal tab it occupied.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/end \
     -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 3d9b7c14-55e2' -d '{}'
 {"ok":true}
 ```
+
+**The close gate.** At the moment of the press the broker computes `lost_if_closed` — the live
+descendant tasks this close would cancel and the open waits whose waiters it would strand. When
+that list is non-empty and the body does not carry `"accept_loss": true`, the route refuses:
+
+```json
+{"error":{"code":"would_lose_work","message":"…","lost":[
+  {"task":"…","title":"review the patch","state":"briefed"},
+  {"wait":"…","release_condition":"the docs are committed","waiters":1}]}}
+```
+
+Show the list, then repeat the same request with `accept_loss: true`. A close with nothing at
+stake is unchanged — one press, empty body. This is deliberately a gate at the close and not a
+list column: a label read earlier does not stop a close (docs/session-states.md#lost_if_closed).
 
 **Not a capability of its own.** A device that may type into a session can already send `/exit` and
 then `exit`; this is the same power with the two steps joined and named. What it adds is that the
@@ -1618,7 +1633,7 @@ machine-authenticated Git landing receipt. A child tab is refused because its au
 
 The first observed idle after the report settles it. When the same terminal next enters `working`
 or `waiting`, Clawdline consumes the receipt; current activity already outranks it in that frame,
-and a later idle without another report becomes `needs_triage`. Restarting the app preserves this
+and a later idle without another report becomes `unknown`. Restarting the app preserves this
 lifecycle. A terminal reused by another process cannot borrow the receipt even before cleanup.
 
 Typed refusals are `400 bad_request` for any body other than one string `summary` of 1…500
@@ -1628,6 +1643,35 @@ device reaches this machine-only handler; `404 session_not_found` when
 `409 session_unbound` when the complete process/conversation tuple cannot be proved; and
 `409 child_session` when the target already has a matching Clawdline task receipt path. A refusal
 must be reported honestly; prose does not substitute for the missing receipt.
+
+### `POST /v1/orchestrator/sessions/:id/state`
+
+The `self` half of the work-state provenance boundary ([docs/session-states.md](session-states.md)):
+a session's bounded declaration about its own quiet state, bound to the exact current process the
+same way `/complete` is, and accepted only while the declaring turn is observably `working`.
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$SID/state" \
+    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H 'Content-Type: application/json' \
+    -d '{"state":"ready","note":"fix landed; can take new work",
+         "owed":{"note":"the schedules trade-off is still your call","moved_by":"the user"}}'
+{"ok":true,"state":"ready","owed":{"note":"…","since":1787903000}}
+```
+
+The body may contain only `state`, `note`, `moved_by`, `person_needed`, and `owed`. `state` may
+be **only** `"ready"` or `"holding"`; `"milestone_complete"`/`"work_complete"` are refused
+`403 self_completion_refused` — the check states stay evidence-only — and anything else is
+`400 bad_request`. A `holding` claim additionally requires `note`, `moved_by`, and
+`person_needed: false` (`422 holding_needs_evidence`): holding is never a default, and a mover
+who is a person or a session makes the truth a wait. Notes are one line of at most 200
+characters.
+
+The `ready`/`holding` claim follows the delivery-receipt lifecycle — settled at the first idle,
+consumed when the terminal next enters `working` or `waiting`. The `owed` debt does not: it
+survives turns until this route clears it with `"owed": null`, and re-declaring the same debt
+note keeps the original `since`. Refusals `401/403/404/409 session_not_working/409
+session_unbound` match `/complete`.
 
 ### Machine coordinator identity and Bearings
 
@@ -1766,12 +1810,12 @@ This returns durable presence and deterministic read-only Bearings:
     "observed_at": 1787832060,
     "coordinator_lifecycle": "standby",
     "work_state_counts": {
-      "ready": 0, "working": 3, "waiting_human": 1, "waiting_session": 1,
-      "needs_triage": 2, "milestone_complete": 1, "work_complete": 0
+      "ready": 0, "working": 3, "waiting_you": 1, "waiting_session": 1,
+      "unknown": 2, "milestone_complete": 1, "work_complete": 0
     },
     "active_task_count": 2, "pending_landing_count": 1, "open_wait_count": 1,
-    "needs_triage": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
-                       "work_state":"needs_triage"}],
+    "unknown": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
+                       "work_state":"unknown"}],
     "waiting": [{"id":"…","assistant":"codex","label":"…","cwd":"…",
                   "work_state":"waiting_session"}],
     "blocking": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
@@ -1787,10 +1831,10 @@ This returns durable presence and deterministic read-only Bearings:
 }
 ```
 
-All seven `work_state_counts` keys are always present. Active tasks are non-terminal task records;
+All eight `work_state_counts` keys are always present. Active tasks are non-terminal task records;
 pending landings are task landings in `pending`; open waits count durable wait groups with at least
-one unreleased waiter. `needs_triage` selects that work state, `waiting` selects
-`waiting_human`/`waiting_session`, and `blocking` selects live owner sessions with waiters. Each
+one unreleased waiter. `unknown` selects that work state, `waiting` selects
+`waiting_you`/`waiting_session`, and `blocking` selects live owner sessions with waiters. Each
 named row is limited to terminal-neutral `id`, assistant, cwd, label and `work_state`. These are
 independent filters, not a partition: a session that is both waiting on a peer and owns another
 peer's wait appears in both `waiting` and `blocking`.
@@ -1819,7 +1863,7 @@ full answer never reaches this one by omission. What survives: `version`, `obser
 `coordinator` reduced to `configured`, `label`, `scope`, `status`, `lifecycle` and the safe
 `session` row (`id`, `assistant`, `label`, `cwd`, `work_state`); `bearings` with its
 `observed_at`, `coordinator_lifecycle`, `work_state_counts`, the three counts, the
-`needs_triage`/`waiting`/`blocking` rows (same five session fields), and `sources` reduced to
+`unknown`/`waiting`/`blocking` rows (same five session fields), and `sources` reduced to
 `observed_at` and `freshness` per source. Everything in it is either an aggregate count or a
 session fact a paired device can already read from `GET /v1/sessions`.
 
@@ -2832,15 +2876,28 @@ app, and an open-ended size is an open-ended cache.
 question is on screen. `unknown` means the terminal did not answer, which is not the same as idle
 and is deliberately not flattened into it.
 
-`work_state` is present exactly once and is one of `ready`, `working`, `waiting_human`,
-`waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`. It is a broker
-projection over separate terminal, task, landing, handoff, and coordination axes; clients must
-not infer it from `idle`. Precedence is: a human question, a durable peer/owed wait, unreadable or
-missing evidence, current activity, an idle root's live child, authenticated delivery, then
-verified target landing. Current
-activity outranks an older receipt. `ready` requires positive proof that no assistant assignment
-exists; an idle assistant without that proof is `needs_triage`. Only `waiting_human` asks the
+`work_state` is present exactly once and is one of `ready`, `working`, `holding`,
+`waiting_you`, `waiting_session`, `unknown`, `milestone_complete`, or `work_complete`. (The
+retired spellings `waiting_human` and `needs_triage` are these first two renamed; the per-state
+reading contract is [`docs/session-states.md`](session-states.md).) It is a broker
+projection over separate terminal, task, landing, handoff, coordination, and self-declaration
+axes; clients must
+not infer it from `idle`. Precedence is: a question stopped on you, a durable peer/owed wait,
+unreadable or
+missing evidence, current activity, an idle root's live child, the finished task receipt,
+authenticated delivery, the session's own `ready`/`holding` claim, then an assistant-free
+prompt's `ready`. Current
+activity outranks an older receipt. `ready` requires positive evidence — an assistant-free
+prompt, or the session's own authenticated declaration (provenance `self`); an idle assistant
+without either is `unknown`, which asks nothing of the reader. Only `waiting_you` asks the
 person to act.
+
+Beside it ride `work_provenance` ("broker" or "self"), and — when a declaration supplied them —
+`work_note` (one line, the session's own words), `work_since`, `work_moved_by`,
+`work_person_needed`, plus the independent second axis `owed`
+(`{note, since, person_needed, moved_by?, provenance}`), a debt that survives turns until the
+session clears it. `holding` appears only with `self` provenance — it has no broker entrance and
+is never a fallback — and a self-declaration can never produce either check state.
 
 An idle root with a live task resolved to its exact current process is `waiting_session`: the
 broker already knows it has an outstanding ChildSession. If the root works beside that child it is

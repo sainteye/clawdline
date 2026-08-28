@@ -21116,7 +21116,7 @@ group("Bearings is a closed deterministic projection without transcript data") {
         now: Date(timeIntervalSince1970: 1_800_000_100))
     let bearings = snapshot["bearings"] as? [String: Any]
     let counts = bearings?["work_state_counts"] as? [String: Any]
-    expect("all seven work states are counted even when zero would be needed", counts?.count, 7)
+    expect("all eight work states are counted even when zero would be needed", counts?.count, 8)
     for state in states { expect("one \(state.rawValue) row", counts?[state.rawValue] as? Int, 1) }
     expect("active task count comes through unchanged", bearings?["active_task_count"] as? Int, 3)
     expect("pending landing count comes through unchanged",
