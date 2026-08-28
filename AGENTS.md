@@ -12,12 +12,20 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
 - Use `git add -- <file>...` with every path named explicitly.
 - Never use `git add -A`, `git add .`, or another broad staging command.
 - Before any root-owned commit, run `git diff --cached --stat` and remove anything outside that
-  commit's scope.
+  commit's scope. **What you are looking for is a path you did not stage yourself.** The index is
+  shared: another session's `git add` is already sitting in it, and a plain `git commit` with no
+  pathspec commits the whole index, theirs included. That happened twice on 2026-08-28. Read the
+  stat as *"is every one of these lines mine?"* rather than *"does this look about right"*, and
+  take a stranger back out with `git reset -- <path>`, which unstages without touching their bytes.
 - Read the staged diff itself; a clean stat does not prove that a file contains only your work.
 - After hunk-staging, commit the reviewed index with plain `git commit -m <message>` and no
   pathspec. `git commit -- <path>...` takes the named files from the worktree instead of the staged
   hunk selection and can absorb another session's unstaged hunks. A commit pathspec is safe only
   when the entire worktree diff of every named path belongs to that commit.
+- **The two commit traps point in opposite directions**, which is why neither bullet above replaces
+  the other: no pathspec sweeps in what somebody else *staged*, a pathspec sweeps in what somebody
+  else left *unstaged*. `git diff --cached --stat` catches the first, reading the staged diff
+  catches the second, and a commit that has had neither run on it is guarded against neither.
 - A child or worker session does not commit. It hands its changes back to the root session for
   review and commit.
 - Once a root session has completed the task it was originally assigned, reviewed its own diff,
@@ -37,6 +45,39 @@ overlapping dirty work, file-release waits and handing an unfinished landing to 
 in [`docs/landing.md`](docs/landing.md). Read it when a delivery comes back.** A child does not
 land and does not need it.
 
+#### Closing a root is an act with victims; look before you do it
+
+Ending a session cancels every live task it dispatched — grandchildren first, then children, live
+ones and the finished ones still holding a tab. [`docs/orchestrator.md`](docs/orchestrator.md)
+describes that mechanism; what follows is the obligation, which the mechanism does not carry.
+
+**Before closing a root, look at what the close takes with it.** One command, and it is short:
+
+```sh
+curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  | jq --arg s "$MY_SESSION_ID" '[.tasks[]
+      | select(.root.sessionId == $s and (.state | IN("queued","spawning","briefed")))
+      | {id, title, state, assistant}]'
+```
+
+Nothing there means close freely. Anything there is work in progress that the close will end, so
+either let it finish, or say in your closing message what you are killing and why. On 2026-08-27
+at 23:20:37–:51 — a fourteen-second window, one close, not four decisions — four in-flight tasks
+died together. One of them was a correction dispatched 75 seconds after the review that demanded
+it, 25 minutes into its run.
+
+**After a cascade, the orphans are somebody's, and that somebody has a name.** A cancelled task
+leaves a landing record reading `pending`, which is also what actively progressing work reads —
+the record cannot tell "being worked on" from "its worker was killed hours ago"
+(`B-PENDING-CANNOT-SEE-ITS-EXECUTOR` in [`docs/backlog.yaml`](docs/backlog.yaml)). So the outgoing
+root writes down, for each orphan, **which named root or which named person picks it up**, in the
+same place it records the cancellation. "Somebody will notice" is not an owner: the safe-close
+correction was written down as *cancelled*, not as *cancelled together with three siblings by one
+close, and now unowned*, and it sat for fourteen hours looking like a hard problem rather than an
+absent one. If nobody can be named, say that out loud to the user before closing — an orphan whose
+owner is unknown is a decision for them, in the shape [below](#decisions-that-are-the-users-go-to-the-user-as-options).
+
 ### Root completion receipt
 
 After a root has genuinely completed its assigned turn—including required integration,
@@ -50,6 +91,29 @@ Do not report this receipt for a partial result, diagnosis-only answer, blocked 
 question, or child task. A child still finishes only through its authenticated `result.json`.
 Clawdline consumes a root receipt when that same terminal begins its next observed turn, so an old
 check cannot reappear after newer unreported work.
+
+## Decisions that are the user's go to the user, as options
+
+A decision only the user can make — which of two designs, whether to spend the quota, what happens
+to an orphaned line of work — does not travel in prose. Asked in a paragraph it does not arrive:
+the user said it plainly on 2026-08-28, «我會漏掉，我不知道怎麼回答» — *I miss it, and I do not
+know how to answer.* A question buried in a status report is a question that was not asked.
+
+So it goes to him **in his own session, through an explicit options prompt** (`AskUserQuestion`, or
+whatever that assistant calls its option cards), and:
+
+- **One question at a time.** Four decisions are four prompts, not one prompt with four parts.
+- **Each option names what happens if he picks it** — the cost, what it gives up, who then does
+  what. An option that is only a label makes him do the reasoning you already did.
+- **The asker's recommendation is attached**, first in the list and marked as the recommendation.
+  You have read the evidence; withholding your view is not neutrality, it is extra work for him.
+
+**Technical to-dos and user decisions are two lists, never one.** They get mixed in a single
+"next steps" paragraph, and it is always the user's half that is lost — a to-do can wait for
+whoever picks the work up, but a decision has no owner but him, so a decision filed under to-dos
+simply stops existing. Report them separately and label them: *what we will do next*, and
+*what we need you to decide*. When a line of work resumes after a pause, ask for both lists from
+each line — its next steps, and its decisions — as two questions.
 
 ## Verifying your work
 
@@ -221,7 +285,10 @@ Write the requested artifacts and write `result.json` last, exactly as the brief
 ## Never
 
 - Never run `git commit`, `git reset`, `git checkout`, or `git stash` from a child or worker
-  session; integration belongs to the root.
+  session; integration belongs to the root. The one exception is a **Claude** child in its own
+  brokered worktree, whose briefing tells it to commit milestones on `clawdline/task/<id>` — that
+  branch is the delivery. A **Codex** child leaves the bytes dirty even in a worktree, because it
+  cannot commit there; see `skills/clawdline/SKILL.md` §2.0a for why.
 - A root may run `./build.sh` when the user explicitly asks to build or install. A child or worker
   session must not run it: the script replaces and restarts the user's running app and can
   interrupt work owned by another session. Before a root runs it, re-check `git status` and make
