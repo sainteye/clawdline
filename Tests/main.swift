@@ -10347,6 +10347,77 @@ group("a Codex session can be named from its first request") {
            CodexNaming.displayLabel(threadName: nil, terminalLabel: "clawdline"), "clawdline")
 }
 
+group("a Codex npm shim starts with Finder's cold PATH") {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-codex-launch-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let node = root.appendingPathComponent("node")
+    let codex = root.appendingPathComponent("codex")
+    try! Data("#!/bin/sh\nprintf 'codex started'\n".utf8).write(to: node)
+    try! Data("#!/usr/bin/env node\n".utf8).write(to: codex)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: codex.path)
+
+    func run(environment: [String: String]) -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = codex
+        process.environment = environment
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        do { try process.run() } catch { return (-1, error.localizedDescription) }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitQuietly()
+        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+    }
+
+    let finder = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+    check("the unprepared npm shim genuinely cannot find node", run(environment: finder).status != 0)
+    let prepared = run(environment: CodexNaming.processEnvironment(for: codex,
+                                                                    inherited: finder))
+    expect("the naming launch boundary supplies the shim's interpreter", prepared.status, 0)
+    expect("the intended Codex shim ran", prepared.output, "codex started")
+}
+
+group("a canonical Codex npm shim resolves to its native vendor executable") {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-codex-package-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let nodeRoot = root.appendingPathComponent("versions/node/v24.1.0", isDirectory: true)
+    let package = nodeRoot.appendingPathComponent("lib/node_modules/@openai/codex",
+                                                   isDirectory: true)
+    let script = package.appendingPathComponent("bin/codex.js")
+    #if arch(arm64)
+    let vendor = "codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
+    #else
+    let vendor = "codex-darwin-x64/vendor/x86_64-apple-darwin/bin/codex"
+    #endif
+    let native = package.appendingPathComponent("node_modules/@openai")
+        .appendingPathComponent(vendor)
+    let shim = nodeRoot.appendingPathComponent("bin/codex")
+    try! FileManager.default.createDirectory(at: script.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: native.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! Data("#!/usr/bin/env node\n".utf8).write(to: script)
+    try! Data("#!/bin/sh\n".utf8).write(to: native)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: native.path)
+    try! FileManager.default.createDirectory(at: shim.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! FileManager.default.createSymbolicLink(
+        atPath: shim.path,
+        withDestinationPath: "../lib/node_modules/@openai/codex/bin/codex.js")
+
+    expect("the architecture-matched native binary is preferred",
+           CodexNaming.preferredExecutable(for: shim), native)
+    expect("an unrelated executable keeps its process-bound identity",
+           CodexNaming.preferredExecutable(for: URL(fileURLWithPath: "/bin/sh")),
+           URL(fileURLWithPath: "/bin/sh"))
+}
+
 group("the fields of a rollout, one at a time") {
     expect("a login shell is unwrapped",
            Codex.command(["/bin/zsh", "-lc", "ls -la"]), "ls -la")
