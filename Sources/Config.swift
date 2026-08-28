@@ -309,6 +309,20 @@ final class Config {
     var lastTargetID: String?
     var history: [String] = []
 
+    /// Names explicitly chosen by a person. Each row carries both identities we may know:
+    /// Claude's hook session id survives a reopened terminal, while the terminal id covers
+    /// Codex, shells and Claude installations without hooks.
+    struct SessionTitle: Equatable {
+        let title: String
+        let sessionID: String?
+        let terminalID: String
+        let updatedAt: Date
+    }
+    private var sessionTitles: [SessionTitle] = []
+    static let sessionTitleLimit = 200
+    static let sessionTitleCapacity = 200
+    static let sessionTitleLifetime: TimeInterval = 90 * 24 * 60 * 60
+
     /// True when at least one device has been paired or a password set.
     ///
     /// Read by ``RemoteTunnel`` before it will start anything: **a tunnel to an endpoint with no
@@ -401,6 +415,10 @@ final class Config {
         if let v = obj["whisper_model"] as? String { whisperModel = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
+        if let rows = obj["session_titles"] as? [[String: Any]] {
+            sessionTitles = rows.compactMap(Self.sessionTitle(from:))
+            pruneSessionTitles()
+        }
         // What the file said, so a later save can tell an edit of ours from an edit of theirs.
         known = obj
     }
@@ -461,6 +479,15 @@ final class Config {
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,
             "history": Array(history.suffix(60)),
+            "session_titles": sessionTitles.map { row -> [String: Any] in
+                var out: [String: Any] = [
+                    "title": row.title,
+                    "terminal_id": row.terminalID,
+                    "updated_at": row.updatedAt.timeIntervalSince1970,
+                ]
+                if let sessionID = row.sessionID { out["session_id"] = sessionID }
+                return out
+            },
         ]
         // Only when there is one. A Swift Optional in this dictionary is not a JSON value, and
         // JSONSerialization throws on it — which `try?` then swallowed, so on a fresh install
@@ -527,4 +554,71 @@ final class Config {
     }
 
     var fileURL: URL { file }
+
+    /// One visible line, with terminal control bytes converted to separators rather than kept
+    /// in config or sent through a slash command. Length is validated by the caller so an
+    /// overlong request is distinguishable from a title that merely needs trimming.
+    static func normalizedSessionTitle(_ raw: String) -> String? {
+        let separated = raw.unicodeScalars.map { scalar -> String in
+            CharacterSet.controlCharacters.contains(scalar) ? " " : String(scalar)
+        }.joined()
+        let line = separated.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.isEmpty ? nil : line
+    }
+
+    func sessionTitle(for target: TargetSession) -> String? {
+        sessionTitle(sessionID: HookBridge.note(for: target)?.session, terminalID: target.id)
+    }
+
+    func sessionTitle(sessionID: String?, terminalID: String) -> String? {
+        if let sessionID,
+           let row = sessionTitles.last(where: { $0.sessionID == sessionID }) {
+            return row.title
+        }
+        return sessionTitles.last(where: { $0.terminalID == terminalID })?.title
+    }
+
+    /// Replace every address for this live session together. That prevents a reused terminal
+    /// from inheriting an old title and leaves one row, not a pair that can drift apart.
+    @discardableResult
+    func setSessionTitle(_ raw: String, sessionID: String?, terminalID: String,
+                         now: Date = Date()) -> String? {
+        let normalized = Self.normalizedSessionTitle(raw)
+        sessionTitles.removeAll { row in
+            row.terminalID == terminalID
+                || (sessionID != nil && row.sessionID == sessionID)
+        }
+        if let normalized, normalized.count <= Self.sessionTitleLimit {
+            sessionTitles.append(SessionTitle(title: normalized, sessionID: sessionID,
+                                              terminalID: terminalID, updatedAt: now))
+        }
+        pruneSessionTitles(now: now)
+        return normalized.flatMap { $0.count <= Self.sessionTitleLimit ? $0 : nil }
+    }
+
+    @discardableResult
+    func setSessionTitle(_ raw: String, for target: TargetSession, now: Date = Date()) -> String? {
+        setSessionTitle(raw, sessionID: HookBridge.note(for: target)?.session,
+                        terminalID: target.id, now: now)
+    }
+
+    private static func sessionTitle(from row: [String: Any]) -> SessionTitle? {
+        guard let raw = row["title"] as? String,
+              let title = normalizedSessionTitle(raw), title.count <= sessionTitleLimit,
+              let terminalID = row["terminal_id"] as? String, !terminalID.isEmpty,
+              let timestamp = row["updated_at"] as? Double else { return nil }
+        let sessionID = (row["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return SessionTitle(title: title, sessionID: sessionID, terminalID: terminalID,
+                            updatedAt: Date(timeIntervalSince1970: timestamp))
+    }
+
+    private func pruneSessionTitles(now: Date = Date()) {
+        let cutoff = now.addingTimeInterval(-Self.sessionTitleLifetime)
+        sessionTitles = sessionTitles.filter { $0.updatedAt >= cutoff }
+            .sorted { $0.updatedAt < $1.updatedAt }
+        if sessionTitles.count > Self.sessionTitleCapacity {
+            sessionTitles.removeFirst(sessionTitles.count - Self.sessionTitleCapacity)
+        }
+    }
 }

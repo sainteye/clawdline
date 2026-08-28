@@ -1,3 +1,7 @@
+import { LOCAL_MACHINE, sessionIdentity } from "./client.js";
+import { jsonFetch, post } from "./fetch.js";
+import { uuid } from "../core/util.js";
+
 /* --------------------------------------------------------------------------
    The API, as a name
    There is one API on this page and it is either the real one or the fixtures.
@@ -16,5 +20,21 @@ export let api = null;
 // migrate one module at a time without creating a second selected transport.
 export { api as client };
 
-export function useClient(implementation) { api = implementation; }
+export function useClient(implementation) {
+    api = implementation;
+    // This card remains a local HTTP surface. Keep the write here so the small transport seam
+    // does not grow a fleet command until the cloud protocol has a matching typed operation.
+    if (typeof api.title !== "function") {
+        api.title = function (value, title) {
+            var identity = sessionIdentity(value, LOCAL_MACHINE);
+            if (identity.machine !== LOCAL_MACHINE) {
+                return Promise.reject(Object.assign(
+                    new Error("Session titles are not available through the cloud transport."),
+                    { code: "unsupported" }));
+            }
+            return jsonFetch("/v1/sessions/" + encodeURIComponent(identity.session) + "/title",
+                             post({ title: title }, { "Idempotency-Key": uuid() }));
+        };
+    }
+}
 export function useApi(implementation) { useClient(implementation); }

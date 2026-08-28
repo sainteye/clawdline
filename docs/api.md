@@ -96,6 +96,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/places/:id/resume/:session` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/resume/:assistant/:session` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/sessions/:id/title` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/end` | token + key | `send` **and** the write switch |
@@ -881,6 +882,32 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/send \
 With the switch on it answers `{"ok":true,"at":<unix seconds>}`. `text` must be a non-empty string;
 anything else is `400 bad_request`. Failure to reach the terminal is `502` with code `internal` and
 whatever the terminal said as the message.
+
+### `POST /v1/sessions/:id/title`
+
+Gives one live session a local display title. It is trimmed, folded to one line and limited to 200
+characters. An empty or whitespace-only `title` clears the local choice and restores the automatic
+task, Codex-thread or terminal label. The terminal's own title is never changed by this local step.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/title \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 97707bb0-0274' \
+    -d '{"title":"Release room"}'
+{"ok":true,"title":"Release room","display_title":"Release room","local_applied":true,"downstream":"synced","downstream_synced":true}
+```
+
+`local_applied` says the durable Clawdline name is already in use. `downstream` separately says
+what happened to the assistant's own name: `synced` for an idle Claude `/rename`, `queued` for a
+Codex thread update, `busy` when Claude was working or asking a question, `unavailable` when no
+Codex thread could be identified, `failed` when the terminal handoff failed, and `local_only` for
+a clear or a non-assistant shell. `downstream_synced` is true only after a synchronous downstream
+handoff succeeded. Busy Claude sessions are deliberately not queued: a local title is durable,
+while replaying a slash command after an app restart would need a second durable command protocol.
+
+The body must contain a string `title`; a different type or an overlong normalized title is `400
+bad_request`, and an unknown session is `404 not_found`. Like `/send`, this is an authenticated,
+idempotency-keyed write and is refused while remote writing is switched off.
 
 ### `POST /v1/sessions/:id/key`
 

@@ -37,6 +37,8 @@ export var Info = (function () {
     var pending = null;  // the word sent after `/model`, until the transcript names that model
     var permissionPending = null; // the mode requested, until a fresh screen capture agrees
     var busy = false;    // a model command or permission key sequence on its way to the Mac
+    var editingTitle = false;
+    var titleDraft = "";
     var stateSeen = "";  // the session's state at the last draw, so a change redraws the buttons
     var confirming = 0;  // the timer reading back, waiting for a sent `/model` to turn up
     var permissionConfirming = 0;
@@ -138,10 +140,20 @@ export var Info = (function () {
         if (typeof s.seconds === "number") {
             meta.push('<span title="' + esc(T.webInfoRunningFor) + '">' + esc(span(s.seconds)) + "</span>");
         }
+        var headline = editingTitle
+            ? '<form class="title-editor" data-title-form="1"><input name="title" type="text" maxlength="200"' +
+                ' value="' + esc(titleDraft) + '" aria-label="' + esc(T.webInfoEditTitle) + '"' +
+                (busy || !S.write ? " disabled" : "") + '><span class="title-actions">' +
+                '<button type="submit" class="chip"' + (busy || !S.write ? " disabled" : "") + '>' +
+                esc(T.webScheduleSave) + '</button><button type="button" class="chip quiet" data-title-cancel="1"' +
+                (busy ? " disabled" : "") + '>' + esc(T.webCancel) + '</button></span></form>'
+            : '<button type="button" class="session-title" data-title-edit="1" aria-label="' +
+                esc(T.webInfoEditTitle) + '"' + (!S.write || busy ? " disabled" : "") + '><span>' +
+                esc(title) + '</span><i aria-hidden="true">✎</i></button>';
         return '<div class="hero">' +
             '<div class="who">' + assistantLogo(s.assistant) + '<span class="assistant-name">' +
                 esc(s.assistant || T.webInfoUnknown) + "</span>" + modelMeta + "</div>" +
-            '<div class="session-title">' + esc(title) + "</div>" +
+            headline +
             '<div class="meta">' + meta.join('<span class="dot">·</span>') + "</div>" +
             "</div>";
     }
@@ -430,6 +442,8 @@ export var Info = (function () {
             pending = null;
             permissionPending = null;
             busy = false;
+            editingTitle = false;
+            titleDraft = "";
             clearTimeout(confirming);
             clearTimeout(permissionConfirming);
             said("");
@@ -454,6 +468,8 @@ export var Info = (function () {
             pending = null;
             permissionPending = null;
             busy = false;
+            editingTitle = false;
+            titleDraft = "";
             clearTimeout(confirming);
             clearTimeout(permissionConfirming);
         },
@@ -527,6 +543,52 @@ export var Info = (function () {
             });
         },
 
+        editTitle: function () {
+            if (!S.write || busy || !data || !data.session) return;
+            editingTitle = true;
+            titleDraft = data.session.title || "";
+            said("");
+            draw();
+            var input = els["info-body"].querySelector(".title-editor input");
+            if (input) { input.focus({ preventScroll: true }); input.select(); }
+        },
+
+        cancelTitle: function () {
+            if (busy) return;
+            editingTitle = false;
+            titleDraft = "";
+            draw();
+        },
+
+        saveTitle: function (value) {
+            var id = forId;
+            if (!id || !S.write || busy) return;
+            titleDraft = String(value || "");
+            busy = true;
+            said("");
+            draw();
+            api.title(id, titleDraft).then(function (answer) {
+                if (forId !== id) return;
+                busy = false;
+                editingTitle = false;
+                titleDraft = "";
+                if (data && data.session && typeof answer.display_title === "string") {
+                    data.session.title = answer.display_title;
+                }
+                SessionFacts.drop(id);
+                if (answer.downstream === "queued") said(T.webInfoTitleQueued, true);
+                else if (answer.downstream === "busy" || answer.downstream === "unavailable" ||
+                         answer.downstream === "failed") said(T.webInfoTitleLocal, true);
+                else said(T.webInfoTitleSaved, true);
+                draw();
+            }).catch(function (e) {
+                if (forId !== id) return;
+                busy = false;
+                said((e && e.message) || T.webInfoFailed);
+                draw();
+            });
+        },
+
         copy: function (text) {
             if (!text || !navigator.clipboard) return;
             navigator.clipboard.writeText(text).then(function () { toast(T.webInfoCopied); }).catch(function () {});
@@ -545,14 +607,30 @@ els["info-body"].addEventListener("click", function (ev) {
     var permission = t.closest ? t.closest("button[data-permission]") : null;
     if (permission) { if (!permission.disabled) Info.switchPermission(permission.dataset.permission); return; }
     var sid = t.closest ? t.closest("button[data-copy]") : null;
-    if (sid) Info.copy(sid.dataset.copy);
+    if (sid) { Info.copy(sid.dataset.copy); return; }
+    var editTitle = t.closest ? t.closest("button[data-title-edit]") : null;
+    if (editTitle) { if (!editTitle.disabled) Info.editTitle(); return; }
+    var cancelTitle = t.closest ? t.closest("button[data-title-cancel]") : null;
+    if (cancelTitle) Info.cancelTitle();
 });
 els["info-body"].addEventListener("submit", function (ev) {
     var form = ev.target;
+    if (form && form.dataset && form.dataset.titleForm) {
+        ev.preventDefault();
+        var title = form.querySelector("input[name=title]");
+        Info.saveTitle(title ? title.value : "");
+        return;
+    }
     if (!form || !form.dataset || !form.dataset.other) return;
     ev.preventDefault();
     var input = form.querySelector("input");
     Info.switchTo(input ? input.value : "", "");
+});
+els["info-body"].addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && ev.target && ev.target.closest(".title-editor")) {
+        ev.preventDefault();
+        Info.cancelTitle();
+    }
 });
 els["status-line-open"].addEventListener("click", function () { Info.open(); });
 // The counts in this row are the sheet's own summary, so the row is where the sheet is opened

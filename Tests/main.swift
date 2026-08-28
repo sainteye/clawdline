@@ -7674,6 +7674,39 @@ group("the key route is gated like every other write") {
            key(writer.token, "{\"key\":\"submit\"}").status, 404)
 }
 
+group("the session-title route is a bounded authenticated write") {
+    let wasWriting = Config.shared.remoteWrite
+    defer { Config.shared.remoteWrite = wasWriting }
+    let reader = RemoteAuth.addDevice(name: "a title reader", caps: [.read])
+    let writer = RemoteAuth.addDevice(name: "a title writer", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id); RemoteAuth.revoke(id: writer.id) }
+
+    func title(_ token: String?, _ value: Any) -> RemoteServer.Response {
+        var headers = ["Content-Type": "application/json",
+                       "Idempotency-Key": UUID().uuidString]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        let body = try! JSONSerialization.data(withJSONObject: ["title": value])
+        return RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/sessions/missing/title", headers: headers,
+            body: String(decoding: body, as: UTF8.self)))
+    }
+
+    Config.shared.remoteWrite = true
+    expect("an anonymous title write is refused", title(nil, "name").status, 401)
+    expect("a read-only device cannot name a session", title(reader.token, "name").status, 403)
+    Config.shared.remoteWrite = false
+    expect("the global write switch protects session titles",
+           remoteErrorCode(title(writer.token, "name")), "write_disabled")
+    Config.shared.remoteWrite = true
+    expect("a well-formed title for no session is a 404",
+           title(writer.token, "name").status, 404)
+    expect("a non-string title is rejected before session lookup",
+           title(writer.token, 7).status, 400)
+    expect("an overlong title is rejected before session lookup",
+           title(writer.token, String(repeating: "x", count: Config.sessionTitleLimit + 1)).status,
+           400)
+}
+
 group("a recording arrives as base64 and is refused before it costs a second of CPU") {
     // Little-endian 16-bit mono, which is the only shape /v1/voice takes -- and the shape the
     // bar's own recorder converts to before it calls the same transcriber. Two bytes a sample.
@@ -9496,6 +9529,136 @@ group("the fields of a rollout, one at a time") {
            Codex.changed(["/a/one.swift": 1, "/b/two.swift": 1, "/c/three.swift": 1,
                           "/d/four.swift": 1]),
            "one.swift, two.swift, three.swift +1")
+}
+
+group("a person-named session title outranks every automatic label") {
+    expect("a person's title outranks the orchestrator task",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: "My release room", orchestratorTitle: "automatic handoff",
+               threadName: "Codex thread", terminalLabel: "terminal tab"),
+           "My release room")
+    expect("the orchestrator task still outranks Codex metadata",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: "automatic handoff",
+               threadName: "Codex thread", terminalLabel: "terminal tab"),
+           "automatic handoff")
+    expect("Codex metadata still outranks the terminal label",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: nil,
+               threadName: "Codex thread", terminalLabel: "terminal tab"),
+           "Codex thread")
+    expect("clearing a person's title restores the automatic label",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: "automatic handoff",
+               threadName: "Codex thread", terminalLabel: "terminal tab"),
+           "automatic handoff")
+}
+
+group("session titles are normalized, persisted and bounded") {
+    expect("line breaks and controls become one ordinary space",
+           Config.normalizedSessionTitle("  first\nsecond\u{0007}\tthird  "),
+           "first second third")
+    check("only whitespace clears a title",
+          Config.normalizedSessionTitle(" \n\t ") == nil)
+    expect("the length boundary is accepted",
+           Config.normalizedSessionTitle(String(repeating: "x", count: Config.sessionTitleLimit))?.count,
+           Config.sessionTitleLimit)
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-session-titles-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let config = Config(directoryForTesting: directory)
+    let now = Date()
+    expect("setting returns the normalized title",
+           config.setSessionTitle("  release\nroom  ", sessionID: "claude-one",
+                                  terminalID: "terminal-one", now: now),
+           "release room")
+    expect("the stable Claude id is preferred after a terminal changes",
+           config.sessionTitle(sessionID: "claude-one", terminalID: "terminal-two"),
+           "release room")
+    expect("the terminal id remains a fallback when there is no hook id",
+           config.sessionTitle(sessionID: nil, terminalID: "terminal-one"),
+           "release room")
+    config.save()
+    let loaded = Config(directoryForTesting: directory)
+    expect("a saved title makes a config round trip",
+           loaded.sessionTitle(sessionID: "claude-one", terminalID: "terminal-two"),
+           "release room")
+    check("clearing removes both lookup keys",
+          loaded.setSessionTitle(" \n ", sessionID: "claude-one",
+                                 terminalID: "terminal-one", now: now) == nil
+              && loaded.sessionTitle(sessionID: "claude-one", terminalID: "terminal-one") == nil)
+
+    let rows: [[String: Any]] = (0..<(Config.sessionTitleCapacity + 3)).map { index in
+        ["title": "title \(index)", "terminal_id": "terminal-\(index)",
+         "updated_at": now.addingTimeInterval(Double(index)).timeIntervalSince1970]
+    }
+    let file = directory.appendingPathComponent("config.json")
+    let data = try! JSONSerialization.data(withJSONObject: ["session_titles": rows])
+    try! data.write(to: file)
+    let bounded = Config(directoryForTesting: directory)
+    check("loading keeps only the newest bounded set",
+          bounded.sessionTitle(sessionID: nil, terminalID: "terminal-0") == nil
+              && bounded.sessionTitle(sessionID: nil,
+                                      terminalID: "terminal-\(Config.sessionTitleCapacity + 2)")
+                  == "title \(Config.sessionTitleCapacity + 2)")
+
+    let stale = [["title": "old", "terminal_id": "old-terminal",
+                  "updated_at": now.addingTimeInterval(-Config.sessionTitleLifetime - 1)
+                    .timeIntervalSince1970]]
+    try! JSONSerialization.data(withJSONObject: ["session_titles": stale]).write(to: file)
+    let cleaned = Config(directoryForTesting: directory)
+    check("expired closed-session titles are discarded",
+          cleaned.sessionTitle(sessionID: nil, terminalID: "old-terminal") == nil)
+}
+
+group("renaming never changes the terminal label used to locate transcripts") {
+    let target = TargetSession(backend: .iterm, id: "terminal-name-test",
+                               name: "Claude Code", tty: "/dev/ttys099",
+                               windowIndex: 0, tabIndex: 0, assistant: .claude)
+    let original = target.label
+    expect("a manual display title leaves the raw terminal label alone",
+           target.label, original)
+    expect("the display calculation can change independently",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: "Human title", orchestratorTitle: nil,
+               threadName: nil, terminalLabel: target.label),
+           "Human title")
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-transcript-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let transcript = directory.appendingPathComponent("matching.jsonl")
+    try! Data("{\"customTitle\":\"Claude Code\"}\n".utf8).write(to: transcript)
+    expect("transcript matching still receives the unchanged terminal title",
+           Transcript.locate(in: directory, tabTitle: target.label), transcript)
+}
+
+group("session-title downstream synchronization never interrupts Claude") {
+    expect("an idle Claude session receives its rename",
+           SessionTitleSync.action(assistant: .claude, state: .idle,
+                                   clearing: false, codexThreadID: nil),
+           .renameClaude)
+    expect("a working Claude session stays local",
+           SessionTitleSync.action(assistant: .claude, state: .working("turn"),
+                                   clearing: false, codexThreadID: nil),
+           .busy)
+    expect("a waiting Claude session is never answered by a rename",
+           SessionTitleSync.action(assistant: .claude, state: .waiting,
+                                   clearing: false, codexThreadID: nil),
+           .busy)
+    expect("Codex metadata may be renamed without waiting for idle",
+           SessionTitleSync.action(assistant: .codex, state: .working("turn"),
+                                   clearing: false, codexThreadID: "thread-one"),
+           .renameCodex(threadID: "thread-one"))
+    expect("clearing is local-only for every assistant",
+           SessionTitleSync.action(assistant: .claude, state: .idle,
+                                   clearing: true, codexThreadID: nil),
+           .localOnly)
 }
 
 group("which assistant a process name stands for") {

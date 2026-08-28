@@ -2,6 +2,33 @@ import AppKit
 import Foundation
 import Network
 
+/// Decide whether a local title can also be handed to the assistant without changing what its
+/// current turn means. Claude accepts a slash command only at an idle prompt; Codex names thread
+/// metadata out of band and therefore does not share that restriction.
+enum SessionTitleSync {
+    enum Action: Equatable {
+        case localOnly
+        case busy
+        case unavailable
+        case renameClaude
+        case renameCodex(threadID: String)
+    }
+
+    static func action(assistant: Assistant?, state: SessionState, clearing: Bool,
+                       codexThreadID: String?) -> Action {
+        guard !clearing else { return .localOnly }
+        switch assistant {
+        case .claude:
+            return state == .idle ? .renameClaude : .busy
+        case .codex:
+            guard let codexThreadID, !codexThreadID.isEmpty else { return .unavailable }
+            return .renameCodex(threadID: codexThreadID)
+        case nil:
+            return .localOnly
+        }
+    }
+}
+
 /// The bar, as something other than a bar.
 ///
 /// Everything this app knows is already computed for four consumers — the panel, the strip above
@@ -1441,6 +1468,65 @@ final class RemoteServer: @unchecked Sendable {
                 }
                 SessionWatch.shared.nudge()
                 return .json(["ok": true])
+            }
+
+        case ("POST", let path) where path.hasSuffix("/title")
+            && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/title".count))
+            return writing(request) { body in
+                guard let raw = body["title"] as? String else {
+                    return .error(400, "bad_request", "title must be a string.")
+                }
+                let title = Config.normalizedSessionTitle(raw)
+                guard title?.count ?? 0 <= Config.sessionTitleLimit else {
+                    return .error(400, "bad_request",
+                                  "title must be at most \(Config.sessionTitleLimit) characters.")
+                }
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+
+                let config = Config.shared
+                _ = config.setSessionTitle(raw, for: session)
+                config.save()
+
+                let state: SessionState = Thread.isMainThread
+                    ? (SessionWatch.shared.states[session.id] ?? .unknown)
+                    : DispatchQueue.main.sync {
+                        SessionWatch.shared.states[session.id] ?? .unknown
+                    }
+                let action = SessionTitleSync.action(
+                    assistant: session.assistant, state: state, clearing: title == nil,
+                    codexThreadID: CodexNaming.shared.threadID(for: session))
+                var downstream = "local_only"
+                var synced = false
+                switch action {
+                case .localOnly:
+                    break
+                case .busy:
+                    downstream = "busy"
+                case .unavailable:
+                    downstream = "unavailable"
+                case .renameClaude:
+                    if let failure = Targets.send("/rename \(title ?? "")", to: session) {
+                        downstream = "failed"
+                        Log.write("session title: Claude rename failed — \(failure)")
+                    } else {
+                        downstream = "synced"
+                        synced = true
+                    }
+                case .renameCodex(let threadID):
+                    CodexNaming.shared.name(title ?? "", thread: threadID, target: session,
+                                            replacingExisting: true)
+                    downstream = "queued"
+                }
+                RemoteAuth.audit("session.title", ["id": session.id,
+                                                    "cleared": title == nil ? "1" : "0",
+                                                    "downstream": downstream])
+                DispatchQueue.main.async { SessionWatch.shared.labelsDidChange() }
+                return .json(["ok": true, "title": title ?? "",
+                              "display_title": session.displayLabel, "local_applied": true,
+                              "downstream": downstream, "downstream_synced": synced])
             }
 
         // Stopping one of a session's background commands.
@@ -3860,6 +3946,10 @@ final class RemoteServer: @unchecked Sendable {
         add([
             "webSessionInfo": t.webSessionInfo,
             "webInfoTitle": t.webInfoTitle,
+            "webInfoEditTitle": t.webInfoEditTitle,
+            "webInfoTitleSaved": t.webInfoTitleSaved,
+            "webInfoTitleLocal": t.webInfoTitleLocal,
+            "webInfoTitleQueued": t.webInfoTitleQueued,
             "webInfoSession": t.webInfoSession,
             "webInfoAssistant": t.webInfoAssistant,
             "webInfoModel": t.webInfoModel,

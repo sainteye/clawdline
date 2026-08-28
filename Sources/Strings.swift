@@ -968,6 +968,10 @@ protocol Copy {
     // the wrong answer that changes what somebody does next.
     var webSessionInfo: String { get }
     var webInfoTitle: String { get }
+    var webInfoEditTitle: String { get }
+    var webInfoTitleSaved: String { get }
+    var webInfoTitleLocal: String { get }
+    var webInfoTitleQueued: String { get }
     var webInfoSession: String { get }
     var webInfoAssistant: String { get }
     var webInfoModel: String { get }
