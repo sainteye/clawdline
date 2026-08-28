@@ -1,5 +1,49 @@
 {
   "cipher" : "AES-256-GCM",
+  "control_response" : {
+    "allowed_classes" : [
+      "ctl"
+    ],
+    "channel" : "ctlr/mac-01/viewer-device-01",
+    "reply_key" : {
+      "decoded_byte_length" : 32,
+      "key" : "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+      "key_id" : "rk-zF3jN8rQ4Wm2pV6sT0uYxA"
+    },
+    "request_envelope" : {
+      "body" : "{\"ch\":\"ctl/mac-01\",\"class\":\"ctl\",\"ct\":\"SYSUFYGzg5UKK6schvAC72o91WEBOvmDYFhDDNom2vC8u5Q7wQwamsUE3jveTolLqWpDLIcw1uCY2mDKQlMwUhEMisfuQBUwahEhAgLG/Q7TTuTJ2sc+uTAaXUqJRS+w3FKVpFvUygZkAwtospdrBHnlKKqFWQGFEIQ1NiUBS4CAmt//7y3/nY9iSih4vWqXqAJFnyIAOvnV6sYmLRzFhW8USiqIsOyn72Ymx6+1E+enVRLz5JBjv/EHynSLoP6b38G2cBQMwH/6CShAcvIew33/xeapbTdqT2eZJUE+k0d5L0kM1/QWpDAUqqD1O7Ar34xUX5cuRMbXaoywD0H8P+nJc8UsjUtkmve3EiCB6o0CkLOTCEXSkSSmi9tHHCBiO2Re+k3Viw==\",\"key_id\":\"ms-1\",\"nonce\":\"AAAAAAAAAAAAAAAH\",\"sender\":\"viewer-device-01\",\"seq\":411,\"sig\":\"QBKVpkGRs711T3yiB5rBTnd4XbJScoCU7FZ5/W3uZUkQSseV1bTCRRBPJC2pagiX2OgNUz4qFTxRcCgNzlLCCA==\",\"ts\":1787817600000,\"v\":1}",
+      "byte_length" : 640,
+      "field_count" : 10,
+      "name" : "request-ams-envelope",
+      "sha256" : "bc59281e686a515c53497ebcc8d370b8665b7190600615e109bb030339ccc8ad"
+    },
+    "response_envelope" : {
+      "body" : "{\"ch\":\"ctlr/mac-01/viewer-device-01\",\"class\":\"ctl\",\"ct\":\"Y+Qqji8cDIvdi2wpY/rSEE2xMUKp9Fw5S0EVMIWc4cWgyud0e4HcbER1NYkkyLwHWAoq85LosG+1Oe3txMXmAGEM9GahgT+a4cKmjxWg+asDMXR3Hg37GyBPujneFLjPfmscAVqGia3Tpjoq1ElajbUywJNQeQHJYwybqD/06JvWdrJsSlEyLE5uokAn3loq8A+NPdEo79JiYW6IZu13NZZ/el6umgk/00m29Ko6sqijT4Ukd/CIYyA2o0FKgJWbnsFyN/JBNKe6cYOfiqt1Si2IqHxYQAklfGjsfEE=\",\"key_id\":\"rk-zF3jN8rQ4Wm2pV6sT0uYxA\",\"nonce\":\"AAAAAAAAAAAAAAAI\",\"sender\":\"mac-01\",\"seq\":912,\"sig\":\"FtpJZt6myTWkXL2zCGwkeZq2OYiVtSQFMvnltYEJpXFxtuZoeK9VpFBD7P7FKmDQXlk6joWtB0Elk4AhOaqWDg==\",\"ts\":1787817600456,\"v\":1}",
+      "byte_length" : 569,
+      "field_count" : 10,
+      "name" : "response-reply-key-envelope",
+      "sha256" : "b0483bface41c741403d2e33d278ae58af826f30d1a8069a80e380cbec226aa5"
+    },
+    "response_open_results" : [
+      {
+        "key_id" : "ms-1",
+        "name" : "response-with-master-secret",
+        "succeeds" : false
+      },
+      {
+        "key_id" : "rk-zF3jN8rQ4Wm2pV6sT0uYxA",
+        "name" : "response-with-reply-key",
+        "succeeds" : true
+      }
+    ],
+    "response_payload" : {
+      "body" : "{\"code\":\"ok\",\"completed_at\":1787817600440,\"request_id\":\"018f2f7a-7d65-4aa8-8e01-11a8f4257ed1\",\"request_seq\":411,\"result\":{\"accepted\":true},\"retryable\":false,\"status\":\"ok\",\"type\":\"execution_response\",\"v\":1}",
+      "byte_length" : 205,
+      "field_count" : 9,
+      "name" : "execution-response-payload",
+      "sha256" : "2b7a35f9d3a0a94b6ea6e4c4e5ec86f58fbf4adff55ff88ba528d587135377f2"
+    }
+  },
   "ed25519_public_key" : "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
   "ed25519_seed" : "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
   "envelopes" : [
