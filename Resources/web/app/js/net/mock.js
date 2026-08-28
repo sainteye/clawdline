@@ -62,11 +62,28 @@ export var Mock = (function () {
           isClaude: false, assistant: "codex", sessionId: "clawdfather-mock", icon: clawdline,
           coordinator: {
               label: "Clawdfather", status: "online",
+              // The advertisement the Mac sends today: four connected reads, everything that
+              // would send, spawn or mutate disabled with a closed reason code.
               commands: [
-                  { type: "status_report", enabled: false,
-                    why: "Preview only in Phase A2: Bearings is read-only." },
-                  { type: "ask_coordinator", enabled: false,
-                    why: "Disabled in Phase A2: Clawdfather actions remain advisory." }
+                  { type: "status_report", enabled: true },
+                  { type: "duplicates_conflicts_ownership", enabled: true },
+                  { type: "landing_closure", enabled: true },
+                  { type: "scope_permissions", enabled: true },
+                  { type: "since_away", enabled: false, reason: "no_return_ledger",
+                    why: "This Mac does not record a return point yet, so there is nothing to read one against." },
+                  { type: "coordinate_work", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "dispatch_independent_work", enabled: false,
+                    reason: "device_cannot_spawn",
+                    why: "A paired device can never start a session — that separation is deliberate, and this command will not cross it." },
+                  { type: "ask_coordinator", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "quiet_watch", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "stop", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "reconnect", enabled: false, reason: "machine_token_only",
+                    why: "Reconnecting needs the Mac's own orchestrator token, which a paired device deliberately does not hold." }
               ]
           } },
         // Waiting, **with the question in it**. This is what the phone could never see: the
@@ -1044,6 +1061,49 @@ export var Mock = (function () {
                         ]
                     } });
                 }, 420);
+            });
+        },
+
+        // The device-readable Bearings projection behind the Clawdfather panel's four
+        // read-only commands — the same shape `GET /v1/orchestrator/coordinator/bearings`
+        // answers, with enough in it to demo every branch of the renderer.
+        coordinatorBearings: function () {
+            return new Promise(function (done) {
+                setTimeout(function () {
+                    var now = Math.floor(Date.now() / 1000);
+                    done({
+                        version: 1, observed_at: now,
+                        coordinator: {
+                            configured: true, label: "Clawdfather", scope: "machine",
+                            status: "online", lifecycle: "standby",
+                            session: { id: "CF00-01", assistant: "codex",
+                                       label: "Clawdfather · machine coordinator",
+                                       cwd: "/Users/x/code/clawdline", work_state: "working" }
+                        },
+                        bearings: {
+                            observed_at: now, coordinator_lifecycle: "standby",
+                            work_state_counts: { ready: 1, working: 3, waiting_human: 1,
+                                                 waiting_session: 1, needs_triage: 1,
+                                                 milestone_complete: 1, work_complete: 0 },
+                            active_task_count: 2, pending_landing_count: 1, open_wait_count: 1,
+                            needs_triage: [{ id: "9D1B-44", assistant: "claude",
+                                             label: "the exporter is stuck on fonts",
+                                             work_state: "needs_triage" }],
+                            waiting: [{ id: "2C71-90", assistant: "claude",
+                                        label: "the signup flow keeps 500ing",
+                                        work_state: "waiting_human" }],
+                            blocking: [{ id: "CF00-01", assistant: "codex",
+                                         label: "Clawdfather · machine coordinator",
+                                         work_state: "working" }],
+                            sources: {
+                                sessions: { observed_at: now, freshness: "current" },
+                                tasks: { observed_at: now, freshness: "current" },
+                                landings: { observed_at: now, freshness: "current" },
+                                waits: { observed_at: now, freshness: "current" }
+                            }
+                        }
+                    });
+                }, 360);
             });
         },
 

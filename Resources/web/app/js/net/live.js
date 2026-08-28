@@ -331,6 +331,13 @@ export var LocalClient = {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/git");
     },
 
+    /// The device-readable half of Bearings, behind the Clawdfather panel's four read-only
+    /// commands. Fetched only when one of them is pressed — never on the stream — and answered
+    /// with this page's own device token; the machine-token inspection route stays untouched.
+    coordinatorBearings: function () {
+        return jsonFetch("/v1/orchestrator/coordinator/bearings");
+    },
+
     /// Where a session may be started. Asked afresh every time the sheet opens: the Mac drops
     /// directories that are no longer there while it builds this, and the answer is only as
     /// true as the moment it was given.
