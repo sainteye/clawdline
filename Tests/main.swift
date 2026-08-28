@@ -11886,9 +11886,6 @@ group("worktree task records, briefings and shared-tree coordination stay distin
           Orchestrator.task(from: legacy)?.isolation == Orchestrator.Isolation.none
               && Orchestrator.task(from: legacy)?.worktree == nil)
 
-    let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
-    Config.shared.orchestratorMaxGrandchildren = 0
-    defer { Config.shared.orchestratorMaxGrandchildren = savedGrandchildren }
     let sharedBrief = Orchestrator.childBrief(for: shared)
     let isolatedBrief = Orchestrator.childBrief(for: isolated)
     check("a shared-tree child keeps the existing briefing without worktree rules",
@@ -14638,118 +14635,105 @@ group("the one line a child is given") {
     check("and it is one line, because it is typed into a prompt", !line.contains("\n"))
 }
 
-group("a child is told whether it may hand work on, and never has to find out by being refused") {
-    // CHILD.md is the whole of a child's instructions, so the level it is standing on has to be
-    // written into it. A child that discovers the rule by dispatching and being refused has
-    // already spent a turn on it, and one that assumes the old rule never tries at all.
-    let saved = Config.shared.orchestratorMaxGrandchildren
-    defer { Config.shared.orchestratorMaxGrandchildren = saved }
-    func task(depth: Int, allowance: Int) -> Orchestrator.Task {
-        Config.shared.orchestratorMaxGrandchildren = allowance
-        return Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                 assistant: .claude, projectDir: "/Users/me/code/thing",
-                                 timeoutMinutes: 30, created: Date(), depth: depth,
-                                 secretHash: String(repeating: "0", count: 64))
+group("a child briefing carries the whole of what a child needs, and none of what it must not") {
+    // CHILD.md is the whole of a child's instructions: it is read once, by a session nobody is
+    // watching, and anything not in it does not happen. The tree is one level deep, so every
+    // child is a leaf and there is only one briefing to get right — the level a child stands on
+    // is asserted in the group below this one.
+    func task(depth: Int = 1) -> Orchestrator.Task {
+        Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                          assistant: .claude, projectDir: "/Users/me/code/thing",
+                          timeoutMinutes: 30, created: Date(), depth: depth,
+                          secretHash: String(repeating: "0", count: 64))
     }
-    func brief(depth: Int, allowance: Int) -> String {
-        Orchestrator.childBrief(for: task(depth: depth, allowance: allowance))
-    }
-    func teaching(depth: Int, allowance: Int) -> String? {
-        Orchestrator.dispatchingBrief(for: task(depth: depth, allowance: allowance))
-    }
+    let brief = Orchestrator.childBrief(for: task())
 
-    let allowed = brief(depth: 1, allowance: 3)
-    check("a child with a level under it is told how many it may open",
-          allowed.contains("at most 3 child sessions of your own"))
-    // The measured finding this split came from: 28,323 characters of dispatch teaching went
-    // into every one of 206 direct children's briefings, and not one of the 206 ever dispatched
-    // anything. So CHILD.md points at the recipe instead of carrying it, and the pointer is
-    // un-skippable because the credential is only on the other side of it.
-    check("and is pointed at the file that teaches it, by full path",
-          allowed.contains("/tmp/.clawdline/\(taskID)/DISPATCHING.md")
-            && allowed.contains("read that file before you hand anything on"))
-    check("but the teaching itself is no longer in the briefing every child pays for",
-          !allowed.contains("## Handing work on")
-            && !allowed.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
-    check("and no convenience summary of the credential either, which is what makes the pointer bite",
-          !allowed.contains("orchestrator-token") && !allowed.contains("X-Clawdline-Orchestrator"))
+    // The measured finding the dispatch teaching was split out over: 28,323 characters of it
+    // went into every one of 206 direct children's briefings, and not one of the 206 ever
+    // dispatched anything. None of it comes back now that nothing may dispatch at all.
+    check("the dispatch recipe is in no briefing any more",
+          !brief.contains("## Handing work on")
+            && !brief.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
+    check("nor a convenience summary of the credential",
+          !brief.contains("orchestrator-token") && !brief.contains("X-Clawdline-Orchestrator"))
     check("nor the one field nothing else would tell a dispatcher",
-          !allowed.contains("parent_task"))
+          !brief.contains("parent_task"))
     check("and reporting says to use the file tool rather than a shell line",
-          allowed.contains("Write it with your file-writing tool, not with a shell command"))
+          brief.contains("Write it with your file-writing tool, not with a shell command"))
     check("and it learns the narrow push opening without needing a skill",
-          allowed.contains("/v1/orchestrator/tasks/\(taskID)/notify")
-              && allowed.contains("The value of push is rarity")
-              && allowed.contains("Routine results belong in `result.json`")
-              && allowed.contains("at most 5 notifications")
-              && allowed.contains("at most 30 per hour"))
+          brief.contains("/v1/orchestrator/tasks/\(taskID)/notify")
+              && brief.contains("The value of push is rarity")
+              && brief.contains("Routine results belong in `result.json`")
+              && brief.contains("at most 5 notifications")
+              && brief.contains("at most 30 per hour"))
     check("and it is told where the answer will appear",
-          allowed.contains("result.json"))
+          brief.contains("result.json"))
     // The ask nothing was making: AGENTS.md, docs/dispatching.md and the dispatch policy all
     // require a first progress note, and the briefing — the only thing a child actually reads —
     // asked only for one when the work drifted. A note at minute three is what lets a wrong
     // direction be cancelled before it has spent a session.
     check("a child is asked for one progress note before it starts, not only when it drifts",
-          allowed.contains("within about three minutes of starting")
-            && allowed.contains("before you begin the work"))
+          brief.contains("within about three minutes of starting")
+            && brief.contains("before you begin the work"))
     check("and told why, because a child that knows why will actually send it",
-          allowed.contains("cancelled at minute three instead of minute twenty-six")
-            && allowed.contains("18.5M and 16.5M tokens"))
+          brief.contains("cancelled at minute three instead of minute twenty-six")
+            && brief.contains("18.5M and 16.5M tokens"))
     check("the at-rest archive key is never named in a child briefing",
-          !allowed.contains("orchestrator-archive-key") && !allowed.contains("archive key"))
+          !brief.contains("orchestrator-archive-key") && !brief.contains("archive key"))
+}
 
-    let recipe = teaching(depth: 1, allowance: 3)
-    check("the recipe is written, rather than pointed at a skill — half of them are Codex",
-          recipe?.contains("## Handing work on") == true
-            && recipe?.contains("/v1/orchestrator/tasks") == true)
-    check("and it carries the credential path, which is what CHILD.md deliberately does not",
-          recipe?.contains("~/.config/clawdline/orchestrator-token") == true)
-    check("and the recipe teaches Codex's closed reasoning override",
-          recipe?.contains("`reasoning_effort` is Codex-only") == true
-            && recipe?.contains("`high` for coding") == true
-            && recipe?.contains("`xhigh` for planning or review") == true)
-    check("and names only permission values the task parser accepts",
-          recipe?.contains("`permission_mode` is `ask`, `edits` or `full`") == true
-            && recipe?.contains("`ask`, `auto` or `full`") == false)
-    check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
-          recipe?.contains("\"root\": {\"parent_task\": \"\(taskID)\"}") == true)
-    check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
-          recipe?.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON") == true)
-    check("with the reason stated, so a child does not helpfully rewrite it as one",
-          recipe?.contains("not with `jq -n` and a quoted filter") == true)
-    check("the token stays this Mac's, not something to pass down",
-          recipe?.contains("do not hand it to anything you dispatch") == true)
-    check("and it names the task whose CHILD.md sent the child here",
-          recipe?.contains("task \(taskID)") == true)
+group("a child is the bottom of the tree, and no setting can put a level under it") {
+    // The tree is one level deep as a structural fact rather than as a default, and the reason
+    // is the shape of `config.json`: it is seeded once and never migrated, so a changed default
+    // reaches only Macs that have never run this app. Every machine that has one already carries
+    // `orchestrator_max_grandchildren: 3`, and if the floor were still read out of that key, all
+    // of them would have gone on dispatching grandchildren after the default moved under them.
+    // So the floor is a constant, the setting is gone from `Config`, and an old file that still
+    // names the key is read by nothing.
+    func child(depth: Int) -> Orchestrator.Task {
+        Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                          assistant: .claude, projectDir: "/Users/me/code/thing",
+                          timeoutMinutes: 30, created: Date(), depth: depth,
+                          secretHash: String(repeating: "0", count: 64))
+    }
 
-    let floor = brief(depth: 2, allowance: 3)
-    check("a child already on the floor is told not to dispatch",
-          floor.contains("Do not dispatch Clawdline tasks of your own."))
-    check("and is given no recipe to ignore", !floor.contains("## Handing work on"))
-    check("and no file to read it out of either", teaching(depth: 2, allowance: 3) == nil)
+    expect("the floor is one level", Orchestrator.depthFloor, 1)
+    check("a root's child is allowed to exist", Orchestrator.depthIsAllowed(1))
+    check("and the task that child would have opened is not",
+          !Orchestrator.depthIsAllowed(2))
 
-    let off = brief(depth: 1, allowance: 0)
-    check("nor is one on a Mac where the level is switched off",
-          off.contains("Do not dispatch Clawdline tasks of your own.")
-              && !off.contains("## Handing work on"))
-    check("and that Mac writes no teaching file at all", teaching(depth: 1, allowance: 0) == nil)
-    check("the first-progress ask reaches a leaf too, which is where most of the tokens are",
-          off.contains("within about three minutes of starting"))
+    // The nail. A Mac that has run any earlier version of this app has the old key in its config
+    // file saying `3`; this is that machine, and the answer has to be the same one.
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-config-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let legacy = """
+    {"orchestrator_max_grandchildren": 3, "orchestrator_max_children": 4}
+    """
+    try? Data(legacy.utf8).write(to: directory.appendingPathComponent("config.json"))
+    let stale = Config(directoryForTesting: directory)
+    expect("an old config naming the removed key still loads its neighbours",
+           stale.orchestratorMaxChildren, 4)
+    check("and the key it still names is read by nothing",
+          !Mirror(reflecting: stale).children.contains {
+              ($0.label ?? "").lowercased().contains("grandchild")
+          })
+    expect("the floor is unmoved by a file that says three", Orchestrator.depthFloor, 1)
+    check("so a child on that Mac still may not open a task",
+          !Orchestrator.depthIsAllowed(2))
+    check("and the machine-wide ceiling is not quietly tightened by the key going away",
+          stale.orchestratorMaxDescendants == 16
+              && Config.shared.orchestratorMaxDescendants == 20,
+          "\(stale.orchestratorMaxDescendants) and \(Config.shared.orchestratorMaxDescendants)")
 
-    // What the split is worth, stated as an arithmetic somebody can break: a child that may
-    // dispatch and one that may not are now briefed with almost the same file. Before this,
-    // they differed by the whole recipe.
-    check("a child that may dispatch is briefed with barely more than one that may not",
-          allowed.count - off.count < 500,
-          "difference of \(allowed.count - off.count) characters")
-
-    Config.shared.orchestratorMaxGrandchildren = 0
-    expect("zero grandchildren is the rule this app had before the level existed",
-           Orchestrator.depthFloor, 1)
-    Config.shared.orchestratorMaxGrandchildren = 1
-    expect("and one is enough to make the floor two", Orchestrator.depthFloor, 2)
-    Config.shared.orchestratorMaxGrandchildren = 10
-    expect("ten does not make it three — there is no third", Orchestrator.depthFloor, 2)
+    let brief = Orchestrator.childBrief(for: child(depth: 1))
+    check("CHILD.md tells a child plainly that it is the bottom",
+          brief.contains("You are the bottom of this tree: you cannot dispatch Clawdline tasks"))
+    check("and sends it to its own assistant's subagents for anything parallel",
+          brief.contains("subagent"))
+    check("no child is pointed at a dispatch recipe any more",
+          !brief.contains("DISPATCHING.md") && !brief.contains("child sessions of your own"))
 }
 
 group("a codex child is briefed with channels it can actually reach") {
@@ -14759,14 +14743,11 @@ group("a codex child is briefed with channels it can actually reach") {
     // arrived. The group above asserts the progress section is *present*; nothing asserted it
     // was *reachable* for the assistant being briefed, which is how the impossible ask stayed
     // green — so every reachability claim here is made against the codex briefing itself.
-    let saved = Config.shared.orchestratorMaxGrandchildren
-    defer { Config.shared.orchestratorMaxGrandchildren = saved }
-    func fixture(_ assistant: Assistant, allowance: Int = 0) -> Orchestrator.Task {
-        Config.shared.orchestratorMaxGrandchildren = allowance
-        return Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                 assistant: assistant, projectDir: "/Users/me/code/thing",
-                                 timeoutMinutes: 30, created: Date(), depth: 1,
-                                 secretHash: String(repeating: "0", count: 64))
+    func fixture(_ assistant: Assistant) -> Orchestrator.Task {
+        Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                          assistant: assistant, projectDir: "/Users/me/code/thing",
+                          timeoutMinutes: 30, created: Date(), depth: 1,
+                          secretHash: String(repeating: "0", count: 64))
     }
     let codex = Orchestrator.childBrief(for: fixture(.codex))
     let claude = Orchestrator.childBrief(for: fixture(.claude))
@@ -14798,26 +14779,24 @@ group("a codex child is briefed with channels it can actually reach") {
             && claude.contains("/v1/orchestrator/tasks/\(taskID)/complete"))
     check("and is told about the file fallback, not left to meet a sandbox the hard way",
           claude.contains("/tmp/.clawdline/\(taskID)/progress.json"))
-
-    let codexTeaching = Orchestrator.dispatchingBrief(for: fixture(.codex, allowance: 3))
-    check("the dispatch recipe warns a codex sandbox before its first dead curl",
-          codexTeaching?.contains("CODEX_SANDBOX_NETWORK_DISABLED") == true)
-    let claudeTeaching = Orchestrator.dispatchingBrief(for: fixture(.claude, allowance: 3))
-    check("without burdening a claude child that can actually dispatch",
-          claudeTeaching?.contains("CODEX_SANDBOX_NETWORK_DISABLED") == false)
 }
 
-group("the graph and the house rules reach the child that needs them") {
+group("the graph and this Mac's own rules reach every child's briefing") {
     // Two paragraphs a briefing grows, and they are governed differently: the plan comes from
     // whoever dispatched (per task), the policy from whoever owns this Mac (per machine). What
     // they have in common is that a child reading neither writes an essay instead of an answer.
-    let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
+    //
+    // **The policy half was once delivered only to a child that could dispatch**, on the reading
+    // that house rules are rules about handing work out. That reading is wrong, and the evidence
+    // is behavioural: the sentence in this Mac's own file saying a Codex sandbox has no network
+    // is what stops a Codex leaf spending a turn on a `curl` that cannot connect. The file
+    // carries facts about the machine and not only rules about dispatching, so it goes to every
+    // child — which, the tree being one level deep, is now the only kind there is.
     let policyFile = Orchestrator.policyURL
     let localPolicyFile = Orchestrator.localPolicyURL
     let policyBefore = try? Data(contentsOf: policyFile)
     let localPolicyBefore = try? Data(contentsOf: localPolicyFile)
     defer {
-        Config.shared.orchestratorMaxGrandchildren = savedGrandchildren
         if let policyBefore {
             try? policyBefore.write(to: policyFile, options: .atomic)
         } else {
@@ -14829,55 +14808,61 @@ group("the graph and the house rules reach the child that needs them") {
             try? FileManager.default.removeItem(at: localPolicyFile)
         }
     }
-    func fixture(plan: String?, allowance: Int) -> Orchestrator.Task {
-        Config.shared.orchestratorMaxGrandchildren = allowance
+    func fixture(plan: String?, assistant: Assistant = .claude) -> Orchestrator.Task {
         var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                     assistant: .claude, projectDir: "/Users/me/code/thing",
+                                     assistant: assistant, projectDir: "/Users/me/code/thing",
                                      timeoutMinutes: 30, created: Date(), depth: 1,
                                      secretHash: String(repeating: "0", count: 64))
         task.plan = plan
         return task
     }
-    func brief(plan: String?, allowance: Int) -> String {
-        Orchestrator.childBrief(for: fixture(plan: plan, allowance: allowance))
-    }
-    func rules(plan: String?, allowance: Int) -> String? {
-        Orchestrator.dispatchingBrief(for: fixture(plan: plan, allowance: allowance))
+    func brief(plan: String?, assistant: Assistant = .claude) -> String {
+        Orchestrator.childBrief(for: fixture(plan: plan, assistant: assistant))
     }
     try? FileManager.default.createDirectory(at: policyFile.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
     try? FileManager.default.removeItem(at: localPolicyFile)
     try? Data("Review runs on opus. Breadth before depth.".utf8).write(to: policyFile, options: .atomic)
 
-    let both = brief(plan: "root → 3 searchers → this one joins them up", allowance: 3)
+    let both = brief(plan: "root → 3 searchers → this one joins them up")
     check("the plan is in the briefing, in the dispatcher's own words",
           both.contains("root → 3 searchers → this one joins them up"))
     check("above the rules, because it is what the rules are read in the light of",
           both.range(of: "## The plan this is part of")!.lowerBound
               < both.range(of: "## Rules")!.lowerBound)
-    // The house rules travel with the recipe rather than with the briefing: they are about a
-    // decision only a dispatching child makes, and they used to be pasted beside the task's own
-    // instructions in every child's CHILD.md.
-    let handOn = rules(plan: "root → 3 searchers → this one joins them up", allowance: 3)
-    check("and this Mac's house rules are there for a child that may dispatch",
-          handOn?.contains("Review runs on opus.") == true)
-    check("named by path, so a child can say where a rule it followed came from",
-          handOn?.contains(Orchestrator.policyURL.path) == true)
-    check("and they are not also copied into the briefing every child pays for",
-          !both.contains("Review runs on opus."))
+    // The house rules used to travel in `DISPATCHING.md`, which only a dispatching child was
+    // given. There is no dispatching child now, and deleting the section with the recipe would
+    // have left this Mac unable to tell any child anything about itself.
+    check("and this Mac's house rules are in the briefing of a child that cannot dispatch",
+          both.contains("Review runs on opus."))
+    check("named by path, both files, so a child can say where a rule it followed came from",
+          both.contains(Orchestrator.policyURL.path)
+            && both.contains(Orchestrator.localPolicyURL.path))
+    check("a codex leaf is told them too, and it is the one the machine facts are written for",
+          brief(plan: nil, assistant: .codex).contains("Review runs on opus."))
 
-    let leaf = brief(plan: "root → 3 searchers → this one", allowance: 0)
+    // The nail this group carries. The machine-local file exists so facts about *this* Mac
+    // survive edits and syncs of the shipped rules; composing it is worth nothing if the
+    // composed text has no consumer, and the briefing is the consumer.
+    try? Data("Codex children here have no network.".utf8)
+        .write(to: localPolicyFile, options: .atomic)
+    let composedBrief = brief(plan: nil)
+    check("the machine-local file reaches the child too, last and under its own heading",
+          composedBrief.contains(Orchestrator.localPolicyHeading)
+            && composedBrief.contains("Codex children here have no network.")
+            && composedBrief.range(of: "Review runs on opus.")!.lowerBound
+                < composedBrief.range(of: Orchestrator.localPolicyHeading)!.lowerBound)
+    try? FileManager.default.removeItem(at: localPolicyFile)
+
+    let leaf = brief(plan: "root → 3 searchers → this one")
     check("a leaf is told the plan too — it is what makes its answer joinable",
           leaf.contains("root → 3 searchers → this one"))
-    check("but not the rules for handing work out, which it has no decision to spend them on",
-          !leaf.contains("Review runs on opus.")
-            && rules(plan: nil, allowance: 0) == nil)
 
     try? FileManager.default.removeItem(at: policyFile)
     check("no file at all is no paragraph, rather than an empty heading",
-          rules(plan: nil, allowance: 3)?.contains("What this Mac says") == false)
+          !brief(plan: nil).contains("## What this Mac says"))
     check("and no plan is no paragraph either",
-          !brief(plan: nil, allowance: 3).contains("## The plan this is part of"))
+          !brief(plan: nil).contains("## The plan this is part of"))
     try? Data("   \n\n  ".utf8).write(to: policyFile, options: .atomic)
     check("a file of nothing but whitespace counts as nobody having said anything",
           Orchestrator.policy() == nil)

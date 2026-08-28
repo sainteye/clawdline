@@ -533,8 +533,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                        hint: L.t.settingsOrchestratorEnabledHint)
         pane.right.row(L.t.settingsOrchestratorMax, childrenPopUp(),
                        hint: L.t.settingsOrchestratorMaxHint)
-        pane.right.row(L.t.settingsOrchestratorSubMax, grandchildrenPopUp(),
-                       hint: L.t.settingsOrchestratorSubMaxHint)
         pane.right.row(L.t.settingsOrchestratorPermission, permissionPopUp(),
                        hint: L.t.settingsOrchestratorPermissionHint)
         pane.right.row(L.t.settingsOrchestratorNotify,
@@ -564,24 +562,14 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// How many child sessions one session may run at once, 1 to 10 — the range `Config` accepts,
     /// so a number picked here is a number the file will still hold after a reload. A popup rather
     /// than a slider because ten stops is a list, and the value is the label.
+    ///
+    /// There is no second row under it. A child dispatches nothing — see ``Orchestrator/depthFloor``
+    /// — so "how many may it open" is not a question this window can ask any more, and a row that
+    /// changed nothing would read as though it did.
     private func childrenPopUp() -> NSView {
         popUp((1...10).map { (String($0), String($0)) },
               current: String(Config.shared.orchestratorMaxChildren)) {
             Config.shared.orchestratorMaxChildren = Int($0) ?? Config.shared.orchestratorMaxChildren
-        }
-    }
-
-    /// The same list one level down, with `0` on the front — and `0` gets a sentence rather than
-    /// a digit, because what it turns off is a whole level rather than a count. It is also the
-    /// rule this app had before that level existed, which is why it is a stop on the list and not
-    /// a separate switch above it.
-    private func grandchildrenPopUp() -> NSView {
-        let stops: [(label: String, value: String)] =
-            [(label: L.t.settingsOrchestratorSubMaxNone, value: "0")]
-            + (1...10).map { (label: String($0), value: String($0)) }
-        return popUp(stops, current: String(Config.shared.orchestratorMaxGrandchildren)) {
-            Config.shared.orchestratorMaxGrandchildren =
-                Int($0) ?? Config.shared.orchestratorMaxGrandchildren
         }
     }
 
