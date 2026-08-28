@@ -14813,13 +14813,20 @@ group("the graph and the house rules reach the child that needs them") {
     // they have in common is that a child reading neither writes an essay instead of an answer.
     let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
     let policyFile = Orchestrator.policyURL
+    let localPolicyFile = Orchestrator.localPolicyURL
     let policyBefore = try? Data(contentsOf: policyFile)
+    let localPolicyBefore = try? Data(contentsOf: localPolicyFile)
     defer {
         Config.shared.orchestratorMaxGrandchildren = savedGrandchildren
         if let policyBefore {
             try? policyBefore.write(to: policyFile, options: .atomic)
         } else {
             try? FileManager.default.removeItem(at: policyFile)
+        }
+        if let localPolicyBefore {
+            try? localPolicyBefore.write(to: localPolicyFile, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: localPolicyFile)
         }
     }
     func fixture(plan: String?, allowance: Int) -> Orchestrator.Task {
@@ -14839,6 +14846,7 @@ group("the graph and the house rules reach the child that needs them") {
     }
     try? FileManager.default.createDirectory(at: policyFile.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
+    try? FileManager.default.removeItem(at: localPolicyFile)
     try? Data("Review runs on opus. Breadth before depth.".utf8).write(to: policyFile, options: .atomic)
 
     let both = brief(plan: "root → 3 searchers → this one joins them up", allowance: 3)
@@ -14937,6 +14945,78 @@ group("the graph and the house rules reach the child that needs them") {
           Orchestrator.policy(reading: "  short rules  ") == "short rules")
     check("and an empty one is still nobody having said anything",
           Orchestrator.policy(reading: "   \n  ") == nil)
+
+    // The optional sibling is machine-local: it is read beside the base at dispatch, composed
+    // last so it wins, and never allowed to be the casualty when the pair crosses the limit.
+    let baseOnly = "Base paragraph one.\n\nBase paragraph two."
+    check("no local policy is byte-identical to the old single-file answer",
+          Orchestrator.policy(reading: baseOnly, local: nil)
+            == Orchestrator.policy(reading: baseOnly))
+    check("a whitespace-only local policy behaves as absent too",
+          Orchestrator.policy(reading: baseOnly, local: "  \n\n ")
+            == Orchestrator.policy(reading: baseOnly))
+
+    let local = "This machine permits loopback progress notes."
+    let composed = Orchestrator.policy(reading: baseOnly, local: local)
+    let localHeading = Orchestrator.localPolicyHeading
+    check("local rules follow the base under a visible precedence heading",
+          composed?.range(of: baseOnly) != nil
+            && composed?.range(of: localHeading) != nil
+            && composed?.range(of: local) != nil
+            && composed!.range(of: baseOnly)!.lowerBound
+                < composed!.range(of: localHeading)!.lowerBound
+            && composed!.range(of: localHeading)!.lowerBound
+                < composed!.range(of: local)!.lowerBound)
+
+    let longBase = (0..<400).map { "Base paragraph \($0) must yield before local facts." }
+        .joined(separator: "\n\n")
+    let protectedLocal = (0..<40).map { "Machine fact \($0) survives." }
+        .joined(separator: "\n\n")
+    let protected = Orchestrator.policy(reading: longBase, local: protectedLocal)
+    check("when the pair is too long, the local policy survives whole and last",
+          protected?.hasSuffix(protectedLocal) == true
+            && protected?.contains("Base paragraph 0 must yield before local facts.") == true
+            && protected?.contains("Base paragraph 399 must yield before local facts.") == false)
+    check("cutting the base is announced rather than made to look complete",
+          protected?.contains("This policy was cut here") == true)
+
+    let oversizedLocal = (0..<500).map { "Oversized machine paragraph \($0)." }
+        .joined(separator: "\n\n")
+    let localCut = Orchestrator.policy(reading: nil, local: oversizedLocal)
+    check("a local policy that alone exceeds the limit is cut without crashing",
+          localCut?.contains(localHeading) == true
+            && localCut?.contains("This policy was cut here") == true
+            && localCut?.contains("Oversized machine paragraph 499.") == false)
+    check("a local policy still reaches dispatch when there is no base",
+          Orchestrator.policy(reading: nil, local: local)?.hasSuffix(local) == true)
+
+    // Everything above this line asks *what survives*, and a reader that never spent the local
+    // section's budget satisfies all of it: the local rules are there, the base is shorter, the
+    // cut is announced — and the briefing is a thousand characters over the ceiling the limit
+    // exists to hold. So one check asks *how long*. The notice is deliberately outside the
+    // budget, here as in the single-file cutter, so the allowance is the limit plus one of them.
+    let noticeRoom = 500
+    check("the pair spends the budget rather than overrunning it",
+          protected!.count <= Orchestrator.policyLimit + noticeRoom)
+
+    // A base with no blank line inside the allowance has no paragraph boundary to cut at: a
+    // policy written as one bulleted list, or one saved with CRLF, where Swift reads `\r\n` as a
+    // single Character so a search for `\n\n` can never match. Rules broken mid-word are the
+    // answer there; no rules at all is not, and that is the whole difference between `?? head`
+    // and `?? ""` — measured on a 16,389-character bulleted base, 12,193 characters of rules
+    // against 807.
+    let unbrokenBase = (0..<600).map { "- rule \($0) has no blank line after it." }
+        .joined(separator: "\n")
+    let unbroken = Orchestrator.policy(reading: unbrokenBase, local: local)
+    check("a base with no paragraph break is cut, not deleted",
+          unbroken?.contains("- rule 0 has no blank line after it.") == true
+            && unbroken?.hasSuffix(local) == true
+            && unbroken!.count > Orchestrator.policyLimit / 2)
+
+    try? Data(baseOnly.utf8).write(to: policyFile, options: .atomic)
+    try? Data(local.utf8).write(to: localPolicyFile, options: .atomic)
+    check("the file-reading half reads the optional local sibling fresh",
+          Orchestrator.policy() == composed)
 }
 
 group("a handoff envelope is validated without reading its letter") {

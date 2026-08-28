@@ -8300,6 +8300,15 @@ enum Orchestrator {
     /// string with `\n` in it.
     static var policyURL: URL { RemoteAuth.directory.appendingPathComponent("dispatch-policy.md") }
 
+    /// Machine facts that must survive edits and syncs of the shipped policy. The app only reads
+    /// this optional sibling: it never seeds, writes, or overwrites it.
+    static var localPolicyURL: URL {
+        RemoteAuth.directory.appendingPathComponent("dispatch-policy.local.md")
+    }
+
+    /// Kept in the composed text so a skimming child can see where machine-local precedence starts.
+    static let localPolicyHeading = "## Machine-local rules (last, so they win)"
+
     /// The maximum this app will carry into a briefing.
     ///
     /// It was 4096, which was set against "house rules" meaning a paragraph about which assistant
@@ -8317,7 +8326,10 @@ enum Orchestrator {
     /// What this Mac says about how work should be handed out, or nil when nobody has said
     /// anything. Read at dispatch rather than at launch, so an edit takes effect on the next
     /// task instead of on the next restart.
-    static func policy() -> String? { policy(reading: try? String(contentsOf: policyURL, encoding: .utf8)) }
+    static func policy() -> String? {
+        policy(reading: try? String(contentsOf: policyURL, encoding: .utf8),
+               local: try? String(contentsOf: localPolicyURL, encoding: .utf8))
+    }
 
     /// The reading half, separated so a test can hand it text instead of a file.
     ///
@@ -8338,6 +8350,49 @@ enum Orchestrator {
         return body + "\n\n**[This policy was cut here.** It is longer than \(policyLimit) "
             + "characters, and everything after this point was not included — so if a rule you "
             + "expected is missing, that is why. Shorten the file.**]**"
+    }
+
+    /// Compose the shipped/base rules with this machine's optional facts. The local rules are
+    /// deliberately last, and spend the budget before the base: silently dropping a machine fact
+    /// would recreate the failure the separate file exists to prevent.
+    static func policy(reading base: String?, local: String?) -> String? {
+        guard let local else { return policy(reading: base) }
+        let localText = local.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !localText.isEmpty else { return policy(reading: base) }
+
+        // Let the established single-file cutter handle the degenerate case where the local file
+        // alone is too large. Its notice remains part of the local section and therefore stays last.
+        // `policy(reading:)` answers nil only for a nil or blank argument, and both are guarded
+        // above — but the guarantee would live entirely in those two lines, so the fallback costs
+        // nothing and removes a `!` that a later edit could make reachable.
+        let localBody = policy(reading: localText) ?? localText
+        let localSection = localPolicyHeading + "\n\n" + localBody
+
+        guard let base else { return localSection }
+        let baseText = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !baseText.isEmpty else { return localSection }
+
+        let whole = baseText + "\n\n" + localSection
+        guard whole.count > policyLimit else { return whole }
+
+        // The notice is intentionally outside the content budget, as it is in the single-file
+        // cutter above. It must say that a cut happened even when no whole base paragraph fits.
+        let baseAllowance = max(0, policyLimit - localSection.count - 2)
+        let head = String(baseText.prefix(baseAllowance))
+        // `?? head` and not `?? ""`, for the reason the single-file cutter above has it: a base
+        // with no blank line inside the allowance — a policy written as one long bulleted list, or
+        // a file saved with CRLF, where Swift reads `\r\n` as one Character and this search never
+        // matches — has no paragraph boundary to cut at, and the honest answer there is a rule
+        // broken mid-word rather than no rules at all. Measured with `?? ""`: a 16,389-character
+        // bulleted base went from 12,193 characters of rules in every briefing to 807, the whole
+        // base gone, with a notice saying only that "the rest" was missing.
+        let baseBody = head.range(of: "\n\n", options: .backwards)
+            .map { String(head[..<$0.lowerBound]) } ?? head
+        let notice = "**[This policy was cut here.** The base and machine-local rules are longer "
+            + "than \(policyLimit) characters together, and part of the base was not included "
+            + "— so if a base rule you expected is missing, that is why. Shorten the base file, or "
+            + "the machine-local one.**]**"
+        return [baseBody, notice, localSection].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
     /// Write the starting policy, once, if there is no file yet — and answer where it is either
@@ -8423,8 +8478,9 @@ enum Orchestrator {
 
         ## What this Mac says about handing work out
 
-        House rules, from \(policyURL.path). They are the person's, not this app's; where they
-        and your own judgement disagree, follow them and say so in your summary.
+        House rules, from \(policyURL.path) and its optional local sibling at
+        \(localPolicyURL.path). They are the person's, not this app's; where they and your own
+        judgement disagree, follow them and say so in your summary.
 
         \(policy)
 

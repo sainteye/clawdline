@@ -236,21 +236,29 @@ quota it describes is the provider's, shared by everything running under that lo
 
 ### House rules
 
-`~/.config/clawdline/dispatch-policy.md` is what this Mac says about **how** work should be
-handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches
-the next task, not the next launch — and copied into the `DISPATCHING.md` of every child that is
-allowed to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a
-session with no such choice to make.
+Two files beside the registry say **how** work should be handed out, as opposed to how much of it.
+`~/.config/clawdline/dispatch-policy.md` is the editable base; the optional sibling
+`dispatch-policy.local.md` holds facts true only on this machine. Both are read fresh on every
+dispatch — an edit reaches the next task, not the next launch — and composed into the
+`DISPATCHING.md` of every child allowed to dispatch in turn. A leaf never sees them: rules about
+choosing a model are noise to a session with no such choice to make.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
 **What ships is `Resources/dispatch-policy.md`** — the file this repository edits, copied into the
-app bundle by `build.sh` and read from there when a machine has no policy of its own. It used to be
-a Swift string literal holding an older draft of the same rules, which is worse than it sounds:
+app bundle by `build.sh` and used to seed the base once when a machine has none. It used to be a
+Swift string literal holding an older draft of the same rules, which is worse than it sounds:
 `ensurePolicyFile` writes that copy, so it is exactly what a fresh install receives, and a machine
 could start life with rules nobody had read for months. If the resource is missing there are no
-house rules, which is what an empty policy file has always meant — and no file is written at all,
-because this function never overwrites and an empty one created by a bad read would be permanent.
+base rules and no file is written; `ensurePolicyFile` never overwrites an existing base. The app
+never seeds, writes, overwrites, or syncs `dispatch-policy.local.md`. Its absence and an empty file
+both mean there are no machine-local additions.
+
+The base is placed first. A visible heading introduces the local file last, so its more specific
+rules win when the two disagree. The 12,000-character cut follows the same precedence: when the
+pair is too long the base is cut at a paragraph boundary and the cut is announced, while the local
+part survives whole. Only a local file that exceeds the limit by itself is cut and announced. The
+Settings edit button still opens the base; its status and line count describe the composed rules.
 
 It opens with the two decisions that come before any of the others:
 
