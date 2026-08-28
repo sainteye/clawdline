@@ -168,6 +168,19 @@ review session satisfies by construction and an odd-jobs session does not. Until
 landed, the honest approximation is one ordinary task per emptied pool and one per review round; a
 tab you keep alive by typing into it is not a standing session, and do not call it one.
 
+**A message is not an assignment.** When one live assistant needs to report status, a finding or a
+coordination note to another — with no new work or shared-tree ownership attached — use
+`POST /v1/orchestrator/messages`. Do not put a hand-written sender prefix through
+`POST /v1/sessions/:id/send`: that route speaks for the person or a paired device, so App and Web
+correctly draw it as their `user` message. The session-message route requires the machine token, an
+`Idempotency-Key`, the source's exact current terminal or conversation id, and the target's exact
+terminal-neutral session id; it preserves Markdown and draws the sender as a separate
+`Clawdline ↔` card. It must not be used to attach work or bypass `claims`, and it refuses a target
+that is showing an option menu with `409 target_busy`. Its `ok` means one typing attempt was
+accepted — not that the target transcript observed it or the assistant acknowledged it — so
+require an explicit reply when the outcome depends on receipt. The closed body and wire format are
+in `docs/messages.md`.
+
 **An interrupted review is handed over, not restarted.** A reviewer that died, timed out or was
 cancelled has usually written part of its finding set already; give that file to whoever picks it
 up. Review is both the most expensive node here and the one most often thrown away — 30 of 101

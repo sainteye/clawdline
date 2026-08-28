@@ -145,6 +145,16 @@ follow-up task，常駐 session 就完全不能寫共享 tree**——review sess
 不產出 bytes），odd-jobs session 不符合。在那個機制進 `HEAD` 之前，誠實的近似作法是「一批出清派
 一件 task、一輪 review 派一件 task」；用手打字餵著的分頁不是常駐 session，也不要這樣講。
 
+**訊息不是派工。** 一個 live assistant 只是要向另一個回報狀態、finding 或協調事項，而且沒有附帶
+新工作或共享 tree 所有權時，用 `POST /v1/orchestrator/messages`。不要手寫 sender 前綴再走
+`POST /v1/sessions/:id/send`：那條路由代表使用者本人或配對裝置，所以 App 和 Web 把它畫成
+使用者本人的 `user` 訊息才是正確的。session-message 路由需要 machine token、`Idempotency-Key`、
+來源當下精確的 terminal 或 conversation id，以及目標的 terminal-neutral session id；它會保留
+Markdown，並把來源畫成獨立的 `Clawdline ↔` 卡片。不能拿它來 attach 工作或繞過 `claims`；目標
+正在顯示選項時，它會以 `409 target_busy` 直接拒絕。回傳的 `ok` 只表示一次終端機輸入已被接受，
+不表示目標 transcript 已觀察到、更不表示 assistant 已確認；結果取決於送達時，要要求對方明確
+回覆。closed body 與 wire 格式見 `docs/messages.md`。
+
 **被中斷的 review 用交接，不要重跑。** 死掉、逾時或被取消的 reviewer，通常已經寫了一部分
 finding set；把那個檔案交給接手的人。review 是這裡最貴的節點，也是被丟掉比例最高的節點——101 次
 review 派工裡有 30 次沒交出 verdict，其中一次重審花了 6.7M tokens 去重讀 1.9M tokens、別人已經
