@@ -506,6 +506,13 @@ you can find it, fill it in. `ROOT_SESSION` and `ROOT_ASSISTANT` have to be in t
 as step 4's `jq`, or the variables will not survive; alternatively paste both strings straight
 into `--arg`.
 
+Do not put the physical iTerm/tmux/Clawdline row id in `root.session_id`. For a new dispatch the
+broker positively recognizes an active physical id or the durable Coordinator's physical binding
+and returns `422 root_identity_is_terminal` with `canonical_root_session_id` and
+`canonical_root_assistant`. Evidence is independent of what you put in `root.assistant`, so replace
+both values with that actual tuple, or use `null`. Unknown, conflicting or offline identities are
+not guessed, so absence alone is not this error.
+
 ---
 
 ## 5. Dispatch
@@ -532,6 +539,7 @@ Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`. **Bra
 | `depth_exceeded` | **you are already at the bottom of the tree** | stop now, tell the user as in §0, and do this one yourself. Do not route around it |
 | `over_capacity` | the allowance is full | `message` says whether it is your session's allowance or the whole Mac's. The error carries `retry_after` in seconds. Wait and resend, or send fewer / in batches. **Do not hammer it** |
 | `bad_task` | `task.json` does not validate | read `message`, fix the file, resend the same `task_id` (same id is idempotent). A bad `model` lands here too |
+| `root_identity_is_terminal` | `root.session_id` is positively proved to be a physical terminal id | replace it with `canonical_root_session_id` from the error, or `null` and poll; never broaden task resolution to terminal ids |
 | `forbidden` | wrong token or none | re-read the token file; still failing means the app regenerated it, so ask the user to restart Clawdline |
 | `rate_limited` | more than 10 dispatches in 10 minutes | wait for the window to roll |
 | `not_found` | no such route | this Clawdline has no orchestrator; ask the user to update |
@@ -548,11 +556,26 @@ output will be.** One line each; the first 8 characters of the `task_id` is enou
 
 Completion arrives one of two ways, and you do not have to choose:
 
-1. **You get told** — the app types a line into your terminal:
+1. **You get told** — the app types one durable `task_finished` notice into your terminal:
    ```
-   [clawdline] task 3f9a21bc (Project portrait) finished: success — see /tmp/.clawdline/<id>/result.json
+   [clawdline] task 3f9a21bc (Project portrait) finished: success — read /tmp/.clawdline/<id>/result.json — after observing, ACK notice <notice-id> at /v1/orchestrator/tasks/<id>/completion/ack
    ```
-   When you see it, read `result.json` and `artifacts/`, then tell the user what came back.
+   When you see it, read `result.json` and `artifacts/`, then ACK the exact `notice_id` with the
+   machine token. Repeating the same ACK is safe:
+
+   ```bash
+   PORT="${CLAWDLINE_PORT:-7717}"
+   TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
+   TASK_ID='<task-id from the completion line>'
+   NOTICE_ID='<notice-id from the completion line>'
+   curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/completion/ack" \
+     -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
+     -d "{\"notice_id\":\"$NOTICE_ID\"}"
+   ```
+
+   Retries carry the same id, so a duplicate line is the same completion, not another result to
+   consume. ACK only after you have observed the notice; an HTTP response, SSE frame or terminal
+   send success does not count for you.
 2. **You poll** — when `root.session_id` came back empty, or the user wants to know now:
 
 ```bash
@@ -563,6 +586,15 @@ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id" \
 `state` runs `queued → spawning → briefed → success | failure | timeout | cancelled |
 spawn_failed`. **`briefed` means the child is working**; it can sit there a long while and that is
 not a stall.
+
+For delivery diagnosis, `GET /v1/orchestrator/completions?pending=true` exposes accepted,
+executed, result-verified, transport-delivered, observed and acknowledged separately. The broker
+retries root missing/chooser/modal/timeout/stale identity on a background queue with a bounded
+budget and keeps polling as the fallback; do not treat `transport_delivered_at` as proof the root
+consumed it. Eight unsuccessful attempts become a typed `dead_letter`, never silent loss. Inspect
+that state in the machine-authenticated ledger; rearm it explicitly with
+`POST /v1/orchestrator/completions/reconcile` and JSON boolean `include_dead_letter: true` after
+correcting the cause. Reconciliation is bounded and never rewrites a historical root identity.
 
 **Do not open a while loop and wait in it.** Check now and then, and when the user asks; children
 routinely run for ten or twenty minutes, and tying the root session to a poll is the most expensive

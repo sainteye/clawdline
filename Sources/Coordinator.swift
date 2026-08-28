@@ -43,6 +43,17 @@ enum Coordinator {
         }
     }
 
+    /// A previous process-bound coordinator binding. Rebind keeps this small ledger so completion
+    /// envelopes addressed to the old conversation can follow the explicitly proved role move;
+    /// ordinary task resolution remains strict and never accepts these aliases.
+    private struct BindingAlias: Codable, Equatable {
+        let sessionID: String
+        let assistant: String
+        let conversationID: String
+        let boundAt: Double
+        let unboundAt: Double
+    }
+
     private struct Record: Codable, Equatable {
         let version: Int
         let id: String
@@ -60,6 +71,8 @@ enum Coordinator {
         /// Optional so the A1 version-1 record remains readable. Absence means generation one.
         let generation: Int?
         let reboundAt: Double?
+        /// Optional for compatibility with every record written before durable completion retry.
+        let aliases: [BindingAlias]?
     }
 
     private enum Loaded {
@@ -155,7 +168,7 @@ enum Coordinator {
                     conversationID: identity.conversationID!,
                     sessionLabel: bounded(candidate.label, maximum: 512) ?? "Session",
                     cwd: candidate.cwd.flatMap { bounded($0, maximum: 4_096) },
-                    generation: 1, reboundAt: nil)
+                    generation: 1, reboundAt: nil, aliases: nil)
                 guard save(record) else {
                     return .refused(500, "coordinator_store_failed",
                                     "The coordinator record could not be written.")
@@ -259,6 +272,13 @@ enum Coordinator {
                                     "The durable coordinator lifecycle cannot be advanced.")
                 }
                 let identity = candidate.identity
+                let previousBoundAt = existing.reboundAt ?? existing.registeredAt
+                var aliases = existing.aliases ?? []
+                aliases.append(BindingAlias(
+                    sessionID: existing.sessionID, assistant: existing.assistant,
+                    conversationID: existing.conversationID,
+                    boundAt: previousBoundAt, unboundAt: reboundAt))
+                if aliases.count > 32 { aliases = Array(aliases.suffix(32)) }
                 let rebound = Record(
                     version: existing.version, id: existing.id, scope: existing.scope,
                     label: existing.label, registeredAt: existing.registeredAt,
@@ -269,7 +289,7 @@ enum Coordinator {
                     sessionLabel: bounded(candidate.label, maximum: 512) ?? "Session",
                     cwd: candidate.cwd.flatMap { bounded($0, maximum: 4_096) },
                     generation: oldGeneration + 1,
-                    reboundAt: reboundAt)
+                    reboundAt: reboundAt, aliases: aliases)
                 guard save(rebound) else {
                     return .refused(500, "coordinator_store_failed",
                                     "The coordinator reconnect could not be written.")
@@ -289,6 +309,48 @@ enum Coordinator {
     static func sessionProjection(for session: LiveSession) -> [String: Any]? {
         guard case .valid(let record) = load(), matches(record, session.identity) else { return nil }
         return ["label": label, "status": "online", "commands": commands]
+    }
+
+    /// New-dispatch ingress correction for the one physical identity the durable Coordinator
+    /// currently binds. The actual assistant comes from the binding rather than the caller's
+    /// label. It returns no evidence for absent, corrupt or unsupported records; callers must
+    /// leave unknown identities alone.
+    static func rootIdentityEvidence(claimed: String?)
+        -> [Orchestrator.RootIdentityEvidence] {
+        guard let claimed, case .valid(let record) = load(), record.sessionID == claimed,
+              let actualAssistant = Assistant(rawValue: record.assistant) else { return [] }
+        return [.init(source: "coordinator_binding", terminalID: record.sessionID,
+                      canonicalSessionID: record.conversationID,
+                      assistant: actualAssistant)]
+    }
+
+    struct DeliveryBinding: Equatable {
+        let conversationID: String
+        let assistant: Assistant
+    }
+
+    /// Resolve only an explicitly proved Coordinator role move. The historical assistant proves
+    /// which old binding created the task; the returned tuple is the canonical current binding,
+    /// whose assistant may differ after a cross-assistant rebind. Physical terminal ids are not
+    /// accepted here, preserving the task resolver's conversation-only contract for legacy rows.
+    static func deliveryBinding(for rootSessionID: String,
+                                historicalAssistant: Assistant,
+                                taskCreated: Date) -> DeliveryBinding? {
+        guard case .valid(let record) = load(),
+              let currentAssistant = Assistant(rawValue: record.assistant) else { return nil }
+        if rootSessionID == record.conversationID {
+            guard historicalAssistant == currentAssistant else { return nil }
+            return DeliveryBinding(conversationID: rootSessionID, assistant: currentAssistant)
+        }
+        let created = taskCreated.timeIntervalSince1970
+        guard let alias = (record.aliases ?? []).last(where: {
+            $0.conversationID == rootSessionID
+                && $0.assistant == historicalAssistant.rawValue
+                && created >= $0.boundAt && created <= $0.unboundAt
+        }) else { return nil }
+        _ = alias
+        return DeliveryBinding(conversationID: record.conversationID,
+                               assistant: currentAssistant)
     }
 
     /// Durable presence plus a deterministic read-only projection over current broker facts.
@@ -493,6 +555,15 @@ enum Coordinator {
         let reboundValid = record.reboundAt.map {
             representableTimestamp($0) && $0 >= record.registeredAt
         } ?? (generation == 1)
+        let aliasesValid = (record.aliases ?? []).count <= 32
+            && (record.aliases ?? []).allSatisfy { alias in
+                Assistant(rawValue: alias.assistant) != nil
+                    && bounded(alias.sessionID, maximum: 512) != nil
+                    && bounded(alias.conversationID, maximum: 1_024) != nil
+                    && representableTimestamp(alias.boundAt)
+                    && representableTimestamp(alias.unboundAt)
+                    && alias.unboundAt >= alias.boundAt
+            }
         return record.version == recordVersion && UUID(uuidString: record.id) != nil
             && record.scope == scope && record.label == label
             && representableTimestamp(record.registeredAt)
@@ -503,6 +574,7 @@ enum Coordinator {
             && bounded(record.tty, maximum: 1_024) != nil
             && bounded(record.conversationID, maximum: 1_024) != nil
             && bounded(record.sessionLabel, maximum: 512) != nil
+            && aliasesValid
             && (record.cwd == nil || record.cwd.flatMap {
                 bounded($0, maximum: 4_096)
             } != nil)

@@ -369,6 +369,17 @@ know" becomes a reason to invent something. Codex normally exports `CODEX_THREAD
 `CODEX_SESSION_ID` as the compatible spelling) and that value is the rollout session id. Claude
 has no direct self-query and uses the transcript nonce procedure in the skill.
 
+A watched terminal id is **not** a substitute for that conversation id. On a new dispatch the
+broker compares `root.session_id` with positive process-bound evidence from the active terminal
+inventory and with the durable Coordinator's current binding. When either safely proves that the
+supplied value is the physical terminal id, dispatch is refused as
+`422 root_identity_is_terminal`; evidence is collected independently of the caller-declared
+`root.assistant`, and the error includes both `canonical_root_session_id` and the proved
+`canonical_root_assistant`. Correct both values and resend the same task id, or use `null` and
+poll. Unknown, offline and conflicting actual tuples are not guessed and are not rejected merely
+because they cannot be resolved. Existing persisted tasks keep their historical root value, and
+task mounting still accepts conversation ids only.
+
 Two things follow from leaving it out, and the second one surprises people. The task is not told
 when it finishes, so the dispatcher has to poll. And **its row has nothing to sit under**: the
 list indents a child beneath the session that asked for it, that session is found through this
@@ -838,7 +849,9 @@ which is a combination that has already put two walks on the stack at once.
 [docs/waiting.md](waiting.md) is why, and the rule that came out of it.
 
 **success · failure** — from `result.json`, or from the complete route, whichever arrives. Both go
-through the same finalize.
+through the same finalize. `finishedAt` records execution; `resultVerifiedAt` is separate and is
+set only after `result.json` passes the task-secret check. A `/complete` outcome therefore does not
+pretend that the result file was verified.
 
 **timeout** — `briefedAt + timeout_minutes`. There is a second way to get here that is not a clock:
 if the child's terminal disappears from the session list for more than a minute while the task is
@@ -1325,21 +1338,25 @@ running, and the next two spawns failing for the reason the first four did.
 
 ### Being told
 
-When a task finalizes, the app looks for the root's terminal — the root declared a session id, and
-Clawdline knows which tty each session id belongs to from [its hooks](hooks.md) — and if it finds
-one that is not currently showing a menu, it types one compact semantic message into it. On the
-wire that message is one exact line: a wrapper around one JSON object with no LF or CR bytes, so
-both iTerm and tmux preserve it byte-for-byte:
+When a task finalizes, its terminal outcome and a completion outbox envelope are committed in the
+same atomic `orchestrator.json` replacement **before** terminal automation begins. The envelope has
+a stable `notice_id`, delivery state, attempt count, typed last error and bounded `next_retry_at`.
+A serial utility queue then resolves the root and types one compact semantic message; iTerm
+automation never holds the RemoteServer queue, main thread or SSE broadcaster. On the wire that
+message is one exact line: a wrapper around one JSON object with no LF or CR bytes:
 
 ```
-<clawdline-notice>{"audience":"root","body":"[clawdline] task 3f9a21bc (Project portrait) finished: success — read /tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","child_may_still_write":false,"claims_released":false,"kind":"task_finished","outstanding":0,"protocol":"clawdline.notice","result_path":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","state":"success","task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","title":"Project portrait"},"version":2}</clawdline-notice>
+<clawdline-notice>{"ack_path":"/v1/orchestrator/tasks/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/completion/ack","audience":"root","body":"[clawdline] task 3f9a21bc (Project portrait) finished: success — read /tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json — after observing, ACK notice 6b1d46cb-… at /v1/orchestrator/tasks/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/completion/ack","child_may_still_write":false,"claims_released":false,"kind":"task_finished","notice_id":"6b1d46cb-1111-4222-8333-444444444444","outstanding":0,"protocol":"clawdline.notice","result_path":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","state":"success","task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","title":"Project portrait"},"version":2}</clawdline-notice>
 ```
 
 `protocol` and `version` identify the envelope. Version 1 remains a closed legacy schema with two
 `kind` values, `task_finished` and `workspace_overlap`; readers continue to accept literal version-1
 rows already stored in transcripts. New writers emit version 2, whose closed set is those two plus
 `file_wait_request`, `file_wait_release`, and `handoff_receipt`. A completion has a closed terminal
-`state`, its task, audience, result path, outstanding-child count and the two timeout/claim flags. An
+`state`, its task, audience, result path, outstanding-child count, the two timeout/claim flags,
+`notice_id`, and `ack_path`. Readers also accept the original version-2 completion shape without
+the last two fields so transcript history remains readable, but only the current shape is
+idempotently ACKable. An
 overlap has the new task plus one or more `{task,path}` rows. A file-wait request carries `wait_id`,
 `repository`, non-empty `paths`, `waiter_session_id`, `reason`, and `release_condition`; a release
 carries the same wait/repository/paths identity plus optional `commit` and `note`. Both handoff
@@ -1357,8 +1374,32 @@ in already was — an ordinary user turn, or a peer message when the lookalike w
 cross-session envelope. Claude transcripts and Codex rollouts decode the same envelope to a
 dedicated notice entry; no reader reconstructs semantics from `body`.
 
-One delivery attempt; a failure is logged and not retried, because the second copy of a
-notification is worse than none.
+Delivery and consumption are intentionally different. `root_missing`, `root_choosing`,
+`iterm_modal`, `terminal_timeout`, `identity_stale`, and other transport failures retry with capped
+exponential delay; a transport success also retries until the root explicitly ACKs the same
+`notice_id`. The stable id makes duplicate terminal lines one consumption, and ACK is idempotent.
+Eight delivery attempts is the bound; exhaustion becomes `dead_letter`, visible through
+`GET /v1/orchestrator/completions`, and a machine-authenticated reconciliation may rearm it.
+For a grandchild, the parent terminal is eligible only when terminal id, assistant, tty, PID,
+process start, transcript-marker proof and conversation id all match the parent Task. Reuse of the
+same terminal/TTY by another same-assistant process is `identity_stale` and sends no bytes.
+
+`accepted_at`, `executed_at`, `result_verified_at`, `transport_delivered_at`, `observed_at`, and
+`acknowledged_at` are independent ledger facts. An HTTP response, SSE frame or successful Apple
+Event never fills `observed_at`; the explicit ACK fills observation and acknowledgement together.
+If persisting that ACK fails, rollback compare-and-swaps only the matching completion-delivery
+transition; concurrently refreshed worktree, landing, close and other Task fields are preserved.
+The task/result GET routes remain the fallback. Startup and the reconciliation API create at most
+25 outboxes per pass for identifiable terminal tasks from the last seven days; null-root and older
+history remain poll-only. Historical root ids are never rewritten. A Coordinator rebind may route
+an old conversation to its current one only through the persisted process-bound alias interval.
+The task's historical `root.assistant` authenticates that alias; delivery then selects the current
+binding's conversation id **and assistant**, so a proved Codex-to-Claude or Claude-to-Codex role
+move cannot send to the stale assistant process.
+The machine ledger accepts only no query or exactly one `pending=true|1|false|0`; `1` is exactly
+true and `0` exactly false. Repeated `pending`, unknown queries, malformed/non-object bodies, extra
+keys and wrong types are typed `400 bad_request`. Reconciliation requires one JSON object
+containing only optional string `task_id` and JSON-boolean `include_dead_letter`.
 
 `orchestrator_notify_root` turns it off for anybody who would rather poll. Every task change also
 goes out on [the event stream](api.md#the-event-stream) as an `orchestrator` frame, which is how the

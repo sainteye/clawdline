@@ -68,9 +68,22 @@ enum ClawdlineMessage {
                             state: HandoffState)
     }
 
+    struct CompletionAcknowledgement: Equatable {
+        let noticeID: String
+        let path: String
+    }
+
     struct Notice: Equatable {
         let event: Event
         let body: String
+        let completionAcknowledgement: CompletionAcknowledgement?
+
+        init(event: Event, body: String,
+             completionAcknowledgement: CompletionAcknowledgement? = nil) {
+            self.event = event
+            self.body = body
+            self.completionAcknowledgement = completionAcknowledgement
+        }
     }
 
     static func encode(_ notice: Notice) -> String {
@@ -103,12 +116,26 @@ enum ClawdlineMessage {
 
         switch kind {
         case "task_finished":
+            let legacyKeys = Set(["protocol", "version", "kind", "audience", "task",
+                                  "state", "result_path", "outstanding",
+                                  "claims_released", "child_may_still_write", "body"])
+            let v2Keys = legacyKeys.union(["notice_id", "ack_path"])
+            let completion: CompletionAcknowledgement?
+            if wireVersion == version, keys(obj) == v2Keys,
+               let noticeID = nonemptyString(obj["notice_id"]), UUID(uuidString: noticeID) != nil,
+               let path = nonemptyString(obj["ack_path"]), path.hasPrefix("/") {
+                completion = CompletionAcknowledgement(noticeID: noticeID.lowercased(), path: path)
+            } else if keys(obj) == legacyKeys {
+                // Literal v1 envelopes and the short-lived original v2 writer remain readable.
+                // They have no delivery identity and therefore cannot be ACKed or deduplicated.
+                completion = nil
+            } else {
+                return nil
+            }
             guard let audience = taskAudience(obj),
                   let task = task(obj["task"]),
                   wireVersion == 1 || wireVersion == version,
-                  keys(obj) == Set(["protocol", "version", "kind", "audience", "task",
-                                    "state", "result_path", "outstanding",
-                                    "claims_released", "child_may_still_write", "body"]),
+                  wireVersion != 1 || completion == nil,
                   let rawState = string(obj["state"]),
                   let state = TaskState(rawValue: rawState),
                   let resultPath = string(obj["result_path"]), !resultPath.isEmpty,
@@ -121,7 +148,7 @@ enum ClawdlineMessage {
                                                outstanding: outstanding,
                                                claimsReleased: claimsReleased,
                                                childMayStillWrite: childMayStillWrite),
-                          body: body)
+                          body: body, completionAcknowledgement: completion)
 
         case "workspace_overlap":
             guard let audience = taskAudience(obj),
@@ -223,6 +250,10 @@ enum ClawdlineMessage {
                 "claims_released": claimsReleased,
                 "child_may_still_write": childMayStillWrite,
             ]) { _, new in new }
+            if let completion = notice.completionAcknowledgement {
+                out["notice_id"] = completion.noticeID
+                out["ack_path"] = completion.path
+            }
         case let .workspaceOverlap(task, audience, overlaps):
             out.merge([
                 "kind": "workspace_overlap",

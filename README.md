@@ -259,6 +259,21 @@ Keep these two rules in that block:
   stale snapshots, and failure isolation. Distinguish `accepted`, `executed`, `delivered`,
   `observed`, and `acknowledged` instead of treating one HTTP response as all five states.
 
+Task completion follows that rule in the broker itself. The terminal outcome and an idempotent
+completion outbox are persisted together before a background terminal send; retries keep one
+`notice_id`, and only the explicit root ACK records observation and acknowledgement. Use
+`GET /v1/orchestrator/completions?pending=true` for the machine ledger and keep task/result polling
+as the fallback. Eight unsuccessful attempts become a typed `dead_letter`; after repairing the
+cause, a machine-authenticated operator can explicitly rearm it through
+`POST /v1/orchestrator/completions/reconcile` with boolean `include_dead_letter`. A new dispatch
+that supplies a watched terminal id instead of its assistant's
+process-bound conversation id is refused with `root_identity_is_terminal`, the canonical id and
+the actual assistant even when the caller mislabeled it; unknown or conflicting identity remains
+nullable rather than guessed. A grandchild completion reaches its parent only while the full
+terminal/assistant/TTY/PID/start/transcript/conversation tuple still matches. A proved Coordinator
+rebind validates an old task with its historical assistant, then routes completion with the current
+canonical conversation-and-assistant tuple, including Codex-to-Claude and Claude-to-Codex moves.
+
 ## Install
 
 **Homebrew**

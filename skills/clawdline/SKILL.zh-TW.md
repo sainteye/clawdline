@@ -446,6 +446,13 @@ echo "root session = ${ROOT_SESSION:-null}"
 `ROOT_SESSION` 與 `ROOT_ASSISTANT` 都要跟步驟 4 的 `jq` 在同一個 bash 呼叫裡，不然變數
 不會留下來——或者直接把兩個字串貼進 `--arg`。
 
+不要把實體 iTerm／tmux／Clawdline row id 填進 `root.session_id`。新派工時，broker 若能正面認出
+active physical id 或 durable Coordinator 的 physical binding，會回
+`422 root_identity_is_terminal`，並附 `canonical_root_session_id` 與
+`canonical_root_assistant`。證據不受你填的 `root.assistant` 影響；請把 session 與 assistant
+一起換成錯誤回傳的實際 tuple，或改填 `null` 自己 poll。未知、衝突或離線的身分不會被猜測，
+單純查不到不等於這個錯誤。
+
 ---
 
 ## 5. Dispatch
@@ -472,6 +479,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 | `depth_exceeded` | **你已經在樹的最底層** | 立刻停，照 §0 回報使用者，然後這件事自己做。不要繞路重試 |
 | `over_capacity` | 額度滿了 | `message` 會說是你這個 session 的額度滿了、還是整台 Mac 的。錯誤物件裡有 `retry_after`（秒）。等它再送，或減件數／分批。**不要連續重打** |
 | `bad_task` | `task.json` 不合格 | 讀 `message`，改檔案，同一個 `task_id` 再送一次（同 id 是冪等的）。`model` 打錯也走這條 |
+| `root_identity_is_terminal` | `root.session_id` 已被正面證明是實體 terminal id | 改用錯誤裡的 `canonical_root_session_id` 與 `canonical_root_assistant`，或填 `null` 自己 poll；不要放寬 task resolver 去接受 terminal id |
 | `forbidden` | token 錯或沒帶 | 重讀 token 檔；還是不行就是 app 重生過 token，請使用者重開 Clawdline |
 | `rate_limited` | 10 分鐘內派超過 10 次 | 等窗口滾過去 |
 | `not_found` | 路由不存在 | 這台的 Clawdline 沒有 orchestrator，請使用者更新 |
@@ -487,11 +495,25 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 
 完成有兩條路，你不用選：
 
-1. **被通知**——app 會往你的終端機打一行進來：
+1. **被通知**——app 會往你的終端機打一則 durable `task_finished` 通知：
    ```
-   [clawdline] task 3f9a21bc (專案肖像圖) finished: success — see /tmp/.clawdline/<id>/result.json
+   [clawdline] task 3f9a21bc (專案肖像圖) finished: success — read /tmp/.clawdline/<id>/result.json — after observing, ACK notice <notice-id> at /v1/orchestrator/tasks/<id>/completion/ack
    ```
-   看到這行就去讀 `result.json` 和 `artifacts/`，然後把結論講給使用者。
+   看到後先讀 `result.json` 與 `artifacts/`，確實觀察完成，再用 machine token ACK 同一個
+   `notice_id`。重送同一份 ACK 是安全的，而且這段在全新的 shell 也能獨立執行：
+
+   ```bash
+   PORT="${CLAWDLINE_PORT:-7717}"
+   TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
+   TASK_ID='<task-id from the completion line>'
+   NOTICE_ID='<notice-id from the completion line>'
+   curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/completion/ack" \
+     -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
+     -d "{\"notice_id\":\"$NOTICE_ID\"}"
+   ```
+
+   重試沿用同一個 id，所以重複的 terminal line 是同一份完成，不是第二份結果。只有真的看見
+   notice 後才 ACK；HTTP response、SSE frame 或 terminal send 成功都不算 root 已觀察。
 2. **自己 poll**——`root.session_id` 沒查到、或使用者現在就要知道：
 
 ```bash
@@ -501,6 +523,14 @@ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id" \
 
 `state` 走 `queued → spawning → briefed → success | failure | timeout | cancelled | spawn_failed`。
 **`briefed` 就是「child 正在做」**，那個狀態可以停很久，不是卡住。
+
+送達診斷可讀 `GET /v1/orchestrator/completions?pending=true`；accepted、executed、
+result-verified、transport-delivered、observed 與 acknowledged 是分開的事實。Broker 會在背景以
+有上限的 budget 重試 root missing／chooser／modal／timeout／stale identity，polling 永遠是 fallback；
+不要把 `transport_delivered_at` 當成 root 已讀。八次失敗會進 typed `dead_letter`，不會靜默遺失。
+先修正原因，再用 machine-authenticated ledger 明確呼叫
+`POST /v1/orchestrator/completions/reconcile`，body 帶 JSON boolean
+`include_dead_letter: true` 重新武裝。Reconcile 有批次與回溯上限，也絕不改寫歷史 root identity。
 
 **不要開一個 while loop 在那裡等。** 每隔一段時間、在使用者問起時查一次就好；child 動輒十幾分鐘，
 把 root session 綁在輪詢上是最貴的用法。
