@@ -125,6 +125,98 @@ enum Assistant: String, CaseIterable {
         }
     }
 
+    /// Session identity a tab this app opens must not inherit.
+    ///
+    /// A terminal is a process, and a process keeps the environment it was started with. iTerm2
+    /// launched once from a shell *inside* a Claude Code session carries that session's identity
+    /// variables for as long as it runs, and hands a copy to every tab opened afterwards —
+    /// including the ones opened from here. Measured on 2026-08-28: `ps -Ewww` on the iTerm2
+    /// process held `CLAUDE_PID`, `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CODE_CHILD_SESSION=1`
+    /// belonging to a session in a different window, and every child dispatched into that iTerm2
+    /// was exec'd with the same three.
+    ///
+    /// A child that inherits them does not merely misreport itself; it *is* somebody else's
+    /// nested session as far as the CLI is concerned. It writes no `~/.claude/sessions/<pid>.json`
+    /// and opens no transcript under `~/.claude/projects/` — three live children that afternoon
+    /// had neither, while five unaffected sessions of the same age had both. With no transcript
+    /// there is no way to prove the briefing arrived, so `expireSpawningIfDue` reads a working
+    /// child as a tab that never reached a prompt, and the disposal on that path erases an
+    /// uncommitted checkout. One delivery branch was lost that way before the cause was found.
+    ///
+    /// **The values do not come from this app** — its own process has none of them, checked the
+    /// same way — so there is nothing here to stop exporting. What this app can do is refuse to
+    /// pass on what it was handed.
+    ///
+    /// The list follows one rule: **drop what claims to be a session, keep what describes the
+    /// installation.** A name is here because its value in a new tab would be a statement about
+    /// some other conversation, and a name is missing because its value is still true in the tab
+    /// being opened.
+    ///
+    /// Dropped, for Claude Code — the whole set one 2.1.250 session exports, minus the kept ones
+    /// below:
+    /// - `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_BRIDGE_SESSION_ID` — another conversation's ids.
+    /// - `CLAUDE_PID` — the pid that names another session's registry file.
+    /// - `CLAUDE_CODE_CHILD_SESSION`, `CLAUDECODE` — the two flags that say "you are running
+    ///   inside a Claude Code session". They are the ones that actually change the behaviour;
+    ///   the ids above are what it would then be wrong about.
+    /// - `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN` — a path to another
+    ///   session's IPC socket and the credential for it. A new session speaking on that channel
+    ///   is impersonation rather than confusion.
+    ///
+    /// Kept, deliberately: `CLAUDE_CODE_ENTRYPOINT=cli` is true of a tab where `claude` is typed;
+    /// `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` is a number this Mac sets in its own settings;
+    /// `CLAUDE_CODE_EXECPATH` names the installed program rather than a conversation, and does
+    /// not decide which binary runs — `CLAUDE_CODE_EXECPATH=/definitely/not/here claude
+    /// --version` still answers `2.1.250`, so dropping it would buy nothing and could only lose
+    /// something on a machine that does use it.
+    ///
+    /// For Codex the same shape exists and is documented in `docs/orchestrator.md`:
+    /// `CODEX_THREAD_ID`, with `CODEX_SESSION_ID` as its compatible spelling, is the rollout id a
+    /// session exports, which is exactly what a dispatching child is told to read back as its own.
+    /// `CODEX_SANDBOX` and `CODEX_SANDBOX_NETWORK_DISABLED` are dropped for the same reason and
+    /// not as sandbox policy: they are a claim to be running *inside* another Codex's sandbox,
+    /// they are false in a tab this app opened, and a child that believes the second one skips
+    /// the loopback half of its progress channel because this repository's own briefings tell it
+    /// to. Setting a sandbox is `--sandbox` on the command line, which is unaffected.
+    ///
+    /// The Claude Code names were read off a live 2.1.250 session's environment and the Codex
+    /// ones out of the shipped binary's strings; a version that invents another name will need
+    /// this list read again, which is what ``Tests`` pins so that a re-reading is a visible edit.
+    var inheritedIdentityVariables: [String] {
+        switch self {
+        case .claude:
+            return ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
+                    "CLAUDE_PID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+                    "CLAUDE_CODE_BRIDGE_SESSION_ID"]
+        case .codex:
+            return ["CODEX_THREAD_ID", "CODEX_SESSION_ID",
+                    "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED"]
+        }
+    }
+
+    /// The `env -u NAME …` that starts every command line this app types, trailing space
+    /// included, or nothing at all when there is nothing to drop.
+    ///
+    /// `env` rather than `unset` for two reasons that were checked rather than assumed. It leaves
+    /// the rest of the environment alone, so the tab keeps its `PATH`, its `CLAUDE_CODE_ENTRYPOINT`
+    /// and everything else a login shell put there: `env -u CLAUDECODE sh -c 'echo
+    /// $CLAUDE_CODE_ENTRYPOINT'` still answers `cli`. And `env` execs the program in its own
+    /// process, so `ps` shows the program's argv with nothing in front of it — `env -u CLAUDECODE
+    /// sleep 3` lists as `sleep 3` — which is what ``Assistant/running(fromPS:)`` reads a tty's
+    /// session out of. A wrapper that stayed on the command line would have made every running
+    /// session unrecognisable.
+    ///
+    /// What it costs is aliases: `env` resolves its program on `PATH`, so a shell alias or
+    /// function called `claude` is stepped past. Both CLIs install as real executables — the one
+    /// on this Mac is `~/.local/bin/claude`, a symlink into the versions directory — and a line
+    /// that runs the installed program rather than somebody's alias is the more predictable of
+    /// the two for a tab nobody is watching.
+    var dropInheritedIdentity: String {
+        let names = inheritedIdentityVariables
+        guard !names.isEmpty else { return "" }
+        return "env " + names.map { "-u " + $0 }.joined(separator: " ") + " "
+    }
+
     /// The same command with a model named on it, an optional typed Codex reasoning override, a
     /// permission mode, a directory the session may reach outside the one it was started in,
     /// and a conversation to pick back up.
@@ -141,6 +233,12 @@ enum Assistant: String, CaseIterable {
     /// after it there is nothing to work out, and with a flag after it instead the CLI would open
     /// its own picker in a tab nobody is sitting at.
     ///
+    /// **The line opens with ``dropInheritedIdentity``**, before the program's own name, so a
+    /// session started here is never handed the identity of whatever happened to launch the
+    /// terminal. It is a prefix rather than a step of its own because every route that types a
+    /// command goes through this method — iTerm2 and tmux both — and a second route that
+    /// forgot the cleaning is the failure it exists to prevent.
+    ///
     /// **`--add-dir` is what makes a dispatched session workable at all.** A child's whole task
     /// lives in `/tmp/.clawdline/<id>/`, which is outside the project it was started in, and a
     /// session asks before it reaches outside — for reading its own briefing, for making its own
@@ -151,7 +249,7 @@ enum Assistant: String, CaseIterable {
     func command(model: String?, reasoningEffort: ReasoningEffort? = nil,
                  permission: Permission = .ask, addDir: String? = nil,
                  resume: String? = nil) -> String {
-        var line = command
+        var line = dropInheritedIdentity + command
         if let resume, !resume.isEmpty { line += " " + resumeFlag + " " + resume }
         if let model, !model.isEmpty { line += " --model " + model }
         if self == .codex, let reasoningEffort {
