@@ -18784,17 +18784,72 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
         guard let type = row["type"] as? String else { return nil }; return (type, row)
     })
     for type in ["status_report", "duplicates_conflicts_ownership", "landing_closure",
-                 "scope_permissions", "since_away", "coordinate_work", "dispatch_independent_work",
-                 "ask_coordinator", "quiet_watch", "stop", "reconnect"] {
-        check("Phase A2 honestly disables \(type)", byType[type]?["enabled"] as? Bool == false
-              && (byType[type]?["why"] as? String)?.contains("Phase A2") == true)
-    }
-    for type in ["status_report", "duplicates_conflicts_ownership", "landing_closure",
                  "scope_permissions"] {
-        check("the four preview-only entries point to Bearings without claiming a web action",
-              (byType[type]?["why"] as? String)?.contains("GET /v1/orchestrator/coordinator") == true
-              && (byType[type]?["why"] as? String)?.lowercased().contains("not connected") == true)
+        check("the four reads are connected and advertised enabled with nothing to explain",
+              byType[type]?["enabled"] as? Bool == true && byType[type]?["reason"] == nil
+              && byType[type]?["why"] == nil)
     }
+    let disabledReasons = ["since_away": "no_return_ledger",
+                           "coordinate_work": "no_command_route",
+                           "dispatch_independent_work": "device_cannot_spawn",
+                           "ask_coordinator": "no_command_route",
+                           "quiet_watch": "no_command_route",
+                           "stop": "no_command_route",
+                           "reconnect": "machine_token_only"]
+    for (type, reason) in disabledReasons {
+        check("\(type) stays disabled with the closed reason code \(reason)",
+              byType[type]?["enabled"] as? Bool == false
+              && byType[type]?["reason"] as? String == reason)
+        let why = byType[type]?["why"] as? String ?? ""
+        check("\(type)'s compatibility prose is honest and cites no phase number",
+              !why.isEmpty && !why.contains("Phase"))
+    }
+
+    // The device-readable half of Bearings: what a paired phone may see, and nothing more.
+    let device = Coordinator.deviceBearings(
+        liveSessions: [father, coordinatorFixture(
+            "triage", pid: 412, conversation: "conversation-c", workState: .needsTriage)],
+        bearings: .init(sessionsFresh: false, activeTaskCount: 3, pendingLandingCount: 2,
+                        openWaitCount: 1,
+                        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_005),
+                        registryObservedAt: Date(timeIntervalSince1970: 1_800_000_006),
+                        sessionsGeneration: 42),
+        now: Date(timeIntervalSince1970: 1_800_000_020))
+    let deviceCoordinator = device["coordinator"] as? [String: Any] ?? [:]
+    expect("the device projection keeps presence", deviceCoordinator["status"] as? String,
+           "online")
+    expect("and the machine scope", deviceCoordinator["scope"] as? String, "machine")
+    check("the durable UUID and lifecycle bookkeeping are withheld from devices",
+          deviceCoordinator["id"] == nil && deviceCoordinator["generation"] == nil
+          && deviceCoordinator["registered_at"] == nil
+          && deviceCoordinator["rebound_at"] == nil)
+    check("store health is withheld from devices", device["store"] == nil)
+    let deviceFacts = device["bearings"] as? [String: Any] ?? [:]
+    expect("aggregate counts survive the allowlist", deviceFacts["active_task_count"] as? Int, 3)
+    expect("and the landing count", deviceFacts["pending_landing_count"] as? Int, 2)
+    expect("the triage rows survive with their session facts",
+           ((deviceFacts["needs_triage"] as? [[String: Any]])?.first?["id"]) as? String, "triage")
+    let deviceSessionsSource = ((deviceFacts["sources"] as? [String: Any])?["sessions"])
+        as? [String: Any] ?? [:]
+    expect("source freshness survives, so a stale picture is never drawn as current",
+           deviceSessionsSource["freshness"] as? String, "stale")
+    check("provenance names and the watch generation counter are withheld",
+          deviceSessionsSource["provenance"] == nil && deviceSessionsSource["generation"] == nil)
+    let deviceJSON = String(decoding: try! JSONSerialization.data(withJSONObject: device),
+                            as: UTF8.self)
+    check("no private binding evidence crosses the device boundary",
+          !deviceJSON.contains("conversation-") && !deviceJSON.contains("ttys0")
+          && !deviceJSON.contains("\"pid\"") && !deviceJSON.contains("1800000000.0"))
+
+    // The route gate difference is the whole design: the full inspection stays behind the
+    // machine token, while the projection falls through to ordinary device auth — an unpaired
+    // caller gets the pairing 401, never the orchestrator 403.
+    expect("the full inspection without the machine token is the orchestrator refusal",
+           RemoteServer.shared.route(remoteRequest(
+               "GET", "/v1/orchestrator/coordinator")).status, 403)
+    expect("the device projection without pairing is the pairing refusal",
+           RemoteServer.shared.route(remoteRequest(
+               "GET", "/v1/orchestrator/coordinator/bearings")).status, 401)
 
     let validBytes = try! Data(contentsOf: Coordinator.storeURL)
     var future = try! JSONSerialization.jsonObject(with: validBytes) as! [String: Any]

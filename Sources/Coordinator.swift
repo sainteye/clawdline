@@ -356,21 +356,103 @@ enum Coordinator {
                 "coordinator": coordinator, "bearings": bearings]
     }
 
+    /// The advertised web commands. Four reads are connected: they are answered by the
+    /// device-readable Bearings projection at `GET /v1/orchestrator/coordinator/bearings`,
+    /// which the page can reach with its own token.
+    ///
+    /// Everything that would send, spawn or mutate stays disabled, and each carries a closed
+    /// `reason` code the client renders in its own language — a code cannot drift out of the
+    /// client's vocabulary the way a sentence can. The prose `why` stays on the wire for pages
+    /// that predate the codes, and says the same honest thing in English; neither field cites
+    /// a phase number, because a phase label means nothing to the person holding the phone.
     private static let commands: [[String: Any]] = {
-        let previewReason = "Preview only in Phase A2: Bearings exists at authenticated "
-            + "GET /v1/orchestrator/coordinator, but this web action is not connected."
-        let previews = ["status_report", "duplicates_conflicts_ownership",
-                        "landing_closure", "scope_permissions"].map {
-            ["type": $0, "enabled": false, "why": previewReason] as [String: Any]
+        let reads = ["status_report", "duplicates_conflicts_ownership",
+                     "landing_closure", "scope_permissions"].map {
+            ["type": $0, "enabled": true] as [String: Any]
         }
-        let reason = "Disabled in Phase A2: reconnect is machine-token-only; other Clawdfather "
-            + "actions remain read-only and advisory."
-        let closed = ["since_away", "coordinate_work", "dispatch_independent_work",
-                      "ask_coordinator", "quiet_watch", "stop", "reconnect"].map {
-            ["type": $0, "enabled": false, "why": reason] as [String: Any]
-        }
-        return previews + closed
+        let unrouted = "No route carries a command from this panel into a session yet, "
+            + "so nothing can be sent."
+        let closed: [[String: Any]] = [
+            ["type": "since_away", "enabled": false, "reason": "no_return_ledger",
+             "why": "This Mac does not record a return point yet, so there is nothing "
+                + "to read one against."],
+            ["type": "coordinate_work", "enabled": false, "reason": "no_command_route",
+             "why": unrouted],
+            ["type": "dispatch_independent_work", "enabled": false,
+             "reason": "device_cannot_spawn",
+             "why": "A paired device can never start a session — that separation is "
+                + "deliberate, and this command will not cross it."],
+            ["type": "ask_coordinator", "enabled": false, "reason": "no_command_route",
+             "why": unrouted],
+            ["type": "quiet_watch", "enabled": false, "reason": "no_command_route",
+             "why": unrouted],
+            ["type": "stop", "enabled": false, "reason": "no_command_route",
+             "why": unrouted],
+            ["type": "reconnect", "enabled": false, "reason": "machine_token_only",
+             "why": "Reconnecting needs the Mac's own orchestrator token, which a paired "
+                + "device deliberately does not hold."],
+        ]
+        return reads + closed
     }()
+
+    /// The device-readable half of ``inspection`` — what a paired phone may see.
+    ///
+    /// Built as an allowlist, never by deleting keys from the full answer, so a field added to
+    /// the authenticated inspection can never leak here by omission. Everything below is either
+    /// already visible to a paired device through `GET /v1/sessions` (terminal-neutral ids,
+    /// labels, cwd, work states) or an aggregate count. Withheld deliberately: the durable
+    /// coordinator UUID, `generation`, `registered_at` and `rebound_at` (rebind bookkeeping a
+    /// device cannot use), `store` health, source `provenance` names and the session-watch
+    /// `generation` counter. Bearings already excludes tty, pid, process start and conversation
+    /// ids by construction.
+    static func deviceBearings(liveSessions: [LiveSession], bearings input: BearingsInput,
+                               now: Date = Date()) -> [String: Any] {
+        let full = inspection(liveSessions: liveSessions, bearings: input, now: now)
+
+        var coordinator: [String: Any] = [:]
+        if let record = full["coordinator"] as? [String: Any] {
+            for key in ["configured", "label", "scope", "status", "lifecycle"] {
+                if let value = record[key] { coordinator[key] = value }
+            }
+            if let session = record["session"] as? [String: Any] {
+                coordinator["session"] = allowedSession(session)
+            }
+        }
+
+        var bearings: [String: Any] = [:]
+        if let record = full["bearings"] as? [String: Any] {
+            for key in ["observed_at", "coordinator_lifecycle", "work_state_counts",
+                        "active_task_count", "pending_landing_count", "open_wait_count"] {
+                if let value = record[key] { bearings[key] = value }
+            }
+            for key in ["needs_triage", "waiting", "blocking"] {
+                bearings[key] = ((record[key] as? [[String: Any]]) ?? []).map(allowedSession)
+            }
+            if let sources = record["sources"] as? [String: Any] {
+                var reduced: [String: Any] = [:]
+                for (name, source) in sources {
+                    guard let source = source as? [String: Any] else { continue }
+                    var row: [String: Any] = [:]
+                    if let at = source["observed_at"] { row["observed_at"] = at }
+                    if let freshness = source["freshness"] { row["freshness"] = freshness }
+                    reduced[name] = row
+                }
+                bearings["sources"] = reduced
+            }
+        }
+
+        return ["version": 1,
+                "observed_at": full["observed_at"] ?? Int(now.timeIntervalSince1970),
+                "coordinator": coordinator, "bearings": bearings]
+    }
+
+    private static func allowedSession(_ row: [String: Any]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for key in ["id", "assistant", "label", "cwd", "work_state"] {
+            if let value = row[key] { out[key] = value }
+        }
+        return out
+    }
 
     private static func safeSession(_ session: LiveSession) -> [String: Any] {
         var row: [String: Any] = [
