@@ -133,6 +133,29 @@ replaced with a stub — or deleted outright. Break the thing once, watch the te
 Do not build from the live working tree, because it may contain another session's partial edits or
 untracked files.
 
+### A confirmation is worth what it names
+
+"I checked, and you are right" is not a check. On 2026-08-28 one root read the route table at
+`docs/api.md:117` — *task secret for pending/abandoned; orchestrator token only for landed* — and
+told another root that marking a landing `abandoned` required that task's secret. The second root
+replied that it had read `docs/api.md` and confirmed it. Neither had read `docs/api.md:2209`, where
+the prose says `pending` and `abandoned` accept **either** the task secret **or** the machine
+token, and only `landed` is restricted; the comment at `Sources/RemoteServer.swift:622` says the
+same, and so does the behaviour. The page contradicts itself, and the wrong half is the one shaped
+like a summary — which is the half people read.
+
+The misreading was cheap. The confirmation was not. Believing the claim had been independently
+checked, the first root went looking for seven task secrets it never needed — matching dispatch
+bodies across a 52.9 MB rollout — and wrote the false rule into a handover document for the next
+session to inherit. Someone else later closed all seven rows with the orchestrator token, in one
+call, because the rule had never been true.
+
+So **when you confirm a claim, name what you read**: a file and a line, or the command and its
+output. "I confirmed" carries no information and cannot itself be checked, while "`docs/api.md:2209`
+contradicts the table at `:117`" is something the next reader can test in ten seconds. It is the
+standard findings are already held to here, for the same reason — a claim that names its source can
+be wrong out loud, and one that does not can only be believed.
+
 ## Dispatching substantial work with Clawdline
 
 Use Clawdline for work that can be split into self-contained tasks and joined later.
