@@ -148,6 +148,21 @@ review 派工裡有 30 次沒交出 verdict，其中一次重審花了 6.7M toke
 delivery，聚焦 diff、mutation、exact-tree 驗收都是你的事，不是它的。會改變設計的修正回原
 implementer 的 session。永遠不要一個 finding 派一件 task。
 
+**一個 feature 或一個 batch 配一次獨立複審，而且要數輪數。** 同一輪裡並排跑兩個互補的 reviewer
+還是「一輪」，那不是這條在管的；這條管的是「改完再審一次」，它看起來免費，其實不是。這裡實測過
+的一條線：實作花 $30.90，四輪複審花 $57.39，是被審那個東西的 **1.9 倍**。
+
+- **第二輪**只在第一輪找到「會復發的缺陷類型」時才派——同一個錯誤還躺在 reviewer 沒讀到的地方。
+  只是想確認某條 finding 修好了，不算理由：那題由當初紅過的那個測試回答。
+- **第三輪**要有一個寫下來、而且協調者看過的理由；或是符合下面兩個機械觸發條件之一。兩個都只看
+  修正的 diff 就能判斷，不需要判斷力，而且都來自同一條線的紀錄——那兩輪修正各自帶進了下一輪
+  複審才抓到的新缺陷：**(a) 這次修正動到 `main` 也在走的程式路徑**；**(b) 這次修正刪掉或弱化了
+  既有的 assertion。** 中了就派，兩個都沒中就寫理由，不然就停。
+- **超過三輪要問使用者。** 無條件多輪複審在這台機器上是被明確否決過的。
+
+比再派一輪便宜、而且通常才是對的做法：把 finding 送回寫這段程式的那個 session（它還握著脈絡），
+修正的 diff 你自己讀。
+
 ### 2.0a 決定這件任務要不要獨立 worktree
 
 能以 Git branch 審查、收進來的程式修改，才用 `"isolation":"worktree"`。broker 會在任務真的
@@ -156,12 +171,29 @@ implementer 的 session。永遠不要一個 finding 派一件 task。
 若是跑著的 app、port、裝置、資料庫、cache 或固定 build 目的地，worktree 也幫不上忙，要用
 `serialize` 管機器全域資源。
 
-child 的規矩只在這裡窄幅翻轉：共用 checkout 的 child 仍然不 commit；進到自己的 worktree 後則要
-早點 commit，而且只能 commit 在 `clawdline/task/<完整-task-id>`。仍然禁止 push、換 branch、merge、
-rebase、stash、hard reset、任何 `git worktree`，以及 `build.sh` 這種會動到機器全域安裝的指令。
-**交付物是那條 branch，不是 checkout 目錄，也不是 artifact diff。** root 用
+child 的規矩只在這裡窄幅翻轉：共用 checkout 的 child 仍然不 commit；**claude** child 進到自己的
+worktree 後則要早點 commit，而且只能 commit 在 `clawdline/task/<完整-task-id>`。仍然禁止 push、
+換 branch、merge、rebase、stash、hard reset、任何 `git worktree`，以及 `build.sh` 這種會動到機器
+全域安裝的指令。**交付物是那條 branch，不是 checkout 目錄，也不是 artifact diff。** root 用
 `git diff <base>...clawdline/task/<id>` 審，再 merge 或 cherry-pick。worktree 只隔離 tracked files；
 gitignore 掉的依賴、cache 與 env 檔不會跟過去。
+
+**codex child 在 worktree 裡 commit 不了，所以不要叫它 commit。** linked worktree 自己沒有 `.git`
+目錄，它的 `.git` 只是一行指標，指到 `<主 repo>/.git/worktrees/<task-id>/`——那個位置在 codex
+sandbox 可寫範圍**之外**。所以每一次 commit 都會死在
+`fatal: Unable to create '…/index.lock': Operation not permitted`，而一個記不下自己交付物的 child
+會回報 `failure`，可是工作明明做完了躺在那裡。今天 task `0c3853b8` 就是這樣：跑完 4438 個檢查，
+回報失敗。所以派工的時候：
+
+- **`assistant: "claude"` 配 `isolation: "worktree"`**——叫它每個里程碑就 commit 在 delivery
+  branch 上。branch 就是交付物，第三小時掛掉也只賠一小時。
+- **`assistant: "codex"` 配 `isolation: "worktree"`**——明確叫它**把 bytes 留成 dirty、不要嘗試
+  commit**，並告訴它 root 會從 task record 裡的 worktree 路徑把那些改動收走。它的交付物是那棵
+  髒的 tree 加上 `result.json`；receipt 上會是 `"dirty": true`、`"commits": 0`，對 codex task 來說
+  那是成功，不是沒做完。
+
+app 產出的 briefing 目前還分不出這件事——不管哪個助理，一律叫它「commit early and often」——所以
+要覆寫它的那句話得由你寫進 `instructions`。在 app 改好之前，什麼都不講就等於講錯的那句。
 
 後續修 findings 的實作輪也是程式修改。下一個 isolated task 要用 `isolation_base` 接在上一輪的
 delivery branch 或 commit 上；不要只為了繼續改，就把交付物轉成 artifact-only task 裡的一包 bundle。
@@ -292,6 +324,12 @@ codex features list | grep image_generation      # → image_generation  stable 
 **做審查的模型，不能比被審的東西所用的模型弱。** 用小模型去審大模型寫的東西，是花錢蓋橡皮圖章。
 
 Codex 那邊同一個欄位填它的 slug（例如 `gpt-5.1-codex`）。
+
+**只有在預設尺寸不對的時候才指名模型——指了一個帳號沒有的，會死在你看不到的地方。** Clawdline
+只驗欄位的拼寫，不驗帳號有沒有這個模型的權限，所以 task 會正常走到 `briefed`，然後在助理自己的
+CLI 裡吃一個 400 死掉：那個錯誤只出現在該助理的 rollout 裡，task record 沒有、`warnings` 沒有、
+`result.json` 也沒有。今天 `gpt-5.1-codex` 在一個用 ChatGPT 登入的帳號上就是這樣。不填 `model`
+不會有這種死法。
 
 只有 Codex task 能選填 `reasoning_effort`，而且只能是 `high` 或 `xhigh`。寫程式建議用
 `high`，規劃建議用 `xhigh`。不寫就沿用 Codex／模型與使用者的預設，command line 不會多出
@@ -575,6 +613,30 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
 ```
 
+**而關掉你自己這個 session，等於一次把它們全部取消，這是最容易忘的一段。** 關掉一個 root——
+頁面上的 Close 鍵、`POST /v1/sessions/:id/end`——會取消它派出去、還活著的每一件 task，孫輩先走。
+那是機制，這裡要講的是責任，而且有兩半。
+
+關**之前**，先看這一關會帶走誰：
+
+```bash
+curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  | jq --arg s "$ROOT_SESSION" '[.tasks[]
+      | select(.root.sessionId == $s and (.state | IN("queued","spawning","briefed")))
+      | {id, title, state, assistant}]'
+```
+
+空的就放心關。不是空的，那些都是這一關會終止的進行中工作，要嘛等它們做完，要嘛在你最後那句話
+裡講清楚你正在殺掉什麼。2026-08-27 的 23:20:37–:51——十四秒、一次關閉——四件在飛的 task 一起死，
+其中一件是複審要求後 75 秒就派出去、已經跑了 25 分鐘的修正。
+
+關**之後**，**每一個孤兒都要指名誰接手。** 它們的 landing record 會寫 `pending`，可是那個字同時
+也是「有人正在做」的意思；record 分不出「正在被做」和「做它的 session 幾小時前就被關掉了」。所以
+一個一個寫下來：接手的是哪個具名 root、或哪個具名的人；真的找不到人，就把它當成一個決定交給使用者，
+不要留在清單裡。安全關閉那條線當初只被記成「被取消」，沒有記成「被一次 cascade 一起取消、而且現在
+沒有主人」，所以它在那裡躺了十四個小時，看起來像個難題，其實只是沒人接。
+
 讀結果：
 
 ```bash
@@ -591,6 +653,12 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 那個 child 動過的檔案裡可能同時躺著兩三個 session 沒做完的東西，而這份詞彙就是你分辨「哪幾段是誰的」
 的依據。用猜的已經產出過根本編譯不過的 staged tree。child 沒寫那一欄，不等於它宣告自己沒引入
 任何名字——去問，或自己讀 diff 把名字抓出來，再開始 stage。
+
+**把回來的結果轉給使用者的時候，要分成兩份。** 結果對**你**的意思是「接下來我要做什麼」，那是
+一份清單；只有**他**能決定的事情是另一份，而且要標明白——絕對不要混在同一段「下一步」裡，混在
+一起的時候，不見的一定是他那半。而且決定要用明確的選項介面問，在他自己的 session 裡問，一次一題，
+每個選項都寫清楚選了會怎樣，附上你的建議：寫成一段文字他會漏掉，也不知道怎麼回答——這是他自己的
+說法。完整規則在 [`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options)。
 
 ### Child 完成不等於程式碼完成
 
@@ -672,6 +740,42 @@ child 必然持有自己的 task secret；
 這裡：**只要還有東西沒 commit，樹是綠的就什麼都沒說**，因為那棵樹是所有人工作的聯集，而 HEAD 只有
 你那一份。所以部分 commit 沒有在「它自己那一份能單獨編譯過」之前算完成；下手之前先問：我拿走的
 東西，還有誰在定義它？宣告少了值、呼叫少了函式、case 少了 enum——這些在樹裡都會過，在 HEAD 裡都會炸。
+
+### 你是協調者的時候，怎麼收掉一整批
+
+好幾條線差不多同時做完，全部都要動同一棵樹。上面那節收的是**一份** delivery，這節是把**全部**
+收完的六個步驟，也就是一個登記在案的 Clawdfather 停止派工、開始收尾時做的事。照順序做——會被跳過
+的就是排序那一步，而那一步正是用來避開 merge 衝突的。
+
+1. **凍結。** 叫每一條還活著的線在一個乾淨的邊界停下來並回報——不是叫它放棄手上的東西，也不是叫它
+   開始新的。回報格式要在同一則訊息裡就給出去，因為一次凍結收回六種不同形狀的答案，等於要再問一次。
+2. **盤點。** 每條線用固定格式回六個欄位，不要散文：
+   - **delivery branch、base、head**——東西在哪，以及它是接在什麼上面做的；
+   - **它必須寫入的共用樹路徑**——這是第 3 步排序的輸入；
+   - **landing task id**——最後要被標成 `landed` 的那一個；
+   - **它的驗證是對著哪一個 commit 跑的**——對著過期 base 跑出來的綠，不能當成「你即將做出來的那棵
+     樹」的證據；
+   - **誰擋著它、它擋著誰。**
+
+   broker 自己的視角要跟這些答案並排讀，不是拿來取代它們：`GET /v1/orchestrator/tasks` 看狀態、
+   worktree receipt 與 dirty，`GET /v1/orchestrator/inflight?project=<dir>` 看還有誰在宣告那些路徑。
+3. **按爭用排序，不要按資歷，也不要按誰等最久。** 輸入是「每份 delivery 會寫哪些檔案」：路徑不重疊
+   的兩份根本不用排序，重疊的兩份就讓「另一份要接在上面的那一份」先走。真的平手時，實際有效的
+   tie-break 是**已經 rebase 到最新 base、而且是對著它驗證過的那一份先走**——只有它的綠還是在講
+   所有人接下來要繼承的那棵樹，而且先落它會讓其他線的 rebase 變便宜而不是變貴。
+4. **一次落一份，而且每一份都由你自己在確切的 staged tree 上驗。** 不是交付者跑的那一次，是你
+   在即將 commit 的那個 index 上跑的那一次，照上面「關閉一份 code delivery」的步驟。一次一份不是
+   為了謹慎而謹慎：它讓失敗可以歸因，因為距離上一棵綠樹之間唯一變動的，就是你剛 stage 的那一份。
+5. **Build**，最後做一次——在最後一份落地之後，中間不要 build。它會替換並重啟使用者正在用的 app，
+   所以動手前先說一聲，而且要從 HEAD 建，不是從工作樹。
+6. **恢復，並且跟每條線要兩份清單。** 在任何東西重新開始之前，分開問每一條線：**(a) 它的技術下一步**、
+   **(b) 只有使用者能做的決定**。兩個問題、兩份清單，永遠如此。合成一題問，回來就是合成一份，而在
+   一段待辦事項裡不見的，可靠地都是使用者那半。那些決定接著用選項介面交給使用者，一次一題，每個選項
+   都帶著它的代價和你的建議——形狀在
+   [`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options)。
+
+然後才收尾：只有真的落地的線才是 `landed`，其他每一條都帶著具名的主人繼續掛著；而關掉你自己的
+session 就是上面「要提早收掉」講的那個動作——先看它會帶走什麼。
 
 ### 透過 Clawdline 等檔案
 
