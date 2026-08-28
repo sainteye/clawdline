@@ -42,6 +42,17 @@ func runCoordinatorRegistrationWorkerIfRequested() {
 
 runCoordinatorRegistrationWorkerIfRequested()
 
+// **Line buffering, so that where the output stops is where the suite stopped.**
+//
+// `print` to a pipe is 4096-byte block buffered, and a trap writes to stderr and dies without
+// flushing stdout — so up to a block of ticks that were genuinely printed never reach the log, and
+// the last line standing is some distance before the crash. On this machine that turned one
+// `exit 133` into days of argument about whether the truncation point named a test or a buffer.
+// It cost one line to end: with `_IOLBF` the last tick in the log is the last group that finished,
+// and the group after it in a green run of the same tree is the one that died. `group()` prints
+// after its body, so it is always that next one — not the name you can see.
+setvbuf(stdout, nil, _IOLBF, 0)
+
 // Do this in the test binary itself, not only in `test.sh`. Contributors sometimes run the
 // already-compiled binary while narrowing a failure; without an in-process boundary that reads
 // the installed app's real push subscriptions and schedule fixtures can notify a real phone.
@@ -4708,9 +4719,13 @@ group("remote images survive the terminal handoff") {
 /// touched here, so nobody pressing ⌘C could have caused it. It was one suite reading another's
 /// board, at about one run in three, and the failures it produced (`got nil, want …`, `got [], want
 /// …`) are the shape a reader gets when somebody else has just cleared what it wrote.
+/// A UUID and not the process id, for the reason `isolatedTestStoreDirectory` above already uses
+/// one: two live processes cannot share a pid *today*, but that is an operating-system property
+/// this file would be leaning on, and the same file solving the same problem two different ways is
+/// the next thing somebody trips over. A UUID needs no such argument and costs nothing.
+let pasteboardRun = UUID().uuidString
 func exclusivePasteboard(_ role: String) -> NSPasteboard {
-    NSPasteboard(name: NSPasteboard.Name(
-        "dev.sainteye.clawdline.tests.\(role).\(ProcessInfo.processInfo.processIdentifier)"))
+    NSPasteboard(name: NSPasteboard.Name("dev.sainteye.clawdline.tests.\(role).\(pasteboardRun)"))
 }
 
 group("giving the pasteboard back") {

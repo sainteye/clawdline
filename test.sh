@@ -73,12 +73,25 @@ STORE="${TMPDIR:-/tmp}/clawdline-test-store-$$"
 mkdir -p "$STORE"
 trap 'rm -rf "$STORE"' EXIT
 
-# Streamed through `tee` rather than captured and echoed at the end. The capture was there so the
-# receipt below could be grepped, and it cost exactly the run that needed it most: a crash mid-suite
-# — measured here as `exit 133`, SIGTRAP — kills the shell before the `echo`, so everything the
-# binary had printed goes with it and the red run is the one that arrives with no output at all.
-# Now the lines appear as they are produced and the log survives the process that wrote it, which is
-# why its path is outside `$STORE` and is printed when the suite fails.
+# Streamed through `tee` rather than captured into a variable and echoed at the end.
+#
+# **Not for the reason it first looked like.** The story here used to be that a crashing binary took
+# the captured output with it; that is false and was measured to be false. `if out=$(…)` survives a
+# `SIGTRAP` in the binary perfectly well — the `if` keeps the assignment out of `errexit`, the
+# substitution reads to EOF, the `echo` runs — and against a Swift binary that prints 500 lines and
+# then calls `fatalError`, capture and `tee` left the *same* 439 lines on disk.
+#
+# Two other things were eating the output, and only one of them is this pipe's business:
+#
+#   * **stdout was block buffered** to 4096 bytes, and a trap does not flush it. That is fixed in
+#     `Tests/main.swift`, which now asks for line buffering; both forms lost those lines equally.
+#   * **The shell itself gets killed from outside** — an agent harness timeout, a cancelled CI job,
+#     Ctrl-C, the OOM killer. There is no `echo` in that story at all. Measured: killed at 0.45s,
+#     `tee` had 219 lines on disk and the captured form had none. On a machine where half a dozen
+#     sessions run this suite under harnesses that impose timeouts, that is the common case.
+#
+# So the log survives the process that wrote it, which is why its path is outside `$STORE` and is
+# printed when the suite fails. Copy it somewhere before the temporary directory goes.
 # **The status has to come from the binary, and `pipefail` will not give it to you.** With
 # `set -o pipefail` a pipeline reports its rightmost non-zero member, so a `tee` that cannot write
 # — a full disk, a read-only `TMPDIR` — would be reported as the suite's own exit code and a green
@@ -97,12 +110,19 @@ pipe=("${PIPESTATUS[@]}")
 status=${pipe[0]}
 tee_status=${pipe[1]}
 set -e
-if [ "$tee_status" -ne 0 ]; then
-  echo "tee exited $tee_status — $LOG may be short, and the terminal above is the whole record" >&2
-fi
 if [ "$status" -ne 0 ]; then
   echo "the suite exited $status — full output kept at $LOG" >&2
   exit "$status"
+fi
+# A `tee` that could not write has to end the run on its own number, and it has to do it *here*.
+# Warning and carrying on was worse than it looked: the receipt check below reads `$LOG`, which is
+# the file tee just failed to write, so a **green** suite ended as `exit 125, missing receipt`
+# pointing at a path that does not exist — a false red, wearing the costume of the thing this whole
+# change exists to remove. 126 rather than 125 so the two are told apart on sight.
+if [ "$tee_status" -ne 0 ]; then
+  echo "tee exited $tee_status writing $LOG, so the receipt below cannot be checked." >&2
+  echo "The suite itself passed; the terminal above is the whole record." >&2
+  exit 126
 fi
 
 # A zero process status is insufficient: removing dispatchMain() lets top-level code return before
