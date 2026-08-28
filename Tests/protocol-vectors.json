@@ -102,5 +102,52 @@
   ],
   "format" : 1,
   "master_secret" : "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
-  "nonce_bytes" : 12
+  "nonce_bytes" : 12,
+  "receipts" : [
+    {
+      "body" : "{\"confirm_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"finalized_at\":\"2026-08-27T12:34:56.789Z\",\"pairing_id\":\"pair-0001\",\"released_bytes\":270336,\"released_rows\":1,\"rotation_id\":\"rot-0001\",\"status\":\"delivered\",\"v\":1,\"viewer_device_id\":\"viewer-0001\"}",
+      "byte_length" : 279,
+      "headers" : {
+        "X-Clawdline-Receipt-SHA256" : "4b3c30d5306679a58bc3df271d265616af1fa2220b41c8297bc5da5390181487"
+      },
+      "name" : "delivered",
+      "sha256" : "4b3c30d5306679a58bc3df271d265616af1fa2220b41c8297bc5da5390181487"
+    },
+    {
+      "body" : "{\"finalized_at\":\"2026-08-27T12:34:56.789Z\",\"pairing_id\":\"pair-0001\",\"reason\":\"expired\",\"released_bytes\":270336,\"released_rows\":1,\"rotation_id\":\"rot-0001\",\"status\":\"released\",\"v\":1,\"viewer_device_id\":\"viewer-0001\"}",
+      "byte_length" : 213,
+      "headers" : {
+        "X-Clawdline-Receipt-SHA256" : "1eac2431e8a4f6bbdd126ff2cdbc461b5c46056302490c5cff38ed2c39b1d620"
+      },
+      "name" : "rotation-expired",
+      "sha256" : "1eac2431e8a4f6bbdd126ff2cdbc461b5c46056302490c5cff38ed2c39b1d620"
+    },
+    {
+      "body" : "{\"finalized_at\":\"2026-08-27T12:34:56.789Z\",\"pairing_id\":\"pair-0001\",\"reason\":\"manual_revoke\",\"released_bytes\":270336,\"released_rows\":1,\"rotation_id\":\"rot-0001\",\"status\":\"released\",\"v\":1,\"viewer_device_id\":\"viewer-0001\"}",
+      "byte_length" : 219,
+      "headers" : {
+        "X-Clawdline-Receipt-SHA256" : "ddfabff04a185e2f7e1e27b55e782722bc8cb008588e1485dda2c5076e97bc41"
+      },
+      "name" : "rotation-manual-revoke",
+      "sha256" : "ddfabff04a185e2f7e1e27b55e782722bc8cb008588e1485dda2c5076e97bc41"
+    },
+    {
+      "body" : "{\"finalized_at\":\"2026-08-27T12:34:56.789Z\",\"pairing_id\":\"pair-0001\",\"reason\":\"start_retry_cleanup\",\"released_bytes\":270336,\"released_rows\":1,\"rotation_id\":\"rot-0001\",\"status\":\"released\",\"v\":1,\"viewer_device_id\":\"\"}",
+      "byte_length" : 214,
+      "headers" : {
+        "X-Clawdline-Receipt-SHA256" : "e1445357605d3f3abd0c6b2844f56c1652b28e2e4c27270ceb0c4d3fcd605320"
+      },
+      "name" : "rotation-start-retry-cleanup",
+      "sha256" : "e1445357605d3f3abd0c6b2844f56c1652b28e2e4c27270ceb0c4d3fcd605320"
+    },
+    {
+      "body" : "{\"finalized_at\":\"2026-08-27T12:34:56.789Z\",\"pairing_id\":\"pair-0001\",\"reason\":\"expired\",\"released_bytes\":270336,\"released_rows\":1,\"rotation_id\":\"\",\"status\":\"released\",\"v\":1,\"viewer_device_id\":\"viewer-0001\"}",
+      "byte_length" : 205,
+      "headers" : {
+        "X-Clawdline-Receipt-SHA256" : "0148dc9c895c54d3c1d8a96c1c927c6a8d4120ca792db6805f5d90a18007b946"
+      },
+      "name" : "ordinary-expired",
+      "sha256" : "0148dc9c895c54d3c1d8a96c1c927c6a8d4120ca792db6805f5d90a18007b946"
+    }
+  ]
 }
