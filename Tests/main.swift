@@ -23044,31 +23044,29 @@ group("both shipped skills teach the durable completion contract") {
     }
 }
 
-group("the living communication Artifact reports the pending durable protocol honestly") {
-    let path = "artifacts/2026-08-26-clawdline-communication-protocol.html"
-    let artifact = try! String(contentsOfFile: path, encoding: .utf8)
-    check("the Artifact removes its obsolete one-shot completion claim",
-          !artifact.contains("精確一行、一次、不重送"))
-    check("the Artifact metadata distinguishes baseline, candidate and pending target",
-          artifact.contains(#"name="artifact:baseline-commit""#)
-            && artifact.contains(#"name="artifact:candidate-source-diff-sha256""#)
-            && artifact.contains(#"name="artifact:candidate-state" content="pending""#)
-            && artifact.contains(#"name="artifact:pending-target" content="main""#))
-    check("the Artifact does not recycle contradictory historical receipts as current",
-          !artifact.contains("cece0844") && !artifact.contains("54f2466e")
-            && !artifact.contains("4a755008"))
-    check("the Artifact footer date agrees with its metadata",
-          artifact.contains(#"name="artifact:written" content="2026-08-27""#)
-            && artifact.contains("artifact:kind=state</code>・寫於 2026-08-27"))
-    let checklist = artifact.components(separatedBy: #"id="checklist""#)
-        .dropFirst().first?.components(separatedBy: "<!-- 16").first ?? ""
-    check("the operational checklist corrects physical root identity",
-          checklist.contains("root_identity_is_terminal")
-            && checklist.contains("canonical_root_session_id")
-            && checklist.contains("canonical_root_assistant"))
-    check("the operational checklist requires observation then completion ACK",
-          checklist.contains("notice_id") && checklist.contains("completion/ack")
-            && checklist.contains("ACK"))
+group("the protocol page carries the durable completion contract") {
+    // This used to assert against the gitignored artifact, and to demand metadata that named this
+    // delivery's own diff hash and a candidate state of "pending". Neither is a contract: the hash
+    // changes on every commit, so the check could only be kept green by feeding it, and "pending"
+    // becomes false the moment the work lands — a test built to eventually lie. The protocol's
+    // authority is `docs/clawdline-protocol.html` now, so the substance is asserted there and the
+    // moment-in-time metadata is gone rather than maintained.
+    let page = try! String(contentsOfFile: "docs/clawdline-protocol.html", encoding: .utf8)
+    check("the page names the stable notice id and the route that consumes it",
+          page.contains("notice_id") && page.contains("completion/ack"))
+    check("and says a send is not an observation",
+          page.contains("a successful send is not an observation"))
+    check("the page names the dead letter and how it is read back",
+          page.contains("dead_letter") && page.contains("include_dead_letter"))
+    check("and says a dead letter nobody can read is worth nothing",
+          page.contains("a dead letter nobody can read"))
+    check("the page names the six facts a completion is decomposed into",
+          page.contains("six separate facts")
+            && page.contains("transport-delivered") && page.contains("acknowledged"))
+    check("the page names the physical-root refusal and what it returns instead",
+          page.contains("root_identity_is_terminal")
+            && page.contains("canonical_root_session_id")
+            && page.contains("canonical_root_assistant"))
 }
 
 group("legacy completion reconciliation is bounded and preserves polling compatibility") {
