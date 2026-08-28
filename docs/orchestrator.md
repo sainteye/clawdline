@@ -359,7 +359,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
-| `root.session_id` | the dispatcher's assistant session id: Claude's transcript UUID or Codex's rollout `session_meta.session_id`; `null` when unavailable |
+| `root.session_id` | the dispatcher's assistant conversation id, or its watched terminal id. At dispatch the broker resolves either spelling against the declared assistant and stores the process-bound conversation id; `null` when unavailable |
 | `root.assistant` | optional `claude` or `codex`. New dispatchers send it; absence or explicit `null` is read as missing, and missing is resolved as `claude` for registries and task writers from before this field existed. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 
@@ -377,6 +377,13 @@ somebody's child is a fact about that session whether or not the parent is on sc
 floats at whatever position the sort gave it, which reads at a glance like a bug in the grouping
 rather than a task that declined to say who asked. If a row belonging under yours matters, send
 the id and `root.assistant` together.
+
+Resolution happens once, before capacity, grouping and the task record are chosen. A terminal id
+and the current conversation id therefore become the same durable root key. Completion
+notification, `liveTasks(dispatchedBy:)`, session grouping and root-close cascade all consume that
+canonical key. If a non-null spelling matches no one (or is ambiguous), dispatch still proceeds
+for compatibility but returns a `root_unresolved` item in `warnings`; the task may require polling
+and cannot be assumed to participate in those owner paths.
 
 The broker does not trust either string on its own. For Claude it resolves the exact current
 process's transcript (using the validated process registry when available, otherwise a hook id
@@ -1239,18 +1246,26 @@ observer provenance and explicit policy boundaries rather than widening this end
 
 Every live Session row carries exactly one closed `work_state`: `ready`, `working`,
 `waiting_human`, `waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`.
-This is not another truth store. The broker deterministically projects it from the terminal
-presence reading, the task registry's authenticated result, the matching landing record, durable
-handoff state, and coordination waits. Those sources remain separate, and top-level terminal
+This is not another free-form truth store. The broker deterministically projects it from the
+terminal presence reading, the task registry's authenticated result, a root's process-bound
+session-delivery receipt, the matching landing record, durable handoff state, and coordination
+waits. Those sources remain separate, and top-level terminal
 `state` is unchanged. A missing or unknown projected value fails closed in the web client as
 `needs_triage`, never as blank idle and never as a check.
 
-The precedence is `waiting_human` (terminal question) > `waiting_session` (waiting-on or owed wait)
-> unreadable or missing evidence (`needs_triage`) > current `working` > delivered milestone >
-broker-verified target landing. Current work intentionally outranks an older receipt: during the
+The precedence is `waiting_human` (terminal question) > waiting-on/owed coordination file wait >
+unreadable or missing evidence (`needs_triage`) > current `working` > an idle dispatcher's live
+child (`waiting_session`) > delivered milestone > broker-verified target landing. Current work
+intentionally outranks an older receipt: during the
 child's linger somebody can resume using the terminal, and the earlier assignment's success cannot claim
 that new activity is finished. `waiting_human` remains the only state that requests a person's
 attention or drives the loud row/push. `waiting_session` stays the quiet `⏳` relationship.
+
+An active child is already typed broker evidence that its dispatcher has an outstanding Session
+obligation. When that exact root process is idle, the projection is therefore `waiting_session`,
+not `needs_triage`; when it works in parallel, current `working` wins. The browser validates the
+same fact against the live task's resolved `root.terminalId` and names the child task beside `⏳`.
+The child finishing removes this wait evidence; it does not itself mark the root delivered.
 
 A successful task with `finishedAt` is `milestone_complete` (one check) only when the task receipt
 is bound to the process occupying the Session now: exact assistant, terminal and tty, pid plus
@@ -1260,27 +1275,38 @@ task. Missing legacy identity fields fail closed. An open handoff's `from_sessio
 two strict namespaces—exact terminal id and exact process-bound conversation id—with no prefix,
 title, tty, or fallback guessing.
 
+An ordinary root has a second, deliberately narrow route to that same one-check milestone:
+`POST /v1/orchestrator/sessions/:terminal-id/complete` while its current turn is observably
+working. The broker resolves and stores the same exact process tuple itself; the body supplies only
+a bounded summary. Its disposition is `scope:session` with
+`evidence:authenticated_session_delivery`. The first subsequent idle settles the receipt, and the
+same terminal's next working or waiting transition consumes it. Thus it says only “this root
+delivered the turn now awaiting approval,” survives an app restart, and cannot be borrowed by a
+reused process or reappear after newer unreported work.
+
 That one check is authenticated, durable reported evidence that the current assignment/phase
 delivered; review, landing, handoff, waits, or later graph nodes may remain. It becomes
 `work_complete` (two checks) only when the same task also has the new machine-authenticated,
 git-verified target landing fields above and the terminal has no unresolved coordination wait or
-handoff. Legacy landed rows without those fields remain a milestone. Neither child prose nor
-progress notes nor Clawdfather advisory can write either check. Clawdfather explains which receipt
+handoff. Legacy landed rows without those fields remain a milestone. Neither unstructured
+assistant prose, progress notes nor Clawdfather advisory can write either check. Clawdfather
+explains which receipt
 is missing, coordinates its owner, and prioritizes `needs_triage`; it is not a status-truth writer.
 
-The existing task result is the typed, durable Session report: `success` maps to delivered
-milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt map to
-triage rather than completion. Natural-language `/progress` notes remain display-only context.
-This deliberately reuses the authenticated, versioned task/result registry instead of adding a
-second session-status API that could drift. A child may intend that all work is complete, but that
-intent is still only its `success` receipt; it cannot directly produce `work_complete`.
+The existing task result remains a child's typed, durable Session report: `success` maps to
+delivered milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt
+map to triage rather than completion. Natural-language `/progress` notes remain display-only
+context. A child may intend that all work is complete, but that intent is still only its `success`
+receipt; it cannot call the root route or directly produce `work_complete`.
 
-The completion scope is deliberately `task`, recorded in the Session's optional `disposition`
-metadata. The registry does not yet model one authoritative set of every descendant, review,
-landing, and handoff obligation belonging to a human root's whole graph. Claiming that broader
-completion would be invented global truth, so the projection fails closed and never calls a root
-graph complete. The typed evidence name is `broker_verified_target_landing`, not “task closure”:
-the broker verified local git containment, not the root's complete test/review graph. `ready` is
+Completion metadata therefore has two narrow scopes. `scope:task` names an authenticated child
+delivery and is the only scope that can advance to a broker-verified target landing.
+`scope:session` names one root-reported turn and is consumed on the next turn; it can never advance
+to two checks. The registry still does not model one authoritative set of every descendant,
+review, landing, and handoff obligation belonging to a human root's whole graph. Claiming that
+broader completion would be invented global truth, so neither scope calls a root graph complete.
+The typed double-check evidence remains `broker_verified_target_landing`, not “task closure”: the
+broker verified local git containment, not the root's complete test/review graph. `ready` is
 likewise not inferred for an idle assistant: without positive evidence
 that no assignment exists, its stopped state is `needs_triage` (the health target for this queue is
 zero). Plain non-assistant prompts can be `ready` because their absence of an assistant assignment

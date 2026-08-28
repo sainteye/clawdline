@@ -122,6 +122,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
@@ -1204,6 +1205,13 @@ hashes to the same `root_key`; two roots that share a label do not share a `root
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
 
+At registration, a non-null `root.session_id` may be either the watched terminal id or the
+assistant's process-bound conversation id. The broker resolves both against `root.assistant` and
+stores only the conversation id, so completion notification, grouping, per-root capacity and the
+root-close cascade use one key. If it cannot resolve exactly one live owner, dispatch remains
+compatible but the response includes `warnings:[{"code":"root_unresolved",…}]`; callers must
+poll and must not assume that owner grouping or cascade is available.
+
 `"isolation":"worktree"` asks for a clean private checkout and a delivery branch named
 `clawdline/task/<complete-task-id>`. Optional `isolation_base` is resolved to a commit; without it,
 the base is `HEAD`. A dirty base succeeds with a warning because its uncommitted files are absent
@@ -1387,6 +1395,53 @@ Two older ways of finding an id still work and are worth knowing, because neithe
 session's *own* terminal-neutral id is the UUID after the colon in `$ITERM_SESSION_ID` — that
 answers "who am I" and nothing else. [`GET /v1/orchestrator/waits`](#coordination-waits) names the
 ids already inside a wait — which is no help to the first session that needs to wait on somebody.
+
+### `POST /v1/orchestrator/sessions/:id/complete`
+
+A root calls this immediately before its final completion response, after the work it claims is
+delivered and after any repository-required verification and commit. `:id` is the terminal-neutral
+id from the session index above—not a Claude session id or Codex thread id—and the closed request
+body contains one bounded sentence:
+
+```console
+$ terminal_id="${ITERM_SESSION_ID##*:}"   # use "$TMUX_PANE" inside tmux
+$ jq -n --arg summary "Implemented, verified and committed the requested change." \
+    '{summary:$summary}' \
+  | curl -sS -X POST \
+      "http://127.0.0.1:7717/v1/orchestrator/sessions/$terminal_id/complete" \
+      -H "X-Clawdline-Orchestrator: $ORCH" \
+      -H 'Content-Type: application/json' --data-binary @-
+{"ok":true,"created":true,"disposition":{"scope":"session",
+ "evidence":"authenticated_session_delivery","receiptAt":1787900400,
+ "title":"Implemented, verified and committed the requested change."}}
+```
+
+The app resolves the named live target itself and binds the receipt to the exact terminal,
+assistant, tty, pid/process start and process-proved conversation. None of those private identity
+facts is accepted from JSON or returned. The route is valid only while that root's current turn is
+observably `working`; this lets a report made during the last tool call become visible when the
+prompt returns to idle without allowing an idle script to mint completion later. An identical
+retry is idempotent (`created:false` with the original timestamp).
+
+This produces `milestone_complete`: one check and **delivered, awaiting approval**. Its
+`disposition` has `scope:"session"` and `evidence:"authenticated_session_delivery"`. It does not
+claim that every descendant, review, landing or deployment obligation in a root's graph is closed,
+and it can never produce `work_complete`; two checks still require the task-scoped,
+machine-authenticated Git landing receipt. A child tab is refused because its authenticated
+`result.json` remains the only completion signal for that assignment.
+
+The first observed idle after the report settles it. When the same terminal next enters `working`
+or `waiting`, Clawdline consumes the receipt; current activity already outranks it in that frame,
+and a later idle without another report becomes `needs_triage`. Restarting the app preserves this
+lifecycle. A terminal reused by another process cannot borrow the receipt even before cleanup.
+
+Typed refusals are `400 bad_request` for any body other than one string `summary` of 1…500
+characters; `401 unauthorized` without a recognised credential and `403 forbidden` when a paired
+device reaches this machine-only handler; `404 session_not_found` when
+`:id` is not a current assistant target; `409 session_not_working` outside an active turn;
+`409 session_unbound` when the complete process/conversation tuple cannot be proved; and
+`409 child_session` when the target already has a matching Clawdline task receipt path. A refusal
+must be reported honestly; prose does not substitute for the missing receipt.
 
 ### Machine coordinator identity and Bearings
 
@@ -2457,8 +2512,9 @@ app, and an open-ended size is an open-ended cache.
     "label": "Clawdfather", "status": "online", "commands": [ … ]
   },
   "disposition": {                                 // only with either completion work_state
-    "scope": "task", "taskId": "…",
-    "evidence": "authenticated_task_delivery",   // or broker_verified_target_landing
+    "scope": "task", "taskId": "…",             // root reports use scope:"session"
+    "evidence": "authenticated_task_delivery",   // or authenticated_session_delivery,
+                                                    // or broker_verified_target_landing
     "receiptAt": 1787049596, "title": "review the delivery"
   },
   "agents": [ … ],                               // only when this session has agents out
@@ -2477,10 +2533,17 @@ and is deliberately not flattened into it.
 `waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`. It is a broker
 projection over separate terminal, task, landing, handoff, and coordination axes; clients must
 not infer it from `idle`. Precedence is: a human question, a durable peer/owed wait, unreadable or
-missing evidence, current activity, authenticated delivery, then verified target landing. Current
+missing evidence, current activity, an idle root's live child, authenticated delivery, then
+verified target landing. Current
 activity outranks an older receipt. `ready` requires positive proof that no assistant assignment
 exists; an idle assistant without that proof is `needs_triage`. Only `waiting_human` asks the
 person to act.
+
+An idle root with a live task resolved to its exact current process is `waiting_session`: the
+broker already knows it has an outstanding ChildSession. If the root works beside that child it is
+`working`; if the child finishes, the wait evidence ends and the root needs its own delivery
+receipt after integration. The web client checks the same live `root.terminalId` relationship and
+draws `⏳` with the child task title rather than falling back to triage.
 
 `milestone_complete` is one check: the task bound to this exact current assistant process has an
 authenticated success result and finish receipt. The binding requires the exact assistant,
@@ -2490,12 +2553,19 @@ therefore gets no check. An unresolved handoff may name its source in either of 
 namespaces—exact terminal id or exact process-bound conversation id—and each is compared only in
 its own namespace; no prefix/title/tty guessing occurs.
 
+An ordinary root may produce the same one-check milestone for its current turn through
+[`POST /v1/orchestrator/sessions/:id/complete`](#post-v1orchestratorsessionsidcomplete). That
+receipt is also bound to the exact current process, carries `scope:"session"` and
+`evidence:"authenticated_session_delivery"`, and is consumed when the terminal begins its next
+observed turn. It is the root's authenticated delivery claim, not independent review or closure of
+every obligation in its graph.
+
 `work_complete` is two checks and means only **broker-verified target landing for that task**. The
 same task must carry a new-format `landed` receipt whose machine-authenticated git verification
 proved its canonical commit is contained by the named local target branch. Legacy landed data,
 arbitrary commit text, the task secret alone, or missing verification fields stay at one check.
 This does not claim that a whole multi-task graph or its tests are complete. `disposition` names
-the task scope and typed evidence; for the double check it also carries canonical `commit`,
+the receipt scope and typed evidence; for the double check it also carries canonical `commit`,
 `target`, `targetCommit`, and `landedAt`. It is output only: agent prose and coordinator advice
 cannot write either check.
 

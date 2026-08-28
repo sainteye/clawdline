@@ -1132,6 +1132,36 @@ final class RemoteServer: @unchecked Sendable {
                                                                    states: watch.states),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
+        // published by the GET above; every process/conversation fact is resolved here from the
+        // live target, never trusted from the request body. It is a single-check delivery claim,
+        // not the broker-verified landing that produces work_complete.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
+            && path.hasSuffix("/complete"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reporting root delivery needs the orchestrator token.")
+            }
+            let encoded = String(path.dropFirst("/v1/orchestrator/sessions/".count)
+                .dropLast("/complete".count))
+            let id = encoded.removingPercentEncoding ?? encoded
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(400, "bad_request", "The route must name one session id.")
+            }
+            guard let target = self.session(withID: id), target.isAssistant else {
+                return .error(404, "session_not_found", "No current assistant session named \(id).")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            guard Set(body.keys) == Set(["summary"]), body["summary"] is String else {
+                return .error(400, "bad_request", "The body must contain only string summary.")
+            }
+            let reply = Orchestrator.reportSessionDelivery(
+                identity: Self.sessionWorkIdentity(target), terminalState: self.state(of: id),
+                summary: body["summary"] as? String ?? "")
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
         // What this Mac can say about each assistant's own account-level quota — one read of two
         // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
         // has to be cheap enough for `Orchestrator.dispatch()` itself to call synchronously at
@@ -2996,6 +3026,13 @@ final class RemoteServer: @unchecked Sendable {
         if Thread.isMainThread { return Self.session(withID: id, among: SessionWatch.shared.targets) }
         return DispatchQueue.main.sync {
             Self.session(withID: id, among: SessionWatch.shared.targets)
+        }
+    }
+
+    private func state(of sessionID: String) -> SessionState {
+        if Thread.isMainThread { return SessionWatch.shared.states[sessionID] ?? .unknown }
+        return DispatchQueue.main.sync {
+            SessionWatch.shared.states[sessionID] ?? .unknown
         }
     }
 

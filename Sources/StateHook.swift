@@ -266,6 +266,7 @@ enum StateHook {
     /// explicit at the only place it could be got wrong.
     static func observe() {
         previous = SessionWatch.shared.states
+        Orchestrator.reconcileSessionDeliveryStates(previous)
         finishTracker = FinishTracker()
         _ = finishTracker.update(states: previous,
                                  sessions: SessionWatch.shared.targets,
@@ -415,6 +416,9 @@ enum StateHook {
         defer { previous = states }
 
         let changes = transitions(from: previous, to: states, sessions: sessions)
+        for change in changes {
+            Orchestrator.noteSessionStateChange(terminalID: change.session.id, to: change.to)
+        }
 
         // A phone, buzzing, for the one state that is worth it.
         //

@@ -47,18 +47,29 @@ export function projectSessionWorkState(s) {
     // These three claims must agree with their source axes. The server always projects them
     // consistently; checking again turns a partial or mixed-version frame into triage rather
     // than two mutually exclusive messages on one row.
-    if (s.work_state === "waiting_human" || s.work_state === "waiting_session") {
+    if (s.work_state === "waiting_human") {
         return { state: "needs_triage", failedClosed: true };
     }
     if ((s.state === "working") !== (s.work_state === "working")) {
         return { state: "needs_triage", failedClosed: true };
     }
+    if (s.work_state === "waiting_session") {
+        return tasksOfRoot(s.id).some(taskLive)
+            ? { state: "waiting_session", failedClosed: false }
+            : { state: "needs_triage", failedClosed: true };
+    }
     if (s.work_state === "milestone_complete" || s.work_state === "work_complete") {
         var disposition = s.disposition || {};
-        var expected = s.work_state === "work_complete"
-            ? "broker_verified_target_landing" : "authenticated_task_delivery";
-        if (disposition.scope !== "task" || !disposition.taskId ||
-            disposition.evidence !== expected) {
+        var taskMilestone = s.work_state === "milestone_complete" &&
+            disposition.scope === "task" && !!disposition.taskId &&
+            disposition.evidence === "authenticated_task_delivery";
+        var sessionMilestone = s.work_state === "milestone_complete" &&
+            disposition.scope === "session" &&
+            disposition.evidence === "authenticated_session_delivery";
+        var taskClosure = s.work_state === "work_complete" &&
+            disposition.scope === "task" && !!disposition.taskId &&
+            disposition.evidence === "broker_verified_target_landing";
+        if (!taskMilestone && !sessionMilestone && !taskClosure) {
             return { state: "needs_triage", failedClosed: true };
         }
     }

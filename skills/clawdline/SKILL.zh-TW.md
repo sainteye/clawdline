@@ -419,7 +419,7 @@ jq -n \
 | `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |
 | `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
-| `root.session_id` | 目前這個助理的 conversation id，照下面查；查不到就 `null`，不要瞎編 |
+| `root.session_id` | 目前這個助理的 conversation id（優先）或受監看的 terminal id；查不到就 `null`，不要瞎編 |
 | `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
 | `root.parent_task` | **只有你自己是 child 才要填**——填你自己那件 task 的 id（第一句話裡那個）。root 派工不用寫。填錯只會讓這件任務被算到別人頭上或被算得更深，不會佔到便宜 |
 
@@ -441,20 +441,11 @@ jq -n \
 
 ### 查自己的助理與 session id（best-effort，查不到就 null）
 
-> **這台機器上有兩種東西都叫「session id」，這一格填錯是靜默失敗。** `root.session_id` 要的是
-> **助理自己的 conversation id**——Claude 的 transcript uuid，或 Codex 的 rollout id。它**不是**
-> 終端機 id、不是 `$ITERM_SESSION_ID` 的值、也不是 `GET /v1/sessions` 與
-> `GET /v1/orchestrator/sessions` 回的那個 `id`。**那些是 `POST /v1/orchestrator/waits` 要的，
-> 跟這一格要的正好相反。**
->
-> 填錯不會有任何人告訴你。派工會被接受、id 原封不動回傳、child 跑起來而且把事情做得好好的——
-> 然後 `notifyRoot` 拿你那串去跟 `Transcript.sessionID(of:)` 比，比不到，就 return 了，
-> **連一行 log 都沒有**（`Sources/Orchestrator.swift` 的 `target(forRootSession:…)`：只有
-> `.handoff` 那條路接受終端機 id，`.task` 不接受）。2026-08-28 實測：四件用終端機 id 派出去的
-> task 全部順利完成，但沒有一件回報、沒有一件出現在 root 底下、root 關掉時也不會被連帶取消。
-> **安靜的孤兒。**
->
-> 所以：照下面的 nonce 做，不要因為終端機 id 比較好拿就拿它頂替。
+> `root.session_id` 優先填助理自己的 conversation id——Claude 的 transcript uuid 或 Codex 的
+> rollout id；broker 現在也接受受監看的 terminal id。派工當下會把兩種拼法依
+> `root.assistant` 解析成同一個 process-bound conversation key，完成通知、分組、容量與 root 關閉
+> cascade 全部用這一把 key。一定要讀 response 的 `warnings`：非 null 的值若找不到唯一 live owner，
+> 會回 `root_unresolved`；這種 Child 可能得自己 poll，也不能假設會隨 Root 關閉。
 
 
 **Codex：**目前 rollout id 已直接放在環境變數裡。要跟寫 `task.json` 放在同一個 shell
@@ -617,6 +608,38 @@ delivered -> reviewed -> pending landing -> landed
 
 除非另一個具名 root 接受了一份 Clawdline handoff，派工的 root 就是 landing owner。「未來某個人」
 不是 owner。責任還在 `delivered`、`reviewed` 或 `pending landing` 時，不得對使用者回報完成。
+
+### 回報 Root 自己完成的這一輪
+
+Root 自己這一輪真的完成時——包含必要整合、驗證與 commit——把 authenticated session delivery
+report 當成最後一個 tool action，再向使用者給 final answer。這是 Root 對應 Child `result.json` 的
+路徑，但語意刻意較弱：只畫一個勾，表示**已交付，等待驗收**；絕不宣稱獨立 review 或 broker-verified
+landing。
+
+```bash
+if [ -n "${TMUX_PANE:-}" ]; then
+  ROOT_TERMINAL="$TMUX_PANE"
+elif [[ "${ITERM_SESSION_ID:-}" == *:* ]]; then
+  ROOT_TERMINAL="${ITERM_SESSION_ID##*:}"
+else
+  echo "無法解析這個 Root 的 terminal-neutral Clawdline id" >&2
+  exit 1
+fi
+jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
+  | curl -sS -X POST \
+      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
+      -H "X-Clawdline-Orchestrator: $TOKEN" \
+      -H 'Content-Type: application/json' --data-binary @-
+```
+
+先把 `SUMMARY` 設成一句不超過 500 字、具體描述本輪交付的句子。只能在最後一輪仍是 working 時呼叫；
+部分成果、只做診斷、遇到 blocker、正在問問題，或自己是 Child 時都不得呼叫。按 typed refusal 分支並如實
+回報；自然語言不能代替缺少的 receipt。Clawdline 在同一個 terminal 開始下一個 observed turn 時會消耗
+receipt，所以舊勾不會在新一輪未回報的工作後重新出現。
+
+Root idle 且仍有 live Clawdline Child 時，broker 會投影成 `waiting_session`，卡片在安靜的 `⏳` 後列出
+Child 工作；這是等待，不是待分流，也不是已交付。Root 同時做事仍顯示 `working`，Child 完成只會移除
+等待 evidence，不會替 Root 的整合工作宣告完成。
 
 有 claims 的 child 成果回來時，root 要用該 task secret 在原 task 上登記尚未關閉的義務：呼叫
 `POST /v1/orchestrator/tasks/:id/landing`，body 是

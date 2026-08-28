@@ -482,7 +482,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |
 | `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
 | `timeout_minutes` | 1…240, 30 if absent |
-| `root.session_id` | this assistant's current conversation id, found below; `null` if unavailable — never invented |
+| `root.session_id` | this assistant's current conversation id (preferred) or watched terminal id; `null` if unavailable — never invented |
 | `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
 | `root.parent_task` | **only when you are yourself a child** — the id of your own task, the one in your first message. Root dispatches leave it out. Getting it wrong bills this task to somebody else or counts it as deeper than it is; there is nothing to gain |
 
@@ -508,22 +508,12 @@ error, pointing the other way — take that report seriously and declare narrowe
 
 ### Finding your own assistant and session id (best-effort; `null` if you cannot)
 
-> **Two different things on this Mac are called a "session id", and putting the wrong one here
-> fails silently.** `root.session_id` takes **the assistant's own conversation id** — the Claude
-> transcript uuid, or Codex's rollout id. It does *not* take the terminal id, the
-> `$ITERM_SESSION_ID` value, or the `id` that `GET /v1/sessions` and `GET /v1/orchestrator/sessions`
-> return. **Those are what `POST /v1/orchestrator/waits` wants, and they are the opposite of what
-> this field wants.**
->
-> Nothing tells you when you get it wrong. The dispatch is accepted, the id is echoed back
-> unchanged, the child runs and does the work perfectly — and then `notifyRoot` compares your string
-> against `Transcript.sessionID(of:)`, finds no match, and returns without so much as a log line
-> (`Sources/Orchestrator.swift`, `target(forRootSession:…)`: only `.handoff` resolution accepts a
-> terminal id, `.task` does not). Measured on 2026-08-28: four tasks dispatched with a terminal id
-> in this field all completed, and not one of them reported back, appeared under its root in the
-> session list, or would have been cancelled when that root closed. **Silent orphans.**
->
-> So: use the nonce below, and do not substitute the terminal id because it was easier to reach.
+> `root.session_id` prefers the assistant's own conversation id — the Claude transcript uuid or
+> Codex rollout id — but the broker also accepts the watched terminal id. At dispatch it resolves
+> either spelling against `root.assistant` and stores one process-bound conversation key for
+> completion notification, grouping, capacity and close cascade. Always inspect `warnings`: a
+> non-null spelling that matches no live owner returns `root_unresolved`; that child may require
+> polling and must not be assumed to close with its root.
 
 
 **Codex:** its current rollout id is exported directly. Do this in the same shell call that writes
@@ -699,6 +689,41 @@ delivered -> reviewed -> pending landing -> landed
 The dispatching root is the landing owner unless a named root accepts a Clawdline handoff. A vague
 "someone later" is not an owner. Do not give the user a completion answer while the obligation is
 `delivered`, `reviewed`, or `pending landing`.
+
+### Report the root's completed turn
+
+When your own root turn is genuinely complete—including required integration, verification and
+commit—make its last tool action an authenticated session delivery report, then give the user the
+final answer. This is the root equivalent of a child's `result.json`, but deliberately weaker: it
+draws one check, **delivered; awaiting approval**, and can never claim independent review or a
+broker-verified landing.
+
+```bash
+if [ -n "${TMUX_PANE:-}" ]; then
+  ROOT_TERMINAL="$TMUX_PANE"
+elif [[ "${ITERM_SESSION_ID:-}" == *:* ]]; then
+  ROOT_TERMINAL="${ITERM_SESSION_ID##*:}"
+else
+  echo "cannot resolve this root's terminal-neutral Clawdline id" >&2
+  exit 1
+fi
+jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
+  | curl -sS -X POST \
+      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
+      -H "X-Clawdline-Orchestrator: $TOKEN" \
+      -H 'Content-Type: application/json' --data-binary @-
+```
+
+Set `SUMMARY` to one concrete sentence of at most 500 characters before that block. Call it only
+while the final turn is still working. Do not call it for partial work, a diagnosis-only answer, a
+blocker, a question, or from a child. Branch on typed refusals and report one honestly; prose is
+not a substitute for a missing receipt. Clawdline consumes the receipt when this terminal begins
+its next observed turn, so an old check cannot return after newer unreported work.
+
+While a root is idle with a live Clawdline child, the broker projects `waiting_session` and the row
+names the child beside a quiet `⏳`; that is waiting, not triage and not delivery. Root activity
+still reads `working`, and a child finishing removes the wait without completing the root's own
+integration turn.
 
 When claimed child work comes back, root records the open obligation on that task with its task
 secret: `POST /v1/orchestrator/tasks/:id/landing` and `{"state":"pending","target":"<ref>"}`.

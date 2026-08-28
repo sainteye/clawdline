@@ -37,6 +37,20 @@ overlapping dirty work, file-release waits and handing an unfinished landing to 
 in [`docs/landing.md`](docs/landing.md). Read it when a delivery comes back.** A child does not
 land and does not need it.
 
+### Root completion receipt
+
+After a root has genuinely completed its assigned turn—including required integration,
+verification and the root-owned commit—and immediately before its final completion response, it
+reports one session-scoped delivery receipt through
+`POST /v1/orchestrator/sessions/:terminal-id/complete`. Follow the exact command and refusal rules
+in [`docs/api.md`](docs/api.md#post-v1orchestratorsessionsidcomplete). This produces only
+**delivered, awaiting approval**; it never claims independent review or broker-verified landing.
+
+Do not report this receipt for a partial result, diagnosis-only answer, blocked task, clarifying
+question, or child task. A child still finishes only through its authenticated `result.json`.
+Clawdline consumes a root receipt when that same terminal begins its next observed turn, so an old
+check cannot reappear after newer unreported work.
+
 ## Verifying your work
 
 The working tree is an editing buffer shared with other sessions, not a reproducible build input.

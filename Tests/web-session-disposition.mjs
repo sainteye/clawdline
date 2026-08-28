@@ -29,6 +29,9 @@ const closed = [
     [{ state: "idle", work_state: "milestone_complete",
        disposition: { scope: "task", taskId: "one", evidence: "authenticated_task_delivery" } },
      "milestone_complete"],
+    [{ state: "idle", work_state: "milestone_complete",
+       disposition: { scope: "session", evidence: "authenticated_session_delivery" } },
+     "milestone_complete"],
     [{ state: "idle", work_state: "work_complete",
        disposition: { scope: "task", taskId: "one", evidence: "broker_verified_target_landing" } },
      "work_complete"]
@@ -45,6 +48,13 @@ assert.equal(project({ state: "working" }).state, "needs_triage",
     "even obvious terminal activity cannot fill in a missing work_state at the client");
 assert.equal(project({ state: "idle", work_state: "waiting_human" }).state, "needs_triage",
     "a projected wait inconsistent with its source axis fails closed");
+state.sessions = [{ id: "root", state: "idle", work_state: "waiting_session" }];
+state.tasks = [{ id: "live-child", state: "briefed", title: "review the patch",
+    root: { terminalId: "root" }, child: { terminalId: "child" } }];
+assert.equal(project(state.sessions[0]).state, "waiting_session",
+    "an active Clawdline child is typed evidence that its idle root waits on a session");
+state.sessions = [];
+state.tasks = [];
 assert.equal(project({ state: "waiting", work_state: "work_complete" }).state, "waiting_human",
     "a human question outranks even a broker closure receipt");
 assert.equal(project({ state: "idle", work_state: "work_complete",
@@ -55,6 +65,9 @@ assert.equal(project({ state: "unknown", work_state: "work_complete" }).state, "
 assert.equal(project({ state: "idle", work_state: "work_complete",
     disposition: { scope: "task", taskId: "one", evidence: "broker_verified_task_closure" }
 }).state, "needs_triage", "legacy over-claimed closure evidence fails closed");
+assert.equal(project({ state: "idle", work_state: "milestone_complete",
+    disposition: { scope: "session", evidence: "authenticated_task_delivery" }
+}).state, "needs_triage", "a root receipt cannot borrow task delivery evidence");
 
 const hostile = {
     state: "idle", work_state: "milestone_complete",
@@ -113,6 +126,8 @@ assert.match(listSource,
 assert.match(listSource,
     /session-work-copy[^\n]+data-work-state[^\n]+work\.state/,
     "the visible completion explanation identifies which closed state it describes");
+assert.match(listSource, /work\.state === "waiting_session"[^}]+webTaskTasks/s,
+    "a root waiting for live children names that task wait on its state line");
 
 const infoSource = await readFile(
     new URL("../Resources/web/app/js/input/info.js", import.meta.url), "utf8");

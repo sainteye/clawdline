@@ -42,6 +42,15 @@ func runCoordinatorRegistrationWorkerIfRequested() {
 
 runCoordinatorRegistrationWorkerIfRequested()
 
+// The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures out
+// of the installed app's live registry even when the test binary is run outside a sandbox.
+let orchestratorTestStoreDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("clawdline-orchestrator-tests-\(UUID().uuidString)", isDirectory: true)
+try! FileManager.default.createDirectory(at: orchestratorTestStoreDirectory,
+                                         withIntermediateDirectories: true)
+Orchestrator.storeURLOverrideForTesting = orchestratorTestStoreDirectory
+    .appendingPathComponent("orchestrator.json")
+
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
 // `swiftc` and nothing else. Run it with ./test.sh.
 //
@@ -10193,6 +10202,22 @@ group("a child row resolves only to its current parent session") {
            resolveTarget(root: codex.id, assistant: nil, resolution: .handoff,
                          targets: [codex], identities: [:]), codex)
 
+    let terminalBinding = Orchestrator.canonicalRootSession(
+        codex.id, assistant: .codex, among: [codex], sessionID: { _ in wanted })
+    expect("dispatch canonicalizes a terminal id to the process-bound conversation",
+           terminalBinding.sessionID, wanted)
+    check("a resolved dispatch emits no root warning", terminalBinding.warning == nil)
+    let conversationBinding = Orchestrator.canonicalRootSession(
+        wanted, assistant: .codex, among: [codex], sessionID: { _ in wanted })
+    expect("the conversation namespace canonicalizes to the same durable key",
+           conversationBinding.sessionID, wanted)
+    let unresolvedBinding = Orchestrator.canonicalRootSession(
+        "MISSING", assistant: .codex, among: [codex], sessionID: { _ in wanted })
+    expect("an unresolved root spelling is retained for compatibility",
+           unresolvedBinding.sessionID, "MISSING")
+    expect("and dispatch reports the typed orphan-risk warning",
+           unresolvedBinding.warning?["code"] as? String, "root_unresolved")
+
     // Same terminal and tty, but a different assistant now occupies them. Even a stale identity
     // source claiming the old id cannot move this new process under the Codex root.
     let reused = target(codex.id, .claude, tty: codex.tty)
@@ -11670,6 +11695,16 @@ group("session work state is a closed broker projection, never an idle guess") {
            project(.waiting, waiting: true), .waitingHuman)
     expect("a peer or owed wait is waiting-session without asking the human",
            project(.idle, waiting: true), .waitingSession)
+    expect("an idle root with an active child is waiting-session",
+           Orchestrator.projectSessionWorkState(
+            terminalState: .idle, task: nil, hasCoordinationWait: false,
+            hasOpenHandoff: false, assignmentKnownAbsent: false,
+            hasOutstandingChild: true), .waitingSession)
+    expect("a root working beside its child still reads as working",
+           Orchestrator.projectSessionWorkState(
+            terminalState: .working("parallel work"), task: nil,
+            hasCoordinationWait: false, hasOpenHandoff: false,
+            assignmentKnownAbsent: false, hasOutstandingChild: true), .working)
     expect("an unreadable terminal outranks a delivered milestone",
            project(.unknown, task: task(.success)), .needsTriage)
     expect("renewed activity outranks an older delivery receipt",
@@ -11749,6 +11784,127 @@ group("session completion receipts are bound to the current process, not a reusa
           !Orchestrator.handoffSource("TAB-old", matches: identity))
     check("a stale conversation is not guessed",
           !Orchestrator.handoffSource("conversation-later", matches: identity))
+}
+
+group("a root session can report one delivered turn without becoming a child task") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let started = Date(timeIntervalSince1970: 300)
+    let rootConversation = "12121212-3434-4567-8899-abcdefabcdef"
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: "ROOT-TAB", assistant: .codex, tty: "/dev/ttys9", pid: 900,
+        processStart: started, conversationID: rootConversation)
+    let reported = Orchestrator.reportSessionDelivery(
+        identity: identity, terminalState: .working("wrapping up"),
+        summary: "Implemented and committed the requested change.",
+        now: Date(timeIntervalSince1970: 400))
+    guard case .ok(let payload) = reported,
+          let disposition = payload["disposition"] as? [String: Any] else {
+        check("a bound working root can report delivery", false); return
+    }
+    expect("the root receipt is session-scoped", disposition["scope"] as? String, "session")
+    expect("with explicit self-reported delivery evidence",
+           disposition["evidence"] as? String, "authenticated_session_delivery")
+    expect("and the authored summary", disposition["title"] as? String,
+           "Implemented and committed the requested change.")
+    if case .ok(let retry) = Orchestrator.reportSessionDelivery(
+        identity: identity, terminalState: .working("still wrapping up"),
+        summary: "Implemented and committed the requested change.",
+        now: Date(timeIntervalSince1970: 401)) {
+        expect("an identical in-turn report is idempotent", retry["created"] as? Bool, false)
+        expect("and preserves the original receipt time",
+               (retry["disposition"] as? [String: Any])?["receiptAt"] as? Int, 400)
+    } else { check("an identical root report can be retried", false) }
+
+    let unrelatedChild = Orchestrator.Task(
+        id: "cdcdcdcd-1111-4222-8333-444444444444", state: .briefed, kind: "custom",
+        title: "another root's child", assistant: .claude, projectDir: "/repo",
+        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 399),
+        rootSessionId: "34343434-5656-4789-8abc-defabcdefabc", rootAssistant: .codex,
+        secretHash: String(repeating: "0", count: 64))
+    Orchestrator.holdScheduleTaskForTesting(unrelatedChild)
+
+    let idle = Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+    expect("another root's top-level child does not turn this root into waiting",
+           idle.state, .milestoneComplete)
+    expect("the public projection keeps the session scope",
+           idle.disposition?["scope"] as? String, "session")
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    expect("the root receipt survives an app restart",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle).state,
+           .milestoneComplete)
+
+    var reused = identity
+    reused.pid = 901
+    expect("a later process in the same terminal cannot borrow the root receipt",
+           Orchestrator.sessionWorkProjection(identity: reused, terminalState: .idle).state,
+           .needsTriage)
+
+    Orchestrator.noteSessionStateChange(terminalID: identity.terminalID, to: .idle)
+    Orchestrator.noteSessionStateChange(terminalID: identity.terminalID,
+                                        to: .working("new request"))
+    expect("starting the next observed turn consumes the old root receipt",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle).state,
+           .needsTriage)
+
+    let child = Orchestrator.Task(
+        id: "dededede-1111-4222-8333-444444444444", state: .briefed, kind: "custom",
+        title: "live child", assistant: .claude, projectDir: "/repo", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 450), rootSessionId: rootConversation,
+        rootAssistant: .codex, secretHash: String(repeating: "0", count: 64))
+    Orchestrator.holdScheduleTaskForTesting(child)
+    expect("the broker projects an idle root with its live child as waiting-session",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle).state,
+           .waitingSession)
+
+    let childIdentity = Orchestrator.SessionWorkIdentity(
+        terminalID: "CHILD-TAB", assistant: .claude, tty: "/dev/ttys10", pid: 1000,
+        processStart: Date(timeIntervalSince1970: 500), conversationID: "child-conversation")
+    var ownTask = Orchestrator.Task(
+        id: "efefefef-1111-4222-8333-444444444444", state: .briefed, kind: "custom",
+        title: "this process is a child", assistant: .claude, projectDir: "/repo",
+        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 490),
+        secretHash: String(repeating: "0", count: 64))
+    ownTask.childTerminalId = childIdentity.terminalID
+    ownTask.childTTY = childIdentity.tty
+    ownTask.childPID = childIdentity.pid
+    ownTask.childProcStart = childIdentity.processStart
+    ownTask.childSessionId = childIdentity.conversationID
+    ownTask.transcriptProven = true
+    Orchestrator.holdScheduleTaskForTesting(ownTask)
+    if case .refused(let status, let code, _, _) = Orchestrator.reportSessionDelivery(
+        identity: childIdentity, terminalState: .working("done"), summary: "done") {
+        expect("a child cannot use the root completion route", status, 409)
+        expect("and is sent back to its task result", code, "child_session")
+    } else { check("a child report is refused", false) }
+
+    if case .refused(let status, let code, _, _) = Orchestrator.reportSessionDelivery(
+        identity: identity, terminalState: .idle, summary: "too late") {
+        expect("a report outside its active turn is a conflict", status, 409)
+        expect("and says the session is not working", code, "session_not_working")
+    } else { check("an idle root cannot mint a fresh check", false) }
+
+    var incomplete = identity
+    incomplete.conversationID = nil
+    if case .refused(let status, let code, _, _) = Orchestrator.reportSessionDelivery(
+        identity: incomplete, terminalState: .working("done"), summary: "done") {
+        expect("an unbound root report is refused", status, 409)
+        expect("with the process-binding code", code, "session_unbound")
+    } else { check("an unbound process cannot report delivery", false) }
+
+    let path = "/v1/orchestrator/sessions/ROOT-TAB/complete"
+    let anonymous = RemoteServer.shared.route(remoteRequest(
+        "POST", path, body: "{\"summary\":\"done\"}"))
+    expect("the root completion route needs the machine-local credential",
+           anonymous.status, 401)
 }
 
 group("only broker-verified target landing evidence can produce the double check") {
@@ -17952,6 +18108,8 @@ Task {
     // MARK: - Result
 
     cloudRunnerWatchdog.cancel()
+    Orchestrator.storeURLOverrideForTesting = nil
+    try? FileManager.default.removeItem(at: orchestratorTestStoreDirectory)
     print("")
     let finalStatus: Int32
     if failures.isEmpty {
