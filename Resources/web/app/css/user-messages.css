@@ -8,20 +8,47 @@
     display: flex;
     flex-direction: column;
 }
+.user-messages-head {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--line);
+}
 .user-messages-sheet h2 {
     margin: 0;
-    padding: 16px 20px 13px;
-    border-bottom: 1px solid var(--line);
     font-size: 14px;
+}
+.user-messages-search {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13px;
+    -webkit-appearance: none;
+    appearance: none;
+}
+.user-messages-search::placeholder { color: var(--faint); }
+.user-messages-search:focus {
+    outline: none;
+    border-color: var(--accent-ed);
+    background: var(--card-hi);
 }
 .user-message-list {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     overscroll-behavior: contain;
     padding: 10px 20px;
 }
-.user-message-list .entry[data-role="user"] .body { max-width: 100%; }
+.user-message-list .entry { width: 100%; min-width: 0; }
+.user-message-list .entry[data-role="user"] .body {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
 .user-message-list .entry[data-role="user"] {
     cursor: pointer;
     border-radius: 10px;

@@ -4,7 +4,7 @@ import { T } from "../core/i18n.js";
 import { esc } from "../core/esc.js";
 import { Optimistic } from "../view/waits.js";
 import { entryHTML } from "../view/transcript.js";
-import { copyForUserMessages, userMessageEntries, userMessagePosition } from "../view/user-messages-data.js";
+import { copyForUserMessages, filterUserMessages, userMessageEntries, userMessagePosition } from "../view/user-messages-data.js";
 import { SessionActions } from "./detail-actions.js";
 
 /* This view owns its small DOM island. The transcript stays the source of truth; opening and
@@ -29,7 +29,9 @@ overlay.hidden = true;
 overlay.innerHTML =
     '<div class="sheet user-messages-sheet" id="user-messages-sheet" role="dialog" aria-modal="true" ' +
     'aria-labelledby="user-messages-title">' +
-    '<h2 id="user-messages-title"></h2>' +
+    '<div class="user-messages-head"><h2 id="user-messages-title"></h2>' +
+    '<input class="user-messages-search" id="user-messages-search" type="search" ' +
+    'autocomplete="off" enterkeyhint="search"></div>' +
     '<div class="user-message-list" id="user-message-list"></div>' +
     '<div class="buttons"><button class="chip" id="user-messages-close" type="button"></button></div>' +
     '</div>';
@@ -37,6 +39,7 @@ document.body.appendChild(overlay);
 
 var sheet = document.getElementById("user-messages-sheet");
 var title = document.getElementById("user-messages-title");
+var search = document.getElementById("user-messages-search");
 var list = document.getElementById("user-message-list");
 var closeButton = document.getElementById("user-messages-close");
 var sessionID = null;
@@ -51,6 +54,8 @@ function syncCopy() {
     var words = copy();
     button.textContent = words.title;
     title.textContent = words.title;
+    search.placeholder = words.search;
+    search.setAttribute("aria-label", words.search);
     closeButton.textContent = T.webClose;
 }
 
@@ -64,12 +69,14 @@ new MutationObserver(syncCopy).observe(document.documentElement, {
 syncCopy();
 
 function draw() {
-    shownEntries = userMessageEntries(
+    var allEntries = userMessageEntries(
         S.tx.id === sessionID ? S.tx.entries : [],
         sessionID ? Optimistic.entries(sessionID) : []
     );
+    shownEntries = filterUserMessages(allEntries, search.value);
     if (!shownEntries.length) {
-        list.innerHTML = '<p class="user-messages-empty">' + esc(copy().empty) + '</p>';
+        list.innerHTML = '<p class="user-messages-empty">' + esc(allEntries.length
+            ? copy().noMatches : copy().empty) + '</p>';
         return;
     }
     list.innerHTML = shownEntries.map(entryHTML).join("");
@@ -83,11 +90,12 @@ function draw() {
 function open() {
     if (!S.openId) return;
     sessionID = S.openId;
+    search.value = "";
     syncCopy();
     draw();
     overlay.hidden = false;
     SessionActions.close();
-    closeButton.focus({ preventScroll: true });
+    search.focus({ preventScroll: true });
 }
 
 function close() {
@@ -146,6 +154,7 @@ button.addEventListener("click", function (event) {
 overlay.addEventListener("click", close);
 sheet.addEventListener("click", function (event) { event.stopPropagation(); });
 closeButton.addEventListener("click", close);
+search.addEventListener("input", draw);
 overlay.addEventListener("keydown", function (event) {
     if (event.key !== "Escape") return;
     event.preventDefault();

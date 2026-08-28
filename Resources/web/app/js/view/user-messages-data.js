@@ -11,6 +11,16 @@ export function userMessageEntries(entries, pending) {
     }).reverse();
 }
 
+/** The visible slice while the person types in the sheet's search field. Keep the original entry
+ * objects: choosing a filtered row still has to identify the exact turn in the full transcript. */
+export function filterUserMessages(entries, query) {
+    var needle = String(query || "").trim().normalize("NFKC").toLocaleLowerCase();
+    if (!needle) return Array.isArray(entries) ? entries : [];
+    return (Array.isArray(entries) ? entries : []).filter(function (entry) {
+        return String(entry && entry.text || "").normalize("NFKC").toLocaleLowerCase().indexOf(needle) >= 0;
+    });
+}
+
 /**
  * The row occupied by one of those exact entry objects in the transcript. Text and timestamps
  * are deliberately not identities: a person can send the same sentence twice, including twice
@@ -38,17 +48,23 @@ export function copyForUserMessages(language) {
         lang.indexOf("zh-hk") === 0 || lang.indexOf("zh-mo") === 0) {
         return {
             title: "我傳出的訊息",
-            empty: "你還沒有在這個 session 傳出訊息。"
+            empty: "你還沒有在這個 session 傳出訊息。",
+            search: "搜尋我講過的話",
+            noMatches: "找不到符合的訊息。"
         };
     }
     if (lang.indexOf("zh") === 0) {
         return {
             title: "我发出的消息",
-            empty: "你还没有在这个 session 发出消息。"
+            empty: "你还没有在这个 session 发出消息。",
+            search: "搜索我说过的话",
+            noMatches: "找不到匹配的消息。"
         };
     }
     return {
         title: "My messages",
-        empty: "You have not sent a message in this session yet."
+        empty: "You have not sent a message in this session yet.",
+        search: "Search what I said",
+        noMatches: "No matching messages."
     };
 }
