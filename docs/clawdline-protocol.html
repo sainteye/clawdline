@@ -385,7 +385,7 @@
       <tr><td><code>ignore_quota</code></td><td>Optional boolean. Dispatch anyway into an assistant whose account reads exhausted, with a warning instead of a refusal.</td></tr>
       <tr><td><code>root.session_id</code></td><td>The dispatcher's conversation id or watched terminal id. Dispatch canonicalizes either spelling to the process-bound conversation id; <code>null</code> when unavailable.</td></tr>
       <tr><td><code>root.assistant</code></td><td>Optional <code>claude</code> or <code>codex</code>. Absent or explicit <code>null</code> reads as missing, and missing resolves as <code>claude</code> for older writers. Any other value is refused.</td></tr>
-      <tr><td><code>root.parent_task</code></td><td>The dispatcher's <strong>own</strong> task id, when the dispatcher is itself a child. <code>null</code> from a root. Anything that is not a task id reads as <code>null</code>.</td></tr>
+      <tr><td><code>root.parent_task</code></td><td>The dispatcher's <strong>own</strong> task id, when the dispatcher is itself a child. <code>null</code> from a root, which is every dispatch the broker now accepts — a child cannot dispatch, so nothing fills this in any more. Still validated and still read, because a stored record from an older build carries it. Anything that is not a task id reads as <code>null</code>.</td></tr>
     </tbody>
   </table>
   </div>
