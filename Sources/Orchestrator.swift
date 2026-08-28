@@ -1358,6 +1358,11 @@ enum Orchestrator {
         /// What this session has said it is doing since it was briefed, oldest first, newest
         /// ``Orchestrator/progressKept`` kept. The title is fixed at dispatch; this is not.
         var progress: [ProgressNote] = []
+        /// The last note collected from the task directory's `progress.json` — the file half
+        /// of the progress channel, for a child whose sandbox cannot reach loopback. Persisted
+        /// so a beat cannot replay the file's old sentence after a newer note arrived over
+        /// HTTP, and a restart cannot replay it either.
+        var progressFileNote: String?
         var isolation = Isolation.none
         var worktree: Worktree?
         /// The existing standing Session this task was delivered into. Nil means Clawdline
@@ -5485,6 +5490,90 @@ enum Orchestrator {
         return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
     }
 
+    /// The name of the progress channel's file half, in the task's own directory.
+    static let progressFileName = "progress.json"
+
+    /// Collect the file half of the progress channel: `progress.json` in the task directory,
+    /// carrying the latest note and the task secret.
+    ///
+    /// **This channel exists because the curl one measurably does not, for most children.** A
+    /// Codex child's sandbox sets `CODEX_SANDBOX_NETWORK_DISABLED=1`; a curl to loopback exits
+    /// 7 after 0 ms, DNS itself is off, and no approval prompt ever appears — measured on this
+    /// machine by task be9a54c0, where 133 codex children were briefed to send a note over
+    /// HTTP and 0 notes ever arrived, against 26 of 40 claude children. `result.json` never
+    /// had the problem, because it is a file the broker picks up. So progress gets the same
+    /// shape: the child replaces one file, the watch beat collects it, and the same secret
+    /// authenticates it. The route stays the fast path for whoever can reach it — a curl lands
+    /// immediately, the file on the next beat.
+    ///
+    /// One file holding one sentence, replaced whole, rather than a log appended to or a file
+    /// per note: the registry keeps only the newest ``progressKept`` — history is the
+    /// transcript's job — and a whole-file replace is the write pattern `result.json` already
+    /// proved survives a sandboxed child's file tool. A half-written file fails to parse and
+    /// is simply read again a few seconds later. `progressFileNote` on the record is what
+    /// tells a new sentence from one already collected, and it is persisted so neither a later
+    /// HTTP note nor a restart makes the beat replay the file's old sentence. The same
+    /// sentence through both channels is one piece of news: whichever lands second is dropped
+    /// by the same newest-note rule the route uses.
+    ///
+    /// Refreshes `task` to the record as committed, so a caller that goes on to replace the
+    /// record cannot write a pre-collection snapshot over the note.
+    private static func collectProgressFile(of task: inout Task) -> Bool {
+        let file = task.dir.appendingPathComponent(progressFileName)
+        guard let data = try? Data(contentsOf: file),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return false
+        }
+        guard let secret = obj["task_secret"] as? String,
+              RemoteAuth.constantTimeEquals(task.secretHash, hash(ofSecret: secret)) else {
+            // Somebody wrote a note they could not have been asked for. Once in the log is
+            // enough — the file is left alone so the evidence is where the log says it is.
+            if !badProgressFiles.contains(task.id) {
+                badProgressFiles.insert(task.id)
+                RemoteAuth.audit("orchestrator.progress",
+                                 ["task": task.id, "ok": "0", "via": "file",
+                                  "why": "bad_secret"])
+            }
+            return false
+        }
+        let note = ((obj["note"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !note.isEmpty, note.count <= progressLimit else {
+            // The route answers a bad note with a 400; a file has nobody holding the reply,
+            // so the refusal goes to the audit log instead — once, like a bad secret.
+            if !badProgressFiles.contains(task.id) {
+                badProgressFiles.insert(task.id)
+                RemoteAuth.audit("orchestrator.progress",
+                                 ["task": task.id, "ok": "0", "via": "file", "why": "bad_note"])
+            }
+            return false
+        }
+        guard note != task.progressFileNote else { return false }
+        lock.lock()
+        guard var current = tasks[task.id], !current.state.isTerminal,
+              current.progressFileNote != note else {
+            lock.unlock()
+            return false
+        }
+        current.progressFileNote = note
+        // The same sentence as the newest note is the other channel delivering the same news.
+        if current.progress.last?.note != note {
+            current.progress.append(ProgressNote(note: note, at: Date()))
+            if current.progress.count > progressKept {
+                current.progress.removeFirst(current.progress.count - progressKept)
+            }
+        }
+        tasks[task.id] = current
+        lock.unlock()
+        task = current
+        save()
+        RemoteServer.shared.broadcastOrchestrator()
+        RemoteAuth.audit("orchestrator.progress", ["task": task.id, "ok": "1", "via": "file"])
+        return true
+    }
+
+    private static var badProgressFiles: Set<String> = []
+
     /// Cancelling with no HTTP answer wrapped around it: the child's tab ended the polite way,
     /// then the task written down. Shared with the cascade below so there is one way to cancel a
     /// task rather than two that drift.
@@ -6288,6 +6377,11 @@ enum Orchestrator {
     /// changed in a way worth persisting.
     private static func watch(_ task: Task) -> Bool {
         var task = task
+
+        // The file half of the progress channel first, before anything below can finalize the
+        // task or write an older snapshot back: collection refreshes this copy of the record,
+        // and a last note written moments before result.json still lands.
+        _ = collectProgressFile(of: &task)
 
         // The result file is the completion signal a sandboxed child can always give — writing
         // to /tmp needs no network approval, where a curl to loopback does.
@@ -7633,6 +7727,124 @@ enum Orchestrator {
         releases the standing session and its claims.
 
         """
+        // A Codex child's sandbox has no network at all — measured by task be9a54c0, not
+        // inferred: CODEX_SANDBOX_NETWORK_DISABLED=1 is set, a curl to 127.0.0.1 exits 7 after
+        // 0 ms, DNS itself is off, and no approval prompt ever appears. 133 codex children
+        // were briefed to curl a progress note and 0 notes arrived; result.json always worked
+        // because it is a file. So every loopback recipe below is per-assistant: HTTP stays
+        // the fast path for a child that can reach it, and a child that cannot is told what
+        // actually works instead of being left to discover the dead network by trying.
+        let sandboxed = task.assistant == .codex
+        let progressFile = """
+        ```json
+        {"task_secret": "<the TASK_SECRET value from your first message>",
+         "note": "<one sentence, at most \(progressLimit) characters>"}
+        ```
+        """
+        let timelySection = sandboxed
+            ? """
+              ## Notifications cannot leave your sandbox
+
+              Other briefings carry a push-notification recipe here; it is a loopback HTTP call
+              your sandbox cannot make, so it is not in yours. Anything the user needs to know
+              mid-flight goes in `progress.json` below, and the answer itself in `result.json`
+              — both are collected and read, so nothing timely is lost by not pushing.
+              """
+            : """
+              ## Up to 5 timely notifications, when the user is waiting
+
+              You may use your own TASK_SECRET to push one sentence the user needs to know now,
+              before completion or for 60 seconds afterwards:
+
+              ```bash
+              curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/notify \\
+                -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
+                -H 'Content-Type: application/json' \\
+                -d '{"title":"<at most 80 characters>","body":"<at most 500 characters>"}'
+              ```
+
+              The value of push is rarity. Routine results belong in `result.json`; notify only
+              when the user is waiting for the answer, including a scheduled task such as
+              today's weather whose useful output is the notification itself. Empty title/body
+              values are refused. Each task may send at most 5 notifications, and this Mac
+              accepts at most 30 per hour. The user may turn agent notifications off. A `409
+              agent_notify_disabled` response is not your fault: leave the content in
+              `result.json`, report failure honestly, and do not retry.
+              """
+        let progressChannel = sandboxed
+            ? """
+              **Your sandbox has no network, so say it with a file.** A `curl` to 127.0.0.1
+              from here exits 7 after 0 ms — DNS is off too, and no approval prompt will
+              appear — so do not spend a turn discovering that. Write \(dir)/progress.json
+              with your file-writing tool, replacing the whole file each time:
+
+              \(progressFile)
+
+              The broker collects it within seconds, the way it collects `result.json`; a
+              half-written file simply fails to parse and is read again. Only the latest
+              sentence in the file is collected — overwrite, do not append.
+              """
+            : """
+              ```bash
+              curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\
+                -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
+                -H 'Content-Type: application/json' \\
+                -d '{"note":"<one sentence, at most \(progressLimit) characters>"}'
+              ```
+
+              If that `curl` cannot connect — some sandboxes have no loopback — do not keep
+              retrying it: write \(dir)/progress.json with your file-writing tool instead,
+              replacing the whole file each time,
+
+              \(progressFile)
+
+              and the broker collects it the way it collects `result.json`.
+              """
+        let inflightSection = sandboxed
+            ? """
+              ## Before you start work you believe is new
+
+              Another session's isolated checkout is invisible from the shared tree: a finished
+              delivery sitting on a branch nobody has merged shows up in no `git status`, no
+              `git diff` and no file listing. So "nothing here does that yet" is not evidence.
+              Other briefings carry a live self-check against the broker's task list; your
+              sandbox cannot reach it, so what you have instead is the plan above, when the
+              dispatcher wrote one, and `task.json`. If part of your task looks like it may
+              already be somebody else's work, write that suspicion into `progress.json` now
+              and into your summary rather than silently building it twice — whoever reads
+              your result can see the whole board and settle it.
+              """
+            : """
+              ## Before you start work you believe is new, look
+
+              Another session's isolated checkout is invisible from the shared tree: a finished
+              delivery sitting on a branch nobody has merged shows up in no `git status`, no
+              `git diff` and no file listing. So "nothing here does that yet" is not evidence.
+              This is:
+
+              ```bash
+              curl -s http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/inflight \\
+                -H "X-Clawdline-Task-Secret: <TASK_SECRET>"
+              ```
+
+              Every line of work outstanding in this repository: what it is, who has it, what
+              state it is in, what files it claimed, and for isolated ones the branch and head
+              where its code actually lives. Read it before you build something you think
+              nobody has built. If a row looks like your job, say so in your result rather
+              than doing it twice.
+              """
+        let announceSection = sandboxed
+            ? """
+              There is no completion announcement to attempt from your sandbox: the file alone
+              is the completion signal, and it has always been enough.
+              """
+            : """
+              Optionally, if outbound network is permitted in your sandbox, you may ALSO announce it:
+              `curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/complete \\
+                 -H "X-Clawdline-Task-Secret: <TASK_SECRET>" -H 'Content-Type: application/json' \\
+                 -d '{"status":"success","summary":"..."}'`
+              This is never required; the file alone is enough.
+              """
         return """
         # Clawdline child briefing — task \(task.id)
 
@@ -7683,24 +7895,7 @@ enum Orchestrator {
         `result.json`. Point verification's private `TMPDIR` at `\(dir)/work/tmp`; the repository's
         snapshot recipe remains unchanged, and its test binary is then reclaimed with the task.
 
-        ## Up to 5 timely notifications, when the user is waiting
-
-        You may use your own TASK_SECRET to push one sentence the user needs to know now, before
-        completion or for 60 seconds afterwards:
-
-        ```bash
-        curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/notify \\
-          -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
-          -H 'Content-Type: application/json' \\
-          -d '{"title":"<at most 80 characters>","body":"<at most 500 characters>"}'
-        ```
-
-        The value of push is rarity. Routine results belong in `result.json`; notify only when
-        the user is waiting for the answer, including a scheduled task such as today's weather
-        whose useful output is the notification itself. Empty title/body values are refused.
-        Each task may send at most 5 notifications, and this Mac accepts at most 30 per hour.
-        The user may turn agent notifications off. A `409 agent_notify_disabled` response is not
-        your fault: leave the content in `result.json`, report failure honestly, and do not retry.
+        \(timelySection)
 
         ## Say what you are doing — once at the start, and again when it changes
 
@@ -7715,33 +7910,14 @@ enum Orchestrator {
         stops matching it — you decide to rewrite the fixture too, the real problem turns out to
         be somewhere else, you have moved on to the second half — say so the same way:
 
-        ```bash
-        curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\
-          -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
-          -H 'Content-Type: application/json' \\
-          -d '{"note":"<one sentence, at most \(progressLimit) characters>"}'
-        ```
+        \(progressChannel)
 
         **This is not a status report and nobody is waiting to read it.** It is one sentence, it
         costs you a second, and it is what another session sees when it asks whether the thing it
         is about to start is already being done. The newest \(progressKept) are kept; sending the
         same sentence twice is ignored rather than refused.
 
-        ## Before you start work you believe is new, look
-
-        Another session's isolated checkout is invisible from the shared tree: a finished
-        delivery sitting on a branch nobody has merged shows up in no `git status`, no `git diff`
-        and no file listing. So "nothing here does that yet" is not evidence. This is:
-
-        ```bash
-        curl -s http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/inflight \\
-          -H "X-Clawdline-Task-Secret: <TASK_SECRET>"
-        ```
-
-        Every line of work outstanding in this repository: what it is, who has it, what state it
-        is in, what files it claimed, and for isolated ones the branch and head where its code
-        actually lives. Read it before you build something you think nobody has built. If a row
-        looks like your job, say so in your result rather than doing it twice.
+        \(inflightSection)
 
         ## Reporting — this is the completion signal, do it exactly
 
@@ -7784,11 +7960,7 @@ enum Orchestrator {
         prompt with no "always allow" on a tab nobody is watching. Atomicity is not yours to
         arrange: a half-written file simply fails to parse and is read again a few seconds later.
 
-        Optionally, if outbound network is permitted in your sandbox, you may ALSO announce it:
-        `curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/complete \\
-           -H "X-Clawdline-Task-Secret: <TASK_SECRET>" -H 'Content-Type: application/json' \\
-           -d '{"status":"success","summary":"..."}'`
-        This is never required; the file alone is enough.
+        \(announceSection)
         """
     }
 
@@ -8039,6 +8211,21 @@ enum Orchestrator {
     static func dispatchingBrief(for task: Task) -> String? {
         let allowance = handOnAllowance(for: task)
         guard allowance > 0 else { return nil }
+        // Every recipe in this file is a loopback HTTP call, and a Codex child usually cannot
+        // make one — the measurement lives beside `collectProgressFile`. A child that finds
+        // out by dispatching has already spent the turn, so the warning rides at the top.
+        let reach = task.assistant == .codex
+            ? """
+
+
+              **Check your reach before you spend a turn on this.** Every step below is a
+              loopback HTTP call. A Codex sandbox with `CODEX_SANDBOX_NETWORK_DISABLED=1` — the
+              way Codex children run on this Mac today — cannot make any of them: `curl` exits
+              7 immediately, and no approval prompt will appear. If that is your sandbox, do
+              not dispatch and do not retry the refusal into being; do the work yourself and
+              say in your summary that you did.
+              """
+            : ""
         let sections = handOnSection(for: task, allowance: allowance)
             + policySection(allowance: allowance)
         return """
@@ -8050,7 +8237,7 @@ enum Orchestrator {
 
         Nothing here is repeated in `CHILD.md`. If you dispatch from memory instead of from this
         file you will get the credential or the parent field wrong, and a dispatch with the parent
-        field wrong is filed under somebody else.
+        field wrong is filed under somebody else.\(reach)
 
         \(sections.trimmingCharacters(in: .newlines))
         """
@@ -8886,6 +9073,7 @@ enum Orchestrator {
         if !task.untouchedClaims.isEmpty { out["untouched_claims"] = task.untouchedClaims }
         if let landing = task.landing { out["landing"] = stored(landing) }
         if !task.progress.isEmpty { out["progress"] = task.progress.map(stored) }
+        if let v = task.progressFileNote { out["progress_file_note"] = v }
         if let worktree = task.worktree {
             out["isolation"] = Isolation.worktree.rawValue
             var storedWorktree: [String: Any] = [
@@ -9171,6 +9359,9 @@ enum Orchestrator {
             }
         }
         task.progress = progress(from: obj["progress"])
+        task.progressFileNote = (obj["progress_file_note"] as? String).flatMap {
+            !$0.isEmpty && $0.count <= progressLimit ? $0 : nil
+        }
         task.isolation = (obj["isolation"] as? String).flatMap(Isolation.init(rawValue:)) ?? .none
         if task.isolation == .worktree {
             guard let raw = obj["worktree"] as? [String: Any],

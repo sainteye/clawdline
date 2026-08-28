@@ -13293,6 +13293,112 @@ group("a session can say what it is doing without stopping to write a report") {
            unauthenticated.status, 403)
 }
 
+group("a sandboxed child's progress arrives as a file, the way its result does") {
+    // Measured on this machine (task be9a54c0): a Codex child's sandbox sets
+    // CODEX_SANDBOX_NETWORK_DISABLED=1, a curl to 127.0.0.1 exits 7 after 0 ms, DNS itself is
+    // off, and no approval prompt ever appears. 133 codex children were briefed to send a
+    // progress note over HTTP and 0 notes ever arrived; result.json always worked, because it
+    // is a file the broker picks up. So progress gets the same shape: the child replaces
+    // progress.json in its own task directory, and the watch beat collects it.
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    let id = UUID().uuidString.lowercased()
+    let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+    defer {
+        try? manager.removeItem(at: directory)
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    let secret = String(repeating: "c3", count: 32)
+    var made = Orchestrator.Task(
+        id: id, state: .briefed, kind: "custom", title: "a codex child at work",
+        assistant: .codex, projectDir: "/repo", timeoutMinutes: 30, created: Date(),
+        secretHash: Orchestrator.hash(ofSecret: secret))
+    made.briefedAt = Date()
+    Orchestrator.holdScheduleTaskForTesting(made)
+
+    let file = directory.appendingPathComponent("progress.json")
+    func say(_ note: String, secret: String = secret) {
+        try! JSONSerialization.data(withJSONObject: ["task_secret": secret, "note": note])
+            .write(to: file, options: .atomic)
+    }
+    func notes() -> [String] {
+        ((Orchestrator.record(id: id)?["progress"] as? [[String: Any]]) ?? [])
+            .compactMap { $0["note"] as? String }
+    }
+
+    say("reading the fixture first", secret: String(repeating: "0f", count: 32))
+    Orchestrator.beat(fromTimer: true)
+    expect("a file with the wrong secret writes nothing into the record", notes(), [])
+
+    say("reading the fixture first")
+    Orchestrator.beat(fromTimer: true)
+    expect("the watch beat collects a valid note with no network call from the child",
+           notes(), ["reading the fixture first"])
+
+    Orchestrator.beat(fromTimer: true)
+    expect("an unchanged file is not collected twice",
+           notes(), ["reading the fixture first"])
+
+    say("the real problem is in the parser")
+    Orchestrator.beat(fromTimer: true)
+    expect("replacing the file appends the new sentence",
+           notes(), ["reading the fixture first", "the real problem is in the parser"])
+
+    // The same sentence through both channels is one piece of news, whichever lands first.
+    _ = Orchestrator.recordProgress(taskID: id, secret: secret,
+                                    note: "moving to the second half")
+    say("moving to the second half")
+    Orchestrator.beat(fromTimer: true)
+    expect("the same sentence through both channels is recorded once",
+           notes(), ["reading the fixture first", "the real problem is in the parser",
+                     "moving to the second half"])
+
+    // The replay trap the collected-marker exists for: the file says A, HTTP has since said
+    // B, and the next beat still finds A sitting in the file.
+    say("checking the fixture again")
+    Orchestrator.beat(fromTimer: true)
+    _ = Orchestrator.recordProgress(taskID: id, secret: secret, note: "writing the fix")
+    Orchestrator.beat(fromTimer: true)
+    expect("a beat cannot replay an already-collected file note over a newer HTTP note",
+           Array(notes().suffix(2)), ["checking the fixture again", "writing the fix"])
+
+    say(String(repeating: "x", count: Orchestrator.progressLimit + 1))
+    Orchestrator.beat(fromTimer: true)
+    expect("a note past the limit is ignored, like the route refuses it",
+           notes().last, "writing the fix")
+
+    try! Data("{\"task_secret\": \"".utf8).write(to: file)
+    Orchestrator.beat(fromTimer: true)
+    say("recovered from the half-written file")
+    Orchestrator.beat(fromTimer: true)
+    expect("a half-written file fails to parse and is simply read again",
+           notes().last, "recovered from the half-written file")
+
+    // The restart shape of the same replay trap: the file still holds its last sentence, a
+    // newer HTTP note has landed since, and the collected-marker must come back off disk —
+    // consecutive dedupe alone cannot save this one.
+    _ = Orchestrator.recordProgress(taskID: id, secret: secret, note: "wrapping up")
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    check("the task survives the reload", Orchestrator.record(id: id) != nil)
+    Orchestrator.beat(fromTimer: true)
+    expect("a restart does not replay a file note the registry already collected",
+           notes().last, "wrapping up")
+    expect("and nothing was double-collected across the reload",
+           notes().count, Orchestrator.progressKept)
+
+    Orchestrator.finalize(id, as: .success, summary: "done")
+    say("still going")
+    Orchestrator.beat(fromTimer: true)
+    check("a finished task's story is its summary; the file is left uncollected",
+          !notes().contains("still going"))
+}
+
 group("terminal notices remind a root about unrecorded claimed work exactly where needed") {
     var task = Orchestrator.Task(
         id: "cdcdcdcd-efef-0101-2323-454545454545", state: .success, kind: "custom",
@@ -14299,6 +14405,61 @@ group("a child is told whether it may hand work on, and never has to find out by
     expect("and one is enough to make the floor two", Orchestrator.depthFloor, 2)
     Config.shared.orchestratorMaxGrandchildren = 10
     expect("ten does not make it three — there is no third", Orchestrator.depthFloor, 2)
+}
+
+group("a codex child is briefed with channels it can actually reach") {
+    // Measured on this machine (task be9a54c0): CODEX_SANDBOX_NETWORK_DISABLED=1, curl to
+    // 127.0.0.1 exits 7 after 0 ms, example.com fails at DNS resolution, and no approval
+    // prompt ever appears. 133 codex children were briefed to curl a progress note; 0 notes
+    // arrived. The group above asserts the progress section is *present*; nothing asserted it
+    // was *reachable* for the assistant being briefed, which is how the impossible ask stayed
+    // green — so every reachability claim here is made against the codex briefing itself.
+    let saved = Config.shared.orchestratorMaxGrandchildren
+    defer { Config.shared.orchestratorMaxGrandchildren = saved }
+    func fixture(_ assistant: Assistant, allowance: Int = 0) -> Orchestrator.Task {
+        Config.shared.orchestratorMaxGrandchildren = allowance
+        return Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                                 assistant: assistant, projectDir: "/Users/me/code/thing",
+                                 timeoutMinutes: 30, created: Date(), depth: 1,
+                                 secretHash: String(repeating: "0", count: 64))
+    }
+    let codex = Orchestrator.childBrief(for: fixture(.codex))
+    let claude = Orchestrator.childBrief(for: fixture(.claude))
+
+    check("a codex child is never handed a loopback recipe at all",
+          !codex.contains("http://127.0.0.1") && !codex.contains("curl -s"))
+    check("its progress channel is the file the broker collects",
+          codex.contains("/tmp/.clawdline/\(taskID)/progress.json")
+            && codex.contains("\"task_secret\"") && codex.contains("\"note\""))
+    check("told as a whole-file replace, the write pattern result.json already proved",
+          codex.contains("replacing the whole file"))
+    check("the three-minute first note survives the channel change",
+          codex.contains("within about three minutes of starting")
+            && codex.contains("before you begin the work"))
+    check("and it is told the network is off rather than left to discover it by trying",
+          codex.contains("exit") && codex.contains("no approval prompt"))
+    check("the push-notification recipe is gone with the network that carried it",
+          !codex.contains("/v1/orchestrator/tasks/\(taskID)/notify"))
+    check("the inflight self-check too, with the plan named as what it has instead",
+          !codex.contains("/v1/orchestrator/tasks/\(taskID)/inflight")
+            && codex.contains("the plan above"))
+    check("and the optional completion announce: the file is the whole signal",
+          !codex.contains("/v1/orchestrator/tasks/\(taskID)/complete"))
+
+    check("a claude child keeps the HTTP fast path for all four",
+          claude.contains("/v1/orchestrator/tasks/\(taskID)/progress")
+            && claude.contains("/v1/orchestrator/tasks/\(taskID)/notify")
+            && claude.contains("/v1/orchestrator/tasks/\(taskID)/inflight")
+            && claude.contains("/v1/orchestrator/tasks/\(taskID)/complete"))
+    check("and is told about the file fallback, not left to meet a sandbox the hard way",
+          claude.contains("/tmp/.clawdline/\(taskID)/progress.json"))
+
+    let codexTeaching = Orchestrator.dispatchingBrief(for: fixture(.codex, allowance: 3))
+    check("the dispatch recipe warns a codex sandbox before its first dead curl",
+          codexTeaching?.contains("CODEX_SANDBOX_NETWORK_DISABLED") == true)
+    let claudeTeaching = Orchestrator.dispatchingBrief(for: fixture(.claude, allowance: 3))
+    check("without burdening a claude child that can actually dispatch",
+          claudeTeaching?.contains("CODEX_SANDBOX_NETWORK_DISABLED") == false)
 }
 
 group("the graph and the house rules reach the child that needs them") {
