@@ -47,8 +47,8 @@ land and does not need it.
 
 #### Closing a root is an act with victims; look before you do it
 
-Ending a session cancels every live task it dispatched — grandchildren first, then children, live
-ones and the finished ones still holding a tab. [`docs/orchestrator.md`](docs/orchestrator.md)
+Ending a session cancels every live task it dispatched — the ones it opened, live and the finished
+ones still holding a tab, deepest first. [`docs/orchestrator.md`](docs/orchestrator.md)
 describes that mechanism; what follows is the obligation, which the mechanism does not carry.
 
 **Before closing a root, look at what the close takes with it.** One command, and it is short:
@@ -332,6 +332,12 @@ when no Clawdline-dispatch language was used and the task merely benefits from i
 If a Clawdline dispatch is refused or fails to reach its prompt, report that typed failure and apply
 the retry/topology rules below; do not silently replace it with a provider-native child session.
 
+**This whole rule is addressed to a root.** The dispatch tree is one level deep: a root opens
+children and a child opens nothing, so a child asked to hand part of its work on does the opposite
+of the above — it uses its own assistant's subagents (Claude Code's Task tool, Codex's subagents),
+because a Clawdline dispatch from a child is refused with `409 depth_exceeded`. See
+[`docs/orchestrator.md`](docs/orchestrator.md#the-tree-is-one-level-deep-and-that-is-structural).
+
 ### Everything else about dispatching is in `docs/dispatching.md`
 
 **Before you dispatch, read [`docs/dispatching.md`](docs/dispatching.md).** Whether the work should
@@ -346,6 +352,10 @@ If the first message names you as a Clawdline child, read the task's `CHILD.md` 
 `CHILD.md` is authoritative for that task and overrides this file where they differ.
 Stay inside the named project paths and your own task directory; do not inspect other `/tmp/.clawdline` tasks.
 Write the requested artifacts and write `result.json` last, exactly as the briefing specifies.
+**You are the bottom of the tree: you cannot dispatch Clawdline tasks of your own, and one you
+attempt is refused.** When part of the task wants to run in parallel or deserves a context of its
+own, use your assistant's built-in subagents — no tab, no broker, and the answer comes back to you
+rather than to a file you have to wait for.
 
 ## Never
 

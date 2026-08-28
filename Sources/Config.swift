@@ -223,18 +223,15 @@ final class Config {
     var orchestratorEnabled = true
     /// How many child sessions one root may have alive at once.
     ///
-    /// Per dispatcher rather than per Mac, because a child may now dispatch in turn and the two
-    /// levels are not the same appetite: five errands from the session a person is sitting in,
-    /// three from a session that is itself an errand. `orchestratorMaxGrandchildren` is the
-    /// second number, and `orchestratorMaxDescendants` is the ceiling over both.
-    var orchestratorMaxChildren = 5
-    /// How many child sessions a *child* may have alive at once. `0` forbids it outright, which
-    /// is the old behaviour: depth stops at one and a child that tries is refused at the door.
+    /// Per dispatcher rather than per Mac: what the number bounds is how much work one
+    /// conversation can have out at a time, and `orchestratorMaxDescendants` is the ceiling over
+    /// every conversation on this Mac at once.
     ///
-    /// Smaller than the root's number on purpose. A child was handed one job by a session that
-    /// was handed nothing; the further from the person at the keyboard a decision is made, the
-    /// less of this Mac it should be able to spend on it.
-    var orchestratorMaxGrandchildren = 3
+    /// There is no second number under it. The tree is one level deep as a structural fact —
+    /// ``Orchestrator/depthFloor`` is a constant, not a reading of this file — so how many a
+    /// *child* may open is not a question this type answers any more. See
+    /// `orchestrator_max_grandchildren` in ``load()``.
+    var orchestratorMaxChildren = 5
     /// How far a dispatched child may go before it stops and asks — the *most* a task may ask
     /// for, not what every task gets. `ask`, `auto`, `edits`, `full`; see ``Permission``.
     ///
@@ -259,11 +256,14 @@ final class Config {
     /// given this instead, because the session doing the asking is not the one that lives with
     /// what happens next.
     var orchestratorPermission = "full"
-    /// Every dispatched session on this Mac, whoever asked. One full tree's worth — a root's
-    /// children and each of their children — and not a setting of its own, because it is not a
-    /// choice anybody makes separately from the two numbers it is made of.
+    /// Every dispatched session on this Mac, whoever asked — four roots' worth of children,
+    /// twenty by default, and not a setting of its own because it is not a choice anybody makes
+    /// separately from the number it is made of. Several root sessions share this Mac, so it is
+    /// deliberately more than one root's cap; it kept the value the two-level arithmetic
+    /// (`children × (1 + grandchildren)`) produced, so removing the second level did not quietly
+    /// tighten what the machine will hold.
     ///
-    /// The per-dispatcher caps say what one session may spend. This says what the machine may
+    /// The per-dispatcher cap says what one session may spend. This says what the machine may
     /// spend, and it is the half that still holds when a caller lies about who it is: declaring
     /// somebody else's session id moves a task into another bucket, never past this line.
     /// The ceiling as the type, with the file's word for it read back through the closed list so
@@ -271,9 +271,7 @@ final class Config {
     var orchestratorPermissionCeiling: Permission {
         Permission(rawValue: orchestratorPermission) ?? .full
     }
-    var orchestratorMaxDescendants: Int {
-        orchestratorMaxChildren * (1 + orchestratorMaxGrandchildren)
-    }
+    var orchestratorMaxDescendants: Int { orchestratorMaxChildren * 4 }
     /// Type one line into the root session when a task it dispatched finishes, so the
     /// conversation that asked for the work is the one that hears it is done.
     var orchestratorNotifyRoot = true
@@ -420,9 +418,13 @@ final class Config {
         if let v = obj["orchestrator_max_children"] as? Int, v >= 1, v <= 10 {
             orchestratorMaxChildren = v
         }
-        if let v = obj["orchestrator_max_grandchildren"] as? Int, v >= 0, v <= 10 {
-            orchestratorMaxGrandchildren = v
-        }
+        // `orchestrator_max_grandchildren` is deliberately not read. It was how many sessions a
+        // child could open in turn, and the tree is one level deep now — a fact of the code
+        // rather than of this file. Every Mac that ever ran this app has the old key sitting in
+        // its `config.json` saying `3`, because the file is seeded once and never migrated; a
+        // changed default would have reached none of them. Reading nothing is what makes the
+        // stale number harmless, and an unknown key is passed through by `save()` rather than
+        // treated as an error, so an old file keeps loading exactly as it did.
         if let v = obj["orchestrator_permission"] as? String,
            Permission(rawValue: v) != nil {
             orchestratorPermission = v
@@ -502,7 +504,6 @@ final class Config {
             "codex_path": codexPath,
             "orchestrator_enabled": orchestratorEnabled,
             "orchestrator_max_children": orchestratorMaxChildren,
-            "orchestrator_max_grandchildren": orchestratorMaxGrandchildren,
             "orchestrator_permission": orchestratorPermission,
             "orchestrator_notify_root": orchestratorNotifyRoot,
             "orchestrator_agent_notify": orchestratorAgentNotify,
