@@ -62,9 +62,16 @@ globalThis.fetch = function (path, options) {
 };
 
 const { Mock } = await import("../Resources/web/app/js/net/mock.js");
+assert.equal(typeof Mock.title, "function", "the fixtures carry a rename of their own");
+
+// Selected the way the entry point selects it, because the bug was in the selecting: `useApi`
+// put its own `title` on whatever it was handed, so the fixtures answered this call over the
+// network.
+const selected = await import("../Resources/web/app/js/net/api.js");
+selected.useApi(Mock);
 
 if (fixtureWrites) {
-    const answer = await Mock.title("8F3A-1C", "  Release  room  ");
+    const answer = await selected.api.title("8F3A-1C", "  Release  room  ");
     assert.equal(reached.length, 0,
         "the fixture answers a rename itself rather than posting to whatever is serving the page");
     assert.equal(answer.title, "Release room", "the fixture normalizes the way the route does");
@@ -78,7 +85,7 @@ if (fixtureWrites) {
     process.exit(0);
 }
 
-await assert.rejects(Mock.title("8F3A-1C", "Release room"), function (error) {
+await assert.rejects(selected.api.title("8F3A-1C", "Release room"), function (error) {
     assert.equal(error.code, "write_disabled", "the fixture refuses with its own typed code");
     assert.match(error.message, /not enabled on this server/,
         "and with its own sentence, not a static file server's");
@@ -86,10 +93,9 @@ await assert.rejects(Mock.title("8F3A-1C", "Release room"), function (error) {
 }, "a read-only fixture refuses a rename rather than posting it");
 assert.equal(reached.length, 0, "and it refuses without reaching the network");
 
-// The namespace object, not a destructured copy: `api` is a live binding that `useApi` writes,
-// and the whole page depends on importers seeing what was put in rather than the null it
-// started as.
-const selected = await import("../Resources/web/app/js/net/api.js");
+// A transport that offers no rename is left offering none. The namespace object rather than a
+// destructured copy, because `api` is a live binding that `useApi` writes and the whole page
+// depends on importers seeing what was put in rather than the null it started as.
 selected.useApi({ send: noop, answer: noop });
 assert.equal(typeof selected.api.title, "undefined",
     "selecting a transport does not add a rename the transport did not offer");
