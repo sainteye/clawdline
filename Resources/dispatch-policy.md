@@ -118,9 +118,14 @@ token: on one machine 84% of dispatches ran on Codex for nothing, and the whole 
 making-shaped work to Claude is the most expensive thing you can do by accident. Where both would do
 and nothing has to be weighed, it goes to Codex.
 
-`haiku` for mechanical single-source work where being wrong is obvious; `sonnet` is the default for a
-leaf; `opus` for a decision somebody acts on without checking, and for any synthesis of several
-children's answers. Name a model only when the default is the wrong size, and say why in the plan.
+`haiku` for mechanical single-source work where being wrong is obvious; `sonnet` for a leaf with
+judgement in it; `opus` for a decision somebody acts on without checking, and for any synthesis of
+several children's answers.
+
+**Always name the model on a Claude dispatch — `opus` unless you can say why not.** Omitting it
+inherits whatever `/model` is set to on this Mac at that moment: nobody chose it for that task and
+nothing records it. Three dispatches ran on `claude-fable-5` that way on 2026-08-28. A named model
+can be argued with; an inherited one cannot even be seen.
 
 ## Somebody has to check the work
 

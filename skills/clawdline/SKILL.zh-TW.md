@@ -325,7 +325,7 @@ codex features list | grep image_generation      # → image_generation  stable 
 | 模型 | 什麼時候 |
 |---|---|
 | `haiku` | 機械性、單一來源的活：抓一頁、抽三個事實、改格式。錯了一眼看得出來的那種 |
-| `sonnet` | 一般有判斷成分的工作，葉節點的預設選擇 |
+| `sonnet` | 一般有判斷成分的工作——但要說得出為什麼不是 `opus` |
 | `opus` | 有人會直接照著做的決定，以及**把好幾個 child 的答案合起來**的那個節點 |
 
 **審查一律用 opus 等級的模型**——那是絕對下限，不是拿來跟被審者比較的相對值（§2.2 rule 3 有背後的
@@ -334,7 +334,10 @@ codex features list | grep image_generation      # → image_generation  stable 
 
 Codex 那邊同一個欄位填它的 slug（例如 `gpt-5.1-codex`）。
 
-**只有在預設尺寸不對的時候才指名模型——指了一個帳號沒有的，會死在你看不到的地方。** Clawdline
+**Claude 派工一律指名模型——除非說得出理由，否則就是 `opus`；Codex 則維持「只有預設尺寸不對時才指名」。**
+這個不對稱不是風格問題：Claude 這邊省略 model 不會選到一個合理的預設，而是**繼承這台 Mac 當下 `/model` 剛好設成什麼**，
+那不是任何人為那件任務做的選擇，也沒有任何地方記下來。2026-08-28 有三個派工就這樣跑在 `claude-fable-5` 上。
+**而指了一個帳號沒有的，會死在你看不到的地方**——那正是 Codex 那半邊維持保守的理由： Clawdline
 只驗欄位的拼寫，不驗帳號有沒有這個模型的權限，所以 task 會正常走到 `briefed`，然後在助理自己的
 CLI 裡吃一個 400 死掉：那個錯誤只出現在該助理的 rollout 裡，task record 沒有、`warnings` 沒有、
 `result.json` 也沒有。今天 `gpt-5.1-codex` 在一個用 ChatGPT 登入的帳號上就是這樣。不填 `model`

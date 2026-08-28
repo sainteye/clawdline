@@ -377,7 +377,7 @@ letters, digits, `.`, `_` and `-` only** — anything else comes back as `bad_ta
 | Model | When |
 |---|---|
 | `haiku` | mechanical, single-source work: fetch a page, pull three facts, reformat. The kind where being wrong is obvious |
-| `sonnet` | ordinary work with judgement in it; the default choice for a leaf |
+| `sonnet` | ordinary work with judgement in it, when you can say why not `opus` |
 | `opus` | a decision somebody will act on without checking, and **any node joining several children's answers** |
 
 **A review runs on an opus-class model** — an absolute floor, not a comparison with whatever
@@ -387,8 +387,12 @@ judgement is worth: a missed finding travels all the way to the end.
 
 On the Codex side the same field takes its slug (e.g. `gpt-5.1-codex`).
 
-**Name a model only when the default is the wrong size — a pin the account cannot honour fails
-where you will not see it.** Clawdline validates the spelling, not the entitlement, so the task
+**Always name the model on a Claude dispatch — `opus` unless you can say why not — and on Codex
+name one only when the default is the wrong size.** The asymmetry is not style: an omitted Claude
+model inherits whatever `/model` is set to on this Mac right now, which nobody chose for that task
+and no record keeps. Three dispatches ran on `claude-fable-5` that way on 2026-08-28. **A pin the
+account cannot honour fails where you will not see it**, which is the reason the Codex half stays
+conservative: Clawdline validates the spelling, not the entitlement, so the task
 reaches `briefed` normally and then dies inside the assistant's own CLI with a 400 that appears
 only in that assistant's rollout, not in the task record, not in `warnings`, and not in
 `result.json`. `gpt-5.1-codex` did this today on a ChatGPT-authenticated account. Omitting `model`
