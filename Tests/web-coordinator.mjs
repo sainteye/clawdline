@@ -211,12 +211,12 @@ const bearingsPayload = {
                    status: "online", lifecycle: "standby" },
     bearings: {
         observed_at: 1787832060, coordinator_lifecycle: "standby",
-        work_state_counts: { ready: 0, working: 3, waiting_human: 1, waiting_session: 1,
-                             needs_triage: 2, milestone_complete: 1, work_complete: 0 },
+        work_state_counts: { ready: 0, working: 3, waiting_you: 1, waiting_session: 1,
+                             unknown: 2, milestone_complete: 1, work_complete: 0 },
         active_task_count: 2, pending_landing_count: 1, open_wait_count: 4,
-        needs_triage: [{ id: "T-1", label: "<script>alert(1)</script>",
-                         work_state: "needs_triage" }],
-        waiting: [{ id: "W-1", label: "the signup flow", work_state: "waiting_human" }],
+        unknown: [{ id: "T-1", label: "<script>alert(1)</script>",
+                         work_state: "unknown" }],
+        waiting: [{ id: "W-1", label: "the signup flow", work_state: "waiting_you" }],
         blocking: [],
         sources: { sessions: { observed_at: 1787832060, freshness: "stale" } }
     }
@@ -226,8 +226,8 @@ const statusHTML = coordinatorAnswerHTML({ type: "status_report" }, bearingsPayl
 assert.ok(statusHTML.includes("Clawdfather online"),
     "the status report says whether Clawdfather is online");
 assert.ok(statusHTML.includes("3 working") && statusHTML.includes("2 waiting"),
-    "waiting_human and waiting_session are counted together");
-assert.ok(statusHTML.includes("2 need triage"));
+    "waiting_you and waiting_session are counted together");
+assert.ok(statusHTML.includes("2 unknown"));
 assert.ok(statusHTML.includes("2 tasks in flight")
     && statusHTML.includes("1 deliveries awaiting landing")
     && statusHTML.includes("4 open file waits"));
@@ -240,13 +240,13 @@ assert.ok(duplicatesHTML.includes("&lt;script&gt;"),
     "session labels from the wire are escaped, never markup");
 assert.ok(!duplicatesHTML.includes("<script>"));
 assert.ok(duplicatesHTML.includes(T.webCoordWaitingList)
-    && duplicatesHTML.includes(T.webCoordNeedsTriage));
+    && duplicatesHTML.includes(T.webCoordUnknown));
 assert.ok(!duplicatesHTML.includes(T.webCoordBlockingList),
     "an empty list is omitted rather than drawn as an empty heading");
 
 const quietHTML = coordinatorAnswerHTML({ type: "duplicates_conflicts_ownership" }, {
     coordinator: { configured: true, label: "Clawdfather", status: "online" },
-    bearings: { needs_triage: [], waiting: [], blocking: [], open_wait_count: 0 }
+    bearings: { unknown: [], waiting: [], blocking: [], open_wait_count: 0 }
 });
 assert.ok(quietHTML.includes(T.webCoordAllQuiet));
 
