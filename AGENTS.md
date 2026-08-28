@@ -82,11 +82,23 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   idle-looking session is parked and should stay open. When that UI is unavailable, the fallback
   user-visible message ends with `⏳ [Clawdline waiting] <owner> — <condition>; please keep this
   session open.`
-- The living Claude Code Artifact for this protocol is
-  `artifacts/2026-08-26-clawdline-communication-protocol.html`. Any change to Clawdline task,
+- **Documents split by audience, and the split decides where they live.** `docs/` is what the
+  community gets: English, written from the outside, tracked here, linked from both READMEs.
+  `artifacts/` is a door into the private `clawdline-cloud` repository — internal working
+  documents are read and written there, in whatever language suits, and they are not part of this
+  repository at all. Anything worth showing somebody who installed this belongs in `docs/`, in
+  English, rewritten for a reader who does not work here; moving an internal page across is a
+  rewrite, not a copy.
+- The living protocol page is `docs/clawdline-protocol.html`. Any change to Clawdline task,
   handoff, landing, claims, file-wait or cross-session communication semantics must update that
-  standalone `kind=state` HTML in the same line of work and re-check it against the authoritative
-  docs. A protocol change is not closed while its Artifact still teaches the previous behavior.
+  standalone HTML in the same line of work and re-check it against the authoritative docs. A
+  protocol change is not closed while that page still teaches the previous behavior.
+- **Nothing in the suite may depend on a path that is not in this repository.** `Tests/main.swift`
+  read the protocol Artifact through the `artifacts/` symlink with `try!`, so `./test.sh` could
+  only pass on a machine that also had the private repository checked out beside this one — and
+  every snapshot built the way this file describes died on it, because `git archive` carries what
+  is tracked and that path is ignored. A clone must be able to run the suite green. When a test
+  needs a document, that document is in `docs/`.
 - Check `GET /v1/orchestrator/assistants` before dispatching, and read a `409
   assistant_exhausted`'s `alternatives` before retrying the same assistant. This closure still
   applies when a child dies mid-task because its assistant ran out of quota: whatever it had not

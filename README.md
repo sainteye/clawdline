@@ -154,8 +154,12 @@ out at once and each of those may have three, but what *they* open, nothing open
 three is twenty terminals at full stretch, which is already more than anybody wants to audit;
 without a floor it is a fork bomb with a language model in it.
 
-**[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the
-credentials, the lifecycle and the routes with `curl` transcripts.
+**[docs/clawdline-protocol.html](docs/clawdline-protocol.html)** is the whole protocol on one
+page, written for somebody who just installed this: how a task is dispatched, what claims and file
+waits guarantee, why landing belongs to the root that asked, and what each promise is worth. Open it
+from a checkout; it needs nothing from the network.
+**[docs/orchestrator.md](docs/orchestrator.md)** is the same protocol in reference form: the file
+formats, the credentials, the lifecycle and the routes with `curl` transcripts.
 **[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** is the part that bites: the four
 places a dispatched session stops to ask, which two of them no setting reaches, and why the flag
 that reads as "get on with it" quietly means the opposite on the cheapest model.

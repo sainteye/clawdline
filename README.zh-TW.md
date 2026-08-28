@@ -135,8 +135,11 @@ Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起�
 一份 `plan`，也就是它所屬的整張圖——葉節點知道自己的答案要餵給誰，才寫得出接得起來的東西，
 而不是一篇沒人要的心得。
 
-**[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、憑證、整個生命週期，
-以及帶著 `curl` 紀錄的路由說明。
+**[docs/clawdline-protocol.html](docs/clawdline-protocol.html)** 是整份協定寫成一頁，讀者是剛裝好
+這個東西的人：一件任務怎麼派出去、claims 和 file wait 各自保證了什麼、為什麼 landing 是「誰派工誰
+負責」、每一條承諾值多少。從 checkout 直接打開就能看，不需要網路。英文。
+**[docs/orchestrator.md](docs/orchestrator.md)** 是同一份協定的參考手冊版：檔案格式、憑證、
+整個生命週期，以及帶著 `curl` 紀錄的路由說明。
 **[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** 是會咬人的那一半：被派出去的
 session 會在哪四個地方停下來問、其中哪兩道任何設定都到不了，以及那個讀起來像「放手去做」的
 flag，為什麼在最便宜的模型上意思正好相反。
