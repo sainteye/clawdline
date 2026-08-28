@@ -4527,6 +4527,10 @@ group("the languages the interface speaks") {
         // Indonesian, and Plan in German and Turkish.
         "es:webInfoPermissionManual", "pt:webInfoPermissionManual", "id:webInfoPermissionManual",
         "de:webInfoPermissionPlan", "tr:webInfoPermissionPlan",
+        // The Clawdfather panel. "Administration" is the French word too, and a German
+        // interface really does say "online"/"offline" — anglicisms macOS itself uses there.
+        "fr:webCoordSectionAdmin",
+        "de:webCoordOnline", "de:webCoordOffline",
     ]
     let en = English()
 
@@ -18841,15 +18845,9 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
           !deviceJSON.contains("conversation-") && !deviceJSON.contains("ttys0")
           && !deviceJSON.contains("\"pid\"") && !deviceJSON.contains("1800000000.0"))
 
-    // The route gate difference is the whole design: the full inspection stays behind the
-    // machine token, while the projection falls through to ordinary device auth — an unpaired
-    // caller gets the pairing 401, never the orchestrator 403.
-    expect("the full inspection without the machine token is the orchestrator refusal",
-           RemoteServer.shared.route(remoteRequest(
-               "GET", "/v1/orchestrator/coordinator")).status, 403)
-    expect("the device projection without pairing is the pairing refusal",
-           RemoteServer.shared.route(remoteRequest(
-               "GET", "/v1/orchestrator/coordinator/bearings")).status, 401)
+    // The route-level gate difference — 401 unpaired, 403 for a paired device on the full
+    // inspection, 200 for a paired device on the projection — is exercised in the coordinator
+    // routes group below, which owns a paired-device fixture.
 
     let validBytes = try! Data(contentsOf: Coordinator.storeURL)
     var future = try! JSONSerialization.jsonObject(with: validBytes) as! [String: Any]
@@ -19283,8 +19281,8 @@ group("Bearings is a closed deterministic projection without transcript data") {
           serverSource.contains("Orchestrator.coordinatorSnapshot(")
           && !serverSource.contains("let counts = Orchestrator.coordinatorCounts()"))
     let coordinatorSource = try! String(contentsOfFile: "Sources/Coordinator.swift", encoding: .utf8)
-    check("Phase A2 production advertises no enabled web coordinator command",
-          !coordinatorSource.contains("[\"type\": $0, \"enabled\": true]"))
+    check("the four connected reads are the only enabled advertisement",
+          coordinatorSource.components(separatedBy: "\"enabled\": true").count == 2)
 }
 
 group("Bearings takes one coherent Orchestrator snapshot for every session fact") {
@@ -19409,6 +19407,26 @@ group("coordinator routes require the machine token and expose no implicit takeo
     expect("the exact binding is standby",
            (body?["coordinator"] as? [String: Any])?["lifecycle"] as? String, "standby")
 
+    // The gate difference is the whole design of the device projection: the full inspection
+    // stays machine-token-only, while /bearings falls through to ordinary device auth.
+    let bearingsPath = "/v1/orchestrator/coordinator/bearings"
+    expect("anonymous Bearings projection is refused at the pairing gate",
+           RemoteServer.shared.route(remoteRequest("GET", bearingsPath)).status, 401)
+    expect("the full inspection refuses even a paired device",
+           RemoteServer.shared.route(remoteRequest(
+            "GET", "/v1/orchestrator/coordinator",
+            headers: ["Authorization": "Bearer \(phone.token)"])).status, 403)
+    let deviceGet = RemoteServer.shared.route(remoteRequest(
+        "GET", bearingsPath, headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("a paired device reads the projection", deviceGet.status, 200)
+    let deviceGetBody = (try? JSONSerialization.jsonObject(with: deviceGet.body))
+        as? [String: Any]
+    expect("and it names presence",
+           (deviceGetBody?["coordinator"] as? [String: Any])?["status"] as? String, "online")
+    check("while the durable UUID and store health never cross the device boundary",
+          (deviceGetBody?["coordinator"] as? [String: Any])?["id"] == nil
+          && deviceGetBody?["store"] == nil)
+
     let ordinary: [String: Any] = ["id": "other", "label": "ordinary"]
     var projectedOrdinary = ordinary
     RemoteServer.attachCoordinator(to: &projectedOrdinary, liveSession: other)
@@ -19436,8 +19454,20 @@ group("coordinator routes require the machine token and expose no implicit takeo
               record["status"] as? String == "online",
               let commands = record["commands"] as? [[String: Any]], commands.count == 11
         else { return false }
+        let connectedReads: Set<String> = ["status_report", "duplicates_conflicts_ownership",
+                                           "landing_closure", "scope_permissions"]
+        let closedReasons: Set<String> = ["no_return_ledger", "no_command_route",
+                                          "device_cannot_spawn", "machine_token_only"]
         return Set(record.keys) == Set(["label", "status", "commands"])
-            && commands.allSatisfy { $0["enabled"] as? Bool == false }
+            && commands.allSatisfy { command in
+                let type = command["type"] as? String ?? ""
+                if connectedReads.contains(type) {
+                    return command["enabled"] as? Bool == true && command["reason"] == nil
+                }
+                return command["enabled"] as? Bool == false
+                    && closedReasons.contains(command["reason"] as? String ?? "")
+                    && !(command["why"] as? String ?? "").isEmpty
+            }
     }
 
     let addressRows = RemoteServer.coordinationSessionRows(
