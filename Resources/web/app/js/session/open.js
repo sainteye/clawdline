@@ -1,4 +1,5 @@
 import { phone, releaseKeyboardFocus } from "../core/env.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
@@ -68,6 +69,10 @@ export function loadTranscript(id, quiet, revision) {
 }
 
 function settleTranscript(id, ticket, outcome, revision) {
+    Diagnostics.note("transcript.settle", {
+        openMatches: S.openId === id, ticketMatches: ticket === transcriptTicket,
+        failed: !!outcome.error, revisionKnown: revision != null
+    });
     if (revision != null) transcriptRevisions.settle(id, revision, !outcome.error);
     // A later request owns both the result and the visible wait. Settling an older request here
     // would take down the skeleton while the request that superseded it is still out.
@@ -156,6 +161,10 @@ export function toBottom() {
 export function openSession(id, keepFocus, forceRefresh) {
     var s = byId(id);
     if (!s || closingID === id) return;
+    Diagnostics.note("session.open.begin", {
+        switching: S.openId !== id, phone: phone(), view: els.app.dataset.view,
+        forceRefresh: !!forceRefresh
+    });
     S.selectedId = id;
     if (S.openId !== id) {
         if (S.openId) transcriptRevisions.stop(S.openId);
@@ -191,6 +200,10 @@ export function openSession(id, keepFocus, forceRefresh) {
         els.app.dataset.pane = "on";
     }
     render();
+    Diagnostics.note("session.open.rendered", {
+        view: els.app.dataset.view, loading: !!S.tx.loading,
+        entries: (S.tx.entries || []).length
+    });
     SkillPicker.changed();
     if (!keepFocus && !phone()) {
         var node = rowNodes[id];

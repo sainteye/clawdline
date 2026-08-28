@@ -1,4 +1,5 @@
 import { atMac } from "../core/env.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 import { esc } from "../core/esc.js";
 import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
@@ -92,6 +93,11 @@ export function renderDetailHead() {
 
 export function renderTranscript() {
     var box = els.tx;
+    Diagnostics.note("transcript.render", {
+        open: !!S.openId, agent: !!S.agent, loading: !!(S.agent || S.tx).loading,
+        entries: ((S.agent || S.tx).entries || []).length,
+        error: !!(S.agent || S.tx).error
+    });
     setOptimisticSpinners([]);
     // Blank rather than the home screen while the list is still on its way — see `listUnknown`.
     // A pane that says "pick a session" and then opens one on its own is a pane that changed its

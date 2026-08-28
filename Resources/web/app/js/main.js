@@ -12,6 +12,7 @@ import "./core/esc.js";
 import { applyStrings } from "./core/i18n.js";
 import { S } from "./core/state.js";
 import { els } from "./core/dom.js";
+import { Diagnostics } from "./core/layout-diagnostics.js";
 import { clockOf } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
 import { api, useApi } from "./net/api.js";
@@ -60,6 +61,7 @@ import "./input/edges.js";
 // The one thing that has to happen before anything on this page can call the API: which of the
 // two it is. `net/api.js` holds the name and knows about neither — see the note there.
 useApi(MOCK ? Mock : Live);
+Diagnostics.bind({ state: S, elements: els });
 
 // The controls module keeps its pure command selection importable without a browser. DOM and
 // the one route back to ordinary Session actions are supplied here, at the page boundary.
@@ -123,6 +125,7 @@ function boot(data) {
     api.start();
     Schedules.start();
     Push.start();
+    Diagnostics.ready();
 }
 
 if (window.__strings) {

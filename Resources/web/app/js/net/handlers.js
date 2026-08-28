@@ -1,4 +1,5 @@
 import { S } from "../core/state.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 import { els } from "../core/dom.js";
 import { Build } from "./build.js";
 import { onSessions, render, renderConn, renderList } from "../view/list.js";
@@ -24,7 +25,19 @@ export var handlers = {
         // The caller responds to `false` by asking for a newer scan. A same-generation REST echo
         // is the same observation, not confirmation; keeping the evidence gate here gives every
         // future transport the same last-known-good protection.
-        if (sessionListNeedsConfirmation(list, S.openId, S.sessions, scan)) return false;
+        if (sessionListNeedsConfirmation(list, S.openId, S.sessions, scan)) {
+            Diagnostics.note("sessions.refused", {
+                rows: list.length, previous: S.sessions.length, open: !!S.openId,
+                complete: !!(scan && scan.complete),
+                emptyAuthoritative: !!(scan && scan.emptyAuthoritative)
+            });
+            return false;
+        }
+        Diagnostics.note("sessions.accepted", {
+            rows: list.length, previous: S.sessions.length, open: !!S.openId,
+            complete: !!(scan && scan.complete),
+            emptyAuthoritative: !!(scan && scan.emptyAuthoritative)
+        });
         var first = !S.arrived;
         S.sessions = list;
         S.at = at || 0;
