@@ -22623,6 +22623,71 @@ group("completion transport failure injection is typed and bounded") {
           last.state == .deadLetter && last.deadLetterAt != nil && last.nextRetryAt == nil)
 }
 
+group("the three ways a completion fails to arrive are each typed and each visible") {
+    // The existing injection group drives `completionTransition`, a pure function: given a code,
+    // does the state machine react correctly. That leaves the question this group asks — does the
+    // real path ever produce those codes, and can anybody see the ending it settles on. Each case
+    // is asserted against its own opposite, because an injection that would pass whatever the
+    // code did is not a probe, it is a shape that happens to be green.
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let root = TargetSession(
+        backend: .iterm, id: "ROOT-TAB", name: "root", tty: "/dev/ttys900",
+        windowIndex: 0, tabIndex: 0, assistant: .claude)
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: root.id, assistant: .claude, tty: root.tty, pid: 900,
+        processStart: Date(timeIntervalSince1970: 1_800_000_000),
+        conversationID: "root-conversation")
+    var owed = Orchestrator.Task(
+        id: "30303030-4040-4050-8060-707070707070", state: .success, kind: "custom",
+        title: "owes a notice", assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,
+        created: Date(), secretHash: String(repeating: "0", count: 64))
+    owed.rootSessionId = "root-conversation"
+    owed.rootAssistant = .claude
+
+    // 1. The root's tab is gone. The control is the same task against an inventory that has it.
+    var found = false
+    if case .found = Orchestrator.completionRecipient(
+        owed, targets: [root], identity: { _ in identity }) { found = true }
+    check("with the root's tab present the recipient resolves", found)
+    var goneCode: Orchestrator.CompletionFailureCode?
+    if case .refused(.failed(let code, _)) = Orchestrator.completionRecipient(
+        owed, targets: [], identity: { _ in identity }) { goneCode = code }
+    expect("and once its tab is gone the refusal is typed, not silent",
+           goneCode, Orchestrator.CompletionFailureCode.rootMissing)
+
+    // 2. Nothing acknowledges. Delivery succeeding is not the end of the obligation.
+    let delivered = Orchestrator.completionTransition(
+        Orchestrator.CompletionDelivery(
+            noticeID: UUID().uuidString.lowercased(), created: Date(),
+            state: .pending, attempts: 0, nextRetryAt: Date(), persisted: true),
+        at: Date(), result: .delivered)
+    check("a delivered notice with no acknowledgement is still owed a retry",
+          delivered.state == .delivered && delivered.nextRetryAt != nil
+            && delivered.acknowledgedAt == nil,
+          "state \(delivered.state.rawValue)")
+
+    // 3. The budget runs out. The point is not the state, it is that somebody can see it: a dead
+    // letter nobody can read is the same as a notice that was never owed.
+    var exhausted = Orchestrator.CompletionDelivery(
+        noticeID: UUID().uuidString.lowercased(), created: Date(),
+        state: .pending, attempts: Orchestrator.completionAttemptLimit - 1,
+        nextRetryAt: Date(), persisted: true)
+    exhausted = Orchestrator.completionTransition(
+        exhausted, at: Date(), result: .failed(.rootMissing, "still gone"))
+    owed.completionDelivery = exhausted
+    Orchestrator.holdScheduleTaskForTesting(owed)
+    check("the exhausted budget settles as a dead letter with no retry left",
+          exhausted.state == .deadLetter && exhausted.nextRetryAt == nil)
+    let hidden = Orchestrator.completionRecords(pendingOnly: true)
+        .contains { $0["task_id"] as? String == owed.id }
+    let shown = Orchestrator.completionRecords(pendingOnly: false)
+        .contains { $0["task_id"] as? String == owed.id }
+    check("and it is reportable rather than merely stored: absent from the pending view, "
+            + "present when dead letters are asked for",
+          !hidden && shown, "pending \(hidden), all \(shown)")
+}
+
 group("grandchild completion delivery is bound to the parent's exact process tuple") {
     Orchestrator.forget()
     defer { Orchestrator.forget() }
@@ -22690,6 +22755,39 @@ group("grandchild completion delivery is bound to the parent's exact process tup
                attempt(stale))
     checkStale("a parent without transcript marker proof is identity_stale and sends nothing",
                attempt(exact, transcriptProven: false))
+}
+
+group("the wait for a completion notice has an upper bound, and something re-arms it") {
+    // "Eventually" is not a contract a person can hold. What a root actually waits is: the first
+    // attempt is scheduled by finalize itself, every later one is picked up by the five-second
+    // beat, and the gap between attempts is capped. Each of those three is asserted here, because
+    // between them they are the bound — and the middle one had nothing holding it at all.
+    let pumped = Orchestrator.completionPumpEnqueuerForTesting
+    defer { Orchestrator.completionPumpEnqueuerForTesting = pumped }
+
+    var rearmed = 0
+    Orchestrator.completionPumpEnqueuerForTesting = { _ in rearmed += 1 }
+    Orchestrator.beat(fromTimer: true)
+    check("the beat re-arms the completion pump, which is what makes a retry ever happen",
+          rearmed >= 1, "beat scheduled the pump \(rearmed) times")
+    // Deleting `scheduleCompletionPump()` from `beat` leaves every other completion assertion
+    // green: they all drive `completionAttempt` directly. The retry ladder below would still be
+    // correct arithmetic about a retry nothing would ever come back for.
+
+    let ladder = (1...Orchestrator.completionAttemptLimit).map {
+        Orchestrator.completionRetryDelay(after: $0)
+    }
+    check("no gap between attempts exceeds the cap",
+          ladder.allSatisfy { $0 <= Orchestrator.completionRetryMaximum },
+          "ladder \(ladder)")
+    check("and the gaps grow rather than repeating the shortest one",
+          ladder.first == 5 && ladder[1] == 10 && ladder.last == Orchestrator.completionRetryMaximum,
+          "ladder \(ladder)")
+    let worst = ladder.dropLast().reduce(0, +)
+    check("so the whole budget is bounded, not open-ended",
+          worst > 0 && worst <= 3600, "worst case \(Int(worst))s over "
+            + "\(Orchestrator.completionAttemptLimit) attempts")
+    expect("a zeroth attempt waits for nothing", Orchestrator.completionRetryDelay(after: 0), 0)
 }
 
 group("finalize saves before send, retries one notice after restart, and ACK stops it") {
