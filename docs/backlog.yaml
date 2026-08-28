@@ -538,29 +538,31 @@ items:
       upgrade instead of asking somebody to remember.
     opened: 2026-08-28
 
-  - id: B-SECRETS-PERSIST-IN-ROLLOUTS
-    title: A task secret outlives its task, in plaintext, inside the dispatcher's transcript
+  - id: B-SECRETS-OUTLIVE-EVERYTHING-ELSE
+    title: A task secret is still recoverable long after every trace of its task is gone
     problem: >-
-      The design is that a task secret travels one route — into the dispatch body and from there
-      into the child's first message — and that the app itself stores only its SHA-256. A child is
-      told never to write it into `task.json`, `CHILD.md`, or anywhere under `/tmp`. But the
-      dispatch body is written by a shell command inside the dispatching root's own session, so the
-      secret lands in that session's transcript in plaintext and stays there. Task directories are
-      swept 24 hours after they finish; transcripts are not swept at all. The stated property —
-      that only the hash is kept — therefore holds for the app and not for the machine.
+      That a secret stays in the dispatching session's transcript is known and accepted —
+      `skills/clawdline/SKILL.md` says so plainly, at the same trust boundary as the token file.
+      What nobody wrote down is the asymmetry in how long it stays. A task directory is swept 24
+      hours after the task ends, taking `task.json`, `CHILD.md`, `result.json` and the artifacts
+      with it. Transcripts are swept never. So the retention policy that governs everything else
+      about a task does not reach the one field the design treats as a credential, and the window
+      in which a secret can be recovered is not 24 hours, it is unbounded.
     evidence: >-
-      Measured 2026-08-28 while looking for seven secrets whose task directories were gone. All
-      seven were recovered from one 52.9 MB codex rollout under `~/.codex/sessions/2026/08/27/` by
-      matching the exact dispatch-body shape `{"task_id":"<id>","secret":"<64 hex>"}`, hours after
-      the tasks ended and after three of the seven directories had already been swept. `CHILD.md`
-      holds only the literal `<TASK_SECRET>` placeholder, so the task directory is not the leak.
+      Demonstrated 2026-08-28, not reasoned about: seven task secrets were recovered from a single
+      52.9 MB codex rollout under `~/.codex/sessions/2026/08/27/` by matching the exact dispatch
+      body `{"task_id":"<id>","secret":"<64 hex>"}` — hours after those tasks ended, and after
+      three of the seven task directories had already been swept off disk. `CHILD.md` holds only
+      the literal `<TASK_SECRET>` placeholder, so the task directory was never the thing keeping
+      them alive.
     severity: noise
     cost: hours
     who_hurts: us
     trigger: >-
-      This is not a local escalation today — anything running as the user can already read
-      `~/.config/clawdline/orchestrator-token`, which is strictly more powerful. It becomes real if
-      transcripts are ever synced, shared, or attached to a report. If that day comes, or sooner if
-      it is cheap, hand the secret to the app through a file or a header the shell does not echo,
-      so the dispatch body never carries it.
+      Not an escalation today: anything running as the user can already read
+      `~/.config/clawdline/orchestrator-token`, which is strictly more powerful than any one task
+      secret. It stops being noise the day a transcript is synced, shared, or attached to a report,
+      because the thing travelling is then older and wider than the retention policy anybody
+      reasoned about. The cheap fix is to stop putting the secret in a shell command line: hand it
+      to the app through a file or a header, so the dispatch body never carries it.
     opened: 2026-08-28
