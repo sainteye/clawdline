@@ -13454,6 +13454,16 @@ group("a child is told whether it may hand work on, and never has to find out by
               && allowed.contains("at most 30 per hour"))
     check("and it is told where the answer will appear",
           allowed.contains("result.json"))
+    // The ask nothing was making: AGENTS.md, docs/dispatching.md and the dispatch policy all
+    // require a first progress note, and the briefing — the only thing a child actually reads —
+    // asked only for one when the work drifted. A note at minute three is what lets a wrong
+    // direction be cancelled before it has spent a session.
+    check("a child is asked for one progress note before it starts, not only when it drifts",
+          allowed.contains("within about three minutes of starting")
+            && allowed.contains("before you begin the work"))
+    check("and told why, because a child that knows why will actually send it",
+          allowed.contains("cancelled at minute three instead of minute twenty-six")
+            && allowed.contains("18.5M and 16.5M tokens"))
     check("the at-rest archive key is never named in a child briefing",
           !allowed.contains("orchestrator-archive-key") && !allowed.contains("archive key"))
 
@@ -13492,6 +13502,8 @@ group("a child is told whether it may hand work on, and never has to find out by
           off.contains("Do not dispatch Clawdline tasks of your own.")
               && !off.contains("## Handing work on"))
     check("and that Mac writes no teaching file at all", teaching(depth: 1, allowance: 0) == nil)
+    check("the first-progress ask reaches a leaf too, which is where most of the tokens are",
+          off.contains("within about three minutes of starting"))
 
     // What the split is worth, stated as an arithmetic somebody can break: a child that may
     // dispatch and one that may not are now briefed with almost the same file. Before this,

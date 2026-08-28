@@ -7414,11 +7414,18 @@ enum Orchestrator {
         The user may turn agent notifications off. A `409 agent_notify_disabled` response is not
         your fault: leave the content in `result.json`, report failure honestly, and do not retry.
 
-        ## Say what you are doing, when it stops being what you were sent to do
+        ## Say what you are doing — once at the start, and again when it changes
 
-        Your title was fixed before you started. When what you are actually doing stops matching
-        it — you decide to rewrite the fixture too, the real problem turns out to be somewhere
-        else, you have moved on to the second half — say so in one line:
+        **Send the first one within about three minutes of starting**, before you begin the work
+        rather than during it: one sentence saying what you have decided to do now that you have
+        read this file and `task.json`. It is the only thing that lets a wrong direction be
+        cancelled at minute three instead of minute twenty-six — the two most expensive cancelled
+        tasks on this Mac burned 18.5M and 16.5M tokens before anybody could tell what they had
+        set off to do. Nobody can read your screen; this note is the whole of what they have.
+
+        After that, your title was fixed before you started. When what you are actually doing
+        stops matching it — you decide to rewrite the fixture too, the real problem turns out to
+        be somewhere else, you have moved on to the second half — say so the same way:
 
         ```bash
         curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\

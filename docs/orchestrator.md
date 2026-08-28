@@ -775,6 +775,16 @@ in `CHILD.md`, which the app writes immediately before injecting: where the task
 outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many,
 that it must not read other task directories, and exactly what `result.json` has to look like.
 
+**It asks for one progress note before the work starts.** `AGENTS.md`, `docs/dispatching.md` and
+the dispatch policy have all required it for a while; the briefing — the only thing a child
+actually reads — asked only for a note when the work drifted. So `CHILD.md` now asks for the first
+one within about three minutes: one sentence saying what the child has decided to do now that it
+has read the briefing and `task.json`, before the work rather than during it. The reason is in the
+briefing too, because a child that knows why will actually send it — it is the only thing that lets
+a wrong direction be cancelled at minute three instead of minute twenty-six, and the two dearest
+cancelled tasks on this machine burned 18.5M and 16.5M tokens before anybody could tell what they
+had set off to do.
+
 **How to dispatch is not in there.** It is in `DISPATCHING.md`, written beside it and only when the
 allowance is above zero; `CHILD.md` keeps one line naming that file. The reason is a measurement:
 across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went
