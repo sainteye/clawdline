@@ -1,4 +1,4 @@
-import { phone } from "../core/env.js";
+import { phone, releaseKeyboardFocus } from "../core/env.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
@@ -178,6 +178,11 @@ export function openSession(id, keepFocus, forceRefresh) {
         observeTranscriptRevision(id, revisionOf(s), false);
     } else if (forceRefresh) loadTranscript(id, true);
     if (phone()) {
+        // A touch on a row does not reliably take focus from the filter on iOS. Release it before
+        // the list becomes invisible so the keyboard's outgoing viewport cannot become the
+        // detail pane's permanent height. Do this only for the screen transition: routing a push
+        // back to the session already being composed in must not dismiss that composer.
+        if (els.app.dataset.view !== "detail") releaseKeyboardFocus();
         els.app.dataset.view = "detail";
         // The phone's own back gesture should mean what it looks like it means.
         try { history.pushState({ view: "detail", id: id }, ""); } catch (e) { }

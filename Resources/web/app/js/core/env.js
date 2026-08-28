@@ -20,6 +20,21 @@ export var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-mo
 export var phone = function () { return window.matchMedia("(max-width: 899px)").matches; };
 
 /**
+ * Put away whichever control still owns the software keyboard before replacing a phone screen.
+ *
+ * A tap on a session row does not necessarily focus the row on iOS, so a filter field can remain
+ * `document.activeElement` even after the list has been hidden behind the detail pane. Keeping
+ * that stale focus makes the viewport tracker believe the keyboard is still authoritative while
+ * WebKit is animating it away. `blur()` is deliberately used rather than naming the filter: sheets
+ * and the composer can open a session too, and the invariant is about the screen transition, not
+ * about one particular field.
+ */
+export function releaseKeyboardFocus() {
+    var el = document.activeElement;
+    if (el && el !== document.body && typeof el.blur === "function") el.blur();
+}
+
+/**
  * Whether there is a keyboard to press Return on.
  *
  * Asked of the pointer rather than of the width, because the question is not how big the screen
@@ -96,6 +111,11 @@ export function hasKeyboard() {
         return !!el && el !== document.body && el !== root;
     }
 
+    function clear() {
+        root.style.removeProperty("--vvh");
+        root.style.removeProperty("--vvt");
+    }
+
     function apply() {
         // A page in the background is not laid out, and what `visualViewport` reports about one
         // is the number it will correct on the way back. Writing it now is writing the wrong
@@ -111,8 +131,7 @@ export function hasKeyboard() {
             // Removed rather than set to `100dvh`: the declaration's own fallback is that, and a
             // property that is present but "the same as the fallback" is one somebody later has
             // to reason about.
-            root.style.removeProperty("--vvh");
-            root.style.removeProperty("--vvt");
+            clear();
         }
     }
     /**
@@ -120,11 +139,21 @@ export function hasKeyboard() {
      *
      * Both moments below announce a change *as it starts*: `focusout` runs while the element
      * losing the caret is in some browsers still `document.activeElement`, and the first value
-     * read after a page is restored is the one from before it was put away. One reading would
-     * be the state being left rather than the state being entered; the frame after is the page
-     * as it actually ended up.
+     * read after a page is restored is the one from before it was put away. The override is
+     * therefore removed before either stale fact can be believed, then measured over two frames:
+     * the first lets focus settle and the second lets WebKit finish the viewport transition.
+     *
+     * Clearing synchronously is the recovery property. Animation frames may be delayed when a
+     * page is hidden or a fixed pane is changing, but a delayed measurement can only postpone a
+     * keyboard adjustment now; it cannot strand the whole document at an obsolete height.
      */
-    function recheck() { apply(); requestAnimationFrame(apply); }
+    function recheck() {
+        clear();
+        requestAnimationFrame(function () {
+            apply();
+            requestAnimationFrame(apply);
+        });
+    }
 
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
