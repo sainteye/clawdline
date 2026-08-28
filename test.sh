@@ -37,6 +37,10 @@ node Tests/web-optimistic.mjs
 node Tests/web-session-resilience.mjs
 node Tests/web-session-disposition.mjs
 node Tests/web-title-transport.mjs
+# Two suites that existed and that nothing ran: neither was in this list, and CI only runs
+# this script. A test nobody runs is a test that passes.
+node Tests/web-user-messages.mjs
+node Resources/web/app/js/net/client.test.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 
