@@ -144,8 +144,15 @@ enum Targets {
         return snap
     }
 
+    /// Consulted only when nothing else has replaced the walk. The suite installs it once, for
+    /// the whole run: safe close is asynchronous and beat-driven, so a fixture left holding a due
+    /// deadline can reach this from a background scan long after the group that made it ended —
+    /// and a unit run must never take a real inventory of the machine it is running on.
+    /// Production never sets either of these.
+    static var safeCloseInventoryFallbackForTesting: (() -> Snapshot)?
+
     static func safeCloseInventory() -> Snapshot {
-        safeCloseInventoryForTesting?() ?? snapshot()
+        safeCloseInventoryForTesting?() ?? safeCloseInventoryFallbackForTesting?() ?? snapshot()
     }
 
     /// Require a fresh, complete inventory to preserve the exact terminal id/backend/tty tuple.

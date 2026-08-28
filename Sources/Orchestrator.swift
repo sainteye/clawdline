@@ -9311,18 +9311,31 @@ enum Orchestrator {
     /// main run loop moving until any main-thread finalization has happened, so this cannot wait
     /// on a pump that is itself waiting on main.
     @discardableResult
+    /// Wait until a serialized promotion has actually happened.
+    ///
+    /// **Both queues, not one.** The pump hands the promotion to the terminal broker and returns
+    /// immediately, and an admission it was refused comes back through the pump queue a quarter
+    /// of a second later. A drain that watched only the pump queue therefore returned while the
+    /// promotion was still in the lane — reliably enough to pass on an idle machine, and not on
+    /// one where anything else was using a terminal.
     static func drainSerializePumpForTesting(timeout: TimeInterval = 3) -> Bool {
-        let done = DispatchSemaphore(value: 0)
-        serializePumpQueue.async { done.signal() }
         let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if done.wait(timeout: .now()) == .success { return true }
-            if Thread.isMainThread {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-            } else {
-                Thread.sleep(forTimeInterval: 0.01)
+        func pause() {
+            if Thread.isMainThread { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            else { Thread.sleep(forTimeInterval: 0.01) }
+        }
+        while Date() < deadline {
+            let done = DispatchSemaphore(value: 0)
+            serializePumpQueue.async { done.signal() }
+            var pumped = false
+            while Date() < deadline {
+                if done.wait(timeout: .now()) == .success { pumped = true; break }
+                pause()
             }
-        } while Date() < deadline
-        return done.wait(timeout: .now()) == .success
+            guard pumped else { return false }
+            if RemoteServer.shared.terminalOutstandingForTesting().total == 0 { return true }
+            pause()
+        }
+        return false
     }
 }

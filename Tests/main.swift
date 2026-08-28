@@ -169,6 +169,12 @@ print("Clawdline tests")
 
 // MARK: - Scheduled dispatches
 
+// An empty *complete* inventory: `closeStep` answers `.wait` on it — an inventory with no
+// terminals in it at all proves nothing — so a background beat that finds one of this suite's
+// fixtures due decides nothing, writes nothing, and above all asks nobody's real terminal.
+// Individual groups still install their own walk over this one.
+Targets.safeCloseInventoryFallbackForTesting = { Targets.Snapshot() }
+
 group("schedule files are strict and carry an ordinary task template") {
     let id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
     let base: [String: Any] = [
@@ -18573,15 +18579,16 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     inventory.error = nil
     // The close is asynchronous now — it is admitted to the terminal broker and settles on main
     // — so the synchronous answer is false and the record is read again before it is written.
-    check("the close is admitted and answers on the main thread, not to its caller",
-          !Orchestrator.takeChildTab(for: staleTake, childID: child.id,
-                                     closeAt: staleTake.closeAt ?? Date(),
-                                     end: { _, _ in nil }))
+    // Only the record question is asked here. A beat fired by a real terminal scan nominates the
+    // same task, and whichever of the two reaches the broker first is the one that closes — so
+    // what the close *decides* is asserted in its own group, on tasks nothing else can see, and
+    // what is left for this one is that neither writer puts the stale snapshot back.
+    Orchestrator.takeChildTab(for: staleTake, childID: child.id,
+                              closeAt: staleTake.closeAt ?? Date(),
+                              end: { _, _ in nil })
     check("the close settles", eventually {
         Orchestrator.terminalClosesInFlightForTesting() == 0
     })
-    check("a successful close drops the deadline it was given",
-          Orchestrator.closeAtForTesting(staleID) == nil)
     check("and takeChildTab's stale snapshot cannot resurrect either deadline",
           Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
