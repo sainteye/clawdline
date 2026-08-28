@@ -124,10 +124,10 @@ enum Transcript {
     /// Startup metadata alone cannot disprove an identity: both assistants create their file
     /// before the first message is durable, so that state must remain eligible for another read.
     ///
-    /// **`.peer` counts as an external turn and `.notice` deliberately does not.** A peer row is
-    /// another session addressing this one — somebody else's conversation reaching in, which
-    /// disproves ownership exactly as a person's turn does. A Clawdline notice is this app
-    /// speaking about a task, and the app types those into tabs it has already identified,
+    /// **`.peer` and `.message` count as external turns; `.notice` deliberately does not.** Both
+    /// peer shapes are another session addressing this one — somebody else's conversation
+    /// reaching in, which disproves ownership exactly as a person's turn does. A Clawdline notice
+    /// is this app speaking about a task, and the app types those into tabs it has already identified,
     /// including a child's own tab as soon as that child hands work on in turn. Counting one
     /// would let the app disprove an identity by talking to it. A transcript whose only
     /// non-assistant content is a notice therefore stays `.unavailable` — says nothing — rather
@@ -139,7 +139,9 @@ enum Transcript {
         switch assistant {
         case .claude:
             for line in jsonl.split(separator: "\n") {
-                if entries(inRow: line).contains(where: { $0.kind == .user || $0.kind == .peer }) {
+                if entries(inRow: line).contains(where: {
+                    $0.kind == .user || $0.kind == .peer || $0.kind == .message
+                }) {
                     return true
                 }
             }
@@ -154,6 +156,7 @@ enum Transcript {
             case user
             case assistant
             case peer          // another Claude Code session addressing this one
+            case message       // another session addressing this one through Clawdline
             case notice        // a versioned Clawdline message, not a person's words
             case tool          // a tool being called
             case toolResult    // what it returned
@@ -168,6 +171,7 @@ enum Transcript {
         /// the UI: they identify a transport endpoint, not somebody a reader can recognise.
         var source: String? = nil
         var sourceMode: String? = nil
+        var sourceAssistant: Assistant? = nil
         /// Internal receipt identity. It never crosses the API boundary; it only distinguishes
         /// two real deliveries of identical prose from Claude's enqueue/delivery double-write.
         var peerMessageID: String? = nil
@@ -720,12 +724,13 @@ enum Transcript {
             guard row["operation"] as? String == "enqueue",
                   let raw = row["content"] as? String
             else { return [] }
-            // Two different envelopes reach this one branch, and neither may claim the
-            // other's rows: a cross-session message is what another session said, a
-            // Clawdline notice is what the app said about a task. Both wrappers are
-            // all-or-nothing over the whole queued string, so a peer message that merely
+            // Three different envelopes reach this one branch, and none may claim the
+            // others' rows: a native peer or a Clawdline session message is what another
+            // session said, while a Clawdline notice is what the app said about a task. Every
+            // wrapper is all-or-nothing over the whole queued string, so a peer message that merely
             // quotes a notice stays a peer message and the reverse cannot happen. The peer
             // test runs first because its envelope is the one that carries a free-form body.
+            if let message = clawdlineSessionMessage(in: raw, at: time) { return [message] }
             if let peer = crossSessionMessage(in: raw, at: time) { return [peer] }
             if let notice = ClawdlineMessage.decode(raw) {
                 return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
@@ -753,10 +758,12 @@ enum Transcript {
         // happens to contain a valid envelope.
         if type == "user", blocks.count == 1,
            blocks[0]["type"] as? String == "text",
-           let raw = blocks[0]["text"] as? String,
-           let notice = ClawdlineMessage.decode(raw) {
-            return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
-                          notice: notice)]
+           let raw = blocks[0]["text"] as? String {
+            if let message = clawdlineSessionMessage(in: raw, at: time) { return [message] }
+            if let notice = ClawdlineMessage.decode(raw) {
+                return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
+                              notice: notice)]
+            }
         }
 
         // Claude stores pasted images as structured blocks and repeats each attachment as
@@ -859,6 +866,16 @@ enum Transcript {
         return Entry(kind: .peer, text: body, tool: nil, time: time,
                      source: attribute("from-name", in: header),
                      sourceMode: attribute("from-mode", in: header))
+    }
+
+    /// Normalize Clawdline's verified session-to-session envelope to a role of its own. The
+    /// envelope and source metadata are discarded after this boundary; clients receive only the
+    /// body and the locally controlled fields carried by ``Entry``.
+    static func clawdlineSessionMessage(in raw: String, at time: Date?) -> Entry? {
+        guard let message = ClawdlineSessionMessage.decode(raw) else { return nil }
+        return Entry(kind: .message, text: message.body, tool: nil, time: time,
+                     source: message.source.label, sourceMode: "clawdline",
+                     sourceAssistant: message.source.assistant)
     }
 
     /// One double-quoted attribute from the small, fixed opening tag above.
@@ -998,9 +1015,9 @@ enum Transcript {
     /// not been taught about it from drawing JSON at somebody. The character is `U+0001`, which
     /// no transcript contains and no keyboard produces.
     ///
-    /// It rides in `text` because that is the field there is. The wire between the Mac and the
-    /// web interface carries `role`, `text`, `tool` and a time and nothing else, and a second
-    /// field would have to be added at both ends at once.
+    /// It rides in `text` because that is the tool-content field. The wire's role-specific
+    /// metadata belongs to peer, session-message and notice rows; a tool row still carries only
+    /// `role`, `text`, optional `tool` and time.
     static let askMarker = "\u{1}ask\u{1}"
 
     /// One question as it was asked. Several can arrive in one call.
@@ -1281,6 +1298,23 @@ extension Transcript {
                 add(label + "\n", [
                     .font: header,
                     .foregroundColor: NSColor.systemIndigo,
+                    .kern: 0.8,
+                    .paragraphStyle: headerStyle,
+                ])
+                block.append(prose(entry.text, body: body, mono: mono))
+                i += 1
+
+            case .message:
+                endBlock()
+                var label = "CLAWDLINE  ⇄"
+                if let source = entry.source, !source.isEmpty { label += "  " + source }
+                if let assistant = entry.sourceAssistant {
+                    label += "  ·  " + assistant.rawValue.uppercased()
+                }
+                if let t = entry.time { label += "   \(clock.string(from: t))" }
+                add(label + "\n", [
+                    .font: header,
+                    .foregroundColor: Style.accent,
                     .kern: 0.8,
                     .paragraphStyle: headerStyle,
                 ])

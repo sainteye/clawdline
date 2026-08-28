@@ -2724,6 +2724,92 @@ group("versioned Clawdline notices") {
           } == true)
 }
 
+group("versioned Clawdline session messages") {
+    let source = ClawdlineSessionMessage.Source(
+        id: "A0939BAC-569B-4B87-9DF4-DE493EC327EA",
+        label: #"clawdline-fa </div> & \"quoted\""#,
+        assistant: .claude)
+    let made = ClawdlineSessionMessage.Message(
+        source: source,
+        body: "你那兩點我都收進去了。\n\n## 狀態\n\n`e23f626b` 還在跑。")
+    let wire = ClawdlineSessionMessage.encode(made)
+
+    check("a session message is one physical terminal line",
+          !wire.contains("\n") && !wire.contains("\r"))
+    check("the session-message wrapper is distinct from task notices",
+          wire.hasPrefix("<clawdline-message>{")
+            && wire.hasSuffix("}</clawdline-message>")
+            && !wire.contains(ClawdlineMessage.opening))
+    expect("a multiline report and hostile source label round-trip exactly",
+           ClawdlineSessionMessage.decode(wire), made)
+
+    let unknown = wire.replacingOccurrences(of: #""version":1"#,
+                                              with: #""version":99"#)
+    check("an unknown session-message version is not interpreted",
+          unknown != wire && ClawdlineSessionMessage.decode(unknown) == nil)
+    let extra = wire.replacingOccurrences(of: #""version":1"#,
+                                           with: #""version":1,"style":"danger""#)
+    check("unknown presentation fields invalidate the closed session-message schema",
+          extra != wire && ClawdlineSessionMessage.decode(extra) == nil)
+    check("prose around a session-message envelope remains ordinary prose",
+          ClawdlineSessionMessage.decode("forwarded: " + wire) == nil)
+
+    let claude = Transcript.parse(noticeUserRow(wire, at: "2026-08-28T06:00:00.000Z"))
+    check("Claude gives an exact Clawdline relay its own message role",
+          claude.count == 1 && claude[0].kind == .message
+            && claude[0].text == made.body
+            && claude[0].source == source.label
+            && claude[0].sourceAssistant == .claude)
+    let queuedRow = try! JSONSerialization.data(withJSONObject: [
+        "type": "queue-operation", "operation": "enqueue", "content": wire,
+        "timestamp": "2026-08-28T06:00:00.000Z",
+    ])
+    let queued = Transcript.parse(String(decoding: queuedRow, as: UTF8.self))
+    check("a relay queued behind a busy Claude keeps the message role",
+          queued.count == 1 && queued[0].kind == .message)
+
+    let codex = Codex.entries(ofItem: [
+        "type": "UserMessage", "content": [["type": "text", "text": wire]],
+    ], at: nil)
+    check("Codex gives the same relay the same message role and source",
+          codex.count == 1 && codex[0].kind == .message
+            && codex[0].source == source.label
+            && codex[0].sourceAssistant == .claude)
+
+    let row = RemoteServer.transcriptRows(claude).first
+    check("HTTP names a relayed session message without calling it the user",
+          row?["role"] as? String == "message"
+            && row?["source"] as? String == source.label
+            && row?["sourceAssistant"] as? String == "claude"
+            && row?["notice"] == nil)
+    check("a relayed session turn counts as external input for transcript ownership",
+          Transcript.containsUserTurn(noticeUserRow(wire,
+                                      at: "2026-08-28T06:00:00.000Z"), assistant: .claude))
+
+    let first = TargetSession(backend: .iterm, id: "TERMINAL-A", name: "source A",
+                              tty: "/dev/ttys070", windowIndex: 0, tabIndex: 0,
+                              assistant: .claude, cwd: "/repo")
+    let second = TargetSession(backend: .tmux, id: "%terminal-b", name: "source B",
+                               tty: "/dev/ttys071", windowIndex: 0, tabIndex: 1,
+                               assistant: .codex, cwd: "/repo")
+    let sessions = [first, second]
+    let conversations = ["TERMINAL-A": "conversation-a", "%terminal-b": "conversation-b"]
+    let resolve: (String) -> TargetSession? = { id in
+        RemoteServer.sessionMessageSource(withID: id, among: sessions) {
+            conversations[$0.id]
+        }
+    }
+    expect("a relay source resolves by exact terminal id", resolve("TERMINAL-A")?.id,
+           "TERMINAL-A")
+    expect("a relay source resolves by exact process-bound conversation id",
+           resolve("conversation-b")?.id, "%terminal-b")
+    check("a title or id prefix cannot impersonate a relay source",
+          resolve("source A") == nil && resolve("TERMINAL") == nil)
+    check("an ambiguous conversation id fails closed",
+          RemoteServer.sessionMessageSource(withID: "same", among: sessions) { _ in "same" }
+            == nil)
+}
+
 group("version 2 file-wait and handoff notices") {
     let hostileRepository = #"/repo/<unsafe>&\"quoted\""#
     let hostilePaths = [#"Sources/<script>.swift"#, #"docs/a, b & `c`.md"#]
@@ -2997,7 +3083,7 @@ group("the Web transcript has an inert Clawdline card") {
               && noticeRenderer.contains("T.webNoticeHandoffPickedUp")
               && noticeRenderer.contains("T.webNoticeHandoffNeedsDelivery")
               && noticeRenderer.contains("T.webNoticeRecheckGit"))
-    func renderNotice(_ entry: [String: Any]) -> (html: String, status: Int32) {
+    func renderEntry(_ entry: [String: Any]) -> (html: String, status: Int32) {
         guard let rendererStart = js.range(of: "function whoHTML(role, at) {") else {
             return ("", -1)
         }
@@ -3009,11 +3095,12 @@ group("the Web transcript has an inert Clawdline card") {
             return String(decoding: data, as: UTF8.self)
         }
         let script = """
-        var WHO = { user: "you", assistant: "claude", peer: "Claude ↔", notice: "Clawdline", tool: "tool" };
+        var WHO = { user: "you", assistant: "claude", peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: "tool" };
         var S = { assistantIcons: false };
         var T = new Proxy({}, { get: function (_, key) { return String(key); } });
         function byId() { return null; }
-        function assistantLogo() { return ""; }
+        function assistantLogo(value) { return "LOGO:" + esc(value); }
+        function assistantName(value) { return String(value || "").toUpperCase(); }
         function clockOf(value) { return String(value || ""); }
         function fill(value) { return String(value || ""); }
         function esc(value) {
@@ -3023,7 +3110,7 @@ group("the Web transcript has an inert Clawdline card") {
         }
         function richText(value) { return "BODY:" + esc(value); }
         eval(\(javascriptLiteral(renderer)));
-        process.stdout.write(noticeHTML(\(javascriptLiteral(entry))));
+        process.stdout.write(entryHTML(\(javascriptLiteral(entry))));
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -3044,7 +3131,7 @@ group("the Web transcript has an inert Clawdline card") {
             return ("", -1)
         }
     }
-    let mismatched = renderNotice([
+    let mismatched = renderEntry([
         "role": "notice", "text": "visible row text from the older server",
         "notice": ["kind": "task_finished", "state": "success"],
     ])
@@ -3053,6 +3140,17 @@ group("the Web transcript has an inert Clawdline card") {
             && mismatched.html.contains("BODY:visible row text from the older server")
             && mismatched.html.contains(#"data-role="assistant""#)
             && !mismatched.html.contains("clawdline-notice"))
+    let relayed = renderEntry([
+        "role": "message", "text": "## status & detail", "source": "<clawdline-fa>",
+        "sourceAssistant": "claude",
+    ])
+    check("the real message renderer produces an escaped, Markdown-capable Clawdline card",
+          relayed.status == 0
+            && relayed.html.contains(#"data-role="message""#)
+            && relayed.html.contains("&lt;clawdline-fa&gt;")
+            && relayed.html.contains("LOGO:claude")
+            && relayed.html.contains("BODY:## status &amp; detail")
+            && !relayed.html.contains("<clawdline-fa>"))
     check("task state lookup rejects inherited object properties and keeps a generic title",
           noticeRenderer.contains("Object.prototype.hasOwnProperty.call(states, n.state)")
               && noticeRenderer.contains("var title = T.webNoticeFinished"))
@@ -3076,6 +3174,16 @@ group("the Web transcript has an inert Clawdline card") {
     check("the card is a distinct inert role",
           css.contains(#".entry[data-role="notice"]"#)
               && css.contains(".notice-card") && !css.contains(".notice-card button"))
+    check("a relayed session message has a role and card distinct from user, peer and notice",
+          js.contains(#"role === "message""#)
+              && js.contains(#"data-role="message""#)
+              && js.contains("message-card")
+              && css.contains(#".entry[data-role="message"]"#)
+              && css.contains(".message-card"))
+    check("the message card escapes its source and renders only the validated assistant mark",
+          js.contains("esc(messageSource)")
+              && js.contains("assistantLogo(sourceAssistant)")
+              && js.contains("assistantName(sourceAssistant)"))
     check("the mock transcript exercises the notice role and hostile title",
           mock.contains(#"role: "notice""#) && mock.contains("Review <unsafe> & finish"))
     // The one screen this pair of features exists to prove is a peer card and a notice card,
@@ -3087,6 +3195,10 @@ group("the Web transcript has an inert Clawdline card") {
           mockTranscript.contains(#"role: "peer""#)
               && mockTranscript.contains(#"role: "notice""#)
               && mockTranscript.contains(#"source: "release-room""#))
+    check("the mock transcript also reaches the Clawdline session-message card",
+          mockTranscript.contains(#"role: "message""#)
+              && mockTranscript.contains(#"source: "clawdline-fa""#)
+              && mockTranscript.contains(#"sourceAssistant: "claude""#))
     check("the mock covers both notice kinds, so the overlap card is reachable too",
           mockTranscript.contains(#"kind: "task_finished""#)
               && mockTranscript.contains(#"kind: "workspace_overlap""#))
@@ -14138,6 +14250,49 @@ group("the session index a wait needs is the dispatch credential's own door") {
         body: "{\"waiter_session_id\":\"NOT-IN-THE-INDEX\"}"))
     expect("a waiter the index does not list cannot register a wait", unknown.status, 404)
     expect("and says which half was not found", remoteErrorCode(unknown), "waiter_not_found")
+}
+
+group("session-message relay has a machine-only, idempotent door") {
+    let path = "/v1/orchestrator/messages"
+    let body = #"{"from_session":"NO-SOURCE","to_session":"NO-TARGET","text":"status"}"#
+    let anonymous = RemoteServer.shared.route(remoteRequest("POST", path, body: body))
+    expect("an anonymous relay stops at authentication", anonymous.status, 401)
+
+    let phone = RemoteAuth.addDevice(name: "a phone that may send prompts", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let paired = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["Authorization": "Bearer \(phone.token)"], body: body))
+    expect("a paired device cannot claim to be an assistant session", paired.status, 403)
+    expect("the refusal names the machine credential boundary", remoteErrorCode(paired),
+           "forbidden")
+
+    let machine = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let unkeyed = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: machine, body: body))
+    expect("a machine relay still requires an idempotency key", unkeyed.status, 400)
+
+    var keyed = machine
+    keyed["Idempotency-Key"] = UUID().uuidString
+    let malformed = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: keyed, body: #"{"from_session":"NO-SOURCE","text":"status"}"#))
+    expect("the relay body is a closed schema", malformed.status, 400)
+
+    keyed["Idempotency-Key"] = UUID().uuidString
+    let unresolved = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: keyed, body: body))
+    expect("a claimed source must resolve to one current assistant session",
+           unresolved.status, 404)
+    expect("the source refusal is typed", remoteErrorCode(unresolved), "source_not_found")
+
+    let server = (try? String(contentsOfFile: "Sources/RemoteServer.swift",
+                              encoding: .utf8)) ?? ""
+    let route = server.components(separatedBy:
+        #"case ("POST", "/v1/orchestrator/messages"):"#)
+        .dropFirst().first?.components(separatedBy: "\n        // A root's explicit").first ?? ""
+    check("the relay route types only the closed encoded envelope",
+          route.contains("ClawdlineSessionMessage.encode(message)")
+            && route.contains("Targets.send(wire, to: target)")
+            && !route.contains("Targets.send(text, to: target)"))
 }
 
 group("the wait session index says what a wait must name, and nothing off the screen") {

@@ -1157,6 +1157,8 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
 
   <p>Every state change also goes out on the event stream, which is how a watching interface finds out without asking. And when a task finalizes, the broker looks for the root's terminal and types one compact structured line into it — a single-line envelope with a version, a kind and a closed set of fields, so that both terminal multiplexers preserve it byte for byte. Recognition is strict and whole-message only: any stray newline, extra key, unknown kind or quoted lookalike is not partly interpreted, and stays visible as ordinary text. <strong>One delivery attempt, and a failure is logged rather than retried, because the second copy of a notification is worse than none.</strong> A machine that would rather poll can switch those lines off entirely.</p>
 
+  <p><strong>A session report is not one of those broker notices.</strong> A live Claude or Codex session may address another through machine-token-only <code>POST /v1/orchestrator/messages</code>. Clawdline resolves the source against the current terminal/process identity and types a separate versioned <code>&lt;clawdline-message&gt;</code> envelope. App and Web draw it as <em>Clawdline ↔ source session</em>, restore the body's Markdown and never attribute it to the person. Plain <code>/send</code>, hand-written prefixes such as <code>[a0939bac name]</code>, and <code>===</code> headings remain ordinary user prompts; the reader does not guess identity from prose. The closed role and kind inventory is in <a href="messages.md">messages.md</a>.</p>
+
   <!-- 23 -->
   <h2 id="later"><span class="n">23</span>Later: the same protocol, elsewhere</h2>
 
@@ -1170,7 +1172,7 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
 
   <hr>
   <footer>
-    <p><strong>This page is the current contract, not a record of a moment.</strong> When Clawdline's task, handoff, landing, claims, file-wait or cross-session notification semantics change, this page changes with them, in the same line of work — a protocol change is not finished while the page still teaches the previous behaviour. The routes in full, with exact request and response shapes, are in the API reference that ships beside it.</p>
+    <p><strong>This page is the current contract, not a record of a moment.</strong> When Clawdline's task, handoff, landing, claims, file-wait, session-message or cross-session notification semantics change, this page changes with them, in the same line of work — a protocol change is not finished while the page still teaches the previous behaviour. The routes in full, with exact request and response shapes, are in the API reference that ships beside it.</p>
   </footer>
 
 </main>

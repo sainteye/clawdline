@@ -333,6 +333,9 @@ export var Mock = (function () {
         // `notice` is what the app said to it about a task. Neither should look like the other.
         { role: "peer", text: "The release notes still say **August**. Fix that before you push.", tool: null,
           at: now - 3560, source: "release-room", sourceMode: "prompting" },
+        { role: "message", text: "你那兩點我都收進去了。\n\n## 狀態\n\n`e23f626b` 還在跑。", tool: null,
+          at: now - 3555, source: "clawdline-fa", sourceMode: "clawdline",
+          sourceAssistant: "claude" },
         { role: "assistant", text: "Caught it — the heading was left over from the last cut. Changed to September and pushed.", tool: null, at: now - 3550 },
         { role: "notice", text: "[clawdline] workspace overlap: task 7d40aa19 (Release notes) and task 2ef96bc1 (Review) share /Users/you/code/clawdline/docs", at: now - 3540,
           notice: { kind: "workspace_overlap", audience: "root",

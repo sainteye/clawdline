@@ -1179,6 +1179,66 @@ final class RemoteServer: @unchecked Sendable {
                                                                    states: watch.states),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        // A live assistant session speaking to another through Clawdline. This is not the
+        // paired-device `/send` route: the source is resolved against current process-bound
+        // session identity, the machine credential is required, and the terminal receives a
+        // closed envelope which transcript readers can attribute without calling it the user.
+        case ("POST", "/v1/orchestrator/messages"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Relaying a session message needs the orchestrator token.")
+            }
+            return orchestratorWriting(request) { body in
+                guard Set(body.keys) == Set(["from_session", "to_session", "text"]),
+                      let sourceID = body["from_session"] as? String, !sourceID.isEmpty,
+                      let targetID = body["to_session"] as? String, !targetID.isEmpty,
+                      let text = body["text"] as? String, !text.isEmpty,
+                      text.count <= 100_000 else {
+                    return .error(400, "bad_request",
+                                  "The closed body needs from_session, to_session and "
+                                  + "1…100000 characters of text.")
+                }
+                guard let source = self.sessionMessageSource(withID: sourceID),
+                      let sourceAssistant = source.assistant else {
+                    return .error(404, "source_not_found",
+                                  "No current assistant session has that terminal or "
+                                  + "conversation id.")
+                }
+                guard let target = self.session(withID: targetID), target.isAssistant else {
+                    return .error(404, "target_not_found",
+                                  "No current assistant session has that terminal id.")
+                }
+                guard source.id != target.id else {
+                    return .error(409, "same_session",
+                                  "A session message must go to a different session.")
+                }
+                if self.state(of: target.id) == .waiting, Targets.isChoosing(target) {
+                    return .error(409, "target_busy",
+                                  "The target is showing a menu; typing would answer it instead "
+                                  + "of delivering the message.")
+                }
+
+                let message = ClawdlineSessionMessage.Message(
+                    source: .init(id: source.id, label: source.displayLabel,
+                                  assistant: sourceAssistant),
+                    body: text)
+                let wire = ClawdlineSessionMessage.encode(message)
+                guard wire.hasPrefix(ClawdlineSessionMessage.opening) else {
+                    return .error(500, "encoding_failed",
+                                  "The session message could not be encoded safely.")
+                }
+                if let failure = Targets.send(wire, to: target) {
+                    return .error(502, "delivery_failed", failure)
+                }
+                RemoteAuth.audit("orchestrator.message", [
+                    "from": source.id, "to": target.id,
+                    "assistant": sourceAssistant.rawValue, "chars": "\(text.count)",
+                ])
+                DispatchQueue.main.async { SessionWatch.shared.nudge() }
+                let at = Int(Date().timeIntervalSince1970)
+                return .json(["ok": true, "accepted_at": at, "at": at])
+            }
+
         // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
         // published by the GET above; every process/conversation fact is resolved here from the
         // live target, never trusted from the request body. It is a single-check delivery claim,
@@ -2104,6 +2164,24 @@ final class RemoteServer: @unchecked Sendable {
             else { note(response, for: request, by: device) }
             return response
         }
+    }
+
+    /// Machine-token writes use the same ten-minute replay table as paired-device writes without
+    /// inheriting that route family's remote-write switch or device capability gate. A relay is
+    /// still a terminal write, so retrying it without an idempotency key is still unsafe.
+    private func orchestratorWriting(_ request: Request,
+                                     _ body: ([String: Any]) -> Response) -> Response {
+        guard let key = request.headers["idempotency-key"], !key.isEmpty else {
+            return .error(400, "bad_request", "That needs an Idempotency-Key header.")
+        }
+        if let seen = idempotent[key], Date().timeIntervalSince(seen.at) < 600 {
+            return seen.response
+        }
+        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+            ?? [:]
+        let response = body(parsed)
+        remember(response, under: key, for: request, by: "orchestrator")
+        return response
     }
 
     private var idempotent: [String: (at: Date, response: Response)] = [:]
@@ -3137,6 +3215,18 @@ final class RemoteServer: @unchecked Sendable {
         sessions.first { $0.id == id }
     }
 
+    /// Resolve a relay source in the two namespaces already exposed to assistant sessions: its
+    /// terminal-neutral id, or the conversation id proved for the process currently in it. No
+    /// title, prefix or tty matching is allowed, and ambiguity fails closed.
+    static func sessionMessageSource(withID id: String, among sessions: [TargetSession],
+                                     conversationID: (TargetSession) -> String?)
+        -> TargetSession? {
+        let matches = sessions.filter { session in
+            session.id == id || conversationID(session) == id
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
     /// The reading lives on the main thread and this runs on the server's queue, so the crossing
     /// is here and nowhere else — one hop for a dictionary lookup, rather than a copy of the
     /// session list kept in two places and drifting.
@@ -3144,6 +3234,16 @@ final class RemoteServer: @unchecked Sendable {
         if Thread.isMainThread { return Self.session(withID: id, among: SessionWatch.shared.targets) }
         return DispatchQueue.main.sync {
             Self.session(withID: id, among: SessionWatch.shared.targets)
+        }
+    }
+
+    private func sessionMessageSource(withID id: String) -> TargetSession? {
+        let sessions: [TargetSession]
+        if Thread.isMainThread { sessions = SessionWatch.shared.targets }
+        else { sessions = DispatchQueue.main.sync { SessionWatch.shared.targets } }
+        return Self.sessionMessageSource(withID: id, among: sessions) { session in
+            Self.sessionIdentity(assistant: session.assistant,
+                                 processBound: Transcript.sessionID(of: session))
         }
     }
 
@@ -3464,6 +3564,9 @@ final class RemoteServer: @unchecked Sendable {
             if entry.kind == .user { row["imageCount"] = entry.imageCount }
             if let source = entry.source, !source.isEmpty { row["source"] = source }
             if let mode = entry.sourceMode, !mode.isEmpty { row["sourceMode"] = mode }
+            if let assistant = entry.sourceAssistant {
+                row["sourceAssistant"] = assistant.rawValue
+            }
             if let notice = entry.notice {
                 row["notice"] = ClawdlineMessage.webObject(for: notice)
             }
@@ -3476,6 +3579,7 @@ final class RemoteServer: @unchecked Sendable {
         case .user:       return "user"
         case .assistant:  return "assistant"
         case .peer:       return "peer"
+        case .message:    return "message"
         case .notice:     return "notice"
         case .tool:       return "tool"
         case .toolResult: return "tool"

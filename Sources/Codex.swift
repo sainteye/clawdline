@@ -375,10 +375,14 @@ enum Codex {
 
         switch item["type"] as? String {
         case "UserMessage":
-            if let raw = exactText(inContent: item["content"]),
-               let notice = ClawdlineMessage.decode(raw) {
-                return [Transcript.Entry(kind: .notice, text: notice.body, tool: nil,
-                                         time: time, notice: notice)]
+            if let raw = exactText(inContent: item["content"]) {
+                if let message = Transcript.clawdlineSessionMessage(in: raw, at: time) {
+                    return [message]
+                }
+                if let notice = ClawdlineMessage.decode(raw) {
+                    return [Transcript.Entry(kind: .notice, text: notice.body, tool: nil,
+                                             time: time, notice: notice)]
+                }
             }
             let canonical = Transcript.canonicalImageContent(text(inContent: item["content"]))
             if canonical.imageCount > 0 {

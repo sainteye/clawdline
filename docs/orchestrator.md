@@ -1629,6 +1629,12 @@ dedicated notice entry; no reader reconstructs semantics from `body`.
 One delivery attempt; a failure is logged and not retried, because the second copy of a
 notification is worse than none.
 
+This is separate from a live session reporting to another live session. That uses machine-token
+`POST /v1/orchestrator/messages`, a version-1 `<clawdline-message>` envelope, and transcript role
+`message`; App and Web name the resolved source instead of drawing the words as the person's user
+turn. The closed inventory, including which first lines intentionally remain ordinary `user`
+prompts, is [`messages.md`](messages.md).
+
 `orchestrator_notify_root` turns it off for anybody who would rather poll. Every task change also
 goes out on [the event stream](api.md#the-event-stream) as an `orchestrator` frame, which is how the
 web interface and anything else watching finds out without asking.

@@ -123,6 +123,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
 | `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
@@ -1485,6 +1486,48 @@ session's *own* terminal-neutral id is the UUID after the colon in `$ITERM_SESSI
 answers "who am I" and nothing else. [`GET /v1/orchestrator/waits`](#coordination-waits) names the
 ids already inside a wait — which is no help to the first session that needs to wait on somebody.
 
+### `POST /v1/orchestrator/messages`
+
+Relay one assistant session's message to another without attributing it to the person. It requires
+`X-Clawdline-Orchestrator` and an `Idempotency-Key`; a paired device gets `403 forbidden` even when
+it has the `send` capability. The closed body is:
+
+```console
+$ curl -sS -X POST http://127.0.0.1:7717/v1/orchestrator/messages \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
+    -H "Idempotency-Key: $(uuidgen)" \
+    -H 'Content-Type: application/json' \
+    -d '{"from_session":"A0939BAC-569B-4B87-9DF4-DE493EC327EA",
+         "to_session":"509F54A8-356E-420D-9EAC-73D676C9580E",
+         "text":"The correction is in the same round.\n\n## Status\n\nStill running."}'
+{"ok":true,"accepted_at":1787896806,"at":1787896806}
+```
+
+`from_session` is either the source's exact terminal-neutral id or its process-bound conversation
+id. `to_session` is the target's exact terminal-neutral id. Both must resolve to current Claude or
+Codex sessions; titles, prefixes and tty names are never matched, ambiguous source identity fails
+closed, and source and target must differ. `text` is 1…100000 characters. A target showing a menu
+returns `409 target_busy`, because typing would answer the menu rather than deliver the message.
+
+The route types one version-1 `<clawdline-message>` envelope. Both transcript readers normalize it
+to `role: "message"`, preserve the body's Markdown and expose only the resolved source label and
+assistant. The complete type inventory and wire schema are in [`messages.md`](messages.md).
+`ok` means the terminal transport accepted one typing attempt. It is not a transcript-observed or
+assistant-acknowledged receipt; the idempotency key prevents a network retry from becoming a
+second prompt.
+
+| `code` | status | meaning |
+|---|---:|---|
+| `unauthorized` | 401 | neither a valid machine credential nor paired-device credential was supplied |
+| `forbidden` | 403 | a paired device reached the route without the machine credential |
+| `bad_request` | 400 | missing idempotency key, malformed/extra body field, empty or oversized text |
+| `source_not_found` | 404 | no unique current source matches the exact terminal/conversation id |
+| `target_not_found` | 404 | the target terminal id is not a current assistant session |
+| `same_session` | 409 | source and target resolve to the same terminal |
+| `target_busy` | 409 | the target is showing a picker/menu |
+| `delivery_failed` | 502 | terminal automation could not type the envelope |
+| `encoding_failed` | 500 | the closed envelope could not be serialized |
+
 ### `POST /v1/orchestrator/sessions/:id/complete`
 
 A root calls this immediately before its final completion response, after the work it claims is
@@ -2800,12 +2843,13 @@ counts only when it was announced **and** has no ending under it.
 
 ```jsonc
 {
-  "role": "user",                  // "user" | "assistant" | "peer" | "notice" | "tool"
+  "role": "user",                  // "user" | "assistant" | "peer" | "message" | "notice" | "tool"
   "text": "請幫我在網頁加入 favicon",
   "tool": "Bash",                  // present only on a tool call, absent on its result
   "at": 1787049580,                // absent if the record carried no timestamp
   "source": "release-room",        // human-readable session name; peer only
-  "sourceMode": "prompting"        // peer sender mode; peer only
+  "sourceMode": "prompting",       // peer sender mode, or "clawdline" for message
+  "sourceAssistant": "claude"      // "claude" | "codex"; message only
 }
 ```
 
@@ -2817,10 +2861,14 @@ For a `peer` entry, `source` is the other session's human-readable name, never i
 transport path. `sourceMode` is the mode that session used to send the message. Either field is
 absent when the transcript did not carry a non-empty value.
 
-`peer` and `notice` are two different things and never stand in for one another: a `peer` entry is
-what another assistant session said to this one, a `notice` entry is what Clawdline said to it
-about a task. A row carries at most one of the two, so `source`/`sourceMode` never appear beside
-`notice`.
+For a `message` entry, `source` is the live source session's resolved display label,
+`sourceMode` is `clawdline`, and `sourceAssistant` is `claude` or `codex`. The envelope's terminal
+id does not become a link or action. The body is session-authored Markdown, unlike an inert
+`notice` card.
+
+`peer`, `message` and `notice` never stand in for one another: `peer` is Claude Code's native
+session-to-session transport, `message` is a session-to-session relay through Clawdline, and
+`notice` is Clawdline reporting a broker fact. `source` metadata never appears beside `notice`.
 
 `role: "notice"` is a versioned, single-line Clawdline envelope that either transcript reader
 recognized as a whole message. The wire wrapper contains no LF or CR. Its `text` is the
@@ -2869,7 +2917,8 @@ both versions non-clickable. Malformed, partial, unknown-version, extra-field, a
 are never dropped and never partly
 interpreted: they keep their full visible text and stay whatever the row they arrived in already
 was. In an ordinary turn that is `role: "user"`; quoted inside a cross-session envelope it is
-`role: "peer"`, because who sent a message is a stronger fact than what its text looks like.
+`role: "peer"`, and quoted inside a Clawdline session-message body it is `role: "message"`, because
+who sent a message is a stronger fact than what its text looks like.
 
 `tool` is whatever the assistant calls it, so the vocabularies differ: Claude Code's are `Bash`,
 `Edit`, `Read` and the rest; Codex's are `shell` for a command, `edit` for a file change,
