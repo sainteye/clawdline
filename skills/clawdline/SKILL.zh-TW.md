@@ -1104,13 +1104,23 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 
   ```bash
   snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-  git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
+  git archive HEAD | tar -x -C "$snapshot_dir"
+  git diff --binary --full-index --no-ext-diff HEAD \
+    | (cd "$snapshot_dir" && git apply --allow-empty --whitespace=nowarn)
+  git ls-files --others --exclude-standard -z \
+    | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
   (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
   ```
 
-  `git stash create` 是上面那條禁令唯一的例外：它只寫出一個裝著工作樹的 commit object，
-  既不動工作樹也不動 stash 清單。樹乾淨的時候它什麼都不印，那就退回用 `HEAD`。
-  **絕對不要叫 child 用 `git write-tree`**——那讀的是 *index*，所以得先 stage，而 index 是共用的：
+  **三行而不是一行，因為那個一行版錯了兩次。** `git archive "$(git stash create)"` 看起來對，
+  失敗的時候卻不出聲：**樹是乾淨的時候** `git stash create` exit 0 但印出**空字串**，所以
+  `|| echo HEAD` 那種退路永遠不會觸發，`git archive ""` 什麼都沒解出來，`./test.sh` exit 127，
+  然後這一輪以「零個失敗」收場。那個綠什麼都沒跑，而且打得最準的是唯讀的複審者——他們的樹永遠
+  是乾淨的。第二，stash object 只裝**已追蹤**檔案的改動，所以別的 session 新增但還沒 commit 的
+  測試會漏出快照，而呼叫它的 `test.sh` 卻進得去：套件照樣綠，那條測試從來沒跑過。
+  以 `HEAD` 開檔、把 `git diff HEAD` 重播上去、再疊上未追蹤的檔案，乾淨樹、髒樹、新檔三種都蓋到，
+  而且不會在 `.git` 裡寫任何 object——在 linked worktree 裡這件事有差，因為 Codex 的沙箱
+  可能根本不能寫那裡。**絕對不要叫 child 用 `git write-tree`**——那讀的是 *index*，所以得先 stage，而 index 是共用的：
   child 會把別的 session 留在裡面的東西一起掃進去，然後被某個 root commit 出去。這件事在這裡發生過。
   `write-tree` 是 root 的工具，因為 root 本來就在 stage，而「commit 下去 HEAD 還編得過嗎」
   這個問題只有 index 答得出來。

@@ -1261,13 +1261,25 @@ hand-written SVG instead — see §2.5.
 
   ```bash
   snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-  git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
+  git archive HEAD | tar -x -C "$snapshot_dir"
+  git diff --binary --full-index --no-ext-diff HEAD \
+    | (cd "$snapshot_dir" && git apply --allow-empty --whitespace=nowarn)
+  git ls-files --others --exclude-standard -z \
+    | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
   (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
   ```
 
-  `git stash create` is the one exception to the bullet above: it writes a commit object holding the
-  working tree and touches neither the worktree nor the stash list. It prints nothing when the tree
-  is clean, so fall back to `HEAD`. **Never tell a child to use `git write-tree`** — that reads the
+  **Three commands and not one, because the one-liner was wrong twice.** `git archive "$(git stash
+  create)"` reads correctly and fails silently: on a **clean tree** `git stash create` exits 0 and
+  prints an **empty string**, so a `|| echo HEAD` fallback never fires, `git archive ""` unpacks
+  nothing, `./test.sh` exits 127 and the run ends with zero failures. That green ran nothing, and it
+  aims straight at read-only reviewers, whose tree is always clean. Second, a stash object carries
+  only *tracked* changes, so a test another session has added but not committed is missing from the
+  snapshot while the `test.sh` that calls it is not: the suite stays green and that test never ran.
+  Replaying `git diff HEAD` onto a `HEAD` archive and overlaying the untracked files covers a clean
+  tree, a dirty one and a new file, and writes no object into `.git` — which matters in a linked
+  worktree, where a Codex sandbox may not write there at all. **Never tell a child to use `git
+  write-tree`** — that reads the
   *index*, so it has to stage first, and the index is shared: the child sweeps up whatever another
   session left in there, and then a root commits it. That has happened here. `write-tree` is root's
   tool, because root is staging anyway and "will HEAD still build after this commit?" is a question

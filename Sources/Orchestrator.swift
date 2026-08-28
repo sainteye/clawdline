@@ -15,11 +15,11 @@ import Security
 /// **Two credentials, deliberately not one.** Dispatching is gated by a token in a `0600` file —
 /// the same boundary `remote-token` uses, and for the same reason: through a tunnel every request
 /// arrives from 127.0.0.1, so "local" is a thing only the filesystem can prove, and a paired
-/// phone must never be able to start sessions. A child allowed to dispatch can read that token;
-/// it still cannot exchange it for another task's secret. Every child gets its own per-task
-/// secret, typed into its first message and good for finishing its own task or sending one of its
-/// tightly limited timely notifications. Only the secret's SHA-256 is kept once the child has
-/// been briefed.
+/// phone must never be able to start sessions. Nothing this app opens may dispatch, so no child
+/// is handed that token at all, and one that found it could still not exchange it for another
+/// task's secret. Every child gets its own per-task secret, typed into its first message and good
+/// for finishing its own task or sending one of its tightly limited timely notifications. Only
+/// the secret's SHA-256 is kept once the child has been briefed.
 enum Orchestrator {
 
     // MARK: - Scheduled dispatches
