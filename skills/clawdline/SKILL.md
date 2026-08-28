@@ -38,7 +38,7 @@ to a session that continues it — is a different move with different rules, and
 
 ---
 
-## 0. Work out which level you are on — this decides whether you may dispatch at all
+## 0. Work out whether you are a root or a child — this decides whether you may dispatch at all
 
 **Any one of these means you are a child:**
 
@@ -46,28 +46,24 @@ to a session that continues it — is a different move with different rules, and
 - You have read, or been asked to read, `/tmp/.clawdline/<id>/CHILD.md`
 - You are holding a `TASK_SECRET=`
 
-**If you are a child, this skill is not what governs you — `CHILD.md` is.** It says in one sentence
-which of these you are, and you do not have to work it out:
+**If you are a child, this skill is not what governs you — `CHILD.md` is.** And every child gets
+the same answer: **you are the floor.** `CHILD.md` says so in one sentence — *you are the bottom of
+this tree: you cannot dispatch Clawdline tasks of your own, and one you attempt is refused* — so
+there is nothing to work out and nothing to look for.
 
-- **"You may hand parts of this on to at most N child sessions of your own…"** → you may dispatch,
-  and the same sentence names `DISPATCHING.md` in your own task directory. **That file is the
-  recipe, and it is nowhere else** — the credential, the fields, the refusals and this Mac's house
-  rules, including the one field nobody else can fill in: `root.parent_task`, the id of your own
-  task. Read it before you hand anything on. §1–§6 below are the long version and are fine to
-  consult, but where they disagree, `CHILD.md` and `DISPATCHING.md` win.
-- **"Do not dispatch Clawdline tasks of your own."** → you are the floor. **Stop.** Tell the user
-  this session is at the bottom of the tree and cannot dispatch any further, then do the work
-  yourself.
+**What to do instead is not "stop".** Work inside your task that wants its own context or wants to
+run in parallel goes to **your own assistant's subagents** — Claude Code's Task tool, Codex's
+subagents. They open no terminal tab, pass through no broker, and hand their answer back into this
+session rather than into a file you have to wait for, which for a piece of one task is the better
+tool anyway. §1–§6 below are written for a root; where they and `CHILD.md` disagree, `CHILD.md`
+wins.
 
-Until 2026-08-28 that teaching lived inside `CHILD.md` under a heading, and this section told you
-to look for the heading and stop if it was absent. It now lives in its own file, so a child that
-never dispatches no longer pays 28,323 characters for it — and looking for the old heading would
-now tell every child on earth to stop.
-
-The tree is two levels deep: the user's session opens children, those children open one more
-level, and that is the end of it. Without a floor, one job becomes five becomes twenty-five and a
-Mac runs out of terminals. The app does enforce it (dispatch answers `depth_exceeded`), but that
-is the last line of defence, not the first — **the first is you.**
+The tree is one level deep: the user's session opens children, a child opens nothing. Without a
+floor, one job becomes five becomes twenty-five and a Mac runs out of terminals. The app does
+enforce it — a dispatch from a child answers `depth_exceeded` — but that is the last line of
+defence, not the first. **There is no `DISPATCHING.md` any more**, in your task directory or
+anywhere else: nothing the app opens may dispatch, so there is no recipe to write, and a copy an
+older build left behind is deleted rather than left to be followed.
 
 ---
 
@@ -97,17 +93,23 @@ reply.
 
 ### 2.0 Read the policy, then answer whether this should be dispatched at all
 
-**Before every dispatch, the first thing you do is read this Mac's policy file:**
+**Before every dispatch, the first thing you do is read this Mac's house rules — and they are two
+files, not one:**
 
 ```bash
-cat ~/.config/clawdline/dispatch-policy.md 2>/dev/null
+cat ~/.config/clawdline/dispatch-policy.md 2>/dev/null        # the base
+cat ~/.config/clawdline/dispatch-policy.local.md 2>/dev/null  # what is true only here
 ```
 
-The app ships that file with contents in it and **the user keeps editing it**, so it grows along
-with what this house knows. **It outranks anything in this skill.** Where the two disagree, follow
-the policy and say which rule you followed when you report back. Only when the file is missing or
-empty do the defaults here apply. The user edits it under Settings → Remote → "How work is handed
-out", and you can edit it for them when they ask.
+The base is shipped with contents in it and **the user keeps editing it**, so it grows along with
+what this house knows. The local sibling is optional, holds the facts that are true only of this
+machine, and the app never seeds, writes or overwrites it. Clawdline composes the two into every
+child's briefing with **the local one last, so where they disagree it wins** — read them the same
+way round. Reading only the base is reading half the rules, and the half you skipped is the half
+about this Mac. **Together they outrank anything in this skill.** Where they and this file disagree,
+follow them and say which rule you followed when you report back. Only when both are missing or
+empty do the defaults here apply. The user edits the base under Settings → Remote → "How work is
+handed out", and you can edit it for them when they ask.
 
 Then, before anything else, **answer the question the policy opens with: should this be dispatched
 at all?**
@@ -326,9 +328,10 @@ that does not writes an essay.
 ### 2.3 How many
 
 A session may have **5 children out at once** by default (`orchestrator_max_children`, 1…10) — and
-that number is **counted per session, not per Mac**. If you are yourself a child, your allowance is
-3 (`orchestrator_max_grandchildren`, 0…10; `0` means you may not dispatch at all). Over the line
-comes back as `over_capacity`.
+that number is **counted per session, not per Mac**; the whole Mac stops at twenty, four roots'
+worth. If you are yourself a child your allowance is none at all, and that is a constant in the
+code rather than a setting. Over either line comes back as `over_capacity`; a child dispatching
+anything comes back as `depth_exceeded`.
 
 ### 2.4 Which assistant
 
@@ -561,7 +564,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `timeout_minutes` | 1…240, 30 if absent |
 | `root.session_id` | this assistant's current conversation id (preferred) or watched terminal id; `null` if unavailable — never invented |
 | `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
-| `root.parent_task` | **only when you are yourself a child** — the id of your own task, the one in your first message. Root dispatches leave it out. Getting it wrong bills this task to somebody else or counts it as deeper than it is; there is nothing to gain |
+| `root.parent_task` | **leave it out.** It existed for a dispatching child, and a child cannot dispatch; every dispatch this app now accepts comes from a root, where the field is `null`. It is still validated and still read, because a stored record from an older build carries it |
 
 **Declaring `claims` costs about twenty output tokens, and most dispatches skip it anyway.**
 Measured across 206 dispatches on this machine: 60.7% declared nothing at all. A collision costs a
@@ -731,7 +734,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
 
 **And closing your own session cancels all of them at once, which is the part people forget.**
 Ending a root — the Close button, `POST /v1/sessions/:id/end` — ends every live task it dispatched,
-grandchildren first. That is documented as a mechanism; here it is an obligation with two halves.
+deepest first. That is documented as a mechanism; here it is an obligation with two halves.
 
 *Before* you close, look at what the close takes with it:
 
@@ -1258,13 +1261,25 @@ hand-written SVG instead — see §2.5.
 
   ```bash
   snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-  git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
+  git archive HEAD | tar -x -C "$snapshot_dir"
+  git diff --binary --full-index --no-ext-diff HEAD \
+    | (cd "$snapshot_dir" && git apply --allow-empty --whitespace=nowarn)
+  git ls-files --others --exclude-standard -z \
+    | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
   (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
   ```
 
-  `git stash create` is the one exception to the bullet above: it writes a commit object holding the
-  working tree and touches neither the worktree nor the stash list. It prints nothing when the tree
-  is clean, so fall back to `HEAD`. **Never tell a child to use `git write-tree`** — that reads the
+  **Three commands and not one, because the one-liner was wrong twice.** `git archive "$(git stash
+  create)"` reads correctly and fails silently: on a **clean tree** `git stash create` exits 0 and
+  prints an **empty string**, so a `|| echo HEAD` fallback never fires, `git archive ""` unpacks
+  nothing, `./test.sh` exits 127 and the run ends with zero failures. That green ran nothing, and it
+  aims straight at read-only reviewers, whose tree is always clean. Second, a stash object carries
+  only *tracked* changes, so a test another session has added but not committed is missing from the
+  snapshot while the `test.sh` that calls it is not: the suite stays green and that test never ran.
+  Replaying `git diff HEAD` onto a `HEAD` archive and overlaying the untracked files covers a clean
+  tree, a dirty one and a new file, and writes no object into `.git` — which matters in a linked
+  worktree, where a Codex sandbox may not write there at all. **Never tell a child to use `git
+  write-tree`** — that reads the
   *index*, so it has to stage first, and the index is shared: the child sweeps up whatever another
   session left in there, and then a root commits it. That has happened here. `write-tree` is root's
   tool, because root is staging anyway and "will HEAD still build after this commit?" is a question

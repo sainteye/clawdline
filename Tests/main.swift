@@ -14955,6 +14955,12 @@ group("a child is the bottom of the tree, and no setting can put a level under i
           brief.contains("subagent"))
     check("no child is pointed at a dispatch recipe any more",
           !brief.contains("DISPATCHING.md") && !brief.contains("child sessions of your own"))
+    // Two sentences elsewhere in the briefing were written for a child that could dispatch, and
+    // survived the level going away because neither says "dispatch" in a way a grep for the
+    // recipe would find. The reading rule let a child open a task directory it had opened
+    // itself, and the honesty rule asked it to account for sessions it can no longer start.
+    check("and nothing else in the briefing assumes it has tasks of its own",
+          !brief.contains("any you dispatched") && !brief.contains("sessions you dispatched"))
 }
 
 group("a codex child is briefed with channels it can actually reach") {

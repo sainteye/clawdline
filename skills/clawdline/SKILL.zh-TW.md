@@ -36,7 +36,7 @@ last-updated: 2026-08-26
 
 ---
 
-## 0. 先確認你在哪一層——這條決定你能不能往下派
+## 0. 先確認你是 root 還是 child——這條決定你能不能往下派
 
 **下面任何一條成立，你就是 child：**
 
@@ -44,24 +44,21 @@ last-updated: 2026-08-26
 - 你讀過、或被要求去讀 `/tmp/.clawdline/<id>/CHILD.md`
 - 你手上有一個 `TASK_SECRET=`
 
-**你是 child 的話，依據不是這份 skill，是 `CHILD.md`。** 它會用一句話直接告訴你是哪一種，
-你不用自己推敲：
+**你是 child 的話，依據不是這份 skill，是 `CHILD.md`。** 而每一個 child 得到的答案都一樣：
+**你就是底。** `CHILD.md` 會用一句話講明——*你是這棵樹的最底層，不能派 Clawdline task，
+派了會被拒絕*——所以沒有東西要推敲，也沒有標題要找。
 
-- **「You may hand parts of this on to at most N child sessions of your own…」** → 你可以派工，
-  而同一句話會指出你自己任務目錄裡的 `DISPATCHING.md`。**那個檔案就是全部的做法，而且只在那裡**
-  ——憑證、欄位、拒絕碼、這台機器的家規，包括 `root.parent_task` 要填你自己那件 task 的 id，
-  那是唯一沒有人會替你填的欄位。派工前先讀它。下面的 §1–§6 只是長版，可以參考，
-  但衝突時以 `CHILD.md` 與 `DISPATCHING.md` 為準。
-- **「Do not dispatch Clawdline tasks of your own.」** → 你這一層已經是底。**立刻停止**，
-  告訴使用者「這個 session 已經在最底層，不能再往下派」，然後自己把事情做掉。
+**接下來要做的不是「停下來」。** 你這件任務裡想要自己的脈絡、或想並行跑的部分，交給
+**你自己這個助理內建的 subagent**——Claude Code 的 Task 工具、Codex 的 subagent。它們不開
+終端機分頁、不經過 broker，答案直接回到這個 session，而不是回到一個你得等的檔案；就一件任務的
+一部分而言，那本來就是比較好的工具。下面的 §1–§6 是寫給 root 的；跟 `CHILD.md` 牴觸時以
+`CHILD.md` 為準。
 
-2026-08-28 以前那份教學寫在 `CHILD.md` 裡的一個標題底下，而這一節本來是叫你去找那個標題、
-找不到就停。現在它搬到自己的檔案，所以不派工的 child 不用再為它付 28,323 個字元——
-而如果還照舊去找那個標題，**每一個 child 都會被告知停止**。
-
-這棵樹只有兩層：使用者的 session 派 child，child 再派一層，就沒有了。沒有底的話，
-一件事變五件變二十五件，一台 Mac 開到爆。app 端有擋（dispatch 會回 `depth_exceeded`），
-但那是最後一道，不是第一道——**第一道是你自己**。
+這棵樹只有一層：使用者的 session 派 child，child 一個都不派。沒有底的話，一件事變五件變
+二十五件，一台 Mac 開到爆。app 端有擋（child 去 dispatch 會回 `depth_exceeded`），但那是最後
+一道，不是第一道。**而且已經沒有 `DISPATCHING.md` 了**，你的任務目錄裡沒有，別的地方也沒有：
+這個 app 開出來的東西沒有一個能派工，所以沒有做法要寫；舊版留下來的那一份會被刪掉，
+而不是留在那裡等人照做。
 
 ---
 
@@ -88,16 +85,20 @@ curl -s "http://127.0.0.1:$PORT/v1/health"
 
 ### 2.0 先讀政策，然後先回答「這件事該不該派」
 
-**每一次派工之前，第一個動作是讀這台 Mac 的政策檔：**
+**每一次派工之前，第一個動作是讀這台 Mac 的家規——而且它是兩份檔案，不是一份：**
 
 ```bash
-cat ~/.config/clawdline/dispatch-policy.md 2>/dev/null
+cat ~/.config/clawdline/dispatch-policy.md 2>/dev/null        # 出廠那份，base
+cat ~/.config/clawdline/dispatch-policy.local.md 2>/dev/null  # 只有這台機器成立的事
 ```
 
-那份檔案**由 app 提供出廠內容、由使用者持續修改**，所以它會隨著這個專案的認識一起長。
-**它的優先權高於這份 skill 裡的任何一條。** 兩邊牴觸時照它做，並在回報時說你照了哪一條。
-檔案不存在或是空的，才照這份 skill 的預設走。使用者可以在 Settings → Remote →「派工的規矩」
-裡編輯它，你也可以在他要求時幫他改。
+base **由 app 提供出廠內容、由使用者持續修改**，所以它會隨著這個專案的認識一起長。local 那份是
+選用的，寫的是只有這台機器成立的事實，app 只讀它，不會建立、寫入或覆蓋它。Clawdline 合成這兩份
+放進每一個 child 的 briefing，**local 排在最後，所以兩邊牴觸時 local 贏**——你也照同樣的順序讀。
+只讀 base 等於只讀了一半的規矩，而漏掉的那一半正是關於這台機器的。**兩份合起來的優先權高於這份
+skill 裡的任何一條。** 牴觸時照它們做，並在回報時說你照了哪一條。兩份都不存在或都是空的，才照
+這份 skill 的預設走。使用者可以在 Settings → Remote →「派工的規矩」裡編輯 base，你也可以在他
+要求時幫他改。
 
 讀完之後，**先回答政策開頭那個問題：這件事該不該派？**
 
@@ -277,8 +278,9 @@ reviewer 不是第五個工人，是一個讀者：只讀別人的產出、只�
 ### 2.3 件數
 
 一個 session 預設同時最多 5 個 child（`orchestrator_max_children`，1…10）——這個數字是
-**每個 session 各自算的**，不是整台 Mac 算的。你自己就是 child 的話，你的額度是 3
-（`orchestrator_max_grandchildren`，0…10；`0` ＝ 不能往下派）。超過會回 `over_capacity`。
+**每個 session 各自算的**，不是整台 Mac 算的；整台 Mac 的上限是二十個，也就是四個 root 的份。
+你自己就是 child 的話，你的額度是零，而且那是程式碼裡的常數、不是設定。超過任一條會回
+`over_capacity`；child 去派工則是 `depth_exceeded`。
 
 ### 2.4 哪個助理
 
@@ -484,7 +486,7 @@ jq -n \
 | `timeout_minutes` | 1…240，沒寫當 30 |
 | `root.session_id` | 目前這個助理的 conversation id（優先）或受監看的 terminal id；查不到就 `null`，不要瞎編 |
 | `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
-| `root.parent_task` | **只有你自己是 child 才要填**——填你自己那件 task 的 id（第一句話裡那個）。root 派工不用寫。填錯只會讓這件任務被算到別人頭上或被算得更深，不會佔到便宜 |
+| `root.parent_task` | **不要填。** 這個欄位是給「會往下派的 child」用的，而 child 已經不能派工；現在這個 app 收得到的每一次派工都來自 root，這一格就是 `null`。它還是會被驗證、還是會被讀，因為舊版留下來的紀錄裡有 |
 
 **宣告 `claims` 大約只花 root 二十個 output token，而多數派工還是沒寫。** 這台機器 206 筆派工
 裡有 60.7% 什麼都沒宣告。撞一次的代價是整件 task 重來——同一份紀錄上是三百萬到一千八百萬 tokens。
@@ -639,7 +641,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
 ```
 
 **而關掉你自己這個 session，等於一次把它們全部取消，這是最容易忘的一段。** 關掉一個 root——
-頁面上的 Close 鍵、`POST /v1/sessions/:id/end`——會取消它派出去、還活著的每一件 task，孫輩先走。
+頁面上的 Close 鍵、`POST /v1/sessions/:id/end`——會取消它派出去、還活著的每一件 task，最深的先走。
 那是機制，這裡要講的是責任，而且有兩半。
 
 關**之前**，先看這一關會帶走誰：
@@ -1102,13 +1104,23 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 
   ```bash
   snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-  git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
+  git archive HEAD | tar -x -C "$snapshot_dir"
+  git diff --binary --full-index --no-ext-diff HEAD \
+    | (cd "$snapshot_dir" && git apply --allow-empty --whitespace=nowarn)
+  git ls-files --others --exclude-standard -z \
+    | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
   (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
   ```
 
-  `git stash create` 是上面那條禁令唯一的例外：它只寫出一個裝著工作樹的 commit object，
-  既不動工作樹也不動 stash 清單。樹乾淨的時候它什麼都不印，那就退回用 `HEAD`。
-  **絕對不要叫 child 用 `git write-tree`**——那讀的是 *index*，所以得先 stage，而 index 是共用的：
+  **三行而不是一行，因為那個一行版錯了兩次。** `git archive "$(git stash create)"` 看起來對，
+  失敗的時候卻不出聲：**樹是乾淨的時候** `git stash create` exit 0 但印出**空字串**，所以
+  `|| echo HEAD` 那種退路永遠不會觸發，`git archive ""` 什麼都沒解出來，`./test.sh` exit 127，
+  然後這一輪以「零個失敗」收場。那個綠什麼都沒跑，而且打得最準的是唯讀的複審者——他們的樹永遠
+  是乾淨的。第二，stash object 只裝**已追蹤**檔案的改動，所以別的 session 新增但還沒 commit 的
+  測試會漏出快照，而呼叫它的 `test.sh` 卻進得去：套件照樣綠，那條測試從來沒跑過。
+  以 `HEAD` 開檔、把 `git diff HEAD` 重播上去、再疊上未追蹤的檔案，乾淨樹、髒樹、新檔三種都蓋到，
+  而且不會在 `.git` 裡寫任何 object——在 linked worktree 裡這件事有差，因為 Codex 的沙箱
+  可能根本不能寫那裡。**絕對不要叫 child 用 `git write-tree`**——那讀的是 *index*，所以得先 stage，而 index 是共用的：
   child 會把別的 session 留在裡面的東西一起掃進去，然後被某個 root commit 出去。這件事在這裡發生過。
   `write-tree` 是 root 的工具，因為 root 本來就在 stage，而「commit 下去 HEAD 還編得過嗎」
   這個問題只有 index 答得出來。

@@ -15,11 +15,11 @@ import Security
 /// **Two credentials, deliberately not one.** Dispatching is gated by a token in a `0600` file —
 /// the same boundary `remote-token` uses, and for the same reason: through a tunnel every request
 /// arrives from 127.0.0.1, so "local" is a thing only the filesystem can prove, and a paired
-/// phone must never be able to start sessions. A child allowed to dispatch can read that token;
-/// it still cannot exchange it for another task's secret. Every child gets its own per-task
-/// secret, typed into its first message and good for finishing its own task or sending one of its
-/// tightly limited timely notifications. Only the secret's SHA-256 is kept once the child has
-/// been briefed.
+/// phone must never be able to start sessions. Nothing this app opens may dispatch, so no child
+/// is handed that token at all, and one that found it could still not exchange it for another
+/// task's secret. Every child gets its own per-task secret, typed into its first message and good
+/// for finishing its own task or sending one of its tightly limited timely notifications. Only
+/// the secret's SHA-256 is kept once the child has been briefed.
 enum Orchestrator {
 
     // MARK: - Scheduled dispatches
@@ -8307,9 +8307,9 @@ enum Orchestrator {
           period otherwise — so copy any log or diff worth keeping into `artifacts/` **before**
           writing `result.json`.
         - \(handOnRule)
-        - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
-          and any your instructions name explicitly. That last one is how a reviewing node works:
-          it is sent to read what other nodes produced, so its instructions list those paths.
+        - Do not read any directory under /tmp/.clawdline/ except your own and any your
+          instructions name explicitly. That second one is how a reviewing node works: it is sent
+          to read what other nodes produced, so its instructions list those paths.
         - Landing records belong to the root after delivery; by protocol convention, a child does
           not call its task's `/landing` route itself even though it holds that task's secret.
         - Do not do work the task did not ask for.
@@ -8381,12 +8381,12 @@ enum Orchestrator {
         Names, not descriptions. A wrong or missing list costs somebody an hour; it costs you a
         minute.
 
-        **If you handed work on and it did not arrive, say so in the summary.** Doing it yourself
-        instead is usually right — the answer is what was asked for, not who produced it. What is
-        not right is a summary that reads as though the sessions you dispatched did the work when
-        they never started. Whoever reads this is deciding how much to trust the result, and
-        "both halves came back" and "both halves failed and I did it myself" are different amounts
-        of evidence behind the same answer.
+        **If you gave part of this to your own subagents and it did not come back, say so in the
+        summary.** Doing it yourself instead is usually right — the answer is what was asked for,
+        not who produced it. What is not right is a summary that reads as though those subagents
+        did the work when they never finished. Whoever reads this is deciding how much to trust
+        the result, and "both halves came back" and "both halves failed and I did it myself" are
+        different amounts of evidence behind the same answer.
 
         **Write it with your file-writing tool, not with a shell command.** A shell line that
         builds JSON and moves it into place gets refused by command screening on its own shape —

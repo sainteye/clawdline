@@ -1293,8 +1293,8 @@ branch on every applicable code:
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
 | `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, advisory `retry_after`, `age_seconds` (`now` minus the blocking task's `created`, an integer), and `root_key` (the blocking task's root tree, hashed — see below). The rejected task is not registered and does not spend dispatch rate-limit budget |
-| `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
-| `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
+| `depth_exceeded` | 409 | **the caller is a child, and a child opens nothing.** The floor is the constant `Orchestrator.depthFloor`, not a setting: `orchestrator_max_grandchildren` still sits in every `config.json` that was ever seeded, is preserved by `save()` as any unknown key is, and is read by nothing. Not a retry — the parallel work goes to that assistant's own subagents |
+| `over_capacity` | 429 | this root's slots are full (`orchestrator_max_children`), or the whole Mac's are (`orchestrator_max_children × 4`). Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
 | `rate_limited` | 429 | more than ten dispatches in ten minutes, or more than one full tree's worth if that is larger |
 | `not_found` | 404 | this build has no orchestrator |
 
@@ -1368,8 +1368,8 @@ leaves `queued` only when it can acquire every name together; shared names are F
 and every terminal state releases all of them. While blocked, the response's task record carries
 `"waiting_on":["<task-id>",…]`; the field is absent when nothing blocks it. Queue waiting does not
 consume `timeout_minutes`, whose clock starts at `briefedAt`. Cancelling a queued task is immediate.
-Queued tasks do count toward children/grandchildren and machine-wide descendant capacity from the
-moment they are registered.
+Queued tasks do count toward the dispatching session's child capacity and the machine-wide
+capacity from the moment they are registered.
 See [Serializing a machine-global operation](orchestrator.md#serializing-a-machine-global-operation)
 for token rules, multi-name atomicity, and restart behavior.
 
@@ -3172,7 +3172,7 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | a sliding window of counted attempts is full — pairing attempts, dispatches per ten minutes, schedules written per ten minutes, agent notifications per hour. What was counted ages out of the window on its own; nothing is draining, which is what separates this from `busy` |
 | `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. The terminal broker admits eight operations globally and two per terminal session, shared by remote terminal mutations, terminal-bearing orchestrator writes and automatic child close; a same-key in-flight retry joins without consuming another place. These refusals are not filed under an `Idempotency-Key` |
-| `over_capacity` | 429 | the dispatcher's child slots are full — `orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
+| `over_capacity` | 429 | the root's child slots are full — `orchestrator_max_children` — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
 | `terminal_io_failed` | 502 | a terminal mutation reached its isolated command queue but the selected backend did not complete the handoff; this includes a bounded tmux subprocess timeout after cleanup |
 | `iterm_attention_required` | 502 | an iTerm Apple Event timed out or returned a malformed list; `app` is `iTerm2`, `action` is `answer_dialog`, and a well-formed later list response re-enables automation. The timed-out event may still execute later |
 | `internal` | 500, 502 | another internal operation failed, including a tab that would not open |

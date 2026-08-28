@@ -191,6 +191,17 @@ runs.
   until that reclaim has landed, delete it yourself before writing `result.json`. Anything worth
   keeping is copied into `artifacts/` first.
 
+**`./test.sh` still exits 133 occasionally, and one measurement would settle it.** Whoever hits it
+next records five things, each with its unit and how it was taken: `wc -c` bytes; `wc -l` lines;
+`grep -a -c '✓'` ticks — **not** the line count, because the last line may be half a tick; **the
+full text of the last complete `✓` line**, meaning the one before any truncated remnant; and
+`grep -a -c 'Fatal error:'` together with whether the tree contains `e8bf1532`. The deciding field
+is the fourth: if it converges across different trees the cause is a *place*, and the code around
+that test is what to read; if it scatters while the byte counts converge, it is a buffer. The two
+cases measured so far converge on one test. An earlier reading that called the cut a buffer
+boundary was withdrawn once those two were compared with each other instead of against a run that
+died of something else — the sister of the rule about holding the observed thing still.
+
 A new test must be seen red before the change that makes it green. A test born green proves
 nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
 replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
@@ -284,6 +295,66 @@ the people.
 Where a field genuinely has to carry several meanings, the repair is to stop overloading it — keep
 the declaration on the record next to a state that says how it was treated — not to remember the
 ambiguity.
+
+### A guard must be able to go red
+
+Seven times in one day, on unrelated questions, a command reported success and nothing had
+happened. The root is the same every time: **succeeding and producing a result were treated as one
+fact.**
+
+- `sed` at the end of a pipeline swallowed the status of the command before it, so the `||` never
+  fired. A pipeline's exit code is its *last* command's, not the one you care about.
+- A guard's glob matched zero files in the directory it is actually invoked from, printed `ok`, and
+  exited 0.
+- `2>&1 | wc -l` counted a five-line error message as five resources.
+- `git stash create` succeeded and printed an empty string, so `|| echo HEAD` never fired, the
+  snapshot held nothing, and `./test.sh` exited 127 with zero failures reported.
+- `git ls-files | grep | sed`, judged with `|| echo none`: the status belonged to `sed`, and was
+  always 0.
+- `grep -c` **exits 1 when the count is legitimately zero**, so `grep -c … || echo 0` prints two
+  zeros — one the real count, one the fallback.
+- `grep` printed *nothing at all* — not `0` — on a log it had decided was binary, while its exit
+  code looked ordinary. `-a` produced the real `0`.
+
+Four questions catch all seven, and they are cheap to ask before relying on a command:
+
+1. **Can this succeed and produce nothing?**
+2. **Is this exit code the one I think it is?** `a | b` reports `b`'s.
+3. **Does this tool change behaviour silently on the shape of its input?** `grep` on something it
+   decides is binary; `wc -l` counting the stderr that `2>&1` handed it.
+4. **Does this exit code carry a result or a status?** `grep` is found/not-found, `diff` is
+   differs/same, `test` likewise. There `||` does not mean *it failed*, it means *the answer is
+   no* — and a perfectly correct "no" fires your fallback.
+
+The prescription is one line: **prove your guard can go red.** Break what it guards, in the
+directory it is really run from, and watch it fail. A check nobody has seen fail is not a weaker
+check, it is a claim with nothing behind it. The one guard written that way on the day the other
+seven were found is `clawdline-cloud`'s `infra/check-aws-descriptions.py`: its author ran it where
+it is actually invoked, made *scanned zero files* return exit `2` with
+`aws_description_scan_empty` on stderr, and had the success line print how many files it read
+(`ok: N .tf file(s) scanned`). **A count in the output is what lets the next reader tell "clean"
+from "never looked".**
+
+Two habits belong under this rule, because they are how a false reading travels.
+
+**Identify by content, and hand the content over.** Searching by content does not save you if what
+you pass on is a line number. Somebody located a passage correctly by matching its text and
+reported it as *line 74*; by the time that was read the line held something else, a grep against
+code that no longer existed came back empty, and the emptiness was broadcast as a fact. On this
+tree line numbers are the half that expires — quote the line itself.
+
+**A number keeps its unit.** `lines: 283` was passed on as *283 ticks*. The tick count was 282, and
+the conclusion built on the coincidence had to be withdrawn. A number that changes units in transit
+is indistinguishable from a measurement, and it is the same failure as a count read off a lossy
+rendering.
+
+One caution about the seventh instance, because the fix is cheap and the diagnosis is not: three
+truncated logs were all cut mid-character, and only one of them silenced `grep` — the other two
+were still valid UTF-8 and printed `0` as usual. **The position of the cut decides, not the fact of
+it.** So always pass `-a` when grepping a log that may be truncated, which costs nothing; and
+**never read grep's silence as evidence that a log was truncated.** For that, use `file` or the
+byte count.
+
 
 ## Dispatching substantial work with Clawdline
 
