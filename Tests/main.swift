@@ -10996,12 +10996,25 @@ group("worktree task records, briefings and shared-tree coordination stay distin
     check("a shared-tree child keeps the existing briefing without worktree rules",
           !sharedBrief.contains("## Your isolated checkout")
               && !sharedBrief.contains("only on this branch"))
-    check("an isolated child is told its branch, base, and commit-only delivery rule",
+    check("an isolated child is told its branch, base and the rules it shares with every isolate",
           isolatedBrief.contains(isolated.worktree!.branch)
               && isolatedBrief.contains(isolated.worktree!.base)
-              && isolatedBrief.contains("only on this branch")
               && isolatedBrief.contains("Do not push")
               && isolatedBrief.contains("gitignore"))
+    // The delivery rule is not the same for both assistants, and this pair is why. A linked
+    // worktree keeps its git metadata in the base repository, outside what codex may write, so
+    // telling a codex child to commit produces a `failure` with the work done — twice in one week
+    // before the briefing was split. The old single assertion asserted "only on this branch"
+    // against a codex fixture, which locked the defect in.
+    check("a codex isolate is told to leave the bytes for root, not to commit",
+          isolatedBrief.contains("Do not commit")
+              && !isolatedBrief.contains("only on this branch"))
+    var isolatedClaude = isolated
+    isolatedClaude.assistant = .claude
+    let claudeBrief = Orchestrator.childBrief(for: isolatedClaude)
+    check("a claude isolate keeps the commit-on-your-branch delivery rule",
+          claudeBrief.contains("only on this branch")
+              && !claudeBrief.contains("Do not commit"))
     check("the work-inside line names the effective monorepo cwd, not projectDir",
           isolatedBrief.contains("Work inside \(isolated.worktree!.cwd)."))
 

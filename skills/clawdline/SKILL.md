@@ -372,8 +372,10 @@ letters, digits, `.`, `_` and `-` only** — anything else comes back as `bad_ta
 | `sonnet` | ordinary work with judgement in it; the default choice for a leaf |
 | `opus` | a decision somebody will act on without checking, and **any node joining several children's answers** |
 
-**A review runs on a model no weaker than what produced the thing.** Judging a big model's output
-with a small one is a rubber stamp with a token cost.
+**A review runs on an opus-class model** — an absolute floor, not a comparison with whatever
+produced the thing (§2.2 rule 3 has the measurement behind that). "No weaker than what it judges"
+would let a haiku leaf be reviewed by haiku, and a review is worth exactly what the reviewer's
+judgement is worth: a missed finding travels all the way to the end.
 
 On the Codex side the same field takes its slug (e.g. `gpt-5.1-codex`).
 

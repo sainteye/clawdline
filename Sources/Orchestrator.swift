@@ -7127,9 +7127,23 @@ enum Orchestrator {
             gitignore — dependencies, build caches, and local environment files — are absent too;
             install them only after checking that doing so will not consume most of your timeout.
 
-            **Commit early and often.** Commit only on this branch: the branch is the delivery,
-            and uncommitted changes can be lost when the checkout is cleaned. You may use
-            `git add`, `git commit`, `git status`, `git diff`, `git log`, and `git show` here.
+            \(task.assistant == .codex
+              ? """
+                **Do not commit. Leave your work uncommitted in this checkout.** A linked
+                worktree keeps its git metadata in the base repository's
+                `.git/worktrees/<task-id>/`, which is outside what you can write, so `git add`
+                fails with `Operation not permitted` on `index.lock` and the delivery is
+                reported as a failure with the work done. That has cost this repository whole
+                rounds. The root reads this checkout and commits for you; your delivery is the
+                bytes, not a branch. You may use `git status`, `git diff`, `git log` and
+                `git show` to read.
+                """
+              : """
+                **Commit early and often.** Commit only on this branch: the branch is the
+                delivery, and uncommitted changes can be lost when the checkout is cleaned. You
+                may use `git add`, `git commit`, `git status`, `git diff`, `git log`, and
+                `git show` here.
+                """)
             Do not push, switch or check out another branch, rebase, merge, hard-reset, stash,
             use `--git-dir` or `git -C` to reach the base repository, run any `git worktree`
             command, or run `./build.sh`. The app records commits, HEAD and dirty state from git;
