@@ -195,32 +195,38 @@
     background-attachment: local, local, scroll, scroll;
 }
 /* A fenced block and the button that copies it.
-   The button is positioned against the wrapper rather than the `<pre>`, so it stays in the
-   corner while the code scrolls underneath it, and it is out of flow, so the block is exactly
-   as wide as it was before the button existed. What keeps it off the text is the `<pre>`'s own
-   right padding: that gutter is part of the scrollable area, so there is nothing underneath the
-   button at any scroll offset — including the far right, where the last character stops short
-   of it rather than sliding under it. */
+   The button is positioned against the wrapper rather than against the `<pre>`, so it holds the
+   corner while the code scrolls underneath it, and it is out of flow, so the block is exactly as
+   wide as it was before the button existed.
+
+   Two things about the corner it holds, both measured rather than assumed. A scrollable box is
+   clipped at its *padding* box, so right padding buys no clear space at rest — a first line
+   longer than the block still runs the full width, under wherever the button is. What the
+   padding does buy is the far end: it is part of the scrollable area, so at full scroll the last
+   character stops short of the button instead of sliding beneath it. So the button is tucked
+   hard into the corner, over the strip where a long line is already cut off and where the shading
+   above says as much — never in the middle of the line, and never with a sliver of text stranded
+   between it and the edge. */
 .entry .body .codeblock { position: relative; }
-.entry .body .codeblock > pre.code { padding-right: 42px; }
+.entry .body .codeblock > pre.code { padding-right: 38px; }
 .entry .body .codecopy {
-    position: absolute; top: 5px; right: 5px;
+    position: absolute; top: 1px; right: 1px;
     display: flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; padding: 0;
-    border: 1px solid var(--line); border-radius: 7px;
+    width: 27px; height: 26px; padding: 0;
+    border: 0; border-radius: 0 7px 0 7px;
     background: #15151b; color: var(--faint);
     cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
 /* Never hover-gated, for the reason the info card's copy button is not: this page is mostly read
-   on a phone, where a control that appears on hover is a control that does not appear. The
-   button stays small enough not to loom over a one-line block, and grows an invisible 44px
-   target around itself for the thumb that is actually pressing it. */
-.entry .body .codecopy::after { content: ""; position: absolute; inset: -7px; }
+   on a phone, where a control that appears on hover is a control that does not appear. It stays
+   small enough not to loom over a one-line block, and grows an invisible 44px target around
+   itself for the thumb that is actually pressing it. */
+.entry .body .codecopy::after { content: ""; position: absolute; inset: -9px; }
 .entry .body .codecopy svg {
-    width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4;
+    width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4;
 }
 .entry .body .codecopy:hover, .entry .body .codecopy:focus-visible {
-    color: var(--accent); border-color: var(--accent-ed);
+    color: var(--accent); background: #1c1c24;
 }
 .entry .body .codecopy:active { transform: scale(0.92); }
 /* Everything else Markdown.swift knows how to draw, drawn here too. The bar and this page read
