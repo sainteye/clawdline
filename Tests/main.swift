@@ -9771,21 +9771,24 @@ group("clearing a title takes the Codex name off Clawdline's surfaces too") {
     let target = TargetSession(backend: .iterm, id: "terminal-codex-clear",
                                name: "codex", tty: "/dev/ttys077",
                                windowIndex: 0, tabIndex: 3, assistant: .codex)
+    // Through the label rather than only through the cache, and with no orchestrator title in
+    // the way: a task title would answer this expression whether the cache had been cleared or
+    // not, which is a check that passes for every possible edit to this repository.
+    func label() -> String {
+        TargetSession.preferredDisplayLabel(
+            manualTitle: nil, orchestratorTitle: nil,
+            threadName: CodexNaming.shared.title(for: target), terminalLabel: target.label)
+    }
     CodexNaming.shared.rememberForTesting("Release room", threadID: "thread-clear",
                                           targetID: target.id)
-    expect("the name a person typed is what the label draws",
-           CodexNaming.shared.title(for: target), "Release room")
+    expect("the name a person typed is what the label draws", label(), "Release room")
     CodexNaming.shared.forget(target: target)
     check("clearing drops it from the display cache",
           CodexNaming.shared.title(for: target) == nil)
     // The half that stays: the thread keeps the name in Codex's own metadata, because
     // `thread/name/set` has no undo and this app does not know what Codex would have called it.
-    // What has to come back is the automatic label, not the name that was just cleared.
-    expect("so the label falls back to the automatic one",
-           TargetSession.preferredDisplayLabel(
-               manualTitle: nil, orchestratorTitle: "automatic handoff",
-               threadName: CodexNaming.shared.title(for: target), terminalLabel: target.label),
-           "automatic handoff")
+    // What has to come back here is the automatic label, not the name that was just cleared.
+    expect("so the label falls back to the terminal's own", label(), "codex")
 }
 
 group("a rename is not typed into a session that is showing a menu") {
