@@ -487,3 +487,28 @@ items:
       does, extend the persisted grant to carry pid and process start and compare them the way
       `refuseForeignProcess` already does.
     opened: 2026-08-28
+
+  - id: B-SUITE-WALKS-LIVE-WORKTREES
+    title: The reclaim tests walk the real worktree root, not a fixture root
+    problem: >-
+      The suite now covers a feature whose whole job is deleting directories, and the tests reach
+      the actual worktree root this machine keeps its isolated checkouts in rather than a fixture
+      directory built for the run. Nothing was deleted, and the safety checks in front of the
+      deletion are real — the resolved path must equal what `worktreePath(project:taskID:)`
+      computes, and a container check defeats `..` and symlinks. But the distance between "the
+      guards held" and "the test could not have reached anybody's work" is the whole difference,
+      and it is currently spanned by review rather than by construction. Somebody's uncommitted
+      hours live in those directories.
+    evidence: >-
+      Independent review 3cbbb7b7 of eda0fa76, 2026-08-28, recorded it as INFO and confirmed all 19
+      worktree directories were still present when it finished — which is to say it had to go and
+      count them. The reclaim path is `reclaimTaskBuildIfDue` in `Sources/Orchestrator.swift`; the
+      tests are the `.build` and `work/` groups in `Tests/main.swift`.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Point the tests at a temporary root through the seam the suite already uses for the store,
+      then delete the guards and confirm the tests still cannot touch a real checkout. If that is
+      awkward to arrange, the awkwardness is the finding.
+    opened: 2026-08-28
