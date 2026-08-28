@@ -232,6 +232,14 @@
 }
 .schedule-run-summary {
     grid-column: 1 / -1;
+    /* This sheet is a picker, not a place to read a report. Two lines are enough to tell one
+       occurrence from another, and the rest of the summary would push the older runs off a
+       phone screen; the whole text stays in the title and in the conversation the row opens. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
     color: var(--ink);
     font-size: 12px; line-height: 1.35;
     overflow-wrap: anywhere;
