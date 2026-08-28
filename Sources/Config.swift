@@ -678,9 +678,9 @@ final class Config {
     }
 
     /// Replace every address for this live session together, so a name lives in one row rather
-    /// than a pair that can drift apart. Note what that does *not* cover: the read side still
-    /// falls back to the terminal id, so a title outlives the session that chose it and the next
-    /// conversation started in the same tab reads it — see `sessionTitle(sessionID:terminalID:)`.
+    /// than a pair that can drift apart. `startedAt` is the third address and the one the read
+    /// side leans on when there is no conversation id — it is what stops the row outliving the
+    /// conversation that chose it. See ``sessionTitle(sessionID:terminalID:conversationStart:)``.
     ///
     /// Refused before anything is removed, and that order is the point: an overlong title used to
     /// delete the row it was too long to replace, so a request the route answers with `400` would
