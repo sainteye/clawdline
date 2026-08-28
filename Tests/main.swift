@@ -7559,6 +7559,78 @@ group("the list of places, tidied") {
           durable("/Users/me/code/clawdline"))
 }
 
+group("the folder budget is spent on plausible places before scratch") {
+    // The defect this guards: `recorded` capped the newest N folders *before* anything judged
+    // what they were. On the Mac this was measured on, 162 of 192 project folders were scratch
+    // — temp directories and worktree checkouts, newer than every real project — so the whole
+    // budget went to folders `tidy` was about to throw away, and the menu shrank to five
+    // entries on a machine with thirty projects.
+    let marks = StartPoints.scratchMarks(home: "/Users/someone",
+                                         temporary: "/var/folders/zz/T")
+    func plausible(_ name: String) -> Bool { StartPoints.couldBeDurable(name, marks: marks) }
+    check("a temp-root name is scratch in the spelling NSTemporaryDirectory uses",
+          !plausible("-var-folders-zz-T-tmp-x1"))
+    check("and in the /private spelling transcripts actually record",
+          !plausible("-private-var-folders-zz-T-tmp-x1"))
+    check("a brokered worktree checkout is scratch",
+          !plausible("-Users-someone-Library-Application-Support-Clawdline-worktrees-repo-abc"))
+    check("an ordinary project is not",
+          plausible("-Users-someone-code-dual"))
+    check("the match stops at a name boundary, so a sibling is not swept up",
+          plausible("-Users-someone--claude2-notes"))
+    check("nor is a root that merely shares opening letters",
+          plausible("-tmpfs-data"))
+
+    // End to end over a described tree: scratch outnumbers the one real place and every piece
+    // of it is newer.
+    let fm = FileManager.default
+    let base = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-recorded-\(getpid())")
+    defer { try? fm.removeItem(at: base) }
+    let now = Date()
+    func folder(under root: URL, cwd: String, provedBy recorded: String? = nil,
+                ago: TimeInterval) {
+        let dir = root.appendingPathComponent(StartPoints.slug(of: cwd), isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let transcript = dir.appendingPathComponent("t.jsonl")
+        try? Data(("{\"type\":\"user\",\"cwd\":\"\(recorded ?? cwd)\"}" + "\n").utf8)
+            .write(to: transcript)
+        let stamp = [FileAttributeKey.modificationDate: now.addingTimeInterval(-ago)]
+        try? fm.setAttributes(stamp, ofItemAtPath: transcript.path)
+        try? fm.setAttributes(stamp, ofItemAtPath: dir.path)
+    }
+    let projects = base.appendingPathComponent("projects", isDirectory: true)
+    folder(under: projects, cwd: "/Users/someone/code/dual", ago: 900)
+    for i in 0..<5 {
+        folder(under: projects, cwd: "/var/folders/zz/T/tmp-\(i)", ago: TimeInterval(10 + i))
+    }
+    let out = StartPoints.recorded(root: projects, folders: 3, scan: 10,
+                                   home: "/Users/someone", temporary: "/var/folders/zz/T")
+    check("the real project is listed even though scratch outnumbers it and is newer",
+          out.map(\.path).contains("/Users/someone/code/dual"))
+    expect("and it is what the first slot was spent on",
+           out.first?.path, "/Users/someone/code/dual")
+    expect("the budget is still a budget", out.count, 3)
+    check("scratch is delayed to the back of the queue rather than dropped",
+          out.dropFirst().allSatisfy { $0.path.hasPrefix("/var/folders/zz/T/") })
+
+    // `scan` bounds the reading, separately from the answer: a run of folders that cannot
+    // prove what they are must not make the loop read the whole disk hunting for slots.
+    let unproven = base.appendingPathComponent("unproven", isDirectory: true)
+    folder(under: unproven, cwd: "/Users/someone/code/keel", ago: 900)
+    for i in 0..<3 {
+        folder(under: unproven, cwd: "/Users/someone/code/ghost-\(i)",
+               provedBy: "/Users/someone/code/elsewhere", ago: TimeInterval(10 + i))
+    }
+    let strict = StartPoints.recorded(root: unproven, folders: 3, scan: 2,
+                                      home: "/Users/someone", temporary: "/var/folders/zz/T")
+    expect("the reading has a bound of its own", strict.count, 0)
+    let generous = StartPoints.recorded(root: unproven, folders: 3, scan: 10,
+                                        home: "/Users/someone", temporary: "/var/folders/zz/T")
+    check("and a wider scan reads far enough down to fill the slots the tight one could not",
+          generous.map(\.path).contains("/Users/someone/code/keel"))
+}
+
 group("starting a session is behind the write gate, like everything else that runs code") {
     let wasWriting = Config.shared.remoteWrite
     defer { Config.shared.remoteWrite = wasWriting }

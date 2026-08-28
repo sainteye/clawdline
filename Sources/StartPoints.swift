@@ -682,21 +682,72 @@ enum StartPoints {
 
         let path = resolved(path)
         let home = resolved(home ?? FileManager.default.homeDirectoryForCurrentUser.path)
-        let temporary = resolved(temporary ?? NSTemporaryDirectory())
         if path == home { return false }
-        if isInside(path, resolved(home + "/.claude")) { return false }
-        if isInside(path, resolved(home + "/.codex")) { return false }
-        if isInside(path, resolved(home + "/Documents/Codex")) { return false }
-        if isInside(path, resolved(home + "/Library/Application Support/Clawdline/worktrees")) {
-            return false
-        }
-        if isInside(path, temporary) { return false }
-        // `NSTemporaryDirectory` normally resolves one per-user /var/folders root. These cover
-        // deliberate /tmp worktrees and the `/private` spelling macOS reports through `lsof`.
-        if isInside(path, resolved("/tmp")) || isInside(path, resolved("/private/tmp")) {
-            return false
+        for root in scratchRoots(home: home, temporary: temporary ?? NSTemporaryDirectory()) {
+            if isInside(path, resolved(root)) { return false }
         }
         return true
+    }
+
+    /// Every root that only ever holds an assistant's own storage — one list, shared between
+    /// ``isDurablePlace(_:home:temporary:)`` and the name screen in
+    /// ``recorded(root:folders:scan:home:temporary:)``, so the judgement and the screen cannot
+    /// drift apart. The home folder is not here because it is refused exactly, not everything
+    /// inside it.
+    ///
+    /// `/tmp` and `/private/tmp` ride alongside `temporary`: `NSTemporaryDirectory` normally
+    /// resolves one per-user /var/folders root, and these cover deliberate /tmp worktrees and
+    /// the `/private` spelling macOS reports through `lsof`.
+    private static func scratchRoots(home: String, temporary: String) -> [String] {
+        [home + "/.claude", home + "/.codex", home + "/Documents/Codex",
+         home + "/Library/Application Support/Clawdline/worktrees",
+         temporary, "/tmp", "/private/tmp"]
+    }
+
+    /// What a scratch folder's *name* opens with.
+    ///
+    /// The roots from ``scratchRoots(home:temporary:)`` pushed through ``slug(of:)``, each in
+    /// every spelling a recorded cwd arrives in: as given, symlink-resolved, and the `/private`
+    /// twin. The twin is spelled out by hand because `resolvingSymlinksInPath` deliberately
+    /// leaves the `/var` and `/tmp` roots alone — `NSTemporaryDirectory()` says
+    /// `/var/folders/…` and stays that way through it, while a transcript's cwd says
+    /// `/private/var/folders/…`, and a screen that knows only one spelling misses half the
+    /// scratch (the first run of the suite against this code caught exactly that). Computed
+    /// once per listing rather than once per folder, because resolving is filesystem work.
+    ///
+    /// `home` and `temporary` are parameters for the same reason they are on `isDurablePlace`:
+    /// so a test can describe a machine instead of running on one.
+    static func scratchMarks(home: String? = nil, temporary: String? = nil) -> [String] {
+        let home = home ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let temporary = temporary ?? NSTemporaryDirectory()
+        var marks: Set<String> = []
+        for root in scratchRoots(home: home, temporary: temporary) {
+            let url = URL(fileURLWithPath: root).standardizedFileURL
+            for spelling in [url.path, url.resolvingSymlinksInPath().path] {
+                marks.insert(slug(of: spelling))
+                if spelling.hasPrefix("/private/") {
+                    marks.insert(slug(of: String(spelling.dropFirst("/private".count))))
+                } else if spelling.hasPrefix("/var/") || spelling.hasPrefix("/tmp/")
+                            || spelling == "/tmp" {
+                    marks.insert(slug(of: "/private" + spelling))
+                }
+            }
+        }
+        return Array(marks)
+    }
+
+    /// Whether a project folder's name could stand for a durable place — judged from the name
+    /// alone, before anything pays to find out what the folder really is.
+    ///
+    /// The name is ``slug(of:)`` of the working directory, and that map is many-to-one, so this
+    /// proves a negative and nothing more: a name that opens with the slug of a scratch root
+    /// names a path inside that root — or a sibling that happens to slug identically, like
+    /// `/tmp.backup` against `/tmp`, which is the one shape this misjudges. That is why
+    /// ``recorded(root:folders:scan:home:temporary:)`` treats the answer as a priority rather
+    /// than a verdict: a doubtful folder resolves last instead of never, so a collision costs
+    /// its place in the queue and not its place on the list.
+    static func couldBeDurable(_ name: String, marks: [String]) -> Bool {
+        !marks.contains { name == $0 || name.hasPrefix($0 + "-") }
     }
 
     /// The directories clawdline can already see a session in.
@@ -822,23 +873,43 @@ enum StartPoints {
     /// folder's stamp, because the answer is a fact about a directory that does not move. What is
     /// read every time is the cheap half: which transcript in it is newest, which is what "most
     /// recently used" means here.
-    static func recorded(root: URL? = nil, folders: Int = 60) -> [Place] {
+    ///
+    /// `folders` bounds the answer and `scan` bounds the reading — the same split
+    /// ``past(in:limit:scan:dir:open:)`` uses, for the same reason: whether a folder deserves one
+    /// of the `folders` slots is only known after resolving it, and some folders resolve to
+    /// nothing. A machine with a thousand projects still does not pay for all of them to answer
+    /// one menu: at most `scan` folders are listed and proved, once, and the proof is cached
+    /// against each folder's stamp after that.
+    ///
+    /// **The slots are spent plausible-first.** When this was measured, 162 of the 192 folders on
+    /// this Mac were scratch — verification snapshots under `/private/var/folders/…` and brokered
+    /// worktree checkouts, most of them newer than every real project — and a budget spent in
+    /// plain mtime order went almost entirely to folders ``tidy(_:limit:isDirectory:)`` was about
+    /// to throw away: the menu was five entries long on a machine with thirty projects. So a
+    /// folder whose *name* already reads as scratch goes to the back of the queue — behind every
+    /// plausible one, newest-first within each half. Delayed rather than dropped, because a name
+    /// is a many-to-one map that can collide (see ``couldBeDurable(_:marks:)``), and `tidy`
+    /// stays the judge of what is actually offered.
+    static func recorded(root: URL? = nil, folders: Int = 60, scan: Int = 240,
+                         home: String? = nil, temporary: String? = nil) -> [Place] {
         let base = root ?? projectsRoot
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: base.path) else { return [] }
 
-        // Newest folders first and capped, so a machine with a thousand projects on it does not
-        // pay for all of them to answer one menu.
-        let dirs = names.compactMap { name -> (name: String, url: URL, at: Date)? in
+        let marks = scratchMarks(home: home, temporary: temporary)
+        let dirs = names.compactMap { name -> (name: String, url: URL, at: Date, plausible: Bool)? in
             let url = base.appendingPathComponent(name, isDirectory: true)
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
                   isDirectory.boolValue else { return nil }
-            return (name, url, modified(url))
-        }.sorted { $0.at > $1.at }.prefix(folders)
+            return (name, url, modified(url), couldBeDurable(name, marks: marks))
+        }.sorted {
+            $0.plausible == $1.plausible ? $0.at > $1.at : $0.plausible
+        }.prefix(scan)
 
         var out: [Place] = []
         for dir in dirs {
+            guard out.count < folders else { break }
             let transcripts = (try? fm.contentsOfDirectory(atPath: dir.url.path))?
                 .filter { $0.hasSuffix(".jsonl") }
                 .map { name -> (url: URL, at: Date) in
