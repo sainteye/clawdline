@@ -10502,11 +10502,12 @@ group("a Codex session can be named from its first request") {
     let unnamed: [String: Any] = ["result": ["thread": ["name": NSNull()]]]
     expect("a persisted thread name is recognised", CodexNaming.threadName(in: named), "Bug bash")
     check("a null persisted name is unnamed", CodexNaming.threadName(in: unnamed) == nil)
-    expect("a persisted Codex name replaces the terminal tab label",
-           CodexNaming.displayLabel(threadName: "修正登入逾時", terminalLabel: "clawdline"),
-           "修正登入逾時")
-    expect("an absent Codex name keeps the terminal tab label",
-           CodexNaming.displayLabel(threadName: nil, terminalLabel: "clawdline"), "clawdline")
+    // What used to sit here was `CodexNaming.displayLabel(threadName:terminalLabel:)` and two
+    // assertions pinning "an absent Codex name keeps the terminal tab label". Both are gone with
+    // it: the function had no caller left in `Sources/` once naming stopped reading tab titles,
+    // and a test holding a removed contract in place is a contract pointing the wrong way.
+    // Where a Codex tab lands with no name of its own is asserted in
+    // `a session's name never comes from its terminal's tab title`.
 }
 
 group("a Codex npm shim starts with Finder's cold PATH") {
@@ -10700,6 +10701,108 @@ group("a session's name never comes from its terminal's tab title") {
     SessionNaming.lookForTesting = { _ in SessionNaming.Name(title: "gone", handle: nil) }
     expect("a shell is not called after the session that used to be in it",
            tab("Default (-zsh)", assistant: nil, tab: 2).displayLabel, "⌘1-3")
+
+    // Codex, which is the half of this that got worse. `SessionNaming` answers for Claude only,
+    // and Codex keeps its name in memory that a restart empties — so an unnamed Codex tab now
+    // shows a coordinate where it used to show the terminal's title. That is the rule applied
+    // evenly and not an oversight, and this case is here because the group above it is all
+    // Claude and a shell: an edit that handed `terminalLabel` back to Codex alone would have
+    // gone through every assertion in this file untouched.
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in SessionNaming.Name(title: "not this one", handle: nil) }
+    expect("a Codex tab with no name of its own says where it is, not what the tab is called",
+           tab("Default (node)", assistant: .codex, tab: 6).displayLabel, "⌘1-7")
+}
+
+// The reading itself, which until this group had no assertion anywhere behind it. `lookForTesting`
+// replaces the *whole* of it, so with every call site stubbed, gutting `SessionNaming.look` to
+// `return .none` left the suite at exactly the same passing count — the headline claim of the type,
+// *more than one source*, was the one part of it nothing touched. These go through
+// `SessionNaming.Sources`, which stubs the three files and runs the real body over them.
+group("a name is read from what proves identity, and from nothing else") {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-naming-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let now = Date()
+    let mine = "11111111-1111-4111-8111-111111111111"
+    let stranger = "99999999-9999-4999-8999-999999999999"
+    func write(_ id: String, _ title: String, created: Date, modified: Date) {
+        let url = root.appendingPathComponent("\(id).jsonl")
+        try! #"{"type":"ai-title","aiTitle":"\#(title)"}"#
+            .write(to: url, atomically: true, encoding: .utf8)
+        try! FileManager.default.setAttributes([.creationDate: created,
+                                                .modificationDate: modified],
+                                               ofItemAtPath: url.path)
+    }
+    // The stranger is the project's most recently written transcript, which is exactly what
+    // `Transcript.locate` returns when it has been given nothing to identify a session by. Its
+    // title is descriptive and plausible and belongs to somebody else — the failure that is worse
+    // than the one this feature was written to fix, because `Default` on eleven rows announced
+    // itself and this does not.
+    write(stranger, "somebody else's conversation",
+          created: now.addingTimeInterval(-3600), modified: now)
+    write(mine, "Ledger reader layer",
+          created: now.addingTimeInterval(-10), modified: now.addingTimeInterval(-5))
+
+    let target = TargetSession(backend: .iterm, id: UUID().uuidString, name: "Default (python)",
+                               tty: "/dev/ttys902", windowIndex: 0, tabIndex: 0, assistant: .claude)
+    func registryEntry(sessionID: String?, name: String?) -> SessionRegistry.Entry? {
+        var row: [String: Any] = ["pid": 4242, "peerProtocol": SessionRegistry.protocolVersion]
+        if let sessionID { row["sessionId"] = sessionID }
+        if let name { row["name"] = name }
+        guard let data = try? JSONSerialization.data(withJSONObject: row) else { return nil }
+        return SessionRegistry.parse(data)
+    }
+    func sources(registry: SessionRegistry.Entry? = nil, hook: String? = nil,
+                 transcripts: URL? = root) -> SessionNaming.Sources {
+        SessionNaming.Sources(registryEntry: { _ in registry }, hookSessionID: { _ in hook },
+                              transcripts: { _ in transcripts })
+    }
+
+    // Route one: the registry names the conversation, so the file name is known and nothing is
+    // ranked. No start time at all here — that is the point, either source alone is enough.
+    expect("the registry's session id picks the transcript by name",
+           SessionNaming.look(at: target, startedAt: nil,
+                              sources: sources(registry: registryEntry(sessionID: mine,
+                                                                       name: "clawdline-cb"))),
+           SessionNaming.Name(title: "Ledger reader layer", handle: "clawdline-cb"))
+
+    // Route two: no registry file — the switch is off, or this Claude Code predates it — and a
+    // `SessionStart` hook answers the same question. This was the third source the doc comment
+    // claimed and the code did not read; `Transcript.record(of:)` had been asking both all along.
+    expect("a hook's session id answers when there is no registry file",
+           SessionNaming.look(at: target, startedAt: nil, sources: sources(hook: mine)).title,
+           "Ledger reader layer")
+
+    // Route three: no id from anywhere, but the process start time is measurable, and a session's
+    // own transcript is created when the session starts. The stranger's file is newer by
+    // modification and an hour older by creation, so only this route tells them apart.
+    expect("with no id, the process start time still finds the right one",
+           SessionNaming.look(at: target, startedAt: now.addingTimeInterval(-10),
+                              sources: sources(registry: registryEntry(sessionID: nil,
+                                                                       name: "clawdline-cb"))).title,
+           "Ledger reader layer")
+
+    // And the guard. Every source of identity is quiet: no registry id, no hook, no start time.
+    // `Transcript.locate` would have one line left — whichever file was written last — and would
+    // hand this tab the stranger's name. Remove the `sessionID != nil || startedAt != nil` guard
+    // in `look` and this assertion reads `somebody else's conversation`.
+    let blind = SessionNaming.look(at: target, startedAt: nil,
+                                   sources: sources(registry: registryEntry(sessionID: nil,
+                                                                            name: "clawdline-cb")))
+    check("nothing that proves identity means no title, not the newest stranger's",
+          blind.title == nil, "got \(blind.title ?? "nil")")
+    // The blank is not a blank row: the handle is still a fact about this session, and it is what
+    // the rung below the title is for.
+    expect("but the handle beside it is still answered", blind.handle, "clawdline-cb")
+    expect("and with no transcript directory either, the handle is the whole answer",
+           SessionNaming.look(at: target, startedAt: now.addingTimeInterval(-10),
+                              sources: sources(registry: registryEntry(sessionID: mine,
+                                                                       name: "clawdline-cb"),
+                                               transcripts: nil)),
+           SessionNaming.Name(title: nil, handle: "clawdline-cb"))
 }
 
 // The second half of the brief, and the one that outlives this incident: one source going quiet
@@ -10763,6 +10866,30 @@ group("a remembered name belongs to a conversation, not to a tab") {
     check("nothing remembered and nothing found is nothing kept",
           SessionNaming.reconcile(remembered: nil, found: .none,
                                   startedAt: started, now: now) == nil)
+
+    // The mirror of the case above it, which had no test and is the one that carries a name
+    // across a conversation change. A remembered look that could not measure a start time has no
+    // baseline under it — and `reconcile` only ever fills the baseline in once, so reading "we
+    // still cannot compare" as "still the same conversation" would keep that name for as long as
+    // the tab is open. A measurement arriving where there was none is a new baseline.
+    let baseless = SessionNaming.Remembered(
+        at: Date(timeIntervalSince1970: 1_787_900_100), startedAt: nil,
+        name: SessionNaming.Name(title: "Ledger reader layer", handle: "clawdline-cb"))
+    check("a name remembered with no start time under it is not carried onto a measured one",
+          SessionNaming.continues(baseless, startedAt: started) == false)
+    check("so a look that finally measures one starts the record over",
+          SessionNaming.reconcile(remembered: baseless, found: .none,
+                                  startedAt: started, now: now) == nil)
+    check("and what it does find is what the tab is called, on its own",
+          SessionNaming.reconcile(remembered: baseless,
+                                  found: SessionNaming.Name(title: nil, handle: "clawdline-fa"),
+                                  startedAt: started, now: now)?.name
+              == SessionNaming.Name(title: nil, handle: "clawdline-fa"))
+    // Still nothing measured on either side is still nothing that happened: that is the quiet
+    // source the rule above is about, and it must not blank the row.
+    check("but two looks that both failed to measure are not a change",
+          SessionNaming.reconcile(remembered: baseless, found: .none,
+                                  startedAt: nil, now: now)?.name.title == "Ledger reader layer")
 }
 
 group("session titles are normalized, persisted and bounded") {
