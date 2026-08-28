@@ -2529,6 +2529,27 @@ appear as `progress` on the task record and on every `inflight` row. Sending the
 the newest one is accepted and ignored — a loop is not news, and refusing it would only cost the
 caller a retry. A terminal task is refused with `409 not_live`: what it did belongs in its summary.
 
+**The file half of the same channel.** Most children cannot make this call at all: a Codex child's
+sandbox sets `CODEX_SANDBOX_NETWORK_DISABLED=1`, `curl` to loopback exits 7 after 0 ms, DNS itself
+is off, and no approval prompt ever appears — measured on the machine this came from (task
+be9a54c0), where 133 codex children were briefed to send this curl and 0 notes ever arrived.
+`result.json` never had the problem, because it is a file the broker picks up. So progress has a
+file twin with the same authentication: the child writes `progress.json` in its own task directory,
+
+```json
+{"task_secret": "<TASK_SECRET>", "note": "<one sentence, at most 300 characters>"}
+```
+
+replacing the whole file each time, and the watch beat collects it within seconds. Only the latest
+sentence is collected — the file is current status, not a log; history is the transcript's job — and
+the collected note joins the same `progress` list with the collection time as its `at`. The same
+sentence through both channels is recorded once, by the same newest-note rule, and a sentence the
+file already delivered is never replayed, even across a restart: `progress_file_note` on the stored
+record is the collected-marker. A file with the wrong secret is ignored and audited once
+(`orchestrator.progress` with `via=file`), and a half-written file simply fails to parse and is read
+again on the next beat. The HTTP route above stays the fast path for a child that can reach it — a
+curl lands immediately, the file on the next beat.
+
 ### `POST /v1/orchestrator/tasks/:id/respawn`
 
 **Retry a dispatch whose tab never opened**, without writing the task out again. Orchestrator-token
