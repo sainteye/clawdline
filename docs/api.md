@@ -2436,7 +2436,7 @@ task record itself (`respawn_of`, `respawn_generation`), so the chain is visible
 | `orchestrator_disabled` | 403 | `orchestrator_enabled` is off |
 | `not_found` | 404 | no task with that id |
 | `not_respawnable` | 409 | the task is not `spawn_failed`. Only the one terminal state meaning *nothing ran* may be retried: a `failure` is an answer, a `timeout` had a session that read the briefing, a `cancelled` was somebody's decision, and a live task has a tab. The error object carries `state` |
-| `respawn_exhausted` | 409 | **at most two respawns descend from one original.** The count runs along the chain, not per call, so a retry of a retry cannot launder the cap by being "the first from *its* parent". The error object carries `original_task`, `respawns` and `limit` |
+| `respawn_exhausted` | 409 | **at most two respawns descend from one original.** What is counted is the whole family the registry still holds below that original, whatever shape it took: a retry of a retry cannot launder the cap by being "the first from *its* parent", and asking the original again cannot launder it either — that one matters, because the id a root has in hand is the one that failed. The error object carries `original_task`, `respawns` and `limit` |
 | `bad_task` | 422 | the id is not a lowercase UUID, a supplied `secret` is not 64 hex characters, or the original `task.json` is gone and there is nothing to copy |
 
 Everything `POST /v1/orchestrator/tasks` can refuse, this can refuse too, at the moment it

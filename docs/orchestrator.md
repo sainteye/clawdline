@@ -1030,8 +1030,10 @@ copy: the registry never held it.
 
 Only `spawn_failed` may be retried, because it is the one terminal state that means *nothing ran*;
 anything else is `409 not_respawnable`. **At most two respawns descend from one original**, counted
-along the chain rather than per call — a retry of a retry cannot launder the cap by being the first
-from its own immediate parent — and the third is `409 respawn_exhausted`. Each new task records
+over the whole family below it rather than along any one chain — a retry of a retry cannot launder
+the cap by being the first from its own immediate parent, and neither can asking the original
+again, which is the shape a caller actually falls into because the id it has in hand is the one
+that failed — and the third is `409 respawn_exhausted`. Each new task records
 `respawn_of` and `respawn_generation`, so a chain reads as a chain in the registry instead of as
 three unrelated tasks with the same title.
 

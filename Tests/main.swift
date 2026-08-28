@@ -18583,6 +18583,10 @@ group("a tab that never opened is retried from its own task file, twice and no f
         guard case .refused(let status, let code, _, _) = reply else { return nil }
         return (status, code)
     }
+    func extra(_ reply: Orchestrator.Reply) -> [String: Any]? {
+        guard case .refused(_, _, _, let extra) = reply else { return nil }
+        return extra
+    }
     func payload(_ reply: Orchestrator.Reply) -> [String: Any]? {
         guard case .ok(let body) = reply else { return nil }
         return body
@@ -18661,6 +18665,32 @@ group("a tab that never opened is retried from its own task file, twice and no f
     let third = refusal(Orchestrator.respawn(taskID: secondID))
     expect("the third retry in one chain is refused", third?.0, 409)
     expect("with its own code", third?.1, "respawn_exhausted")
+
+    // The chain is one shape the family can take; the caller falls into the other. The id a root
+    // holds is the one that failed, so the natural retry loop asks the *same* original again —
+    // and a chain depth cannot see that, because a respawn writes nothing back to the task it
+    // retried, leaving a spent original at generation zero for ever. The cap is on the family.
+    let spent = refusal(Orchestrator.respawn(taskID: originalID))
+    expect("an original whose family is full refuses a further retry", spent?.0, 409)
+    expect("whatever shape spent it", spent?.1, "respawn_exhausted")
+    check("and the number it reports is the family, not one task's depth",
+          extra(Orchestrator.respawn(taskID: originalID))?["respawns"] as? Int == 2)
+
+    // Two calls on the same original, which is what that loop actually does: both are retries of
+    // one original, so the second is the family's last and the third is refused by the same count.
+    let loopedID = UUID().uuidString.lowercased()
+    write(loopedID)
+    _ = Orchestrator.dispatch(taskID: loopedID, secret: String(repeating: "e5", count: 32))
+    let loopedFirst = record(payload(Orchestrator.respawn(taskID: loopedID)))?["id"] as? String
+    sweep(loopedFirst)
+    let loopedSecond = record(payload(Orchestrator.respawn(taskID: loopedID)))?["id"] as? String
+    sweep(loopedSecond)
+    check("two retries may descend from one original by asking that original twice",
+          Orchestrator.isTaskID(loopedFirst ?? "") && Orchestrator.isTaskID(loopedSecond ?? "")
+            && loopedFirst != loopedSecond)
+    let looped = refusal(Orchestrator.respawn(taskID: loopedID))
+    expect("and a third from that same original is refused", looped?.0, 409)
+    expect("by the code the limit answers with", looped?.1, "respawn_exhausted")
 
     let successID = UUID().uuidString.lowercased()
     tabOpens = true

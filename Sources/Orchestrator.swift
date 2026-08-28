@@ -1298,8 +1298,10 @@ enum Orchestrator {
         /// three unrelated-looking tasks with the same title.
         var respawnOf: String?
         /// How far down a respawn chain this task sits: `0` for an original, `1` for the retry of
-        /// one, `2` for the retry of that. Counted along the chain when the task is made rather
-        /// than per call, so a chain of respawns cannot launder ``Orchestrator/respawnLimit``.
+        /// one, `2` for the retry of that. It is a description of where this task came from and
+        /// nothing more: ``Orchestrator/respawnLimit`` is enforced over the whole family
+        /// descending from one original, by ``Orchestrator/respawnFamily(of:)``, because a depth
+        /// held on the retried task is a number no respawn ever updates.
         var respawnGeneration = 0
         /// The whole graph this task is one node of, in the dispatcher's own words. Carried into
         /// the briefing so a leaf knows what its output feeds — which is the difference between
@@ -4019,15 +4021,15 @@ enum Orchestrator {
                                    + "is \(origin.state.rawValue).",
                             extra: ["state": origin.state.rawValue])
         }
-        let original = respawnOriginal(of: origin)
-        guard origin.respawnGeneration < respawnLimit else {
+        let family = respawnFamily(of: origin)
+        guard family.descendants < respawnLimit else {
             return .refused(status: 409, code: "respawn_exhausted",
-                            message: "Task \(original) has already been respawned "
-                                   + "\(origin.respawnGeneration) times; the limit is "
+                            message: "Task \(family.original) has already been respawned "
+                                   + "\(family.descendants) times; the limit is "
                                    + "\(respawnLimit). Dispatch a new task, or find out why the "
                                    + "tab will not open.",
-                            extra: ["original_task": original,
-                                    "respawns": origin.respawnGeneration,
+                            extra: ["original_task": family.original,
+                                    "respawns": family.descendants,
                                     "limit": respawnLimit])
         }
         if let supplied, !isTaskSecret(supplied) {
@@ -4061,33 +4063,57 @@ enum Orchestrator {
         } catch {
             return .refused(500, "internal", "Could not write the respawned task file.")
         }
-        RemoteAuth.audit("orchestrator.respawn", ["task": fresh, "from": taskID,
-                                                  "original": original,
-                                                  "generation": String(origin.respawnGeneration + 1)])
         let reply = dispatch(taskID: fresh, secret: secret,
                              respawn: RespawnOrigin(taskID: taskID,
                                                     generation: origin.respawnGeneration + 1))
         // The caller needs the secret it did not choose. A dispatch that was refused leaves the
         // directory behind for the ordinary sweep, exactly as a root's own abandoned attempt does.
         guard case .ok(var payload) = reply else { return reply }
+        // Audited after the dispatch rather than before it. Written first, the line records
+        // retries that never happened — an `over_capacity` refusal opens no tab — and an audit
+        // that reads bigger than the thing it audits is worse than none.
+        RemoteAuth.audit("orchestrator.respawn", ["task": fresh, "from": taskID,
+                                                  "original": family.original,
+                                                  "generation": String(origin.respawnGeneration + 1)])
         payload["secret"] = secret
         payload["respawn_of"] = taskID
-        payload["original_task"] = original
+        payload["original_task"] = family.original
         return .ok(payload)
     }
 
-    /// The first task in a respawn chain, found by walking back through `respawnOf`. Stops at a
-    /// record the registry no longer holds and at a cycle it should never contain, so a swept
-    /// ancestor shortens the answer rather than hanging the walk.
-    private static func respawnOriginal(of task: Task) -> String {
-        var current = task
-        var seen: Set<String> = [current.id]
-        while let previous = current.respawnOf, !seen.contains(previous),
-              let earlier = held(previous) {
-            seen.insert(previous)
-            current = earlier
+    /// The first task in `task`'s respawn chain, and how many tasks the registry holds that
+    /// descend from it.
+    ///
+    /// The cap is on the family, not on any one chain: *at most two respawns descend from one
+    /// original*. A chain depth cannot enforce that, because `respawn` writes nothing back to the
+    /// task it retried — a `spawn_failed` original stays at generation zero however many times it
+    /// is respawned, so counting its own depth lets the same original be retried for ever. That
+    /// is also the shape the caller falls into, since the id a root has in hand is the one that
+    /// failed: `curl …/$FAILED_ID/respawn`, again, and again.
+    ///
+    /// Both walks stop at a record the registry no longer holds and at a cycle it should never
+    /// contain, so a swept ancestor shortens the chain rather than hanging the walk, and a swept
+    /// retry is not counted — the count is over what is still known, exactly as the chain is.
+    private static func respawnFamily(of task: Task) -> (original: String, descendants: Int) {
+        load()
+        lock.lock()
+        let parents = tasks.mapValues(\.respawnOf)
+        lock.unlock()
+        // `parents[id]` is doubly optional on purpose: `.some(nil)` is a held original, `nil` is a
+        // task the registry has forgotten, and only the first may be walked through.
+        func originOf(_ id: String) -> String {
+            var current = id
+            var seen: Set<String> = [current]
+            while let previous = parents[current] ?? nil, !seen.contains(previous),
+                  parents[previous] != nil {
+                seen.insert(previous)
+                current = previous
+            }
+            return current
         }
-        return current.id
+        let original = originOf(task.id)
+        let descendants = parents.keys.filter { $0 != original && originOf($0) == original }.count
+        return (original, descendants)
     }
 
     /// One response builder for both the first request and an idempotent retry. The scan happens
