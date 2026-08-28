@@ -17223,14 +17223,16 @@ group("an isolated checkout's build output is reclaimed on its own deadline") {
                Config(directoryForTesting: configDirectory).orchestratorBuildGraceMinutes, 60)
     }
 
-    // A reclaim nobody documented is a reclaim somebody reports as data loss.
+    // A reclaim nobody documented is a reclaim somebody reports as data loss — and the one
+    // thing a reader has to be told is which wait it does *not* observe.
+    let landingSentence = ["docs/api.md": "landing.state == pending",
+                           "docs/orchestrator.md": "pending landing does not exempt"]
     for page in ["docs/api.md", "docs/orchestrator.md"] {
         let text = try! String(contentsOfFile: page, encoding: .utf8)
-        check("\(page) names the build grace setting and its deadline",
+        check("\(page) names the build grace setting, its deadline, and the landing it ignores",
               text.contains("orchestrator_build_grace_minutes")
-                && text.contains("build_cleanup_at"))
-        check("\(page) says a pending landing does not defer it",
-              text.lowercased().contains("pending"))
+                && text.contains("build_cleanup_at")
+                && text.contains(landingSentence[page]!))
     }
 }
 
