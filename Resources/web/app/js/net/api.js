@@ -1,7 +1,3 @@
-import { LOCAL_MACHINE, sessionIdentity } from "./client.js";
-import { jsonFetch, post } from "./fetch.js";
-import { uuid } from "../core/util.js";
-
 /* --------------------------------------------------------------------------
    The API, as a name
    There is one API on this page and it is either the real one or the fixtures.
@@ -14,6 +10,14 @@ import { uuid } from "../core/util.js";
    Not a fixed object forwarding the methods, either. `Mock` is missing `pushKey`,
    `places` and `startPlace` on purpose, and six places ask `typeof api.X !==
    "function"` to find out whether this mode has that at all.
+
+   **And nothing is added to what was handed in.** `title` was, for one release:
+   it was defined here and grafted onto whichever implementation arrived, so the
+   fixtures grew a method that went straight to the network and the offline flow
+   answered a rename with a static file server's `Unsupported method ('POST')`.
+   A transport that cannot do something says so in its own words — see the local
+   client, the fixtures and the cloud client, each of which now carries its own
+   `title`.
    -------------------------------------------------------------------------- */
 export let api = null;
 // The new name is an alias of the same live binding. Existing call sites can
@@ -22,19 +26,5 @@ export { api as client };
 
 export function useClient(implementation) {
     api = implementation;
-    // This card remains a local HTTP surface. Keep the write here so the small transport seam
-    // does not grow a fleet command until the cloud protocol has a matching typed operation.
-    if (typeof api.title !== "function") {
-        api.title = function (value, title) {
-            var identity = sessionIdentity(value, LOCAL_MACHINE);
-            if (identity.machine !== LOCAL_MACHINE) {
-                return Promise.reject(Object.assign(
-                    new Error("Session titles are not available through the cloud transport."),
-                    { code: "unsupported" }));
-            }
-            return jsonFetch("/v1/sessions/" + encodeURIComponent(identity.session) + "/title",
-                             post({ title: title }, { "Idempotency-Key": uuid() }));
-        };
-    }
 }
 export function useApi(implementation) { useClient(implementation); }

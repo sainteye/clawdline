@@ -35,6 +35,7 @@ node Tests/web-coordinator.mjs
 node Tests/web-optimistic.mjs
 node Tests/web-session-resilience.mjs
 node Tests/web-session-disposition.mjs
+node Tests/web-title-transport.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 

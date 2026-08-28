@@ -3983,6 +3983,7 @@ final class RemoteServer: @unchecked Sendable {
             "webInfoTitleLocal": t.webInfoTitleLocal,
             "webInfoTitleQueued": t.webInfoTitleQueued,
             "webInfoTitleNotDurable": t.webInfoTitleNotDurable,
+            "webInfoTitleCloud": t.webInfoTitleCloud,
             "webInfoSession": t.webInfoSession,
             "webInfoAssistant": t.webInfoAssistant,
             "webInfoModel": t.webInfoModel,

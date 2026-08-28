@@ -527,6 +527,7 @@ struct French: Copy {
     let webInfoTitleLocal = "Titre enregistré dans Clawdline ; le nom en aval n’a pas changé."
     let webInfoTitleQueued = "Titre enregistré dans Clawdline ; mise à jour Codex en attente."
     let webInfoTitleNotDurable = "Titre appliqué, mais ce Mac n’a pas pu l’écrire sur le disque ; il disparaîtra au redémarrage."
+    let webInfoTitleCloud = "Les titres de session se changent seulement sur le Mac, pas via la connexion cloud."
     let webInfoSession = "Cette session"
     let webInfoAssistant = "Assistant"
     let webInfoModel = "Modèle"

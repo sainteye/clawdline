@@ -525,6 +525,7 @@ struct Korean: Copy {
     let webInfoTitleLocal = "Clawdline에 저장했습니다. 하위 이름은 바뀌지 않았습니다."
     let webInfoTitleQueued = "Clawdline에 저장했습니다. Codex 업데이트가 대기 중입니다."
     let webInfoTitleNotDurable = "제목은 지금 보이지만 이 Mac에 저장하지 못했습니다. 다시 시작하면 사라집니다."
+    let webInfoTitleCloud = "세션 제목은 Mac에서만 바꿀 수 있고 클라우드 연결로는 바꿀 수 없습니다."
     let webInfoSession = "이 세션"
     let webInfoAssistant = "어시스턴트"
     let webInfoModel = "모델"

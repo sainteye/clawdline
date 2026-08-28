@@ -527,6 +527,7 @@ struct Russian: Copy {
     let webInfoTitleLocal = "Название сохранено в Clawdline; нижестоящее имя не изменено."
     let webInfoTitleQueued = "Название сохранено в Clawdline; обновление Codex в очереди."
     let webInfoTitleNotDurable = "Название применено, но этот Mac не смог записать его на диск; после перезапуска оно исчезнет."
+    let webInfoTitleCloud = "Названия сессий меняются только на самом Mac, а не через облачное подключение."
     let webInfoSession = "Эта сессия"
     let webInfoAssistant = "Ассистент"
     let webInfoModel = "Модель"

@@ -527,6 +527,7 @@ struct Turkish: Copy {
     let webInfoTitleLocal = "Başlık Clawdline’a kaydedildi; alt ad değişmedi."
     let webInfoTitleQueued = "Başlık Clawdline’a kaydedildi; Codex güncellemesi sırada."
     let webInfoTitleNotDurable = "Başlık görünüyor ama bu Mac diske yazamadı; yeniden başlatınca kaybolacak."
+    let webInfoTitleCloud = "Oturum başlıkları yalnızca Mac üzerinde değiştirilir, bulut bağlantısıyla değil."
     let webInfoSession = "Bu oturum"
     let webInfoAssistant = "Asistan"
     let webInfoModel = "Model"
