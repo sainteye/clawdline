@@ -327,7 +327,7 @@ final class Config {
     /// Claude's hook session id survives a reopened terminal, the terminal id covers Codex,
     /// shells and Claude installations without hooks, and `startedAt` is what tells the second
     /// conversation in a reused tab apart from the first — see
-    /// ``sessionTitle(sessionID:terminalID:conversationStart:)``.
+    /// ``sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)``.
     struct SessionTitle: Equatable {
         let title: String
         let sessionID: String?
@@ -336,6 +336,20 @@ final class Config {
         /// in it. Nil is a value here, not a missing one: a shell has no conversation to
         /// outlive, so "there was no process" has to match "there is no process" exactly.
         let startedAt: Date?
+        /// The Claude transcript's own `customTitle` at the moment this name was chosen, or nil
+        /// when the transcript had none yet. Compared against a fresh read of the same file on
+        /// every later look: a difference means a person has since typed `/rename` in the
+        /// terminal, and the newer of the two utterances — theirs — is what should show. Only
+        /// meaningful together with ``seenTranscriptPath``. See
+        /// ``sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)``.
+        let seenCustomTitle: String?
+        /// Where that transcript was, captured alongside ``seenCustomTitle`` so the comparison
+        /// above never has to re-resolve it. Nil when none could be resolved at all — a
+        /// non-Claude session, or one whose file did not exist yet — which switches the whole
+        /// comparison off rather than treating "no transcript" as "no rename": a name set before
+        /// this field existed, or before Claude Code had written its first transcript byte,
+        /// behaves exactly as it always did, and always wins.
+        let seenTranscriptPath: String?
         let updatedAt: Date
     }
     /// **The one part of this file that is touched from two threads.** Every other setting here is
@@ -610,11 +624,16 @@ final class Config {
     }
 
     func sessionTitle(for target: TargetSession) -> String? {
-        // The credential is a closure so the `ps` behind it is only paid when there is a row
-        // that would otherwise be returned. Most tabs have no title at all, and this is asked
-        // once per session on every redraw.
+        // Both closures are paid only when there is a row that would otherwise be returned: most
+        // tabs have no title at all, and this is asked once per session on every redraw.
+        // `currentCustomTitle` never re-resolves the transcript — it re-reads the path the row
+        // already carries through ``Transcript/customTitle(ofTranscript:)``, which is
+        // ``Transcript``'s own size-keyed cache, not a second synchronous lookup on this path.
         sessionTitle(sessionID: hookSessionID(of: target), terminalID: target.id,
-                     conversationStart: { Targets.processStart(of: target) })
+                     conversationStart: { Targets.processStart(of: target) },
+                     currentCustomTitle: { path in
+                         Transcript.customTitle(ofTranscript: URL(fileURLWithPath: path))
+                     })
     }
 
     /// `HookBridge`'s tty table is replaced wholesale on the main thread, so it is read there or
@@ -645,12 +664,24 @@ final class Config {
     ///   hooks have no conversation id to offer, and the process is the conversation for exactly
     ///   as long as it runs. Compared with ``SessionRegistry/startTolerance`` because both ends
     ///   are derived from whole-second `ps` output — see ``ITerm/processStart(ofPID:)``.
+    ///
+    /// A row surviving both proofs still has to survive a third: **the newer of two human
+    /// utterances wins.** `currentCustomTitle`, given the row's own ``SessionTitle/seenTranscriptPath``,
+    /// answers what the transcript's `/rename` says right now; ``staleAfterRename(_:currentCustomTitle:)``
+    /// compares that with what it said when this name was chosen. A difference means somebody
+    /// typed `/rename` afterward, so this row gives way — and is dropped, so the comparison is
+    /// not repeated forever.
     func sessionTitle(sessionID: String?, terminalID: String,
-                      conversationStart: () -> Date? = { nil }) -> String? {
+                      conversationStart: () -> Date? = { nil },
+                      currentCustomTitle: (String) -> String? = { _ in nil }) -> String? {
         sessionTitleLock.lock()
         if let sessionID,
            let row = sessionTitles.last(where: { $0.sessionID == sessionID }) {
             sessionTitleLock.unlock()
+            if Self.staleAfterRename(row, currentCustomTitle: currentCustomTitle) {
+                forgetSessionTitle(row)
+                return nil
+            }
             return row.title
         }
         // A row that names a conversation this is not stays out of the fallback entirely. A row
@@ -664,7 +695,31 @@ final class Config {
         guard let candidate,
               Self.sameConversation(candidate.startedAt, conversationStart())
         else { return nil }
+        if Self.staleAfterRename(candidate, currentCustomTitle: currentCustomTitle) {
+            forgetSessionTitle(candidate)
+            return nil
+        }
         return candidate.title
+    }
+
+    /// Whether a person has typed `/rename` since this row's name was chosen. No baseline — no
+    /// transcript could be resolved at set time — is not evidence of a change, so the local name
+    /// stands; see ``SessionTitle/seenTranscriptPath``.
+    private static func staleAfterRename(_ row: SessionTitle,
+                                         currentCustomTitle: (String) -> String?) -> Bool {
+        guard let path = row.seenTranscriptPath else { return false }
+        return currentCustomTitle(path) != row.seenCustomTitle
+    }
+
+    /// Drop a name a later `/rename` has superseded, keyed by value rather than by index: both
+    /// callers above already unlocked once to find the row, and re-finding it by identity here
+    /// is simpler than threading an index through that unlock. So the next read finds no row at
+    /// all and falls straight through to the automatic label, instead of repeating this same
+    /// comparison and the same answer on every redraw.
+    private func forgetSessionTitle(_ row: SessionTitle) {
+        sessionTitleLock.lock()
+        sessionTitles.removeAll { $0 == row }
+        sessionTitleLock.unlock()
     }
 
     /// Whether two readings of "the assistant process in that tab" are the same process.
@@ -695,6 +750,13 @@ final class Config {
             if let startedAt = row.startedAt {
                 out["started_at"] = startedAt.timeIntervalSince1970
             }
+            // `seen_custom_title` is legitimately absent while `seen_transcript_path` is present
+            // — a transcript that had no `/rename` yet when this name was chosen — so the two
+            // are written independently rather than as one optional pair.
+            if let seenCustomTitle = row.seenCustomTitle { out["seen_custom_title"] = seenCustomTitle }
+            if let seenTranscriptPath = row.seenTranscriptPath {
+                out["seen_transcript_path"] = seenTranscriptPath
+            }
             return out
         }
     }
@@ -702,7 +764,9 @@ final class Config {
     /// Replace every address for this live session together, so a name lives in one row rather
     /// than a pair that can drift apart. `startedAt` is the third address and the one the read
     /// side leans on when there is no conversation id — it is what stops the row outliving the
-    /// conversation that chose it. See ``sessionTitle(sessionID:terminalID:conversationStart:)``.
+    /// conversation that chose it. `seenCustomTitle`/`seenTranscriptPath` are the fourth and
+    /// fifth, the baseline a later `/rename` is measured against. See
+    /// ``sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)``.
     ///
     /// Refused before anything is removed, and that order is the point: an overlong title used to
     /// delete the row it was too long to replace, so a request the route answers with `400` would
@@ -710,7 +774,8 @@ final class Config {
     /// the Mac-side entry point this feature is heading for would not have.
     @discardableResult
     func setSessionTitle(_ raw: String, sessionID: String?, terminalID: String,
-                         startedAt: Date? = nil, now: Date = Date()) -> String? {
+                         startedAt: Date? = nil, seenCustomTitle: String? = nil,
+                         seenTranscriptPath: String? = nil, now: Date = Date()) -> String? {
         let normalized = Self.normalizedSessionTitle(raw)
         if let normalized, normalized.count > Self.sessionTitleLimit { return nil }
         sessionTitleLock.lock()
@@ -721,6 +786,8 @@ final class Config {
         if let normalized {
             sessionTitles.append(SessionTitle(title: normalized, sessionID: sessionID,
                                               terminalID: terminalID, startedAt: startedAt,
+                                              seenCustomTitle: seenCustomTitle,
+                                              seenTranscriptPath: seenTranscriptPath,
                                               updatedAt: now))
         }
         pruneSessionTitlesLocked(now: now)
@@ -732,9 +799,14 @@ final class Config {
     func setSessionTitle(_ raw: String, for target: TargetSession, now: Date = Date()) -> String? {
         // Read here, at the moment the name is chosen, because that is the conversation the
         // person is naming. Asking again later would only ever describe whatever is in the tab
-        // by then.
-        setSessionTitle(raw, sessionID: hookSessionID(of: target), terminalID: target.id,
-                        startedAt: Targets.processStart(of: target), now: now)
+        // by then. The transcript snapshot is the one place this feature pays for
+        // ``Transcript/record(of:)`` in full — it happens once, when somebody names a session,
+        // never on the redraw path that reads it back.
+        let snapshot = Transcript.customTitleSnapshot(of: target)
+        return setSessionTitle(raw, sessionID: hookSessionID(of: target), terminalID: target.id,
+                               startedAt: Targets.processStart(of: target),
+                               seenCustomTitle: snapshot?.title,
+                               seenTranscriptPath: snapshot?.path, now: now)
     }
 
     private static func sessionTitle(from row: [String: Any]) -> SessionTitle? {
@@ -747,8 +819,16 @@ final class Config {
         // Those rows keep working through their session id and stop working through the terminal
         // alone, which is the whole point of the field.
         let startedAt = (row["started_at"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        // Both absent in rows written before a name could go stale. Those rows keep working
+        // exactly as they did — ``staleAfterRename(_:currentCustomTitle:)`` treats a nil
+        // ``seenTranscriptPath`` as "nothing to compare against", not as "a rename happened".
+        let seenCustomTitle = row["seen_custom_title"] as? String
+        let seenTranscriptPath = (row["seen_transcript_path"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        }
         return SessionTitle(title: title, sessionID: sessionID, terminalID: terminalID,
-                            startedAt: startedAt,
+                            startedAt: startedAt, seenCustomTitle: seenCustomTitle,
+                            seenTranscriptPath: seenTranscriptPath,
                             updatedAt: Date(timeIntervalSince1970: timestamp))
     }
 

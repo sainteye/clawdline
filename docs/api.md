@@ -904,6 +904,16 @@ Codex would have called it, so the name a person typed stays in Codex's own meta
 still lists the thread under it, and a later reading of that metadata puts it back on the label. The
 terminal's own title is never changed by this local step.
 
+**For Claude, the newer of the two human names wins.** Naming a session here does not stop a person
+from typing `/rename` straight into that terminal afterward — and when they do, the name they just
+typed is the more recent one, so it is what the label shows from then on. Clawdline notices this by
+comparing the transcript's own `customTitle` against what it was at the moment this route ran, not by
+timestamp: an old rename in a transcript that gets named here today must not look newer than it is.
+Naming it here again, or clearing it, makes this route's name current again. This applies only to
+Claude — Codex has no `/rename` — and only when a transcript already existed to compare against; a
+name set before Claude Code has written its first byte has nothing to compare against and simply
+wins, the way it always did.
+
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/title \
     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \

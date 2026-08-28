@@ -57,6 +57,10 @@ struct TargetSession: Equatable, Identifiable {
     /// The only human-authored source comes first; every other label is generated or inferred.
     /// `terminalLabel` is an input, never an output written back to ``label``: transcript lookup
     /// relies on the terminal's original title when hooks are unavailable.
+    ///
+    /// `manualTitle` is not a constant a person set once: ``Config/sessionTitle(for:)`` already
+    /// withholds it the moment a later `/rename` in the terminal supersedes it, so this still
+    /// picks "the only human-authored source" — just not always the same one.
     static func preferredDisplayLabel(manualTitle: String?, orchestratorTitle: String?,
                                       threadName: String?, terminalLabel: String) -> String {
         if let manualTitle = manualTitle?.trimmingCharacters(in: .whitespacesAndNewlines),

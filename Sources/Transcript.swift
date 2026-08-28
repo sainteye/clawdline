@@ -288,6 +288,30 @@ enum Transcript {
         return found.title
     }
 
+    /// The transcript's own last explicit `/rename`, without ``title(ofTranscript:)``'s fallback
+    /// to `aiTitle`. `Config` needs exactly this — not the effective display title — to tell "no
+    /// rename has happened since a local name was chosen" from "one has, so the local name
+    /// should give way". Reuses ``customTitleCache``: every call to ``title(ofTranscript:)``
+    /// already fills it, cached or not, so asking here never reads the file a second time.
+    static func customTitle(ofTranscript url: URL) -> String? {
+        _ = title(ofTranscript: url)
+        titleLock.lock()
+        defer { titleLock.unlock() }
+        return customTitleCache[url.path]?.title
+    }
+
+    /// Where a session's transcript is right now, and what `/rename` it last recorded — resolved
+    /// once, at the moment a local name is chosen, and never again on the redraw path. Finding
+    /// the transcript from scratch means asking `SessionRegistry` on top of the `ps`/`lsof`
+    /// ``Targets/processStart(of:)`` and ``Targets/workingDirectory(of:)`` already pay for
+    /// elsewhere on that path — exactly the second synchronous read a row cannot afford paying
+    /// for on every repaint. ``Config`` stores the path from here and re-reads only
+    /// ``customTitle(ofTranscript:)`` — cache-backed — on every later look.
+    static func customTitleSnapshot(of target: TargetSession) -> (path: String, title: String?)? {
+        guard target.isClaude, let record = record(of: target) else { return nil }
+        return (record.url.path, customTitle(ofTranscript: record.url))
+    }
+
     private static func readTitle(ofTranscript url: URL, tailBytes: Int,
                                   knownCustom: String?, scanEarlier: Bool)
         -> (title: String?, customTitle: String?) {

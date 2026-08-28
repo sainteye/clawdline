@@ -3156,6 +3156,14 @@ group("transcript titles") {
     expect("the last custom title is used", Transcript.title(ofTranscript: customOnly),
            "last chosen title")
 
+    // `customTitle(ofTranscript:)` is what `Config` compares a local name's baseline against —
+    // it must never inherit `title(ofTranscript:)`'s fallback to `aiTitle`, or an ordinary
+    // automatic title would look exactly like a person having typed `/rename`.
+    expect("no explicit rename means no custom title, even with an ai title to fall back to",
+           Transcript.customTitle(ofTranscript: aiOnly), nil)
+    expect("an explicit rename is reported on its own", Transcript.customTitle(ofTranscript: customOnly),
+           "last chosen title")
+
     let both = write("both", [
         #"{"type":"custom-title","customTitle":"修正瀏覽器問答"}"#,
         String(repeating: "x", count: 1_024),
@@ -9740,6 +9748,99 @@ group("a person's session title belongs to the conversation, not to the tab") {
     check("and it is still the credential after loading, not just a stored field",
           loaded.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
                               conversationStart: { restarted }) == nil)
+}
+
+group("the newest of a local name and a terminal /rename wins") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-freshness-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let config = Config(directoryForTesting: directory)
+    let now = Date()
+
+    // 1. A local name chosen when the transcript had no `/rename` yet; the terminal gets one
+    // afterward. The newer utterance — the terminal's — has to win.
+    config.setSessionTitle("Web-chosen name", sessionID: "claude-fresh", terminalID: "terminal-fresh",
+                           seenCustomTitle: nil, seenTranscriptPath: "/tmp/fake-fresh.jsonl", now: now)
+    var reads = 0
+    expect("a later /rename in the terminal takes the label away from the local name",
+           config.sessionTitle(sessionID: "claude-fresh", terminalID: "terminal-fresh",
+                               currentCustomTitle: { path in
+                                   reads += 1
+                                   check("it is asked about the transcript this row recorded",
+                                         path == "/tmp/fake-fresh.jsonl")
+                                   return "Renamed from the terminal"
+                               }),
+           nil)
+    expect("one read decided it", reads, 1)
+    // 4. Superseded, not merely out-voted: the row is gone, so a second read never asks the
+    // transcript again — there is nothing left to compare.
+    expect("the superseded row does not answer a second time",
+           config.sessionTitle(sessionID: "claude-fresh", terminalID: "terminal-fresh",
+                               currentCustomTitle: { _ in reads += 1; return "Renamed from the terminal" }),
+           nil)
+    expect("and was not asked, because there was nothing left standing to ask about", reads, 1)
+
+    // 2. The guard against over-correction this line exists for: an unchanged customTitle is not
+    // itself a rename. A stored value read back identical must never evict the local name — the
+    // naive version of this feature is "any customTitle beats the local name", and that is wrong.
+    config.setSessionTitle("Stays local", sessionID: "claude-stable", terminalID: "terminal-stable",
+                           seenCustomTitle: "Same as ever", seenTranscriptPath: "/tmp/fake-stable.jsonl",
+                           now: now)
+    expect("no change in the transcript means the local name still wins",
+           config.sessionTitle(sessionID: "claude-stable", terminalID: "terminal-stable",
+                               currentCustomTitle: { _ in "Same as ever" }),
+           "Stays local")
+    expect("and it survives being asked more than once",
+           config.sessionTitle(sessionID: "claude-stable", terminalID: "terminal-stable",
+                               currentCustomTitle: { _ in "Same as ever" }),
+           "Stays local")
+
+    // 3. A local name taken after a customTitle already existed: the baseline is non-nil, and as
+    // long as nothing has changed since, the local name still wins — the old rename is not itself
+    // treated as a supersession just because it predates the local name.
+    config.setSessionTitle("Chosen after an old rename", sessionID: "claude-after",
+                           terminalID: "terminal-after", seenCustomTitle: "An old rename",
+                           seenTranscriptPath: "/tmp/fake-after.jsonl", now: now)
+    expect("a pre-existing rename is the baseline, not a later change",
+           config.sessionTitle(sessionID: "claude-after", terminalID: "terminal-after",
+                               currentCustomTitle: { _ in "An old rename" }),
+           "Chosen after an old rename")
+
+    // No baseline at all — the transcript could not be resolved when the name was set, the shape
+    // a non-Claude session or a not-yet-written transcript takes — is not evidence of anything,
+    // so the local name is never evicted for want of something to compare it against.
+    config.setSessionTitle("No baseline to compare", sessionID: "claude-none",
+                           terminalID: "terminal-none", now: now)
+    expect("with nothing to compare against, the local name always wins",
+           config.sessionTitle(sessionID: "claude-none", terminalID: "terminal-none",
+                               currentCustomTitle: { _ in "Anything at all" }),
+           "No baseline to compare")
+
+    // 5. Clearing is untouched by any of this: it still returns to the automatic label.
+    config.setSessionTitle("", sessionID: "claude-stable", terminalID: "terminal-stable", now: now)
+    check("clearing still returns to the automatic label",
+          config.sessionTitle(sessionID: "claude-stable", terminalID: "terminal-stable",
+                              currentCustomTitle: { _ in "Same as ever" }) == nil)
+
+    // The baseline round-trips through a save, so a rename that happens while the app is closed
+    // is still caught on the first read after it reopens.
+    config.setSessionTitle("Round-trips too", sessionID: "claude-persist", terminalID: "terminal-persist",
+                           seenCustomTitle: "before restart", seenTranscriptPath: "/tmp/fake-persist.jsonl",
+                           now: now)
+    config.save()
+    let loaded = Config(directoryForTesting: directory)
+    expect("an unchanged transcript still wins after a restart",
+           loaded.sessionTitle(sessionID: "claude-persist", terminalID: "terminal-persist",
+                               currentCustomTitle: { _ in "before restart" }),
+           "Round-trips too")
+    expect("and a rename typed while the app was closed is noticed on the first read back",
+           loaded.sessionTitle(sessionID: "claude-persist", terminalID: "terminal-persist",
+                               currentCustomTitle: { _ in "renamed while closed" }),
+           nil)
+
+    // 6. Every existing title-precedence test above this one must still pass unmodified — the
+    // suite run this change was verified against is the proof, not a restatement here.
 }
 
 group("a config write that did not happen is not reported as saved") {
