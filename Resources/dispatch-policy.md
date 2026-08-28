@@ -19,6 +19,12 @@ this be cut into pieces that need not talk to each other, and joined at the end?
 ask, then do whatever they answer — **their yes settles it**, and what is owed is the reason once,
 before the work starts.
 
+**And ask it as options, not as prose.** Any decision genuinely the user's — this one, which design,
+who adopts an orphaned line — reaches him in his own session as an explicit options prompt: one
+question at a time, each option naming what happens if he picks it, your recommendation attached.
+Asked inside a paragraph it does not arrive; his words are «我會漏掉，我不知道怎麼回答». **Technical
+to-dos and user decisions are two lists, never one** — mixed, it is always his half that is lost.
+
 **Clawdline Agent**, **dispatch**, **new tab**, **independent task**, **派 Agent／派下去** all mean
 `POST /v1/orchestrator/tasks`: a broker task id and an ordinary assistant session in its own tab.
 Codex `thread_spawn`, Claude sidechains and other provider-native children do not satisfy it, and a
@@ -43,6 +49,13 @@ until the slice is mature; new discoveries go to that session, not a new tab.
 run out mid-task and a context window can fill. So a long or multi-file slice goes out with
 `isolation: "worktree"`, commits each milestone on its delivery branch, and reports through
 `/progress` when the work stops matching its title. A death in hour three then costs one hour.
+
+**But only Claude can commit in that worktree.** A linked worktree's git metadata lives in the main
+repo's `.git/worktrees/<task-id>/`, outside what a Codex sandbox may write, so every commit dies on
+`index.lock: Operation not permitted` and the child reports failure holding finished work — again
+today, after 4438 passing checks. Tell a **claude** worktree child to commit milestones; tell a
+**codex** one to leave the bytes dirty for root. The briefing says "commit early and often" to both,
+so the instructions must override it.
 
 **Never open a session for one small change.** Small items pool, and the pool empties when any of
 these is true: five items are waiting; they are together worth more than about thirty minutes; or
@@ -130,3 +143,13 @@ the reviewer's head buries the judgement somebody needed to see. Once it has edi
 its verdict is spent — that repair is a delivery, and the focused diff and exact-tree acceptance are
 root's. It repairs only what does not change the design; a design-changing correction goes back to
 the implementer's session. Never one task per finding.
+
+**One review round per feature or batch, and count them.** Complementary reviewers side by side are
+one round; what is capped is re-reviewing after a correction, which feels free and is not. Measured
+on one line here: implementation $30.90, its four review rounds $57.39 — 1.9x the thing reviewed. A
+**second** round only when the first found a defect *class* that will recur elsewhere; "did the fix
+work" is answered by the test that was red. A **third** only with a written reason the coordinator
+has seen, or on either trigger below — decidable from the correction diff, and taken from that same
+line, where each correction introduced defects the next review caught: **(a) it touches a code path
+`main` is also on**; **(b) it deleted or weakened an existing assertion.** Past three, ask. Blanket
+multi-round review is rejected here.
