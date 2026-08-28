@@ -1852,6 +1852,16 @@ enum Orchestrator {
     /// Test seam: observes the warning decision before optional terminal delivery.
     static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
     static var attachedSenderForTesting: ((String, TargetSession) -> String?)?
+    /// The session inventory an attachment resolves against, and the starter a tab-opening
+    /// dispatch uses.
+    ///
+    /// Production reads `SessionWatch` and opens a real terminal; a suite can do neither, which
+    /// is how everything past ``attachmentDecision(sessionID:assistant:sessions:states:tasks:roles:isChoosing:excluding:)``
+    /// — `spawnAttached`, `502 attach_delivery_failed`, the single-flight check the serialize
+    /// pump re-runs, and every tab-opening failure at dispatch — came to have no test that could
+    /// go red. Both are cleared by ``forget()``.
+    static var attachmentInventoryForTesting: ([TargetSession], [String: SessionState])?
+    static var taskStarterForTesting: TaskStarter?
     /// Test seam for the final display sentence; production always enters WebPush below.
     static var agentPushForTesting:
         ((String, String, String, String?, String?) -> WebPush.Delivery)?
@@ -3481,7 +3491,9 @@ enum Orchestrator {
                                           excluding excludedTaskID: String? = nil)
         -> AttachmentDecision {
         let inventory: ([TargetSession], [String: SessionState])
-        if Thread.isMainThread {
+        if let supplied = attachmentInventoryForTesting {
+            inventory = supplied
+        } else if Thread.isMainThread {
             inventory = (SessionWatch.shared.targets, SessionWatch.shared.states)
         } else {
             inventory = DispatchQueue.main.sync {
@@ -3717,6 +3729,20 @@ enum Orchestrator {
                 attachDeliveryFailed = true
             } else {
                 task = opened
+                // The one ending that does not go through `finalize`, and the two reclaim
+                // deadlines are the only thing it would have taken from there that this task
+                // still owes. A tab that never opened has no `work/` and its worktree was
+                // disposed of inside `spawn`, so both are usually already answered — but the
+                // guarantee is "every terminal state", and an exception nobody wrote down is
+                // how the first one of these went unnoticed.
+                if task.state == .spawnFailed {
+                    task.workCleanupAt = reclaimDeadline(
+                        minutes: Config.shared.orchestratorWorkGraceMinutes,
+                        outcome: .spawnFailed)
+                    task.buildCleanupAt = task.worktree == nil ? nil : reclaimDeadline(
+                        minutes: Config.shared.orchestratorBuildGraceMinutes,
+                        outcome: .spawnFailed)
+                }
                 _ = replaceTask(task, expecting: .queued,
                                 discardSecret: task.state.isTerminal)
             }
@@ -3765,11 +3791,13 @@ enum Orchestrator {
     /// Internal so the final task-to-terminal wiring can be mutation-tested without opening a
     /// real tab. The default remains the single production path into `StartPoints.start`.
     static func spawn(_ task: Task, attachedSession: TargetSession? = nil,
-                      start: TaskStarter = { place, assistant, model, effort, permission, addDir in
-                          StartPoints.start(place, assistant: assistant, model: model,
-                                            reasoningEffort: effort, permission: permission,
-                                            addDir: addDir)
-                      }) -> Task {
+                      start: TaskStarter? = nil) -> Task {
+        let start = start ?? taskStarterForTesting
+            ?? { place, assistant, model, effort, permission, addDir in
+                StartPoints.start(place, assistant: assistant, model: model,
+                                  reasoningEffort: effort, permission: permission,
+                                  addDir: addDir)
+            }
         var task = task
         task.queuedSecret = nil
         if task.attachSessionId != nil {
@@ -7553,6 +7581,10 @@ enum Orchestrator {
     /// describes the work rather than the housekeeping waiting on it.
     static func closeAtForTesting(_ id: String) -> Date? { held(id)?.closeAt }
 
+    static func workCleanupAtForTesting(_ id: String) -> Date? { held(id)?.workCleanupAt }
+
+    static func buildCleanupAtForTesting(_ id: String) -> Date? { held(id)?.buildCleanupAt }
+
     /// Test seams for the scheduler's in-memory arbitration. Production reaches the same state
     /// only through ordinary dispatch registration on the remote serial queue.
     static func holdScheduleTaskForTesting(_ task: Task) {
@@ -8665,8 +8697,11 @@ enum Orchestrator {
         scheduleDispatchEnqueuerForTesting = nil
         workspaceOverlapObserverForTesting = nil
         attachedSenderForTesting = nil
+        attachmentInventoryForTesting = nil
+        taskStarterForTesting = nil
         agentPushForTesting = nil
         titlesByTerminal = [:]
+        rolesByTerminal = [:]
         loaded = false
         lock.unlock()
         ownershipLock.lock()
