@@ -289,25 +289,13 @@ function debugUI(force, reveal) {
     drawDebug();
 }
 
-function installDebugGesture() {
+function installDebugButton() {
     var target = context && context.elements && context.elements.conn;
     if (!target) return;
-    var timer = null, triggered = false;
-    function cancel() { clearTimeout(timer); timer = null; }
-    target.addEventListener("pointerdown", function () {
-        cancel(); triggered = false;
-        timer = setTimeout(function () {
-            timer = null; triggered = true; debugUI(true, true);
-        }, 1200);
-    }, true);
-    ["pointerup", "pointercancel", "pointerleave"].forEach(function (name) {
-        target.addEventListener(name, cancel, true);
-    });
     target.addEventListener("click", function (event) {
-        if (!triggered) return;
-        triggered = false; event.preventDefault(); event.stopImmediatePropagation();
+        event.preventDefault(); event.stopImmediatePropagation();
+        debugUI(true, true);
     }, true);
-    target.addEventListener("contextmenu", function (event) { event.preventDefault(); }, true);
 }
 
 function observe() {
@@ -353,7 +341,7 @@ export var Diagnostics = {
         window.addEventListener("unhandledrejection", function (event) {
             captureError("unhandled_rejection", event.reason);
         });
-        observe(); installDebugGesture(); debugUI();
+        observe(); installDebugButton(); debugUI();
     },
     ready: function () { ready = true; append("boot.ready"); schedule("boot.ready"); },
     note: function (event, data) { append(event, data); schedule(event); },
