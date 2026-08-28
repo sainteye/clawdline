@@ -50,6 +50,12 @@ one blocks a landing or somebody is waiting on it. **No item sits longer than 24
 "accumulate" quietly becomes "never". One task carries the whole batch, `claims` is the union of what
 it writes, and the instructions list the items separately so the result can report on each one.
 
+**A recurring chore is a batch that repeats.** The pool rule is written for work that turns up once,
+and scheduled work slips past it: every run is a fresh session paying the whole fixed cost, daily.
+Measured on one machine, five runs of three daily chores cost 4.0% of everything it had ever
+dispatched, to produce a rounding error of output. Run them as follow-up tasks in one standing
+session, kept as separate tasks so a failed chore does not take the others with it.
+
 **Standing sessions** — one kept open between jobs for odd jobs, one for review — take work **only
 as an attached follow-up task** carrying its own id, secret, `claims` and `result.json`.
 `POST /v1/sessions/:id/send` is not that: it makes no task record, so what it feeds in holds no
@@ -75,6 +81,14 @@ is for: a leaf that knows what its output feeds writes a usable output, one that
 essay, and leaves are narrow enough to state in a sentence. **Stagger dispatches 30–45 seconds** or
 they compete, and a tab that has not reached a prompt in four minutes is `spawn_failed`, whose retry
 needs a fresh id and secret. **Say when you did it yourself.**
+- **Ask every task for one `/progress` note in its first three minutes**, saying what it has decided
+  to do now it has read the briefing. One round, and it is the only thing that lets a wrong
+  direction be cancelled at minute three rather than minute twenty-six: the two dearest cancelled
+  tasks measured on one machine burned 18.5M and 16.5M tokens before anybody could tell.
+- **An interrupted review is handed over, not restarted.** A reviewer that died or was cancelled has
+  usually written part of its findings; hand that file to whoever picks it up. Review is both the
+  most expensive node and the one most often thrown away — 30 of 101 review dispatches on one
+  machine never returned a verdict.
 
 ## Which assistant, which model
 
@@ -82,6 +96,12 @@ needs a fresh id and secret. **Say when you did it yourself.**
   hand-written SVG, a build driven to green, mechanical edits across many files. It cannot be told
   where to save a drawing — say: generate it, then copy it into `artifacts/`.
 - **Claude** for reading and judging: a diff, why something behaves as it does, prose.
+
+The choice has a price as well as a fit. Codex work is billed against a plan and Claude work per
+token: on one machine 84% of dispatches ran on Codex for nothing, and the whole bill came from the
+16% on Claude. So "Codex makes, Claude reads" is not only about which is better at what — sending
+making-shaped work to Claude is the most expensive thing you can do by accident. Where both would do
+and nothing has to be weighed, it goes to Codex.
 
 `haiku` for mechanical single-source work where being wrong is obvious; `sonnet` is the default for a
 leaf; `opus` for a decision somebody acts on without checking, and for any synthesis of several
