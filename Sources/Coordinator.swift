@@ -684,7 +684,7 @@ enum Coordinator {
 
     private static func allowedSession(_ row: [String: Any]) -> [String: Any] {
         var out: [String: Any] = [:]
-        for key in ["id", "assistant", "label", "cwd", "work_state", "closeability"] {
+        for key in ["id", "assistant", "label", "cwd", "work_state", "closeability_state"] {
             if let value = row[key] { out[key] = value }
         }
         return out
@@ -726,7 +726,7 @@ enum Coordinator {
         if let assistant = session.identity.assistant { row["assistant"] = assistant.rawValue }
         if let cwd = session.cwd { row["cwd"] = cwd }
         if let closeability = session.closeability {
-            row["closeability"] = closeability.rawValue
+            row["closeability_state"] = closeability.rawValue
         }
         return row
     }
@@ -743,7 +743,7 @@ enum Coordinator {
         if let cwd = live?.cwd ?? record.cwd { session["cwd"] = cwd }
         if let workState = live?.workState { session["work_state"] = workState.rawValue }
         if let closeability = live?.closeability {
-            session["closeability"] = closeability.rawValue
+            session["closeability_state"] = closeability.rawValue
         }
         let observationCurrent = sessionsFresh && sessionsObservedAt.map {
             representableTimestamp($0.timeIntervalSince1970)

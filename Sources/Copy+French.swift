@@ -280,6 +280,8 @@ struct French: Copy {
     let sessionWorkComplete = "Intégration dans la branche cible vérifiée par le courtier"
     let closeabilitySafe = "Peut être fermée sans risque"
     let closeabilityBlocked = "{n} obligations restantes"
+    let closeabilityBlockedOne = "1 obligation restante"
+    let closeabilityBlockedMany = "{n} obligations restantes"
     let closeabilityNeedsAttestation = "En attente de l’attestation de la session"
     let closeabilityUnknown = "Fermeture indéterminée"
     let closeabilityWhy = "Fermeture impossible car"

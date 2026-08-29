@@ -28,8 +28,9 @@ Three existing axes stay separate, and this adds a fourth:
 
 ## The projection
 
-Every Session row on `GET /v1/sessions`, `GET /v1/orchestrator/sessions` and the Bearings
-inspection carries it:
+Every Session row on `GET /v1/sessions` and `GET /v1/orchestrator/sessions` carries the full
+object. Bearings is intentionally reduced and uses the distinctly typed key
+`closeability_state` plus `closeability_counts`; the same key never changes type across routes.
 
 ```json
 {
@@ -46,7 +47,8 @@ inspection carries it:
     "version": "cl1_2f9a4c31d0be5a7788c1e6b04d3f9021",
     "provenance": ["broker"],
     "attestation_id": null,
-    "source": {"provenance": "session_watch", "freshness": "current"}
+    "source": {"provenance": "session_watch", "freshness": "current",
+               "observed_at": 1788005790, "max_age_seconds": 45}
   }
 }
 ```
@@ -54,10 +56,10 @@ inspection carries it:
 Each value has one action:
 
 - `blocked`: the broker sees a positive obligation; do not close.
-- `needs_attestation`: broker blockers are clear, but only the Session can account for local or
-  external work; ask that exact Session.
-- `safe`: broker blockers are clear and the exact current process supplied a fresh closure
-  attestation; the close button may proceed.
+- `needs_attestation`: broker blockers are clear, but local or external work is not broker
+  observable; obtain an attestation about that exact Session.
+- `safe`: broker blockers are clear and a fresh closure attestation is bound to the exact current
+  process; the close button may proceed.
 - `unknown`: evidence is stale, missing or ambiguous; refresh/audit and fail closed.
 
 `ready` means able to accept work. `safe` means able to end. They are independent. Legacy
@@ -95,21 +97,25 @@ headline naming one of them would be a wrong one.
 Projected from the current registries rather than stored as a second truth, and from **records
 only**: a worktree is dirty because a reading wrote that down, and a claim was touched because the
 terminal-state audit said so at the time. Nothing here stats a filesystem or reads a screen at
-projection time.
+projection time. A list response settles the obligation clock and copies the task, wait, handoff,
+self-state and attestation records once; every row in that response projects from the same
+immutable registry snapshot.
 
 - terminal working, waiting or unreadable;
 - a task this exact process is executing, still unfinished (`own_task_unfinished`);
 - live descendant or attached task;
 - a terminal task with no verified result and no summary — a child that died without reporting;
-- root/executor pending landing;
+- pending landing and post-delivery worktree/claim closure belong to the dispatching root; an
+  executor carries only `own_task_unfinished` while its task is live and is never told to land;
 - coordination wait as owner or waiter;
 - open handoff;
 - an outbound completion delivery not yet acknowledged, dead-lettered included;
 - a non-empty `owed` debt;
 - a dirty isolated worktree, or claims the audit found touched, with no `landed`/`abandoned`
   landing decision recorded;
-- stale or missing Session inventory, an unbound process identity, or anything but exactly one
-  inventory row resolving to this exact (assistant, conversation) pair.
+- stale (incomplete or older than 45 seconds) or missing Session inventory, an unbound process
+  identity, or anything but exactly one inventory row resolving to this exact (assistant,
+  conversation) pair.
 
 ### The two clocks
 
@@ -135,20 +141,24 @@ over the exact process identity, both clocks, and the resulting state.
 
 It deliberately does **not** cover the SessionWatch scan generation. That advances on its own every
 few seconds, and a token nobody could hold still long enough to send would make every close a race
-rather than proving anything. Scan freshness reaches the reader as `source.freshness` and, when it
-is not current, as `unknown` — which no close accepts.
+rather than proving anything. Scan freshness reaches the reader as `source.freshness`, the
+inventory's own `source.observed_at`, and the published `source.max_age_seconds`. Incomplete,
+missing, future-dated or older evidence becomes `unknown`, which no close accepts.
 
-## Evidence only the Session can provide
+## Evidence the broker cannot observe
 
 The broker cannot prove ownership of shared-tree hunks, unregistered local todos, repo-external
 artifacts and deployments, user decisions not written to `owed`, or whether direct root work covers
 the whole request. `POST /v1/orchestrator/sessions/:id/closure` is where that is answered — see
 [`api.md`](api.md#post-v1orchestratorsessionsidclosure) for the request contract.
 
-Bound to the exact terminal, assistant, PID/start and conversation, and to one turn through
+The route is authorized by the machine orchestrator token. Its record is bound to the exact
+target terminal, assistant, PID/start and conversation, and to one observed turn through
 `activity_generation` rather than through the race-prone requirement that SessionWatch display
-`working` in the same millisecond. The receipt is self-attestation, not completion; only the broker
-merge may output `safe`.
+`working` in the same millisecond. That binding names what the assertion is about; it does not
+authenticate which human or process holding the machine token authored it. Operationally, ask the
+target Session for its account before the credential holder posts it. The route rereads the real
+terminal and inventory after recording, and only that broker merge may output `safe`.
 
 ## Closing
 
@@ -163,7 +173,9 @@ opaque token. The broker recomputes at the close:
   `unknown`, or a superseded attestation — those produce no victim list, and accepting a loss
   nobody can enumerate is not consent.
 
-Omitting the field leaves every existing client exactly where it was.
+Omitting the field leaves every existing client exactly where it was. Consequently the proof
+protects clients that opt in; an older client or script that omits it retains only the prior
+`lost_if_closed` protection.
 
 A closed Session disappears from the live inventory. There is deliberately no live `closed` state
 and no permanent record of one; what remains is the bounded `session.end` audit row.
@@ -174,8 +186,9 @@ and no permanent record of one; what remains is the bounded `session.end` audit 
 2. `blocked`: work the `reasons` list. Each names its subject id and the one thing that moves it —
    land or abandon the landing, release the wait, acknowledge the completion, clear the debt,
    let the child finish.
-3. `needs_attestation`: ask that exact Session to `POST …/closure` with the
-   `activity_generation` the row carries. It is the only party that can.
+3. `needs_attestation`: ask that exact Session to account for its local work, then use the machine
+   credential to `POST …/closure` with the row's `activity_generation`. The stored subject binding
+   is exact; the HTTP credential does not prove who supplied the account.
 4. `unknown`: do not close. Take a fresh reading; if it persists, the `reasons` say whether the
    inventory was incomplete, the identity unbound, or two rows are claiming one conversation.
 5. Repeat the close with the version from the projection you just read. A refusal is not a retry

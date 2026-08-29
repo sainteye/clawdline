@@ -280,6 +280,8 @@ struct Russian: Copy {
     let sessionWorkComplete = "Подтверждённое брокером вливание в целевую ветку"
     let closeabilitySafe = "Можно безопасно закрыть"
     let closeabilityBlocked = "Осталось обязательств: {n}"
+    let closeabilityBlockedOne = "Осталось 1 обязательство"
+    let closeabilityBlockedMany = "Осталось обязательств: {n}"
     let closeabilityNeedsAttestation = "Ждём подтверждения от самой сессии"
     let closeabilityUnknown = "Можно ли закрыть — неизвестно"
     let closeabilityWhy = "Закрыть нельзя, потому что"

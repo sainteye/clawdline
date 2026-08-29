@@ -280,6 +280,8 @@ struct German: Copy {
     let sessionWorkComplete = "Vom Broker verifizierte Integration in den Ziel-Branch"
     let closeabilitySafe = "Kann sicher geschlossen werden"
     let closeabilityBlocked = "{n} offene Verpflichtungen"
+    let closeabilityBlockedOne = "1 offene Verpflichtung"
+    let closeabilityBlockedMany = "{n} offene Verpflichtungen"
     let closeabilityNeedsAttestation = "Wartet auf die Bestätigung der Sitzung"
     let closeabilityUnknown = "Schließbarkeit unbekannt"
     let closeabilityWhy = "Nicht schließbar, weil"

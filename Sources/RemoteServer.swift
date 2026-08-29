@@ -132,6 +132,10 @@ final class RemoteServer: @unchecked Sendable {
     /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
     /// replace only SessionWatch's external terminal inventory with deterministic rows.
     static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
+    /// Supplies one complete process-bound identity while route tests still exercise the real
+    /// serializers and gates. Production always resolves these fields from the watched process.
+    static var sessionWorkIdentityForTesting:
+        ((TargetSession) -> Orchestrator.SessionWorkIdentity)?
     /// Replaces only the process-bound conversation reader used by whoami. The route still takes
     /// a real coherent target snapshot and executes both exact-resolution passes.
     static var sessionConversationIDForTesting: ((TargetSession) -> String?)?
@@ -144,6 +148,8 @@ final class RemoteServer: @unchecked Sendable {
     /// Replaces the route body only after a non-send terminal mutation entered the production
     /// bounded worker. This keeps queue/isolation tests away from real ttys.
     static var terminalRouteForTesting: ((Request) -> Response)?
+    /// Replaces only the final destructive handoff after every `/end` gate has run.
+    static var sessionEndForTesting: ((TargetSession) -> String?)?
     /// Deterministic expiry seam for artifact route and relay lifecycle tests.
     static var imageArtifactNowForTesting: (() -> Date)?
     /// Already-serialized full snapshots for bridge lifecycle integration tests. Production keeps
@@ -1418,8 +1424,10 @@ final class RemoteServer: @unchecked Sendable {
                               "Reading the sessions a wait can name needs the orchestrator token.")
             }
             let watch = SessionWatch.shared
+            let supplied = Self.sessionPayloadForTesting
             return .json(["sessions": Self.coordinationSessionRows(
-                            watch.targets, states: watch.states,
+                            supplied?.0 ?? watch.targets,
+                            states: supplied?.1 ?? watch.states,
                             inventory: self.sessionInventoryEvidence()),
                           "at": Int(Date().timeIntervalSince1970)])
 
@@ -1657,7 +1665,7 @@ final class RemoteServer: @unchecked Sendable {
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return answer(reply)
 
-        // The evidence only the Session itself can supply: shared-tree hunks it owns, local
+        // Evidence about one Session that the broker cannot observe itself: shared-tree hunks it owns, local
         // todos nothing registered, artifacts and deployments outside the repository, decisions
         // never written to `owed`. A route of its own rather than another meaning for `/state`,
         // because this one is about *ending* and that one is about what to do next.
@@ -1665,8 +1673,10 @@ final class RemoteServer: @unchecked Sendable {
         // **Bound to one turn by `activity_generation`, not by a same-millisecond screen
         // reading.** The session writes this at the end of its turn; whether a SessionWatch beat
         // landed on the same instant is not evidence about anything, and requiring it would be a
-        // race the honest caller loses. The receipt is self-attestation: only the broker merge
-        // may output `safe`.
+        // race the honest caller loses. The machine orchestrator token is the authorization
+        // boundary. The receipt binds the assertion to the exact target process and turn; it
+        // does not prove which credential holder authored it. Only a fresh broker reread may
+        // output `safe`.
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
             && path.hasSuffix("/closure"):
             guard orchestratorAuthed else {
@@ -1703,10 +1713,13 @@ final class RemoteServer: @unchecked Sendable {
             if let auditID = body["audit_id"], !(auditID is String) {
                 return .error(400, "bad_request", "audit_id must be a string.")
             }
-            return answer(Orchestrator.attestClosure(
+            let reply = Orchestrator.attestClosure(
                 identity: Self.sessionWorkIdentity(target), status: status,
                 activityGeneration: body["activity_generation"] as? Int,
-                note: body["note"] as? String, auditID: body["audit_id"] as? String))
+                note: body["note"] as? String, auditID: body["audit_id"] as? String)
+            return answer(Self.closureProjectionAnswer(reply) {
+                self.closeability(of: target)
+            })
 
         // A session's declaration about its own quiet state — the `self` half of the work-state
         // provenance boundary (docs/session-states.md). Identity is resolved from the live
@@ -2210,7 +2223,13 @@ final class RemoteServer: @unchecked Sendable {
                 // Nothing happens here for a session that dispatched nothing, which is most of
                 // them; the cascade and its reasoning live in `Orchestrator`.
                 Orchestrator.cancelChildren(ofRoot: session)
-                if let failure = Targets.end(session) {
+                let endFailure: String?
+                if let suppliedEnd = Self.sessionEndForTesting {
+                    endFailure = suppliedEnd(session)
+                } else {
+                    endFailure = Targets.end(session)
+                }
+                if let failure = endFailure {
                     return Self.terminalFailure(failure, backend: session.backend)
                 }
                 DispatchQueue.main.async { SessionWatch.shared.nudge() }
@@ -3517,6 +3536,17 @@ final class RemoteServer: @unchecked Sendable {
         return .ok(payload)
     }
 
+    /// A closure write records only the attestation. Its HTTP receipt is then decorated from a
+    /// fresh real projection, never from permissive placeholder inventory or terminal state.
+    static func closureProjectionAnswer(
+        _ reply: Orchestrator.Reply,
+        projection: () -> Orchestrator.SessionCloseabilityProjection
+    ) -> Orchestrator.Reply {
+        guard case .ok(var payload) = reply else { return reply }
+        payload["closeability"] = projection().wire
+        return .ok(payload)
+    }
+
     /// An orchestrator reply, in the envelope everything else already uses.
     private func answer(_ reply: Orchestrator.Reply) -> Response {
         switch reply {
@@ -3971,10 +4001,12 @@ final class RemoteServer: @unchecked Sendable {
         let matches = Self.identityMatchCounts(
             targets.filter(\.isAssistant).compactMap { identities[$0.id] })
         let evidence = sessionInventoryEvidence()
+        let registry = Orchestrator.closeabilityRegistrySnapshot()
         return [
             "sessions": targets.map {
                 json(of: $0, stateOverride: states?[$0.id], identity: identities[$0.id],
-                     identityMatches: matches[$0.id] ?? 1, inventory: evidence)
+                     identityMatches: matches[$0.id] ?? 1, inventory: evidence,
+                     closeabilityRegistry: registry)
             },
             "at": Int(Date().timeIntervalSince1970),
             "scan": [
@@ -4005,6 +4037,7 @@ final class RemoteServer: @unchecked Sendable {
     /// projection. A replacement between reads can only produce a mixed tuple that fails the
     /// all-fields task comparison; it can never promote a stale receipt.
     static func sessionWorkIdentity(_ session: TargetSession) -> Orchestrator.SessionWorkIdentity {
+        if let supplied = sessionWorkIdentityForTesting { return supplied(session) }
         let pid = Targets.pid(of: session)
         return Orchestrator.SessionWorkIdentity(
             terminalID: session.id, assistant: session.assistant, tty: session.tty, pid: pid,
@@ -4028,6 +4061,9 @@ final class RemoteServer: @unchecked Sendable {
     /// same fact for closeability — the broker cannot say which process it is talking about.
     static func identityMatchCounts(_ identities: [Orchestrator.SessionWorkIdentity])
         -> [String: Int] {
+        let inventoryHasUnreadableAssistant = identities.contains {
+            $0.assistant == nil || $0.conversationID == nil
+        }
         var byConversation: [String: Int] = [:]
         for identity in identities {
             guard let assistant = identity.assistant,
@@ -4042,6 +4078,13 @@ final class RemoteServer: @unchecked Sendable {
                 // An unbound identity is reported as unbound, once. Counting it as ambiguous
                 // too would put two reasons on the row for one missing fact.
                 out[identity.terminalID] = 1
+                continue
+            }
+            if inventoryHasUnreadableAssistant {
+                // One unreadable assistant may be the competing twin of any bound row. The
+                // inventory cannot prove uniqueness for the readable half, so every bound row
+                // fails closed rather than silently counting only what was readable.
+                out[identity.terminalID] = 0
                 continue
             }
             out[identity.terminalID] =
@@ -4059,10 +4102,12 @@ final class RemoteServer: @unchecked Sendable {
         if Self.sessionPayloadForTesting != nil {
             return SessionInventoryEvidence(complete: true, observedAt: Date(), generation: nil)
         }
-        let watch = SessionWatch.shared
-        return SessionInventoryEvidence(complete: watch.scanComplete,
-                                        observedAt: watch.scanObservedAt,
-                                        generation: watch.scanGeneration)
+        return onMain(from: "RemoteServer.closeabilityInventory") {
+            let snapshot = SessionWatch.shared.identitySnapshot()
+            return SessionInventoryEvidence(
+                complete: snapshot.complete, observedAt: snapshot.observedAt,
+                generation: snapshot.generation)
+        }
     }
 
     private func sessionIdentityMatchCount(for identity: Orchestrator.SessionWorkIdentity)
@@ -4283,6 +4328,7 @@ final class RemoteServer: @unchecked Sendable {
             sessionsFresh: sessionsFresh, sessionsObservedAt: inventory.observedAt,
             sessionsGeneration: inventory.generation)
         let matches = Self.identityMatchCounts(bases.map(\.identity))
+        let closeabilityRegistry = Orchestrator.closeabilityRegistrySnapshot()
         let sessions = zip(bases, registry.sessions).map { base, facts in
             Coordinator.LiveSession(
                 identity: base.identity, label: base.label, cwd: base.cwd,
@@ -4294,7 +4340,8 @@ final class RemoteServer: @unchecked Sendable {
                     inventoryComplete: sessionsFresh,
                     inventoryObservedAt: inventory.observedAt,
                     inventoryGeneration: inventory.generation,
-                    identityMatches: matches[base.identity.terminalID] ?? 1).state)
+                    identityMatches: matches[base.identity.terminalID] ?? 1,
+                    registrySnapshot: closeabilityRegistry).state)
         }
         return CoordinatorObservation(
             sessions: sessions, sessionsObservedAt: inventory.observedAt,
@@ -4362,6 +4409,7 @@ final class RemoteServer: @unchecked Sendable {
         let matches = identityMatchCounts(assistants.compactMap { identities[$0.id] })
         let evidence = inventory ?? SessionInventoryEvidence(
             complete: true, observedAt: Date(), generation: nil)
+        let registry = Orchestrator.closeabilityRegistrySnapshot()
         return assistants.map { session -> [String: Any] in
             let terminalState = states[session.id] ?? .unknown
             let identity = identities[session.id] ?? sessionWorkIdentity(session)
@@ -4373,7 +4421,8 @@ final class RemoteServer: @unchecked Sendable {
                 identity: identity, terminalState: terminalState,
                 inventoryComplete: evidence.complete, inventoryObservedAt: evidence.observedAt,
                 inventoryGeneration: evidence.generation,
-                identityMatches: matches[session.id] ?? 1)
+                identityMatches: matches[session.id] ?? 1,
+                registrySnapshot: registry)
             var row: [String: Any] = [
                 "id": session.id,
                 "label": session.displayLabel,
@@ -4496,7 +4545,7 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
-    /// Exercise all five production SessionWatch readers. The fixture supplies an id from
+    /// Exercise every production SessionWatch reader. The fixture supplies an id from
     /// SessionWatch itself, keeping the reads non-empty without replacing the inventory through a
     /// test seam. Which sites crossed is read from ``MainQueue/endRecordingHopsForTesting()``, so
     /// a reader whose crossing was deleted cannot still be named by the list it used to return.
@@ -4506,6 +4555,7 @@ final class RemoteServer: @unchecked Sendable {
         _ = session(withID: sessionID)
         _ = sessionMessageSource(withID: sessionID)
         _ = state(of: sessionID)
+        _ = sessionInventoryEvidence()
     }
 
     /// Whether Clawdline may type a coordination-wait notice into that session right now, in the
@@ -4530,7 +4580,9 @@ final class RemoteServer: @unchecked Sendable {
                       stateOverride: SessionState? = nil,
                       identity precomputedIdentity: Orchestrator.SessionWorkIdentity? = nil,
                       identityMatches: Int? = nil,
-                      inventory: SessionInventoryEvidence? = nil) -> [String: Any] {
+                      inventory: SessionInventoryEvidence? = nil,
+                      closeabilityRegistry: Orchestrator.CloseabilityRegistrySnapshot? = nil)
+        -> [String: Any] {
         let watch = SessionWatch.shared
         let state = stateOverride ?? watch.states[session.id] ?? .unknown
         let menu = watch.menu(of: session.id)
@@ -4567,7 +4619,8 @@ final class RemoteServer: @unchecked Sendable {
             identity: identity, terminalState: state,
             inventoryComplete: evidence.complete, inventoryObservedAt: evidence.observedAt,
             inventoryGeneration: evidence.generation,
-            identityMatches: identityMatches ?? sessionIdentityMatchCount(for: identity)).wire
+            identityMatches: identityMatches ?? sessionIdentityMatchCount(for: identity),
+            registrySnapshot: closeabilityRegistry).wire
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
         let coordination = Orchestrator.coordination(forTerminal: session.id)
         if !coordination.waitingOn.isEmpty || !coordination.waitedOnBy.isEmpty {
@@ -4947,7 +5000,10 @@ final class RemoteServer: @unchecked Sendable {
             "sessionWorkMilestone": t.sessionWorkMilestone,
             "sessionWorkComplete": t.sessionWorkComplete,
             "closeabilitySafe": t.closeabilitySafe,
-            "closeabilityBlocked": t.closeabilityBlocked,
+            // One established transport key, two renderer forms. The unit separator cannot be
+            // spoken copy and keeps older key inventories closed while letting grammar vary.
+            "closeabilityBlocked": t.closeabilityBlockedOne + "\u{1f}"
+                + t.closeabilityBlockedMany,
             "closeabilityNeedsAttestation": t.closeabilityNeedsAttestation,
             "closeabilityUnknown": t.closeabilityUnknown,
             "closeabilityWhy": t.closeabilityWhy,

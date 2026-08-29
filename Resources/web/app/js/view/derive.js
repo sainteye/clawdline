@@ -115,7 +115,12 @@ function closeabilityReasonRows(block) {
 export function projectSessionCloseability(s) {
     s = s || {};
     var block = closeabilityBlock(s);
-    if (!block || !CLOSEABILITY_STATES[block.state]) {
+    if (!block) {
+        var present = Object.prototype.hasOwnProperty.call(s, "closeability");
+        var malformed = present ? { state: "unknown", reasons: [], mover: null } : null;
+        return { state: "unknown", failedClosed: true, reasons: [], block: malformed };
+    }
+    if (!CLOSEABILITY_STATES[block.state]) {
         return { state: "unknown", failedClosed: true, reasons: [], block: block };
     }
     var reasons = closeabilityReasonRows(block);
@@ -178,6 +183,23 @@ export function closeabilityVersion(s) {
     return typeof version === "string" && version ? version : null;
 }
 
+/** Everything in the badge whose identity can change its rendered words. */
+export function sessionCloseabilityShape(s) {
+    var projected = projectSessionCloseability(s);
+    if (!projected.block) return "";
+    function moverShape(mover) {
+        if (!mover || typeof mover !== "object") return "-";
+        return [mover.kind || "-", mover["self"] === true ? "self" : "other",
+            mover.session_id || "-"].join(":");
+    }
+    var reasons = projected.reasons.map(function (reason) {
+        return [reason.code || "-", reason.kind || "-", reason.subject_kind || "-",
+            reason.subject_id || "-", moverShape(reason.mover)].join(":");
+    }).join("|");
+    return [projected.state, projected.failedClosed ? "closed" : "direct",
+        moverShape(projected.block.mover), reasons].join(";");
+}
+
 /**
  * One badge, beside the work state and never instead of it.
  *
@@ -192,7 +214,9 @@ export function sessionCloseabilityHTML(s) {
         var obligations = projected.reasons.filter(function (row) {
             return row.kind === "obligation";
         }).length;
-        copy = fill(T.closeabilityBlocked, { n: obligations });
+        var forms = String(T.closeabilityBlocked || "").split("\u001f");
+        copy = fill(obligations === 1 ? forms[0] : (forms[1] || forms[0]),
+            { n: obligations });
     } else if (projected.state === "needs_attestation") {
         copy = T.closeabilityNeedsAttestation;
     } else copy = T.closeabilityUnknown;

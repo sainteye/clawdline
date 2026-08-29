@@ -279,6 +279,8 @@ struct English: Copy {
     let sessionWorkComplete = "Reviewed and approved"
     let closeabilitySafe = "Safe to close"
     let closeabilityBlocked = "{n} obligations remain"
+    let closeabilityBlockedOne = "1 obligation remains"
+    let closeabilityBlockedMany = "{n} obligations remain"
     let closeabilityNeedsAttestation = "Waiting for session attestation"
     let closeabilityUnknown = "Closeability unknown"
     let closeabilityWhy = "Not closeable because"

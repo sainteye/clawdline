@@ -488,6 +488,8 @@ protocol Copy {
     var sessionWorkComplete: String { get }
     var closeabilitySafe: String { get }
     var closeabilityBlocked: String { get }
+    var closeabilityBlockedOne: String { get }
+    var closeabilityBlockedMany: String { get }
     var closeabilityNeedsAttestation: String { get }
     var closeabilityUnknown: String { get }
     var closeabilityWhy: String { get }
@@ -1327,6 +1329,12 @@ protocol Copy {
     func hotkeyFailedTitle(_ combo: String) -> String
     func hotkeyFailedBody(_ configPath: String) -> String
     var loginFailed: String { get }
+}
+
+extension Copy {
+    /// Languages that do not inflect this sentence may keep their established form twice.
+    var closeabilityBlockedOne: String { closeabilityBlocked }
+    var closeabilityBlockedMany: String { closeabilityBlocked }
 }
 
 /// Which language the interface speaks, and the words themselves.

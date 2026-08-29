@@ -549,7 +549,7 @@ export var T = {
     sessionWorkMilestone: "Delivered; awaiting approval",
     sessionWorkComplete: "Reviewed and approved",
     closeabilitySafe: "Safe to close",
-    closeabilityBlocked: "{n} obligations remain",
+    closeabilityBlocked: "1 obligation remains\u001f{n} obligations remain",
     closeabilityNeedsAttestation: "Waiting for session attestation",
     closeabilityUnknown: "Closeability unknown",
     closeabilityWhy: "Not closeable because",

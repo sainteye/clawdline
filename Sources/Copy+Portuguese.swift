@@ -283,6 +283,8 @@ struct Portuguese: Copy {
     let sessionWorkComplete = "Integração no ramo de destino verificada pelo broker"
     let closeabilitySafe = "Pode fechar com segurança"
     let closeabilityBlocked = "{n} obrigações em aberto"
+    let closeabilityBlockedOne = "1 obrigação em aberto"
+    let closeabilityBlockedMany = "{n} obrigações em aberto"
     let closeabilityNeedsAttestation = "À espera da atestação da sessão"
     let closeabilityUnknown = "Fecho indeterminado"
     let closeabilityWhy = "Não pode fechar porque"

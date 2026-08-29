@@ -1165,7 +1165,8 @@ equal. Anything else is refused:
     "person_needed":false}}],"version":"cl1_…","observed_at":1788005803,
   "activity_generation":42,"obligation_generation":91,"session_generation":63,
   "provenance":["broker"],"attestation_id":null,
-  "source":{"provenance":"session_watch","freshness":"current"}}}}
+  "source":{"provenance":"session_watch","freshness":"current",
+    "observed_at":1788005790,"max_age_seconds":45}}}}
 ```
 
 Two rules matter more than the mechanism. **Omitting the field changes nothing** — every client
@@ -1851,11 +1852,14 @@ session_unbound` match `/complete`.
 
 ### `POST /v1/orchestrator/sessions/:id/closure`
 
-The evidence only the Session itself can supply, and the second half of
+Evidence about a Session that the broker cannot observe, and the second half of
 [closeability](session-closeability.md). The broker can see tasks, landings, waits, handoffs,
 outbound completions and declared debts; it cannot see which shared-tree hunks this session owns,
 what it has on a local list nothing registered, what it deployed outside the repository, or
-whether its direct work covers the whole of what it was asked. So it asks, and this is the answer.
+whether its direct work covers the whole of what it was asked. The machine orchestrator token
+authorizes this write. The target in the path says which exact process and observed turn the
+assertion is about; the credential does not prove which holder authored it. The operational caller
+should therefore obtain the target Session's account first.
 
 ```console
 $ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$SID/closure" \
@@ -1880,8 +1884,10 @@ caller loses. Name the wrong turn and the answer is `409 closure_generation_stal
 broker's current value so the caller can retry against it. Read the current value from the
 `closeability.activity_generation` field of any Session row.
 
-The receipt is **self-attestation, not completion**. Only the broker merge may output `safe`, and
-it does so only when its own blockers are also clear; a session that attests while the broker sees
+The receipt is **a subject-bound attestation, not caller authentication or completion**. After the
+write, the route rereads the real terminal state, inventory evidence and identity multiplicity;
+only that broker merge may output `safe`, and it does so only when its own blockers are also clear;
+a session that attests while the broker sees
 a pending landing gets an honest `blocked` back with its word recorded beside the evidence
 (`provenance: ["broker","self"]`). Re-posting the same attestation for the same turn and the same
 obligation clock returns `200` with `created:false` and the same `attestation_id`. A later process
@@ -2045,12 +2051,16 @@ This returns durable presence and deterministic read-only Bearings:
       "ready": 0, "working": 3, "waiting_you": 1, "waiting_session": 1,
       "unknown": 2, "milestone_complete": 1, "work_complete": 0
     },
+    "closeability_counts": {
+      "blocked": 1, "needs_attestation": 0, "safe": 1, "unknown": 1,
+      "not_projected": 1
+    },
     "active_task_count": 2, "pending_landing_count": 1, "open_wait_count": 1,
     "pending_landings": [{"id":"3f9a21bc-…","root_key":"9f1c2e7a",
       "ownership":{"version":1,"status":"observed_working","subject":"root",
         "task_id":"3f9a21bc-…","task_state":"success","root_key":"9f1c2e7a"}}],
     "unknown": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
-                       "work_state":"unknown"}],
+                       "work_state":"unknown","closeability_state":"unknown"}],
     "waiting": [{"id":"…","assistant":"codex","label":"…","cwd":"…",
                   "work_state":"waiting_session"}],
     "blocking": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
@@ -2066,7 +2076,10 @@ This returns durable presence and deterministic read-only Bearings:
 }
 ```
 
-All eight `work_state_counts` keys are always present. Active tasks are non-terminal task records;
+All eight `work_state_counts` keys are always present. `closeability_counts` always carries the
+four closeability states plus `not_projected`, keeping absent projection distinct from doubtful
+`unknown`. Bearings rows use the reduced string key `closeability_state`; full Session routes use
+the object key `closeability`, so one key never changes type. Active tasks are non-terminal task records;
 pending landings are task landings in `pending`; open waits count durable wait groups with at least
 one unreleased waiter. `pending_landings` is the same ordered row set returned by
 `GET /v1/orchestrator/landings`, including its fail-closed owner/executor projection; the count and
@@ -2122,10 +2135,10 @@ full answer never reaches this one by omission. What survives: `version`, `obser
 `registration` reduced to its one closed `state` word, re-validated on the way out so an
 unrecognised value leaves as `blocked`; `coordinator` reduced to `configured`, `label`, `scope`,
 `status`, `lifecycle` and the safe `session` row (`id`, `assistant`, `label`, `cwd`,
-`work_state`); `bearings` with its
-`observed_at`, `coordinator_lifecycle`, `work_state_counts`, the three counts,
+`work_state`, optional `closeability_state`); `bearings` with its
+`observed_at`, `coordinator_lifecycle`, `work_state_counts`, `closeability_counts`, the three counts,
 `pending_landings`, the
-`unknown`/`waiting`/`blocking` rows (same five session fields), and `sources` reduced to
+`unknown`/`waiting`/`blocking` rows (the same fields), and `sources` reduced to
 `observed_at` and `freshness` per source. Pending landing rows, their ownership object, the three
 evidence sources and each source field are separately allowlisted; no opaque nested dictionary is
 copied. Those rows are already readable by the same paired-device capability at the landing GET.
@@ -3374,7 +3387,7 @@ other. The block carries `state` (`blocked`, `needs_attestation`, `safe`, `unkno
 `reasons` list, the single `mover` when every outstanding reason points at one, `observed_at`,
 `session_generation`, `activity_generation`, `obligation_generation`, `provenance`,
 `attestation_id`, an opaque `version` for the close route's compare-and-swap, and a `source`
-naming the freshness of the reading behind it. Its contract, the closed reason vocabulary and the
+naming its own `observed_at`, the 45-second maximum age and resulting freshness. Its contract, the closed reason vocabulary and the
 precedence that makes doubtful evidence outrank a short obligation list are in
 [`session-closeability.md`](session-closeability.md). Clients compare `version`; they never
 construct or parse it.

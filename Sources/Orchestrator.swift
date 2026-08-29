@@ -2525,6 +2525,17 @@ enum Orchestrator {
         return .some(text)
     }
 
+    /// Closure notes have their own persistence bound. Keeping this validator separate prevents
+    /// a later self-state copy change from accepting an attestation the loader must discard.
+    private static func closureNote(_ raw: String?) -> String?? {
+        guard let raw else { return .some(nil) }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= closureNoteLimit,
+              !text.contains("\n"), !text.unicodeScalars.contains(where: { $0.value == 0 })
+        else { return .none }
+        return .some(text)
+    }
+
     /// Record a session's declaration about its own quiet state — the `self` half of the
     /// provenance boundary. The route supplies identity from the current watched process, like
     /// ``reportSessionDelivery``, and only while the declaring turn is observably working.
@@ -2668,8 +2679,8 @@ enum Orchestrator {
         load()
         var changed = false
         lock.lock()
-        // The turn clock the closure attestation names. It moves before any receipt is settled,
-        // so an attestation written for the turn that just ended cannot survive the next one.
+        // The observed-turn clock the closure attestation names. It moves before any receipt is
+        // settled, so an attestation cannot survive the next active transition SessionWatch sees.
         if noteActivityLocked(terminalID: terminalID, state: state) { changed = true }
         if var delivery = sessionDeliveries[terminalID] {
             switch state {
@@ -2734,11 +2745,11 @@ enum Orchestrator {
     enum SessionCloseability: String, CaseIterable {
         /// The broker sees a positive obligation. Do not close.
         case blocked
-        /// Broker blockers are clear, but only this exact Session can account for local or
-        /// external work. Ask that Session.
+        /// Broker blockers are clear, but local or external work is not broker-observable.
+        /// Obtain an attestation bound to this exact Session.
         case needsAttestation = "needs_attestation"
-        /// Broker blockers are clear and the exact current process supplied a fresh closure
-        /// attestation. The close button may proceed.
+        /// Broker blockers are clear and a fresh closure attestation is bound to the exact
+        /// current process. The close button may proceed.
         case safe
         /// Evidence is stale, missing or ambiguous. Refresh or audit, and fail closed.
         case unknown
@@ -2842,8 +2853,8 @@ enum Orchestrator {
 
     /// The exact process's own account of work the broker cannot see: shared-tree hunks it owns,
     /// unregistered local todos, artifacts and deployments outside the repository, decisions
-    /// never written to `owed`. It is self-attestation, not completion — only the broker merge
-    /// may output `safe`.
+    /// never written to `owed`. It is subject-bound attestation, not caller authentication or
+    /// completion — only the broker merge may output `safe`.
     struct ClosureAttestation: Equatable {
         let id: String
         let identity: SessionWorkIdentity
@@ -2858,6 +2869,9 @@ enum Orchestrator {
 
     static let closureNoteLimit = 200
     static let closureAuditIDLimit = 128
+    /// A complete background inventory is expected at least every 20 seconds. Two missed beats
+    /// plus scheduling slack is the safety boundary; older evidence cannot support `safe`.
+    static let closeabilityInventoryMaxAge: TimeInterval = 45
 
     /// Per-terminal turn clock. It advances when a terminal is observed *entering* working or
     /// waiting — a new turn — and not for a changed live line inside one turn. Attestations name
@@ -2874,6 +2888,16 @@ enum Orchestrator {
     /// title or a progress note does not silently invalidate the attestation just written.
     private static var obligationGeneration = 0
     private static var obligationFingerprint = ""
+    private static var closeabilityRegistryReadCountForTesting = 0
+
+    static func resetCloseabilityRegistryReadCountForTesting() {
+        lock.lock(); closeabilityRegistryReadCountForTesting = 0; lock.unlock()
+    }
+
+    static func closeabilityRegistryReadsForTesting() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return closeabilityRegistryReadCountForTesting
+    }
 
     private static func activityClass(of state: SessionState) -> String {
         switch state {
@@ -3028,6 +3052,7 @@ enum Orchestrator {
         let observedAt: Date
         let sessionGeneration: Int?
         let sourceFreshness: String
+        let sourceObservedAt: Date?
         let activityGeneration: Int
         let obligationGeneration: Int
         let version: String
@@ -3047,7 +3072,14 @@ enum Orchestrator {
                 "obligation_generation": obligationGeneration,
                 "version": version,
                 "provenance": provenance,
-                "source": ["provenance": "session_watch", "freshness": sourceFreshness],
+            ]
+            out["source"] = [
+                "provenance": "session_watch",
+                "freshness": sourceFreshness,
+                "observed_at": sourceObservedAt.map {
+                    Int($0.timeIntervalSince1970)
+                } ?? NSNull(),
+                "max_age_seconds": Int(closeabilityInventoryMaxAge),
             ]
             out["session_generation"] = sessionGeneration as Any? ?? NSNull()
             out["attestation_id"] = attestationID as Any? ?? NSNull()
@@ -3079,9 +3111,13 @@ enum Orchestrator {
         if !input.identityBound {
             evidence.append(CloseabilityReason(.sessionIdentityUnbound, mover: .broker))
         }
+        let inventoryAge = input.inventoryObservedAt.map { now.timeIntervalSince($0) }
+        let inventoryOverAge = inventoryAge.map {
+            $0 < 0 || $0 > closeabilityInventoryMaxAge
+        } ?? false
         if input.inventoryObservedAt == nil {
             evidence.append(CloseabilityReason(.sessionInventoryMissing, mover: .broker))
-        } else if !input.inventoryComplete {
+        } else if !input.inventoryComplete || inventoryOverAge {
             evidence.append(CloseabilityReason(.sessionInventoryStale, mover: .broker))
         }
         if input.identityMatches != 1 {
@@ -3152,10 +3188,11 @@ enum Orchestrator {
         }
         let freshness: String
         if input.inventoryObservedAt == nil { freshness = "missing" }
-        else { freshness = input.inventoryComplete ? "current" : "stale" }
+        else { freshness = input.inventoryComplete && !inventoryOverAge ? "current" : "stale" }
         return SessionCloseabilityProjection(
             state: state, reasons: reasons, observedAt: now,
             sessionGeneration: nil, sourceFreshness: freshness,
+            sourceObservedAt: input.inventoryObservedAt,
             activityGeneration: input.activityGeneration,
             obligationGeneration: input.obligationGeneration,
             version: closeabilityVersion(
@@ -3187,7 +3224,8 @@ enum Orchestrator {
             if let ownTask, task.parentTaskId == ownTask.id { return true }
             guard let conversation = identity.conversationID,
                   task.rootSessionId == conversation,
-                  (task.rootAssistant ?? .claude) == identity.assistant else { return false }
+                  let rootAssistant = task.rootAssistant,
+                  rootAssistant == identity.assistant else { return false }
             return true
         }
 
@@ -3200,7 +3238,10 @@ enum Orchestrator {
                         ?? .task(task.id)))
                 continue
             }
-            guard mine || (ownTask.map { $0.id == task.id } ?? false) else { continue }
+            // Once an executor's own task is terminal, its result, landing and isolated bytes
+            // are obligations of the dispatching root. A child cannot land and must never be
+            // told that `this session` can move the root's row.
+            guard mine else { continue }
             let landingClosed = task.landing.map {
                 $0.state == .landed || $0.state == .abandoned
             } ?? false
@@ -3256,55 +3297,85 @@ enum Orchestrator {
         return out
     }
 
+    /// One immutable registry reading shared by every Session projected in an HTTP response.
+    /// Building it settles the machine-wide clock and copies the three record collections once,
+    /// so a polled list is O(registry + sessions) rather than O(registry × sessions).
+    struct CloseabilityRegistrySnapshot {
+        let tasks: [Task]
+        let waits: [CoordinationWait]
+        let handoffs: [HandoffEnvelope]
+        let selfStates: [String: SessionSelfState]
+        let attestations: [String: ClosureAttestation]
+        let activityGenerations: [String: Int]
+        let obligationGeneration: Int
+    }
+
+    static func closeabilityRegistrySnapshot() -> CloseabilityRegistrySnapshot {
+        load()
+        lock.lock()
+        settleObligationGenerationLocked()
+        closeabilityRegistryReadCountForTesting += 1
+        let snapshot = CloseabilityRegistrySnapshot(
+            tasks: Array(tasks.values), waits: Array(coordinationWaits.values),
+            handoffs: Array(handoffs.values), selfStates: sessionSelfStates,
+            attestations: closureAttestations,
+            activityGenerations: sessionActivityGenerations,
+            obligationGeneration: obligationGeneration)
+        lock.unlock()
+        return snapshot
+    }
+
     /// The broker-side projection for one live Session. `identityMatches` is supplied by the
-    /// caller because only it holds the inventory the ambiguity is about.
+    /// caller because only it holds the inventory the ambiguity is about. List callers pass one
+    /// shared registry snapshot; a single-row gate takes a fresh one here.
     static func sessionCloseability(identity: SessionWorkIdentity,
                                     terminalState: SessionState,
                                     inventoryComplete: Bool = true,
                                     inventoryObservedAt: Date? = Date(),
                                     inventoryGeneration: Int? = nil,
                                     identityMatches: Int = 1,
+                                    registrySnapshot suppliedSnapshot:
+                                        CloseabilityRegistrySnapshot? = nil,
                                     now: Date = Date()) -> SessionCloseabilityProjection {
-        load()
-        lock.lock()
-        settleObligationGenerationLocked()
-        let input = closeabilityInputLocked(
+        let snapshot = suppliedSnapshot ?? closeabilityRegistrySnapshot()
+        let input = closeabilityInput(
             identity: identity, terminalState: terminalState,
             inventoryComplete: inventoryComplete, inventoryObservedAt: inventoryObservedAt,
-            identityMatches: identityMatches)
-        lock.unlock()
+            identityMatches: identityMatches, snapshot: snapshot)
         let projected = projectCloseability(input, now: now)
         return SessionCloseabilityProjection(
             state: projected.state, reasons: projected.reasons, observedAt: projected.observedAt,
             sessionGeneration: inventoryGeneration, sourceFreshness: projected.sourceFreshness,
+            sourceObservedAt: projected.sourceObservedAt,
             activityGeneration: projected.activityGeneration,
             obligationGeneration: projected.obligationGeneration, version: projected.version,
             provenance: projected.provenance, attestationID: projected.attestationID,
             mover: projected.mover)
     }
 
-    /// Caller holds `lock`.
-    private static func closeabilityInputLocked(identity: SessionWorkIdentity,
-                                                terminalState: SessionState,
-                                                inventoryComplete: Bool,
-                                                inventoryObservedAt: Date?,
-                                                identityMatches: Int) -> CloseabilityInput {
+    private static func closeabilityInput(identity: SessionWorkIdentity,
+                                          terminalState: SessionState,
+                                          inventoryComplete: Bool,
+                                          inventoryObservedAt: Date?,
+                                          identityMatches: Int,
+                                          snapshot: CloseabilityRegistrySnapshot)
+        -> CloseabilityInput {
         let bound = identity.assistant != nil && identity.pid != nil
             && identity.processStart != nil && identity.conversationID != nil
-        let selfState = sessionSelfStates[identity.terminalID].flatMap {
+        let selfState = snapshot.selfStates[identity.terminalID].flatMap {
             recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
         }
         let obligations = closeabilityObligations(
-            identity: identity, tasks: Array(tasks.values),
-            waits: Array(coordinationWaits.values), handoffs: Array(handoffs.values),
+            identity: identity, tasks: snapshot.tasks,
+            waits: snapshot.waits, handoffs: snapshot.handoffs,
             owed: selfState?.owed)
         return CloseabilityInput(
             terminalState: terminalState, identity: identity, identityBound: bound,
             inventoryComplete: inventoryComplete, inventoryObservedAt: inventoryObservedAt,
             identityMatches: identityMatches, obligations: obligations,
-            attestation: closureAttestations[identity.terminalID],
-            activityGeneration: sessionActivityGenerations[identity.terminalID] ?? 0,
-            obligationGeneration: obligationGeneration)
+            attestation: snapshot.attestations[identity.terminalID],
+            activityGeneration: snapshot.activityGenerations[identity.terminalID] ?? 0,
+            obligationGeneration: snapshot.obligationGeneration)
     }
 
     /// `POST /v1/orchestrator/sessions/:id/closure`.
@@ -3331,7 +3402,7 @@ enum Orchestrator {
                             "status must be \"clear\". A session that still owes something says "
                                 + "so by leaving the obligation where the broker can see it.")
         }
-        guard case .some(let note) = selfNote(rawNote) else {
+        guard case .some(let note) = closureNote(rawNote) else {
             return .refused(400, "bad_request",
                             "note must be one line of 1–\(closureNoteLimit) characters.")
         }
@@ -3362,32 +3433,22 @@ enum Orchestrator {
            closureAttestationIsCurrent(existing, identity: identity,
                                        activityGeneration: currentActivity,
                                        obligationGeneration: currentObligation) {
-            let input = closeabilityInputLocked(
-                identity: identity, terminalState: .idle, inventoryComplete: true,
-                inventoryObservedAt: now, identityMatches: 1)
             lock.unlock()
-            let projected = projectCloseability(input, now: now)
-            return .ok(["ok": true, "created": false, "attestation_id": existing.id,
-                        "closeability": projected.wire])
+            return .ok(["ok": true, "created": false, "attestation_id": existing.id])
         }
         let made = ClosureAttestation(
             id: UUID().uuidString.lowercased(), identity: identity,
             activityGeneration: currentActivity, obligationGeneration: currentObligation,
             note: note, auditID: auditID, created: now)
         closureAttestations[identity.terminalID] = made
-        let input = closeabilityInputLocked(
-            identity: identity, terminalState: .idle, inventoryComplete: true,
-            inventoryObservedAt: now, identityMatches: 1)
         lock.unlock()
         save()
-        let projected = projectCloseability(input, now: now)
         RemoteAuth.audit("orchestrator.session.closure", [
             "session": identity.terminalID, "attestation": made.id,
             "activity": String(currentActivity), "obligation": String(currentObligation),
-            "state": projected.state.rawValue,
+            "state": "recorded",
         ])
-        return .ok(["ok": true, "created": true, "attestation_id": made.id,
-                    "closeability": projected.wire])
+        return .ok(["ok": true, "created": true, "attestation_id": made.id])
     }
 
     static func stored(_ attestation: ClosureAttestation) -> [String: Any] {

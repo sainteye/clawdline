@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { T as fallbackStrings } from "../Resources/web/app/js/core/i18n.js";
 
 const deriveURL = new URL("../Resources/web/app/js/view/derive.js", import.meta.url);
 const deriveSource = await readFile(deriveURL, "utf8");
@@ -13,7 +14,7 @@ const standalone = deriveSource
 globalThis.__closeabilityState = { sessions: [], tasks: [], filter: "" };
 globalThis.__closeabilityStrings = {
     closeabilitySafe: "Safe to close",
-    closeabilityBlocked: "{n} obligations remain",
+    closeabilityBlocked: "1 obligation remains\u001f{n} obligations remain",
     closeabilityNeedsAttestation: "Waiting for session attestation",
     closeabilityUnknown: "Closeability unknown",
     closeabilityWhy: "Not closeable because",
@@ -146,11 +147,53 @@ assert.match(blockedBadge, /2 obligations remain/,
     "the count is the obligations, filled into the reader's own sentence");
 assert.match(blockedBadge, /title="2 obligations remain · this session moves it"/,
     "and the full sentence, with its mover, stays reachable when the row ellipsises it");
+const oneBlockedBadge = html({ state: "idle", closeability: block({
+    state: "blocked", attestation_id: null, reasons: [obligation],
+    mover: { kind: "session", self: true, person_needed: false } }) });
+assert.match(oneBlockedBadge, /1 obligation remains/,
+    "the ordinary one-obligation case uses the real singular renderer string");
+assert.doesNotMatch(oneBlockedBadge, /1 obligations/,
+    "the singular case cannot silently fall through to the many form");
+const servedBlockedForms = globalThis.__closeabilityStrings.closeabilityBlocked;
+globalThis.__closeabilityStrings.closeabilityBlocked = fallbackStrings.closeabilityBlocked;
+const fallbackOneBlockedBadge = html({ state: "idle", closeability: block({
+    state: "blocked", attestation_id: null, reasons: [obligation],
+    mover: { kind: "session", self: true, person_needed: false } }) });
+globalThis.__closeabilityStrings.closeabilityBlocked = servedBlockedForms;
+assert.match(fallbackOneBlockedBadge, /1 obligation remains/,
+    "the baked-in English fallback renders the singular form without leaking a template hole");
+assert.doesNotMatch(fallbackOneBlockedBadge, /\{n\}|1 obligations/,
+    "the fallback remains readable before the translated string request completes");
 const unknownBadge = html({ state: "idle" });
 assert.match(unknownBadge, /data-closeability="unknown"/,
     "a missing projection still draws the honest absence");
 assert.equal(/[\u{1F500}-\u{1F5FF}]/u.test(unknownBadge), false,
     "and it carries no icon: giving an absence a symbol is how needs_triage became a demand");
+const malformed = project({ state: "idle", closeability: "safe" });
+assert.ok(malformed.block,
+    "a present but malformed closeability value keeps an honest unknown block for rendering");
+assert.equal(project({ state: "idle" }).block, null,
+    "a genuinely absent field stays distinguishable for old-server compatibility");
+
+const shapeBase = { state: "idle", closeability: block({
+    state: "blocked", attestation_id: null, reasons: [obligation],
+    mover: { kind: "session", self: true, person_needed: false } }) };
+const shapeMoved = { state: "idle", closeability: block({
+    state: "blocked", attestation_id: null, reasons: [{ ...obligation,
+        mover: { kind: "session", self: false, session_id: "ROOT-TAB",
+                 person_needed: false } }],
+    mover: { kind: "session", self: false, session_id: "ROOT-TAB",
+             person_needed: false } }) };
+const shapeRetargeted = { state: "idle", closeability: block({
+    state: "blocked", attestation_id: null,
+    reasons: [{ ...obligation, subject_id: "task-2" }],
+    mover: { kind: "session", self: true, person_needed: false } }) };
+assert.notEqual(derive.sessionCloseabilityShape(shapeBase),
+    derive.sessionCloseabilityShape(shapeMoved),
+    "a mover identity change invalidates the row redraw key");
+assert.notEqual(derive.sessionCloseabilityShape(shapeBase),
+    derive.sessionCloseabilityShape(shapeRetargeted),
+    "a reason subject identity change invalidates the row redraw key");
 
 // A safe row asks for nothing, so it names no mover.
 assert.equal(/moves it/.test(safeBadge), false,

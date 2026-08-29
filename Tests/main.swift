@@ -265,7 +265,16 @@ func makeLandingRepository() -> (url: URL, commit: String) {
     return (url, commit)
 }
 
+let focusedTestGroups: Set<String> = Set(
+    (ProcessInfo.processInfo.environment["CLAWDLINE_TEST_GROUPS"] ?? "")
+        .split(separator: "\n").map(String.init))
+var matchedFocusedTestGroups: Set<String> = []
+
 func group(_ title: String, _ body: () -> Void) {
+    if !focusedTestGroups.isEmpty {
+        guard focusedTestGroups.contains(title) else { return }
+        matchedFocusedTestGroups.insert(title)
+    }
     let before = failures.count
     body()
     let mark = failures.count == before ? "✓" : "✗"
@@ -14870,7 +14879,7 @@ group("closeability is four states, and doubt about the evidence outranks the li
     func project(_ terminal: SessionState = .idle,
                  obligations: [R] = [],
                  attestation: Orchestrator.ClosureAttestation? = nil,
-                 complete: Bool = true, observed: Date? = Date(timeIntervalSince1970: 1),
+                 complete: Bool = true, observed: Date? = Date(timeIntervalSince1970: 1_990),
                  matches: Int = 1, bound: Bool = true,
                  activity: Int = 7, obligation: Int = 11)
         -> Orchestrator.SessionCloseabilityProjection {
@@ -14895,6 +14904,11 @@ group("closeability is four states, and doubt about the evidence outranks the li
            project().state, .needsAttestation)
     expect("a positive obligation blocks", project(obligations: [landingDebt]).state, .blocked)
     expect("an incomplete reading is unknown", project(complete: false).state, .unknown)
+    let aged = project(attestation: attestation,
+                       observed: Date(timeIntervalSince1970: 1_900))
+    expect("a complete but over-age inventory is unknown", aged.state, .unknown)
+    expect("the source publishes the inventory's own observation time",
+           (aged.wire["source"] as? [String: Any])?["observed_at"] as? Int, 1_900)
 
     // Fail-closed: nothing doubtful may pass through safe, whatever else is true.
     for (name, projected) in [
@@ -14974,6 +14988,13 @@ group("closeability is four states, and doubt about the evidence outranks the li
             selfClaim: .ready), .ready)
     expect("and says nothing at all about being able to end",
            project(obligations: [landingDebt]).state, .blocked)
+
+    let unreadableTwin = Orchestrator.SessionWorkIdentity(
+        terminalID: "CLOSE-TWIN", assistant: .claude, tty: "/dev/ttys41", pid: 4001,
+        processStart: started, conversationID: nil)
+    let matchCounts = RemoteServer.identityMatchCounts([identity, unreadableTwin])
+    expect("an unreadable competing assistant makes a bound identity ambiguous",
+           matchCounts[identity.terminalID], 0)
 
     // The CAS token: opaque, stable for one situation, and different for every input it covers.
     let version = Orchestrator.closeabilityVersion(
@@ -15160,6 +15181,20 @@ group("every broker blocker has a record that produces it, and a closure that cl
     own.transcriptProven = true
     expect("a session executing an unfinished task of its own is not closeable",
            obligations(tasks: [own]), ["own_task_unfinished"])
+    own.state = .success
+    own.finishedAt = Date(timeIntervalSince1970: 50)
+    own.resultVerifiedAt = Date(timeIntervalSince1970: 50)
+    own.summary = "done"
+    own.landing = landing(.pending)
+    own.worktree = Orchestrator.Worktree(
+        path: "/tmp/child-wt", branch: "clawdline/task/own", base: "HEAD",
+        repository: "/repo", cwd: "/repo", head: "abc", commits: 1, dirty: true)
+    own.claims = ["Sources/A.swift"]
+    own.untouchedClaims = []
+    let executorAfterDelivery = Orchestrator.closeabilityObligations(
+        identity: root, tasks: [own], waits: [], handoffs: [], owed: nil)
+    expect("the executor does not inherit the dispatching root's landing obligations",
+           executorAfterDelivery.map(\.code.rawValue), [])
 }
 
 group("a closure attestation is bound to one process and one turn, and survives a restart") {
@@ -15183,7 +15218,7 @@ group("a closure attestation is bound to one process and one turn, and survives 
     func closeability() -> Orchestrator.SessionCloseabilityProjection {
         Orchestrator.sessionCloseability(
             identity: identity, terminalState: .idle,
-            inventoryObservedAt: Date(timeIntervalSince1970: 2_000))
+            inventoryObservedAt: Date())
     }
 
     if case .refused(let status, let code, _, _) = Orchestrator.attestClosure(
@@ -15290,13 +15325,13 @@ group("a closure attestation is bound to one process and one turn, and survives 
     expect("a later process in the same terminal cannot borrow the attestation",
            Orchestrator.sessionCloseability(
             identity: reused, terminalState: .idle,
-            inventoryObservedAt: Date(timeIntervalSince1970: 2_000)).state, .needsAttestation)
+            inventoryObservedAt: Date()).state, .needsAttestation)
     var resumed = identity
     resumed.conversationID = "conversation-resumed"
     expect("nor can a different conversation in the same process",
            Orchestrator.sessionCloseability(
             identity: resumed, terminalState: .idle,
-            inventoryObservedAt: Date(timeIntervalSince1970: 2_000)).state, .needsAttestation)
+            inventoryObservedAt: Date()).state, .needsAttestation)
 
     // The route's own half of the same boundary, and it is a separate line of code from the
     // projection's. A later process in this tab, naming the same turn clock, must be issued its
@@ -15335,7 +15370,8 @@ group("the close route asks to be proven only when a client says so") {
         -> Orchestrator.SessionCloseabilityProjection {
         Orchestrator.SessionCloseabilityProjection(
             state: state, reasons: reasons, observedAt: Date(timeIntervalSince1970: 1),
-            sessionGeneration: 3, sourceFreshness: "current", activityGeneration: 1,
+            sessionGeneration: 3, sourceFreshness: "current",
+            sourceObservedAt: Date(timeIntervalSince1970: 1), activityGeneration: 1,
             obligationGeneration: 2,
             version: Orchestrator.closeabilityVersion(
                 identity: identity, activityGeneration: 1, obligationGeneration: 2,
@@ -15359,13 +15395,28 @@ group("the close route asks to be proven only when a client says so") {
 }
 
 group("the closure route is closed at its edges") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    let wasWriting = Config.shared.remoteWrite
+    try? FileManager.default.removeItem(at: store)
+    Orchestrator.forget()
+    Config.shared.remoteWrite = true
     let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken(),
                 "Content-Type": "application/json"]
     let session = TargetSession(
         backend: .iterm, id: "CLOSURE-ROUTE", name: "closure route", tty: "/dev/ttys70",
         windowIndex: 0, tabIndex: 0, assistant: .claude)
     RemoteServer.sessionPayloadForTesting = ([session], ["CLOSURE-ROUTE": .idle])
-    defer { RemoteServer.sessionPayloadForTesting = nil }
+    defer {
+        Config.shared.remoteWrite = wasWriting
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.sessionWorkIdentityForTesting = nil
+        RemoteServer.sessionEndForTesting = nil
+        RemoteServer.coordinatorObservationEvidenceForTesting = nil
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
 
     expect("an attestation with no credential at all never reaches the route",
            RemoteServer.shared.route(remoteRequest(
@@ -15389,6 +15440,125 @@ group("the closure route is closed at its edges") {
         body: "{\"status\":\"clear\",\"activity_generation\":0}"))
     expect("a terminal whose process cannot be bound cannot attest", unbound.status, 409)
     expect("by name", remoteErrorCode(unbound), "session_unbound")
+
+    let peer = TargetSession(
+        backend: .iterm, id: "CLOSURE-PEER", name: "closure peer", tty: "/dev/ttys71",
+        windowIndex: 0, tabIndex: 1, assistant: .claude)
+    let identities: [String: Orchestrator.SessionWorkIdentity] = [
+        session.id: .init(
+            terminalID: session.id, assistant: .claude, tty: session.tty, pid: 7_000,
+            processStart: Date(timeIntervalSince1970: 7_000),
+            conversationID: "conversation-closure-route"),
+        peer.id: .init(
+            terminalID: peer.id, assistant: .claude, tty: peer.tty, pid: 7_001,
+            processStart: Date(timeIntervalSince1970: 7_001),
+            conversationID: "conversation-closure-peer"),
+    ]
+    RemoteServer.sessionWorkIdentityForTesting = { identities[$0.id]! }
+    RemoteServer.sessionPayloadForTesting = ([session, peer], [session.id: .idle, peer.id: .idle])
+
+    let made = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/sessions/\(session.id)/closure", headers: auth,
+        body: "{\"status\":\"clear\",\"activity_generation\":0}"))
+    expect("the machine token is the real authorization boundary for an attestation",
+           made.status, 200)
+    let madeBody = (try? JSONSerialization.jsonObject(with: made.body)) as? [String: Any]
+    let madeCloseability = madeBody?["closeability"] as? [String: Any]
+    expect("the route receipt is a reread of the real idle projection",
+           madeCloseability?["state"] as? String, "safe")
+
+    RemoteServer.sessionPayloadForTesting = (
+        [session, peer], [session.id: .working("still checking"), peer.id: .idle])
+    let workingReceipt = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/sessions/\(session.id)/closure", headers: auth,
+        body: "{\"status\":\"clear\",\"activity_generation\":0}"))
+    let workingBody = (try? JSONSerialization.jsonObject(with: workingReceipt.body))
+        as? [String: Any]
+    expect("an attestation receipt cannot fabricate idle over a working terminal",
+           (workingBody?["closeability"] as? [String: Any])?["state"] as? String, "blocked")
+
+    RemoteServer.sessionPayloadForTesting = ([session, peer], [session.id: .idle, peer.id: .idle])
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1), generation: 8, complete: true)
+    let agedReceipt = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/sessions/\(session.id)/closure", headers: auth,
+        body: "{\"status\":\"clear\",\"activity_generation\":0}"))
+    let agedBody = (try? JSONSerialization.jsonObject(with: agedReceipt.body)) as? [String: Any]
+    let agedCloseability = agedBody?["closeability"] as? [String: Any]
+    expect("an over-age complete inventory fails the route receipt closed",
+           agedCloseability?["state"] as? String, "unknown")
+    expect("and the receipt publishes the inventory observation, not response time",
+           (agedCloseability?["source"] as? [String: Any])?["observed_at"] as? Int, 1)
+    RemoteServer.coordinatorObservationEvidenceForTesting = nil
+
+    let reader = RemoteAuth.addDevice(name: "closeability route reader", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id) }
+    Orchestrator.resetCloseabilityRegistryReadCountForTesting()
+    let publicRead = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/sessions", headers: ["Authorization": "Bearer \(reader.token)"]))
+    expect("the public read route executes its real serializer", publicRead.status, 200)
+    let publicBody = (try? JSONSerialization.jsonObject(with: publicRead.body)) as? [String: Any]
+    let publicRows = publicBody?["sessions"] as? [[String: Any]] ?? []
+    check("the public read route carries one typed closeability object per row",
+          publicRows.count == 2 && publicRows.allSatisfy { $0["closeability"] is [String: Any] })
+    expect("one list request takes one amortized registry snapshot",
+           Orchestrator.closeabilityRegistryReadsForTesting(), 1)
+
+    let orchestratorRead = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/sessions", headers: auth))
+    expect("the orchestrator read route executes its real serializer", orchestratorRead.status, 200)
+    let orchestratorBody = (try? JSONSerialization.jsonObject(with: orchestratorRead.body))
+        as? [String: Any]
+    let orchestratorRows = orchestratorBody?["sessions"] as? [[String: Any]] ?? []
+    let orchestratorShapes = orchestratorRows.map {
+        "\($0["id"] as? String ?? "?"):\(type(of: $0["closeability"] as Any))"
+    }
+    check("the orchestrator read route uses the same typed closeability schema",
+          orchestratorRows.count == 2
+            && orchestratorRows.allSatisfy { $0["closeability"] is [String: Any] },
+          "rows=\(orchestratorShapes)")
+
+    var ended: [String] = []
+    RemoteServer.sessionEndForTesting = { ended.append($0.id); return nil }
+    func end(_ target: TargetSession, body: String) -> RemoteServer.Response {
+        let headers = [
+            "Authorization": "Bearer \(reader.token)",
+            "Idempotency-Key": UUID().uuidString,
+            "Content-Type": "application/json",
+        ]
+        return RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/sessions/\(target.id)/end", headers: headers, body: body))
+    }
+    let safeVersion = madeCloseability?["version"] as? String ?? ""
+    let refused = end(session, body:
+        "{\"expected_closeability_version\":\"cl1_stale\",\"accept_loss\":true}")
+    expect("the actual POST end wiring refuses a moved proof", refused.status, 409)
+    expect("the route names the typed proof refusal", remoteErrorCode(refused), "close_not_proven")
+    let refusedBody = (try? JSONSerialization.jsonObject(with: refused.body)) as? [String: Any]
+    check("the refusal carries the target's current typed projection",
+          ((refusedBody?["error"] as? [String: Any])?["closeability"]
+            as? [String: Any])?["state"] as? String == "safe")
+    check("accept_loss never reached the destructive handoff", ended.isEmpty)
+    check("the route writes its named refusal audit",
+          RemoteAuth.recentAudit(limit: 20).contains {
+              $0["event"] as? String == "session.end.refused"
+                && $0["id"] as? String == session.id
+          })
+
+    let wrongTarget = end(peer, body:
+        "{\"expected_closeability_version\":\"\(safeVersion)\"}")
+    expect("a proof for another exact target identity is refused", wrongTarget.status, 409)
+    expect("by the same typed gate", remoteErrorCode(wrongTarget), "close_not_proven")
+
+    let compatibility = end(peer, body: "{}")
+    expect("omitting expected_closeability_version preserves the old close contract",
+           compatibility.status, 200)
+    expect("the optional compatibility path reaches only its named target", ended, [peer.id])
+
+    let proven = end(session, body:
+        "{\"expected_closeability_version\":\"\(safeVersion)\"}")
+    expect("the exact safe version reaches the final close handoff", proven.status, 200)
+    expect("and no other route call reached it", ended, [peer.id, session.id])
 }
 
 group("session completion receipts are bound to the current process, not a reusable terminal") {
@@ -23352,7 +23522,9 @@ func coordinatorFixture(_ terminalID: String, assistant: Assistant = .codex,
                         conversation: String = "conversation-a",
                         workState: Orchestrator.SessionWorkState = .ready,
                         waitingOnSession: Bool = false,
-                        hasWaiters: Bool = false) -> Coordinator.LiveSession {
+                        hasWaiters: Bool = false,
+                        closeability: Orchestrator.SessionCloseability? = nil)
+    -> Coordinator.LiveSession {
     Coordinator.LiveSession(
         identity: Orchestrator.SessionWorkIdentity(
             terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
@@ -23360,7 +23532,8 @@ func coordinatorFixture(_ terminalID: String, assistant: Assistant = .codex,
             conversationID: conversation),
         label: terminalID == "father" ? "Clawdfather" : "ordinary work",
         cwd: "/Users/me/code/clawdline", workState: workState,
-        waitingOnSession: waitingOnSession, hasWaiters: hasWaiters)
+        waitingOnSession: waitingOnSession, hasWaiters: hasWaiters,
+        closeability: closeability)
 }
 
 group("a coordinator is explicitly registered, durable, singleton and process-bound") {
@@ -24220,15 +24393,19 @@ group("coordinator routes require the machine token and expose no implicit takeo
     try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
     Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
     Coordinator.forgetForTesting()
-    let father = coordinatorFixture("father")
-    let other = coordinatorFixture("other", pid: 411, conversation: "conversation-b")
+    let father = coordinatorFixture("father", closeability: .safe)
+    let other = coordinatorFixture(
+        "other", pid: 411, conversation: "conversation-b", closeability: .blocked)
     let unbound = Coordinator.LiveSession(
         identity: Orchestrator.SessionWorkIdentity(
             terminalID: "unbound", assistant: .claude, tty: "/dev/ttys099", pid: nil,
             processStart: nil, conversationID: nil),
         label: "Clawdfather by title only", cwd: "/Users/me/code/clawdline",
-        workState: .unknown, waitingOnSession: false, hasWaiters: false)
-    RemoteServer.coordinatorSessionsForTesting = [father, other, unbound]
+        workState: .unknown, waitingOnSession: false, hasWaiters: false,
+        closeability: .unknown)
+    let unprojected = coordinatorFixture(
+        "unprojected", pid: 412, conversation: "conversation-c", workState: .unknown)
+    RemoteServer.coordinatorSessionsForTesting = [father, other, unbound, unprojected]
     defer {
         RemoteServer.coordinatorSessionsForTesting = nil
         RemoteServer.coordinatorObservationEvidenceForTesting = nil
@@ -24344,6 +24521,22 @@ group("coordinator routes require the machine token and expose no implicit takeo
         as? [String: Any]
     expect("and it names presence",
            (deviceGetBody?["coordinator"] as? [String: Any])?["status"] as? String, "online")
+    let deviceBearings = deviceGetBody?["bearings"] as? [String: Any]
+    let closeabilityCounts = deviceBearings?["closeability_counts"] as? [String: Any]
+    check("Bearings counts all four states and keeps absence as not_projected",
+          closeabilityCounts?["safe"] as? Int == 1
+            && closeabilityCounts?["blocked"] as? Int == 1
+            && closeabilityCounts?["unknown"] as? Int == 1
+            && closeabilityCounts?["needs_attestation"] as? Int == 0
+            && closeabilityCounts?["not_projected"] as? Int == 1)
+    let unknownRows = deviceBearings?["unknown"] as? [[String: Any]] ?? []
+    let projectedUnknown = unknownRows.first { $0["id"] as? String == "unbound" }
+    check("the reduced Bearings row names its reduced schema distinctly",
+          projectedUnknown?["closeability_state"] as? String == "unknown"
+            && projectedUnknown?["closeability"] == nil)
+    let absentUnknown = unknownRows.first { $0["id"] as? String == "unprojected" }
+    check("a not_projected row does not counterfeit unknown",
+          absentUnknown?["closeability_state"] == nil)
     check("while the durable UUID and store health never cross the device boundary",
           (deviceGetBody?["coordinator"] as? [String: Any])?["id"] == nil
           && deviceGetBody?["store"] == nil)
@@ -25693,6 +25886,12 @@ func sessionWatchCrossingProbe() async
                 }
                 if RemoteServer.sessionConversationIDForTesting != nil {
                     seamsLeftSet.append("RemoteServer.sessionConversationIDForTesting")
+                }
+                if RemoteServer.sessionWorkIdentityForTesting != nil {
+                    seamsLeftSet.append("RemoteServer.sessionWorkIdentityForTesting")
+                }
+                if RemoteServer.sessionEndForTesting != nil {
+                    seamsLeftSet.append("RemoteServer.sessionEndForTesting")
                 }
                 let targets = SessionWatch.shared.targets
                 var crossed = 0
@@ -27063,6 +27262,7 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/RemoteServer.swift", "RemoteServer.state(of:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionWhoAmI", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.closeabilityIdentities", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.closeabilityInventory", 1),
 ]
 
 /// The production crossings the fixture at the end of this file drives for real and watches hop.
@@ -27077,6 +27277,7 @@ let dynamicallyExercisedCrossingSites: Set<String> = [
     "RemoteServer.session(withID:)",
     "RemoteServer.sessionMessageSource(withID:)",
     "RemoteServer.state(of:)",
+    "RemoteServer.closeabilityInventory",
 ]
 
 /// The file with its whole-line comments dropped, so this guard is about the code and not about
@@ -28019,6 +28220,26 @@ let cloudRunnerWatchdog = DispatchWorkItem {
 // saturates the pool the timer would need — measured here: with the pool full, a five-second
 // `asyncAfter` watchdog had still not fired three minutes later. A dedicated thread cannot be
 // starved by the code it is watching. `perform()` does nothing once the result path cancels it.
+if !focusedTestGroups.isEmpty {
+    let missingFocusedTestGroups = focusedTestGroups.subtracting(matchedFocusedTestGroups).sorted()
+    if !missingFocusedTestGroups.isEmpty {
+        failures.append("focused test group(s) not found: "
+            + missingFocusedTestGroups.joined(separator: "; "))
+    }
+    if checks == 0 {
+        failures.append("focused test selection executed zero checks")
+    }
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
+    print("")
+    if failures.isEmpty {
+        print("\(checks) focused checks passed")
+        exit(0)
+    }
+    print("\(failures.count) of \(checks) focused checks failed:")
+    for failure in failures { print("  ✗ \(failure)") }
+    exit(1)
+}
+
 Thread.detachNewThread {
     Thread.sleep(forTimeInterval: TimeInterval(cloudRunnerTimeoutSeconds))
     cloudRunnerWatchdog.perform()

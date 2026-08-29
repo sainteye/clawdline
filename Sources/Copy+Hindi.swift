@@ -284,6 +284,8 @@ struct Hindi: Copy {
     let sessionWorkComplete = "ब्रोकर द्वारा सत्यापित लक्ष्य ब्रांच लैंडिंग"
     let closeabilitySafe = "बंद करना सुरक्षित है"
     let closeabilityBlocked = "{n} दायित्व बाक़ी हैं"
+    let closeabilityBlockedOne = "1 दायित्व बाक़ी है"
+    let closeabilityBlockedMany = "{n} दायित्व बाक़ी हैं"
     let closeabilityNeedsAttestation = "सत्र की पुष्टि की प्रतीक्षा"
     let closeabilityUnknown = "बंद कर पाना अज्ञात"
     let closeabilityWhy = "बंद नहीं हो सकता क्योंकि"
