@@ -3065,6 +3065,8 @@ group("versioned Clawdline session messages") {
         source: source,
         body: "你那兩點我都收進去了。\n\n## 狀態\n\n`e23f626b` 還在跑。")
     let wire = ClawdlineSessionMessage.encode(made)
+    let handwrittenReport =
+        "[a0939bac clawdline-fa｜⚠ 共用樹現在編不過] `e23f626b` 還在跑。"
 
     check("a session message is one physical terminal line",
           !wire.contains("\n") && !wire.contains("\r"))
@@ -3085,6 +3087,12 @@ group("versioned Clawdline session messages") {
           extra != wire && ClawdlineSessionMessage.decode(extra) == nil)
     check("prose around a session-message envelope remains ordinary prose",
           ClawdlineSessionMessage.decode("forwarded: " + wire) == nil)
+
+    let prefixed = Transcript.parse(noticeUserRow(
+        handwrittenReport, at: "2026-08-28T06:00:00.000Z"))
+    check("a hand-written cross-session sender prefix remains an ordinary user turn",
+          prefixed.count == 1 && prefixed[0].kind == .user
+            && prefixed[0].text == handwrittenReport && prefixed[0].source == nil)
 
     let claude = Transcript.parse(noticeUserRow(wire, at: "2026-08-28T06:00:00.000Z"))
     check("Claude gives an exact Clawdline relay its own message role",
@@ -23553,6 +23561,25 @@ group("both shipped skills teach the durable completion contract") {
         check("the \(language) skill explains bounded dead-letter reconciliation",
               skill.contains("dead_letter") && skill.contains("completions/reconcile")
                 && skill.contains("include_dead_letter"))
+    }
+}
+
+group("both shipped skills trigger on cross-session reports") {
+    let variants = [
+        ("English", "skills/clawdline/SKILL.md", "another live session"),
+        ("Traditional Chinese", "skills/clawdline/SKILL.zh-TW.md", "另一個 live session"),
+    ]
+    let triggerCases = ["send", "message", "report", "status", "finding", "coordination"]
+    for (language, path, destination) in variants {
+        let skill = try! String(contentsOfFile: path, encoding: .utf8)
+        let sections = skill.components(separatedBy: "---")
+        let frontmatter = sections.count > 2 ? sections[1].lowercased() : ""
+        check("the \(language) trigger metadata addresses another live session",
+              frontmatter.contains(destination.lowercased()))
+        for trigger in triggerCases {
+            check("the \(language) trigger metadata includes \(trigger)",
+                  frontmatter.contains(trigger))
+        }
     }
 }
 

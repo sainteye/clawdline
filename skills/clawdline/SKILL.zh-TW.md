@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.2.0
+version: 2.2.1
 description: |
   把工作派給另一個 session 做：透過 Clawdline app 開一個 child session（Claude 或 Codex），
   注入第一句話、等它寫回 result.json，完成時回報給你。適合「這件事我不想在這條對話裡做」
@@ -12,12 +12,14 @@ description: |
   「handoff 給新 session」「交接給下一個 session」「明天用新 session 接著做」，
   以及同樣意思的英文說法 "use Clawdline Handoff"、"hand this over to a fresh session"、
   "pick this up in Codex"、"continue this tomorrow in a new session"。
+  也會在要把 message、report、status、finding 或 coordination note 傳送（send）給另一個 live session
+  時觸發。
   不要觸發：這條對話自己動手就好的小事（開 child 的成本遠大於直接做）、Task/subagent 就能解決
   的檢索與分析（那是 subagent，不是 Clawdline child）、單純想知道現在有哪些 session 在跑
   （那是看 Clawdline 面板或 GET /v1/orchestrator/sessions）。
   **這個 session 自己就是 child 時，依據是 CHILD.md 不是這裡**——見 §0。
 user-invocable: true
-last-updated: 2026-08-26
+last-updated: 2026-08-29
 ---
 
 > 這是英文正本 [`SKILL.md`](SKILL.md) 的繁體中文對照版，內容同步。裝哪一份都可以，
@@ -154,7 +156,8 @@ follow-up task，常駐 session 就完全不能寫共享 tree**——review sess
 Markdown，並把來源畫成獨立的 `Clawdline ↔` 卡片。不能拿它來 attach 工作或繞過 `claims`；目標
 正在顯示選項時，它會以 `409 target_busy` 直接拒絕。回傳的 `ok` 只表示一次終端機輸入已被接受，
 不表示目標 transcript 已觀察到、更不表示 assistant 已確認；結果取決於送達時，要要求對方明確
-回覆。closed body 與 wire 格式見 `docs/messages.md`。
+回覆。任何 typed refusal 都要如實呈現；不得退回 `/v1/sessions/:id/send` 或手寫 sender prefix。
+closed body 與 wire 格式見 `docs/messages.md`。
 
 **被中斷的 review 用交接，不要重跑。** 死掉、逾時或被取消的 reviewer，通常已經寫了一部分
 finding set；把那個檔案交給接手的人。review 是這裡最貴的節點，也是被丟掉比例最高的節點——101 次
