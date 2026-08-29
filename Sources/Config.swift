@@ -326,11 +326,13 @@ final class Config {
     /// no login shell, which is the same reason ``Tmux/binary`` cannot look on `PATH`. Blank
     /// means the environment if it has one and `~/.codex` otherwise; `~` is expanded.
     var codexHome = ""
-    /// Give a new Codex conversation a short user-facing name from its first request.
+    /// Give a new unnamed conversation a short user-facing name from its first request.
     ///
     /// Off until somebody chooses it because this is not local bookkeeping: it starts one small
-    /// Codex turn, sends that request to the configured model and spends Codex usage. The helper
-    /// turn is ephemeral, so the act of naming a session never creates another session to name.
+    /// Codex turn, sends that request to the configured model and spends Codex usage. Codex
+    /// conversations use it immediately; Claude conversations use it only after the first turn
+    /// ends without Claude Code writing its own title. The helper turn is ephemeral, so naming a
+    /// session never creates another session to name.
     var codexAutoName = false
     /// The deliberately small model used for that one narrow turn. Kept configurable because
     /// model availability belongs to the account, not to this binary; the default is the current
@@ -447,7 +449,9 @@ final class Config {
     var lastTargetID: String?
     var history: [String] = []
 
-    /// Names explicitly chosen by a person. Each row carries every identity we may know:
+    /// Session names kept by Clawdline: normally chosen by a person, with a lower-precedence
+    /// generated row only when Claude Code supplied no title. Each row carries the identities
+    /// appropriate to its source:
     /// Claude's hook session id survives a reopened terminal, the terminal id covers Codex,
     /// shells and Claude installations without hooks, and `startedAt` is what tells the second
     /// conversation in a reused tab apart from the first — see
@@ -456,6 +460,10 @@ final class Config {
         let title: String
         let sessionID: String?
         let terminalID: String
+        /// False for a name a person chose; true for Claude's model fallback. Keeping both in the
+        /// same bounded, locked ledger gives them identical durability without putting generated
+        /// prose in the human-title precedence rung.
+        let automatic: Bool
         /// When the assistant process in that tab started, or nil for a tab with no assistant
         /// in it. Nil is a value here, not a missing one: a shell has no conversation to
         /// outlive, so "there was no process" has to match "there is no process" exactly.
@@ -819,7 +827,7 @@ final class Config {
                       currentCustomTitle: (String) -> String? = { _ in nil }) -> String? {
         sessionTitleLock.lock()
         if let sessionID,
-           let row = sessionTitles.last(where: { $0.sessionID == sessionID }) {
+           let row = sessionTitles.last(where: { !$0.automatic && $0.sessionID == sessionID }) {
             sessionTitleLock.unlock()
             if Self.staleAfterRename(row, currentCustomTitle: currentCustomTitle) {
                 forgetSessionTitle(row)
@@ -831,7 +839,7 @@ final class Config {
         // that names none is still a candidate: a title can be set in the moment before the hook
         // note arrives, and the start time below is what decides it either way.
         let candidate = sessionTitles.last { row in
-            row.terminalID == terminalID
+            !row.automatic && row.terminalID == terminalID
                 && (sessionID == nil || row.sessionID == nil || row.sessionID == sessionID)
         }
         sessionTitleLock.unlock()
@@ -843,6 +851,16 @@ final class Config {
             return nil
         }
         return candidate.title
+    }
+
+    /// A model-generated Claude fallback, addressed only by the transcript's durable conversation
+    /// id. There is deliberately no terminal fallback: a tab outlives the assistant inside it,
+    /// while a Claude transcript UUID names exactly one conversation and survives resume.
+    func automaticSessionTitle(sessionID: String) -> String? {
+        guard !sessionID.isEmpty else { return nil }
+        sessionTitleLock.lock()
+        defer { sessionTitleLock.unlock() }
+        return sessionTitles.last { $0.automatic && $0.sessionID == sessionID }?.title
     }
 
     /// Whether a person has typed `/rename` since this row's name was chosen. No baseline — no
@@ -890,6 +908,7 @@ final class Config {
                 "updated_at": row.updatedAt.timeIntervalSince1970,
             ]
             if let sessionID = row.sessionID { out["session_id"] = sessionID }
+            if row.automatic { out["automatic"] = true }
             if let startedAt = row.startedAt {
                 out["started_at"] = startedAt.timeIntervalSince1970
             }
@@ -923,16 +942,39 @@ final class Config {
         if let normalized, normalized.count > Self.sessionTitleLimit { return nil }
         sessionTitleLock.lock()
         sessionTitles.removeAll { row in
-            row.terminalID == terminalID
-                || (sessionID != nil && row.sessionID == sessionID)
+            !row.automatic && (row.terminalID == terminalID
+                || (sessionID != nil && row.sessionID == sessionID))
         }
         if let normalized {
             sessionTitles.append(SessionTitle(title: normalized, sessionID: sessionID,
-                                              terminalID: terminalID, startedAt: startedAt,
+                                              terminalID: terminalID, automatic: false,
+                                              startedAt: startedAt,
                                               seenCustomTitle: seenCustomTitle,
                                               seenTranscriptPath: seenTranscriptPath,
                                               updatedAt: now))
         }
+        pruneSessionTitlesLocked(now: now)
+        sessionTitleLock.unlock()
+        return normalized
+    }
+
+    /// Store the low-precedence title generated for an otherwise unnamed Claude conversation.
+    /// A person's row is neither removed nor replaced; it remains independently visible above
+    /// this one and clearing it reveals the automatic fallback again.
+    @discardableResult
+    func setAutomaticSessionTitle(_ raw: String, sessionID: String, terminalID: String,
+                                  now: Date = Date()) -> String? {
+        guard !sessionID.isEmpty, !terminalID.isEmpty,
+              let normalized = Self.normalizedSessionTitle(raw),
+              normalized.count <= Self.sessionTitleLimit else { return nil }
+        sessionTitleLock.lock()
+        sessionTitles.removeAll {
+            $0.automatic && $0.sessionID == sessionID
+        }
+        sessionTitles.append(SessionTitle(title: normalized, sessionID: sessionID,
+                                          terminalID: terminalID, automatic: true,
+                                          startedAt: nil, seenCustomTitle: nil,
+                                          seenTranscriptPath: nil, updatedAt: now))
         pruneSessionTitlesLocked(now: now)
         sessionTitleLock.unlock()
         return normalized
@@ -958,6 +1000,10 @@ final class Config {
               let terminalID = row["terminal_id"] as? String, !terminalID.isEmpty,
               let timestamp = row["updated_at"] as? Double else { return nil }
         let sessionID = (row["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let automatic = row["automatic"] as? Bool ?? false
+        // An automatic row has no process/terminal fallback by design. Without the transcript
+        // UUID it can never be addressed, so do not let a malformed hand edit spend capacity.
+        if automatic && sessionID == nil { return nil }
         // Absent in rows written before a title had to prove which conversation it belonged to.
         // Those rows keep working through their session id and stop working through the terminal
         // alone, which is the whole point of the field.
@@ -970,7 +1016,8 @@ final class Config {
             $0.isEmpty ? nil : $0
         }
         return SessionTitle(title: title, sessionID: sessionID, terminalID: terminalID,
-                            startedAt: startedAt, seenCustomTitle: seenCustomTitle,
+                            automatic: automatic, startedAt: startedAt,
+                            seenCustomTitle: seenCustomTitle,
                             seenTranscriptPath: seenTranscriptPath,
                             updatedAt: Date(timeIntervalSince1970: timestamp))
     }

@@ -106,7 +106,7 @@ struct Hindi: Copy {
     let settingsReopenHint = "टर्मिनल से हटते ही बार छिप जाती है, और टर्मिनल पर लौटते ही वापस आ जाती है। काम हो गया, इसका मतलब Esc है।"
     let settingsFollow = "बार जिस पर टिकी है, टर्मिनल वही दिखाता है"
     let settingsFollowHint = "यह उस session का tab चुन लेता है। टर्मिनल को सामने नहीं लाता — वरना हर बार Tab दबाते ही keyboard उस डिब्बे से निकल जाता जिसमें आप लिख रहे हैं।"
-    let settingsCodexAutoName = "नई Codex sessions को नाम दें"
+    let settingsCodexAutoName = "नई sessions को नाम दें"
     let settingsCodexAutoNameHint = "हर बिना नाम वाली session के लिए एक छोटा Codex Luna turn चलाता है। यह पहली request इस्तेमाल करता है, Codex usage खर्च करता है और आपका चुना नाम नहीं बदलता।"
     let settingsNotch = "नॉच में रहे"
     let settingsNotchHint = "कैमरा हाउसिंग में एक किरदार। बंद माने बंद — कुछ नहीं बनता, कोई विंडो नहीं।"

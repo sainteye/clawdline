@@ -512,10 +512,12 @@ Codex ends on `/quit` where Claude Code ends on `/exit`, and each refuses the ot
 why *End* knows which it is talking to. If Codex lives somewhere other than `~/.codex`, set
 `codex_home` in the config; an app launched from Finder cannot see your `CODEX_HOME`.
 
-**Optional automatic names.** Turn on *Name new Codex sessions* in Settings and Clawdline asks the
-configured small Codex model for one title after the first request. The helper run is ephemeral,
-uses low reasoning with tools disabled, and never replaces a name you chose. It is off by default
-because each title is a real Codex turn and spends Codex usage.
+**Optional automatic names.** Turn on *Name new sessions* in Settings and Clawdline asks the
+configured small Codex model for one title after the first request. Codex uses it directly. Claude
+Code normally writes its own title; Clawdline uses the model only when the first turn has finished
+and that title is still absent. The helper run is ephemeral, uses low reasoning with tools disabled,
+and never replaces a name you or Claude Code chose. It is off by default because each fallback is a
+real Codex turn and spends Codex usage.
 
 Built and used against **Codex 0.149.0** and **Claude Code 2.1.235**. Neither screen is a promised
 interface: [what is read, and what you would see if it changed →](docs/compatibility.md)
@@ -562,7 +564,7 @@ itself.
 | `mascot` · `notch` | `clawd` · `true` | the character, and whether it lives in the notch |
 | `follow_target` | `true` | the terminal's tab follows what the bar points at |
 | `tmux_path` | `""` | empty looks in the usual places |
-| `codex_auto_name` | `false` | name a new Codex session from its first request and show it in the session list |
+| `codex_auto_name` | `false` | name a new session from its first request; Claude uses it only when its own title is absent |
 | `codex_auto_name_model` | `gpt-5.6-luna` | model for that one ephemeral, low-reasoning turn |
 | `codex_home` · `codex_path` | `""` | overrides for a nonstandard Codex home or executable |
 

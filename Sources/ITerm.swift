@@ -99,9 +99,10 @@ struct TargetSession: Equatable, Identifiable {
     ///    still showing a name on 2026-08-28: the screen read `Clawdfather 新增介面` and so did
     ///    the transcript's `aiTitle`, while the same session's registry `name` read
     ///    `clawdline-97`. The transcript is where the descriptive name lives.
-    /// 4. `threadName` — the same thing for Codex, which keeps its name in thread metadata
-    ///    rather than in a transcript. Disjoint from the rung above by assistant, so the order
-    ///    between the two is a formality.
+    /// 4. `threadName` — Codex's persisted thread metadata, or the model fallback Clawdline keeps
+    ///    for a Claude conversation whose first turn ended without an `aiTitle`. Either is
+    ///    disjoint by assistant and yields immediately if the Claude transcript later gets a
+    ///    `customTitle` or `aiTitle` on the rung above.
     /// 5. `handle` — `~/.claude/sessions/<pid>.json`'s `name`, `clawdline-cb` and the like.
     ///    **Never descriptive** — all eleven files read on 2026-08-28 said `nameSource:
     ///    "derived"` — but it is durable, it is per-conversation, and it names the project. It

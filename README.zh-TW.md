@@ -437,9 +437,11 @@ Codex 用 `/quit` 結束，Claude Code 用 `/exit`，而且兩邊都不吃對方
 自己在跟誰講話的原因。如果你的 Codex 不在 `~/.codex`，在設定裡填 `codex_home`；從 Finder 啟動的
 app 看不到你的 `CODEX_HOME`。
 
-**可選的自動命名。** 在設定裡打開「自動命名新的 Codex session」，Clawdline 會在第一則需求出現後，
-請設定的小型 Codex 模型取一次標題。那個 helper run 是 ephemeral、使用 low reasoning、工具全關，
-而且絕不蓋掉你自己取的名稱。預設關著，因為每個標題都是真的 Codex turn，也會消耗 Codex 額度。
+**可選的自動命名。** 在設定裡打開「自動命名新的 session」，Clawdline 會在第一則需求出現後，
+請設定的小型 Codex 模型取一次標題。Codex 會直接使用；Claude Code 通常會自己寫名稱，只有第一輪
+結束後仍然沒有名稱時，Clawdline 才會啟動 fallback。那個 helper run 是 ephemeral、使用 low
+reasoning、工具全關，而且絕不蓋掉你或 Claude Code 已經取的名稱。預設關著，因為每次 fallback
+都是真的 Codex turn，也會消耗 Codex 額度。
 
 實際跑過並拿來用的版本是 **Codex 0.149.0** 與 **Claude Code 2.1.235**。兩邊的螢幕都不是承諾過的
 介面：[讀了哪些東西、變了你會看到什麼 →](docs/compatibility.md)
@@ -482,7 +484,7 @@ claude
 | `mascot` · `notch` | `clawd` · `true` | 角色，以及要不要住在瀏海裡 |
 | `follow_target` | `true` | 終端機的分頁跟著輸入條的目標走 |
 | `tmux_path` | `""` | 空的 ＝ 去常見位置找 |
-| `codex_auto_name` | `false` | 從第一則需求替新的 Codex session 命名，並顯示在 session 清單 |
+| `codex_auto_name` | `false` | 從第一則需求替新的 session 命名；Claude 只在自己的名稱缺席時才用 |
 | `codex_auto_name_model` | `gpt-5.6-luna` | 那一次 ephemeral、low-reasoning turn 使用的模型 |
 | `codex_home` · `codex_path` | `""` | Codex home 或執行檔不在慣用位置時覆寫 |
 

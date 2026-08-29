@@ -100,7 +100,7 @@ struct Korean: Copy {
     let settingsReopenHint = "터미널에서 다른 곳으로 넘어가면 막대는 들어가고, 터미널로 돌아오면 막대도 돌아옵니다. 다 썼다는 뜻이 되는 것은 Esc입니다."
     let settingsFollow = "막대가 겨냥한 것을 터미널에도 띄우기"
     let settingsFollowHint = "그 세션의 탭을 선택합니다. 터미널을 맨 앞으로 가져오지는 않습니다. 그랬다가는 Tab을 누를 때마다 지금 입력하던 칸에서 키보드가 빠져나가기 때문입니다."
-    let settingsCodexAutoName = "새 Codex 세션 자동 이름 지정"
+    let settingsCodexAutoName = "새 세션 자동 이름 지정"
     let settingsCodexAutoNameHint = "이름 없는 세션마다 작은 Codex Luna turn을 한 번 실행합니다. 첫 요청을 사용하고 Codex 사용량을 소모하며, 직접 정한 이름은 바꾸지 않습니다."
     let settingsNotch = "노치에 살기"
     let settingsNotchHint = "카메라 하우징에 사는 캐릭터. 끄면 끝 — 아무것도 그리지 않고 창도 만들지 않습니다."

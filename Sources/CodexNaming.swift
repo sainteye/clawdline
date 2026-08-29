@@ -1,15 +1,17 @@
 import Darwin
 import Foundation
 
-/// Names a persisted Codex thread from the first thing its person asked for.
+/// Names a session from the first thing its person asked for.
 ///
 /// There are two Codex processes in this path and they have deliberately different jobs:
 ///
 /// - `codex exec --ephemeral` is the small, isolated model turn that writes a title.
 /// - `codex app-server` reads and sets the real thread's supported `name` metadata.
 ///
-/// The rollout and Codex's SQLite store are never edited here. They are another program's state,
-/// and app-server exists precisely so a client does not have to know how that state is laid out.
+/// Codex owns a supported persisted thread name, so app-server writes that metadata. Claude Code
+/// usually writes its own `aiTitle`; when it finishes a first turn without doing so, Clawdline
+/// keeps the generated fallback in its config under the transcript's durable conversation UUID.
+/// Neither assistant's transcript or private database is edited.
 final class CodexNaming {
     static let shared = CodexNaming()
 
@@ -19,9 +21,11 @@ final class CodexNaming {
     private var runningThreads = Set<String>()
     private var finishedThreads = Set<String>()
     private var retryAfter: [String: Date] = [:]
-    /// Codex owns the persisted title; this is only the small bridge that lets Clawdline draw it.
-    /// Keying by terminal target as well as thread prevents a reused tab from showing its old task.
-    private var displayedTitles: [String: (threadID: String, title: String)] = [:]
+    /// The persisted owner is Codex metadata or Config respectively; this is the small bridge that
+    /// lets Clawdline draw either one. Keying by terminal target as well as conversation prevents
+    /// a reused tab from showing its previous occupant's task.
+    private var displayedTitles: [String: (assistant: Assistant, conversationID: String,
+                                           title: String)] = [:]
 
     /// One interactive Codex thread as `thread/list` describes it, pared down to what the
     /// start sheet needs. App-server remains the owner of both the persisted name and the
@@ -44,12 +48,13 @@ final class CodexNaming {
     /// Reconsider the current sessions after a reading or a changed setting.
     func consider(_ targets: [TargetSession]) {
         guard Config.shared.codexAutoName else { return }
-        for target in targets where target.assistant == .codex {
+        for target in targets where target.assistant != nil {
             lock.lock()
             let reserved = checkingTargets.insert(target.id).inserted
             lock.unlock()
             guard reserved else { continue }
-            work.addOperation { [weak self] in self?.consider(target) }
+            let state = SessionWatch.shared.states[target.id] ?? .unknown
+            work.addOperation { [weak self] in self?.consider(target, state: state) }
         }
     }
 
@@ -58,42 +63,33 @@ final class CodexNaming {
         consider(SessionWatch.shared.targets)
     }
 
-    private func consider(_ target: TargetSession) {
+    private func consider(_ target: TargetSession, state: SessionState) {
         defer {
             lock.lock()
             checkingTargets.remove(target.id)
             lock.unlock()
         }
-        guard Config.shared.codexAutoName,
-              let record = Transcript.record(of: target), record.assistant == .codex,
+        guard Config.shared.codexAutoName else { return }
+        switch target.assistant {
+        case .codex: considerCodex(target)
+        case .claude: considerClaude(target, state: state)
+        case nil: break
+        }
+    }
+
+    private func considerCodex(_ target: TargetSession) {
+        guard let record = Transcript.record(of: target), record.assistant == .codex,
               let head = Codex.head(of: record.url), !head.id.isEmpty,
               let request = Codex.firstUserMessage(of: record.url), !request.isEmpty
         else { return }
 
-        associate(targetID: target.id, with: head.id)
+        associate(targetID: target.id, assistant: .codex, with: head.id)
+        let key = identityKey(.codex, head.id)
 
-        lock.lock()
-        let tooSoon = retryAfter[head.id].map { $0 > Date() } ?? false
-        let reserved = !finishedThreads.contains(head.id) && !tooSoon
-            && runningThreads.insert(head.id).inserted
-        lock.unlock()
-        guard reserved else { return }
+        guard reserve(key) else { return }
 
         var done = false
-        defer {
-            lock.lock()
-            runningThreads.remove(head.id)
-            if done {
-                finishedThreads.insert(head.id)
-                retryAfter.removeValue(forKey: head.id)
-            } else {
-                // Authentication, account model availability and the network do change, but not
-                // every twenty-second screen reading. A short retry is useful; a tight loop is a
-                // meter that keeps trying to spend money while something is broken.
-                retryAfter[head.id] = Date().addingTimeInterval(5 * 60)
-            }
-            lock.unlock()
-        }
+        defer { finishReservation(key, done: done) }
 
         guard let binary = Self.executable(for: target) else {
             Log.write("codex name: executable not found — set codex_path")
@@ -111,7 +107,7 @@ final class CodexNaming {
             return
         }
         if let title = Self.threadName(in: before) {
-            remember(title, threadID: head.id, targetID: target.id)
+            remember(title, assistant: .codex, conversationID: head.id, targetID: target.id)
             done = true
             return
         }
@@ -138,9 +134,124 @@ final class CodexNaming {
             Log.write("codex name: could not name thread \(head.id)")
             return
         }
-        remember(title, threadID: head.id, targetID: target.id)
+        remember(title, assistant: .codex, conversationID: head.id, targetID: target.id)
         done = true
         Log.write("codex name: named thread \(head.id)")
+    }
+
+    /// Whether Claude Code has had its own opportunity to name this conversation. Waiting for
+    /// idle makes the fallback exceptional: it does not spend a Codex turn while Claude's first
+    /// response — and its ordinary `aiTitle` write — is still in flight.
+    static func shouldGenerateClaudeTitle(systemTitle: String?, request: String?,
+                                          state: SessionState) -> Bool {
+        let hasSystemTitle = !(systemTitle ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard state == .idle, !hasSystemTitle,
+              let request,
+              !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return false }
+        return true
+    }
+
+    private func considerClaude(_ target: TargetSession, state: SessionState) {
+        guard let record = Transcript.record(of: target), record.assistant == .claude,
+              let sessionID = Transcript.sessionID(in: record.url, assistant: .claude),
+              !sessionID.isEmpty else { return }
+
+        associate(targetID: target.id, assistant: .claude, with: sessionID)
+        let key = identityKey(.claude, sessionID)
+
+        // Claude's own title is authoritative and already reaches the display through
+        // `SessionNaming`. Mark this conversation finished without putting a second title under it.
+        if let title = Transcript.title(ofTranscript: record.url),
+           !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            markFinished(key)
+            return
+        }
+        if let stored = Config.shared.automaticSessionTitle(sessionID: sessionID) {
+            remember(stored, assistant: .claude, conversationID: sessionID, targetID: target.id)
+            markFinished(key)
+            return
+        }
+
+        let request = Transcript.firstUserMessage(of: record.url)
+        guard Self.shouldGenerateClaudeTitle(systemTitle: nil, request: request, state: state),
+              let request else { return }
+        guard reserve(key) else { return }
+
+        var done = false
+        defer { finishReservation(key, done: done) }
+
+        // There need not be a Codex tab open. Resolve the configured/fixed Codex executable rather
+        // than asking the Claude process path and accidentally trying to run `claude exec`.
+        guard let binary = Self.executable(for: nil) else {
+            Log.write("claude name: Codex executable not found — set codex_path")
+            return
+        }
+        guard let server = CodexNameServer(executable: binary, codexHome: Codex.home) else {
+            Log.write("claude name: Codex app-server did not start")
+            return
+        }
+        defer { server.stop() }
+
+        let model = Config.shared.codexAutoNameModel
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty, server.models().contains(model) else {
+            Log.write("claude name: model \(model.isEmpty ? "(blank)" : model) is not available")
+            return
+        }
+        guard Config.shared.codexAutoName,
+              let title = Self.generateTitle(request: request, model: model,
+                                             executable: binary, codexHome: Codex.home)
+        else { return }
+
+        // Claude may have written `aiTitle` while the model turn was running. Its own answer wins,
+        // and the paid fallback is discarded rather than flashed briefly underneath it.
+        if let native = Transcript.title(ofTranscript: record.url),
+           !native.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            done = true
+            return
+        }
+        guard Config.shared.codexAutoName,
+              Config.shared.setAutomaticSessionTitle(title, sessionID: sessionID,
+                                                     terminalID: target.id) != nil else { return }
+        remember(title, assistant: .claude, conversationID: sessionID, targetID: target.id)
+        DispatchQueue.main.async { _ = Config.shared.save() }
+        done = true
+        Log.write("claude name: named conversation \(sessionID)")
+    }
+
+    private func identityKey(_ assistant: Assistant, _ id: String) -> String {
+        "\(assistant.rawValue):\(id)"
+    }
+
+    private func reserve(_ key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let tooSoon = retryAfter[key].map { $0 > Date() } ?? false
+        return !finishedThreads.contains(key) && !tooSoon
+            && runningThreads.insert(key).inserted
+    }
+
+    private func finishReservation(_ key: String, done: Bool) {
+        lock.lock()
+        runningThreads.remove(key)
+        if done {
+            finishedThreads.insert(key)
+            retryAfter.removeValue(forKey: key)
+        } else {
+            // Authentication, account model availability and the network do change, but not every
+            // screen reading. Retry eventually; never turn a broken naming helper into a meter.
+            retryAfter[key] = Date().addingTimeInterval(5 * 60)
+        }
+        lock.unlock()
+    }
+
+    private func markFinished(_ key: String) {
+        lock.lock()
+        finishedThreads.insert(key)
+        retryAfter.removeValue(forKey: key)
+        lock.unlock()
     }
 
     /// Name a thread outright. The orchestrator already knows what a child was sent to do, so
@@ -151,12 +262,14 @@ final class CodexNaming {
               replacingExisting: Bool = false) {
         work.addOperation { [weak self] in
             guard let self else { return }
-            self.remember(title, threadID: threadID, targetID: target.id)
+            self.remember(title, assistant: .codex, conversationID: threadID,
+                          targetID: target.id)
             // The auto-namer may have got there first — same queue, but it can have been queued
             // by an earlier reading. A title it generated yields to the task's; one a person
             // typed does not, and the only way to tell them apart is whether it was us.
             self.lock.lock()
-            let autoNamed = !self.finishedThreads.insert(threadID).inserted
+            let autoNamed = !self.finishedThreads
+                .insert(self.identityKey(.codex, threadID)).inserted
             self.lock.unlock()
             guard let binary = Self.executable(for: target),
                   let server = CodexNameServer(executable: binary, codexHome: Codex.home) else {
@@ -177,7 +290,11 @@ final class CodexNaming {
     /// clearing a title reaches Codex could only ever be written against a stub of the thing
     /// being tested.
     func rememberForTesting(_ title: String, threadID: String, targetID: String) {
-        remember(title, threadID: threadID, targetID: targetID)
+        remember(title, assistant: .codex, conversationID: threadID, targetID: targetID)
+    }
+
+    func rememberClaudeForTesting(_ title: String, sessionID: String, targetID: String) {
+        remember(title, assistant: .claude, conversationID: sessionID, targetID: targetID)
     }
 
     /// Stop drawing a remembered name for this tab, so the label falls back to whatever the
@@ -193,19 +310,27 @@ final class CodexNaming {
     /// this app inventing a title and persisting it in another program's store. `docs/api.md`
     /// says so where a caller will read it.
     func forget(target: TargetSession) {
+        // Claude's entry is the automatic fallback underneath a person's title, not the person's
+        // title itself. Clearing the latter must reveal this cache immediately; only Codex stores
+        // a person-chosen name in this bridge and therefore needs it removed here.
+        guard target.assistant == .codex else { return }
         lock.lock()
         let had = displayedTitles.removeValue(forKey: target.id) != nil
         lock.unlock()
         if had { publishTitleChange() }
     }
 
-    /// The title to put on Clawdline surfaces. The terminal's own title remains untouched because
-    /// iTerm and tmux use it for navigation, and Codex's supported name lives in thread metadata.
+    /// The low-precedence title to put on Clawdline surfaces. The terminal's own title remains
+    /// untouched: Codex persists this in thread metadata, while Claude's fallback is local and
+    /// yields to any `customTitle` or `aiTitle` its transcript later supplies.
     func title(for target: TargetSession) -> String? {
-        guard target.assistant == .codex else { return nil }
+        guard let assistant = target.assistant else { return nil }
         lock.lock()
         defer { lock.unlock() }
-        return displayedTitles[target.id]?.title
+        guard let displayed = displayedTitles[target.id], displayed.assistant == assistant else {
+            return nil
+        }
+        return displayed.title
     }
 
     /// The cached association is cheapest. A manual title must also work when auto-naming is
@@ -213,7 +338,9 @@ final class CodexNaming {
     func threadID(for target: TargetSession) -> String? {
         guard target.assistant == .codex else { return nil }
         lock.lock()
-        let cached = displayedTitles[target.id]?.threadID
+        let cached = displayedTitles[target.id].flatMap {
+            $0.assistant == .codex ? $0.conversationID : nil
+        }
         lock.unlock()
         if let cached { return cached }
         guard let record = Transcript.record(of: target), record.assistant == .codex else {
@@ -223,19 +350,23 @@ final class CodexNaming {
         return id
     }
 
-    private func associate(targetID: String, with threadID: String) {
+    private func associate(targetID: String, assistant: Assistant, with conversationID: String) {
         lock.lock()
-        let changed = displayedTitles[targetID].map { $0.threadID != threadID } ?? false
+        let changed = displayedTitles[targetID].map {
+            $0.assistant != assistant || $0.conversationID != conversationID
+        } ?? false
         if changed { displayedTitles.removeValue(forKey: targetID) }
         lock.unlock()
         if changed { publishTitleChange() }
     }
 
-    private func remember(_ title: String, threadID: String, targetID: String) {
+    private func remember(_ title: String, assistant: Assistant, conversationID: String,
+                          targetID: String) {
         lock.lock()
         let old = displayedTitles[targetID]
-        let changed = old?.threadID != threadID || old?.title != title
-        displayedTitles[targetID] = (threadID, title)
+        let changed = old?.assistant != assistant || old?.conversationID != conversationID
+            || old?.title != title
+        displayedTitles[targetID] = (assistant, conversationID, title)
         lock.unlock()
         if changed { publishTitleChange() }
     }

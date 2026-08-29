@@ -102,7 +102,7 @@ struct Spanish: Copy {
     let settingsReopenHint = "Salir del terminal guarda la barra, y volver a él la trae de vuelta. Esc es lo que quiere decir que has terminado con ella."
     let settingsFollow = "El terminal muestra aquello a lo que apunta la barra"
     let settingsFollowHint = "Selecciona la pestaña de esa sesión. No trae el terminal al frente: si lo hiciera, cada pulsación de Tab te sacaría el teclado de la casilla en la que estás escribiendo."
-    let settingsCodexAutoName = "Nombrar nuevas sesiones de Codex"
+    let settingsCodexAutoName = "Nombrar nuevas sesiones"
     let settingsCodexAutoNameHint = "Ejecuta un pequeño turno de Codex Luna por cada sesión sin nombre. Usa la primera petición, consume uso de Codex y nunca sustituye un nombre que hayas elegido."
     let settingsNotch = "Vivir en la muesca"
     let settingsNotchHint = "Un personaje en la carcasa de la cámara. Desactivado es desactivado: no se dibuja nada ni se crea ventana."

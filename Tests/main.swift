@@ -10545,6 +10545,76 @@ group("a Codex session can be named from its first request") {
     // `a session's name never comes from its terminal's tab title`.
 }
 
+group("an unnamed Claude conversation gets a durable model fallback") {
+    let first = #"{"type":"user","message":{"content":[{"type":"text","text":"修正登入逾時問題"}]}}"#
+    let second = #"{"type":"user","message":{"content":[{"type":"text","text":"順便更新文件"}]}}"#
+    let assistant = #"{"type":"assistant","message":{"content":[{"type":"text","text":"I will inspect it."}]}}"#
+    expect("Claude naming uses the first authored request",
+           Transcript.firstUserMessage(in: [assistant, first, second].joined(separator: "\n")),
+           "修正登入逾時問題")
+
+    check("Claude waits until the first turn is idle before paying for a fallback",
+          !CodexNaming.shouldGenerateClaudeTitle(systemTitle: nil,
+                                                 request: "修正登入逾時問題",
+                                                 state: .working("Working")))
+    check("Claude does not replace a title its own system supplied",
+          !CodexNaming.shouldGenerateClaudeTitle(systemTitle: "Claude's title",
+                                                 request: "修正登入逾時問題",
+                                                 state: .idle))
+    check("an idle unnamed Claude conversation with a request is eligible",
+          CodexNaming.shouldGenerateClaudeTitle(systemTitle: nil,
+                                                request: "修正登入逾時問題",
+                                                state: .idle))
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-claude-auto-title-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let config = Config(directoryForTesting: directory)
+    expect("the generated fallback is stored by conversation id",
+           config.setAutomaticSessionTitle("修正登入逾時", sessionID: "claude-one",
+                                           terminalID: "terminal-one"),
+           "修正登入逾時")
+    check("an automatic fallback never enters the human-title rung",
+          config.sessionTitle(sessionID: "claude-one", terminalID: "terminal-one") == nil)
+    expect("the automatic rung can read it independently",
+           config.automaticSessionTitle(sessionID: "claude-one"), "修正登入逾時")
+    config.setAutomaticSessionTitle("第二段對話", sessionID: "claude-two",
+                                    terminalID: "terminal-one")
+    expect("reusing a terminal does not erase the earlier conversation's fallback",
+           config.automaticSessionTitle(sessionID: "claude-one"), "修正登入逾時")
+    check("the automatic fallback is saved", config.save())
+    let loaded = Config(directoryForTesting: directory)
+    expect("the fallback survives an app restart",
+           loaded.automaticSessionTitle(sessionID: "claude-one"), "修正登入逾時")
+    loaded.setSessionTitle("我的登入修復", sessionID: "claude-one",
+                           terminalID: "terminal-one")
+    expect("a person can still name the same conversation",
+           loaded.sessionTitle(sessionID: "claude-one", terminalID: "terminal-one"),
+           "我的登入修復")
+    loaded.setSessionTitle("", sessionID: "claude-one", terminalID: "terminal-one")
+    expect("clearing that choice reveals the generated fallback again",
+           loaded.automaticSessionTitle(sessionID: "claude-one"), "修正登入逾時")
+
+    let target = TargetSession(backend: .iterm, id: "terminal-claude-fallback",
+                               name: "Default (claude)", tty: "/dev/ttys098",
+                               windowIndex: 0, tabIndex: 0, assistant: .claude)
+    CodexNaming.shared.rememberClaudeForTesting("模型產生的名稱",
+                                                sessionID: "claude-display",
+                                                targetID: target.id)
+    expect("Clawdline draws the fallback instead of Claude's derived handle",
+           CodexNaming.shared.title(for: target), "模型產生的名稱")
+    expect("Claude's own later title still outranks the fallback",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: nil,
+               conversationTitle: "Claude 系統名稱",
+               threadName: CodexNaming.shared.title(for: target),
+               handle: "yoga-astro-44", coordinate: target.coordinate),
+           "Claude 系統名稱")
+    CodexNaming.shared.forget(target: target)
+}
+
 group("a Codex npm shim starts with Finder's cold PATH") {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("clawdline-codex-launch-\(UUID().uuidString)", isDirectory: true)

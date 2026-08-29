@@ -165,6 +165,31 @@ enum Transcript {
         }
     }
 
+    /// The first request a person authored in a Claude transcript, for the optional fallback
+    /// session namer. Read from the bounded beginning for the same reason Codex does: a title is
+    /// about how the conversation began, and enabling naming later must not turn a long-running
+    /// session into a full-file read.
+    ///
+    /// This deliberately uses the ordinary row parser. Claude records reminders, peer deliveries,
+    /// Clawdline notices and queued input on the user's side too; ``entries(inRow:)`` is the one
+    /// boundary that already separates those from words the person actually wrote.
+    static func firstUserMessage(of url: URL, bytes: Int = 2_000_000) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: bytes), !data.isEmpty else { return nil }
+        return firstUserMessage(in: String(decoding: data, as: UTF8.self))
+    }
+
+    static func firstUserMessage(in jsonl: String) -> String? {
+        for line in jsonl.split(separator: "\n") {
+            if let entry = entries(inRow: line).first(where: { $0.kind == .user }),
+               !entry.text.isEmpty {
+                return entry.text
+            }
+        }
+        return nil
+    }
+
     struct Entry {
         enum Kind {
             case user
