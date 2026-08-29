@@ -4917,6 +4917,16 @@ final class RemoteServer: @unchecked Sendable {
             "sessionWorkSelfStated": t.sessionWorkSelfStated,
             "sessionWorkMilestone": t.sessionWorkMilestone,
             "sessionWorkComplete": t.sessionWorkComplete,
+            "closeabilitySafe": t.closeabilitySafe,
+            "closeabilityBlocked": t.closeabilityBlocked,
+            "closeabilityNeedsAttestation": t.closeabilityNeedsAttestation,
+            "closeabilityUnknown": t.closeabilityUnknown,
+            "closeabilityWhy": t.closeabilityWhy,
+            "closeabilityMoverSelf": t.closeabilityMoverSelf,
+            "closeabilityMoverPerson": t.closeabilityMoverPerson,
+            "closeabilityMoverSession": t.closeabilityMoverSession,
+            "closeabilityMoverBroker": t.closeabilityMoverBroker,
+            "closeabilityNotProven": t.closeabilityNotProven,
         ])
 
         // The transcript pane.

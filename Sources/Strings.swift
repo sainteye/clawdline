@@ -486,6 +486,16 @@ protocol Copy {
     var sessionWorkSelfStated: String { get }
     var sessionWorkMilestone: String { get }
     var sessionWorkComplete: String { get }
+    var closeabilitySafe: String { get }
+    var closeabilityBlocked: String { get }
+    var closeabilityNeedsAttestation: String { get }
+    var closeabilityUnknown: String { get }
+    var closeabilityWhy: String { get }
+    var closeabilityMoverSelf: String { get }
+    var closeabilityMoverPerson: String { get }
+    var closeabilityMoverSession: String { get }
+    var closeabilityMoverBroker: String { get }
+    var closeabilityNotProven: String { get }
 
     /// The way back to the list on a phone. A chevron is drawn in front of it, so this is the
     /// word alone.

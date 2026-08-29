@@ -149,6 +149,16 @@ export var Mock = (function () {
         // mentions it once, where the turn ended, and every list after that drew it as done.
         { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
           cwd: "/Users/x/code/notebook", state: "idle", work_state: "unknown", line: null,
+          // A debt is an obligation, so this quiet row is not closeable and says who moves it.
+          closeability: { state: "blocked", observed_at: now, session_generation: 41,
+                          activity_generation: 9, obligation_generation: 87,
+                          version: "cl1_a1b2c3d4e5f60718293a4b5c6d7e8f90",
+                          provenance: ["broker"], attestation_id: null,
+                          reasons: [{ code: "owed_decision", kind: "obligation",
+                                      subject_kind: "session", subject_id: "9B04-2D",
+                                      mover: { kind: "person", person_needed: true } }],
+                          mover: { kind: "person", person_needed: true },
+                          source: { provenance: "session_watch", freshness: "current" } },
           isClaude: true, assistant: "claude", sessionId: null, icon: creature,
           // The second axis riding on a quiet row: the session still gets on with its build,
           // and the reader still owes it a call — three days old, which is the point.
@@ -164,6 +174,18 @@ export var Mock = (function () {
         // row can say stated-not-proven out loud.
         { id: "B770-3A", backend: "iterm", tty: "ttys031", label: "wait out the release build",
           cwd: "/Users/x/code/notebook", state: "idle", work_state: "holding",
+          // Nothing the broker can see is outstanding, and that is still not permission: only
+          // this session knows whether it owns shared-tree bytes nobody wrote down.
+          closeability: { state: "needs_attestation", observed_at: now, session_generation: 41,
+                          activity_generation: 4, obligation_generation: 87,
+                          version: "cl1_0c1d2e3f405162738495a6b7c8d9e0f1",
+                          provenance: ["broker"], attestation_id: null,
+                          reasons: [{ code: "attestation_missing", kind: "attestation",
+                                      subject_kind: "session", subject_id: "B770-3A",
+                                      mover: { kind: "session", "self": true,
+                                               person_needed: false } }],
+                          mover: { kind: "session", "self": true, person_needed: false },
+                          source: { provenance: "session_watch", freshness: "current" } },
           work_provenance: "self", work_note: "resumes when the release build finishes",
           work_moved_by: "the release build", work_person_needed: false, work_since: now - 1200,
           line: null, isClaude: true, assistant: "claude", sessionId: null, icon: creature },
@@ -171,6 +193,15 @@ export var Mock = (function () {
           cwd: "/Users/x/code/notebook", state: "idle", work_state: "ready",
           work_provenance: "self", work_note: "RootSession fix landed; can take new work",
           work_since: now - 300,
+          // `ready` and `safe` on one row, which is the pair most worth being able to see:
+          // they agree here and they are still two different questions.
+          closeability: { state: "safe", reasons: [], observed_at: now, session_generation: 41,
+                          activity_generation: 12, obligation_generation: 87,
+                          version: "cl1_2f9a4c31d0be5a7788c1e6b04d3f9021",
+                          provenance: ["broker", "self"],
+                          attestation_id: "6f0b2d1e-9a44-4c2c-b0d5-1f8a3c7e5d20",
+                          mover: null, source: { provenance: "session_watch",
+                                                 freshness: "current" } },
           line: null, isClaude: true, assistant: "claude", sessionId: null, icon: creature },
         // The **owner** of the wait the row below is stuck on, and the reason this fixture is
         // here: an owner's row used to be drawn exactly like a session in no relationship at
@@ -1028,7 +1059,8 @@ export var Mock = (function () {
             });
         },
 
-        end: function (id) {
+        end: function (id, acceptLoss, closeabilityVersion) {
+            void acceptLoss; void closeabilityVersion;
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }

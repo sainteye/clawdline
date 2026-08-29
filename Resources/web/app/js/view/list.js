@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
-import { byId, ordered, projectSessionWorkState, revisionOf, rowDepth, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
+import { byId, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, sessionCloseabilityHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
@@ -628,6 +628,10 @@ function fillRow(node, s) {
         }
     }
     var workSaid = sessionWorkStateHTML(s);
+    // The fourth projection rides beside the third, never inside it. A row can invite work and
+    // still be unsafe to end, and one badge standing for both is the collapse this undoes.
+    var closeable = projectSessionCloseability(s);
+    if (closeable.block) workSaid += sessionCloseabilityHTML(s);
     // A receipt mark is fast to scan, but it cannot explain whether the child merely delivered
     // its milestone or the root verified the target landing. Keep the mark's accessible label and
     // follow it with the same localized receipt in visible text; aria-hidden avoids saying it twice.
@@ -648,8 +652,9 @@ function fillRow(node, s) {
     })).concat(roots.filter(taskLive).map(function (task) {
         return ["child", task.id || "", task.title || ""].join(":");
     })).join("+");
-    var shape = kind + "-" + s.state + "+ws" + work.state + (shells ? "+sh" + shells : "") +
-        (waitShape ? "+cw" + waitShape : "");
+    var shape = kind + "-" + s.state + "+ws" + work.state +
+        (closeable.block ? "+cl" + closeable.state + ":" + closeable.reasons.length : "") +
+        (shells ? "+sh" + shells : "") + (waitShape ? "+cw" + waitShape : "");
     if (state.dataset.shape !== shape) {
         state.dataset.shape = shape;
         if (kind === "closing") {

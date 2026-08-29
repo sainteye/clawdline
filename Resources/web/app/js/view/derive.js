@@ -83,6 +83,127 @@ export function projectSessionWorkState(s) {
     return { state: s.work_state, failedClosed: false };
 }
 
+var CLOSEABILITY_STATES = {
+    blocked: true, needs_attestation: true, safe: true, unknown: true
+};
+
+var CLOSEABILITY_ICON = { safe: "\uD83D\uDD13", blocked: "\uD83D\uDD12", needs_attestation: "\uD83D\uDDDD" };
+
+function closeabilityBlock(s) {
+    var value = s && s.closeability;
+    return (!!value && typeof value === "object" && !Array.isArray(value)) ? value : null;
+}
+
+function closeabilityReasonRows(block) {
+    var rows = block && block.reasons;
+    return Array.isArray(rows) ? rows.filter(function (row) {
+        return !!row && typeof row === "object" && !Array.isArray(row) &&
+            typeof row.code === "string";
+    }) : [];
+}
+
+/**
+ * The fourth projection, re-decided at the client so a partial or older frame can never draw
+ * "safe to close".
+ *
+ * The rule is the server's own, restated: `safe` is the one value with a positive precondition
+ * — a current reading, an attestation id, and no reason left standing — and everything that
+ * does not meet it falls to `unknown`, which no close accepts. `ready` is not consulted at all:
+ * able to take work and able to end are different questions, and reading one off the other is
+ * exactly the collapse this projection exists to undo.
+ */
+export function projectSessionCloseability(s) {
+    s = s || {};
+    var block = closeabilityBlock(s);
+    if (!block || !CLOSEABILITY_STATES[block.state]) {
+        return { state: "unknown", failedClosed: true, reasons: [], block: block };
+    }
+    var reasons = closeabilityReasonRows(block);
+    var kinds = reasons.map(function (row) { return row.kind; });
+    var freshness = (block.source && block.source.freshness) || "";
+    if (block.state === "safe") {
+        var proven = !reasons.length && freshness === "current" &&
+            typeof block.attestation_id === "string" && !!block.attestation_id &&
+            typeof block.version === "string" && !!block.version &&
+            s.state !== "working" && s.state !== "waiting" && s.state !== "unknown";
+        return proven
+            ? { state: "safe", failedClosed: false, reasons: reasons, block: block }
+            : { state: "unknown", failedClosed: true, reasons: reasons, block: block };
+    }
+    if (block.state === "blocked" && kinds.indexOf("obligation") < 0) {
+        return { state: "unknown", failedClosed: true, reasons: reasons, block: block };
+    }
+    if (block.state === "needs_attestation" &&
+        (!reasons.length || kinds.indexOf("obligation") >= 0 || kinds.indexOf("evidence") >= 0)) {
+        return { state: "unknown", failedClosed: true, reasons: reasons, block: block };
+    }
+    return { state: block.state, failedClosed: false, reasons: reasons, block: block };
+}
+
+/** Who clears the thing that is standing in the way, in the reader's language. */
+export function closeabilityMoverText(mover) {
+    if (!mover || typeof mover !== "object") return "";
+    if (mover.kind === "person") return T.closeabilityMoverPerson;
+    if (mover.kind === "broker") return T.closeabilityMoverBroker;
+    if (mover.kind === "task") return T.closeabilityMoverSession;
+    if (mover.kind === "session") {
+        return mover["self"] ? T.closeabilityMoverSelf : T.closeabilityMoverSession;
+    }
+    return "";
+}
+
+/**
+ * The rows the close confirmation lists. Each one names the machine code, the subject it is
+ * about, and who moves it — a code alone tells somebody there is a problem and not which
+ * object has it, and a sentence alone cannot be grepped for in a log.
+ */
+export function closeabilityLines(s) {
+    var projected = projectSessionCloseability(s);
+    return projected.reasons.map(function (row) {
+        var said = row.code;
+        if (row.subject_id) said += " · " + row.subject_id;
+        var mover = closeabilityMoverText(row.mover);
+        if (mover) said += " · " + mover;
+        return said;
+    });
+}
+
+/** The opaque CAS token a proven close hands back, and only when the client itself agrees the
+ *  frame says safe. A page that failed the projection closed sends nothing and gets the
+ *  unchanged gate. */
+export function closeabilityVersion(s) {
+    var projected = projectSessionCloseability(s);
+    if (projected.state !== "safe") return null;
+    var version = projected.block && projected.block.version;
+    return typeof version === "string" && version ? version : null;
+}
+
+/**
+ * One badge, beside the work state and never instead of it.
+ *
+ * `unknown` keeps the vocabulary's rule about absences: it says so in words and carries no
+ * icon, because giving an absence a symbol is how `needs_triage` came to read as a demand.
+ */
+export function sessionCloseabilityHTML(s) {
+    var projected = projectSessionCloseability(s);
+    var copy;
+    if (projected.state === "safe") copy = T.closeabilitySafe;
+    else if (projected.state === "blocked") {
+        var obligations = projected.reasons.filter(function (row) {
+            return row.kind === "obligation";
+        }).length;
+        copy = fill(T.closeabilityBlocked, { n: obligations });
+    } else if (projected.state === "needs_attestation") {
+        copy = T.closeabilityNeedsAttestation;
+    } else copy = T.closeabilityUnknown;
+    var mover = projected.block && projected.block.mover;
+    var moverSaid = projected.state === "safe" ? "" : closeabilityMoverText(mover);
+    var title = moverSaid ? copy + " · " + moverSaid : copy;
+    var icon = CLOSEABILITY_ICON[projected.state];
+    return '<span class="session-closeability" data-closeability="' + projected.state +
+        '" title="' + attr(title) + '">' + attr(icon ? icon + " " + copy : copy) + "</span>";
+}
+
 /** A debt's age in the coarsest honest unit. Under an hour it is simply fresh; the value of
  *  the number starts where memory stops. */
 function owedAge(since) {

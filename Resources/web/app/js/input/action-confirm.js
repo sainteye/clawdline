@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { confirmSpin, drawSpinner, setConfirmSpin, spinPhase } from "../core/pixels.js";
 import { Build } from "../net/build.js";
-import { lostIfClosed } from "../view/derive.js";
+import { byId, closeabilityLines, closeabilityVersion, lostIfClosed, projectSessionCloseability } from "../view/derive.js";
 import { Waits } from "../view/waits.js";
 import { closeDetail } from "../session/open.js";
 import { closeAgent } from "../session/agent.js";
@@ -40,25 +40,46 @@ export var ActionConfirm = {
         // `lost_if_closed`, at the only moment it can still change the outcome. Confirming a
         // sheet that showed the list is the acceptance the server's close gate asks for.
         var lost = kind === "end" ? lostIfClosed(id) : [];
+        // The Deep Status half of the same press: not what the close would take, but why the
+        // broker cannot yet say it is safe, and which one thing moves each of those.
+        var why = kind === "end" ? closeabilityLines(byId(id)) : [];
+        var closeableState = kind === "end"
+            ? projectSessionCloseability(byId(id)).state : null;
         this.pending = { id: id, kind: kind, action: action, opener: returnFocus,
-                         ask: ask || null, lost: lost };
+                         ask: ask || null, lost: lost, why: why,
+                         closeability: closeableState,
+                         closeabilityVersion: kind === "end"
+                             ? closeabilityVersion(byId(id)) : null };
         this.busy = false;
         els["action-confirm-sheet"].dataset.kind = kind;
         els["action-confirm-title"].textContent = (ask && ask.title) ? ask.title
             : (kind === "end" ? T.webConfirmEndTitle
                               : fill(T.webConfirmActionTitle, { action: action }));
         els["action-confirm-say"].textContent = (ask && ask.say) ? ask.say
-            : (kind === "end" ? this.endSay(lost)
+            : (kind === "end" ? this.endSay(lost, why, closeableState)
                               : fill(T.webConfirmActionSay, { action: action }));
         els["action-confirm"].hidden = false;
         this.sync();
         els["action-confirm-go"].focus({ preventScroll: true });
     },
 
-    endSay: function (lost) {
-        if (!lost || !lost.length) return T.webConfirmEndSay;
-        return T.webConfirmEndSay + "\n" + T.webConfirmEndLoses + "\n" +
-            lost.map(function (item) { return "· " + item; }).join("\n");
+    endSay: function (lost, why, closeability) {
+        var said = T.webConfirmEndSay;
+        if (lost && lost.length) {
+            said += "\n" + T.webConfirmEndLoses + "\n" +
+                lost.map(function (item) { return "· " + item; }).join("\n");
+        }
+        // Shown whenever the projection is not `safe`, including `unknown` — an absence of
+        // proof is the thing the reader most needs to see before pressing a button that ends
+        // somebody's work, and it is exactly what an empty list used to look like.
+        if (closeability && closeability !== "safe") {
+            said += "\n" + T.closeabilityNotProven;
+            if (why && why.length) {
+                said += "\n" + T.closeabilityWhy + ":\n" +
+                    why.map(function (item) { return "· " + item; }).join("\n");
+            }
+        }
+        return said;
     },
 
     /**
@@ -75,7 +96,9 @@ export var ActionConfirm = {
         }).filter(Boolean);
         this.open("end", id);
         if (this.pending) this.pending.lost = lost.length ? lost : ["…"];
-        els["action-confirm-say"].textContent = this.endSay(this.pending && this.pending.lost);
+        els["action-confirm-say"].textContent = this.endSay(
+            this.pending && this.pending.lost, this.pending && this.pending.why,
+            this.pending && this.pending.closeability);
     },
 
     close: function (restore) {
@@ -110,7 +133,8 @@ export var ActionConfirm = {
             // flight — leaves nothing in flight to release these buttons, and both ways out of
             // the sheet are now disabled. So the sheet undoes itself rather than sitting there
             // spinning at somebody who cannot leave it.
-            if (!SessionActions.end(pending.id, (pending.lost || []).length > 0)) {
+            if (!SessionActions.end(pending.id, (pending.lost || []).length > 0,
+                                    pending.closeabilityVersion)) {
                 this.busy = false;
                 this.sync();
                 this.close(false);

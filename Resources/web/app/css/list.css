@@ -161,6 +161,16 @@
     flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; font: 11.5px/1 var(--mono); color: var(--faint);
 }
+/* The fourth projection. Same shrink-and-ellipsise contract as every other badge on this row,
+   which is what makes 320 and 390 hold: the row never grows, the least important badge loses
+   its characters first, and the whole sentence stays reachable through `title`. It is never
+   the loud one — a session that is safe to close is not asking for anything. */
+.session-closeability {
+    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font: 11.5px/1 var(--mono); color: var(--faint);
+}
+.session-closeability[data-closeability="unknown"] { font-style: italic; }
+.session-closeability[data-closeability="blocked"] { color: var(--ink-dim, var(--faint)); }
 
 /* waiting — the loud one. It is the only state that costs you something for every second it
    goes unnoticed, so it is the only one allowed a colour, a bar and a heartbeat. */
