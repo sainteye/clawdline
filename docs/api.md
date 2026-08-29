@@ -1947,6 +1947,7 @@ This returns durable presence and deterministic read-only Bearings:
   "version": 1,
   "observed_at": 1787832060,
   "store": {"status": "ready"}, // absent | ready | corrupt | unsupported
+  "registration": {"state": "configured"}, // available | configured | blocked
   "coordinator": {
     "configured": true,
     "id": "e76f1e87-6de4-4f39-8cc7-c62eef96712f",
@@ -2006,17 +2007,35 @@ to no live Session row. An absent, corrupt or unsupported record produces
 replacement. No response contains a transcript, transcript path, assistant conversation id, tty,
 pid or process start.
 
+Because those three stores spell one identical `coordinator` tuple, that tuple cannot answer
+*may this caller register*. `registration.state` answers it, from the same durable read the
+registration refusal is made on, in exactly one of three words:
+
+| `registration.state` | Durable store | What a client may do |
+| --- | --- | --- |
+| `available` | no record | offer registration; it writes over nothing |
+| `configured` | a valid record, `status` `online` **or** `offline` | do not offer; both are owners |
+| `blocked` | unreadable, unparseable, or a version this build does not know | do not offer, ever; `POST /v1/orchestrator/coordinator/register` refuses it `409 coordinator_store_invalid` and the bytes are preserved |
+
+The vocabulary is closed, so a client may switch on it exhaustively — and must treat a missing
+field or a fourth word as `blocked` rather than as permission. It is a projection of store health
+and nothing else: no coordinator id, path, token, stored bytes or corruption text crosses with it,
+and `blocked` never says which of the three failures it was. `store.status` (`absent`, `ready`,
+`corrupt`, `unsupported`) stays on this machine-token surface as before.
+
 #### `GET /v1/orchestrator/coordinator/bearings`
 
 The device-readable half of the same answer. It accepts ordinary device auth (the orchestrator
-token also works), because it exists for exactly one caller: the Clawdfather controls panel on a
-paired phone, whose four read-only commands are answered from it. The full inspection above stays
-machine-token-only.
+token also works). The Clawdfather controls panel uses it for four read-only commands, and the
+new-Session creation sheet reads it when opening and again immediately before it sends a
+registration-only instruction. The full inspection above stays machine-token-only.
 
 The body is a strict subset of the full inspection, built as an allowlist — a field added to the
 full answer never reaches this one by omission. What survives: `version`, `observed_at`;
-`coordinator` reduced to `configured`, `label`, `scope`, `status`, `lifecycle` and the safe
-`session` row (`id`, `assistant`, `label`, `cwd`, `work_state`); `bearings` with its
+`registration` reduced to its one closed `state` word, re-validated on the way out so an
+unrecognised value leaves as `blocked`; `coordinator` reduced to `configured`, `label`, `scope`,
+`status`, `lifecycle` and the safe `session` row (`id`, `assistant`, `label`, `cwd`,
+`work_state`); `bearings` with its
 `observed_at`, `coordinator_lifecycle`, `work_state_counts`, the three counts, the
 `unknown`/`waiting`/`blocking` rows (same five session fields), and `sources` reduced to
 `observed_at` and `freshness` per source. Everything in it is either an aggregate count or a
@@ -2026,6 +2045,9 @@ Deliberately withheld, beyond Bearings' own exclusions (tty, pid, process start,
 ids): the durable coordinator UUID, `generation`, `registered_at` and `rebound_at` — the
 compare-and-swap bookkeeping of the machine-token rebind flow, which a device cannot use —
 plus `store` health, source `provenance` names and the session-watch `generation` counter.
+`registration.state` is the one thing derived from `store` health that does cross, because it is
+what a device needs in order not to ask for something the machine would refuse; it is one of
+three words and discloses nothing about the store behind it.
 
 The optional `session.coordinator` record is projected on both `GET /v1/sessions` and
 `GET /v1/orchestrator/sessions` for the exact bound row only. It advertises
@@ -2052,7 +2074,8 @@ Every remaining command that would send, spawn or mutate stays `enabled:false` a
 prose kept for pages that predate the codes. A client that knows the code ignores the prose; one
 that does not still shows a true sentence. Reconnect is deliberately machine-token-only; it is
 not the registration-only new-Session creation helper, whose local assistant registers itself
-only when no coordinator is configured and never rebinds an offline owner.
+only when no coordinator is configured and never rebinds an offline owner. That helper's switch
+in the browser is enabled by `registration.state === "available"` alone.
 Dispatch would start a session from a device, which is the one thing
 the device/orchestrator credential split exists to prevent. The record is absent from every
 ordinary row, preserving their old JSON behavior.

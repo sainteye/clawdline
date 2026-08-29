@@ -70,12 +70,12 @@ export var T = {
     webConfirmEndTitle: "Close this session?",
     webConfirmEndSay: "The assistant will quit, then its terminal tab will close.",
     webConfirmEndLoses: "Closing also ends:",
-    webMakeClawdfather: "Name the new session Clawdfather",
+    webClawdfatherCreateLabel: "Name the new session Clawdfather",
     webClawdfatherIs: "This session is {name}",
-    webConfirmClawdfatherTitle: "Name the new session Clawdfather?",
-    webConfirmClawdfatherSay: "One instruction is typed into the new session. It registers only if this Mac has no coordinator configured at all; an existing one is left alone, offline or not.",
-    webClawdfatherAsk: "Please register this new session as this Mac's Clawdfather, the machine coordinator. Your terminal-neutral session id is {id}. Read the coordinator record using the orchestrator token at ~/.config/clawdline/orchestrator-token. If and only if no coordinator is configured, follow the registration branch of “Becoming Clawdfather” in docs/orchestrator.md. If any coordinator is already configured, including one that is offline, do not replace it. Then report what happened.",
-    webClawdfatherAsked: "The new session was asked to become Clawdfather",
+    webClawdfatherRegisterAsk: "Please register this new session as this Mac's Clawdfather, the machine coordinator. Your terminal-neutral session id is {id}. Read the coordinator record using the orchestrator token at ~/.config/clawdline/orchestrator-token. If and only if no coordinator is configured, follow the registration branch of “Becoming Clawdfather” in docs/orchestrator.md. If any coordinator is already configured, including one that is offline, do not replace it. Then report what happened.",
+    webClawdfatherRegisterSent: "The new session was asked to become Clawdfather",
+    webClawdfatherRegisterLate: "The new session did not become ready in time to name it Clawdfather.",
+    webClawdfatherRegisterBlocked: "This Mac's coordinator record cannot be read, so it is left exactly as it is.",
     // The Clawdfather controls panel — see `input/coordinator-actions.js`. The commands table
     // is closed there on purpose, so every label and summary lives here rather than riding the
     // broker's `commands` payload; `{name}` is the coordinator's advertised label.

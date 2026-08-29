@@ -22541,6 +22541,119 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
            (corrupt["coordinator"] as? [String: Any])?["status"] as? String, "unregistered")
 }
 
+/*
+   The one word a browser is allowed to gate coordinator creation on.
+
+   `coordinator.configured` cannot be that word. An absent store, a corrupt one and one written
+   by an unknown version all project the identical `configured:false, status:"unregistered"`
+   tuple — so a page reading that tuple offers to register over a record `register` will refuse
+   with `coordinator_store_invalid`, and the refusal lands in a session's transcript rather than
+   in the browser that caused it. `registration.state` is derived from the same authoritative
+   `load()` the refusal is, and separates the three.
+
+   Every fixture below is written to a real store and read back through the ordinary projection.
+   None of them is a dictionary assembled here to have the shape the assertion wants.
+*/
+group("registration availability is a closed word derived from the durable store") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-registration-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    defer {
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+    }
+
+    let facts = Coordinator.BearingsInput(sessionsFresh: true, activeTaskCount: 0,
+                                          pendingLandingCount: 0, openWaitCount: 0)
+    let father = coordinatorFixture("father")
+    let other = coordinatorFixture("other", pid: 411, conversation: "conversation-b")
+
+    func state(_ live: [Coordinator.LiveSession]) -> (String?, String?) {
+        let full = Coordinator.inspection(liveSessions: live, bearings: facts)
+        let device = Coordinator.deviceBearings(liveSessions: live, bearings: facts)
+        return ((full["registration"] as? [String: Any])?["state"] as? String,
+                (device["registration"] as? [String: Any])?["state"] as? String)
+    }
+
+    // 1 — absent. Nothing is stored, so registering writes over nothing.
+    let absent = state([father])
+    expect("an absent store is the one state that invites registration", absent.0, "available")
+    expect("and a paired device is told the same word", absent.1, "available")
+
+    // 2 — a valid record whose exact process is live.
+    guard case .ok = Coordinator.register(
+        father, among: [father, other], now: Date(timeIntervalSince1970: 1_800_000_010),
+        makeID: { UUID(uuidString: "11111111-2222-4333-8444-555555555555")! }) else {
+        check("the registration fixture registers", false); return
+    }
+    let online = state([father, other])
+    expect("a live owner is configured, not available", online.0, "configured")
+    expect("and the device projection agrees", online.1, "configured")
+
+    // 3 — the same valid record with no matching live process. Still an owner.
+    let offline = state([other])
+    expect("an offline owner is still an owner", offline.0, "configured")
+    expect("and offline never reads as available", offline.1, "configured")
+
+    // 4 — an unknown durable version. The bytes are somebody else's and must survive.
+    let validBytes = try! Data(contentsOf: Coordinator.storeURL)
+    var future = try! JSONSerialization.jsonObject(with: validBytes) as! [String: Any]
+    future["version"] = 99
+    let futureBytes = try! JSONSerialization.data(withJSONObject: future)
+    try! futureBytes.write(to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+    let unsupported = state([father])
+    expect("an unknown version blocks registration rather than inviting it",
+           unsupported.0, "blocked")
+    expect("and the device is told so before it types anything", unsupported.1, "blocked")
+    expect("the compatibility tuple is unchanged, which is why it cannot be the gate",
+           (Coordinator.inspection(liveSessions: [father], bearings: facts)["coordinator"]
+            as? [String: Any])?["status"] as? String, "unregistered")
+
+    // 5 — unparseable bytes. Same answer, same reason: it is not ours to overwrite.
+    let corruptBytes = Data("{not-json".utf8)
+    try! corruptBytes.write(to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+    let corrupt = state([father])
+    expect("a corrupt store blocks registration", corrupt.0, "blocked")
+    expect("and says so on the device projection too", corrupt.1, "blocked")
+    expect("a blocked store is still reported as unregistered for compatibility",
+           (Coordinator.inspection(liveSessions: [father], bearings: facts)["coordinator"]
+            as? [String: Any])?["configured"] as? Bool, false)
+    expect("and the bytes nobody may overwrite are still there",
+           try! Data(contentsOf: Coordinator.storeURL), corruptBytes)
+
+    // The vocabulary is closed. A client may switch on it exhaustively, which is the whole
+    // reason it is worth sending: an open-ended word would have to fail closed on every value
+    // and would therefore be no better than the tuple it replaces.
+    check("the projection has exactly three words",
+          Coordinator.registrationStates == ["available", "configured", "blocked"])
+    for words in [absent, online, offline, unsupported, corrupt] {
+        check("every state produced from a real store is one of the three",
+              words.0.map(Coordinator.registrationStates.contains) == true
+                && words.1.map(Coordinator.registrationStates.contains) == true)
+    }
+
+    // Non-sensitive by construction: the projection is one of three words and carries no path,
+    // no coordinator id, no token, no stored bytes and no corruption text.
+    let deviceJSON = String(
+        decoding: try! JSONSerialization.data(
+            withJSONObject: Coordinator.deviceBearings(liveSessions: [father], bearings: facts)),
+        as: UTF8.self)
+    check("the blocked answer discloses nothing about the store it is protecting",
+          !deviceJSON.contains("not-json") && !deviceJSON.contains(directory.path)
+            && !deviceJSON.contains("coordinator.json")
+            && !deviceJSON.contains("11111111-2222-4333-8444-555555555555")
+            && !deviceJSON.contains("corrupt") && !deviceJSON.contains("unsupported"))
+    check("store health itself is still withheld from devices",
+          Coordinator.deviceBearings(liveSessions: [father], bearings: facts)["store"] == nil)
+}
+
 group("an offline coordinator can be rebound without changing its durable identity") {
     let manager = FileManager.default
     let directory = manager.temporaryDirectory

@@ -91,6 +91,32 @@ enum Coordinator {
         }
     }
 
+    /// The closed vocabulary of ``registrationState`` — the one word a browser is allowed to
+    /// gate coordinator creation on.
+    ///
+    /// It exists because `coordinator.configured` cannot answer the question. An absent record,
+    /// a corrupt one and one written by an unknown version all project the identical
+    /// `configured:false, status:"unregistered"` tuple, so a page reading that tuple sees an
+    /// invitation to register where the store is in fact something ``register`` will refuse
+    /// with `coordinator_store_invalid` — after the instruction has already been typed into a
+    /// session. The three meanings are therefore stated rather than inferred, and a client that
+    /// meets a fourth must treat it as none of them.
+    ///
+    /// It carries no coordinator id, path, token, stored bytes or corruption text: the whole
+    /// projection is one of these three words.
+    static let registrationStates: Set<String> = ["available", "configured", "blocked"]
+
+    /// `available` — nothing is stored, so registering writes over nothing.
+    /// `configured` — a valid record exists, online or offline; both are owners.
+    /// `blocked` — unreadable, unparseable or from an unknown version. Never overwrite it.
+    private static func registrationState(_ loaded: Loaded) -> String {
+        switch loaded {
+        case .absent: return "available"
+        case .valid: return "configured"
+        case .corrupt, .unsupported: return "blocked"
+        }
+    }
+
     private enum StoreFingerprint: Equatable {
         case absent
         case inaccessible(Int32)
@@ -415,6 +441,7 @@ enum Coordinator {
         ]
         return ["version": 1, "observed_at": observed,
                 "store": ["status": loaded.status],
+                "registration": ["state": registrationState(loaded)],
                 "coordinator": coordinator, "bearings": bearings]
     }
 
@@ -482,9 +509,23 @@ enum Coordinator {
     /// device cannot use), `store` health, source `provenance` names and the session-watch
     /// `generation` counter. Bearings already excludes tty, pid, process start and conversation
     /// ids by construction.
+    ///
+    /// `store.status` stays withheld, but the one thing a device legitimately needs from it —
+    /// whether registering would write over something — crosses as ``registrationStates``, a
+    /// single closed word. That is the whole of the difference: no path, no bytes, no reason
+    /// text, nothing a caller could use to tell a corrupt store from an unsupported one.
     static func deviceBearings(liveSessions: [LiveSession], bearings input: BearingsInput,
                                now: Date = Date()) -> [String: Any] {
         let full = inspection(liveSessions: liveSessions, bearings: input, now: now)
+
+        // Fail closed, in the projection itself: if the authoritative answer is missing or is
+        // a word this build does not know, the device is told the least permissive of the
+        // three rather than being handed a state it might read as permission.
+        var registrationState = "blocked"
+        if let record = full["registration"] as? [String: Any],
+           let state = record["state"] as? String, registrationStates.contains(state) {
+            registrationState = state
+        }
 
         var coordinator: [String: Any] = [:]
         if let record = full["coordinator"] as? [String: Any] {
@@ -520,6 +561,7 @@ enum Coordinator {
 
         return ["version": 1,
                 "observed_at": full["observed_at"] ?? Int(now.timeIntervalSince1970),
+                "registration": ["state": registrationState],
                 "coordinator": coordinator, "bearings": bearings]
     }
 

@@ -534,27 +534,34 @@ protocol Copy {
     ///
     /// The browser cannot register a coordinator — that needs the orchestrator token, and a
     /// paired device does not have one. So the sheet does not do it: it types
-    /// `webClawdfatherAsk` into the new session through the ordinary send route, and the
+    /// `webClawdfatherRegisterAsk` into the new session through the ordinary send route, and the
     /// session, which is a local process that *can* read the token, carries out the
     /// registration itself.
     ///
     /// `{name}` in `webClawdfatherIs` is the label from the authenticated `session.coordinator`
-    /// projection; `{id}` in `webClawdfatherAsk` is the new session's terminal-neutral id, which
-    /// the page already holds and hands over rather than leaving it to be worked out at the far
-    /// end. A translation that drops that hole would be addressed to nobody, so
+    /// projection; `{id}` in `webClawdfatherRegisterAsk` is the new session's terminal-neutral
+    /// id, which the page already holds and hands over rather than leaving it to be worked out
+    /// at the far end. A translation that drops that hole would be addressed to nobody, so
     /// `input/clawdfather.js` refuses it and types the English — see the fallbacks there, which
     /// are the layer below the baked-in English in `core/i18n.js`.
     ///
-    /// The member names still read `webMake…`/`web…Ask`/`web…Asked` from the retired Session
-    /// menu item. Renaming them means renaming the keys `/v1/strings` sends, which is a
-    /// `RemoteServer.swift` change this copy contract does not own; the words are what the page
-    /// and the far end read, and those are creation-only.
-    var webMakeClawdfather: String { get }
+    /// The three outcomes are all said in the reader's language, because the sheet's own words
+    /// were localized while the two sentences beside them stayed English literals in
+    /// `input/start.js` — a difference `tools/check-web-strings.py` cannot see, since a
+    /// hardcoded sentence has no name to compare. `webClawdfatherRegisterBlocked` is the newest
+    /// of them and belongs to the newest fact: the Mac now says whether registering would write
+    /// over a coordinator record it cannot read, and a person who is refused deserves that
+    /// reason rather than a failed-read sentence that is not what happened.
+    ///
+    /// The names were `webMake…`/`web…Ask`/`web…Asked`, from the retired existing-Session menu
+    /// item, and the two `webConfirmClawdfather…` keys were its confirmation sheet. Those two
+    /// are deleted rather than renamed; the sheet they belonged to is gone.
+    var webClawdfatherCreateLabel: String { get }
     var webClawdfatherIs: String { get }
-    var webConfirmClawdfatherTitle: String { get }
-    var webConfirmClawdfatherSay: String { get }
-    var webClawdfatherAsk: String { get }
-    var webClawdfatherAsked: String { get }
+    var webClawdfatherRegisterAsk: String { get }
+    var webClawdfatherRegisterSent: String { get }
+    var webClawdfatherRegisterLate: String { get }
+    var webClawdfatherRegisterBlocked: String { get }
     /// The Clawdfather controls panel — `input/coordinator-actions.js`.
     ///
     /// The commands table is closed on the client on purpose: labels, placement and safety

@@ -516,8 +516,11 @@ document.documentElement.className = "booting";
                  row above it, because both are lists the Mac decides the contents of. -->
             <div class="row" id="start-resume" hidden></div>
             <!-- A role chosen only while creating a genuinely new Session. Its disabled state
-                 comes from the durable coordinator Bearings record, so an offline Clawdfather
-                 closes it exactly as an online one does. -->
+                 comes from the one closed word the Mac sends beside Bearings, so an offline
+                 Clawdfather closes it exactly as an online one does — and so does a coordinator
+                 record the Mac cannot read. The label is deliberately empty: `drawClawdfather`
+                 writes the served translation into it before the row is unhidden, and an English
+                 sentence left here would be the one word on this sheet nobody could translate. -->
             <div class="row" id="start-clawdfather-row" hidden>
                 <button class="chip check" id="start-clawdfather" type="button"
                         aria-pressed="false" disabled>
@@ -526,7 +529,7 @@ document.documentElement.className = "booting";
                         <path class="mark" d="M3.6 7.1 5.9 9.4 10.4 4.6"
                               stroke-linecap="round" stroke-linejoin="round"></path>
                     </svg>
-                    <span id="start-clawdfather-label">Name the new session Clawdfather</span>
+                    <span id="start-clawdfather-label"></span>
                 </button>
                 <span class="clawdfather-state" id="start-clawdfather-state"
                     role="status" aria-live="polite"></span>

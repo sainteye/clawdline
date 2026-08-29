@@ -1328,11 +1328,12 @@ final class RemoteServer: @unchecked Sendable {
 
         // The device-readable half of Bearings. No `orchestratorAuthed` guard on purpose: an
         // orchestrator read without the machine token falls through to ordinary device auth at
-        // the top gate, which is exactly who this projection is for — the Clawdfather panel's
-        // four read-only commands, on a page that holds a device token. What it answers is an
-        // allowlist built in `Coordinator.deviceBearings`: aggregate counts plus session facts
-        // a paired device can already read from `GET /v1/sessions`, and never the durable
-        // coordinator UUID, lifecycle bookkeeping, store health, tty, pid or conversation ids.
+        // the top gate, which is exactly who this projection is for: the Clawdfather panel's four
+        // read-only commands and the new-Session creation sheet's open/pre-send registration
+        // checks, on a page that holds a device token. What it answers is an allowlist built in
+        // `Coordinator.deviceBearings`: aggregate counts plus session facts a paired device can
+        // already read from `GET /v1/sessions`, and never the durable coordinator UUID,
+        // lifecycle bookkeeping, store health, tty, pid or conversation ids.
         case ("GET", "/v1/orchestrator/coordinator/bearings"):
             let observation = coordinatorObservation()
             let registry = observation.registry
@@ -5052,12 +5053,12 @@ final class RemoteServer: @unchecked Sendable {
         // types it through the ordinary send route; only the session can read the orchestrator
         // token, so only the session performs the registration.
         add([
-            "webMakeClawdfather": t.webMakeClawdfather,
+            "webClawdfatherCreateLabel": t.webClawdfatherCreateLabel,
             "webClawdfatherIs": t.webClawdfatherIs,
-            "webConfirmClawdfatherTitle": t.webConfirmClawdfatherTitle,
-            "webConfirmClawdfatherSay": t.webConfirmClawdfatherSay,
-            "webClawdfatherAsk": t.webClawdfatherAsk,
-            "webClawdfatherAsked": t.webClawdfatherAsked,
+            "webClawdfatherRegisterAsk": t.webClawdfatherRegisterAsk,
+            "webClawdfatherRegisterSent": t.webClawdfatherRegisterSent,
+            "webClawdfatherRegisterLate": t.webClawdfatherRegisterLate,
+            "webClawdfatherRegisterBlocked": t.webClawdfatherRegisterBlocked,
         ])
 
         // The Clawdfather controls panel — sections, the closed commands table, effect and state
