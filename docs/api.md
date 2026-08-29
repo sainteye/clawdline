@@ -135,6 +135,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
 | `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/sessions/:id/state` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/sessions/:id/closure` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
@@ -1151,6 +1152,29 @@ Show the list, then repeat the same request with `accept_loss: true`. A close wi
 stake is unchanged — one press, empty body. This is deliberately a gate at the close and not a
 list column: a label read earlier does not stop a close (docs/session-states.md#lost_if_closed).
 
+**The proven close.** A caller may additionally send `expected_closeability_version`, copied
+verbatim from the opaque `closeability.version` on the Session row it drew
+([closeability](session-closeability.md)). The broker recomputes the projection at its end of the
+same press and proceeds only when the state is still `safe` *and* the version still compares
+equal. Anything else is refused:
+
+```json
+{"error":{"code":"close_not_proven","message":"…","closeability":{
+  "state":"blocked","reasons":[{"code":"pending_landing_owned","kind":"obligation",
+    "subject_kind":"task","subject_id":"…","mover":{"kind":"session","self":true,
+    "person_needed":false}}],"version":"cl1_…","observed_at":1788005803,
+  "activity_generation":42,"obligation_generation":91,"session_generation":63,
+  "provenance":["broker"],"attestation_id":null,
+  "source":{"provenance":"session_watch","freshness":"current"}}}}
+```
+
+Two rules matter more than the mechanism. **Omitting the field changes nothing** — every client
+written before this existed keeps exactly the `lost_if_closed` contract above, which is why the
+field is an opt-in rather than a new precondition. And **`accept_loss` is not an answer to this
+gate**: it is the human override for a positive victim list somebody was shown, and a stale,
+ambiguous, unattested or superseded projection produces no such list. Accepting a loss nobody can
+enumerate is not consent, so a request carrying both is still refused `close_not_proven`.
+
 **Not a capability of its own.** A device that may type into a session can already send `/exit` and
 then `exit`; this is the same power with the two steps joined and named. What it adds is that the
 second step lands on a tab that has already left the session list — which is exactly why doing it
@@ -1824,6 +1848,44 @@ consumed when the terminal next enters `working` or `waiting`. The `owed` debt d
 survives turns until this route clears it with `"owed": null`, and re-declaring the same debt
 note keeps the original `since`. Refusals `401/403/404/409 session_not_working/409
 session_unbound` match `/complete`.
+
+### `POST /v1/orchestrator/sessions/:id/closure`
+
+The evidence only the Session itself can supply, and the second half of
+[closeability](session-closeability.md). The broker can see tasks, landings, waits, handoffs,
+outbound completions and declared debts; it cannot see which shared-tree hunks this session owns,
+what it has on a local list nothing registered, what it deployed outside the repository, or
+whether its direct work covers the whole of what it was asked. So it asks, and this is the answer.
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$SID/closure" \
+    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H 'Content-Type: application/json' \
+    -d '{"status":"clear","activity_generation":42,
+         "note":"all owned work landed; no local obligation","audit_id":"optional"}'
+{"ok":true,"created":true,"attestation_id":"6f0b2d1e-…",
+ "closeability":{"state":"safe","reasons":[],"version":"cl1_…", …}}
+```
+
+The body may contain only `status`, `activity_generation`, `note` and `audit_id`. `status` must
+be `"clear"`; anything else is `422 closure_status_unsupported`, because a session that still owes
+something says so by leaving the obligation where the broker can already see it. Identity is
+resolved from the live watched process exactly as `/complete` and `/state` do and is never taken
+from the body; a terminal whose process cannot be bound is `409 session_unbound`.
+
+**`activity_generation` is what binds this to one turn, and it replaces the same-instant screen
+reading.** The session writes this at the end of its turn; whether a SessionWatch beat landed on
+the same millisecond is not evidence about anything, and requiring it would be a race the honest
+caller loses. Name the wrong turn and the answer is `409 closure_generation_stale`, carrying the
+broker's current value so the caller can retry against it. Read the current value from the
+`closeability.activity_generation` field of any Session row.
+
+The receipt is **self-attestation, not completion**. Only the broker merge may output `safe`, and
+it does so only when its own blockers are also clear; a session that attests while the broker sees
+a pending landing gets an honest `blocked` back with its word recorded beside the evidence
+(`provenance: ["broker","self"]`). Re-posting the same attestation for the same turn and the same
+obligation clock returns `200` with `created:false` and the same `attestation_id`. A later process
+in the same terminal is issued its own attestation and never the previous one's.
 
 ### Machine coordinator identity and Bearings
 
@@ -3305,6 +3367,17 @@ Beside it ride `work_provenance` ("broker" or "self"), and — when a declaratio
 (`{note, since, person_needed, moved_by?, provenance}`), a debt that survives turns until the
 session clears it. `holding` appears only with `self` provenance — it has no broker entrance and
 is never a fallback — and a self-declaration can never produce either check state.
+
+Beside all of that rides the independent fourth projection, `closeability` — `ready` says this
+session can take work, `closeability` says whether it can end, and neither may be read off the
+other. The block carries `state` (`blocked`, `needs_attestation`, `safe`, `unknown`), a typed
+`reasons` list, the single `mover` when every outstanding reason points at one, `observed_at`,
+`session_generation`, `activity_generation`, `obligation_generation`, `provenance`,
+`attestation_id`, an opaque `version` for the close route's compare-and-swap, and a `source`
+naming the freshness of the reading behind it. Its contract, the closed reason vocabulary and the
+precedence that makes doubtful evidence outrank a short obligation list are in
+[`session-closeability.md`](session-closeability.md). Clients compare `version`; they never
+construct or parse it.
 
 An idle root with a live task resolved to its exact current process is `waiting_session`: the
 broker already knows it has an outstanding ChildSession. If the root works beside that child it is
