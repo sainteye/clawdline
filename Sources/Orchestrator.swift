@@ -2668,6 +2668,9 @@ enum Orchestrator {
         load()
         var changed = false
         lock.lock()
+        // The turn clock the closure attestation names. It moves before any receipt is settled,
+        // so an attestation written for the turn that just ended cannot survive the next one.
+        if noteActivityLocked(terminalID: terminalID, state: state) { changed = true }
         if var delivery = sessionDeliveries[terminalID] {
             switch state {
             case .idle where !delivery.settled:
@@ -2714,6 +2717,729 @@ enum Orchestrator {
         for (terminalID, state) in states where state == .idle {
             noteSessionStateChange(terminalID: terminalID, to: state)
         }
+    }
+
+    // MARK: - Session closeability
+
+    /// The fourth projection, beside terminal `state`, `work_state` and the `owed` overlay.
+    ///
+    /// `ready` means able to accept work. This says whether a Session is able to *end*, and the
+    /// two are independent: a session with nothing to do can still own a pending landing, and a
+    /// session mid-turn can owe nobody anything. Each value has exactly one action, which is the
+    /// same design test the work-state vocabulary is held to (docs/session-states.md).
+    ///
+    /// There is deliberately no `closed` case. A closed Session leaves the live inventory; what
+    /// remains is the bounded audit row `RemoteAuth.audit` already writes, not a permanent live
+    /// record which every later reader would have to learn to ignore.
+    enum SessionCloseability: String, CaseIterable {
+        /// The broker sees a positive obligation. Do not close.
+        case blocked
+        /// Broker blockers are clear, but only this exact Session can account for local or
+        /// external work. Ask that Session.
+        case needsAttestation = "needs_attestation"
+        /// Broker blockers are clear and the exact current process supplied a fresh closure
+        /// attestation. The close button may proceed.
+        case safe
+        /// Evidence is stale, missing or ambiguous. Refresh or audit, and fail closed.
+        case unknown
+    }
+
+    /// Why a Session is not closeable, in one closed vocabulary. Grouped by `kind` because the
+    /// three groups have three different next actions and only one of them is a list of work.
+    enum CloseabilityReasonCode: String, CaseIterable {
+        // Positive obligations the broker can prove from its own registries.
+        case terminalWorking = "terminal_working"
+        case terminalWaitingYou = "terminal_waiting_you"
+        case ownTaskUnfinished = "own_task_unfinished"
+        case liveDescendantTask = "live_descendant_task"
+        case taskWithoutResult = "task_without_result"
+        case pendingLandingOwned = "pending_landing_owned"
+        case coordinationWaitOwned = "coordination_wait_owned"
+        case coordinationWaitWaiting = "coordination_wait_waiting"
+        case openHandoff = "open_handoff"
+        case completionUndelivered = "completion_undelivered"
+        case owedDecision = "owed_decision"
+        case dirtyIsolatedWorktree = "dirty_isolated_worktree"
+        case touchedClaimsWithoutClosure = "touched_claims_without_closure"
+        // Evidence problems. Every one of these fails the whole projection closed to `unknown`,
+        // because what they cast doubt on is the completeness of the obligation list itself.
+        case terminalUnreadable = "terminal_unreadable"
+        case sessionInventoryStale = "session_inventory_stale"
+        case sessionInventoryMissing = "session_inventory_missing"
+        case sessionIdentityUnbound = "session_identity_unbound"
+        case sessionIdentityAmbiguous = "session_identity_ambiguous"
+        // Answerable only by the Session itself.
+        case attestationMissing = "attestation_missing"
+        case attestationSuperseded = "attestation_superseded"
+
+        var kind: CloseabilityReasonKind {
+            switch self {
+            case .terminalUnreadable, .sessionInventoryStale, .sessionInventoryMissing,
+                 .sessionIdentityUnbound, .sessionIdentityAmbiguous:
+                return .evidence
+            case .attestationMissing, .attestationSuperseded:
+                return .attestation
+            default:
+                return .obligation
+            }
+        }
+    }
+
+    enum CloseabilityReasonKind: String {
+        case obligation, evidence, attestation
+    }
+
+    /// Who or what clears one reason. The same distinction `work_moved_by` draws on the row:
+    /// "your build; nobody" and "the user's decision; the user" are opposite calls to action.
+    enum CloseabilityMover: Equatable {
+        /// The Session being asked about. It is the one that must finish, land or attest.
+        case thisSession
+        /// Another live Session, named by its terminal-neutral id.
+        case otherSession(String)
+        /// A person. Nothing moves until somebody decides.
+        case person
+        /// A task record, when the broker cannot name the terminal holding it.
+        case task(String)
+        /// A fresh reading. Nobody is at fault; the evidence is simply not current.
+        case broker
+
+        var wire: [String: Any] {
+            switch self {
+            case .thisSession: return ["kind": "session", "self": true, "person_needed": false]
+            case .otherSession(let id):
+                return ["kind": "session", "session_id": id, "self": false,
+                        "person_needed": false]
+            case .person: return ["kind": "person", "person_needed": true]
+            case .task(let id): return ["kind": "task", "task_id": id, "person_needed": false]
+            case .broker: return ["kind": "broker", "person_needed": false]
+            }
+        }
+    }
+
+    /// One typed reason, naming its subject so the reader can go and look at the thing itself.
+    struct CloseabilityReason: Equatable {
+        let code: CloseabilityReasonCode
+        let subjectKind: String?
+        let subjectID: String?
+        let mover: CloseabilityMover
+
+        init(_ code: CloseabilityReasonCode, subjectKind: String? = nil,
+             subjectID: String? = nil, mover: CloseabilityMover = .thisSession) {
+            self.code = code
+            self.subjectKind = subjectKind
+            self.subjectID = subjectID
+            self.mover = mover
+        }
+
+        var wire: [String: Any] {
+            var out: [String: Any] = ["code": code.rawValue, "kind": code.kind.rawValue,
+                                      "mover": mover.wire]
+            if let subjectKind { out["subject_kind"] = subjectKind }
+            if let subjectID { out["subject_id"] = subjectID }
+            return out
+        }
+    }
+
+    /// The exact process's own account of work the broker cannot see: shared-tree hunks it owns,
+    /// unregistered local todos, artifacts and deployments outside the repository, decisions
+    /// never written to `owed`. It is self-attestation, not completion — only the broker merge
+    /// may output `safe`.
+    struct ClosureAttestation: Equatable {
+        let id: String
+        let identity: SessionWorkIdentity
+        /// The generation the declaring turn named. A later working/waiting turn moves it.
+        let activityGeneration: Int
+        /// The obligation clock at the moment of the merge. Any later obligation change moves it.
+        let obligationGeneration: Int
+        let note: String?
+        let auditID: String?
+        let created: Date
+    }
+
+    static let closureNoteLimit = 200
+    static let closureAuditIDLimit = 128
+
+    /// Per-terminal turn clock. It advances when a terminal is observed *entering* working or
+    /// waiting — a new turn — and not for a changed live line inside one turn. Attestations name
+    /// it, so a session that starts working again after attesting has invalidated its own claim.
+    ///
+    /// Deliberately never reset when the process in a terminal changes: a monotone counter that
+    /// is never reused cannot make an old attestation match a new process by arithmetic, and the
+    /// full identity comparison refuses that case anyway.
+    private static var sessionActivityGenerations: [String: Int] = [:]
+    private static var sessionActivityClasses: [String: String] = [:]
+    private static var closureAttestations: [String: ClosureAttestation] = [:]
+    /// Machine-wide obligation clock. It advances only when the *content* of the obligation
+    /// evidence changes — see ``obligationFingerprintLocked()`` — so writing an attestation, a
+    /// title or a progress note does not silently invalidate the attestation just written.
+    private static var obligationGeneration = 0
+    private static var obligationFingerprint = ""
+
+    private static func activityClass(of state: SessionState) -> String {
+        switch state {
+        case .working: return "working"
+        case .waiting: return "waiting"
+        case .idle: return "idle"
+        case .unknown: return "unknown"
+        }
+    }
+
+    /// Caller holds `lock`.
+    @discardableResult
+    private static func noteActivityLocked(terminalID: String, state: SessionState) -> Bool {
+        let now = activityClass(of: state)
+        let before = sessionActivityClasses[terminalID]
+        guard before != now else { return false }
+        sessionActivityClasses[terminalID] = now
+        guard now == "working" || now == "waiting" else { return true }
+        sessionActivityGenerations[terminalID] = (sessionActivityGenerations[terminalID] ?? 0) + 1
+        return true
+    }
+
+    static func activityGeneration(ofTerminal terminalID: String) -> Int {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return sessionActivityGenerations[terminalID] ?? 0
+    }
+
+    static func currentObligationGeneration() -> Int {
+        load()
+        lock.lock()
+        settleObligationGenerationLocked()
+        let generation = obligationGeneration
+        lock.unlock()
+        return generation
+    }
+
+    /// A stable digest of exactly the evidence the closeability projection reads. Caller holds
+    /// `lock`. Sorted and fully spelled, because a fingerprint that misses a field is a clock
+    /// that does not tick for the change that mattered.
+    private static func obligationFingerprintLocked() -> String {
+        var parts: [String] = []
+        for task in tasks.values.sorted(by: { $0.id < $1.id }) {
+            var row: [String] = []
+            row.append(task.id)
+            row.append(task.state.rawValue)
+            row.append(task.rootSessionId ?? "-")
+            row.append(task.rootAssistant?.rawValue ?? "-")
+            row.append(task.parentTaskId ?? "-")
+            row.append(task.childTerminalId ?? "-")
+            row.append(task.childSessionId ?? "-")
+            row.append(task.resultVerifiedAt == nil ? "0" : "1")
+            row.append(task.summary == nil ? "0" : "1")
+            row.append(task.landing?.state.rawValue ?? "-")
+            row.append(task.landing?.ownerRootKey ?? "-")
+            let dirty: String = task.worktree?.dirty.map { $0 ? "1" : "0" } ?? "-"
+            row.append(dirty)
+            row.append(task.completionDelivery?.state.rawValue ?? "-")
+            row.append(task.claims.sorted().joined(separator: ","))
+            row.append(task.untouchedClaims.sorted().joined(separator: ","))
+            parts.append(row.joined(separator: "\u{1}"))
+        }
+        for wait in coordinationWaits.values.sorted(by: { $0.id < $1.id }) {
+            let pending = wait.waiters.filter { $0.releaseDeliveredAt == nil }
+                .map(\.sessionID).sorted().joined(separator: ",")
+            parts.append([wait.id, wait.ownerSessionID, pending].joined(separator: "\u{1}"))
+        }
+        for handoff in handoffs.values.sorted(by: { $0.id < $1.id }) {
+            parts.append([handoff.id, handoff.state.rawValue, handoff.fromSession ?? "-"]
+                .joined(separator: "\u{1}"))
+        }
+        for selfState in sessionSelfStates.values
+            .sorted(by: { $0.identity.terminalID < $1.identity.terminalID }) {
+            parts.append([selfState.identity.terminalID,
+                          selfState.owed?.note ?? "-"].joined(separator: "\u{1}"))
+        }
+        let canonical = parts.joined(separator: "\u{2}")
+        return RemoteAuth.hex(SHA256.hash(data: Data(canonical.utf8)))
+    }
+
+    /// Advance the obligation clock when, and only when, the obligation evidence changed.
+    /// Caller holds `lock`. Returns whether it moved.
+    @discardableResult
+    private static func settleObligationGenerationLocked() -> Bool {
+        let current = obligationFingerprintLocked()
+        guard current != obligationFingerprint else { return false }
+        obligationFingerprint = current
+        obligationGeneration += 1
+        return true
+    }
+
+    /// The opaque CAS token clients copy from a projection into a close request.
+    ///
+    /// It covers the exact process identity, the two clocks that can invalidate an attestation,
+    /// and the resulting state. It deliberately does **not** cover the SessionWatch scan
+    /// generation: that advances on its own every few seconds, and a token nobody could hold
+    /// still long enough to send would make every close a race rather than proving anything.
+    /// Scan freshness reaches the reader as `source` and as `unknown`, which no close accepts.
+    static func closeabilityVersion(identity: SessionWorkIdentity, activityGeneration: Int,
+                                    obligationGeneration: Int,
+                                    state: SessionCloseability) -> String {
+        let canonical = [
+            "cl1", identity.terminalID, identity.assistant?.rawValue ?? "-", identity.tty,
+            identity.pid.map(String.init) ?? "-",
+            identity.processStart.map { String(Int($0.timeIntervalSince1970)) } ?? "-",
+            identity.conversationID ?? "-", String(activityGeneration),
+            String(obligationGeneration), state.rawValue,
+        ].joined(separator: "\u{1}")
+        return "cl1_" + RemoteAuth.hex(SHA256.hash(data: Data(canonical.utf8))).prefix(32)
+    }
+
+    /// Everything the pure precedence needs, gathered by the caller so the decision itself can be
+    /// tested exhaustively without a registry.
+    struct CloseabilityInput {
+        var terminalState: SessionState
+        var identityBound: Bool
+        /// The SessionWatch inventory that produced this reading was a complete one.
+        var inventoryComplete: Bool
+        /// When that inventory was observed. Nil is the closed `missing` source state.
+        var inventoryObservedAt: Date?
+        /// How many rows of that inventory resolve to this exact identity. Anything but one is
+        /// ambiguous, and ambiguity is not evidence.
+        var identityMatches: Int
+        var obligations: [CloseabilityReason]
+        var attestation: ClosureAttestation?
+        var identity: SessionWorkIdentity
+        var activityGeneration: Int
+        var obligationGeneration: Int
+
+        init(terminalState: SessionState, identity: SessionWorkIdentity,
+             identityBound: Bool = true, inventoryComplete: Bool = true,
+             inventoryObservedAt: Date? = Date(timeIntervalSince1970: 1),
+             identityMatches: Int = 1, obligations: [CloseabilityReason] = [],
+             attestation: ClosureAttestation? = nil, activityGeneration: Int = 0,
+             obligationGeneration: Int = 0) {
+            self.terminalState = terminalState
+            self.identity = identity
+            self.identityBound = identityBound
+            self.inventoryComplete = inventoryComplete
+            self.inventoryObservedAt = inventoryObservedAt
+            self.identityMatches = identityMatches
+            self.obligations = obligations
+            self.attestation = attestation
+            self.activityGeneration = activityGeneration
+            self.obligationGeneration = obligationGeneration
+        }
+    }
+
+    struct SessionCloseabilityProjection {
+        let state: SessionCloseability
+        let reasons: [CloseabilityReason]
+        let observedAt: Date
+        let sessionGeneration: Int?
+        let sourceFreshness: String
+        let activityGeneration: Int
+        let obligationGeneration: Int
+        let version: String
+        let provenance: [String]
+        let attestationID: String?
+        /// The one mover every outstanding reason points at, when there is exactly one. Nil
+        /// means several — which is itself the answer, and the reason list is then the whole
+        /// story rather than a headline.
+        let mover: CloseabilityMover?
+
+        var wire: [String: Any] {
+            var out: [String: Any] = [
+                "state": state.rawValue,
+                "reasons": reasons.map(\.wire),
+                "observed_at": Int(observedAt.timeIntervalSince1970),
+                "activity_generation": activityGeneration,
+                "obligation_generation": obligationGeneration,
+                "version": version,
+                "provenance": provenance,
+                "source": ["provenance": "session_watch", "freshness": sourceFreshness],
+            ]
+            out["session_generation"] = sessionGeneration as Any? ?? NSNull()
+            out["attestation_id"] = attestationID as Any? ?? NSNull()
+            out["mover"] = mover?.wire as Any? ?? NSNull()
+            return out
+        }
+    }
+
+    /// Is this attestation still the current process's, and still about the current clocks?
+    static func closureAttestationIsCurrent(_ attestation: ClosureAttestation,
+                                            identity: SessionWorkIdentity,
+                                            activityGeneration: Int,
+                                            obligationGeneration: Int) -> Bool {
+        recordedIdentityMatchesCurrentSession(attestation.identity, identity: identity)
+            && attestation.activityGeneration == activityGeneration
+            && attestation.obligationGeneration == obligationGeneration
+    }
+
+    /// The whole precedence, pure.
+    ///
+    /// **`unknown` outranks `blocked`, and that ordering is the point.** A stale, missing or
+    /// ambiguous source does not merely add a row to the obligation list — it makes the list's
+    /// *completeness* unknown, and a reader handed an incomplete list reads it as a checklist.
+    /// So doubt about the evidence is reported as doubt, with whatever positive obligations were
+    /// seen still listed underneath, rather than as a confident short list of two things to do.
+    static func projectCloseability(_ input: CloseabilityInput,
+                                    now: Date = Date()) -> SessionCloseabilityProjection {
+        var evidence: [CloseabilityReason] = []
+        if !input.identityBound {
+            evidence.append(CloseabilityReason(.sessionIdentityUnbound, mover: .broker))
+        }
+        if input.inventoryObservedAt == nil {
+            evidence.append(CloseabilityReason(.sessionInventoryMissing, mover: .broker))
+        } else if !input.inventoryComplete {
+            evidence.append(CloseabilityReason(.sessionInventoryStale, mover: .broker))
+        }
+        if input.identityMatches != 1 {
+            evidence.append(CloseabilityReason(
+                .sessionIdentityAmbiguous, subjectKind: "session",
+                subjectID: input.identity.terminalID, mover: .broker))
+        }
+        if input.terminalState == .unknown {
+            evidence.append(CloseabilityReason(
+                .terminalUnreadable, subjectKind: "session",
+                subjectID: input.identity.terminalID, mover: .broker))
+        }
+
+        var obligations = input.obligations
+        switch input.terminalState {
+        case .working:
+            obligations.insert(CloseabilityReason(
+                .terminalWorking, subjectKind: "session",
+                subjectID: input.identity.terminalID, mover: .thisSession), at: 0)
+        case .waiting:
+            obligations.insert(CloseabilityReason(
+                .terminalWaitingYou, subjectKind: "session",
+                subjectID: input.identity.terminalID, mover: .person), at: 0)
+        case .idle, .unknown:
+            break
+        }
+
+        var attestationReasons: [CloseabilityReason] = []
+        var attestationID: String?
+        var provenance = ["broker"]
+        if evidence.isEmpty, obligations.isEmpty {
+            if let attestation = input.attestation,
+               recordedIdentityMatchesCurrentSession(attestation.identity,
+                                                     identity: input.identity) {
+                provenance.append("self")
+                if closureAttestationIsCurrent(
+                    attestation, identity: input.identity,
+                    activityGeneration: input.activityGeneration,
+                    obligationGeneration: input.obligationGeneration) {
+                    attestationID = attestation.id
+                } else {
+                    attestationReasons.append(CloseabilityReason(
+                        .attestationSuperseded, subjectKind: "attestation",
+                        subjectID: attestation.id, mover: .thisSession))
+                }
+            } else {
+                attestationReasons.append(CloseabilityReason(
+                    .attestationMissing, subjectKind: "session",
+                    subjectID: input.identity.terminalID, mover: .thisSession))
+            }
+        } else if let attestation = input.attestation,
+                  recordedIdentityMatchesCurrentSession(attestation.identity,
+                                                        identity: input.identity) {
+            // A session may say it is clear while the broker still sees work. Recording that it
+            // said so is useful; letting it decide is not.
+            provenance.append("self")
+        }
+
+        let state: SessionCloseability
+        if !evidence.isEmpty { state = .unknown }
+        else if !obligations.isEmpty { state = .blocked }
+        else if attestationID != nil { state = .safe }
+        else { state = .needsAttestation }
+
+        let reasons = evidence + obligations + attestationReasons
+        let unique = reasons.map(\.mover).reduce(into: [CloseabilityMover]()) { seen, mover in
+            if !seen.contains(mover) { seen.append(mover) }
+        }
+        let freshness: String
+        if input.inventoryObservedAt == nil { freshness = "missing" }
+        else { freshness = input.inventoryComplete ? "current" : "stale" }
+        return SessionCloseabilityProjection(
+            state: state, reasons: reasons, observedAt: now,
+            sessionGeneration: nil, sourceFreshness: freshness,
+            activityGeneration: input.activityGeneration,
+            obligationGeneration: input.obligationGeneration,
+            version: closeabilityVersion(
+                identity: input.identity, activityGeneration: input.activityGeneration,
+                obligationGeneration: input.obligationGeneration, state: state),
+            provenance: provenance, attestationID: attestationID,
+            mover: unique.count == 1 ? unique[0] : nil)
+    }
+
+    /// Every positive obligation the broker can prove for one Session, from records alone.
+    ///
+    /// Pure, and given its inputs rather than reading the registry, so the whole table can be
+    /// exercised without seeding one. Nothing here stats a filesystem or reads a screen: a
+    /// worktree is dirty because the record says a reading found it dirty, and a claim was
+    /// touched because the terminal-state audit wrote that down at the time.
+    static func closeabilityObligations(identity: SessionWorkIdentity,
+                                        tasks: [Task],
+                                        waits: [CoordinationWait],
+                                        handoffs: [HandoffEnvelope],
+                                        owed: OwedDebt?) -> [CloseabilityReason] {
+        var out: [CloseabilityReason] = []
+        let ownTask = taskForCurrentSession(tasks, identity: identity)
+        if let ownTask, !ownTask.state.isTerminal {
+            out.append(CloseabilityReason(.ownTaskUnfinished, subjectKind: "task",
+                                          subjectID: ownTask.id, mover: .thisSession))
+        }
+
+        func dispatchedByThisSession(_ task: Task) -> Bool {
+            if let ownTask, task.parentTaskId == ownTask.id { return true }
+            guard let conversation = identity.conversationID,
+                  task.rootSessionId == conversation,
+                  (task.rootAssistant ?? .claude) == identity.assistant else { return false }
+            return true
+        }
+
+        for task in tasks.sorted(by: { $0.created < $1.created }) {
+            let mine = dispatchedByThisSession(task)
+            if mine, !task.state.isTerminal {
+                out.append(CloseabilityReason(
+                    .liveDescendantTask, subjectKind: "task", subjectID: task.id,
+                    mover: task.childTerminalId.map { CloseabilityMover.otherSession($0) }
+                        ?? .task(task.id)))
+                continue
+            }
+            guard mine || (ownTask.map { $0.id == task.id } ?? false) else { continue }
+            let landingClosed = task.landing.map {
+                $0.state == .landed || $0.state == .abandoned
+            } ?? false
+            if task.state.isTerminal, task.resultVerifiedAt == nil, task.summary == nil,
+               !landingClosed {
+                out.append(CloseabilityReason(.taskWithoutResult, subjectKind: "task",
+                                              subjectID: task.id, mover: .thisSession))
+            }
+            if task.landing?.state == .pending {
+                out.append(CloseabilityReason(.pendingLandingOwned, subjectKind: "task",
+                                              subjectID: task.id, mover: .thisSession))
+            }
+            if let delivery = task.completionDelivery, delivery.state != .acknowledged, mine {
+                out.append(CloseabilityReason(.completionUndelivered, subjectKind: "task",
+                                              subjectID: task.id, mover: .thisSession))
+            }
+            if task.worktree?.dirty == true, !landingClosed {
+                out.append(CloseabilityReason(.dirtyIsolatedWorktree, subjectKind: "task",
+                                              subjectID: task.id, mover: .thisSession))
+            }
+            if !task.claims.isEmpty, task.state.isTerminal, !landingClosed,
+               Set(task.untouchedClaims) != Set(task.claims) {
+                out.append(CloseabilityReason(.touchedClaimsWithoutClosure, subjectKind: "task",
+                                              subjectID: task.id, mover: .thisSession))
+            }
+        }
+
+        for wait in waits.sorted(by: { $0.created < $1.created }) {
+            let pending = wait.waiters.filter { $0.releaseDeliveredAt == nil }
+            guard !pending.isEmpty else { continue }
+            if wait.ownerSessionID == identity.terminalID {
+                out.append(CloseabilityReason(.coordinationWaitOwned, subjectKind: "wait",
+                                              subjectID: wait.id, mover: .thisSession))
+            } else if pending.contains(where: { $0.sessionID == identity.terminalID }) {
+                out.append(CloseabilityReason(
+                    .coordinationWaitWaiting, subjectKind: "wait", subjectID: wait.id,
+                    mover: .otherSession(wait.ownerSessionID)))
+            }
+        }
+
+        for handoff in handoffs.sorted(by: { $0.created < $1.created })
+        where handoff.state != .delivered
+            && handoffSource(handoff.fromSession, matches: identity) {
+            out.append(CloseabilityReason(.openHandoff, subjectKind: "handoff",
+                                          subjectID: handoff.id, mover: .thisSession))
+        }
+
+        if let owed {
+            out.append(CloseabilityReason(
+                .owedDecision, subjectKind: "session", subjectID: identity.terminalID,
+                mover: owed.personNeeded ? .person : .thisSession))
+        }
+        return out
+    }
+
+    /// The broker-side projection for one live Session. `identityMatches` is supplied by the
+    /// caller because only it holds the inventory the ambiguity is about.
+    static func sessionCloseability(identity: SessionWorkIdentity,
+                                    terminalState: SessionState,
+                                    inventoryComplete: Bool = true,
+                                    inventoryObservedAt: Date? = Date(),
+                                    inventoryGeneration: Int? = nil,
+                                    identityMatches: Int = 1,
+                                    now: Date = Date()) -> SessionCloseabilityProjection {
+        load()
+        lock.lock()
+        settleObligationGenerationLocked()
+        let input = closeabilityInputLocked(
+            identity: identity, terminalState: terminalState,
+            inventoryComplete: inventoryComplete, inventoryObservedAt: inventoryObservedAt,
+            identityMatches: identityMatches)
+        lock.unlock()
+        let projected = projectCloseability(input, now: now)
+        return SessionCloseabilityProjection(
+            state: projected.state, reasons: projected.reasons, observedAt: projected.observedAt,
+            sessionGeneration: inventoryGeneration, sourceFreshness: projected.sourceFreshness,
+            activityGeneration: projected.activityGeneration,
+            obligationGeneration: projected.obligationGeneration, version: projected.version,
+            provenance: projected.provenance, attestationID: projected.attestationID,
+            mover: projected.mover)
+    }
+
+    /// Caller holds `lock`.
+    private static func closeabilityInputLocked(identity: SessionWorkIdentity,
+                                                terminalState: SessionState,
+                                                inventoryComplete: Bool,
+                                                inventoryObservedAt: Date?,
+                                                identityMatches: Int) -> CloseabilityInput {
+        let bound = identity.assistant != nil && identity.pid != nil
+            && identity.processStart != nil && identity.conversationID != nil
+        let selfState = sessionSelfStates[identity.terminalID].flatMap {
+            recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
+        }
+        let obligations = closeabilityObligations(
+            identity: identity, tasks: Array(tasks.values),
+            waits: Array(coordinationWaits.values), handoffs: Array(handoffs.values),
+            owed: selfState?.owed)
+        return CloseabilityInput(
+            terminalState: terminalState, identity: identity, identityBound: bound,
+            inventoryComplete: inventoryComplete, inventoryObservedAt: inventoryObservedAt,
+            identityMatches: identityMatches, obligations: obligations,
+            attestation: closureAttestations[identity.terminalID],
+            activityGeneration: sessionActivityGenerations[identity.terminalID] ?? 0,
+            obligationGeneration: obligationGeneration)
+    }
+
+    /// `POST /v1/orchestrator/sessions/:id/closure`.
+    ///
+    /// **Not gated on the terminal displaying `working` in the same millisecond.** That
+    /// requirement is a race the declaring session cannot win: it is writing the request at the
+    /// end of its turn, and whether a screen reading landed on the same beat is not evidence
+    /// about anything. What binds this to one turn instead is `activity_generation` — the
+    /// caller names the turn it is speaking for, and a stale number is refused by name.
+    static func attestClosure(identity: SessionWorkIdentity,
+                              status rawStatus: String,
+                              activityGeneration claimedGeneration: Int?,
+                              note rawNote: String?,
+                              auditID rawAuditID: String?,
+                              now: Date = Date()) -> Reply {
+        load()
+        guard identity.assistant != nil, identity.pid != nil, identity.processStart != nil,
+              identity.conversationID != nil else {
+            return .refused(409, "session_unbound",
+                            "The current assistant process and conversation could not be bound.")
+        }
+        guard rawStatus == "clear" else {
+            return .refused(422, "closure_status_unsupported",
+                            "status must be \"clear\". A session that still owes something says "
+                                + "so by leaving the obligation where the broker can see it.")
+        }
+        guard case .some(let note) = selfNote(rawNote) else {
+            return .refused(400, "bad_request",
+                            "note must be one line of 1–\(closureNoteLimit) characters.")
+        }
+        var auditID: String?
+        if let rawAuditID {
+            let trimmed = rawAuditID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.count <= closureAuditIDLimit,
+                  !trimmed.contains("\n") else {
+                return .refused(400, "bad_request",
+                                "audit_id must be one line of 1–\(closureAuditIDLimit) "
+                                    + "characters.")
+            }
+            auditID = trimmed
+        }
+
+        lock.lock()
+        settleObligationGenerationLocked()
+        let currentActivity = sessionActivityGenerations[identity.terminalID] ?? 0
+        guard let claimedGeneration, claimedGeneration == currentActivity else {
+            lock.unlock()
+            return .refused(status: 409, code: "closure_generation_stale",
+                            message: "activity_generation must name this turn. The broker's "
+                                + "current value is \(currentActivity).",
+                            extra: ["activity_generation": currentActivity])
+        }
+        let currentObligation = obligationGeneration
+        if let existing = closureAttestations[identity.terminalID],
+           closureAttestationIsCurrent(existing, identity: identity,
+                                       activityGeneration: currentActivity,
+                                       obligationGeneration: currentObligation) {
+            let input = closeabilityInputLocked(
+                identity: identity, terminalState: .idle, inventoryComplete: true,
+                inventoryObservedAt: now, identityMatches: 1)
+            lock.unlock()
+            let projected = projectCloseability(input, now: now)
+            return .ok(["ok": true, "created": false, "attestation_id": existing.id,
+                        "closeability": projected.wire])
+        }
+        let made = ClosureAttestation(
+            id: UUID().uuidString.lowercased(), identity: identity,
+            activityGeneration: currentActivity, obligationGeneration: currentObligation,
+            note: note, auditID: auditID, created: now)
+        closureAttestations[identity.terminalID] = made
+        let input = closeabilityInputLocked(
+            identity: identity, terminalState: .idle, inventoryComplete: true,
+            inventoryObservedAt: now, identityMatches: 1)
+        lock.unlock()
+        save()
+        let projected = projectCloseability(input, now: now)
+        RemoteAuth.audit("orchestrator.session.closure", [
+            "session": identity.terminalID, "attestation": made.id,
+            "activity": String(currentActivity), "obligation": String(currentObligation),
+            "state": projected.state.rawValue,
+        ])
+        return .ok(["ok": true, "created": true, "attestation_id": made.id,
+                    "closeability": projected.wire])
+    }
+
+    static func stored(_ attestation: ClosureAttestation) -> [String: Any] {
+        var out: [String: Any] = [
+            "id": attestation.id,
+            "terminal_id": attestation.identity.terminalID,
+            "tty": attestation.identity.tty,
+            "activity_generation": attestation.activityGeneration,
+            "obligation_generation": attestation.obligationGeneration,
+            "created": attestation.created.timeIntervalSince1970,
+        ]
+        if let assistant = attestation.identity.assistant {
+            out["assistant"] = assistant.rawValue
+        }
+        if let pid = attestation.identity.pid { out["pid"] = Int(pid) }
+        if let start = attestation.identity.processStart {
+            out["process_start"] = start.timeIntervalSince1970
+        }
+        if let conversation = attestation.identity.conversationID {
+            out["conversation_id"] = conversation
+        }
+        if let note = attestation.note { out["note"] = note }
+        if let auditID = attestation.auditID { out["audit_id"] = auditID }
+        return out
+    }
+
+    static func closureAttestation(from obj: [String: Any]) -> ClosureAttestation? {
+        guard let id = obj["id"] as? String, !id.isEmpty, id.count <= 128,
+              let terminalID = obj["terminal_id"] as? String, !terminalID.isEmpty,
+              terminalID.count <= 512,
+              let assistantName = obj["assistant"] as? String,
+              let assistant = Assistant(rawValue: assistantName),
+              let tty = obj["tty"] as? String, !tty.isEmpty, tty.count <= 512,
+              let pidValue = obj["pid"] as? Int, let pid = Int32(exactly: pidValue),
+              let processStart = obj["process_start"] as? Double,
+              let conversation = obj["conversation_id"] as? String,
+              !conversation.isEmpty, conversation.count <= 512,
+              let activity = obj["activity_generation"] as? Int, activity >= 0,
+              let obligation = obj["obligation_generation"] as? Int, obligation >= 0,
+              let created = obj["created"] as? Double else { return nil }
+        let note = obj["note"] as? String
+        if let note, note.isEmpty || note.count > closureNoteLimit { return nil }
+        let auditID = obj["audit_id"] as? String
+        if let auditID, auditID.isEmpty || auditID.count > closureAuditIDLimit { return nil }
+        return ClosureAttestation(
+            id: id,
+            identity: SessionWorkIdentity(
+                terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
+                processStart: Date(timeIntervalSince1970: processStart),
+                conversationID: conversation),
+            activityGeneration: activity, obligationGeneration: obligation,
+            note: note, auditID: auditID, created: Date(timeIntervalSince1970: created))
     }
 
     /// What a terminal this app opened for a task is called. Nil for every other session.
@@ -10540,12 +11266,37 @@ enum Orchestrator {
             guard let selfState = sessionSelfState(from: row) else { continue }
             foundSelfStates[selfState.identity.terminalID] = selfState
         }
+        var foundAttestations: [String: ClosureAttestation] = [:]
+        for row in obj["closure_attestations"] as? [[String: Any]] ?? [] {
+            guard let attestation = closureAttestation(from: row) else { continue }
+            foundAttestations[attestation.identity.terminalID] = attestation
+        }
+        var foundActivity: [String: Int] = [:]
+        var foundActivityClasses: [String: String] = [:]
+        for row in obj["session_activity"] as? [[String: Any]] ?? [] {
+            guard let terminalID = row["terminal_id"] as? String, !terminalID.isEmpty,
+                  terminalID.count <= 512,
+                  let generation = row["generation"] as? Int, generation >= 0 else { continue }
+            foundActivity[terminalID] = generation
+            if let observed = row["class"] as? String,
+               ["working", "waiting", "idle", "unknown"].contains(observed) {
+                foundActivityClasses[terminalID] = observed
+            }
+        }
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
         coordinationWaits = foundWaits
         sessionDeliveries = foundSessionDeliveries
         sessionSelfStates = foundSelfStates
+        closureAttestations = foundAttestations
+        sessionActivityGenerations = foundActivity
+        sessionActivityClasses = foundActivityClasses
+        // Both halves come back together, so a restart neither invents a tick nor loses one:
+        // the first save recomputes the same fingerprint over the same records and finds it
+        // unchanged, which is what lets an attestation written before the restart survive it.
+        obligationGeneration = max(0, obj["obligation_generation"] as? Int ?? 0)
+        obligationFingerprint = obj["obligation_fingerprint"] as? String ?? ""
         reindex()
         lock.unlock()
         // Proofs stored before the independent ledger existed are still strong proofs. Backfill
@@ -10563,6 +11314,10 @@ enum Orchestrator {
         storeSaveLock.lock(); defer { storeSaveLock.unlock() }
         lock.lock()
         reindex()
+        // One choke point for the obligation clock, and it moves only when the obligation
+        // evidence itself changed. Bumping on every write would invalidate an attestation with
+        // the very save that stored it.
+        settleObligationGenerationLocked()
         let rows = tasks.values.sorted { $0.created < $1.created }.map { stored($0) }
         let handoffRows = handoffs.values.sorted { $0.created < $1.created }
             .map { stored($0) }
@@ -10572,11 +11327,24 @@ enum Orchestrator {
             .sorted { $0.reportedAt < $1.reportedAt }.map { stored($0) }
         let sessionSelfStateRows = sessionSelfStates.values
             .sorted { $0.identity.terminalID < $1.identity.terminalID }.map { stored($0) }
+        let closureRows = closureAttestations.values
+            .sorted { $0.identity.terminalID < $1.identity.terminalID }.map { stored($0) }
+        let activityRows = sessionActivityGenerations.keys.sorted().map { terminalID in
+            ["terminal_id": terminalID,
+             "generation": sessionActivityGenerations[terminalID] ?? 0,
+             "class": sessionActivityClasses[terminalID] ?? "unknown"] as [String: Any]
+        }
+        let generation = obligationGeneration
+        let fingerprint = obligationFingerprint
         lock.unlock()
         let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
                                   "coordination_waits": waitRows,
                                   "session_deliveries": sessionDeliveryRows,
-                                  "session_self_states": sessionSelfStateRows]
+                                  "session_self_states": sessionSelfStateRows,
+                                  "closure_attestations": closureRows,
+                                  "session_activity": activityRows,
+                                  "obligation_generation": generation,
+                                  "obligation_fingerprint": fingerprint]
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
@@ -11496,6 +12264,11 @@ enum Orchestrator {
         coordinationWaits = [:]
         sessionDeliveries = [:]
         sessionSelfStates = [:]
+        closureAttestations = [:]
+        sessionActivityGenerations = [:]
+        sessionActivityClasses = [:]
+        obligationGeneration = 0
+        obligationFingerprint = ""
         handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []
