@@ -84,6 +84,9 @@ final class SessionWatch {
     /// Called on the main thread after every reading. Keyed so a consumer that registers twice
     /// replaces itself rather than being called twice.
     var observers: [String: () -> Void] = [:]
+    /// Completion is a different fact from published content changing. Remote consumers use this
+    /// lane to receive a receipt even when an inventory found exactly the state already on screen.
+    var scanCompletionObservers: [String: () -> Void] = [:]
 
     /// True while the panel is on screen and something in it is showing this. The only thing it
     /// changes is how often the terminal is asked.
@@ -115,6 +118,10 @@ final class SessionWatch {
     /// that an empty list is real.
     private(set) var scanGeneration = 0
     private(set) var scanComplete = false
+    /// Advances once, and only once, when an admitted inventory read returns to the main queue.
+    /// Unlike ``scanGeneration`` it advances for an unchanged or failed/incomplete read too.
+    private(set) var completedScanSequence = 0
+    private(set) var completedScanComplete = false
     /// Wall-clock instant when the most recent complete terminal inventory was accepted. Unlike
     /// an HTTP read time or process-local generation, this is the evidence's own observation time.
     private(set) var scanObservedAt: Date?
@@ -208,34 +215,38 @@ final class SessionWatch {
 
     enum RefreshDisposition: String { case accepted, coalesced, throttled }
     struct RefreshReceipt {
-        let generation: Int
+        let completedScanSequence: Int
         let disposition: RefreshDisposition
     }
 
-    /// Ask for fresh evidence. The receipt names the coherent generation before this request and
-    /// whether it started work, joined an existing debt, or was held by the completed-read floor.
+    /// Ask for fresh evidence. The receipt names the completed-read sequence before this request
+    /// and whether it started work, joined an existing debt, or was held by the completed-read floor.
     /// One Boolean carries the debt: any number of requests within that floor can buy at most one
     /// follow-up terminal inventory.
     @discardableResult
     func refresh() -> RefreshReceipt {
         dispatchPrecondition(condition: .onQueue(.main))
-        let receiptGeneration = scanGeneration
+        let receiptSequence = completedScanSequence
         if reading {
             refreshPending = true
-            return RefreshReceipt(generation: receiptGeneration, disposition: .coalesced)
+            return RefreshReceipt(completedScanSequence: receiptSequence,
+                                  disposition: .coalesced)
         }
         if refreshFloorRead != nil {
             refreshPending = true
-            return RefreshReceipt(generation: receiptGeneration, disposition: .coalesced)
+            return RefreshReceipt(completedScanSequence: receiptSequence,
+                                  disposition: .coalesced)
         }
         let now = Self.refreshClockForTesting?() ?? ProcessInfo.processInfo.systemUptime
         if let completed = lastReadCompletedAt, now - completed < refreshFloor {
             refreshPending = true
             scheduleRefreshFloor(after: max(0, refreshFloor - (now - completed)))
-            return RefreshReceipt(generation: receiptGeneration, disposition: .throttled)
+            return RefreshReceipt(completedScanSequence: receiptSequence,
+                                  disposition: .throttled)
         }
         read()
-        return RefreshReceipt(generation: receiptGeneration, disposition: .accepted)
+        return RefreshReceipt(completedScanSequence: receiptSequence,
+                              disposition: .accepted)
     }
 
     /// How long to wait before looking again. Just past the two seconds it takes the live line to
@@ -296,7 +307,7 @@ final class SessionWatch {
                 DispatchQueue.main.async {
                     self.recordScan(complete: false, error: processScan.error,
                                     preserved: knownTargets.count, observed: 0)
-                    self.finishReading()
+                    self.finishReading(scanComplete: false)
                 }
                 return
             }
@@ -446,7 +457,7 @@ final class SessionWatch {
                 self.apply(targets: sessions, states: states,
                            scanComplete: inventoryComplete,
                            emptyInventoryAuthoritative: emptyAuthoritative)
-                self.finishReading()
+                self.finishReading(scanComplete: inventoryComplete)
             }
         }
     }
@@ -455,10 +466,16 @@ final class SessionWatch {
     /// Only `refresh()`/`nudge()` callers — including the registry watcher — set this Boolean;
     /// cadence timer ticks call `read()` directly. A burst on any explicit path therefore remains
     /// one debt rather than an inventory queue.
-    private func finishReading() {
+    private func finishReading(scanComplete: Bool) {
+        completedScanSequence += 1
+        completedScanComplete = scanComplete
         reading = false
         lastReadCompletedAt = Self.refreshClockForTesting?()
             ?? ProcessInfo.processInfo.systemUptime
+        // This publication is intentionally independent of `apply`'s content-change observer.
+        // A manual request needs to hear that its exact read ended even when nothing changed, and
+        // it needs the false outcome when a prerequisite or terminal inventory was incomplete.
+        for observe in scanCompletionObservers.values { observe() }
         guard refreshPending else { return }
         scheduleRefreshFloor(after: refreshFloor)
     }

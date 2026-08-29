@@ -465,8 +465,12 @@ final class RemoteServer: @unchecked Sendable {
     private func syncSnapshotObserver() {
         if isRunning || cloudAttached {
             SessionWatch.shared.observers["remote"] = { [weak self] in self?.broadcast() }
+            SessionWatch.shared.scanCompletionObservers["remote"] = {
+                [weak self] in self?.broadcast()
+            }
         } else {
             SessionWatch.shared.observers.removeValue(forKey: "remote")
+            SessionWatch.shared.scanCompletionObservers.removeValue(forKey: "remote")
         }
     }
 
@@ -882,7 +886,9 @@ final class RemoteServer: @unchecked Sendable {
                 "accepted": receipt.disposition == .accepted,
                 "coalesced": receipt.disposition == .coalesced,
                 "throttled": receipt.disposition == .throttled,
-                "scan": ["generation": receipt.generation],
+                "scan": [
+                    "completed": ["sequence": receipt.completedScanSequence],
+                ],
             ])
         // Same-origin authenticated bytes for a reference already published in a transcript.
         // The URL carries only an opaque id; paths and source filenames never cross this route.
@@ -3860,6 +3866,10 @@ final class RemoteServer: @unchecked Sendable {
                 "generation": watch.scanGeneration,
                 "complete": watch.scanComplete,
                 "emptyAuthoritative": watch.emptyInventoryAuthoritative,
+                "completed": [
+                    "sequence": watch.completedScanSequence,
+                    "complete": watch.completedScanComplete,
+                ],
             ],
         ]
     }
