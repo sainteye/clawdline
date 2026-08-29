@@ -443,6 +443,9 @@ assert.doesNotMatch(recipe, /web app's \*Make this session Clawdfather\* item/,
     "the protocol no longer documents the removed existing-Session menu item");
 assert.match(recipe, /new-Session \*Name the new session Clawdfather\* choice/,
     "the protocol names the creation-time owner of the instruction");
+assert.doesNotMatch(recipe,
+    /coordinator\.configured\s*:\s*false[^.\n]{0,160}(?:enable|permission|register)/i,
+    "the creation recipe never treats configured:false as permission to register");
 assert.match(recipe, /registration-only/i,
     "the web creation flow is separated from the manual offline rebind repair");
 assert.match(recipe, /creation sheet never asks a new Session to rebind or replace an offline owner/,

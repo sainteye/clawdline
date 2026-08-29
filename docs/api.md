@@ -1947,6 +1947,7 @@ This returns durable presence and deterministic read-only Bearings:
   "version": 1,
   "observed_at": 1787832060,
   "store": {"status": "ready"}, // absent | ready | corrupt | unsupported
+  "registration": {"state": "configured"}, // available | configured | blocked
   "coordinator": {
     "configured": true,
     "id": "e76f1e87-6de4-4f39-8cc7-c62eef96712f",
@@ -2025,9 +2026,9 @@ and `blocked` never says which of the three failures it was. `store.status` (`ab
 #### `GET /v1/orchestrator/coordinator/bearings`
 
 The device-readable half of the same answer. It accepts ordinary device auth (the orchestrator
-token also works), because it exists for exactly one caller: the Clawdfather controls panel on a
-paired phone, whose four read-only commands are answered from it. The full inspection above stays
-machine-token-only.
+token also works). The Clawdfather controls panel uses it for four read-only commands, and the
+new-Session creation sheet reads it when opening and again immediately before it sends a
+registration-only instruction. The full inspection above stays machine-token-only.
 
 The body is a strict subset of the full inspection, built as an allowlist — a field added to the
 full answer never reaches this one by omission. What survives: `version`, `observed_at`;

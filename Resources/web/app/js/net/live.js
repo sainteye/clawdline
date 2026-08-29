@@ -485,9 +485,10 @@ export var LocalClient = {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/git");
     },
 
-    /// The device-readable half of Bearings, behind the Clawdfather panel's four read-only
-    /// commands. Fetched only when one of them is pressed — never on the stream — and answered
-    /// with this page's own device token; the machine-token inspection route stays untouched.
+    /// The device-readable half of Bearings. The Clawdfather panel fetches it for four read-only
+    /// commands; the new-Session sheet also fetches it when opening and immediately before its
+    /// registration-only send. It never rides the event stream and uses this page's own device
+    /// token; the machine-token inspection route stays untouched.
     coordinatorBearings: function () {
         return jsonFetch("/v1/orchestrator/coordinator/bearings");
     },

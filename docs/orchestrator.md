@@ -1498,10 +1498,11 @@ observer provenance and explicit policy boundaries rather than widening this end
 
 **The web app's new-Session *Name the new session Clawdfather* choice is not a fourth coordinator
 route.** None of the three endpoints above became reachable from a paired device, and none of them
-types into anything. When the creation sheet opens it reads the device-safe Bearings projection;
-only an explicit `coordinator.configured:false` enables the choice, so an offline durable owner
-closes it exactly as an online one does. That projection contains no machine credential or durable
-compare-and-swap fields.
+types into anything. When the creation sheet opens it reads the device-safe Bearings projection.
+Only the exact closed state `registration.state === "available"` enables the choice. `configured`
+closes it for both an online and an offline durable owner; `blocked`, a missing field, or an unknown
+value also closes it rather than guessing that the store is empty. That projection contains no
+machine credential or durable compare-and-swap fields.
 
 After the new tab appears in `/v1/sessions`, the page waits until its `assistant` field proves that
 Claude or Codex is ready rather than typing a paragraph into the newborn shell. It then reads
