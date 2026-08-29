@@ -16,16 +16,49 @@ enum SessionImagePresentation {
     static let maximumThumbnail = NSSize(width: 320, height: 180)
     private static let previewPrefix = "clawdline://session-image/"
 
+    private enum Materialization {
+        case live(SessionImageArtifact, Data)
+        case expired(CGFloat)
+    }
+
     static func render(_ artifact: SessionImageArtifact, size: CGFloat,
                        store: SessionImageArtifactStore = SessionImageArtifactStore(),
                        now: Date = Date()) -> NSAttributedString {
         guard Int(now.timeIntervalSince1970) < artifact.expiresAt else {
-            return expiredTile(size: size)
+            return materialize(.expired(size))
         }
-        guard case .live(let stored, let data) = store.lookup(id: artifact.id, now: now),
-              let image = NSImage(data: data) else {
-            return expiredTile(size: size)
+        guard case .live(let stored, let data) = store.lookup(id: artifact.id, now: now) else {
+            return materialize(.expired(size))
         }
+        return materialize(.live(stored, data))
+    }
+
+    /// All AppKit presentation objects are constructed inside one queue-identity boundary. The
+    /// controller deliberately parses and renders transcripts on a worker; `Thread.isMainThread`
+    /// is not a safe predicate after `dispatchMain()`, so this uses the app's named queue seam.
+    private static func materialize(_ value: Materialization) -> NSAttributedString {
+        materializeWithQueueIdentity(value).text
+    }
+
+    private static func materializeWithQueueIdentity(_ value: Materialization)
+        -> (text: NSAttributedString, onMainQueue: Bool) {
+        onMain(from: "SessionImagePresentation.materialize") {
+            let text: NSAttributedString
+            switch value {
+            case .live(let stored, let data): text = liveTile(stored, data: data)
+            case .expired(let size): text = expiredTile(size: size)
+            }
+            return (text, MainQueue.isCurrent)
+        }
+    }
+
+    private static func onMain<T>(from site: String, _ work: () -> T) -> T {
+        MainQueue.hop(from: site, alreadyOnMain: MainQueue.isCurrent, work)
+    }
+
+    private static func liveTile(_ stored: SessionImageArtifact,
+                                 data: Data) -> NSAttributedString {
+        guard let image = NSImage(data: data) else { return expiredTile(size: 12) }
 
         // Dimensions come back from the owned store beside the bytes. Transcript metadata is
         // only a reference and never gets to size native views by itself.
@@ -40,14 +73,22 @@ enum SessionImagePresentation {
         attachment.bounds = bounds
         let rendered = NSMutableAttributedString(attachment: attachment)
         rendered.addAttributes([
-            .link: previewPrefix + artifact.id,
-            .sessionImageArtifactID: artifact.id,
-            .sessionImageExpiry: artifact.expiresAt,
+            .link: previewPrefix + stored.id,
+            .sessionImageArtifactID: stored.id,
+            .sessionImageExpiry: stored.expiresAt,
             .sessionImageState: "live",
             .cursor: NSCursor.pointingHand,
         ], range: NSRange(location: 0, length: rendered.length))
         rendered.append(NSAttributedString(string: "\n"))
         return rendered
+    }
+
+    /// Drive the same live-image materializer used by production so tests can observe a real
+    /// worker-to-main hop, including NSTextAttachmentCell and NSCursor construction.
+    static func exerciseQueueCrossingForTesting(
+        artifact: SessionImageArtifact, data: Data) -> Bool {
+        let rendered = materializeWithQueueIdentity(.live(artifact, data))
+        return rendered.text.length > 0 && rendered.onMainQueue
     }
 
     static func artifactID(_ link: String) -> String? {
@@ -66,7 +107,7 @@ enum SessionImagePresentation {
         text.enumerateAttribute(.sessionImageArtifactID,
                                 in: NSRange(location: 0, length: text.length)) { value, _, stop in
             guard let id = value as? String else { return }
-            guard case .live = store.lookup(id: id, now: now) else {
+            guard case .live = store.liveness(id: id, now: now) else {
                 current = false
                 stop.pointee = true
                 return

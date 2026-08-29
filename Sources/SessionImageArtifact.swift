@@ -101,6 +101,23 @@ struct SessionImageArtifactStore {
         case missing
     }
 
+    /// The cheap answer used by transcript-cache validation. It deliberately carries no bytes:
+    /// the controller asks this every 1.2 seconds, while ``lookup`` is reserved for rendering and
+    /// HTTP retrieval that actually need the PNG.
+    enum Liveness {
+        case live(SessionImageArtifact)
+        case expired
+        case missing
+    }
+
+    /// A narrow test seam that proves cache validation did not accidentally reopen image bytes.
+    /// Production leaves it nil, so the hot path pays no closure or locking cost beyond the store
+    /// work it already performs.
+    struct AccessObserver {
+        let didCheckMetadata: () -> Void
+        let didReadBytes: () -> Void
+    }
+
     static let productionPolicy = Policy(
         ttl: 24 * 60 * 60,
         maxCount: 64,
@@ -126,10 +143,13 @@ struct SessionImageArtifactStore {
 
     let directory: URL
     let policy: Policy
+    private let accessObserver: AccessObserver?
 
-    init(directory: URL = defaultDirectory, policy: Policy = productionPolicy) {
+    init(directory: URL = defaultDirectory, policy: Policy = productionPolicy,
+         accessObserver: AccessObserver? = nil) {
         self.directory = directory.standardizedFileURL
         self.policy = policy
+        self.accessObserver = accessObserver
     }
 
     /// Prepare every input before writing any output. A malformed second image therefore cannot
@@ -201,6 +221,36 @@ struct SessionImageArtifactStore {
         guard Self.isArtifactID(id) else { return .missing }
         Self.lock.lock()
         defer { Self.lock.unlock() }
+        switch livenessUnlocked(id: id, now: now) {
+        case .missing: return .missing
+        case .expired: return .expired
+        case .live(let artifact):
+            let file = imageURL(id)
+            accessObserver?.didReadBytes()
+            guard let data = try? Data(contentsOf: file), data.count == artifact.byteCount
+            else {
+                guard var metadata = readMetadata(id) else { return .missing }
+                metadata.deletedAt = now.timeIntervalSince1970
+                try? FileManager.default.removeItem(at: file)
+                try? write(metadata)
+                return .expired
+            }
+            return .live(artifact, data)
+        }
+    }
+
+    /// Check metadata, expiry and owned-file existence without opening the PNG payload.
+    /// Its missing/expired/live result intentionally matches ``lookup`` so the cache cannot keep
+    /// a broken attachment alive or turn an unknown opaque id into a public tombstone.
+    func liveness(id: String, now: Date = Date()) -> Liveness {
+        guard Self.isArtifactID(id) else { return .missing }
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        return livenessUnlocked(id: id, now: now)
+    }
+
+    private func livenessUnlocked(id: String, now: Date) -> Liveness {
+        accessObserver?.didCheckMetadata()
         guard var metadata = readMetadata(id) else { return .missing }
         let file = imageURL(id)
         let expired = Int(now.timeIntervalSince1970) >= metadata.artifact.expiresAt
@@ -214,14 +264,7 @@ struct SessionImageArtifactStore {
             pruneTombstonesUnlocked(now: now)
             return .expired
         }
-        guard let data = try? Data(contentsOf: file), data.count == metadata.artifact.byteCount
-        else {
-            metadata.deletedAt = now.timeIntervalSince1970
-            try? FileManager.default.removeItem(at: file)
-            try? write(metadata)
-            return .expired
-        }
-        return .live(metadata.artifact, data)
+        return .live(metadata.artifact)
     }
 
     /// Turn already-published references into tombstones. Source files are never inputs here.

@@ -181,6 +181,37 @@ func expectClose(_ name: String, _ got: CGFloat, _ want: CGFloat, _ tolerance: C
     check(name, abs(got - want) < tolerance, "got \(got), want \(want)")
 }
 
+/// A PNG fixture whose dimensions are pixels, never logical points. `NSImage.lockFocus()` uses
+/// the attached display's backing scale and turns 3x2 into 6x4 on a Retina Mac; filling the bitmap
+/// bytes directly keeps this suite identical with a screen, headless, at 1x and at 2x.
+func exactPixelPNG(width: Int, height: Int,
+                   rgba: (UInt8, UInt8, UInt8, UInt8)) -> Data? {
+    guard width > 0, height > 0,
+          let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+          let pixels = rep.bitmapData else { return nil }
+    for y in 0..<height {
+        let row = pixels.advanced(by: y * rep.bytesPerRow)
+        for x in 0..<width {
+            let pixel = row.advanced(by: x * 4)
+            pixel[0] = rgba.0
+            pixel[1] = rgba.1
+            pixel[2] = rgba.2
+            pixel[3] = rgba.3
+        }
+    }
+    return rep.representation(using: .png, properties: [:])
+}
+
+/// A byte-stable 1x1 PNG used to drive AppKit materialization after `dispatchMain()` without
+/// constructing the fixture itself on a worker.
+func onePixelPNG() -> Data? {
+    Data(base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL0WQAAAABJRU5ErkJggg==")
+}
+
 @discardableResult
 func testGit(_ arguments: [String], cwd: URL) -> (status: Int32, output: String) {
     let process = Process()
@@ -3187,15 +3218,23 @@ group("session image artifacts are owned, bounded and expire explicitly") {
     let root = isolatedTestSessionImagesDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     let source = root.appendingPathComponent("misleading-name.txt")
-    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let drawn = NSImage(size: NSSize(width: 3, height: 2))
-    drawn.lockFocus()
-    NSColor.systemPink.setFill()
-    NSRect(x: 0, y: 0, width: 3, height: 2).fill()
-    drawn.unlockFocus()
-    let original = NSBitmapImageRep(data: drawn.tiffRepresentation!)!
-        .representation(using: .png, properties: [:])!
-    try! original.write(to: source)
+    do {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    } catch {
+        check("the owned-artifact fixture directory can be created", false, "\(error)")
+        return
+    }
+    guard let original = exactPixelPNG(width: 3, height: 2,
+                                       rgba: (236, 72, 153, 255)) else {
+        check("the owned-artifact fixture encodes exact 3x2 pixels", false)
+        return
+    }
+    do {
+        try original.write(to: source)
+    } catch {
+        check("the owned-artifact fixture can be written", false, "\(error)")
+        return
+    }
 
     let policy = SessionImageArtifactStore.Policy(
         ttl: 10, maxCount: 1, maxTotalBytes: 1 << 20,
@@ -3204,7 +3243,17 @@ group("session image artifacts are owned, bounded and expire explicitly") {
         maxMetadataCount: 8, maxImagesPerMessage: 2)
     let store = SessionImageArtifactStore(directory: root, policy: policy)
     let now = Date(timeIntervalSince1970: 1_800_000_000)
-    let first = try! store.importPaths([source.path], now: now).first!
+    let first: SessionImageArtifactStore.Stored
+    do {
+        guard let imported = try store.importPaths([source.path], now: now).first else {
+            check("the exact-pixel fixture imports one artifact", false)
+            return
+        }
+        first = imported
+    } catch {
+        check("the exact-pixel fixture imports one artifact", false, "\(error)")
+        return
+    }
     expect("an imported image is detected from decoded bytes, not its extension",
            first.artifact.mediaType, "image/png")
     expect("decoded dimensions become stable client metadata", first.artifact.width, 3)
@@ -3214,7 +3263,7 @@ group("session image artifacts are owned, bounded and expire explicitly") {
     check("the stored file is an owned re-encoded PNG",
           first.file.deletingLastPathComponent().standardizedFileURL
             == root.standardizedFileURL
-            && (try! Data(contentsOf: first.file)).starts(with: [0x89, 0x50, 0x4e, 0x47]))
+            && (try? Data(contentsOf: first.file))?.starts(with: [0x89, 0x50, 0x4e, 0x47]) == true)
 
     switch store.lookup(id: first.artifact.id, now: now.addingTimeInterval(1)) {
     case .live(let artifact, let data):
@@ -3224,7 +3273,18 @@ group("session image artifacts are owned, bounded and expire explicitly") {
         check("a live lookup returns the same typed metadata and bytes", false)
     }
 
-    let second = try! store.importPaths([source.path], now: now.addingTimeInterval(2)).first!
+    let second: SessionImageArtifactStore.Stored
+    do {
+        guard let imported = try store.importPaths(
+            [source.path], now: now.addingTimeInterval(2)).first else {
+            check("a second exact-pixel fixture imports for pruning", false)
+            return
+        }
+        second = imported
+    } catch {
+        check("a second exact-pixel fixture imports for pruning", false, "\(error)")
+        return
+    }
     check("count pruning deletes only an owned older artifact",
           !FileManager.default.fileExists(atPath: first.file.path)
             && FileManager.default.fileExists(atPath: second.file.path)
@@ -3256,7 +3316,12 @@ group("session image artifacts are owned, bounded and expire explicitly") {
         check("remote and relative image paths are rejected", false)
     }
     let fake = root.appendingPathComponent("fake.png")
-    try! Data("not an image".utf8).write(to: fake)
+    do {
+        try Data("not an image".utf8).write(to: fake)
+    } catch {
+        check("the unsupported-image fixture can be written", false, "\(error)")
+        return
+    }
     do {
         _ = try store.importPaths([fake.path], now: now)
         check("unsupported bytes are rejected before storage", false)
@@ -3286,16 +3351,24 @@ group("session image artifacts are owned, bounded and expire explicitly") {
 group("native session images render live thumbnails and explicit expiry") {
     let root = isolatedTestSessionImagesDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    do {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    } catch {
+        check("the native-image fixture directory can be created", false, "\(error)")
+        return
+    }
     let source = root.appendingPathComponent("source.png")
-    let drawn = NSImage(size: NSSize(width: 640, height: 360))
-    drawn.lockFocus()
-    NSColor.systemTeal.setFill()
-    NSRect(x: 0, y: 0, width: 640, height: 360).fill()
-    drawn.unlockFocus()
-    let png = NSBitmapImageRep(data: drawn.tiffRepresentation!)!
-        .representation(using: .png, properties: [:])!
-    try! png.write(to: source)
+    guard let png = exactPixelPNG(width: 640, height: 360,
+                                  rgba: (20, 184, 166, 255)) else {
+        check("the native-image fixture encodes exact 640x360 pixels", false)
+        return
+    }
+    do {
+        try png.write(to: source)
+    } catch {
+        check("the native-image fixture can be written", false, "\(error)")
+        return
+    }
 
     let policy = SessionImageArtifactStore.Policy(
         ttl: 10, maxCount: 2, maxTotalBytes: 1 << 20,
@@ -3304,7 +3377,17 @@ group("native session images render live thumbnails and explicit expiry") {
         maxMetadataCount: 8, maxImagesPerMessage: 2)
     let store = SessionImageArtifactStore(directory: root, policy: policy)
     let now = Date(timeIntervalSince1970: 1_800_000_000)
-    let artifact = try! store.importPaths([source.path], now: now).first!.artifact
+    let artifact: SessionImageArtifact
+    do {
+        guard let imported = try store.importPaths([source.path], now: now).first else {
+            check("the native exact-pixel fixture imports one artifact", false)
+            return
+        }
+        artifact = imported.artifact
+    } catch {
+        check("the native exact-pixel fixture imports one artifact", false, "\(error)")
+        return
+    }
     let live = SessionImagePresentation.render(
         artifact, size: 12, store: store, now: now.addingTimeInterval(1))
     var attachment: NSTextAttachment?
@@ -3338,6 +3421,22 @@ group("native session images render live thumbnails and explicit expiry") {
     check("the native transcript keeps text and appends one image thumbnail",
           transcript.string.contains("A retained caption") && transcriptAttachmentCount == 1)
 
+    var metadataChecks = 0
+    var byteReads = 0
+    let observedStore = SessionImageArtifactStore(
+        directory: root, policy: policy,
+        accessObserver: .init(
+            didCheckMetadata: { metadataChecks += 1 },
+            didReadBytes: { byteReads += 1 }))
+    check("cached-image liveness stays on metadata and file existence",
+          SessionImagePresentation.cacheIsCurrent(
+            live, store: observedStore, now: now.addingTimeInterval(1)))
+    expect("one cached image performs one metadata liveness check", metadataChecks, 1)
+    expect("cache liveness reads no image bytes", byteReads, 0)
+    _ = observedStore.lookup(id: artifact.id, now: now.addingTimeInterval(1))
+    expect("a full lookup still performs its metadata check", metadataChecks, 2)
+    expect("a full lookup is distinguishable by one byte read", byteReads, 1)
+
     let expired = SessionImagePresentation.render(
         artifact, size: 12, store: store, now: now.addingTimeInterval(10))
     check("past expires_at is a localized visible tile rather than a broken attachment",
@@ -3353,8 +3452,8 @@ group("native session images render live thumbnails and explicit expiry") {
     check("English and Traditional Chinese name expiry explicitly",
           English().imageExpired == "Image expired"
             && TraditionalChinese().imageExpired == "圖片已過期")
-    let webFallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
-    let webServer = try! String(contentsOfFile: "Sources/RemoteServer.swift")
+    let webFallback = (try? String(contentsOfFile: "Resources/web/app/js/core/i18n.js")) ?? ""
+    let webServer = (try? String(contentsOfFile: "Sources/RemoteServer.swift")) ?? ""
     for key in ["webImageExpired", "webImagePreview", "webImageClose"] {
         check("the browser fallback and /v1/strings both carry \(key)",
               webFallback.contains("\(key):") && webServer.contains("\"\(key)\":"))
@@ -3383,14 +3482,17 @@ group("session image artifact HTTP retrieval is typed and authenticated") {
     }
 
     let input = isolatedTestSessionImagesDirectory.appendingPathComponent("route-source.png")
-    let image = NSImage(size: NSSize(width: 4, height: 3))
-    image.lockFocus()
-    NSColor.systemBlue.setFill()
-    NSRect(x: 0, y: 0, width: 4, height: 3).fill()
-    image.unlockFocus()
-    let png = NSBitmapImageRep(data: image.tiffRepresentation!)!
-        .representation(using: .png, properties: [:])!
-    try! png.write(to: input)
+    guard let png = exactPixelPNG(width: 4, height: 3,
+                                  rgba: (59, 130, 246, 255)) else {
+        check("the HTTP fixture encodes exact 4x3 pixels", false)
+        return
+    }
+    do {
+        try png.write(to: input)
+    } catch {
+        check("the HTTP exact-pixel fixture can be written", false, "\(error)")
+        return
+    }
 
     var headers = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken(),
                    "Idempotency-Key": UUID().uuidString]
@@ -3398,8 +3500,11 @@ group("session image artifact HTTP retrieval is typed and authenticated") {
         "from_session": sourceSession.id, "to_session": targetSession.id,
         "text": "請看這張圖。", "images": [["path": input.path]],
     ]
-    let body = String(data: try! JSONSerialization.data(withJSONObject: object),
-                      encoding: .utf8)!
+    guard let objectData = try? JSONSerialization.data(withJSONObject: object),
+          let body = String(data: objectData, encoding: .utf8) else {
+        check("the HTTP image-message fixture serializes", false)
+        return
+    }
     let accepted = RemoteServer.shared.route(remoteRequest(
         "POST", "/v1/orchestrator/messages", headers: headers, body: body))
     expect("a valid local image message is accepted once", accepted.status, 200)
@@ -3417,9 +3522,20 @@ group("session image artifact HTTP retrieval is typed and authenticated") {
     let phone = RemoteAuth.addDevice(name: "artifact reader", caps: [.read])
     defer { RemoteAuth.revoke(id: phone.id) }
     let readHeaders = ["Authorization": "Bearer \(phone.token)"]
+    let unauthenticated = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/artifacts/images/\(artifactID)"))
+    expect("an image artifact refuses a request with no token", unauthenticated.status, 401)
+    expect("a missing image credential has the typed auth refusal",
+           remoteErrorCode(unauthenticated), "unauthorized")
+    let wrongToken = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/artifacts/images/\(artifactID)",
+        headers: ["Authorization": "Bearer definitely-not-a-device-token"]))
+    expect("an image artifact refuses a wrong token", wrongToken.status, 401)
+    expect("a wrong image credential has the typed auth refusal",
+           remoteErrorCode(wrongToken), "unauthorized")
     let live = RemoteServer.shared.route(remoteRequest(
         "GET", "/v1/artifacts/images/\(artifactID)", headers: readHeaders))
-    expect("an authenticated live artifact returns bytes", live.status, 200)
+    expect("a read-capability token retrieves a live artifact", live.status, 200)
     check("live bytes have an exact type and private no-store policy",
           live.headers["Content-Type"] == "image/png"
             && live.headers["Cache-Control"] == "private, no-store"
@@ -3441,9 +3557,13 @@ group("session image artifact HTTP retrieval is typed and authenticated") {
     var bad = object
     bad["images"] = [["path": input.path, "url": "https://example.test/leak.png"]]
     let sendsBefore = sent.count
+    guard let badData = try? JSONSerialization.data(withJSONObject: bad),
+          let badBody = String(data: badData, encoding: .utf8) else {
+        check("the invalid image-input fixture serializes", false)
+        return
+    }
     let extra = RemoteServer.shared.route(remoteRequest(
-        "POST", "/v1/orchestrator/messages", headers: headers,
-        body: String(data: try! JSONSerialization.data(withJSONObject: bad), encoding: .utf8)!))
+        "POST", "/v1/orchestrator/messages", headers: headers, body: badBody))
     expect("extra image-input fields are rejected", extra.status, 400)
     check("request validation finishes before any terminal send", sent.count == sendsBefore)
 }
@@ -23901,6 +24021,32 @@ func mainQueueIdentityProbe() async
     }
 }
 
+func sessionImagePresentationCrossingProbe() async
+    -> (rendered: Bool, observedSites: [String], hopsOverflowed: Bool,
+        reentrantHops: [String]) {
+    await withCheckedContinuation { continuation in
+        Thread.detachNewThread {
+            guard let data = onePixelPNG() else {
+                continuation.resume(returning: (false, [], false, []))
+                return
+            }
+            let artifact = SessionImageArtifact(
+                id: "11111111-2222-4333-8444-555555555555", mediaType: "image/png",
+                byteCount: data.count, width: 1, height: 1,
+                expiresAt: Int(Date().addingTimeInterval(60).timeIntervalSince1970))
+            MainQueue.forgetReentrantHopsForTesting()
+            MainQueue.beginRecordingHopsForTesting()
+            let rendered = SessionImagePresentation.exerciseQueueCrossingForTesting(
+                artifact: artifact, data: data)
+            let recorded = MainQueue.endRecordingHopsForTesting()
+            continuation.resume(returning: (
+                rendered, recorded.sites, recorded.overflowed,
+                MainQueue.reentrantHopsForTesting
+            ))
+        }
+    }
+}
+
 /// The crossings a reading with live targets in it leads to, asked from the one place they
 /// can be wrong: a main-queue block after `dispatchMain()`, where the main thread is parked and
 /// this block is running on a worker.
@@ -23956,6 +24102,14 @@ func sessionWatchCrossingProbe() async
                 if let target = targets.first {
                     StartPoints.exerciseQueueCrossingsForTesting()
                     RemoteIcon.exerciseQueueCrossingsForTesting(size: 37)
+                    if let data = onePixelPNG() {
+                        let artifact = SessionImageArtifact(
+                            id: "11111111-2222-4333-8444-555555555555", mediaType: "image/png",
+                            byteCount: data.count, width: 1, height: 1,
+                            expiresAt: Int(Date().addingTimeInterval(60).timeIntervalSince1970))
+                        _ = SessionImagePresentation.exerciseQueueCrossingForTesting(
+                            artifact: artifact, data: data)
+                    }
                     Orchestrator.exerciseQueueCrossingsForTesting(
                         sessionID: target.id, assistant: target.assistant ?? .codex)
                     RemoteServer.shared.exerciseQueueCrossingsForTesting(sessionID: target.id)
@@ -25288,6 +25442,7 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/StartPoints.swift", "StartPoints.live", 1),
     ("Sources/StartPoints.swift", "StartPoints.runningApps", 1),
     ("Sources/RemoteIcon.swift", "RemoteIcon.onMain", 3),
+    ("Sources/SessionImagePreview.swift", "SessionImagePresentation.materialize", 1),
     ("Sources/Orchestrator.swift", "Orchestrator.resolveAttachment", 1),
     ("Sources/Orchestrator.swift", "Orchestrator.dispatch.attachFailure", 1),
     ("Sources/Orchestrator.swift", "Orchestrator.startQueuedTaskIfEligible.secretFailure", 1),
@@ -25311,6 +25466,7 @@ let dynamicallyExercisedCrossingSites: Set<String> = [
     "StartPoints.live",
     "StartPoints.runningApps",
     "RemoteIcon.onMain",
+    "SessionImagePresentation.materialize",
     "Orchestrator.resolveAttachment",
     "RemoteServer.titleState(of:)",
     "RemoteServer.coordinatorObservation",
@@ -25354,6 +25510,7 @@ group("every main-queue crossing is a named production call site, in the source 
     // deleting `StartPoints.live`'s crossing outright, both left the suite at 5421 of 5421 green.
     // A guard that cannot go red is worse than no guard, because somebody believes it.
     let crossingFiles = ["Sources/StartPoints.swift", "Sources/RemoteIcon.swift",
+                         "Sources/SessionImagePreview.swift",
                          "Sources/Orchestrator.swift", "Sources/RemoteServer.swift"]
     var sources: [String: String] = [:]
     for file in crossingFiles {
@@ -25657,6 +25814,17 @@ Task {
     check("record(id:) returns without synchronously dispatching onto its current queue",
           mainQueueIdentity.missingRecord)
 
+    let imageCrossing = await sessionImagePresentationCrossingProbe()
+    check("a worker can materialize the real image attachment through the main-queue boundary",
+          imageCrossing.rendered)
+    check("image attachment materialization is observed at its named main-queue site",
+          imageCrossing.observedSites == ["SessionImagePresentation.materialize"],
+          "\(imageCrossing.observedSites)")
+    check("the image materialization hop recorder returns the complete reading",
+          !imageCrossing.hopsOverflowed)
+    check("image materialization never mistakes thread identity for main-queue identity",
+          imageCrossing.reentrantHops.isEmpty, "\(imageCrossing.reentrantHops)")
+
     let crossings = await sessionWatchCrossingProbe()
     check("a reading left a live target behind for the crossings to be asked about",
           crossings.targets > 0)
@@ -25674,7 +25842,8 @@ Task {
     check("every crossing the fixture drives is observed hopping, by its own name",
           missingCrossingSites.isEmpty,
           "missing \(missingCrossingSites) — observed \(observedCrossingSites.sorted())")
-    for file in ["StartPoints", "RemoteIcon", "Orchestrator", "RemoteServer"] {
+    for file in ["StartPoints", "RemoteIcon", "SessionImagePresentation",
+                 "Orchestrator", "RemoteServer"] {
         let wrong = crossings.reentrantHops.filter { $0.hasPrefix(file + ".") }
         check("\(file) never mistakes main-thread identity for main-queue identity",
               wrong.isEmpty, "\(wrong)")
