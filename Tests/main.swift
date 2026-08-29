@@ -95,6 +95,15 @@ guard setenv("CLAWDLINE_DROPS_DIR", isolatedTestDropsDirectory.path, 1) == 0 els
     fatalError("could not isolate the test drop cache")
 }
 
+// Session-message image artifacts have their own deleting cache. Keep the suite's lifecycle and
+// pruning checks inside the same disposable boundary rather than letting a test expire somebody's
+// live attachment.
+let isolatedTestSessionImagesDirectory = isolatedTestStoreDirectory
+    .appendingPathComponent("session-images", isDirectory: true)
+guard setenv("CLAWDLINE_SESSION_IMAGE_DIR", isolatedTestSessionImagesDirectory.path, 1) == 0 else {
+    fatalError("could not isolate the test session-image cache")
+}
+
 /// The drop cache the app itself would use — what this suite must never write into.
 ///
 /// Spelled out rather than read from `Drop.directory`, which is the thing under test: asking the
@@ -3131,6 +3140,226 @@ group("versioned Clawdline session messages") {
     check("an ambiguous conversation id fails closed",
           RemoteServer.sessionMessageSource(withID: "same", among: sessions) { _ in "same" }
             == nil)
+
+    let image = SessionImageArtifact(
+        id: "11111111-2222-4333-8444-555555555555", mediaType: "image/png",
+        byteCount: 73, width: 3, height: 2, expiresAt: 1_788_876_806)
+    let pictured = ClawdlineSessionMessage.Message(
+        source: source, body: "這是剛才的畫面。", artifacts: [image])
+    let v2 = ClawdlineSessionMessage.encode(pictured)
+    check("an image message advances only that wire to version 2",
+          v2.contains(#""version":2"#) && !wire.contains(#""version":2"#))
+    expect("a version 2 image reference round-trips without bytes or a URL",
+           ClawdlineSessionMessage.decode(v2), pictured)
+    check("the version 2 terminal envelope carries metadata but no retrievable address",
+          v2.contains(#""artifacts""#) && !v2.contains("data:")
+            && !v2.contains("http:") && !v2.contains("https:"))
+
+    let extraArtifactField = v2.replacingOccurrences(
+        of: #""width":3"#, with: #""path":"/tmp/private.png","width":3"#)
+    check("an extra field inside a version 2 artifact invalidates the whole envelope",
+          extraArtifactField != v2
+            && ClawdlineSessionMessage.decode(extraArtifactField) == nil)
+    let unsupportedArtifact = v2.replacingOccurrences(of: "image/png", with: "image/svg+xml")
+    check("a version 2 artifact has one closed media type",
+          unsupportedArtifact != v2
+            && ClawdlineSessionMessage.decode(unsupportedArtifact) == nil)
+
+    let picturedEntry = Transcript.clawdlineSessionMessage(in: v2, at: nil)
+    let picturedRow = picturedEntry.flatMap { RemoteServer.transcriptRows([$0]).first }
+    check("HTTP carries typed artifact metadata on the attributed message row",
+          picturedRow?["role"] as? String == "message"
+            && (picturedRow?["artifacts"] as? [[String: Any]])?.count == 1
+            && ((picturedRow?["artifacts"] as? [[String: Any]])?.first?["id"] as? String)
+                == image.id
+            && picturedRow?["path"] == nil && picturedRow?["url"] == nil)
+}
+
+group("session image artifacts are owned, bounded and expire explicitly") {
+    let root = isolatedTestSessionImagesDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let source = root.appendingPathComponent("misleading-name.txt")
+    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let drawn = NSImage(size: NSSize(width: 3, height: 2))
+    drawn.lockFocus()
+    NSColor.systemPink.setFill()
+    NSRect(x: 0, y: 0, width: 3, height: 2).fill()
+    drawn.unlockFocus()
+    let original = NSBitmapImageRep(data: drawn.tiffRepresentation!)!
+        .representation(using: .png, properties: [:])!
+    try! original.write(to: source)
+
+    let policy = SessionImageArtifactStore.Policy(
+        ttl: 10, maxCount: 1, maxTotalBytes: 1 << 20,
+        maxInputBytes: 1 << 20, maxEncodedBytes: 1 << 20,
+        maxDimension: 100, maxPixels: 10_000, tombstoneTTL: 20,
+        maxMetadataCount: 8, maxImagesPerMessage: 2)
+    let store = SessionImageArtifactStore(directory: root, policy: policy)
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let first = try! store.importPaths([source.path], now: now).first!
+    expect("an imported image is detected from decoded bytes, not its extension",
+           first.artifact.mediaType, "image/png")
+    expect("decoded dimensions become stable client metadata", first.artifact.width, 3)
+    expect("decoded height becomes stable client metadata", first.artifact.height, 2)
+    expect("expiry is an absolute instant fixed when the artifact is accepted",
+           first.artifact.expiresAt, 1_800_000_010)
+    check("the stored file is an owned re-encoded PNG",
+          first.file.deletingLastPathComponent().standardizedFileURL
+            == root.standardizedFileURL
+            && (try! Data(contentsOf: first.file)).starts(with: [0x89, 0x50, 0x4e, 0x47]))
+
+    switch store.lookup(id: first.artifact.id, now: now.addingTimeInterval(1)) {
+    case .live(let artifact, let data):
+        check("a live lookup returns the same typed metadata and bytes",
+              artifact == first.artifact && data == (try? Data(contentsOf: first.file)))
+    default:
+        check("a live lookup returns the same typed metadata and bytes", false)
+    }
+
+    let second = try! store.importPaths([source.path], now: now.addingTimeInterval(2)).first!
+    check("count pruning deletes only an owned older artifact",
+          !FileManager.default.fileExists(atPath: first.file.path)
+            && FileManager.default.fileExists(atPath: second.file.path)
+            && FileManager.default.fileExists(atPath: source.path))
+    if case .expired = store.lookup(id: first.artifact.id, now: now.addingTimeInterval(2)) {
+        check("a pruned known id remains a typed tombstone", true)
+    } else {
+        check("a pruned known id remains a typed tombstone", false)
+    }
+    if case .expired = store.lookup(id: second.artifact.id, now: now.addingTimeInterval(12)) {
+        check("TTL expiry is deterministic through the supplied clock", true)
+    } else {
+        check("TTL expiry is deterministic through the supplied clock", false)
+    }
+    if case .missing = store.lookup(
+        id: "99999999-8888-4777-8666-555555555555", now: now) {
+        check("an id never owned by the store is distinct from expiry", true)
+    } else {
+        check("an id never owned by the store is distinct from expiry", false)
+    }
+
+    do {
+        _ = try store.importPaths(["https://example.test/picture.png"], now: now)
+        check("remote and relative image paths are rejected", false)
+    } catch let refusal as SessionImageArtifactStore.Refusal {
+        expect("remote and relative image paths are rejected", refusal.code,
+               "invalid_image_path")
+    } catch {
+        check("remote and relative image paths are rejected", false)
+    }
+    let fake = root.appendingPathComponent("fake.png")
+    try! Data("not an image".utf8).write(to: fake)
+    do {
+        _ = try store.importPaths([fake.path], now: now)
+        check("unsupported bytes are rejected before storage", false)
+    } catch let refusal as SessionImageArtifactStore.Refusal {
+        expect("unsupported bytes are rejected before storage", refusal.code,
+               "unsupported_image")
+    } catch {
+        check("unsupported bytes are rejected before storage", false)
+    }
+    let tightPolicy = SessionImageArtifactStore.Policy(
+        ttl: 10, maxCount: 2, maxTotalBytes: 1 << 20,
+        maxInputBytes: max(1, original.count - 1), maxEncodedBytes: 1 << 20,
+        maxDimension: 100, maxPixels: 10_000, tombstoneTTL: 20,
+        maxMetadataCount: 8, maxImagesPerMessage: 2)
+    do {
+        _ = try SessionImageArtifactStore(directory: root, policy: tightPolicy)
+            .importPaths([source.path], now: now)
+        check("oversized source bytes are refused before decode or storage", false)
+    } catch let refusal as SessionImageArtifactStore.Refusal {
+        expect("oversized source bytes are refused before decode or storage", refusal.code,
+               "image_too_large")
+    } catch {
+        check("oversized source bytes are refused before decode or storage", false)
+    }
+}
+
+group("session image artifact HTTP retrieval is typed and authenticated") {
+    let sourceSession = TargetSession(
+        backend: .iterm, id: "IMAGE-SOURCE", name: "image source",
+        tty: "/dev/ttys080", windowIndex: 0, tabIndex: 0,
+        assistant: .claude, cwd: "/repo")
+    let targetSession = TargetSession(
+        backend: .tmux, id: "%image-target", name: "image target",
+        tty: "/dev/ttys081", windowIndex: 0, tabIndex: 1,
+        assistant: .codex, cwd: "/repo")
+    RemoteServer.sessionPayloadForTesting = (
+        [sourceSession, targetSession], [sourceSession.id: .idle, targetSession.id: .idle])
+    var sent: [String] = []
+    RemoteServer.terminalSendForTesting = { text, _ in sent.append(text); return nil }
+    var clock = Date(timeIntervalSince1970: 1_800_100_000)
+    RemoteServer.imageArtifactNowForTesting = { clock }
+    defer {
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.terminalSendForTesting = nil
+        RemoteServer.imageArtifactNowForTesting = nil
+    }
+
+    let input = isolatedTestSessionImagesDirectory.appendingPathComponent("route-source.png")
+    let image = NSImage(size: NSSize(width: 4, height: 3))
+    image.lockFocus()
+    NSColor.systemBlue.setFill()
+    NSRect(x: 0, y: 0, width: 4, height: 3).fill()
+    image.unlockFocus()
+    let png = NSBitmapImageRep(data: image.tiffRepresentation!)!
+        .representation(using: .png, properties: [:])!
+    try! png.write(to: input)
+
+    var headers = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken(),
+                   "Idempotency-Key": UUID().uuidString]
+    let object: [String: Any] = [
+        "from_session": sourceSession.id, "to_session": targetSession.id,
+        "text": "請看這張圖。", "images": [["path": input.path]],
+    ]
+    let body = String(data: try! JSONSerialization.data(withJSONObject: object),
+                      encoding: .utf8)!
+    let accepted = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/messages", headers: headers, body: body))
+    expect("a valid local image message is accepted once", accepted.status, 200)
+    let acceptedBody = (try? JSONSerialization.jsonObject(with: accepted.body)) as? [String: Any]
+    let artifact = (acceptedBody?["artifacts"] as? [[String: Any]])?.first
+    let artifactID = artifact?["id"] as? String ?? ""
+    check("the relay response exposes only stable artifact metadata",
+          !artifactID.isEmpty && artifact?["width"] as? Int == 4
+            && artifact?["height"] as? Int == 3
+            && artifact?["path"] == nil && artifact?["url"] == nil)
+    let decoded = sent.first.flatMap(ClawdlineSessionMessage.decode)
+    check("the target receives the attributed v2 envelope rather than a /send fallback",
+          sent.count == 1 && decoded?.artifacts.first?.id == artifactID)
+
+    let phone = RemoteAuth.addDevice(name: "artifact reader", caps: [.read])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let readHeaders = ["Authorization": "Bearer \(phone.token)"]
+    let live = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/artifacts/images/\(artifactID)", headers: readHeaders))
+    expect("an authenticated live artifact returns bytes", live.status, 200)
+    check("live bytes have an exact type and private no-store policy",
+          live.headers["Content-Type"] == "image/png"
+            && live.headers["Cache-Control"] == "private, no-store"
+            && live.body.starts(with: [0x89, 0x50, 0x4e, 0x47]))
+
+    clock = clock.addingTimeInterval(SessionImageArtifactStore.productionPolicy.ttl + 1)
+    let expired = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/artifacts/images/\(artifactID)", headers: readHeaders))
+    expect("an expired artifact has HTTP gone semantics", expired.status, 410)
+    expect("expiry is a typed client branch", remoteErrorCode(expired), "artifact_expired")
+    let unknown = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/artifacts/images/99999999-8888-4777-8666-555555555555",
+        headers: readHeaders))
+    expect("an unknown artifact stays distinct from expiry", unknown.status, 404)
+    expect("unknown ids have their own typed branch", remoteErrorCode(unknown),
+           "artifact_not_found")
+
+    headers["Idempotency-Key"] = UUID().uuidString
+    var bad = object
+    bad["images"] = [["path": input.path, "url": "https://example.test/leak.png"]]
+    let sendsBefore = sent.count
+    let extra = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/messages", headers: headers,
+        body: String(data: try! JSONSerialization.data(withJSONObject: bad), encoding: .utf8)!))
+    expect("extra image-input fields are rejected", extra.status, 400)
+    check("request validation finishes before any terminal send", sent.count == sendsBefore)
 }
 
 group("version 2 file-wait and handoff notices") {

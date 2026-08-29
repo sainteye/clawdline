@@ -211,6 +211,9 @@ enum Transcript {
         var source: String? = nil
         var sourceMode: String? = nil
         var sourceAssistant: Assistant? = nil
+        /// Byte-free, typed references from a strictly decoded v2 Clawdline session message.
+        /// Paths and image data never enter a transcript entry.
+        var artifacts: [SessionImageArtifact] = []
         /// Internal receipt identity. It never crosses the API boundary; it only distinguishes
         /// two real deliveries of identical prose from Claude's enqueue/delivery double-write.
         var peerMessageID: String? = nil
@@ -914,7 +917,8 @@ enum Transcript {
         guard let message = ClawdlineSessionMessage.decode(raw) else { return nil }
         return Entry(kind: .message, text: message.body, tool: nil, time: time,
                      source: message.source.label, sourceMode: "clawdline",
-                     sourceAssistant: message.source.assistant)
+                     sourceAssistant: message.source.assistant,
+                     artifacts: message.artifacts)
     }
 
     /// One double-quoted attribute from the small, fixed opening tag above.
