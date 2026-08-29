@@ -76,6 +76,111 @@ enum Transcript {
                              alreadyOnMain: MainQueue.isCurrent) { claudeSessionID(of: session) }
     }
 
+    /// Every exact conversation identity proved by one uncached process observation. Building a
+    /// pass is the expensive boundary; looking up rows inside it is pure, so ambiguity checks do
+    /// not repeat `ps`, `lsof` or registry discovery for every target.
+    struct IdentityPass {
+        let identities: [String: String]
+
+        func sessionID(of session: TargetSession) -> String? { identities[session.id] }
+    }
+
+    /// File/process-only seams for production-shaped identity fixtures. The registry, hook and
+    /// transcript readers remain production code; tests redirect their real evidence into a
+    /// private directory and replace only the background pid start which a sandbox cannot ask
+    /// `ps` for.
+    static var identityRegistryDirectoryForTesting: URL?
+    static var identityClaudeProjectDirectoryForTesting: URL?
+    static var identityHookDirectoryForTesting: URL?
+    static var identityBackgroundProcessStartForTesting: ((Int32) -> Date?)?
+    static var identityWorkingDirectoryForTesting: ((TargetSession) -> String?)?
+
+    /// Read one fresh, process-bound identity pass for an immutable target population.
+    ///
+    /// Claude uses the registry file named by the freshly observed pid (following an exact
+    /// parked-job background entry), or the exact tty's freshly read hook note when no registry
+    /// identity survives validation, and verifies the named transcript against that same process
+    /// start. Codex uses the rollout actually held open in the same observation. Neither route
+    /// consults the ordinary status/pane caches.
+    static func freshIdentityPass(among sessions: [TargetSession]) -> IdentityPass {
+        let evidence = ITerm.identityProcessEvidence(forTTYs: Set(sessions.map(\.tty)))
+        guard evidence.scan.isComplete else { return IdentityPass(identities: [:]) }
+
+        func running(_ session: TargetSession) -> Assistant.Running? {
+            let tty = session.tty.hasPrefix("/dev/")
+                ? String(session.tty.dropFirst("/dev/".count)) : session.tty
+            guard let found = evidence.scan.assistants[tty],
+                  found.assistant == session.assistant else { return nil }
+            return found
+        }
+
+        let claudeRows = sessions.compactMap { session -> (TargetSession, Assistant.Running)? in
+            guard session.assistant == .claude, let process = running(session) else { return nil }
+            return (session, process)
+        }
+        var registry = SessionRegistry.Reading(entries: Config.shared.sessionRegistry
+            ? SessionRegistry.entries(
+                in: identityRegistryDirectoryForTesting ?? SessionRegistry.directory,
+                pids: claudeRows.map { $0.1.pid })
+            : [:])
+        for (session, process) in claudeRows where registry.entries[process.pid] != nil {
+            registry.processes[session.id] = SessionRegistry.Process(
+                pid: process.pid, started: process.processStart)
+        }
+        let backgroundStarted = identityBackgroundProcessStartForTesting
+            ?? Targets.processStart(ofPID:)
+        SessionRegistry.attachBackground(
+            to: &registry,
+            in: identityRegistryDirectoryForTesting ?? SessionRegistry.directory,
+            started: backgroundStarted)
+
+        var identities: [String: String] = [:]
+        for session in sessions {
+            guard let process = running(session) else { continue }
+            switch session.assistant {
+            case .claude:
+                let entry = SessionRegistry.entry(for: session.id, in: registry)
+                guard let id = namedClaudeSessionID(
+                        registry: entry?.sessionID,
+                        hook: freshClaudeHookSessionID(of: session)),
+                      let cwd = entry?.cwd
+                        ?? identityWorkingDirectoryForTesting?(session)
+                        ?? Targets.workingDirectory(of: session),
+                      let url = locate(
+                        in: identityClaudeProjectDirectoryForTesting
+                            ?? projectDirectory(forCwd: cwd),
+                        tabTitle: "", startedAt: process.processStart, sessionID: id),
+                      let proved = sessionID(in: url, assistant: .claude) else { continue }
+                identities[session.id] = proved
+            case .codex:
+                guard let proved = Codex.identity(
+                    among: evidence.openFilesByPID[process.pid] ?? [], fresh: true) else { continue }
+                identities[session.id] = proved.id
+            case nil:
+                continue
+            }
+        }
+        return IdentityPass(identities: identities)
+    }
+
+    /// One hook note named by this exact tty, read anew for each identity pass.
+    ///
+    /// Reading the file rather than the ordinary in-memory status table is deliberate: whoami's
+    /// consistency contract is two independent observations, and a note replaced between them
+    /// must make the binding stale. The filename, parsed tty and transcript id all have to agree;
+    /// there is no directory scan or nearby-row selection.
+    private static func freshClaudeHookSessionID(of session: TargetSession) -> String? {
+        let tty = session.tty.hasPrefix("/dev/")
+            ? String(session.tty.dropFirst("/dev/".count)) : session.tty
+        guard !tty.isEmpty, !tty.contains("/") else { return nil }
+        let directory = identityHookDirectoryForTesting ?? HookBridge.notesDirectory
+        let url = directory.appendingPathComponent("\(tty).json")
+        guard let data = try? Data(contentsOf: url),
+              let note = HookBridge.parse(data), note.tty == tty,
+              let id = note.session, !id.isEmpty else { return nil }
+        return id
+    }
+
     /// The Claude half of ``sessionID(of:)``, on the main queue.
     ///
     /// `record(of:)` is also the transcript-pane discovery path, where title and time are useful

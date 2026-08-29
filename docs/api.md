@@ -129,6 +129,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/usage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage.csv` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/whoami` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
 | `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/sessions/:id/state` | orchestrator token | — |
@@ -1306,7 +1307,8 @@ applicable code:
 | `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, `serialize`, or contradictory `root.poll_only`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `root_session_required` | 422 | `root.session_id` is null or empty and `root.poll_only` is not `true`. Nothing is registered or opened; send the current assistant conversation id, or explicitly opt into detached polling |
-| `root_unresolved` | 422 | the supplied non-null root id does not resolve to exactly one live process-bound session for `root.assistant`. Nothing is registered or opened; correct the id, or use null plus `root.poll_only:true` and poll |
+| `root_unresolved` | 422 | the supplied non-null root id resolves to no live process-bound session for `root.assistant`. Nothing is registered or opened; correct the id, or use null plus `root.poll_only:true` and poll |
+| `conversation_ambiguous` | 409 | more than one live process of `root.assistant` proves the same conversation id; no owner is selected and nothing is registered or opened |
 | `root_identity_is_terminal` | 422 | positive active-terminal or durable-Coordinator evidence proves `root.session_id` is a physical terminal id. The evidence is collected independently of caller-declared `root.assistant`; the error returns the actual `canonical_root_session_id` and `canonical_root_assistant`. Conflicting/unknown evidence remains nullable rather than guessed. The task is not registered and the provisional dispatch-rate ticket is refunded |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
@@ -1349,11 +1351,12 @@ hashes to the same `root_key`; two roots that share a label do not share a `root
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
 
-At registration, a non-null `root.session_id` may be either the watched terminal id or the
-assistant's process-bound conversation id. The broker resolves both against `root.assistant` and
-stores only the conversation id, so completion notification, grouping, per-root capacity and the
-root-close cascade use one key. If it cannot resolve exactly one live owner, HTTP dispatch returns
-`422 root_unresolved` before registration. If no interactive owner exists by design, send
+At registration, a non-null `root.session_id` is the assistant's process-bound conversation id,
+never the watched terminal id. The broker resolves it against `root.assistant` and stores that
+conversation id, so completion notification, grouping, per-root capacity and the root-close
+cascade use one key. No matching live owner returns `422 root_unresolved`; more than one
+same-assistant process proving the conversation returns `409 conversation_ambiguous`. Both are
+refused before registration. If no interactive owner exists by design, send
 `"root":{"session_id":null,"poll_only":true,…}`; that explicit mode registers a detached task and
 the caller owns polling it.
 
@@ -1569,10 +1572,65 @@ the owner's session, so a plain shell prompt is an address that cannot answer. A
 `sessions` array is an answer, not a refusal: it means nothing has been read yet, or nothing is
 open. `at` is when the reply was built.
 
-Two older ways of finding an id still work and are worth knowing, because neither is complete. A
-session's *own* terminal-neutral id is the UUID after the colon in `$ITERM_SESSION_ID` — that
-answers "who am I" and nothing else. [`GET /v1/orchestrator/waits`](#coordination-waits) names the
-ids already inside a wait — which is no help to the first session that needs to wait on somebody.
+For the calling session's own id, use the exact conversation-bound
+[`GET /v1/orchestrator/whoami`](#get-v1orchestratorwhoami) resolver below. The UUID after the colon
+in `$ITERM_SESSION_ID` is only a cached terminal hint: after iTerm restarts and an assistant resumes,
+that environment value can name a terminal which no longer exists. The live registry is
+authoritative. [`GET /v1/orchestrator/waits`](#coordination-waits) names only ids already inside a
+wait, which is no help to the first session that needs to wait on somebody.
+
+### `GET /v1/orchestrator/whoami`
+
+Resolve one assistant's exact process-bound conversation id to the terminal-neutral id currently
+bound to it. This machine-only route requires `X-Clawdline-Orchestrator`; a paired device is
+refused `403 forbidden`. Its query is closed and contains exactly one lowercase UUID:
+
+```console
+$ curl -sSG http://127.0.0.1:7717/v1/orchestrator/whoami \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
+    --data-urlencode "conversation_id=01a04b4b-d7a0-7950-bdbc-268e17510cba"
+{"conversation_id":"01a04b4b-d7a0-7950-bdbc-268e17510cba",
+ "terminal_id":"E7C8E9B9-8DC9-4AA8-9B7A-763B95EA4202","assistant":"codex",
+ "provenance":{"source":"live_session_registry","registry_generation":83,
+  "registry_complete":true,"registry_observed_at":1787990400,
+  "consistency":"single_snapshot_revalidated"},"at":1787990401}
+```
+
+`conversation_id` in the response echoes the exact input whose current process binding was proved;
+it cannot be normalized or replaced with a different value during resolution.
+`terminal_id` is what terminal-addressed routes such as `/send`, `/state`, `/complete`, waits,
+`attach_session` and coordinator registration take. Task `root.session_id` is different: it takes
+the process-bound conversation id directly. The resolver never matches a terminal id, label, cwd,
+state, tab title, context usage or recency, and never guesses among rows. In particular,
+`$ITERM_SESSION_ID` is not an input to this route and must not be used as a fallback after a miss.
+
+The consistency boundary is one main-queue publication of the live Session registry followed by
+two independent, uncached process-evidence passes before serialization. Each pass takes one fresh
+process list and one batched open-file reading for the frozen target population; Claude registry
+files (including exact parked-job background entries), hook notes and Codex rollout heads are
+freshly read from that evidence. If a detach or rebind changes,
+removes or duplicates the match between passes, the route returns `409 session_identity_stale`
+with `retryable:true`; an incomplete registry returns `409 registry_stale`. It never combines a
+conversation from one observation with a terminal from another, and a success body is closed to
+`conversation_id`, `terminal_id`, `assistant`, `provenance` and `at`—never label, cwd, pid or tty.
+
+| `code` | status | meaning |
+|---|---:|---|
+| `unauthorized` | 401 | no recognised credential was supplied |
+| `forbidden` | 403 | a paired device reached this machine-only route |
+| `conversation_id_required` | 400 | the closed query is missing `conversation_id`, repeats it or contains an extra key |
+| `conversation_id_malformed` | 400 | the value is not one lowercase UUID |
+| `conversation_not_found` | 404 | no live exact process binding has that conversation id |
+| `conversation_ambiguous` | 409 | more than one live process binding claims the id; none was selected |
+| `session_identity_stale` | 409 | the exact binding changed during the two-pass resolution; retry |
+| `registry_stale` | 409 | the terminal registry publication is incomplete; retry after a complete scan |
+
+If this assistant genuinely cannot establish its own provider conversation id—an older Claude
+installation without the registry/hook, for example—use authenticated
+`GET /v1/orchestrator/sessions` as the explicit address-book fallback for terminal-addressed
+operations. Select the live assistant row deliberately; do not substitute `$ITERM_SESSION_ID`.
+That fallback does not manufacture a task root: `root.session_id` remains a process-bound
+conversation id, so dispatch without one must use explicit `root.poll_only:true` and be polled.
 
 ### `POST /v1/orchestrator/messages`
 
@@ -1624,7 +1682,10 @@ id from the session index above—not a Claude session id or Codex thread id—a
 body contains one bounded sentence:
 
 ```console
-$ terminal_id="${ITERM_SESSION_ID##*:}"   # use "$TMUX_PANE" inside tmux
+$ conversation_id='<this assistant process-bound conversation id>'
+$ terminal_id=$(curl -fsSG http://127.0.0.1:7717/v1/orchestrator/whoami \
+      -H "X-Clawdline-Orchestrator: $ORCH" \
+      --data-urlencode "conversation_id=$conversation_id" | jq -er .terminal_id)
 $ jq -n --arg summary "Implemented, verified and committed the requested change." \
     '{summary:$summary}' \
   | curl -sS -X POST \

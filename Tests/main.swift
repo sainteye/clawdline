@@ -12204,6 +12204,66 @@ group("a child row resolves only to its current parent session") {
         wanted, assistant: .codex, among: [codex], sessionID: { _ in wanted })
     expect("the conversation namespace canonicalizes to the same durable key",
            conversationBinding.sessionID, wanted)
+    let duplicateCodex = target("CODEX-TAB-2", .codex, tty: "/dev/ttys8")
+    let duplicateRows = [codex, duplicateCodex]
+    let duplicateIdentities = [codex.id: wanted, duplicateCodex.id: wanted]
+    let ambiguousBinding = Orchestrator.canonicalRootSession(
+        wanted, assistant: .codex, among: duplicateRows,
+        sessionID: { duplicateIdentities[$0.id] })
+    expect("dispatch names duplicate same-assistant conversation rows honestly",
+           ambiguousBinding.warning?["code"] as? String, "conversation_ambiguous")
+    var dispatchAmbiguity: (Int, String)?
+    if let warning = ambiguousBinding.warning,
+       case .refused(let status, let code, _, _) = Orchestrator.rootBindingRefusal(warning) {
+        dispatchAmbiguity = (status, code)
+    }
+    check("the HTTP dispatch boundary returns the same ambiguity before registration",
+          dispatchAmbiguity?.0 == 409 && dispatchAmbiguity?.1 == "conversation_ambiguous")
+    check("the canonical resolver never deduplicates two processes into one conversation",
+          Orchestrator.target(
+            forRootSession: wanted, assistant: .codex, resolution: .task,
+            among: duplicateRows, sessionID: { duplicateIdentities[$0.id] }) == nil)
+    // These five production consumers intentionally have no typed HTTP response to carry an
+    // ambiguity. Pin each one to the shared resolver's fail-closed answer instead of adding five
+    // parallel identity algorithms or invasive delivery seams merely for the test.
+    check("handoff receipt resolution sends to neither duplicate conversation owner",
+          Orchestrator.target(
+            forRootSession: wanted, assistant: nil, resolution: .handoff,
+            among: duplicateRows, sessionID: { duplicateIdentities[$0.id] }) == nil)
+    check("root notification resolution sends to neither duplicate conversation owner",
+          Orchestrator.target(
+            forRootSession: wanted, assistant: .codex, resolution: .task,
+            among: duplicateRows, sessionID: { duplicateIdentities[$0.id] }) == nil)
+    check("workspace overlap resolution sends to neither duplicate conversation owner",
+          Orchestrator.target(
+            forRootSession: wanted, assistant: .codex, resolution: .task,
+            among: duplicateRows, sessionID: { duplicateIdentities[$0.id] }) == nil)
+    check("batch URL resolution names neither duplicate conversation terminal",
+          Orchestrator.target(
+            forRootSession: wanted, assistant: nil, resolution: .task,
+            among: duplicateRows, sessionID: { duplicateIdentities[$0.id] }) == nil)
+    check("rootTerminalID leaves a duplicate conversation task unmounted",
+          Orchestrator.rootTerminalID(
+            for: task(), parentTerminalID: nil, among: duplicateRows,
+            sessionID: { duplicateIdentities[$0.id] }) == nil)
+    var whoamiAmbiguous = false
+    if case .ambiguous = RemoteServer.sessionWhoAmI(
+        conversationID: wanted, among: duplicateRows,
+        identityPass: { duplicateIdentities }) { whoamiAmbiguous = true }
+    check("whoami calls the same two-row subject conversation_ambiguous", whoamiAmbiguous)
+    let duplicateTask = task()
+    var completionAmbiguity: Orchestrator.CompletionFailureCode?
+    if case .refused(.failed(let code, _)) = Orchestrator.completionRecipient(
+        duplicateTask, targets: duplicateRows,
+        identity: { candidate in
+            Orchestrator.SessionWorkIdentity(
+                terminalID: candidate.id, assistant: candidate.assistant, tty: candidate.tty,
+                pid: candidate.id == codex.id ? 701 : 702,
+                processStart: Date(timeIntervalSince1970: candidate.id == codex.id ? 701 : 702),
+                conversationID: duplicateIdentities[candidate.id])
+        }) { completionAmbiguity = code }
+    expect("completion names that same subject with the same typed ambiguity",
+           completionAmbiguity?.rawValue, "conversation_ambiguous")
     let unresolvedBinding = Orchestrator.canonicalRootSession(
         "MISSING", assistant: .codex, among: [codex], sessionID: { _ in wanted })
     expect("an unresolved root spelling is retained for compatibility",
@@ -16069,6 +16129,169 @@ group("coordination wait routes keep their credential and ownership boundaries")
     expect("the registered waiter may cancel only its membership", cancelled.status, 200)
     check("cancelling the sole waiter removes the group",
           Orchestrator.coordinationWaitRecords().isEmpty)
+}
+
+group("session whoami is a machine-only exact-conversation bridge") {
+    let path = "/v1/orchestrator/whoami"
+    let conversation = "11111111-2222-4333-8444-555555555555"
+    let replacement = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    func target(_ id: String, assistant: Assistant? = .codex, name: String = "same label")
+        -> TargetSession {
+        TargetSession(backend: .iterm, id: id, name: name, tty: "/dev/ttys099",
+                      windowIndex: 0, tabIndex: 0, assistant: assistant, cwd: "/same/cwd")
+    }
+    defer {
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.sessionConversationIDForTesting = nil
+        RemoteServer.sessionIdentityPassDidFinishForTesting = nil
+    }
+    let anonymous = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)"))
+    expect("anonymous whoami stops at authentication", anonymous.status, 401)
+
+    let phone = RemoteAuth.addDevice(name: "whoami route phone", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let paired = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("a paired device cannot resolve a process identity", paired.status, 403)
+    expect("the paired-device refusal names the credential boundary",
+           remoteErrorCode(paired), "forbidden")
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let missing = RemoteServer.shared.route(remoteRequest("GET", path, headers: auth))
+    expect("whoami requires exactly one conversation id", missing.status, 400)
+    expect("the missing input is typed", remoteErrorCode(missing), "conversation_id_required")
+    let malformed = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=not-a-conversation", headers: auth))
+    expect("whoami rejects a malformed conversation id", malformed.status, 400)
+    expect("the malformed input is typed", remoteErrorCode(malformed),
+           "conversation_id_malformed")
+    let duplicate = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)&conversation_id=\(conversation)",
+        headers: auth))
+    expect("whoami rejects a repeated conversation_id", duplicate.status, 400)
+    expect("the duplicate query uses the closed-query code", remoteErrorCode(duplicate),
+           "conversation_id_required")
+    let extra = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)&unknown=1", headers: auth))
+    expect("whoami rejects an unknown extra query key", extra.status, 400)
+    expect("the extra-key refusal uses the closed-query code", remoteErrorCode(extra),
+           "conversation_id_required")
+    let empty = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=", headers: auth))
+    expect("whoami rejects an empty conversation_id", empty.status, 400)
+    expect("the empty-value refusal uses the closed-query code", remoteErrorCode(empty),
+           "conversation_id_required")
+    let uppercase = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(replacement.uppercased())", headers: auth))
+    expect("whoami rejects an uppercase UUID", uppercase.status, 400)
+    expect("uppercase is malformed rather than normalized", remoteErrorCode(uppercase),
+           "conversation_id_malformed")
+    let trailingSlash = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)/?conversation_id=\(conversation)", headers: auth))
+    expect("a trailing slash does not widen the exact route", trailingSlash.status, 404)
+    let extraSegment = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)/extra?conversation_id=\(conversation)", headers: auth))
+    expect("an extra path segment does not widen the exact route", extraSegment.status, 404)
+
+    // Resume/rebind fixture: the stale terminal is absent; the same process-bound conversation
+    // now belongs to one newly observed terminal. The route must return that new address.
+    let oldTerminal = "22222222-3333-4444-8555-666666666666"
+    let newTerminal = "33333333-4444-4555-8666-777777777777"
+    RemoteServer.sessionPayloadForTesting = ([target(newTerminal)], [:])
+    RemoteServer.sessionConversationIDForTesting = { _ in conversation }
+    let rebound = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a resumed conversation resolves successfully", rebound.status, 200)
+    let reboundBody = (try? JSONSerialization.jsonObject(with: rebound.body)) as? [String: Any]
+    expect("the old absent terminal is never returned",
+           reboundBody?["terminal_id"] as? String, newTerminal)
+    expect("the canonical conversation comes from the process-bound match",
+           reboundBody?["conversation_id"] as? String, conversation)
+    expect("the response names the assistant", reboundBody?["assistant"] as? String, "codex")
+    expect("the response schema is closed at five public keys",
+           Set(reboundBody?.keys.map { $0 } ?? []),
+           Set(["conversation_id", "terminal_id", "assistant", "provenance", "at"]))
+    check("the response leaks no label, cwd, pid or tty",
+          Set(["label", "cwd", "pid", "tty"]).isDisjoint(
+            with: Set(reboundBody?.keys.map { $0 } ?? [])))
+    let provenance = reboundBody?["provenance"] as? [String: Any]
+    check("the response identifies its registry and consistency boundary",
+          provenance?["source"] as? String == "live_session_registry"
+            && provenance?["consistency"] as? String == "single_snapshot_revalidated")
+
+    // Mutation 1: accepting the terminal namespace would trust the stale iTerm environment.
+    // It is a valid UUID on purpose, so only the namespace boundary can reject it.
+    let staleEnvironment = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(oldTerminal)", headers: auth))
+    expect("a stale terminal environment id is not accepted as a conversation",
+           staleEnvironment.status, 404)
+    expect("the stale namespace fails as an exact conversation miss",
+           remoteErrorCode(staleEnvironment), "conversation_not_found")
+
+    // Mutation 2: label, cwd and state are identical. Only the exact process-bound value may
+    // select the second row; a presentation/ranking resolver would pick the first.
+    let lookalike = target("44444444-5555-4666-8777-888888888888")
+    let exact = target("55555555-6666-4777-8888-999999999999")
+    RemoteServer.sessionPayloadForTesting = ([lookalike, exact],
+                                             [lookalike.id: .idle, exact.id: .idle])
+    RemoteServer.sessionConversationIDForTesting = { candidate in
+        candidate.id == exact.id ? conversation : replacement
+    }
+    let exactOnly = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    let exactBody = (try? JSONSerialization.jsonObject(with: exactOnly.body)) as? [String: Any]
+    expect("same label, cwd and state cannot outrank exact identity",
+           exactBody?["terminal_id"] as? String, exact.id)
+
+    // Mutation 3: the reader observes the requested binding, then its replacement. Returning the
+    // first terminal without the second pass would make this 200 instead of a typed retry.
+    RemoteServer.sessionPayloadForTesting = ([exact], [exact.id: .working("whoami")])
+    var reads = 0
+    RemoteServer.sessionConversationIDForTesting = { _ in
+        reads += 1
+        return reads == 1 ? conversation : replacement
+    }
+    let moved = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a binding moved between resolution passes is refused", moved.status, 409)
+    expect("the moved binding asks the caller to retry", remoteErrorCode(moved),
+           "session_identity_stale")
+
+    // Mutation 4a/4b: first-match selection and guessed fallbacks are both forbidden.
+    RemoteServer.sessionPayloadForTesting = ([lookalike, exact], [:])
+    RemoteServer.sessionConversationIDForTesting = { _ in conversation }
+    let ambiguous = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("duplicate process-bound conversation identity fails closed", ambiguous.status, 409)
+    expect("the duplicate refusal is typed", remoteErrorCode(ambiguous),
+           "conversation_ambiguous")
+    RemoteServer.sessionConversationIDForTesting = { _ in replacement }
+    let nonexistent = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a nonexistent conversation is never guessed", nonexistent.status, 404)
+    expect("the nonexistent refusal is typed", remoteErrorCode(nonexistent),
+           "conversation_not_found")
+
+    let shell = target("66666666-7777-4888-8999-aaaaaaaaaaaa", assistant: nil)
+    RemoteServer.sessionPayloadForTesting = ([shell], [:])
+    RemoteServer.sessionConversationIDForTesting = { _ in conversation }
+    let unsupported = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a plain-shell row cannot manufacture an assistant identity", unsupported.status, 404)
+    expect("the shell remains an exact conversation miss", remoteErrorCode(unsupported),
+           "conversation_not_found")
+
+    if let source = try? String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8),
+       let protocolPage = try? String(
+            contentsOfFile: "docs/clawdline-protocol.html", encoding: .utf8) {
+        check("the source and living protocol page both name the whoami route",
+              source.contains(#"case ("GET", "/v1/orchestrator/whoami")"#)
+                && protocolPage.contains("GET /v1/orchestrator/whoami"))
+    } else {
+        check("the source and protocol page are readable for the whoami guard", false)
+    }
 }
 
 group("the session index a wait needs is the dispatch credential's own door") {
@@ -22878,7 +23101,8 @@ group("task completion ingress and delivery are durable protocol facts") {
 
 group("completion transport failure injection is typed and bounded") {
     let codes: [Orchestrator.CompletionFailureCode] = [
-        .rootMissing, .rootChoosing, .itermModal, .terminalTimeout, .identityStale,
+        .rootMissing, .conversationAmbiguous, .rootChoosing, .itermModal, .terminalTimeout,
+        .identityStale,
     ]
     for code in codes {
         let original = Orchestrator.CompletionDelivery(
@@ -23587,7 +23811,7 @@ func mainQueueIdentityProbe() async
 /// **The seams are read first, on purpose.** `resolveAttachment` and two of the RemoteServer
 /// readers answer out of a fixture when their `…ForTesting` inventory is set, taking no crossing at
 /// all. A group that forgot to clear one would leave this fixture proving nothing, quietly, so the
-/// three are named here and checked rather than assumed.
+/// all four are named here and checked rather than assumed.
 ///
 /// The targets come from ``SessionWatch``, filled by a real reading earlier in this file, because
 /// an empty target list is the whole reason these crossings were dormant.
@@ -23609,6 +23833,9 @@ func sessionWatchCrossingProbe() async
                 }
                 if RemoteServer.sessionPayloadForTesting != nil {
                     seamsLeftSet.append("RemoteServer.sessionPayloadForTesting")
+                }
+                if RemoteServer.sessionConversationIDForTesting != nil {
+                    seamsLeftSet.append("RemoteServer.sessionConversationIDForTesting")
                 }
                 let targets = SessionWatch.shared.targets
                 var crossed = 0
@@ -24968,6 +25195,7 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/RemoteServer.swift", "RemoteServer.session(withID:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionMessageSource(withID:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.state(of:)", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.sessionWhoAmI", 1),
 ]
 
 /// The ten of those the fixture at the end of this file drives for real and watches hop.
@@ -25083,6 +25311,335 @@ func sessionWatchReading(_ sessions: [TargetSession]) -> Bool {
     }
     SessionWatch.shared.start()
     return eventually { SessionWatch.shared.targets.map(\.id) == sessions.map(\.id) }
+}
+
+group("whoami revalidates real Claude and Codex files across fresh process passes") {
+    let path = "/v1/orchestrator/whoami"
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let conversation = "11111111-2222-4333-8444-555555555555"
+    let replacement = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let external = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-whoami-production-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+    let previousSessionRegistry = Config.shared.sessionRegistry
+    defer {
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.sessionConversationIDForTesting = nil
+        RemoteServer.sessionIdentityPassDidFinishForTesting = nil
+        ITerm.identityProcessEvidenceForTesting = nil
+        Transcript.identityRegistryDirectoryForTesting = nil
+        Transcript.identityClaudeProjectDirectoryForTesting = nil
+        Transcript.identityHookDirectoryForTesting = nil
+        Transcript.identityBackgroundProcessStartForTesting = nil
+        Transcript.identityWorkingDirectoryForTesting = nil
+        Config.shared.sessionRegistry = previousSessionRegistry
+        SessionWatch.inventoryForTesting = nil
+        SessionWatch.shared.stop()
+        try? FileManager.default.removeItem(at: external)
+    }
+
+    let project = external.appendingPathComponent("project", isDirectory: true).path
+    let rolloutDirectory = external.appendingPathComponent("sessions/2026/08/29",
+                                                            isDirectory: true)
+    try! FileManager.default.createDirectory(at: rolloutDirectory,
+                                             withIntermediateDirectories: true)
+    let rollout = rolloutDirectory.appendingPathComponent(
+        "rollout-2026-08-29T08-00-00-whoami.jsonl")
+    let spareRollout = rolloutDirectory.appendingPathComponent(
+        "rollout-2026-08-29T08-00-01-spare.jsonl")
+    func writeCodexIdentity(_ id: String, to url: URL = rollout) {
+        try! Data("""
+        {"type":"session_meta","payload":{"session_id":"\(id)","cwd":"\(project)","thread_source":"user","source":"cli"}}
+        """.utf8).write(to: url)
+    }
+    writeCodexIdentity(conversation)
+    writeCodexIdentity(replacement, to: spareRollout)
+
+    let codex = TargetSession(
+        backend: .iterm, id: "CODEX-WHOAMI", name: "codex", tty: "/dev/ttys811",
+        windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: project)
+    let spare = TargetSession(
+        backend: .iterm, id: "CODEX-SPARE", name: "spare", tty: "/dev/ttys812",
+        windowIndex: 0, tabIndex: 1, assistant: .codex, cwd: project)
+    check("the production fixture publishes multiple targets through SessionWatch",
+          sessionWatchReading([codex, spare]))
+    check("and whoami reads a complete real identity snapshot",
+          eventually { SessionWatch.shared.identitySnapshot().complete })
+
+    let codexPID: Int32 = 81_101
+    let sparePID: Int32 = 81_102
+    var processEvidenceReads = 0
+    var populations: [Set<String>] = []
+    ITerm.identityProcessEvidenceForTesting = { requestedTTYs in
+        processEvidenceReads += 1
+        populations.append(requestedTTYs)
+        return ITerm.IdentityProcessEvidence(
+            scan: ITerm.AssistantProcessScan(assistants: [
+                "ttys811": Assistant.Running(assistant: .codex, pid: codexPID,
+                    processStart: Date(timeIntervalSince1970: 1_800_000_000)),
+                "ttys812": Assistant.Running(assistant: .codex, pid: sparePID,
+                    processStart: Date(timeIntervalSince1970: 1_800_000_001)),
+            ], error: nil),
+            openFilesByPID: [codexPID: [rollout.path], sparePID: [spareRollout.path]])
+    }
+    RemoteServer.sessionIdentityPassDidFinishForTesting = { pass in
+        if pass == 1 { writeCodexIdentity(replacement) }
+    }
+    let codexMoved = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("an unchanged Codex rollout path is freshly re-read after its identity changes",
+           codexMoved.status, 409)
+    expect("the Codex rollout mutation is a named stale identity",
+           remoteErrorCode(codexMoved), "session_identity_stale")
+    expect("Codex revalidation makes two independent process-evidence readings",
+           processEvidenceReads, 2)
+    check("each pass reads the whole frozen target population once",
+          populations == Array(repeating: Set([codex.tty, spare.tty]), count: 2),
+          "\(populations)")
+
+    // Claude uses the same production reader shape, with the process registry and exact named
+    // transcript redirected into this fixture's private directory. Only the timing seam mutates
+    // the external file between passes.
+    let registryDirectory = external.appendingPathComponent("registry", isDirectory: true)
+    let claudeProject = external.appendingPathComponent("claude-project", isDirectory: true)
+    try! FileManager.default.createDirectory(at: registryDirectory,
+                                             withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: claudeProject,
+                                             withIntermediateDirectories: true)
+    let claudePID: Int32 = 81_103
+    let procStart = "Tue Aug 25 06:21:43 2026"
+    let claudeStarted = SessionRegistry.procStartDate(procStart)!
+    func writeClaudeIdentity(_ id: String) {
+        let json = """
+        {"pid":\(claudePID),"sessionId":"\(id)","cwd":"\(project)","procStart":"\(procStart)","peerProtocol":1,"kind":"interactive","status":"busy"}
+        """
+        try! Data(json.utf8).write(
+            to: registryDirectory.appendingPathComponent("\(claudePID).json"))
+    }
+    try! Data("{}\n".utf8).write(
+        to: claudeProject.appendingPathComponent("\(conversation).jsonl"))
+    try! Data("{}\n".utf8).write(
+        to: claudeProject.appendingPathComponent("\(replacement).jsonl"))
+    writeClaudeIdentity(conversation)
+    let claude = TargetSession(
+        backend: .iterm, id: "CLAUDE-WHOAMI", name: "claude", tty: "/dev/ttys813",
+        windowIndex: 0, tabIndex: 2, assistant: .claude)
+    check("the Claude fixture has the production iTerm shape with no stored cwd",
+          claude.cwd == nil)
+    Transcript.identityWorkingDirectoryForTesting = { candidate in
+        candidate.id == claude.id ? project : nil
+    }
+    check("the same production snapshot path can publish both assistants",
+          sessionWatchReading([claude, codex]))
+    Transcript.identityRegistryDirectoryForTesting = registryDirectory
+    Transcript.identityClaudeProjectDirectoryForTesting = claudeProject
+    processEvidenceReads = 0
+    populations = []
+    ITerm.identityProcessEvidenceForTesting = { requestedTTYs in
+        processEvidenceReads += 1
+        populations.append(requestedTTYs)
+        return ITerm.IdentityProcessEvidence(
+            scan: ITerm.AssistantProcessScan(assistants: [
+                "ttys813": Assistant.Running(assistant: .claude, pid: claudePID,
+                                               processStart: claudeStarted),
+                "ttys811": Assistant.Running(assistant: .codex, pid: codexPID,
+                    processStart: Date(timeIntervalSince1970: 1_800_000_000)),
+            ], error: nil),
+            openFilesByPID: [codexPID: [rollout.path]])
+    }
+    RemoteServer.sessionIdentityPassDidFinishForTesting = { pass in
+        if pass == 1 { writeClaudeIdentity(replacement) }
+    }
+    let claudeMoved = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("Claude's registry file is freshly re-read after its conversation changes",
+           claudeMoved.status, 409)
+    expect("the Claude registry mutation is the same named stale identity",
+           remoteErrorCode(claudeMoved), "session_identity_stale")
+    expect("Claude revalidation also makes two independent process-evidence readings",
+           processEvidenceReads, 2)
+    check("Claude and Codex rows share each pass instead of rescanning per target",
+          populations == Array(repeating: Set([claude.tty, codex.tty]), count: 2),
+          "\(populations)")
+
+    // The positive production path has no route identity seam: the same uncached registry and
+    // transcript readers which detected the mutation above have to serialize a successful 200.
+    writeClaudeIdentity(conversation)
+    RemoteServer.sessionIdentityPassDidFinishForTesting = nil
+    let claudeFresh = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a stable real Claude registry binding succeeds without the route identity seam",
+           claudeFresh.status, 200)
+    let claudeFreshBody = (try? JSONSerialization.jsonObject(
+        with: claudeFresh.body)) as? [String: Any]
+    expect("the production success serializes the exact proved conversation",
+           claudeFreshBody?["conversation_id"] as? String, conversation)
+    expect("and its current terminal-neutral address",
+           claudeFreshBody?["terminal_id"] as? String, claude.id)
+
+    // Parking leaves the interactive registry file behind and moves the live conversation into
+    // a background process. Its pid must really be alive because attachBackground deliberately
+    // asks the kernel before reading a historical directory entry.
+    let parkedJob = "whoami1"
+    let backgroundPID = getpid()
+    let backgroundStarted = SessionRegistry.procStartDate("Tue Aug 25 06:22:43 2026")!
+    Transcript.identityBackgroundProcessStartForTesting = { pid in
+        pid == backgroundPID ? backgroundStarted : nil
+    }
+    let processDate = DateFormatter()
+    processDate.locale = Locale(identifier: "en_US_POSIX")
+    processDate.timeZone = TimeZone(identifier: "UTC")
+    processDate.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+    func writeParkedIdentity(_ id: String, peerProtocol: Int = 1,
+                             jobID: String = parkedJob,
+                             processStart: Date = backgroundStarted) {
+        let parked = """
+        {"pid":\(claudePID),"sessionId":"parked-old","cwd":"\(project)","procStart":"\(procStart)","peerProtocol":1,"kind":"interactive","parkedJobId":"\(parkedJob)","status":"busy"}
+        """
+        let background = """
+        {"pid":\(backgroundPID),"sessionId":"\(id)","cwd":"\(project)","procStart":"\(processDate.string(from: processStart))","peerProtocol":\(peerProtocol),"kind":"bg","jobId":"\(jobID)","status":"busy"}
+        """
+        try! Data(parked.utf8).write(
+            to: registryDirectory.appendingPathComponent("\(claudePID).json"))
+        try! Data(background.utf8).write(
+            to: registryDirectory.appendingPathComponent("\(backgroundPID).json"))
+    }
+    writeParkedIdentity(conversation)
+    let parked = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a parked Claude tab resolves through its exact live background job", parked.status,
+           200)
+    let parkedBody = (try? JSONSerialization.jsonObject(with: parked.body)) as? [String: Any]
+    expect("the parked route returns the interactive tab which owns that job",
+           parkedBody?["terminal_id"] as? String, claude.id)
+
+    RemoteServer.sessionIdentityPassDidFinishForTesting = { pass in
+        if pass == 1 { writeParkedIdentity(replacement) }
+    }
+    writeParkedIdentity(conversation)
+    let parkedMoved = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("parked background evidence changing between passes fails closed",
+           parkedMoved.status, 409)
+    expect("the parked change has the typed two-pass stale code",
+           remoteErrorCode(parkedMoved), "session_identity_stale")
+
+    RemoteServer.sessionIdentityPassDidFinishForTesting = nil
+    writeParkedIdentity(conversation, peerProtocol: 0)
+    let parkedOldProtocol = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a parked background with the wrong protocol stays unresolved",
+           parkedOldProtocol.status, 404)
+    writeParkedIdentity(conversation, jobID: "another-job")
+    let parkedWrongJob = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a parked background from another job stays unresolved",
+           parkedWrongJob.status, 404)
+    writeParkedIdentity(conversation,
+                        processStart: backgroundStarted.addingTimeInterval(60))
+    let parkedWrongStart = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a parked background from another process start stays unresolved",
+           parkedWrongStart.status, 404)
+    writeParkedIdentity(conversation)
+    try? FileManager.default.removeItem(
+        at: registryDirectory.appendingPathComponent("\(backgroundPID).json"))
+    let parkedMissingBackground = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a parked tab never falls back to its frozen identity without a background",
+           parkedMissingBackground.status, 404)
+
+    // A hook note is the strict legacy source: it names one transcript for this exact tty. The
+    // registry is disabled here, so no registry row can make either success pass accidentally.
+    let hookDirectory = external.appendingPathComponent("hooks", isDirectory: true)
+    try! FileManager.default.createDirectory(at: hookDirectory,
+                                             withIntermediateDirectories: true)
+    Transcript.identityHookDirectoryForTesting = hookDirectory
+    Config.shared.sessionRegistry = false
+    func writeHookIdentity(_ id: String, tty: String = "ttys813") {
+        let json = """
+        {"event":"SessionStart","kind":"session_start","tty":"\(tty)","at":1787990400,"session":"\(id)"}
+        """
+        try! Data(json.utf8).write(
+            to: hookDirectory.appendingPathComponent("ttys813.json"))
+    }
+    RemoteServer.sessionIdentityPassDidFinishForTesting = nil
+    writeHookIdentity(conversation)
+    let hook = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a production-shaped no-cwd iTerm row resolves exact hook evidence through the dispatch working-directory fallback",
+           hook.status, 200)
+    let hookBody = (try? JSONSerialization.jsonObject(with: hook.body)) as? [String: Any]
+    expect("the hook source still returns only its exact terminal",
+           hookBody?["terminal_id"] as? String, claude.id)
+
+    RemoteServer.sessionIdentityPassDidFinishForTesting = { pass in
+        if pass == 1 { writeHookIdentity(replacement) }
+    }
+    writeHookIdentity(conversation)
+    let hookMoved = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("hook evidence changing between passes fails closed", hookMoved.status, 409)
+    expect("the hook change has the typed two-pass stale code",
+           remoteErrorCode(hookMoved), "session_identity_stale")
+
+    RemoteServer.sessionIdentityPassDidFinishForTesting = nil
+    writeHookIdentity(conversation, tty: "ttys999")
+    let hookWrongTTY = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a hook whose embedded tty disagrees with its exact filename stays unresolved",
+           hookWrongTTY.status, 404)
+    let missingTranscript = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+    writeHookIdentity(missingTranscript)
+    let hookMissingTranscript = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(missingTranscript)", headers: auth))
+    expect("a hook cannot resolve a transcript which does not exist",
+           hookMissingTranscript.status, 404)
+    let oldTranscript = "cccccccc-dddd-4eee-8fff-000000000000"
+    let oldTranscriptURL = claudeProject.appendingPathComponent("\(oldTranscript).jsonl")
+    try! Data("{}\n".utf8).write(to: oldTranscriptURL)
+    try! FileManager.default.setAttributes(
+        [.modificationDate: claudeStarted.addingTimeInterval(-1)],
+        ofItemAtPath: oldTranscriptURL.path)
+    writeHookIdentity(oldTranscript)
+    let hookOldTranscript = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(oldTranscript)", headers: auth))
+    expect("a hook cannot resolve a transcript older than the current process",
+           hookOldTranscript.status, 404)
+    writeHookIdentity("")
+    let hookEmptyID = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("a hook with an empty conversation id stays unresolved", hookEmptyID.status, 404)
+    try? FileManager.default.removeItem(
+        at: hookDirectory.appendingPathComponent("ttys813.json"))
+    let trulyMissing = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("without registry or hook evidence the production route remains a miss",
+           trulyMissing.status, 404)
+    expect("the genuine miss remains typed as conversation_not_found",
+           remoteErrorCode(trulyMissing), "conversation_not_found")
+
+    Config.shared.sessionRegistry = previousSessionRegistry
+    Transcript.identityHookDirectoryForTesting = nil
+    writeClaudeIdentity(conversation)
+
+    // A partial terminal inventory goes through SessionWatch's real confidence seam. No payload
+    // or conversation override is involved, so deleting the production complete guard makes
+    // this named response change.
+    SessionWatch.inventoryForTesting = {
+        (scan: ITerm.AssistantProcessScan(assistants: [:], error: nil),
+         snapshot: Targets.Snapshot(sessions: [claude, codex], currentID: nil,
+                                    error: "fixture incomplete", isComplete: false))
+    }
+    SessionWatch.shared.start()
+    check("the incomplete fixture is published as incomplete by SessionWatch",
+          eventually { !SessionWatch.shared.identitySnapshot().complete })
+    RemoteServer.sessionIdentityPassDidFinishForTesting = nil
+    let incomplete = RemoteServer.shared.route(remoteRequest(
+        "GET", "\(path)?conversation_id=\(conversation)", headers: auth))
+    expect("an incomplete real registry snapshot fails closed", incomplete.status, 409)
+    expect("and names the registry confidence failure", remoteErrorCode(incomplete),
+           "registry_stale")
 }
 
 group("a reading with live sessions in it reaches the ledger, both ways") {

@@ -542,6 +542,21 @@ enum ITerm {
         var isComplete: Bool { error == nil }
     }
 
+    /// One uncached process observation for an identity-resolution pass. The process list and
+    /// every Codex process's open files are read once each for the whole target population, then
+    /// reused per row. Ordinary status readers keep their short caches; whoami alone pays for a
+    /// fresh boundary whose second pass can actually observe resume/rebind.
+    struct IdentityProcessEvidence {
+        let scan: AssistantProcessScan
+        let openFilesByPID: [Int32: [String]]
+    }
+
+    /// Replaces only the two subprocess results used by a fresh identity pass. Tests still run
+    /// the production Transcript reader against real registry and rollout files, and use this
+    /// seam to describe which test pid holds which file without inspecting the test runner.
+    static var identityProcessEvidenceForTesting:
+        ((Set<String>) -> IdentityProcessEvidence)?
+
     private static let pidLock = NSLock()
     private static var pidCache: (at: CFAbsoluteTime, scan: AssistantProcessScan)?
 
@@ -599,6 +614,28 @@ enum ITerm {
             pidLock.unlock()
         }
         return scan
+    }
+
+    /// An uncached `ps` plus one batched `lsof`, scoped to the ttys in one immutable registry
+    /// publication. This is deliberately separate from ``assistantProcessScan()`` and
+    /// ``Codex/heldRollout(ofPID:)``: their 2s/20s caches are correct for repainting a status row
+    /// and cannot prove two independent identity observations made microseconds apart.
+    static func identityProcessEvidence(forTTYs ttys: Set<String>) -> IdentityProcessEvidence {
+        if let supplied = identityProcessEvidenceForTesting { return supplied(ttys) }
+        let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,lstart=,command="])
+        let scan = parseAssistantProcessScan(run.out, timedOut: run.timedOut,
+                                             exitStatus: run.status)
+        guard scan.isComplete else {
+            return IdentityProcessEvidence(scan: scan, openFilesByPID: [:])
+        }
+        let wanted = Set(ttys.map {
+            $0.hasPrefix("/dev/") ? String($0.dropFirst("/dev/".count)) : $0
+        })
+        let codexPIDs = scan.assistants.compactMap { tty, running -> Int32? in
+            wanted.contains(tty) && running.assistant == .codex ? running.pid : nil
+        }
+        return IdentityProcessEvidence(scan: scan,
+                                       openFilesByPID: openFiles(ofPIDs: codexPIDs))
     }
 
     /// tty → what is running on it. The one process listing everything else on this path shares.
@@ -712,6 +749,27 @@ enum ITerm {
             .split(separator: "\n")
             .filter { $0.hasPrefix("n/") }
             .map { String($0.dropFirst()) }
+    }
+
+    /// Open files for several processes from one `lsof` execution. `-Fpn` emits a `p<pid>` row
+    /// before that process's `n<path>` rows, so paths with spaces remain unambiguous and no
+    /// per-target subprocess is needed.
+    static func openFiles(ofPIDs pids: [Int32]) -> [Int32: [String]] {
+        let unique = Array(Set(pids)).sorted()
+        guard !unique.isEmpty else { return [:] }
+        let out = shell("/usr/sbin/lsof",
+                        ["-a", "-p", unique.map(String.init).joined(separator: ","), "-Fpn"]).out
+        var found: [Int32: [String]] = [:]
+        var current: Int32?
+        for line in out.split(separator: "\n") {
+            if line.hasPrefix("p"), let pid = Int32(line.dropFirst()) {
+                current = pid
+                found[pid, default: []] = found[pid, default: []]
+            } else if line.hasPrefix("n/"), let pid = current {
+                found[pid, default: []].append(String(line.dropFirst()))
+            }
+        }
+        return found
     }
 
     /// The other direction: every process holding one file open.

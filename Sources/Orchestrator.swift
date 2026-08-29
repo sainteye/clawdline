@@ -1317,6 +1317,7 @@ enum Orchestrator {
 
     enum CompletionFailureCode: String, Equatable {
         case rootMissing = "root_missing"
+        case conversationAmbiguous = "conversation_ambiguous"
         case rootChoosing = "root_choosing"
         case itermModal = "iterm_modal"
         case terminalTimeout = "terminal_timeout"
@@ -4324,12 +4325,7 @@ enum Orchestrator {
             among: rootTargets(), sessionID: Transcript.sessionID(of:))
         if requireRootSession, let warning = rootBinding.warning {
             refundDispatchRate(rateTicket)
-            return .refused(
-                status: 422, code: "root_unresolved",
-                message: (warning["message"] as? String ?? "root.session_id is unresolved.")
-                    + " Use the current process-bound conversation id, or use a null "
-                    + "root.session_id with root.poll_only true and poll the task explicitly.",
-                extra: [:])
+            return rootBindingRefusal(warning)
         }
         made.rootSessionId = rootBinding.sessionID
         let rootWarnings = rootBinding.warning.map { [$0] } ?? []
@@ -8457,10 +8453,17 @@ enum Orchestrator {
                 taskCreated: task.created)
             let deliveryRoot = rebound?.conversationID ?? storedRoot
             let deliveryAssistant = rebound?.assistant ?? historicalAssistant
-            if let found = target(forRootSession: deliveryRoot, assistant: deliveryAssistant,
-                                  resolution: .task, among: targets,
-                                  sessionID: { identity($0).conversationID }) {
-                recipient = found
+            let matches = Self.targets(
+                forRootSession: deliveryRoot, assistant: deliveryAssistant,
+                resolution: .task, among: targets,
+                sessionID: { identity($0).conversationID })
+            if matches.count == 1 {
+                recipient = matches[0]
+            } else if matches.count > 1 {
+                return .refused(.failed(
+                    .conversationAmbiguous,
+                    "More than one live process proves the root conversation identity; "
+                        + "no completion recipient was selected."))
             } else {
                 let physicalCollision = targets.contains { target in
                     target.id == storedRoot || (identity(target).conversationID == deliveryRoot
@@ -11053,15 +11056,22 @@ enum Orchestrator {
     ) -> (sessionID: String?, warning: [String: Any]?) {
         guard let supplied else { return (nil, nil) }
         let expectedAssistant = assistant ?? .claude
-        var canonical: Set<String> = []
+        var matches: [String] = []
         for target in targets where target.assistant == expectedAssistant {
             let conversation = sessionID(target)
             guard target.id == supplied || conversation == supplied,
                   let conversation else { continue }
-            canonical.insert(conversation)
+            matches.append(conversation)
         }
-        if canonical.count == 1, let resolved = canonical.first {
+        if matches.count == 1, let resolved = matches.first {
             return (resolved, nil)
+        }
+        if matches.count > 1 {
+            return (supplied, [
+                "code": "conversation_ambiguous",
+                "message": "More than one live process of the declared assistant proves "
+                    + "root.session_id; no owner was selected.",
+            ])
         }
         return (supplied, [
             "code": "root_unresolved",
@@ -11070,11 +11080,38 @@ enum Orchestrator {
         ])
     }
 
+    /// Turn the canonical resolver's typed finding into the HTTP dispatch refusal before any
+    /// task is registered. Kept pure so duplicate-row semantics are checked at the route boundary
+    /// rather than inferred from the warning dictionary alone.
+    static func rootBindingRefusal(_ warning: [String: Any]) -> Reply {
+        let code = warning["code"] as? String ?? "root_unresolved"
+        return .refused(
+            status: code == "conversation_ambiguous" ? 409 : 422, code: code,
+            message: (warning["message"] as? String ?? "root.session_id is unresolved.")
+                + " Use the current process-bound conversation id, or use a null "
+                + "root.session_id with root.poll_only true and poll the task explicitly.",
+            extra: [:])
+    }
+
     static func target(forRootSession rootSessionID: String,
                        assistant: Assistant?, resolution: RootResolution,
                        among targets: [TargetSession],
                        sessionID: (TargetSession) -> String?) -> TargetSession? {
-        targets.first { target in
+        let matches = Self.targets(forRootSession: rootSessionID, assistant: assistant,
+                                   resolution: resolution, among: targets,
+                                   sessionID: sessionID)
+        return matches.count == 1 ? matches[0] : nil
+    }
+
+    /// Every exact match seen by the process-bound root resolver. Callers which need to explain
+    /// a refusal use the count; the ordinary root lookup above still exposes only one-or-none.
+    /// Keeping both on this seam makes ambiguity fail closed without inventing a second identity
+    /// algorithm for routes which need a typed `ambiguous` answer.
+    static func targets(forRootSession rootSessionID: String,
+                        assistant: Assistant?, resolution: RootResolution,
+                        among targets: [TargetSession],
+                        sessionID: (TargetSession) -> String?) -> [TargetSession] {
+        targets.filter { target in
             guard assistant == nil || target.assistant == assistant else { return false }
             if resolution == .handoff && target.id == rootSessionID { return true }
             return sessionID(target) == rootSessionID

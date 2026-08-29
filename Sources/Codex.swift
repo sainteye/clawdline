@@ -257,6 +257,20 @@ enum Codex {
         return nil
     }
 
+    /// The conversation identity in one already-observed open-file list. Unlike the ordinary
+    /// pane path, a whoami pass can ask for an uncached head: the same rollout path may be
+    /// rewritten or replaced when a process resumes, and a permanent path-keyed head would make
+    /// two resolution passes the same observation in disguise.
+    static func identity(among paths: [String], fresh: Bool) -> (url: URL, id: String)? {
+        for path in paths where isRollout(path) {
+            let url = URL(fileURLWithPath: path)
+            let found = fresh ? readHead(of: url) : head(of: url)
+            guard let found, found.isUser, !found.id.isEmpty else { continue }
+            return (url, found.id)
+        }
+        return nil
+    }
+
     /// Whether a path is one of Codex's session files, by shape rather than by prefix — the home
     /// directory can be moved with `CODEX_HOME`, and `lsof` answers with the resolved path
     /// anyway, which on a Mac is `/private/…` where the setting said `/tmp/…`.

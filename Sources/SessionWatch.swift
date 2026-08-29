@@ -20,6 +20,18 @@ import Foundation
 /// else on a machine that is not running any.
 final class SessionWatch {
 
+    /// One coherent publication of the addressable session registry. The target population and
+    /// its provenance are copied together on the main queue, which is the only place a completed
+    /// scan publishes them. Process-bound conversation identity is deliberately resolved by the
+    /// caller immediately afterwards and revalidated before use: assistant registry files can
+    /// move while this in-memory snapshot is being inspected.
+    struct IdentitySnapshot {
+        let targets: [TargetSession]
+        let generation: Int
+        let complete: Bool
+        let observedAt: Date?
+    }
+
     static let shared = SessionWatch()
     private init() {}
 
@@ -102,6 +114,12 @@ final class SessionWatch {
     private(set) var emptyInventoryAuthoritative = false
 
     private var interval: TimeInterval { isForeground ? 1.2 : 20 }
+
+    func identitySnapshot() -> IdentitySnapshot {
+        dispatchPrecondition(condition: .onQueue(.main))
+        return IdentitySnapshot(targets: targets, generation: scanGeneration,
+                                complete: scanComplete, observedAt: scanObservedAt)
+    }
 
     func start() {
         timer?.invalidate()
