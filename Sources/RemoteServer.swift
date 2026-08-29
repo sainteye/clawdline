@@ -5052,12 +5052,12 @@ final class RemoteServer: @unchecked Sendable {
         // types it through the ordinary send route; only the session can read the orchestrator
         // token, so only the session performs the registration.
         add([
-            "webMakeClawdfather": t.webMakeClawdfather,
+            "webClawdfatherCreateLabel": t.webClawdfatherCreateLabel,
             "webClawdfatherIs": t.webClawdfatherIs,
-            "webConfirmClawdfatherTitle": t.webConfirmClawdfatherTitle,
-            "webConfirmClawdfatherSay": t.webConfirmClawdfatherSay,
-            "webClawdfatherAsk": t.webClawdfatherAsk,
-            "webClawdfatherAsked": t.webClawdfatherAsked,
+            "webClawdfatherRegisterAsk": t.webClawdfatherRegisterAsk,
+            "webClawdfatherRegisterSent": t.webClawdfatherRegisterSent,
+            "webClawdfatherRegisterLate": t.webClawdfatherRegisterLate,
+            "webClawdfatherRegisterBlocked": t.webClawdfatherRegisterBlocked,
         ])
 
         // The Clawdfather controls panel — sections, the closed commands table, effect and state

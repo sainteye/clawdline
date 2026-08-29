@@ -83,11 +83,14 @@ export var Start = (function () {
     var assignmentState = createClawdfatherAssignmentState({
         timeoutMs: HOLD,
         onTimeout: function () {
-            toast("The new session did not become ready in time to name it Clawdfather.", true);
+            toast(T.webClawdfatherRegisterLate, true);
         },
+        // `result.state` is what this browser did; `result.choice.state` is what the Mac said.
+        // Both can read "blocked" and they are not the same word: the outer one means nothing
+        // was typed, the inner one means the coordinator record must not be written over.
         onSettled: function (result) {
             if (result && result.state === "sent") {
-                toast("The new session was asked to become Clawdfather.");
+                toast(T.webClawdfatherRegisterSent);
                 return;
             }
             if (result && result.state === "blocked") {
@@ -96,6 +99,8 @@ export var Start = (function () {
                 if (choice.state === "assigned") {
                     toast(fill(coordinator.status === "online" ? T.webCoordOnline : T.webCoordOffline,
                                { name: coordinator.label || "Clawdfather" }));
+                } else if (choice.state === "blocked") {
+                    toast(T.webClawdfatherRegisterBlocked, true);
                 } else {
                     toast(T.webCoordReadFailed, true);
                 }
@@ -285,9 +290,10 @@ export var Start = (function () {
      * A creation-only role switch, closed by any durable coordinator record.
      *
      * The live Session list cannot answer the offline case: its coordinator projection is on the
-     * exact bound process only. Bearings can, and only an explicit `configured:false` enables
-     * this button. A failed or unfinished read therefore looks disabled rather than guessing that
-     * an absent live crown means the machine is unowned.
+     * exact bound process only. Bearings can, and only `registration.state === "available"`
+     * enables this button. A failed or unfinished read therefore looks disabled rather than
+     * guessing that an absent live crown means the machine is unowned, and a store the Mac
+     * cannot read says so in its own words instead of borrowing the failed-read sentence.
      */
     function drawClawdfather() {
         var row = els["start-clawdfather-row"];
@@ -305,7 +311,11 @@ export var Start = (function () {
 
         var words = "";
         if (choice.state === "checking") words = T.webLoading;
-        else if (choice.state === "unavailable" || coordinatorFailed) {
+        else if (choice.state === "blocked") {
+            // Not a failed read: the read succeeded and said the record is unreadable at the
+            // other end. Saying "could not read bearings" here would blame the wrong hop.
+            words = T.webClawdfatherRegisterBlocked;
+        } else if (choice.state === "unavailable" || coordinatorFailed) {
             words = T.webCoordReadFailed;
         } else if (choice.state === "assigned") {
             var coordinator = choice.coordinator || {};

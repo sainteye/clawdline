@@ -1546,9 +1546,19 @@ authoritative copy of it, so that a session which has just been asked has someth
 rather than Swift source to reverse-engineer.
 
 For the web creation helper, **registration-only** is a hard boundary: after step 2 it follows
-step 3 only when `coordinator.configured` is `false`. If any record is configured, whether online
-or offline, it reports that owner and stops. Steps 4 and 5 remain a manual local repair procedure;
-the creation sheet never asks a new Session to rebind or replace an offline owner.
+step 3 only when the Mac says `registration.state` is `available`. If any record is configured,
+whether online or offline, it reports that owner and stops. Steps 4 and 5 remain a manual local
+repair procedure; the
+creation sheet never asks a new Session to rebind or replace an offline owner.
+
+**And it never asks over a store it cannot read.** `coordinator.configured` is `false` for an
+absent record, a corrupt one and one from an unknown version alike, so a browser gating on that
+field alone would type the instruction into a session and learn from the resulting
+`409 coordinator_store_invalid` — in that session's transcript, where the person who pressed the
+switch never sees it. `registration.state` (`available` / `configured` / `blocked`, documented
+under `GET /v1/orchestrator/coordinator/bearings` in `docs/api.md`) is the field the switch reads,
+and `blocked` is refused in the browser before anything is sent. A session that arrives here on
+its own should read it the same way: a store you cannot parse is not an unregistered machine.
 
 **The two local facts.** The token is `~/.config/clawdline/orchestrator-token`, mode `0600` and
 readable only by a process running as its owner; the port is `remote_port` in

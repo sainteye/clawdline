@@ -10,10 +10,11 @@
    `~/.config/clawdline/orchestrator-token` and carry out the registration-only branch of the
    documented recipe itself — the same trust boundary every other Clawdline dispatch already
    stands on, and the same one a person crosses by typing the curl by hand. The creation sheet
-   separately reads the device-safe Bearings projection so an existing offline owner closes its
-   switch; that read exposes no machine credential or coordinator write. The sentence travels over
-   `POST /v1/sessions/:id/send`, which the page can already reach and which every other composed
-   message goes through.
+   separately reads the device-safe Bearings projection for one closed word — whether registering
+   would write over something — so an existing offline owner, and a store nobody may overwrite,
+   both close its switch; that read exposes no machine credential or coordinator write. The
+   sentence travels over `POST /v1/sessions/:id/send`, which the page can already reach and which
+   every other composed message goes through.
 
    The browser also knows something the new session would otherwise have to work out: the
    terminal-neutral id. That is exactly the `id` on a Session row, so it is handed over in the
@@ -25,41 +26,48 @@ import { T, fill } from "../core/i18n.js";
 /**
  * Whether the creation sheet may offer the Clawdfather choice.
  *
- * The device-readable Bearings record is durable, unlike the optional projection on a live
- * Session row: it still says `configured:true` when the registered coordinator is offline. That
- * is the answer this choice needs, because an offline Clawdfather is not an invitation to create
- * a second one.
+ * **One field decides it, and it is not `coordinator`.** The Mac sends
+ * `registration.state`, derived from the durable store it would have to write, and it says one
+ * of exactly three words: `available` (nothing stored), `configured` (a valid owner, online or
+ * offline — both are owners), `blocked` (a record that is corrupt, unreadable or from a version
+ * this Mac does not understand, which registration must never overwrite).
  *
- * `payload === null` is the read still in flight. A malformed or failed answer also fails closed;
- * only the exact canonical unregistered tuple opens the switch. The current device projection
- * cannot distinguish a genuinely absent record from a corrupt or unsupported record because the
- * server folds all three into that tuple; fixing that is backend F2, not a distinction this UI
- * claims to make. Resuming is deliberately absent rather than disabled: assigning a role while
- * creating something is not an action on an old transcript.
+ * The `coordinator` tuple beside it cannot answer this and is kept only for the words the sheet
+ * says out loud. Absent, corrupt and unsupported stores project the *identical*
+ * `configured:false, status:"unregistered"` tuple, so a switch reading that tuple offers to
+ * register over a record the broker will refuse with `coordinator_store_invalid` — and the
+ * refusal arrives after the instruction has been typed into a session, where the browser never
+ * sees it.
+ *
+ * Everything that is not exactly `"available"` fails closed. `payload === null` is the read
+ * still in flight; a missing, misspelled, wrongly-cased or unknown state, and an answer from a
+ * Mac that predates the field, are all `unavailable`. Resuming is deliberately absent rather
+ * than disabled: assigning a role while creating something is not an action on an old
+ * transcript.
  */
 export function clawdfatherCreationChoice(payload, selected, fresh) {
     if (!fresh) {
         return { state: "hidden", shown: false, enabled: false, checked: false,
                  coordinator: null };
     }
-    var coordinator = payload && typeof payload === "object"
-        && payload.coordinator && typeof payload.coordinator === "object"
+    var answered = payload && typeof payload === "object";
+    var coordinator = answered && payload.coordinator && typeof payload.coordinator === "object"
         ? payload.coordinator : null;
-    if (!coordinator || typeof coordinator.configured !== "boolean") {
-        return { state: payload === null ? "checking" : "unavailable",
-                 shown: true, enabled: false, checked: false, coordinator: coordinator };
-    }
-    if (coordinator.configured === true) {
+    var registration = answered && payload.registration
+        && typeof payload.registration === "object" ? payload.registration : null;
+    var state = registration && typeof registration.state === "string"
+        ? registration.state : "";
+    if (state === "configured") {
         return { state: "assigned", shown: true, enabled: false, checked: false,
                  coordinator: coordinator };
     }
-    // Only the closed canonical tuple opens creation. Explicit new states fail closed here as
-    // future-proofing; the current device projection still needs backend F2 before it can expose
-    // corrupt/unsupported records differently from genuine absence.
-    if (coordinator.configured !== false || coordinator.status !== "unregistered"
-        || coordinator.lifecycle !== "unregistered") {
-        return { state: "unavailable", shown: true, enabled: false, checked: false,
+    if (state === "blocked") {
+        return { state: "blocked", shown: true, enabled: false, checked: false,
                  coordinator: coordinator };
+    }
+    if (state !== "available") {
+        return { state: payload === null ? "checking" : "unavailable",
+                 shown: true, enabled: false, checked: false, coordinator: coordinator };
     }
     return {
         state: selected === true ? "selected" : "available",
@@ -70,9 +78,10 @@ export function clawdfatherCreationChoice(payload, selected, fresh) {
 /* --------------------------------------------------------------------------
    The words, and the two that are kept here as well
 
-   Both sentences below come from the Mac: `T.webMakeClawdfather` is the chip on the creation
-   sheet and `T.webClawdfatherAsk` is the line typed into the new session, translated into every
-   language in `L.catalog`. `core/i18n.js` already carries an English copy of each for a page
+   Both sentences below come from the Mac: `T.webClawdfatherCreateLabel` is the chip on the
+   creation sheet and `T.webClawdfatherRegisterAsk` is the line typed into the new session,
+   translated into every language in `L.catalog`. `core/i18n.js` already carries an English copy
+   of each for a page
    whose `/v1/strings` read failed, and `applyStrings` refuses an empty value, so the ordinary
    missing-translation case never reaches this module.
 
@@ -110,14 +119,14 @@ function served(value, english) {
 
 /** The chip on the creation sheet, in this browser's language. */
 export function clawdfatherCreationLabel() {
-    return served(T.webMakeClawdfather, CREATION_LABEL_EN);
+    return served(T.webClawdfatherCreateLabel, CREATION_LABEL_EN);
 }
 
 /** The one line typed into the new session. It never offers offline replacement. */
 export function clawdfatherInstruction(session) {
     var id = session && typeof session.id === "string" ? session.id.trim() : "";
     if (!id) return "";
-    var template = served(T.webClawdfatherAsk, CREATION_ASK_EN);
+    var template = served(T.webClawdfatherRegisterAsk, CREATION_ASK_EN);
     if (template.indexOf("{id}") < 0 || /\brebind\b/i.test(template)) {
         template = CREATION_ASK_EN;
     }
