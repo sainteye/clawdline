@@ -111,6 +111,7 @@ final class RemoteServer: @unchecked Sendable {
     private let coordinatorInventoryLock = NSLock()
     private var coordinatorInventoryCache: CoordinatorSessionInventory?
     private var coordinatorInventoryRefreshPending = false
+    private var coordinatorInventoryRefreshScheduleCountForTesting = 0
     /// Main-thread mirror used only to decide whether SessionWatch still needs its observer when
     /// the loopback listener is off.
     private var cloudAttached = false
@@ -124,6 +125,10 @@ final class RemoteServer: @unchecked Sendable {
     /// sets it; route tests use it to prove landings remain readable when live observation is
     /// unavailable.
     static var coordinatorObservationUnavailableForTesting = false
+    /// Holds the real main-queue refresh after it has been scheduled. Tests combine this with a
+    /// seeded cache to exercise the production timeout and single-flight branches rather than a
+    /// route-level observation replacement.
+    static var coordinatorInventoryRefreshGateForTesting: DispatchSemaphore?
     /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
     /// replace only SessionWatch's external terminal inventory with deterministic rows.
     static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
@@ -1271,13 +1276,13 @@ final class RemoteServer: @unchecked Sendable {
             }
             let observation = coordinatorObservation()
             let live = observation.sessions
-            guard let candidate = live.first(where: {
+            let candidate = live.first(where: {
                 $0.identity.terminalID == sessionID
-            }) else {
-                return .error(404, "session_not_found",
-                              "No live Claude or Codex session has that terminal-neutral id.")
-            }
-            return answer(Coordinator.register(candidate, among: live))
+            })
+            return answer(Coordinator.register(
+                sessionID: sessionID, candidate: candidate, among: live,
+                sessionsFresh: observation.sessionsFresh,
+                sessionsObservedAt: observation.sessionsObservedAt))
 
         case ("POST", "/v1/orchestrator/coordinator/rebind"):
             guard orchestratorAuthed else {
@@ -3919,7 +3924,7 @@ final class RemoteServer: @unchecked Sendable {
         let cwd: String?
     }
 
-    private struct CoordinatorSessionInventory {
+    struct CoordinatorSessionInventory {
         let targets: [TargetSession]
         let states: [String: SessionState]
         let complete: Bool
@@ -3966,6 +3971,23 @@ final class RemoteServer: @unchecked Sendable {
         coordinatorInventoryLock.unlock()
     }
 
+    /// Production-faithful inventory seam: only the cache is supplied. The route still executes
+    /// `boundedCoordinatorInventory`, schedules its normal main-queue refresh, waits on its real
+    /// bound, and converts the resulting current/stale/missing availability itself.
+    func seedCoordinatorInventoryForTesting(_ inventory: CoordinatorSessionInventory?) {
+        coordinatorInventoryLock.lock()
+        coordinatorInventoryCache = inventory
+        coordinatorInventoryRefreshPending = false
+        coordinatorInventoryRefreshScheduleCountForTesting = 0
+        coordinatorInventoryLock.unlock()
+    }
+
+    func coordinatorInventoryRefreshStateForTesting() -> (pending: Bool, scheduled: Int) {
+        coordinatorInventoryLock.lock(); defer { coordinatorInventoryLock.unlock() }
+        return (coordinatorInventoryRefreshPending,
+                coordinatorInventoryRefreshScheduleCountForTesting)
+    }
+
     private func readCoordinatorInventoryOnMain() -> CoordinatorSessionInventory {
         let watch = SessionWatch.shared
         let acceptedScanEvidence = (watch.scanObservedAt, watch.scanGeneration)
@@ -3989,7 +4011,12 @@ final class RemoteServer: @unchecked Sendable {
             return .missing
         }
         let completed = DispatchSemaphore(value: 0)
+        coordinatorInventoryLock.lock()
+        coordinatorInventoryRefreshScheduleCountForTesting += 1
+        coordinatorInventoryLock.unlock()
+        let refreshGate = Self.coordinatorInventoryRefreshGateForTesting
         DispatchQueue.main.async { [weak self] in
+            refreshGate?.wait()
             if let self = self {
                 self.finishCoordinatorInventoryRefresh(self.readCoordinatorInventoryOnMain())
             }

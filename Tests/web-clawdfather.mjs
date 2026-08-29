@@ -51,6 +51,9 @@ const SERVED = {
     offline: { registration: { state: "configured" },
                coordinator: { configured: true, status: "offline", lifecycle: "offline",
                               scope: "machine", label: "Clawdfather" } },
+    unknown: { registration: { state: "configured" },
+               coordinator: { configured: true, status: "unknown", lifecycle: "unknown",
+                              scope: "machine", label: "Clawdfather" } },
     corrupt: { registration: { state: "blocked" },
                coordinator: { configured: false, status: "unregistered",
                               lifecycle: "unregistered", scope: "machine",
@@ -75,7 +78,7 @@ assert.equal(available.checked, true);
 assert.equal(available.state, "selected");
 assert.equal(clawdfatherCreationChoice(SERVED.absent, false, true).state, "available");
 
-for (const status of ["online", "offline"]) {
+for (const status of ["online", "offline", "unknown"]) {
     const assigned = clawdfatherCreationChoice(SERVED[status], true, true);
     assert.equal(assigned.shown, true);
     assert.equal(assigned.enabled, false,
@@ -399,6 +402,8 @@ const start = await readFile(
 assert.match(source, /typeof[^\n]*assistant[^\n]*===\s*["']string["']/,
     "the instruction waits for the assistant rather than being typed into the newborn shell");
 assert.doesNotMatch(start, /v1\/orchestrator/);
+assert.match(start, /coordinatorPresenceText\(coordinator\)/,
+    "the creation sheet uses the same three-state coordinator words as the controls");
 
 const menu = await readFile(
     new URL("../Resources/web/app/js/input/action-confirm.js", import.meta.url), "utf8"

@@ -70,6 +70,10 @@
 .coordinator-presence[data-status="offline"] .coordinator-presence-dot {
     background: var(--faint); opacity: 1;
 }
+.coordinator-presence[data-status="unknown"] { color: var(--faint); }
+.coordinator-presence[data-status="unknown"] .coordinator-presence-dot {
+    background: var(--warn); opacity: 1;
+}
 .coordinator-groups {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;
 }

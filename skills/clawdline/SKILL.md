@@ -1044,15 +1044,18 @@ this is the short form.
    live row for terminal-addressed work only; ownerless dispatch remains explicit poll-only.
 2. **Read the state first** — `GET /v1/orchestrator/coordinator`, with `$TOKEN` from step 1 of this
    skill. `coordinator.configured` false means nobody holds it; otherwise `coordinator.status` is
-   `online` or `offline`, and `coordinator.id` and `coordinator.generation` are the pair a
-   reconnect has to quote.
+   `online`, `offline`, or `unknown`, and `coordinator.id` and `coordinator.generation` are the pair
+   a later exact-offline reconnect has to quote.
 3. **Nobody configured** → `POST /v1/orchestrator/coordinator/register` with `{"session_id": …}`,
    one field and no more. `created:false` means you already were it.
-4. **Configured and `offline`** → `POST /v1/orchestrator/coordinator/rebind` with
+4. **Configured and `unknown`** → wait, then repeat step 2. Stale, missing, untimestamped, or
+   pre-binding Session evidence is not proof that the previous process is offline; do not register
+   or rebind from it.
+5. **Configured and exactly `offline`** → `POST /v1/orchestrator/coordinator/rebind` with
    `expected_coordinator_id`, `expected_generation` and `session_id`. The UUID survives a
    reconnect on purpose, so the generation is the compare-and-swap value. A mismatch means the
    record moved while you were reading it: go back to step 2 rather than retrying the old numbers.
-5. **Configured, `online`, somebody else** → stop. Registration is never a takeover and the API
+6. **Configured, `online`, somebody else** → stop. Registration is never a takeover and the API
    refuses it (`coordinator_exists`, `coordinator_online`). Report who holds it and leave it there.
 
 Then say what happened. Whoever asked is usually watching another window, and "already held by the

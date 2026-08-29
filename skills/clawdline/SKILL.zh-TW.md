@@ -913,14 +913,17 @@ route 打進你的 session，真正做事的是你。完整版連每一種拒絕
    刻意選 live row；沒有 owner 的 dispatch 仍須明確 poll-only。
 2. **先讀現況**——`GET /v1/orchestrator/coordinator`，用本 skill 第 1 節的 `$TOKEN`。
    `coordinator.configured` 是 false 代表沒有人擔任；否則看 `coordinator.status` 是 `online` 還是
-   `offline`，而 `coordinator.id` 與 `coordinator.generation` 是重新接上時必須原樣帶回去的那一對。
+   `offline`／`unknown`；`coordinator.id` 與 `coordinator.generation` 是之後只有在精確證明 offline
+   時，重新接上必須原樣帶回去的那一對。
 3. **沒有人註冊過** → `POST /v1/orchestrator/coordinator/register`，body 只有 `{"session_id": …}`
    一個欄位，多一個都不行。回 `created:false` 代表本來就是你。
-4. **有註冊但 `offline`** → `POST /v1/orchestrator/coordinator/rebind`，帶
+4. **有註冊且是 `unknown`** → 等待後回第 2 步重讀。Stale、missing、沒有時間戳或早於 binding 的
+   Session 證據都不能證明舊 process 已離線；不要用它 register 或 rebind。
+5. **有註冊且精確是 `offline`** → `POST /v1/orchestrator/coordinator/rebind`，帶
    `expected_coordinator_id`、`expected_generation` 與 `session_id`。UUID 是刻意跨重新接上不變的，
    所以真正的 compare-and-swap 值是 generation。對不上代表你讀完之後紀錄動過了：回第 2 步重讀，
    不要拿舊的數字再試一次。
-5. **有註冊、`online`、而且是別人** → 停手。註冊從來就不是接管，API 也會擋
+6. **有註冊、`online`、而且是別人** → 停手。註冊從來就不是接管，API 也會擋
    （`coordinator_exists`、`coordinator_online`）。回報是誰在擔任，然後別動它。
 
 最後把結果講出來。叫你去做的人通常在另一個視窗，「已經由另一個 checkout 的那個 session 擔任」跟
