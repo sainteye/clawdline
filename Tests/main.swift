@@ -15297,6 +15297,22 @@ group("a closure attestation is bound to one process and one turn, and survives 
            Orchestrator.sessionCloseability(
             identity: resumed, terminalState: .idle,
             inventoryObservedAt: Date(timeIntervalSince1970: 2_000)).state, .needsAttestation)
+
+    // The route's own half of the same boundary, and it is a separate line of code from the
+    // projection's. A later process in this tab, naming the same turn clock, must be issued its
+    // own receipt: handing back the previous process's id would tell it that a claim it never
+    // made is already on the record under its name.
+    var relaunched = identity
+    relaunched.pid = 5002
+    guard case .ok(let issued) = Orchestrator.attestClosure(
+        identity: relaunched, status: "clear",
+        activityGeneration: Orchestrator.activityGeneration(ofTerminal: "ATTEST-TAB"),
+        note: nil, auditID: nil) else {
+        check("a later process in the same tab can attest for itself", false); return
+    }
+    check("and is issued its own attestation rather than the previous process's",
+          issued["created"] as? Bool == true
+              && (issued["attestation_id"] as? String).map { $0 != attestationID } == true)
 }
 
 group("the close route asks to be proven only when a client says so") {
@@ -15351,10 +15367,10 @@ group("the closure route is closed at its edges") {
     RemoteServer.sessionPayloadForTesting = ([session], ["CLOSURE-ROUTE": .idle])
     defer { RemoteServer.sessionPayloadForTesting = nil }
 
-    expect("an unauthenticated attestation is refused",
+    expect("an attestation with no credential at all never reaches the route",
            RemoteServer.shared.route(remoteRequest(
             "POST", "/v1/orchestrator/sessions/CLOSURE-ROUTE/closure",
-            body: "{\"status\":\"clear\"}")).status, 403)
+            body: "{\"status\":\"clear\"}")).status, 401)
     expect("a session nobody is running is a 404",
            RemoteServer.shared.route(remoteRequest(
             "POST", "/v1/orchestrator/sessions/NOBODY/closure", headers: auth,
@@ -27046,6 +27062,7 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/RemoteServer.swift", "RemoteServer.sessionMessageSource(withID:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.state(of:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionWhoAmI", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.closeabilityIdentities", 1),
 ]
 
 /// The production crossings the fixture at the end of this file drives for real and watches hop.
