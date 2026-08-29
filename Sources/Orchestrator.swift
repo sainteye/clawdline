@@ -2642,6 +2642,50 @@ enum Orchestrator {
         return rolesByTerminal[id]
     }
 
+    /// The task record a terminal's spend should be filed under, for ``UsageLedger``. Nil for a
+    /// session a person opened themselves, which the ledger files as `manual`.
+    ///
+    /// The record rather than the ``Role``: the ledger stores what the work *was* — its kind, its
+    /// isolation, how many paths it claimed, which schedule made it — and a role carries none of
+    /// that. Attachment is treated the way ``reindex()`` treats it: a guest task owns the session
+    /// only while it is live, because a standing session wearing a finished task's name is the
+    /// one shape it must not have.
+    static func ledgerTaskRecord(forTerminal id: String) -> [String: Any]? {
+        lock.lock(); defer { lock.unlock() }
+        let candidates = tasks.values.filter { $0.childTerminalId == id }
+        if let live = candidates.first(where: { !$0.state.isTerminal }) {
+            return ledgerRecord(of: live)
+        }
+        let owned = candidates.filter { $0.attachSessionId == nil }
+            .sorted { $0.created > $1.created }
+        return owned.first.map(ledgerRecord)
+    }
+
+    /// Every task the registry still holds, in its own spelling, for the ledger's backfill.
+    ///
+    /// The registry keeps 200 rows and task directories are swept a day after they finish, so
+    /// this is free evidence that would otherwise age out. Running it again is safe, and every
+    /// word of that is the ledger's side of the bargain rather than this function's: the delta
+    /// against a session's cursor is zero for a record already attributed, a record that has
+    /// never had a session produces no row at all, and a correction that says nothing new is not
+    /// written. Handing over the queued half of the registry is therefore not a mistake here —
+    /// `UsageLedger.importTaskRecords(_:)` is where "was anything actually observed" is decided,
+    /// once, for both this and the finalize collector.
+    static func ledgerBackfillRecords() -> [[String: Any]] {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return tasks.values.sorted { $0.created < $1.created }.map(ledgerRecord)
+    }
+
+    /// The stored record, minus the two fields that are credentials rather than facts about the
+    /// work. Nothing outside this file needs either, and the ledger is a durable store.
+    private static func ledgerRecord(of task: Task) -> [String: Any] {
+        var out = stored(task)
+        out.removeValue(forKey: "queued_secret")
+        out.removeValue(forKey: "secret_hash")
+        return out
+    }
+
     /// Under the lock.
     private static func reindex() {
         var found = handoffTitlesByTerminal
@@ -6202,6 +6246,14 @@ enum Orchestrator {
         // is a door that opens from the inside.
         _ = dispatchToken()
         resumeAfterRestart()
+        // Rescue what the registry still holds before the cap evicts it. Off the main thread and
+        // idempotent: a record already attributed contributes nothing on a second pass, so this
+        // runs on every launch rather than once, and picks up whatever finished while the app
+        // was not running.
+        let backfill = ledgerBackfillRecords()
+        DispatchQueue.global(qos: .utility).async {
+            UsageLedger.shared.importTaskRecords(backfill)
+        }
         cleanup()
         scheduleQueue.async { scheduleBeat() }
         SessionWatch.shared.observers["orchestrator"] = { beat(fromTimer: false) }
@@ -7468,6 +7520,21 @@ enum Orchestrator {
             tasks[taskID] = task
             lock.unlock()
         }
+        // The durable copy, taken here because this record is on a 200-row eviction and this
+        // task's directory is swept twenty-four hours from now. The whole record goes over rather
+        // than a hand-picked set of fields — see `UsageLedger.spellings` for why picking is the
+        // mistake — and the ledger attributes only what it has not already seen for this session,
+        // so a task that ran inside a watched session is not counted twice.
+        //
+        // **Executed, not delivered, and one call rather than logic threaded through here.** The
+        // event being recorded is "this task reached a terminal state and this is its usage".
+        // Whether the root was successfully told is a different event with its own retries, so
+        // this deliberately sits above `completeFinalization` — where `notifyRoot` lives — reads
+        // no notification state, and is not conditional on one. If the surrounding code is ever
+        // run more than once, the deterministic interval key and its unique constraint make the
+        // repeat a no-op rather than a second charge; that is the property being relied on, not
+        // an accident of ordering.
+        UsageLedger.shared.collect(taskRecord: ledgerRecord(of: task))
         task.workCleanupAt = reclaimDeadline(
             minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: outcome)
         // Only a task with its own disposable checkout has build output of its own to reclaim. A

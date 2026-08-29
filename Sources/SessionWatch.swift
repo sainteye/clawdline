@@ -313,6 +313,14 @@ final class SessionWatch {
             // and then forgets.
             let shells = Shells.reading(of: sessions)
 
+            // What all of this has cost, written somewhere nothing sweeps. It rides here because
+            // the transcripts are already on disk and the round trip to the terminal has already
+            // been paid for — so a session a person opened themselves is in the ledger on the
+            // same terms as a dispatched one, which is the only way the number can honestly
+            // claim to be what Clawdline sees. Throttled to one checkpoint per session every
+            // five minutes; see `UsageLedger.checkpoint(sessions:now:)`.
+            UsageLedger.checkpoint(sessions: sessions)
+
             // Only the ones nothing is known about yet.
             var grids: [String: ProjectIcon.Grid] = [:]
             for session in sessions where self.grids[session.id] == nil {
@@ -375,6 +383,17 @@ final class SessionWatch {
             let now = states[target.id]
             if case .working = was, case .working = now { continue }
             if case .working = was, now != nil, now != .unknown { finished.append(target) }
+        }
+
+        // A session that has left a *complete* reading is a source that will not grow again, and
+        // process disappearance is one of the three forced checkpoints the ledger needs. Only on
+        // a complete scan: an incomplete one has already been ruled not to be evidence of
+        // absence anywhere else in this file, and sealing on it would file a live session's row
+        // as finished.
+        if scanComplete {
+            let present = Set(targets.map(\.id))
+            let gone = self.targets.map(\.id).filter { !present.contains($0) }
+            if !gone.isEmpty { UsageLedger.departed(gone) }
         }
 
         let evidenceChanged = scanComplete != self.scanComplete
