@@ -1422,11 +1422,19 @@ takeover through registration. A2 adds the separately guarded offline reconnect 
 still no unconditional replacement, deletion or stop path. Corrupt and unknown-version records
 fail closed and are preserved for diagnosis rather than treated as absence.
 
+An absent store is written only from a complete SessionWatch inventory carrying its accepted-scan
+time. Stale, missing, untimestamped or clock-inconsistent evidence returns
+`409 coordinator_liveness_unknown` before candidate absence is considered, so the shape of a stale
+cache cannot manufacture `session_not_found`. This freshness gate applies only to construction:
+under the same lock an existing exact binding stays idempotent and every different identity stays
+`coordinator_exists`, without rewriting the durable owner.
+
 Restart continuity is identity continuity, not conversation resurrection. After the app reloads,
 the durable record projects `session.coordinator` only when all private binding facts still match
 the one current process. That exact row receives the web renderer's closed record—`label`, online
 `status`, and `commands`—on both Session JSON surfaces. Every ordinary row is unchanged. A missing
-or reused process leaves the durable coordinator `offline` and decorates no row; the role never
+or reused process absent from a complete timestamped inventory leaves the durable coordinator
+`offline` and decorates no row; degraded evidence instead reports `unknown`. The role never
 migrates to a matching label or the most recently active assistant.
 
 `GET /v1/orchestrator/coordinator`, also orchestrator-token-only, returns safe durable presence and
@@ -1444,6 +1452,9 @@ inventory is `stale`, never silently complete. If the main queue is unavailable,
 is explicitly stale (or missing before the first successful read), landing rows remain present and
 ownership is `unknown`. The device projector allowlists each pending row, ownership record,
 evidence source and evidence field independently; it never copies an opaque nested dictionary.
+Coordinator liveness follows the same boundary: a complete timestamped observation may say exact
+`online` or, when no older than the binding, exact `offline`; stale, missing, untimestamped or
+pre-binding evidence says `status:unknown, lifecycle:unknown` and cannot authorize reconnect.
 The route returns only the
 opaque coordinator UUID and terminal-neutral session id, assistant, cwd/label/work-state. It never
 returns transcript text/path, assistant conversation id, tty, pid or process start.
@@ -1494,7 +1505,8 @@ coordinator metadata and requires the caller to refresh before any mutation or i
 
 An exact current binding is idempotent. Any different candidate is accepted only when one complete,
 current SessionWatch scan contains the candidate and does not contain the old exact tuple. If the
-old tuple is present, `coordinator_online` refuses live takeover. If the scan is incomplete,
+old tuple is present in that current timestamped scan, `coordinator_online` refuses live takeover.
+If the scan is incomplete or untimestamped,
 `coordinator_liveness_unknown` refuses to convert absence of evidence into offline proof. This is
 also the answer when the scan predates the current binding's construction or last reconnect: a
 pre-binding snapshot cannot disprove a newer tuple. This is the same observer lesson as host
@@ -1524,7 +1536,7 @@ observer provenance and explicit policy boundaries rather than widening this end
 route.** None of the three endpoints above became reachable from a paired device, and none of them
 types into anything. When the creation sheet opens it reads the device-safe Bearings projection.
 Only the exact closed state `registration.state === "available"` enables the choice. `configured`
-closes it for both an online and an offline durable owner; `blocked`, a missing field, or an unknown
+closes it for every configured durable owner (`online`, `offline` or `unknown`); `blocked`, a missing field, or an unknown
 value also closes it rather than guessing that the store is empty. That projection contains no
 machine credential or durable compare-and-swap fields.
 
@@ -1572,7 +1584,7 @@ rather than Swift source to reverse-engineer.
 
 For the web creation helper, **registration-only** is a hard boundary: after step 2 it follows
 step 3 only when the Mac says `registration.state` is `available`. If any record is configured,
-whether online or offline, it reports that owner and stops. Steps 4 and 5 remain a manual local
+whether online, offline or unknown, it reports that owner and stops. Steps 4 and 5 remain a manual local
 repair procedure; the
 creation sheet never asks a new Session to rebind or replace an offline owner.
 
@@ -1633,9 +1645,12 @@ $ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/coordinator" \
  "bearings":{…}}
 ```
 
-`coordinator.configured` is `false` when nobody has ever registered. When it is `true`,
-`coordinator.status` is `online` if the exact bound process is still alive and `offline` if it is
-not, and `coordinator.id` and `coordinator.generation` are the pair a reconnect must quote back.
+`coordinator.configured` is `false` when nobody has ever registered. When it is `true`, a complete
+timestamped inventory reports `coordinator.status` as `online` for the exact bound process or
+`offline` only when a scan no older than that binding proves it absent. `unknown` means the
+inventory is stale, missing, untimestamped or predates the binding: wait and repeat this read; do
+not claim the process is offline or attempt reconnect. `coordinator.id` and
+`coordinator.generation` are the pair a later exact-offline reconnect must quote back.
 
 **3. Nobody is configured — register.** One field, and it is your id from step 1:
 
@@ -1648,7 +1663,7 @@ $ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/coordinator/register" 
 
 `created:false` with a `200` means you were already it and nothing changed.
 
-**4. Configured but `offline` — reconnect.** Registration is never a takeover, so reconnecting is a
+**4. Configured and exactly `offline` — reconnect.** Registration is never a takeover, so reconnecting is a
 separate, guarded operation, and its three fields are closed: the `id` and `generation` you just
 read, plus your own id.
 

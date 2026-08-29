@@ -1869,12 +1869,22 @@ returns `200` with `created:false` and the same UUID. “Same process start” u
 slightly between observations; terminal id, assistant, tty, pid and process-proved conversation id
 must still match exactly. Drift beyond that tolerance fails closed.
 
+Construction additionally requires a complete SessionWatch observation with its accepted-scan
+timestamp. If that inventory is stale, missing, untimestamped, or its clock lies after the
+registration lifecycle timestamp, an absent store returns `409 coordinator_liveness_unknown` and
+writes nothing. This check precedes candidate absence, so a stale cache that happens not to contain
+`session_id` cannot be relabelled `session_not_found`. Durable presence is decided first under the
+same lock: an already configured exact identity remains idempotent and a different identity remains
+`coordinator_exists`, even when current liveness cannot be asserted.
+
 A different live identity returns `409 coordinator_exists` with the current safe `coordinator`
 metadata and does not take over. Registration never doubles as reconnect. There remains no
 unconditional replace, delete or stop operation.
 `400 bad_request` means malformed JSON, an extra/missing field, or a non-string `session_id`;
 `404 session_not_found` means no current assistant row has that terminal-neutral id;
 `409 session_unbound` means the row exists but its complete process identity cannot be proved;
+`409 coordinator_liveness_unknown` means an absent store was paired with stale, missing or unusable
+Session evidence and therefore was not written;
 `409 coordinator_store_invalid` means a corrupt or unknown-version durable record was preserved
 rather than overwritten; and `500 coordinator_store_failed` means the atomic write did not land.
 
@@ -1915,7 +1925,8 @@ record. A corrupt or unsupported record is preserved. If the expected generation
 the candidate already is the exact binding, the call is idempotent (`rebound:false`) even if a
 broader scan is stale. A stale generation is never treated as idempotent. Otherwise the
 existing process-bound tuple must be absent from a complete current SessionWatch scan. A live exact
-old tuple returns `409 coordinator_online`; an incomplete scan returns
+old tuple in that current timestamped scan returns `409 coordinator_online`; an incomplete or
+untimestamped scan returns
 `409 coordinator_liveness_unknown`. `sessionsObservedAt` is the unchanged timestamp taken when
 SessionWatch accepted that completed scan—not the later HTTP read time. If no completed-scan time
 exists, or it predates the current binding's construction/last reconnect, it cannot disprove the
@@ -1957,8 +1968,8 @@ This returns durable presence and deterministic read-only Bearings:
     "scope": "machine", "label": "Clawdfather",
     "registered_at": 1787832000,
     "generation": 2, "rebound_at": 1787832600,
-    "status": "online",         // online | offline
-    "lifecycle": "standby",    // standby | offline
+    "status": "online",         // online | offline | unknown
+    "lifecycle": "standby",    // standby | offline | unknown
     "session": {
       "id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
       "assistant": "codex", "label": "coordinate Phase A",
@@ -2012,9 +2023,11 @@ indefinitely for the main queue: one single-flight bounded SessionWatch read ref
 repeated reads cannot accumulate main-queue work), and an unavailable
 read uses stale cached evidence or explicit `missing`. Either degraded state keeps durable registry
 rows and makes ownership `unknown`; it never turns missing observation into absence.
-If the durable binding is valid but no exact current process matches, the coordinator is
-`status:"offline", lifecycle:"offline"`, retains the last safe session metadata, and is attached
-to no live Session row. An absent, corrupt or unsupported record produces
+Coordinator liveness uses that same evidence boundary. A valid binding is `online` only when an
+exact process appears in a complete timestamped current inventory; it is `offline` only when such
+an inventory, no older than the binding, proves the tuple absent. Stale, missing, untimestamped or
+pre-binding evidence yields `status:"unknown", lifecycle:"unknown"`, retains the last safe session
+metadata, and cannot authorize reconnect. An absent, corrupt or unsupported record produces
 `configured:false, status:"unregistered", lifecycle:"unregistered"`; corruption never elects a
 replacement. No response contains a transcript, transcript path, assistant conversation id, tty,
 pid or process start.
@@ -2026,7 +2039,7 @@ registration refusal is made on, in exactly one of three words:
 | `registration.state` | Durable store | What a client may do |
 | --- | --- | --- |
 | `available` | no record | offer registration; it writes over nothing |
-| `configured` | a valid record, `status` `online` **or** `offline` | do not offer; both are owners |
+| `configured` | a valid record, `status` `online`, `offline` **or** `unknown` | do not offer; every value is the same durable owner |
 | `blocked` | unreadable, unparseable, or a version this build does not know | do not offer, ever; `POST /v1/orchestrator/coordinator/register` refuses it `409 coordinator_store_invalid` and the bytes are preserved |
 
 The vocabulary is closed, so a client may switch on it exhaustively — and must treat a missing
@@ -3337,7 +3350,7 @@ remain visible when a session disappears. The full waiter arrays live on the wai
 title, task ancestry or age. It appears on exactly the current process-bound Session whose
 terminal-neutral id, assistant, tty, pid/start and assistant conversation identity match the
 durable machine coordinator record. The closed renderer boundary contains only `label`,
-`status: "online"` and `commands`; an offline durable identity does not decorate a similar or
+`status: "online"` and `commands`; an offline or unknown-liveness durable identity does not decorate a similar or
 reused terminal row. Its registration and read-only Bearings contract are documented under
 [Machine coordinator identity and Bearings](#machine-coordinator-identity-and-bearings).
 

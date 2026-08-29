@@ -152,18 +152,26 @@ enum Coordinator {
         lock.unlock()
     }
 
-    /// Explicit construction. The candidate must itself occur in the caller's current live
-    /// inventory; this prevents a unit or future call site from registering a synthetic tuple.
+    /// Compatibility entry point for direct, already-current observations.
     static func register(_ candidate: LiveSession, among liveSessions: [LiveSession],
                          now: Date = Date(), makeID: () -> UUID = UUID.init)
         -> Orchestrator.Reply {
+        register(sessionID: candidate.identity.terminalID, candidate: candidate,
+                 among: liveSessions, sessionsFresh: true, sessionsObservedAt: now,
+                 now: now, makeID: makeID)
+    }
+
+    /// Explicit construction. Durable presence is decided under the registration lock before
+    /// liveness is consulted: an existing singleton keeps its idempotent/coordinator-exists
+    /// behaviour even while SessionWatch is degraded. Only an absent store needs construction
+    /// evidence, and that evidence must be a complete, timestamped current observation before a
+    /// missing candidate can be called `session_not_found` or any bytes can be persisted.
+    static func register(sessionID: String, candidate: LiveSession?,
+                         among liveSessions: [LiveSession], sessionsFresh: Bool,
+                         sessionsObservedAt: Date?,
+                         now: Date = Date(), makeID: () -> UUID = UUID.init)
+        -> Orchestrator.Reply {
         let registeredAt = now.timeIntervalSince1970
-        guard valid(candidate), liveSessions.contains(where: {
-            exact($0.identity, candidate.identity)
-        }) else {
-            return .refused(409, "session_unbound",
-                            "That session has no complete process-bound assistant identity.")
-        }
         guard representableTimestamp(registeredAt) else {
             return .refused(500, "coordinator_store_failed",
                             "The coordinator lifecycle timestamp cannot be represented.")
@@ -173,20 +181,50 @@ enum Coordinator {
         guard let reply = withExclusiveRegistrationLock({ () -> Orchestrator.Reply in
             switch load(force: true) {
             case .valid(let existing):
-                if matches(existing, candidate.identity) {
+                if let candidate, candidate.identity.terminalID == sessionID,
+                   valid(candidate), liveSessions.contains(where: {
+                       exact($0.identity, candidate.identity)
+                   }), matches(existing, candidate.identity) {
                     return .ok(["ok": true, "created": false,
-                                "coordinator": coordinatorMetadata(existing, among: liveSessions)])
+                                "coordinator": coordinatorMetadata(
+                                    existing, among: liveSessions,
+                                    sessionsFresh: sessionsFresh,
+                                    sessionsObservedAt: sessionsObservedAt)])
                 }
                 return .refused(status: 409, code: "coordinator_exists",
                                 message: "A different machine coordinator is already registered; "
                                     + "registration is never a takeover operation.",
                                 extra: ["coordinator": coordinatorMetadata(
-                                    existing, among: liveSessions)])
+                                    existing, among: liveSessions,
+                                    sessionsFresh: sessionsFresh,
+                                    sessionsObservedAt: sessionsObservedAt)])
             case .corrupt, .unsupported:
                 return .refused(409, "coordinator_store_invalid",
                                 "The durable coordinator record is unreadable or from an unknown "
                                     + "version; it was not replaced.")
             case .absent:
+                let observedAt = sessionsObservedAt?.timeIntervalSince1970
+                guard sessionsFresh,
+                      observedAt.map({
+                          representableTimestamp($0) && $0 <= registeredAt
+                      }) == true else {
+                    return .refused(
+                        409, "coordinator_liveness_unknown",
+                        "The Session inventory is stale or untimestamped, so a coordinator "
+                            + "cannot be constructed from it.")
+                }
+                guard let candidate, candidate.identity.terminalID == sessionID else {
+                    return .refused(
+                        404, "session_not_found",
+                        "No live Claude or Codex session has that terminal-neutral id.")
+                }
+                guard valid(candidate), liveSessions.contains(where: {
+                    exact($0.identity, candidate.identity)
+                }) else {
+                    return .refused(
+                        409, "session_unbound",
+                        "That session has no complete process-bound assistant identity.")
+                }
                 let identity = candidate.identity
                 let record = Record(
                     version: recordVersion, id: makeID().uuidString.lowercased(), scope: scope,
@@ -203,7 +241,10 @@ enum Coordinator {
                                     "The coordinator record could not be written.")
                 }
                 return .ok(["ok": true, "created": true,
-                            "coordinator": coordinatorMetadata(record, among: liveSessions)])
+                            "coordinator": coordinatorMetadata(
+                                record, among: liveSessions,
+                                sessionsFresh: sessionsFresh,
+                                sessionsObservedAt: sessionsObservedAt)])
             }
         }) else {
             return .refused(500, "coordinator_store_failed",
@@ -245,7 +286,9 @@ enum Coordinator {
                         message: "The durable coordinator changed after the caller observed it; "
                             + "refresh Bearings before reconnecting.",
                         extra: ["coordinator": coordinatorMetadata(
-                            existing, among: liveSessions)])
+                            existing, among: liveSessions,
+                            sessionsFresh: sessionsFresh,
+                            sessionsObservedAt: sessionsObservedAt)])
                 }
                 let currentGeneration = existing.generation ?? 1
                 guard expectedGeneration == currentGeneration else {
@@ -254,21 +297,39 @@ enum Coordinator {
                         message: "The coordinator lifecycle advanced after the caller observed it; "
                             + "refresh Bearings before reconnecting.",
                         extra: ["coordinator": coordinatorMetadata(
-                            existing, among: liveSessions)])
+                            existing, among: liveSessions,
+                            sessionsFresh: sessionsFresh,
+                            sessionsObservedAt: sessionsObservedAt)])
                 }
 
                 if matches(existing, candidate.identity) {
                     return .ok(["ok": true, "rebound": false,
                                 "coordinator": coordinatorMetadata(
-                                    existing, among: liveSessions)])
+                                    existing, among: liveSessions,
+                                    sessionsFresh: sessionsFresh,
+                                    sessionsObservedAt: sessionsObservedAt)])
                 }
                 if liveSessions.contains(where: { matches(existing, $0.identity) }) {
+                    guard sessionsFresh, sessionsObservedAt.map({
+                        representableTimestamp($0.timeIntervalSince1970)
+                    }) == true else {
+                        return .refused(
+                            status: 409, code: "coordinator_liveness_unknown",
+                            message: "The Session inventory is stale, so coordinator liveness "
+                                + "cannot be asserted.",
+                            extra: ["coordinator": coordinatorMetadata(
+                                existing, among: liveSessions,
+                                sessionsFresh: sessionsFresh,
+                                sessionsObservedAt: sessionsObservedAt)])
+                    }
                     return .refused(
                         status: 409, code: "coordinator_online",
                         message: "The exact current coordinator is still online; reconnect cannot "
                             + "take over a live binding.",
                         extra: ["coordinator": coordinatorMetadata(
-                            existing, among: liveSessions)])
+                            existing, among: liveSessions,
+                            sessionsFresh: sessionsFresh,
+                            sessionsObservedAt: sessionsObservedAt)])
                 }
                 guard sessionsFresh else {
                     return .refused(
@@ -276,7 +337,9 @@ enum Coordinator {
                         message: "The Session inventory is stale, so the old coordinator cannot "
                             + "be proved offline.",
                         extra: ["coordinator": coordinatorMetadata(
-                            existing, among: liveSessions)])
+                            existing, among: liveSessions,
+                            sessionsFresh: sessionsFresh,
+                            sessionsObservedAt: sessionsObservedAt)])
                 }
                 let observedAt = sessionsObservedAt?.timeIntervalSince1970
                 let bindingChangedAt = existing.reboundAt ?? existing.registeredAt
@@ -289,7 +352,9 @@ enum Coordinator {
                         message: "The Session inventory predates the current coordinator binding, "
                             + "so it cannot prove that binding offline.",
                         extra: ["coordinator": coordinatorMetadata(
-                            existing, among: liveSessions)])
+                            existing, among: liveSessions,
+                            sessionsFresh: sessionsFresh,
+                            sessionsObservedAt: sessionsObservedAt)])
                 }
 
                 let oldGeneration = currentGeneration
@@ -324,7 +389,10 @@ enum Coordinator {
                                     "The coordinator reconnect could not be written.")
                 }
                 return .ok(["ok": true, "rebound": true,
-                            "coordinator": coordinatorMetadata(rebound, among: liveSessions)])
+                            "coordinator": coordinatorMetadata(
+                                rebound, among: liveSessions,
+                                sessionsFresh: sessionsFresh,
+                                sessionsObservedAt: sessionsObservedAt)])
             }
         }) else {
             return .refused(500, "coordinator_store_failed",
@@ -396,8 +464,11 @@ enum Coordinator {
         let lifecycle: String
         switch loaded {
         case .valid(let record):
-            coordinator = coordinatorMetadata(record, among: liveSessions)
-            lifecycle = coordinator["lifecycle"] as? String ?? "offline"
+            coordinator = coordinatorMetadata(
+                record, among: liveSessions,
+                sessionsFresh: input.sessionsFresh,
+                sessionsObservedAt: input.sessionsObservedAt)
+            lifecycle = coordinator["lifecycle"] as? String ?? "unknown"
         case .absent, .corrupt, .unsupported:
             coordinator = ["configured": false, "status": "unregistered",
                            "lifecycle": "unregistered", "scope": scope, "label": label]
@@ -517,10 +588,11 @@ enum Coordinator {
     /// the authenticated inspection can never leak here by omission. Everything below is either
     /// already visible to a paired device through `GET /v1/sessions` (terminal-neutral ids,
     /// labels, cwd, work states) or an aggregate count. Withheld deliberately: the durable
-    /// coordinator UUID, `generation`, `registered_at` and `rebound_at` (rebind bookkeeping a
-    /// device cannot use), `store` health, source `provenance` names and the session-watch
-    /// `generation` counter. Bearings already excludes tty, pid, process start and conversation
-    /// ids by construction.
+    /// coordinator UUID, top-level `generation`, `registered_at` and `rebound_at` (rebind
+    /// bookkeeping a device cannot use), `store` health, and the top-level source dictionaries.
+    /// Pending-row ownership is a narrower nested allowlist and deliberately retains only its
+    /// fixed evidence source names plus `observed_at`, `generation`, `provenance` and `freshness`.
+    /// Bearings already excludes tty, pid, process start and conversation ids by construction.
     ///
     /// `store.status` stays withheld, but the one thing a device legitimately needs from it —
     /// whether registering would write over something — crosses as ``registrationStates``, a
@@ -626,7 +698,9 @@ enum Coordinator {
     }
 
     private static func coordinatorMetadata(_ record: Record,
-                                            among liveSessions: [LiveSession]) -> [String: Any] {
+                                            among liveSessions: [LiveSession],
+                                            sessionsFresh: Bool,
+                                            sessionsObservedAt: Date?) -> [String: Any] {
         let live = liveSessions.first { matches(record, $0.identity) }
         var session: [String: Any] = [
             "id": record.sessionID, "assistant": record.assistant,
@@ -634,13 +708,29 @@ enum Coordinator {
         ]
         if let cwd = live?.cwd ?? record.cwd { session["cwd"] = cwd }
         if let workState = live?.workState { session["work_state"] = workState.rawValue }
-        let online = live != nil
+        let observationCurrent = sessionsFresh && sessionsObservedAt.map {
+            representableTimestamp($0.timeIntervalSince1970)
+        } == true
+        let bindingChangedAt = record.reboundAt ?? record.registeredAt
+        let status: String
+        let lifecycle: String
+        if observationCurrent, live != nil {
+            status = "online"
+            lifecycle = "standby"
+        } else if observationCurrent,
+                  sessionsObservedAt.map({ $0.timeIntervalSince1970 >= bindingChangedAt }) == true {
+            status = "offline"
+            lifecycle = "offline"
+        } else {
+            status = "unknown"
+            lifecycle = "unknown"
+        }
         var metadata: [String: Any] = [
             "configured": true, "id": record.id, "scope": record.scope,
             "label": record.label, "registered_at": Int(record.registeredAt),
             "generation": record.generation ?? 1,
-            "status": online ? "online" : "offline",
-            "lifecycle": online ? "standby" : "offline",
+            "status": status,
+            "lifecycle": lifecycle,
             "session": session
         ]
         if let reboundAt = record.reboundAt { metadata["rebound_at"] = Int(reboundAt) }

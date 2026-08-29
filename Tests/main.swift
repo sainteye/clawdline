@@ -14459,6 +14459,114 @@ group("pending landing ownership is one fail-closed observation across list and 
            "missing")
 }
 
+group("bounded coordinator inventory keeps timed-out and in-flight cache reads stale") {
+    let manager = FileManager.default
+    let coordinatorDirectory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-bounded-coordinator-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! manager.createDirectory(at: coordinatorDirectory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = coordinatorDirectory
+        .appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    let orchestratorStore = Orchestrator.storeURL
+    let orchestratorBefore = try? Data(contentsOf: orchestratorStore)
+    Orchestrator.forget()
+    let refreshGate = DispatchSemaphore(value: 0)
+    RemoteServer.coordinatorInventoryRefreshGateForTesting = refreshGate
+    defer {
+        refreshGate.signal()
+        RemoteServer.coordinatorInventoryRefreshGateForTesting = nil
+        RemoteServer.shared.seedCoordinatorInventoryForTesting(nil)
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: coordinatorDirectory)
+        if let orchestratorBefore {
+            try? orchestratorBefore.write(to: orchestratorStore, options: .atomic)
+        } else {
+            try? manager.removeItem(at: orchestratorStore)
+        }
+        Orchestrator.forget()
+    }
+
+    let durable = coordinatorFixture("bounded-durable")
+    guard case .ok = Coordinator.register(
+        durable, among: [durable], now: Date(timeIntervalSince1970: 100)) else {
+        check("the bounded-inventory coordinator fixture registers", false)
+        return
+    }
+    let taskID = "71717171-8181-9191-a1a1-b1b1b1b1b1b1"
+    let taskSecret = String(repeating: "71", count: 32)
+    var task = Orchestrator.Task(
+        id: taskID, state: .success, kind: "custom", title: "bounded stale landing",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 1), finishedAt: Date(timeIntervalSince1970: 2),
+        rootSessionId: "bounded-root", rootAssistant: .codex,
+        rootLabel: "bounded owner", claims: ["Sources/Bounded.swift"],
+        claimsDeclared: true, secretHash: Orchestrator.hash(ofSecret: taskSecret))
+    task.landing = Orchestrator.Landing(
+        state: .pending, target: "main", delivery: nil,
+        ownerRootKey: Orchestrator.rootKeyDigest("bounded-root"),
+        since: Date(timeIntervalSince1970: 10), commit: nil, note: nil)
+    Orchestrator.holdScheduleTaskForTesting(task)
+
+    RemoteServer.shared.seedCoordinatorInventoryForTesting(.init(
+        targets: [], states: [:], complete: true,
+        observedAt: Date(timeIntervalSince1970: 200), generation: 9))
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    func payload(_ path: String) -> [String: Any]? {
+        let done = DispatchSemaphore(value: 0)
+        let resultLock = NSLock()
+        var result: [String: Any]?
+        Thread.detachNewThread {
+            let response = RemoteServer.shared.route(remoteRequest("GET", path, headers: auth))
+            let decoded = (try? JSONSerialization.jsonObject(with: response.body))
+                as? [String: Any]
+            resultLock.lock()
+            result = decoded
+            resultLock.unlock()
+            done.signal()
+        }
+        done.wait()
+        resultLock.lock(); defer { resultLock.unlock() }
+        return result
+    }
+    func sessionFreshness(_ payload: [String: Any]?) -> String? {
+        if let sources = payload?["sources"] as? [String: Any] {
+            return (sources["sessions"] as? [String: Any])?["freshness"] as? String
+        }
+        let bearings = payload?["bearings"] as? [String: Any]
+        return ((bearings?["sources"] as? [String: Any])?["sessions"]
+            as? [String: Any])?["freshness"] as? String
+    }
+
+    let timedOut = payload("/v1/orchestrator/landings")
+    let timedOutRows = timedOut?["landings"] as? [[String: Any]] ?? []
+    check("a timed-out bounded refresh returns the cached inventory as stale",
+          sessionFreshness(timedOut) == "stale"
+            && timedOutRows.count == 1
+            && (timedOutRows[0]["ownership"] as? [String: Any])?["status"]
+                as? String == "unknown")
+
+    let inFlight = payload("/v1/orchestrator/coordinator")
+    let inFlightCoordinator = inFlight?["coordinator"] as? [String: Any]
+    let inFlightRows = (inFlight?["bearings"] as? [String: Any])?["pending_landings"]
+        as? [[String: Any]] ?? []
+    check("an in-flight bounded refresh also returns stale and preserves every durable row",
+          sessionFreshness(inFlight) == "stale"
+            && inFlightRows.count == 1
+            && (inFlightRows[0]["ownership"] as? [String: Any])?["status"]
+                as? String == "unknown")
+    check("stale cached absence never positively asserts the durable coordinator offline",
+          inFlightCoordinator?["status"] as? String == "unknown"
+            && inFlightCoordinator?["lifecycle"] as? String == "unknown")
+    let refreshState = RemoteServer.shared.coordinatorInventoryRefreshStateForTesting()
+    check("repeated timed-out reads schedule no second main-queue refresh while one is pending",
+          refreshState.pending && refreshState.scheduled == 1,
+          "pending=\(refreshState.pending), scheduled=\(refreshState.scheduled)")
+
+    refreshGate.signal()
+}
+
 group("cleanup retains pending landing obligations beyond the ordinary registry cap") {
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
@@ -22805,13 +22913,30 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
             workState: .working, waitingOnSession: false, hasWaiters: false)) == nil)
 
     let offline = Coordinator.inspection(
-        liveSessions: [other], bearings: .init(sessionsFresh: true, activeTaskCount: 0,
-                                               pendingLandingCount: 0, openWaitCount: 0))
+        liveSessions: [other], bearings: .init(
+            sessionsFresh: true, activeTaskCount: 0, pendingLandingCount: 0,
+            openWaitCount: 0,
+            sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_030)))
     expect("a missing exact process preserves durable identity but reports offline",
            (offline["coordinator"] as? [String: Any])?["lifecycle"] as? String, "offline")
     check("offline presence exposes no private binding evidence",
           !String(decoding: try! JSONSerialization.data(withJSONObject: offline), as: UTF8.self)
             .contains("conversation-a"))
+    let stale = Coordinator.inspection(
+        liveSessions: [other], bearings: .init(
+            sessionsFresh: false, activeTaskCount: 0, pendingLandingCount: 0,
+            openWaitCount: 0,
+            sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_030)))
+    check("stale evidence cannot positively assert a durable coordinator offline",
+          (stale["coordinator"] as? [String: Any])?["status"] as? String == "unknown"
+            && (stale["coordinator"] as? [String: Any])?["lifecycle"] as? String == "unknown")
+    let missing = Coordinator.inspection(
+        liveSessions: [other], bearings: .init(
+            sessionsFresh: true, activeTaskCount: 0, pendingLandingCount: 0,
+            openWaitCount: 0, sessionsObservedAt: nil))
+    check("missing evidence cannot positively assert a durable coordinator offline",
+          (missing["coordinator"] as? [String: Any])?["status"] as? String == "unknown"
+            && (missing["coordinator"] as? [String: Any])?["lifecycle"] as? String == "unknown")
 
     let projected = Coordinator.sessionProjection(for: father)
     expect("the authenticated optional row has the fixed label",
@@ -22888,8 +23013,8 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
                         sessionsGeneration: 42),
         now: Date(timeIntervalSince1970: 1_800_000_020))
     let deviceCoordinator = device["coordinator"] as? [String: Any] ?? [:]
-    expect("the device projection keeps presence", deviceCoordinator["status"] as? String,
-           "online")
+    expect("the device projection keeps degraded presence without asserting liveness",
+           deviceCoordinator["status"] as? String, "unknown")
     expect("and the machine scope", deviceCoordinator["scope"] as? String, "machine")
     check("the durable UUID and lifecycle bookkeeping are withheld from devices",
           deviceCoordinator["id"] == nil && deviceCoordinator["generation"] == nil
@@ -23590,6 +23715,27 @@ group("coordinator routes require the machine token and expose no implicit takeo
     let brokenJSON = RemoteServer.shared.route(remoteRequest(
         "POST", path, headers: auth, body: "{not-json"))
     expect("malformed JSON is rejected before identity lookup", brokenJSON.status, 400)
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_800_000_020), generation: 1,
+        complete: false)
+    let staleAbsent = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"missing\"}"))
+    expect("stale registration evidence fails before cache-shaped absence",
+           staleAbsent.status, 409)
+    expect("stale registration is typed as unknown liveness",
+           remoteErrorCode(staleAbsent), "coordinator_liveness_unknown")
+    check("stale registration evidence writes no durable candidate",
+          !manager.fileExists(atPath: Coordinator.storeURL.path))
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: nil, generation: 1, complete: true)
+    let untimestampedAbsent = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"father\"}"))
+    expect("untimestamped registration evidence fails closed",
+           remoteErrorCode(untimestampedAbsent), "coordinator_liveness_unknown")
+    check("untimestamped registration evidence writes no durable candidate",
+          !manager.fileExists(atPath: Coordinator.storeURL.path))
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(), generation: 2, complete: true)
     let unknown = RemoteServer.shared.route(remoteRequest(
         "POST", path, headers: auth, body: "{\"session_id\":\"missing\"}"))
     expect("an unknown terminal-neutral session is refused", unknown.status, 404)
@@ -23605,6 +23751,25 @@ group("coordinator routes require the machine token and expose no implicit takeo
         "POST", path, headers: auth, body: "{\"session_id\":\"other\"}"))
     expect("the route refuses implicit takeover", conflict.status, 409)
     expect("with the singleton code", remoteErrorCode(conflict), "coordinator_exists")
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_800_000_020), generation: 1,
+        complete: false)
+    let staleIdempotent = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"father\"}"))
+    expect("a durable exact registration stays idempotent under stale observation",
+           staleIdempotent.status, 200)
+    let staleIdempotentBody = (try? JSONSerialization.jsonObject(with: staleIdempotent.body))
+        as? [String: Any]
+    check("stale idempotency mutates nothing and reports unknown liveness",
+          staleIdempotentBody?["created"] as? Bool == false
+            && (staleIdempotentBody?["coordinator"] as? [String: Any])?["status"]
+                as? String == "unknown")
+    let staleConflict = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"other\"}"))
+    expect("a different durable identity still returns coordinator_exists while stale",
+           remoteErrorCode(staleConflict), "coordinator_exists")
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(), generation: 3, complete: true)
 
     let anonymousGet = RemoteServer.shared.route(remoteRequest(
         "GET", "/v1/orchestrator/coordinator"))
@@ -24936,6 +25101,10 @@ func sessionWatchCrossingProbe() async
                 if RemoteServer.coordinatorObservationUnavailableForTesting {
                     seamsLeftSet.append(
                         "RemoteServer.coordinatorObservationUnavailableForTesting")
+                }
+                if RemoteServer.coordinatorInventoryRefreshGateForTesting != nil {
+                    seamsLeftSet.append(
+                        "RemoteServer.coordinatorInventoryRefreshGateForTesting")
                 }
                 if RemoteServer.sessionPayloadForTesting != nil {
                     seamsLeftSet.append("RemoteServer.sessionPayloadForTesting")
