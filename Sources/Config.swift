@@ -1,5 +1,76 @@
 import AppKit
 
+/// Which queue the caller is standing on — which is **not** the same question as which thread.
+///
+/// They agree right up until `dispatchMain()` runs. After it the main thread is parked and the
+/// main *queue* is drained by whichever worker libdispatch hands it to, so inside a block that is
+/// already on the main queue `Thread.isMainThread` is false. Code that decides whether to hop on
+/// that answer takes a `dispatch_sync` onto the queue that already owns its thread, and
+/// libdispatch does not deadlock on that — it traps. A trap in a background reading is a process
+/// that disappears with no failing test, no log line and nothing on screen; that is what
+/// ``Orchestrator/records()`` did (fixed in b6d1939a) and it cost a day to find.
+///
+/// It lives in this file because two of the three crossings that ask this are here and in
+/// ``Transcript``, and both are inside one change's write set. ``Orchestrator/isOnMainQueue`` asks
+/// the same question through a key of its own; folding it into this belongs to whoever next edits
+/// that file.
+enum MainQueue {
+
+    private static let key: DispatchSpecificKey<Bool> = {
+        let key = DispatchSpecificKey<Bool>()
+        DispatchQueue.main.setSpecific(key: key, value: true)
+        return key
+    }()
+
+    /// True when the caller is running on the main queue, whichever thread is draining it.
+    static var isCurrent: Bool { DispatchQueue.getSpecific(key: key) == true }
+
+    /// Answer `work` on the main queue, hopping only when the caller is not already there.
+    ///
+    /// **`alreadyOnMain` is the caller's own answer, and it is passed in rather than asked here
+    /// because the caller's answer is the thing that goes wrong.** Every site this replaced asked
+    /// `Thread.isMainThread`, which reads correctly for as long as nothing runs on the main queue
+    /// from a worker — and then stops.
+    ///
+    /// So the hop is checked against queue identity once more here, one step before it would be
+    /// taken. A caller whose predicate was wrong runs its work inline, which is what it wanted
+    /// anyway, and is named in ``reentrantHopsForTesting``. This is the net rather than the
+    /// decision: what it buys is that a wrong predicate becomes an observable mistake — a line in
+    /// the log and a red check — instead of a process that vanishes mid-reading.
+    static func hop<T>(from site: String, alreadyOnMain: Bool, _ work: () -> T) -> T {
+        if alreadyOnMain { return work() }
+        guard isCurrent else { return DispatchQueue.main.sync(execute: work) }
+        reentryLock.lock()
+        reentrantHops.append(site)
+        let first = loggedReentry.insert(site).inserted
+        reentryLock.unlock()
+        // Once per site. A wrong predicate is wrong on every reading, and the panel takes one
+        // every 1.2 seconds — a line each would bury the log it is trying to be found in.
+        if first {
+            Log.write("main-queue hop from \(site) was already on the main queue; ran it there")
+        }
+        return work()
+    }
+
+    private static let reentryLock = NSLock()
+    private static var reentrantHops: [String] = []
+    private static var loggedReentry: Set<String> = []
+
+    /// Sites whose predicate sent them to ``hop(from:alreadyOnMain:_:)`` while they were already
+    /// on the main queue, in the order it happened. Empty is the only correct reading.
+    static var reentrantHopsForTesting: [String] {
+        reentryLock.lock(); defer { reentryLock.unlock() }
+        return reentrantHops
+    }
+
+    static func forgetReentrantHopsForTesting() {
+        reentryLock.lock()
+        reentrantHops = []
+        loggedReentry = []
+        reentryLock.unlock()
+    }
+}
+
 /// Settings and history, kept in ~/.config/clawdline/.
 /// Everything has a default: a missing, corrupt or half-written config must still launch.
 final class Config {
@@ -644,9 +715,22 @@ final class Config {
     ///
     /// Not private because ``SessionNaming/look(at:startedAt:sources:)`` needs the same id from
     /// the same queues, and a second copy of this crossing is a second chance to get it wrong.
+    ///
+    /// **Queue identity, not thread identity** — see ``MainQueue``. This asked
+    /// `Thread.isMainThread` until it was fixed alongside the crossing in
+    /// ``Transcript/sessionID(of:)``.
+    ///
+    /// **This is not a production defect, and the distinction is worth keeping.** The app runs
+    /// `app.run()`, where NSApplication drains the main queue on the main thread, so the thread
+    /// predicate agrees with the queue there and this never fires. It is a process that parks its
+    /// main thread and lets a worker drain the queue — which is what the test binary does after
+    /// `dispatchMain()` — where the two disagree and the hop below would have trapped. An earlier
+    /// version of this comment said the app would trap; it would not, and overstating a defect in
+    /// a comment is a false claim nothing tests.
     func hookSessionID(of target: TargetSession) -> String? {
-        if Thread.isMainThread { return HookBridge.note(for: target)?.session }
-        return DispatchQueue.main.sync { HookBridge.note(for: target)?.session }
+        MainQueue.hop(from: "Config.hookSessionID(of:)", alreadyOnMain: MainQueue.isCurrent) {
+            HookBridge.note(for: target)?.session
+        }
     }
 
     /// The name a person gave **this conversation**, not the name somebody once gave this tab.

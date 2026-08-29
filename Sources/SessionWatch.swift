@@ -180,10 +180,12 @@ final class SessionWatch {
         let knownTargets = targets
         DispatchQueue.global(qos: isForeground ? .userInitiated : .utility).async { [weak self] in
             guard let self else { return }
+            // nil in the app; see `inventoryForTesting` at the foot of this file.
+            let inventory = SessionWatch.inventoryForTesting?()
             // Cheapest possible answer to "is any of this worth doing": one `ps`, already cached
             // for a couple of seconds, and nothing at all follows it on a machine with no Claude
             // Code running. tmux panes are in here too — they are ordinary processes on a tty.
-            let processScan = ITerm.assistantProcessScan()
+            let processScan = inventory?.scan ?? ITerm.assistantProcessScan()
             guard processScan.isComplete else {
                 // Silence from `ps` is not evidence that every assistant exited. Leave every
                 // published field exactly as it was; even re-reading the old sessions here would
@@ -199,7 +201,7 @@ final class SessionWatch {
             // remains as an ordinary shell. Always take a real terminal inventory so an empty
             // result can never permanently forget a shell-only child on process evidence alone.
             // `ITerm.list` is also the bounded recovery probe that clears an automation circuit.
-            let snap = Targets.snapshot()
+            let snap = inventory?.snapshot ?? Targets.snapshot()
             let anyAssistant = !processScan.assistants.isEmpty
             let contradiction = snap.isComplete && Targets.hasLiveProcessContradiction(
                 previous: knownTargets, scanned: snap.sessions,
@@ -451,4 +453,26 @@ final class SessionWatch {
         if case .working(let line) = states[id] { return line }
         return nil
     }
+
+    // MARK: - Test seam
+
+    /// What a reading asks the machine, replaced only by the suite. nil in the app.
+    ///
+    /// **The one seam in this file, and it is at the one boundary that matters.** Everything
+    /// above it in ``read()`` is round trips — `ps`, and the terminal inventory. Everything below
+    /// it is what a reading *concludes*: the reconciliation, the merges, the usage ledger's two
+    /// forced checkpoints, and the publish onto the main queue. Nothing in the suite had ever
+    /// started this class, so `targets` stayed empty forever and every one of those conclusions
+    /// was dormant — and a dormant consequence is an unasserted one. The ledger's collector was
+    /// wired to this path in the previous slice and nothing proved the wire was there.
+    ///
+    /// Declared here rather than beside its two uses on purpose: it is read at exactly two lines
+    /// of ``read()``, each `inventory?.x ?? <the production call>`, so a later change to that
+    /// function's ordering rebases past it mechanically instead of reasoning around a seam
+    /// threaded through the file.
+    ///
+    /// Read once per reading, so a fixture cannot be handed a scan and a snapshot that disagree
+    /// about the same instant.
+    static var inventoryForTesting: (() -> (scan: ITerm.AssistantProcessScan,
+                                            snapshot: Targets.Snapshot))?
 }

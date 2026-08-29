@@ -62,24 +62,38 @@ enum Transcript {
     static func sessionID(of session: TargetSession) -> String? {
         // HookBridge's tty table is replaced on main. Preserve the same boundary the old root
         // resolver used when Claude's registry is absent; Codex never touches that table.
-        if session.assistant == .claude && !Thread.isMainThread {
-            return DispatchQueue.main.sync { sessionID(of: session) }
+        //
+        // **Queue identity, not thread identity** — see ``MainQueue``. This crossing asked
+        // `Thread.isMainThread`, which is false inside a main-queue block once `dispatchMain()`
+        // has parked the main thread, so the hop it took from there was a synchronous dispatch
+        // onto the queue it was already on. Nothing had ever reached it that way, because
+        // nothing in the suite gave ``SessionWatch`` a target to read.
+        guard session.assistant == .claude else {
+            guard let record = record(of: session) else { return nil }
+            return sessionID(in: record.url, assistant: record.assistant)
         }
-        if session.assistant == .claude {
-            // `record(of:)` is also the transcript-pane discovery path, where title and time are
-            // useful best-effort ranking. Identity has a stronger contract: without a registry
-            // or hook naming one transcript, no ranked candidate may become somebody's id.
-            guard let id = namedClaudeSessionID(
-                    registry: SessionRegistry.sessionID(of: session),
-                    hook: HookBridge.note(for: session)?.session),
-                  let cwd = Targets.workingDirectory(of: session),
-                  let url = locate(cwd: cwd, tabTitle: session.name,
-                                   startedAt: Targets.processStart(of: session), sessionID: id)
-            else { return nil }
-            return sessionID(in: url, assistant: .claude)
-        }
-        guard let record = record(of: session) else { return nil }
-        return sessionID(in: record.url, assistant: record.assistant)
+        return MainQueue.hop(from: "Transcript.sessionID(of:)",
+                             alreadyOnMain: MainQueue.isCurrent) { claudeSessionID(of: session) }
+    }
+
+    /// The Claude half of ``sessionID(of:)``, on the main queue.
+    ///
+    /// `record(of:)` is also the transcript-pane discovery path, where title and time are useful
+    /// best-effort ranking. Identity has a stronger contract: without a registry or hook naming
+    /// one transcript, no ranked candidate may become somebody's id.
+    ///
+    /// Split out from its caller so the crossing above is one expression. Left in place it would
+    /// have to re-enter `sessionID(of:)` from inside the hop, which is a recursion whose base case
+    /// is the very predicate under test.
+    private static func claudeSessionID(of session: TargetSession) -> String? {
+        guard let id = namedClaudeSessionID(
+                registry: SessionRegistry.sessionID(of: session),
+                hook: HookBridge.note(for: session)?.session),
+              let cwd = Targets.workingDirectory(of: session),
+              let url = locate(cwd: cwd, tabTitle: session.name,
+                               startedAt: Targets.processStart(of: session), sessionID: id)
+        else { return nil }
+        return sessionID(in: url, assistant: .claude)
     }
 
     /// Only sources that name a Claude conversation may establish root identity. Empty values
