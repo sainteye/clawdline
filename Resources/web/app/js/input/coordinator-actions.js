@@ -177,7 +177,8 @@ export function sendDeepStatusAudit(client, session, context) {
     var coordinator = coordinatorForSession(session);
     if (!coordinator || coordinator.status !== "online") {
         return Promise.reject(auditError(
-            "coordinator_offline",
+            coordinator && coordinator.status === "unknown"
+                ? "coordinator_unknown" : "coordinator_offline",
             coordinator && coordinator.status === "unknown"
                 ? T.webCoordUnknown : T.webCoordAuditWhyOffline));
     }
@@ -219,7 +220,9 @@ export function coordinatorForSession(session) {
 /** Preserve three-state liveness at every renderer; a disconnected browser may downgrade an
  * exact online observation to offline, but missing evidence must never be spelled as either. */
 export function coordinatorPresenceState(coordinator, context) {
-    if (!coordinator || coordinator.status === "unknown") return "unknown";
+    if (!coordinator || (coordinator.status !== "online" && coordinator.status !== "offline")) {
+        return "unknown";
+    }
     if (coordinator.status === "offline") return "offline";
     return context && context.connected === false ? "offline" : "online";
 }

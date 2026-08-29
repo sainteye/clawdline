@@ -8,6 +8,7 @@ import {
     coordinatorForSession,
     coordinatorGroups,
     coordinatorPanelHTML,
+    coordinatorPresenceState,
     coordinatorPreview,
     coordinatorReason,
     coordinatorRoute,
@@ -143,6 +144,10 @@ const unknownPanel = coordinatorPanelHTML(unknownCoordinatorSession,
 assert.match(unknownPanel, /data-status="unknown"[^>]*>.*Unknown/s,
     "unknown Session evidence is rendered as unknown, never offline or online");
 assert.doesNotMatch(unknownPanel, /Clawdfather offline|Clawdfather online/);
+assert.equal(coordinatorPresenceState({}, { connected: true }), "unknown",
+    "missing coordinator status fails closed as unknown");
+assert.equal(coordinatorPresenceState({ status: "starting" }, { connected: true }), "unknown",
+    "an unrecognized future coordinator status fails closed as unknown");
 const unknownCoordinatorCSS = await readFile(
     new URL("../Resources/web/app/css/coordinator.css", import.meta.url), "utf8"
 );
@@ -256,7 +261,7 @@ await assert.rejects(() => sendDeepStatusAudit(spyClient, {
 }, { connected: true, write: true }), (error) => error.code === "coordinator_offline");
 await assert.rejects(() => sendDeepStatusAudit(spyClient, unknownCoordinatorSession,
     { connected: true, write: true }),
-    (error) => error.code === "coordinator_offline" && error.message === T.webCoordUnknown);
+    (error) => error.code === "coordinator_unknown" && error.message === T.webCoordUnknown);
 assert.equal(sent.length, 1, "offline and no-write contexts never reach the client");
 
 const noWriteAudit = coordinatorGroups(coordinatorSession,
