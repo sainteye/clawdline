@@ -2,6 +2,35 @@
 
 Status: process contract now; broker/runner automation described below is planned.
 
+## Phase 0–1 repository guards
+
+The refactor foundation implements three local guards without changing the 6,434-check baseline:
+
+- `tools/swift-source-manifest.sh` is sourced by both `build.sh` and `test.sh`; production mode
+  compares the 89-entry production partition only with recursive `Sources/` inventory, while full
+  mode separately compares both the 89-production and 40-test partitions. Partition swaps fail
+  closed, and Tests-only drift does not block the application build.
+- `tools/check-architecture-boundaries.sh` verifies the entry point remains at most 500 lines,
+  24 ordered runners,
+  432 sealed group identities, production net-growth freezes and the 2,000-line suite ceiling.
+- `Tests/TestGroupManifest.swift` records group titles at runtime and adds a failure on any identity
+  or order difference without incrementing `checks`. `test.sh` separately requires the exact
+  `6434 checks passed` line and the existing Cloud receipt exactly once.
+
+The missing-nested-source mutation returned 1 before the fixture was restored; the entry-point
+growth mutation returned 1 at 534 lines before the 34-line entry was restored. These are guard
+proofs, not extra full-suite runs. Focused `--group` execution and compile caching in “Runner
+direction” remain planned; this phase does not pretend they exist.
+
+The four sealed structural/count receipts have different owners. A legitimate check change updates
+the `6434 checks passed` expectation in `test.sh` and the recorded baseline. A group identity change
+updates `expectedOrderedTestGroupTitles`, the `432` architecture expectation and the baseline. A
+runner-boundary change updates `Tests/main.swift`, its documented order and the `24` expectation. A
+suite-file change updates the manifest and the `34` `*Tests.swift` expectation. The entry point's
+current 34-line size is an observation, not another exact guard; its enforced limit is 500. Change
+only the receipts affected by the approved behavior change, record the old guard going red, then
+record the updated guard green.
+
 ## One feature graph
 
 ```text
@@ -82,6 +111,32 @@ reused across tasks.
 A mutation receipt links to a baseline for the same question. A dirty overlay is explicitly local
 self-proof. The same exact tuple is not rerun after green. A second full suite is valid only after a
 typed `inconclusive_environment` result.
+
+### Reproducible working-overlay digest
+
+An overlay receipt records its exact base commit separately and computes `overlay_sha256` from a
+worktree whose `HEAD` is that base. Hash the bytes from
+`git diff --binary --full-index --no-ext-diff HEAD` exactly as emitted. Then, for every untracked
+path returned by `git ls-files --others --exclude-standard -z` in bytewise (`LC_ALL=C`) sorted order,
+append `NUL`, the path bytes, another `NUL`, and the file bytes. SHA-256 the resulting byte stream.
+Tracked changes (including deletions, modes and binary patches) are therefore bound by the diff;
+untracked paths and contents are bound explicitly. Do not add a separator after the diff other than
+the leading `NUL` of the first untracked record, and do not include ignored files.
+
+One reference implementation is:
+
+```bash
+{
+  git diff --binary --full-index --no-ext-diff HEAD
+  while IFS= read -r -d '' path; do
+    printf '\0%s\0' "$path"
+    dd if="$path" status=none
+  done < <(git ls-files --others --exclude-standard -z | LC_ALL=C sort -z)
+} | shasum -a 256
+```
+
+The recorded base commit, digest recipe and digest are one subject identifier. A digest from an
+earlier report that omitted its byte recipe is superseded rather than treated as comparable.
 
 ## Invalid result metadata
 

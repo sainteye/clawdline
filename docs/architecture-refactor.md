@@ -1,6 +1,6 @@
 # Architecture refactor blueprint
 
-Status: design, not an authorization to rewrite the application.
+Status: Phases 0–1 implemented as a review candidate; Phase 2 remains gated and unauthorized.
 
 Measured baseline: `main` at `04071d8a`, 2026-08-29. The exact candidate tree passed 6,434
 checks before the application build. Re-measure file sizes and dependencies before starting any
@@ -22,6 +22,76 @@ The current hotspots are evidence of collision, not automatic split points:
 | `Sources/RemoteServer.swift` | 5,903 | transport, routing, auth, terminal broker, domain handlers, SSE and assets |
 | `Sources/Controller.swift` | 4,092 | AppKit composition, session browser, transcript, stack, voice and snapshots |
 | `Sources/Settings.swift` | 3,919 | window lifecycle, persistence and several independent product domains |
+
+## Phase 0–1 candidate sealed at `f32071e5`
+
+The extraction candidate starts from `f32071e5f429dee9b22ab3f32853212c14f747f6` and changes no
+production Swift behavior. Baseline A and candidate baseline B both execute the same ordered 432
+`group()` identities and 6,434 checks. The guards that prove those facts are check-neutral, so the
+act of guarding the baseline does not mint a new check and then call the new number equivalent.
+
+| Surface | Before | Candidate |
+|---|---:|---:|
+| `Tests/main.swift` | 27,630 lines | 34 lines |
+| ordered `group()` identities | 432 | 432 |
+| full Swift check count | 6,434 | 6,434 |
+| Swift test files | 12 | 40 |
+| extracted domain runners, including isolation | 1 implicit stream | 24 explicit runners |
+| largest extracted suite | n/a | 1,841 lines |
+
+`tools/swift-source-manifest.sh` is now the single deterministic source inventory used by both
+`build.sh` and `test.sh`. Build mode recursively compares the production partition only with
+`Sources/**/*.swift`; full test mode separately compares that partition and the test partition with
+`Sources/**/*.swift` and `Tests/**/*.swift`. A nested addition/removal or a Sources↔Tests partition
+swap therefore fails before compilation, while Tests-only drift cannot block an application build.
+The manifest currently contains 89 production and 40 test sources. `tools/check-architecture-boundaries.sh`
+also freezes `Orchestrator.swift` at 11,564 lines, `RemoteServer.swift` at 5,903 lines, keeps
+`Tests/main.swift` below 500 lines and free of domain `group()` calls, requires 24 ordered runners
+and 432 manifest entries, and enforces the 2,000-line suite stop-growth boundary.
+
+### Ordered suite and dependency manifest
+
+`Tests/main.swift` owns process order only. It enters subprocess probes, installs isolation, runs
+the following synchronous runners in order, starts the existing 11-suite Cloud registry, and then
+enters `dispatchMain()`. All suites depend inward on `TestHarness`; only process probes and
+`TestIsolation` may configure process-global seams. Domain suites may call production APIs and
+shared high-fan-in fixtures, but do not call another domain runner.
+
+The criteria column records engineering judgments against the anti-over-splitting criteria below;
+it is not a measured dependency-distance table. Every boundary has at least two stated judgments,
+which should be re-evaluated against current dependencies before a later extraction:
+
+| Order | Runner / file | Owned change pressure | Criteria |
+|---:|---|---|---|
+| 1 | `runTestIsolationTests` / `TestIsolation.swift` | process stores, caches and cleanup | 1, 2, 3 |
+| 2 | `runScheduledDispatchTests` / `ScheduledDispatchTests.swift` | schedule parsing, persistence and routes | 1, 3, 4 |
+| 3 | `runMascotTests` / `MascotTests.swift` | mascot schema, validation and rendering | 1, 3, 4 |
+| 4 | `runTranscriptTests` / `TranscriptTests.swift` | terminal parsing and transcript ownership/rendering | 1, 3, 4 |
+| 5 | `runMarkdownTests` / `MarkdownTests.swift` | Markdown rendering, attachments and presentation | 1, 3, 4 |
+| 6 | `runDevStackTests` / `DevStackTests.swift` | DevStack schema, state and log projection | 1, 2, 4 |
+| 7 | `runHookTests` / `HookTests.swift` | hooks, tunnel, push and remote seams | 1, 3, 4 |
+| 8 | `runSessionLaunchTests` / `SessionLaunchTests.swift` | places, terminal launch and start routes | 1, 3, 4 |
+| 9 | `runPlannerTests` / `PlannerTests.swift` | intent planning, menus and authenticated commands | 1, 3, 4 |
+| 10 | `runPeerMessageTests` / `PeerMessageTests.swift` | peer-envelope transcript reconciliation | 1, 3, 4 |
+| 11 | `runCodexSessionTests` / `CodexSessionTests.swift` | Codex activity, rollout and naming | 1, 3, 4 |
+| 12 | `runConversationTests` / `ConversationTests.swift` | conversation identity and resume parsing | 1, 3, 4 |
+| 13 | `runOrchestratorDispatchTests` / `OrchestratorDispatchTests.swift` | admission, models, worktrees and claims | 1, 3, 4 |
+| 14 | `runOrchestratorLandingTests` / `OrchestratorLandingTests.swift` | landing, visibility and root receipts | 1, 2, 4 |
+| 15 | `runOrchestratorLifecycleTests` / `OrchestratorLifecycleTests.swift` | serialization, state transitions and briefing | 1, 2, 4 |
+| 16 | `runOrchestratorCoordinationTests` / `OrchestratorCoordinationTests.swift` | handoffs, waits, relay and notifications | 1, 2, 4 |
+| 17 | `runSessionCloseAndQuotaTests` / `SessionCloseAndQuotaTests.swift` | close lifecycle, linger and quota | 1, 2, 4 |
+| 18 | `runSessionRegistryTests` / `SessionRegistryTests.swift` | Claude registry and subprocess jobs | 1, 2, 4 |
+| 19 | `runBackgroundAndStorageTests` / `BackgroundAndStorageTests.swift` | background sessions, owned storage and reclaim | 1, 2, 4 |
+| 20 | `runOrchestratorRecoveryTests` / `OrchestratorRecoveryTests.swift` | spawn retry, progress and verification metadata | 1, 2, 4 |
+| 21 | `runCoordinatorTests` / `CoordinatorTests.swift` | coordinator identity, rebind and Bearings | 1, 2, 4 |
+| 22 | `runOrchestratorCompletionTests` / `OrchestratorCompletionTests.swift` | durable completion ingress, retry and ACK | 1, 2, 4 |
+| 23 | `runUsageLedgerTests` / `UsageLedgerTests.swift` | ledger normalization, migration and correction | 1, 2, 4 |
+| 24 | `runSessionWatchTests` / `SessionWatchTests.swift` | queue crossings, live reads and backpressure | 1, 2, 4 |
+
+Infrastructure has narrower direction: `TestProcessProbes` may enter subprocess-only modes;
+`TestIsolation` owns global setup; `TestHarness` owns checks, failures and shared fixtures;
+`TestGroupManifest` owns the sealed ordered identity list; `CloudTestRunner` is the only async
+completion and receipt path. Existing Cloud suites retain their names, order and counts.
 
 The architectural defect is stronger than size: `Orchestrator` calls `RemoteServer`, while
 `RemoteServer` calls `Orchestrator`; Settings also uses the HTTP server as a serialization service.
@@ -203,6 +273,22 @@ would increase coupling.
 
 Every phase records before/after commits, keeps wire/store contracts stable, does focused proof and
 one phase-end exact-tree suite, adds no dependency cycle, and can be reverted as whole commits.
-Approve only Phases 0–1 initially. Phase 2 begins only after the extracted harness preserves group
-order and the sealed Phase 0 baseline B. Later phases need a fresh approval at their gate; this document is a map,
-not permission to run six migrations concurrently.
+Approve only Phases 0–1 initially. Phase 2 begins only when all of these are true on one exact
+candidate commit tree:
+
+1. independent review has sealed every finding as fixed, disproved or deferred with an owner;
+2. the 432-entry `expectedOrderedTestGroupTitles` equals the runtime order, the full result is
+   exactly 6,434 checks, and the existing Cloud receipt appears exactly once with the existing
+   eleven suite names and counts;
+3. `tools/swift-source-manifest.sh` reports the exact on-disk recursive inventory, including a
+   recorded red mutation for one missing nested source;
+4. the architecture guard reports `Tests/main.swift <= 500`, 24 ordered runners, no domain group in
+   the entry point, no extracted suite above 2,000 lines, and no net growth in the two frozen
+   production hotspots;
+5. the diff contains no production relocation, wire/store/concurrency change or new dependency
+   cycle, and HEAD compiles standing alone; and
+6. the Phase 2 policy list receives fresh human approval after the evidence above is reviewed.
+
+Failure of any item leaves `architecture_hold`; it is not permission to weaken a receipt or begin a
+partial production move. Later phases need the same fresh approval at their own gate. This document
+is a map, not permission to run six migrations concurrently.

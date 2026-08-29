@@ -3,6 +3,8 @@
 # compiled straight by swiftc — one less layer of "what does the build config actually say".
 set -euo pipefail
 cd "$(dirname "$0")"
+. tools/swift-source-manifest.sh
+verify_swift_source_manifest production
 
 APP="${CLAWDLINE_APP:-$HOME/Applications/Clawdline.app}"
 APP_PARENT="$(dirname "$APP")"
@@ -26,7 +28,7 @@ swiftc \
   -target arm64-apple-macos13.0 \
   -O \
   -o "$BIN" \
-  Sources/*.swift \
+  "${clawdline_production_sources[@]}" \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
 
 cp Resources/iterm.js "$RES/"

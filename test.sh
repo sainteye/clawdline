@@ -5,7 +5,48 @@
 # entry points cannot live in one binary. Everything else compiles in, so the tests
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
+
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:11,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166'
+expected_swift_receipt='6434 checks passed'
+
+count_exact_receipt_lines() {
+  local receipt=$1
+  local log=$2
+  awk -v receipt="$receipt" '$0 == receipt { count++ } END { print count + 0 }' "$log"
+}
+
+verify_test_completion_receipts() {
+  local log=$1
+  local cloud_receipt_count swift_receipt_count reported_swift_receipts
+  cloud_receipt_count=$(count_exact_receipt_lines "$expected_cloud_receipt" "$log")
+  if [ "$cloud_receipt_count" -ne 1 ]; then
+    echo "Cloud test completion receipt appeared $cloud_receipt_count times, expected exactly once — full output kept at $log" >&2
+    return 125
+  fi
+
+  swift_receipt_count=$(count_exact_receipt_lines "$expected_swift_receipt" "$log")
+  if [ "$swift_receipt_count" -ne 1 ]; then
+    reported_swift_receipts=$(awk '/^[0-9]+ checks passed$/ { values = values (values ? ", " : "") $0 } END { print values ? values : "none" }' "$log")
+    echo "Swift test completion receipt mismatch: expected exactly one '$expected_swift_receipt'; found $swift_receipt_count exact and reported $reported_swift_receipts — full output kept at $log" >&2
+    return 125
+  fi
+}
+
+# This narrow mode exercises the full-suite completion guard without compiling or running the
+# suite. It never emits a completion receipt of its own and cannot be mistaken for a full run.
+if [ "${1:-}" = "--verify-completion-receipts" ]; then
+  if [ "$#" -ne 2 ]; then
+    echo "usage: $0 --verify-completion-receipts <suite-log>" >&2
+    exit 2
+  fi
+  verify_test_completion_receipts "$2"
+  exit $?
+fi
+
 cd "$(dirname "$0")"
+. tools/swift-source-manifest.sh
+verify_swift_source_manifest full
+bash tools/check-architecture-boundaries.sh
 
 # Trailing commas in an argument list are Swift 6.1 syntax. The toolchain here is usually
 # newer than CI's, so code that compiles locally can fail to parse on the runner — and the
@@ -14,7 +55,7 @@ offenders=$(awk '
   $0 ~ /,[[:space:]]*\)/            { print FILENAME ":" FNR ": " $0 }
   prev ~ /,[[:space:]]*$/ && $0 ~ /^[[:space:]]*\)/ { print FILENAME ":" FNR-1 ": " prev }
   { prev = $0 }
-' Sources/*.swift Tests/*.swift)
+' "${clawdline_production_sources[@]}" "${clawdline_test_sources[@]}")
 if [ -n "$offenders" ]; then
   echo "trailing comma before ) — Swift 6.1 syntax, and CI runs something older:"
   echo "$offenders"
@@ -78,8 +119,8 @@ swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
   -o "$BIN" \
-  $(ls Sources/*.swift | grep -v 'Sources/main.swift') \
-  Tests/*.swift \
+  "${clawdline_library_sources[@]}" \
+  "${clawdline_test_sources[@]}" \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
 
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
@@ -110,8 +151,8 @@ trap 'rm -rf "$STORE"' EXIT
 #   * **stdout was block buffered** at 16384 — the binary's fd 1 is this pipe, and stays this pipe
 #     however the caller redirects, because a caller's `> run.log` lands on `tee`'s stdout and not
 #     on the binary's. So a crash could swallow most of the suite's own output, by the same amount
-#     for everybody. That is fixed in `Tests/main.swift`, which now asks for line buffering; both
-#     forms lost those lines equally.
+#     for everybody. That is fixed in `Tests/TestIsolation.swift`, which now asks for line
+#     buffering; both forms lost those lines equally.
 #   * **The shell itself gets killed from outside** — an agent harness timeout, a cancelled CI job,
 #     Ctrl-C, the OOM killer. There is no `echo` in that story at all. Measured: killed at 0.45s,
 #     `tee` had 219 lines on disk and the captured form had none. On a machine where half a dozen
@@ -155,10 +196,5 @@ fi
 # A zero process status is insufficient: removing dispatchMain() lets top-level code return before
 # either async suite or the final result path runs. Require the receipt emitted only by that path,
 # with full-suite counts so a targeted-case environment cannot make CI green either.
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:11,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166'
-cloud_receipt_count=$(grep -Fxc "$expected_cloud_receipt" "$LOG" || true)
-if [ "$cloud_receipt_count" -ne 1 ]; then
-  echo "Cloud test completion receipt appeared $cloud_receipt_count times, expected exactly once — full output kept at $LOG" >&2
-  exit 125
-fi
+verify_test_completion_receipts "$LOG"
 rm -f "$LOG"
