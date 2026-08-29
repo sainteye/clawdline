@@ -135,6 +135,19 @@ assert.equal(disconnected.find((action) => action.type === "coordinate_work").st
 assert.match(coordinatorPanelHTML(coordinatorSession, { connected: false, write: true }),
     /data-status="offline"[^>]*>.*Clawdfather offline/s,
     "a dropped browser connection cannot leave the controls claiming the coordinator is online");
+const unknownCoordinatorSession = { ...coordinatorSession, coordinator: {
+    ...coordinatorSession.coordinator, status: "unknown", lifecycle: "unknown"
+} };
+const unknownPanel = coordinatorPanelHTML(unknownCoordinatorSession,
+    { connected: true, write: true });
+assert.match(unknownPanel, /data-status="unknown"[^>]*>.*Unknown/s,
+    "unknown Session evidence is rendered as unknown, never offline or online");
+assert.doesNotMatch(unknownPanel, /Clawdfather offline|Clawdfather online/);
+const unknownCoordinatorCSS = await readFile(
+    new URL("../Resources/web/app/css/coordinator.css", import.meta.url), "utf8"
+);
+assert.match(unknownCoordinatorCSS, /data-status="unknown"[\s\S]{0,180}var\(--warn\)/,
+    "unknown presence has its own non-green visual state");
 
 const html = coordinatorPanelHTML(coordinatorSession, { connected: true, write: true });
 assert.match(html, /data-command="status_report"/);
@@ -241,6 +254,9 @@ await assert.rejects(() => sendDeepStatusAudit(spyClient, coordinatorSession,
 await assert.rejects(() => sendDeepStatusAudit(spyClient, {
     ...coordinatorSession, coordinator: { ...coordinatorSession.coordinator, status: "offline" }
 }, { connected: true, write: true }), (error) => error.code === "coordinator_offline");
+await assert.rejects(() => sendDeepStatusAudit(spyClient, unknownCoordinatorSession,
+    { connected: true, write: true }),
+    (error) => error.code === "coordinator_offline" && error.message === T.webCoordUnknown);
 assert.equal(sent.length, 1, "offline and no-write contexts never reach the client");
 
 const noWriteAudit = coordinatorGroups(coordinatorSession,
@@ -365,6 +381,13 @@ assert.ok(statusHTML.includes("2 tasks in flight")
     && statusHTML.includes("4 open file waits"));
 assert.ok(statusHTML.includes(esc(T.webCoordStaleSessions)),
     "a stale session watch is said, never silently drawn as current");
+const unknownStatusHTML = coordinatorAnswerHTML({ type: "status_report" }, {
+    ...bearingsPayload,
+    coordinator: { ...bearingsPayload.coordinator, status: "unknown", lifecycle: "unknown" }
+});
+assert.ok(unknownStatusHTML.includes(T.webCoordUnknown),
+    "a status report preserves unknown liveness instead of spelling it offline");
+assert.ok(!unknownStatusHTML.includes("Clawdfather offline"));
 
 const duplicatesHTML = coordinatorAnswerHTML(
     { type: "duplicates_conflicts_ownership" }, bearingsPayload);

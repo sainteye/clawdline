@@ -176,7 +176,10 @@ function auditError(code, message) {
 export function sendDeepStatusAudit(client, session, context) {
     var coordinator = coordinatorForSession(session);
     if (!coordinator || coordinator.status !== "online") {
-        return Promise.reject(auditError("coordinator_offline", T.webCoordAuditWhyOffline));
+        return Promise.reject(auditError(
+            "coordinator_offline",
+            coordinator && coordinator.status === "unknown"
+                ? T.webCoordUnknown : T.webCoordAuditWhyOffline));
     }
     if (!context || context.connected !== true) {
         return Promise.reject(auditError("connection_offline", T.webCoordAuditWhyDisconnected));
@@ -207,9 +210,25 @@ export function coordinatorForSession(session) {
     if (!source || typeof source !== "object" || Array.isArray(source)) return null;
     return {
         label: nonempty(source.label) || "Clawdfather",
-        status: source.status === "online" ? "online" : "offline",
+        status: source.status === "online" ? "online"
+            : (source.status === "offline" ? "offline" : "unknown"),
         commands: Array.isArray(source.commands) ? source.commands : []
     };
+}
+
+/** Preserve three-state liveness at every renderer; a disconnected browser may downgrade an
+ * exact online observation to offline, but missing evidence must never be spelled as either. */
+export function coordinatorPresenceState(coordinator, context) {
+    if (!coordinator || coordinator.status === "unknown") return "unknown";
+    if (coordinator.status === "offline") return "offline";
+    return context && context.connected === false ? "offline" : "online";
+}
+
+export function coordinatorPresenceText(coordinator, context) {
+    var state = coordinatorPresenceState(coordinator, context);
+    if (state === "unknown") return T.webCoordUnknown;
+    return fill(state === "online" ? T.webCoordOnline : T.webCoordOffline,
+                { name: coordinator && coordinator.label || "Clawdfather" });
 }
 
 /** The one route selector used by the row. Only the authenticated optional record changes it. */
@@ -272,9 +291,10 @@ export function coordinatorGroups(session, context) {
         var tokenEffort = normalizeTokenEffort(command.token_effort);
         var why = state === "disabled" ? coordinatorReason(command) : "";
         if (type === "deep_status_audit" && state === "unavailable") {
-            why = coordinator.status !== "online" ? T.webCoordAuditWhyOffline
+            why = coordinator.status === "unknown" ? T.webCoordUnknown
+                : (coordinator.status !== "online" ? T.webCoordAuditWhyOffline
                 : (!context || context.connected !== true ? T.webCoordAuditWhyDisconnected
-                    : T.webCoordAuditWhyNoWrite);
+                    : T.webCoordAuditWhyNoWrite));
         }
         grouped[definition.section].push({
             type: type,
@@ -332,8 +352,7 @@ export function coordinatorAnswerHTML(action, data) {
     }
     function presence() {
         if (coordinator.configured === false) return T.webCoordUnregistered;
-        return fill(coordinator.status === "online" ? T.webCoordOnline : T.webCoordOffline,
-                    { name: name });
+        return coordinatorPresenceText({ status: coordinator.status, label: name });
     }
 
     if (type === "status_report") {
@@ -428,7 +447,7 @@ function actionHTML(action) {
 export function coordinatorPanelHTML(session, context) {
     var coordinator = coordinatorForSession(session);
     if (!coordinator) return "";
-    var online = coordinator.status === "online" && (!context || context.connected !== false);
+    var presenceState = coordinatorPresenceState(coordinator, context);
     var groups = coordinatorGroups(session, context);
     var sections = groups.map(function (group) {
         return '<section class="coordinator-group" aria-labelledby="coordinator-group-' +
@@ -438,9 +457,9 @@ export function coordinatorPanelHTML(session, context) {
     if (!sections) {
         sections = '<p class="coordinator-empty">' + esc(T.webCoordEmpty) + "</p>";
     }
-    return '<div class="coordinator-presence" data-status="' + (online ? "online" : "offline") + '">' +
+    return '<div class="coordinator-presence" data-status="' + presenceState + '">' +
         '<span class="coordinator-presence-dot" aria-hidden="true"></span><span>' +
-        esc(fill(online ? T.webCoordOnline : T.webCoordOffline, { name: coordinator.label })) +
+        esc(coordinatorPresenceText(coordinator, context)) +
         "</span></div>" +
         '<div class="coordinator-groups">' + sections + "</div>" +
         '<section class="coordinator-preview" aria-live="polite" hidden></section>' +

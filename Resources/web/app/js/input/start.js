@@ -15,6 +15,7 @@ import {
     createClawdfatherAssignmentState,
     createClawdfatherCoordinatorLoader
 } from "./clawdfather.js";
+import { coordinatorPresenceText } from "./coordinator-actions.js";
 
 /* ---- starting a session -------------------------------------------------- */
 
@@ -97,8 +98,7 @@ export var Start = (function () {
                 var choice = result.choice || {};
                 var coordinator = choice.coordinator || {};
                 if (choice.state === "assigned") {
-                    toast(fill(coordinator.status === "online" ? T.webCoordOnline : T.webCoordOffline,
-                               { name: coordinator.label || "Clawdfather" }));
+                    toast(coordinatorPresenceText(coordinator));
                 } else if (choice.state === "blocked") {
                     toast(T.webClawdfatherRegisterBlocked, true);
                 } else {
@@ -319,8 +319,7 @@ export var Start = (function () {
             words = T.webCoordReadFailed;
         } else if (choice.state === "assigned") {
             var coordinator = choice.coordinator || {};
-            words = fill(coordinator.status === "online" ? T.webCoordOnline : T.webCoordOffline,
-                         { name: coordinator.label || "Clawdfather" });
+            words = coordinatorPresenceText(coordinator);
         }
         state.textContent = words;
         button.title = words;
