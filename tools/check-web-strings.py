@@ -7,12 +7,14 @@ boundary is otherwise a page which quietly prints ``undefined`` or stays in Engl
 """
 import re
 import sys
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 JS_ROOT = ROOT / "Resources" / "web" / "app" / "js"
 I18N = JS_ROOT / "core" / "i18n.js"
 SERVER = ROOT / "Sources" / "RemoteServer.swift"
+INDEX = Path(os.environ.get("CLAWDLINE_WEB_INDEX", ROOT / "Resources" / "web" / "index.html"))
 NAME = r"[A-Za-z_$][A-Za-z0-9_$]*"
 
 
@@ -35,10 +37,27 @@ def main():
         modules = sorted(JS_ROOT.rglob("*.js"))
         i18n = I18N.read_text()
         server = SERVER.read_text()
+        index = INDEX.read_text()
     except OSError as error:
         fail(str(error))
     if not modules:
         fail(f"no JavaScript modules found under {JS_ROOT.relative_to(ROOT)}")
+
+    usage = section(index, "// Usage Analytics IIFE: begin",
+                    "// Usage Analytics IIFE: end", "Usage Analytics IIFE")
+    usage_strings = set(re.findall(r"['\"]([^'\"\n]{3,})['\"]", usage))
+    required_usage_reads = {
+        "/v1/orchestrator/usage/analytics?",
+        "/v1/orchestrator/usage/analytics.csv?",
+        "/v1/orchestrator/usage/analytics.json?",
+        "usage-token-body",
+        "usage_analytics_busy",
+        "scan_limit_reached",
+    }
+    missing_usage = required_usage_reads - usage_strings
+    if missing_usage:
+        fail("Usage Analytics IIFE lost guarded string reads: "
+             + ", ".join(sorted(missing_usage)))
 
     reads = set()
     for module in modules:
@@ -75,7 +94,7 @@ def main():
 
     print(
         f"web strings agree: {len(reads)} read, {len(defined)} defined in T, "
-        f"{len(sent)} sent by /v1/strings"
+        f"{len(sent)} sent by /v1/strings; {len(usage_strings)} Usage Analytics IIFE literals guarded"
     )
     return 0
 

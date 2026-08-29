@@ -130,6 +130,9 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage.csv` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/usage/analytics` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/usage/analytics.csv` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/usage/analytics.json` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/whoami` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
@@ -2751,63 +2754,98 @@ directories. An entry can appear only after a Claude child transcript proves the
 and Clawdline successfully appends its task, assistant, session, canonical path, proof method,
 project, and timestamp to the independent ledger.
 
-### `GET /v1/orchestrator/usage`, `GET /v1/orchestrator/usage.csv`
+### `GET /v1/orchestrator/usage`, `.csv` (legacy forensic contracts)
+
+These two URLs retain their pre-analytics contracts byte-for-byte: `/usage` is the original
+aggregate payload and `/usage.csv` is the original forensic CSV, including session/path and all
+reserved columns. Existing accounting and incident tools therefore do not receive a new schema on
+an old URL. They remain authenticated reads; the CSV is forensic rather than privacy-safe and must
+not be exposed as a public download.
+
+### `GET /v1/orchestrator/usage/analytics`, `/analytics.csv`, `/analytics.json`
 
 **What every assistant session on this machine has spent, out of a store nothing sweeps.**
 
 The task registry keeps 200 rows and a task directory is deleted 24 hours after the task
 finishes, so `GET /v1/orchestrator/tasks` cannot answer a question about last month and never
-will. These two read it out of `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
+will. These three read it out of `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
 instead — see [`docs/orchestrator.md`](orchestrator.md#the-usage-ledger) for what is in there and
-how it gets there.
+how it gets there. The web app's **Usage** button is the human-facing Overview and Agent Work
+reader of the first route; it does not maintain a second store or a second arithmetic path.
 
-Both take the same range and neither starts anything:
+All three take the same closed query and none starts anything. Unknown keys and repeated keys are
+`400 bad_request`; a misspelled filter may not silently broaden an accounting query.
 
 | Query | Meaning |
 |---|---|
-| `from`, `to` | inclusive **local** days, `YYYY-MM-DD`. Anything else is `400 bad_request`; the bounds are compared as text, so a different format would quietly select a different set of rows. Omitted means every row the ledger holds |
+| `from`, `to` | inclusive local days, `YYYY-MM-DD`, interpreted in `timezone`. Omitted means every row the ledger holds |
+| `timezone` | IANA timezone identifier; the Mac's current timezone by default. Range boundaries and day/week/month buckets are made by `Calendar` in this zone, so a DST day is one bucket even when it is 23 or 25 hours |
 | `group` | `model` (the default), `assistant`, `origin`, `project`, `day`, `coverage`, `task`. An unknown value is `400 bad_request` |
+| `bucket` | `day` (the default), `week`, `month` |
+| `assistant`, `model`, `origin`, `project` | exact filters over the public analytics values. `project` is the final project name, never its filesystem path |
+| `view` | `overview` (the default) or `agent_work`; identifies the consumer while preserving one response contract |
+| `limit` | drill-down page size, `1...200`, default `50` |
+| `cursor` | opaque continuation returned by `pagination.nextCursor`. Rows are ordered by `startedAt`, then interval id, newest first; a newer insertion cannot duplicate or skip the continuation |
 
 ```json
 {"usage":{
   "range":{"from":"2026-08-01","to":"2026-08-28","timezone":"Asia/Taipei"},
+  "freshness":{"generatedAt":"2026-08-29T02:00:00Z","latestObservedAt":"2026-08-29T01:59:30Z",
+               "ageSeconds":30,"status":"current","scanTruncated":false},
+  "rangeFreshness":{"dataThrough":"2026-08-28T23:59:30Z","ageSeconds":7230,
+                    "status":"historical"},
+  "capabilities":{"views":["overview","agent_work"],"groupBy":["model","assistant","…"],
+                  "buckets":["day","week","month"],"exports":["csv","json"],
+                  "maxPageSize":200,"maxScannedRows":100000},
+  "priceSnapshot":{"activeId":"clawdline-prices-2026-08-28",
+                   "observedIds":["clawdline-prices-2026-08-14"],
+                   "meaning":"Observed ids price rows; activeId is current, not an actual bill."},
   "groupBy":"model",
-  "groups":[
-    {"key":"claude-opus-5","rows":42,
-     "tokens":{"inputNew":184220,"output":392110,"cacheRead":907441200,"cacheWrite":2210400},
-     "total":910227930,"tokenRowsUnknown":0,
-     "cost":{"byUnit":{"USD":128.41},"rows":31,"bases":{"list_price_estimate":31}},
-     "unpriced":{"rows":11,"reasons":{"no_cost_recorded":11}},
-     "coverage":{"complete":40,"partial":2}},
-    {"key":"gpt-5.6-sol","rows":57,
-     "tokens":{"inputNew":21403110,"output":1188420,"cacheRead":641309880,"cacheWrite":0},
-     "tokenPartsUnknown":{"inputNew":3,"output":3,"cacheRead":3,"cacheWrite":3},
-     "total":663901410,"tokenRowsUnknown":3,
-     "cost":null,
-     "unpriced":{"rows":57,"reasons":{"plan_billed":57}},
-     "coverage":{"complete":52,"partial":2,"source_missing":3},
-     "coverageReasons":{"source_unreadable_at_close":3}}],
-  "totals":{"…":"the same shape over every row in the range"},
+  "totals":{"rows":99,
+    "tokens":{"inputNew":21587330,"output":1580530,"cacheRead":1548751080,"cacheWrite":2210400},
+    "tokenPartsUnknown":{"inputNew":3,"output":3,"cacheRead":3,"cacheWrite":3},
+    "tokenRowsUnknown":3,"measuredFloor":1574139340,"strictTotal":null,
+    "costs":[
+      {"unit":"USD","basis":"list_price_estimate","value":128.41,"rows":30,
+       "priceSnapshotIds":["clawdline-prices-2026-08-28"]},
+      {"unit":"USD","basis":"provider_actual","value":17.32,"rows":1,
+       "priceSnapshotIds":[]}],
+    "unavailableCost":{"rows":68,"reasons":{"plan_billed":57,"no_cost_recorded":11}},
+    "coverage":{"states":{"complete":92,"partial":4,"source_missing":3},
+                "reasons":{"source_unreadable_at_close":3},"tokenRowsUnknown":3,
+                "tokenPartsUnknown":{"inputNew":3,"output":3,"cacheRead":3,"cacheWrite":3}}},
+  "breakdown":[{"key":"claude-opus-5","…":"the totals shape for this group"}],
+  "trend":[{"bucket":"2026-08-28",
+             "tokens":{"inputNew":20,"output":30,"cacheRead":400,"cacheWrite":0},
+             "measuredFloor":450,"strictTotal":450,"coverage":{"…":"…"}}],
+  "rows":[{"id":"opaque interval id","taskId":"…","startedAt":"…","endedAt":"…","assistant":"codex",
+           "model":"gpt-5.6-sol","project":"clawdline",
+           "tokens":{"inputNew":20,"output":30,"cacheRead":400,"cacheWrite":0},
+           "strictTotal":450,"measuredFloor":450,"unknownTokenParts":[],"sourceTotal":450,
+           "cost":null,"missingCostReason":"plan_billed","coverage":"complete",
+           "coverageReasons":[],"reconciliation":null,"inputBasis":"includes_cache"}],
+  "pagination":{"limit":50,"nextCursor":"eyJhdCI6…","hasMore":true},
+  "rowCount":99,
   "corrections":0,
   "schemaVersion":1,
-  "priceSnapshotId":"clawdline-prices-2026-08-28",
-  "unavailable":{"columns":["graph_id","parent_task_id","retry_of","attempt","landing_state",
-                            "disposition"],
-                 "why":"Whole-tree and retry identity are not plumbed yet. …"}}}
+  "unavailableDimensions":{"dimensions":["graph_id","parent_task_id","retry_of","attempt",
+                                            "landing_state","disposition"],
+                           "reason":"Whole-tree and retry identity are not plumbed yet. …",
+                           "graphView":false,"retryView":false,"landingView":false}}}
 ```
 
-**`null` means unknown and never zero, on both routes.** `tokens`, `total` and `cost` are `null`
-where nothing in the group carried one, and the CSV leaves the field empty. A row sealed
-`source_missing` — a session whose transcript could not be read — has NULL token counts and is
-counted in `tokenRowsUnknown` rather than summed as `0`. That is the point of the whole store:
-summing absent costs as zero once produced **1137M tokens, $0.00**, which is a month-end that
-looks entirely normal and is wrong in the direction nobody checks.
+Every response carries range/timezone, schema, capabilities, observed and active price snapshots,
+ledger freshness, range data-through/freshness, coverage, corrections and unavailable dimensions.
+Top-level `freshness` is always the newest ledger observation independent of the selected range;
+`rangeFreshness` describes only that range, so a historical month is not presented as a stale
+store. Schema 1 cannot support graph/retry/landing views and
+says so; it does not infer them from task ancestry.
 
-**A partly measured row is a marked row too, and it arrives marked.** `tokenRowsUnknown` counts
-every row that could not measure *something*, not only the rows that measured nothing at all, and
-`tokenPartsUnknown` names which column is short and on how many rows — a summed column with no
-entry there is one every row measured. `total` is the sum of what was measured, so a row with
-three parts known and one NULL contributes its three rather than dropping out of the range.
+**Value, unit, basis, availability and reason remain separate.** `null` is unknown and never zero.
+`measuredFloor` sums known token parts; `strictTotal` is `null` when any part is unknown. The four
+trend token fields are mutually exclusive normalized parts. Cost is an array of exact
+`unit`+`basis` series: two USD rows are not added when one is `provider_actual` and the other is
+`list_price_estimate`. `plan_billed` is unavailable, not free; an estimate is not an actual bill.
 
 `coverageReasons` carries the store's own words for why rows are marked: `session_unresolved` (a
 task whose session neither collector ever knew, filed under an invented identity that gets a
@@ -2816,25 +2854,35 @@ cursor of its own — so that group's total may count one session's counters twi
 transcript), `source_unreadable_at_close`, `no_usage_recorded`. `coverage` says only how much of a
 source was read and says nothing about any of these.
 
-`cost` is `byUnit` rather than one number because Codex has no per-session dollar figure in any
-login mode — its rows carry credits or nothing, never `0` — and adding credits to dollars is a
-number with no meaning. `unpriced.reasons` names *which* kind of unavailable each missing cost is:
-`plan_billed`, `no_price_for_model`, `unknown_model`, `no_cost_recorded`. Absence with no reason
-attached is indistinguishable from a cheap month.
+`.csv` and `.json` export every matching public row, not merely the page. Both omit raw prompts,
+session ids, working directories, source bytes, raw usage objects and the stored machine-local day
+(the requested timezone is authoritative instead). Safe CSV deliberately keeps `ended_at`, all
+four token parts, `unknown_token_parts`, `source_total`, `reconciliation`, `input_basis`, and the
+complete cost value/unit/basis/snapshot identity. CSV leaves unknown fields
+empty and prefixes text beginning (after spaces) with `=`, `+`, `-`, `@`, tab or carriage return
+with an apostrophe before RFC 4180 quoting, preventing spreadsheet formula execution. JSON is the
+lossless public form: null and zero, strict total and measured floor, cost unit/basis/snapshot and
+all availability reasons remain distinguishable. A query over more than 100,000 rows is marked
+partial on the reading route and refused as `413 export_too_large` on either export; narrow the
+range rather than accepting a silently incomplete file. The range and every exact assistant,
+model, origin and public-project filter are applied in SQLite before `maxScannedRows + 1` matching
+rows are admitted; the service never reads or sorts the whole ledger. A narrow old month can
+therefore clear the refusal even when the store contains millions of newer rows.
 
-`unavailable.columns` are reserved and NULL in every row of schema 1. Whole-tree and retry
-identity need plumbing that does not exist yet, so the aggregate names them rather than drawing a
-view it cannot support.
+Analytics rows and their opaque cursor are explicitly ordered newest first by `startedAt`, then
+interval id. This is a presentation contract, not the forensic reader's incomplete-first order.
+Coverage gaps remain prominent through `availability`, `coverage`, unknown-part counts and the web
+warning banner rather than through a hidden ordering bias.
 
-`.csv` answers `text/csv; charset=utf-8` with one header row and one line per interval, over the
-same range. **Rows that could not measure something come first** — any part unknown, not only all
-four — because the sessions most likely to go missing are the long ones and a total nobody scrolls
-past would otherwise hide its own bias. It carries one column the aggregate has no place for:
-`input_basis`, which records whether the source's `input` already included its cached input and on
-what evidence that was decided — see
-[`docs/orchestrator.md`](orchestrator.md#spelling-and-why-the-object-is-copied-rather-than-picked-apart).
-Every reserved column is present and empty, so a reader can see what is reserved rather than
-wonder where it went.
+Analytics owns a serial worker and an admission budget of two. Saturation is returned as typed
+`429 usage_analytics_busy`; it does not consume the separate eight-place `/info`/`/v1/places`
+reading budget. JSON serialization failure is typed `500 json_serialization_failed`, never a 200
+empty attachment.
+
+Authentication is identical on all three routes: an orchestrator token or a paired device with
+`read`. Anonymous requests are `401`. The projection contains stable accounting ids, task id,
+assistant/model/origin, final project name and usage metadata; it contains no prompt text or raw
+filesystem path.
 
 ### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
 

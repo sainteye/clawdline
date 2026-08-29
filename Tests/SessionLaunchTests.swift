@@ -39,6 +39,12 @@ group("the expensive remote reads take exactly one bounded side door") {
     func limited(_ path: String) -> Bool { RemoteServer.isLimitedSlowReading(path) }
 
     check("the places list leaves the shared server queue", slow("/v1/places"))
+    check("legacy forensic usage retains its pre-analytics route path",
+          !slow("/v1/orchestrator/usage") && !slow("/v1/orchestrator/usage.csv"))
+    check("analytics has its own side door instead of the shared reading queue",
+          RemoteServer.isUsageAnalyticsReading("/v1/orchestrator/usage/analytics")
+            && RemoteServer.isUsageAnalyticsReading("/v1/orchestrator/usage/analytics.csv")
+            && RemoteServer.isUsageAnalyticsReading("/v1/orchestrator/usage/analytics.json"))
     check("session info leaves it", slow("/v1/sessions/ABC/info"))
     check("the session transcript leaves it", slow("/v1/sessions/ABC/transcript"))
     check("an encoded session id is still one segment", slow("/v1/sessions/A%2FB/info"))
@@ -70,6 +76,36 @@ group("the slow-reading gate agrees with dispatch") {
            atDoor.map(remoteErrorCode) ?? "")
     expect("and the same sentence", remoteErrorMessage(throughDispatch),
            atDoor.map(remoteErrorMessage) ?? "")
+}
+
+group("the usage analytics gate accepts both documented read credentials") {
+    let anonymous = remoteRequest("GET", "/v1/orchestrator/usage/analytics")
+    expect("anonymous usage is refused before its 60k-capable read",
+           RemoteServer.shared.slowReadingRefusal(anonymous)?.status, 401)
+    let machine = remoteRequest("GET", "/v1/orchestrator/usage/analytics",
+        headers: ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()])
+    check("the orchestrator token reaches the worker rather than the paired-device refusal",
+          RemoteServer.shared.slowReadingRefusal(machine) == nil)
+}
+
+group("usage analytics saturation is isolated from ordinary remote readings") {
+    var analytics = RemoteServer.UsageAnalyticsLimiter()
+    for n in 0..<RemoteServer.usageAnalyticsDepth {
+        check("analytics request \(n + 1) is admitted", analytics.admit(
+            depth: RemoteServer.usageAnalyticsDepth))
+    }
+    check("the next analytics request gets typed-busy admission refusal",
+          !analytics.admit(depth: RemoteServer.usageAnalyticsDepth))
+    let busy = RemoteServer.usageAnalyticsBusyResponse()
+    check("saturation is delivered as typed 429 usage_analytics_busy",
+          busy.status == 429 && remoteErrorCode(busy) == "usage_analytics_busy")
+
+    var ordinary = RemoteServer.ReadingLimiter()
+    check("a full analytics budget does not consume the /info budget",
+          ordinary.admit("/v1/sessions/ABC/info", depth: RemoteServer.readingDepth))
+    ordinary.finish("/v1/sessions/ABC/info")
+    for _ in 0..<RemoteServer.usageAnalyticsDepth { analytics.finish() }
+    expect("both independent budgets drain to zero", [analytics.count, ordinary.count], [0, 0])
 }
 
 group("the slow-reading depth is paired on every exit") {

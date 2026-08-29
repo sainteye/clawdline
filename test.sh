@@ -7,7 +7,7 @@
 set -euo pipefail
 
 expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:11,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166'
-expected_swift_receipt='6434 checks passed'
+expected_swift_receipt='6531 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

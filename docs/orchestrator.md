@@ -2019,9 +2019,13 @@ statement that fails harmlessly and then finishing — which is deliberate rathe
 covered by a test that builds a version-1 store rather than starting, as every other test does,
 from an empty file that runs the creation path instead of the upgrade.
 
-Read it through [`GET /v1/orchestrator/usage`](api.md#get-v1orchestratorusage-get-v1orchestratorusagecsv)
-and its `.csv`. There is deliberately no page and no chart: the data is the asset, and what a page
-should show is a question a month of real rows will answer better than a guess made today.
+The legacy forensic aggregate and CSV remain on `GET /v1/orchestrator/usage` and `.csv`. Read the
+privacy-safe public contract through
+[`GET /v1/orchestrator/usage/analytics`](api.md#get-v1orchestratorusageanalytics-analyticscsv-analyticsjson),
+its safe `.csv` and its lossless public `.json`. The web app's **Usage** button provides Overview and Agent
+Work over that same contract: local-day range and timezone, breakdown and exclusive token trend,
+cost series separated by unit+basis, coverage/correction panels and paginated drill-down. Every
+visual has a table or textual summary, and the contract sends no prompt, session id or raw path.
 
 ### One row
 

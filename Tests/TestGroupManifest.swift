@@ -1,7 +1,8 @@
 import Foundation
 
-// Sealed from Tests/main.swift at f32071e5. Runtime validation is deliberately check-neutral:
-// moving the harness must not change the historical 6,434-check completion count.
+// Sealed from Tests/main.swift at f32071e5, then extended only by approved feature receipts.
+// Runtime validation is deliberately check-neutral: the manifest tracks current order while
+// test.sh separately owns the current exact completion count.
 let expectedOrderedTestGroupTitles: [String] = [
     "the test binary isolates push state even when it is launched directly",
     "the test binary isolates the drop cache even when it is launched directly",
@@ -162,6 +163,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a top-level state from the wrong vocabulary",
     "the expensive remote reads take exactly one bounded side door",
     "the slow-reading gate agrees with dispatch",
+    "the usage analytics gate accepts both documented read credentials",
+    "usage analytics saturation is isolated from ordinary remote readings",
     "the slow-reading depth is paired on every exit",
     "terminal writes cannot hold the remote server queue",
     "key and end terminal mutations leave health and SSE turns responsive",
@@ -420,6 +423,14 @@ let expectedOrderedTestGroupTitles: [String] = [
     "re-reading a source never double-counts, and a boundary cuts a segment",
     "a source that cannot be read is a state, and nothing renders it as zero",
     "a cost is copied where it exists and never invented where it does not",
+    "usage analytics keeps quantity semantics and privacy in one closed contract",
+    "usage analytics validates filters and paginates a changing ledger stably",
+    "usage analytics uses one requested timezone for day grouping and trend",
+    "a 60k-row SQLite-to-DTO usage query stays bounded and measured",
+    "the SQLite analytics bound belongs to the complete matching query",
+    "usage exports are spreadsheet-safe and JSON-lossless",
+    "usage analytics routes keep authentication, validation and privacy aligned",
+    "the shipped page contains the accessible Usage Analytics MVP",
     "the ledger agrees with the registry and the route, row by row on one task id",
     "a sealed row is corrected rather than rewritten",
     "each kind of work is counted exactly once, and the routes answer for the range",

@@ -4,7 +4,8 @@ Status: process contract now; broker/runner automation described below is planne
 
 ## Phase 0–1 repository guards
 
-The refactor foundation implements three local guards without changing the 6,434-check baseline:
+The refactor foundation implements three local guards. Phase 0 preserved the historical
+6,434-check baseline; approved Local Usage integration moved the current receipt to 6,531:
 
 - `tools/swift-source-manifest.sh` is sourced by both `build.sh` and `test.sh`; production mode
   compares the 89-entry production partition only with recursive `Sources/` inventory, while full
@@ -12,10 +13,10 @@ The refactor foundation implements three local guards without changing the 6,434
   closed, and Tests-only drift does not block the application build.
 - `tools/check-architecture-boundaries.sh` verifies the entry point remains at most 500 lines,
   24 ordered runners,
-  432 sealed group identities, production net-growth freezes and the 2,000-line suite ceiling.
+  442 current sealed group identities, production net-growth receipts and the 2,000-line suite ceiling.
 - `Tests/TestGroupManifest.swift` records group titles at runtime and adds a failure on any identity
   or order difference without incrementing `checks`. `test.sh` separately requires the exact
-  `6434 checks passed` line and the existing Cloud receipt exactly once.
+  `6531 checks passed` line and the existing Cloud receipt exactly once.
 
 The missing-nested-source mutation returned 1 before the fixture was restored; the entry-point
 growth mutation returned 1 at 534 lines before the 34-line entry was restored. These are guard
@@ -23,8 +24,8 @@ proofs, not extra full-suite runs. Focused `--group` execution and compile cachi
 direction” remain planned; this phase does not pretend they exist.
 
 The four sealed structural/count receipts have different owners. A legitimate check change updates
-the `6434 checks passed` expectation in `test.sh` and the recorded baseline. A group identity change
-updates `expectedOrderedTestGroupTitles`, the `432` architecture expectation and the baseline. A
+the `6531 checks passed` expectation in `test.sh` and the recorded baseline. A group identity change
+updates `expectedOrderedTestGroupTitles`, the `442` architecture expectation and the baseline. A
 runner-boundary change updates `Tests/main.swift`, its documented order and the `24` expectation. A
 suite-file change updates the manifest and the `34` `*Tests.swift` expectation. The entry point's
 current 34-line size is an observation, not another exact guard; its enforced limit is 500. Change

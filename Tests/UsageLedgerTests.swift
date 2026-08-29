@@ -702,6 +702,471 @@ group("a cost is copied where it exists and never invented where it does not") {
           (UsageLedger.payload(of: codex ?? UsageLedger.Bucket())["cost"]) is NSNull)
 }
 
+/// One analytics row without going through a collector. Query tests hold the observed subject
+/// still and vary only the reader: this is deliberately not evidence about collection.
+func analyticsRow(_ key: String, at: Date, assistant: String = "claude",
+                  model: String? = "claude-opus-5", project: String? = "/private/acme/widget",
+                  counts: UsageLedger.Counts = .init(inputNew: 1, output: 2,
+                                                     cacheRead: 3, cacheWrite: 4),
+                  cost: Double? = nil, unit: String? = nil, basis: String = "unknown",
+                  missing: String? = "no_cost_recorded",
+                  coverage: String = "complete", reasons: [String] = []) -> UsageLedger.Row {
+    var row = UsageLedger.Row()
+    row.intervalKey = key
+    row.assistant = assistant
+    row.sessionID = "private-session-\(key)"
+    row.boundaryKind = "task"
+    row.boundaryID = "task-\(key)"
+    row.taskID = "task-\(key)"
+    row.origin = "dispatch"
+    row.projectKey = project
+    row.workingDir = project.map { $0 + "/checkout" }
+    row.model = model
+    row.counts = counts
+    row.total = counts.total
+    row.costValue = cost
+    row.costUnit = unit
+    row.costBasis = basis
+    row.priceSnapshotID = cost == nil ? nil : UsageLedger.priceSnapshotID
+    row.missingReason = missing
+    row.coverage = coverage
+    row.coverageReasons = reasons
+    row.startedAt = at
+    row.updatedAt = at.addingTimeInterval(30)
+    row.localDay = UsageLedger.localDay(of: at)
+    row.sealed = true
+    return row
+}
+
+group("usage analytics keeps quantity semantics and privacy in one closed contract") {
+    let at = ISO8601DateFormatter().date(from: "2026-11-01T05:30:00Z")!
+    let rows = [
+        analyticsRow("estimated", at: at, counts: .init(inputNew: 10, output: 20,
+                                                        cacheRead: 30, cacheWrite: nil),
+                     cost: 1.25, unit: "USD", basis: "list_price_estimate", missing: nil,
+                     coverage: "partial", reasons: ["source_regressed"]),
+        // 05:30Z and 06:30Z are both 01:30 on the fall-back day, with different offsets.
+        analyticsRow("actual", at: at.addingTimeInterval(3_600), counts: .init(inputNew: 0,
+                     output: 0, cacheRead: 0, cacheWrite: 0), cost: 2.5, unit: "USD",
+                     basis: "provider_actual", missing: nil),
+        analyticsRow("plan", at: at.addingTimeInterval(7_200), assistant: "codex",
+                     model: "gpt-5.6-sol", counts: .init(), cost: nil, basis: "unknown",
+                     missing: "plan_billed", coverage: "source_missing",
+                     reasons: ["source_unreadable_at_close"]),
+    ]
+    let service = UsageQueryService(rows: { rows })
+    let result = service.query(.init(from: "2026-11-01", to: "2026-11-01",
+                                     timezoneID: "America/New_York", groupBy: .assistant,
+                                     bucket: .day, limit: 50), now: at.addingTimeInterval(600))
+    let payload = result.payload
+    expect("the schema is explicit", payload["schemaVersion"] as? Int,
+           UsageLedger.schemaVersion)
+    expect("the requested timezone survives the response",
+           (payload["range"] as? [String: Any])?["timezone"] as? String,
+           "America/New_York")
+    check("freshness, capabilities, price snapshot, coverage and unavailable dimensions travel",
+          payload["freshness"] is [String: Any]
+            && payload["capabilities"] is [String: Any]
+            && payload["priceSnapshot"] is [String: Any]
+            && payload["coverage"] is [String: Any]
+            && payload["unavailableDimensions"] is [String: Any])
+
+    let totals = payload["totals"] as? [String: Any]
+    expect("a partial range publishes its measured floor", totals?["measuredFloor"] as? Int, 60)
+    check("and its strict total is unknown rather than the same number or zero",
+          totals?["strictTotal"] is NSNull)
+    let costs = totals?["costs"] as? [[String: Any]] ?? []
+    expect("cost stays in one series per unit and basis", costs.count, 2)
+    check("the two USD bases are never added together",
+          costs.contains { $0["unit"] as? String == "USD"
+            && $0["basis"] as? String == "list_price_estimate"
+            && $0["value"] as? Double == 1.25 }
+            && costs.contains { $0["unit"] as? String == "USD"
+                && $0["basis"] as? String == "provider_actual"
+                && $0["value"] as? Double == 2.5 })
+    expect("plan billing is unavailable rather than free",
+           ((totals?["unavailableCost"] as? [String: Any])?["reasons"]
+                as? [String: Int])?["plan_billed"], 1)
+    let unknownOnly = UsageQueryService(rows: {
+        [analyticsRow("unknown-only", at: at, counts: .init(), missing: "plan_billed")]
+    }).query(.init(timezoneID: "UTC"), now: at)
+    check("an entirely unknown quantity remains null rather than a zero",
+          ((unknownOnly.payload["totals"] as? [String: Any])?["measuredFloor"]) is NSNull)
+
+    var oldPriced = analyticsRow("old-price", at: at, cost: 0.004, unit: "USD",
+                                 basis: "list_price_estimate", missing: nil)
+    oldPriced.priceSnapshotID = "prices-observed-in-row"
+    let snapshotPayload = UsageQueryService(rows: { [oldPriced] })
+        .query(.init(timezoneID: "UTC"), now: at).payload
+    let snapshot = snapshotPayload["priceSnapshot"] as? [String: Any]
+    expect("the active price snapshot is named separately from observed data",
+           snapshot?["activeId"] as? String, UsageLedger.priceSnapshotID)
+    expect("the row's observed snapshot set is what the range reports",
+           snapshot?["observedIds"] as? [String], ["prices-observed-in-row"])
+
+    let trend = payload["trend"] as? [[String: Any]] ?? []
+    expect("both repeated local hours land in one DST-safe day bucket", trend.count, 1)
+    let firstTrend = trend.first? ["tokens"] as? [String: Any]
+    expect("the trend exposes exactly the four mutually exclusive token parts",
+           Set(firstTrend?.keys.map { $0 } ?? []),
+           Set(["inputNew", "output", "cacheRead", "cacheWrite"]))
+    let publicRows = payload["rows"] as? [[String: Any]] ?? []
+    let actualRow = publicRows.first { $0["id"] as? String == "actual" }
+    let actualTokens = actualRow?["tokens"] as? [String: Any]
+    let actualCost = actualRow?["cost"] as? [String: Any]
+    check("one Agent Work row carries four token parts and the complete cost identity",
+          Set(actualTokens?.keys.map { $0 } ?? [])
+            == Set(["inputNew", "output", "cacheRead", "cacheWrite"])
+            && actualCost?["value"] as? Double == 2.5
+            && actualCost?["unit"] as? String == "USD"
+            && actualCost?["basis"] as? String == "provider_actual"
+            && actualCost?["priceSnapshotId"] as? String == UsageLedger.priceSnapshotID)
+    let json = String(decoding: (try? JSONSerialization.data(withJSONObject: publicRows,
+                                                              options: [.sortedKeys])) ?? Data(),
+                      as: UTF8.self)
+    check("drill-down has no raw session, prompt or filesystem path",
+          !json.contains("private-session") && !json.contains("/private/")
+            && !json.contains("workingDir") && !json.contains("usageRaw"), json)
+}
+
+group("usage analytics validates filters and paginates a changing ledger stably") {
+    let base = Date(timeIntervalSince1970: 1_800_000_000)
+    var rows = (0..<5).map { analyticsRow("row-\($0)", at: base.addingTimeInterval(Double($0))) }
+    let service = UsageQueryService(rows: { rows })
+    let query = UsageQueryService.Query(timezoneID: "UTC", groupBy: .model,
+                                        bucket: .day, limit: 2)
+    let first = service.query(query, now: base.addingTimeInterval(20))
+    expect("the first page is bounded", first.rows.map(\.intervalKey), ["row-4", "row-3"])
+    check("a full page has an opaque continuation", first.nextCursor != nil)
+    rows.append(analyticsRow("newer", at: base.addingTimeInterval(100)))
+    var next = query
+    next.cursor = first.nextCursor
+    let second = service.query(next, now: base.addingTimeInterval(120))
+    expect("a newer insertion does not duplicate or skip the continuation",
+           second.rows.map(\.intervalKey), ["row-2", "row-1"])
+
+    let tied = ["x", "z", "y"].map { analyticsRow($0, at: base) }
+    let tiedService = UsageQueryService(rows: { tied })
+    let tiedFirst = tiedService.query(query, now: base)
+    var tiedNext = query
+    tiedNext.cursor = tiedFirst.nextCursor
+    expect("equal timestamps use interval id as a stable cursor tie-break",
+           tiedService.query(tiedNext, now: base).rows.map(\.intervalKey), ["x"])
+
+    for invalid in [
+        ["timezone": "Mars/Olympus"], ["limit": "0"], ["limit": "201"],
+        ["limit": "abc"], ["limit": "1e3"], ["limit": "50.5"],
+        ["from": "2026-02-31"], ["to": "2025-04-31"],
+        ["bucket": "quarter"], ["view": "graph"], ["mystery": "yes"],
+    ] {
+        check("an invalid closed query is rejected: \(invalid)",
+              UsageQueryService.parse(invalid, repeatedKeys: []).error != nil)
+    }
+    check("repeated keys are refused instead of last-writer-wins",
+          UsageQueryService.parse(["timezone": "UTC"], repeatedKeys: ["timezone"]).error != nil)
+    check("real leap days round-trip as local calendar dates",
+          UsageQueryService.parse(["from": "2024-02-29", "to": "2024-02-29",
+                                   "timezone": "Asia/Taipei"], repeatedKeys: []).query != nil)
+}
+
+group("usage analytics uses one requested timezone for day grouping and trend") {
+    let at = ISO8601DateFormatter().date(from: "2026-08-29T23:00:00Z")!
+    var crossing = analyticsRow("zone-crossing", at: at)
+    crossing.localDay = "2026-08-30" // what a Taipei writer stored
+    let payload = UsageQueryService(rows: { [crossing] }).query(
+        .init(from: "2026-08-29", to: "2026-08-29", timezoneID: "America/New_York",
+              groupBy: .day, bucket: .day), now: at).payload
+    expect("day breakdown follows the request timezone",
+           (payload["breakdown"] as? [[String: Any]])?.first?["key"] as? String,
+           "2026-08-29")
+    expect("trend names that same requested-timezone day",
+           (payload["trend"] as? [[String: Any]])?.first?["bucket"] as? String,
+           "2026-08-29")
+}
+
+group("a 60k-row SQLite-to-DTO usage query stays bounded and measured") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let url = store.appendingPathComponent("usage.sqlite3")
+    _ = UsageLedger.shared.rows() // create and migrate the production schema first
+    let inserted = usageStoreExec(url, """
+        BEGIN IMMEDIATE;
+        WITH RECURSIVE counter(n) AS (
+          VALUES(0) UNION ALL SELECT n + 1 FROM counter WHERE n < 59999
+        )
+        INSERT INTO usage_intervals
+          (interval_key, schema_version, assistant, session_id, boundary_kind, boundary_id,
+           segment_no, segment_reason, origin, project_key, model, billing_mode,
+           input_new, output, cache_read, cache_write, total,
+           cost_value, cost_unit, cost_basis, price_snapshot_id, missing_reason,
+           coverage, sealed, started_at, local_day, observed_at, updated_at)
+        SELECT printf('perf-%05d', n), 1,
+               CASE WHEN n % 2 = 0 THEN 'claude' ELSE 'codex' END,
+               printf('session-%05d', n), 'task', printf('task-%05d', n), 0, 'start',
+               'dispatch', '/private/perf/project-' || (n % 20),
+               CASE WHEN n % 2 = 0 THEN 'claude-opus-5' ELSE 'gpt-5.6-sol' END,
+               CASE WHEN n % 2 = 0 THEN 'unknown' ELSE 'plan' END,
+               1, 2, 3, 4, 10,
+               CASE WHEN n % 3 = 0 THEN 0.001 ELSE NULL END,
+               CASE WHEN n % 3 = 0 THEN 'USD' ELSE NULL END,
+               CASE WHEN n % 3 = 0 THEN 'list_price_estimate' ELSE 'unknown' END,
+               CASE WHEN n % 3 = 0 THEN '\(UsageLedger.priceSnapshotID)' ELSE NULL END,
+               CASE WHEN n % 3 = 0 THEN NULL ELSE 'plan_billed' END,
+               'complete', 1, 1800000000.0 + n, '2027-01-15',
+               1800000000.0 + n, 1800000000.0 + n
+          FROM counter;
+        COMMIT;
+        """)
+    check("the performance fixture inserted all rows in one transaction", inserted)
+    let started = Date()
+    let result = UsageQueryService().query(.init(timezoneID: "UTC", groupBy: .model,
+                                                  bucket: .day, limit: 50),
+                                           now: Date(timeIntervalSince1970: 1_800_100_000))
+    let seconds = Date().timeIntervalSince(started)
+    expect("the measured query read all 60k rows", result.payload["rowCount"] as? Int, 60_000)
+    expect("while returning only the bounded page", result.rows.count, 50)
+    check("without reaching the explicit scan ceiling", !result.scanTruncated)
+    check("and completes inside a generous interactive ceiling", seconds < 10,
+          String(format: "%.3f seconds", seconds))
+    print(String(format: "USAGE_ANALYTICS_PERF rows=60000 seconds=%.3f subject=sqlite_to_dto",
+                 seconds))
+}
+
+group("the SQLite analytics bound belongs to the complete matching query") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let url = store.appendingPathComponent("usage.sqlite3")
+    _ = UsageLedger.shared.rows()
+    let old = ISO8601DateFormatter().date(from: "2026-01-15T00:00:00Z")!
+        .timeIntervalSince1970
+    let newer = ISO8601DateFormatter().date(from: "2026-03-15T00:00:00Z")!
+        .timeIntervalSince1970
+    let inserted = usageStoreExec(url, """
+        BEGIN IMMEDIATE;
+        WITH RECURSIVE counter(n) AS (
+          VALUES(0) UNION ALL SELECT n + 1 FROM counter WHERE n < 119999
+        )
+        INSERT INTO usage_intervals
+          (interval_key, schema_version, assistant, session_id, boundary_kind, boundary_id,
+           segment_no, segment_reason, origin, project_key, model, billing_mode,
+           input_new, output, cache_read, cache_write, total, cost_basis, missing_reason,
+           coverage, sealed, started_at, local_day, observed_at, updated_at)
+        SELECT printf('bound-%06d', n), 1, CASE WHEN n % 2 = 0 THEN 'claude' ELSE 'codex' END,
+               printf('session-%06d', n), 'task', printf('task-%06d', n), 0, 'start',
+               CASE WHEN n % 3 = 0 THEN 'schedule' ELSE 'dispatch' END,
+               '/private/bounded/project-' || (n % 4), 'model-' || (n % 2), 'unknown',
+               1, 2, 3, 4, 10, 'unknown', 'no_cost_recorded', 'complete', 1,
+               CASE WHEN n < 20000 THEN \(old) + n ELSE \(newer) + n END,
+               CASE WHEN n < 20000 THEN '2026-01-15' ELSE '2026-03-15' END,
+               CASE WHEN n < 20000 THEN \(old) + n ELSE \(newer) + n END,
+               CASE WHEN n < 20000 THEN \(old) + n ELSE \(newer) + n END
+          FROM counter;
+        INSERT INTO usage_corrections(interval_key, reason, proposed, written_at)
+          VALUES ('bound-000001', 'old-range', '{}', \(old)),
+                 ('bound-110000', 'new-range', '{}', \(newer));
+        COMMIT;
+        """)
+    check("the 120k fixture inserted through the production SQLite schema", inserted)
+
+    let oldMonth = UsageQueryService().query(
+        .init(from: "2026-01-01", to: "2026-01-31", timezoneID: "UTC", limit: 20),
+        now: Date(timeIntervalSince1970: newer + 120_000))
+    expect("an old narrow month outside the newest global 100k remains visible",
+           oldMonth.payload["rowCount"] as? Int, 20_000)
+    check("that narrow matching query clears truncation", !oldMonth.scanTruncated)
+    expect("corrections are scoped to the same requested subject",
+           oldMonth.payload["corrections"] as? Int, 1)
+    let fullyFiltered = UsageQueryService().query(
+        .init(from: "2026-01-01", to: "2026-01-31", timezoneID: "UTC",
+              assistant: "claude", model: "model-0", origin: "schedule",
+              project: "project-0", limit: 20))
+    expect("assistant/model/origin/project are all applied inside the bounded SQLite query",
+           fullyFiltered.payload["rowCount"] as? Int, 1_667)
+    check("the complete narrow filter does not inherit whole-store truncation",
+          !fullyFiltered.scanTruncated)
+    expect("top-level freshness describes the newest ledger observation",
+           (oldMonth.payload["freshness"] as? [String: Any])?["status"] as? String,
+           "current")
+    expect("the historical range reports its own data-through separately",
+           (oldMonth.payload["rangeFreshness"] as? [String: Any])?["status"] as? String,
+           "historical")
+
+    let all = UsageQueryService().query(.init(timezoneID: "UTC", limit: 20))
+    check("more than 100k matching rows is explicitly partial", all.scanTruncated)
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let refused = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/analytics.csv?timezone=UTC", headers: auth))
+    check("an over-bound matching export is a typed 413",
+          refused.status == 413 && remoteErrorCode(refused) == "export_too_large")
+    let narrowed = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/analytics.csv?timezone=UTC&from=2026-01-01&to=2026-01-31",
+        headers: auth))
+    check("narrowing the matching range makes the export available",
+          narrowed.status == 200 && narrowed.headers["Content-Type"] == "text/csv; charset=utf-8")
+}
+
+group("usage exports are spreadsheet-safe and JSON-lossless") {
+    let at = Date(timeIntervalSince1970: 1_800_000_000)
+    var dangerous = analyticsRow("=WEBSERVICE(\"https://bad\")", at: at,
+                                 model: "+cmd|' /C calc'!A0",
+                                 project: "/private/customer/@evil")
+    dangerous.endedAt = at.addingTimeInterval(30)
+    dangerous.sourceTotal = 10
+    dangerous.reconciliation = "parts_match"
+    dangerous.inputBasis = "exclusive"
+    let service = UsageQueryService(rows: { [dangerous] })
+    let result = service.query(.init(timezoneID: "UTC", limit: 10), now: at)
+    let csv = service.exportCSV(result)
+    check("every spreadsheet formula introducer is neutralized",
+          csv.contains("'=WEBSERVICE") && csv.contains("'+cmd") && csv.contains("'@evil"), csv)
+    check("safe CSV omits raw filesystem and session data",
+          !csv.contains("/private/") && !csv.contains("private-session"), csv)
+    check("safe CSV keeps non-sensitive row reconciliation facts",
+          csv.hasPrefix("interval_id,task_id,started_at,ended_at,")
+            && csv.contains("unknown_token_parts,source_total,reconciliation,input_basis")
+            && csv.contains("parts_match,exclusive"), csv.prefix(500).description)
+    let exported = try! service.exportJSON(result)
+    let object = (try? JSONSerialization.jsonObject(with: exported)) as? [String: Any]
+    let row = (object?["rows"] as? [[String: Any]])?.first
+    check("JSON preserves null separately from a measured zero",
+          (row?["strictTotal"] as? Int) == 10 && row?["cost"] is NSNull)
+    check("JSON export declares that it is complete",
+          object?["truncated"] as? Bool == false && object?["rowCount"] as? Int == 1)
+
+    let failing = UsageQueryService(rows: { [dangerous] }, jsonEncoder: { _ in nil })
+    let failingResult = failing.query(.init(timezoneID: "UTC"), now: at)
+    do {
+        _ = try failing.exportJSON(failingResult)
+        check("JSON serialization failure is never an empty successful file", false)
+    } catch UsageQueryService.ExportError.jsonSerialization {
+        check("JSON serialization failure becomes a typed failure", true)
+    } catch {
+        check("JSON serialization failure has the expected type", false, "\(error)")
+    }
+}
+
+group("usage analytics routes keep authentication, validation and privacy aligned") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    UsageLedger.shared.importTaskRecord([
+        "id": "route-private", "assistant": "claude", "state": "success", "kind": "code",
+        "project_dir": "/private/customer/secret-project", "timeout_minutes": 30, "depth": 1,
+        "child_session": "secret-conversation-id",
+        "usage": ["input": 1, "output": 2, "cache_read": 3, "cache_write": 4,
+                  "total": 10, "model": "claude-opus-5"],
+        "finished_at": Date().timeIntervalSince1970,
+    ])
+    expect("anonymous analytics remains behind the read gate",
+           RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/usage/analytics")).status, 401)
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    for invalid in ["?timezone=Mars%2FOlympus", "?limit=0", "?group=model&group=task",
+                    "?unknown=true"] {
+        let response = RemoteServer.shared.route(remoteRequest(
+            "GET", "/v1/orchestrator/usage/analytics" + invalid, headers: auth))
+        check("invalid analytics query is typed 400: \(invalid)",
+              response.status == 400 && remoteErrorCode(response) == "bad_request")
+    }
+    let response = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/analytics?timezone=UTC&limit=1", headers: auth))
+    let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+    let usage = object?["usage"] as? [String: Any]
+    check("the JSON reading route carries the complete metadata contract",
+          response.status == 200 && usage?["freshness"] is [String: Any]
+            && usage?["capabilities"] is [String: Any]
+            && usage?["coverage"] is [String: Any]
+            && usage?["unavailableDimensions"] is [String: Any])
+    let download = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/analytics.json?timezone=UTC", headers: auth))
+    let downloadText = String(decoding: download.body, as: UTF8.self)
+    check("the JSON export is authenticated, downloadable and path-free",
+          download.status == 200 && download.headers["Content-Disposition"]?.contains(".json") == true
+            && !downloadText.contains("/private/")
+            && !downloadText.contains("secret-conversation-id"), downloadText.prefix(300).description)
+    let csv = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/analytics.csv?timezone=UTC", headers: auth))
+    let csvText = String(decoding: csv.body, as: UTF8.self)
+    check("the CSV route uses the same private projection",
+          csv.status == 200 && csv.headers["Content-Type"] == "text/csv; charset=utf-8"
+            && !csvText.contains("/private/") && !csvText.contains("secret-conversation-id"),
+          csvText.prefix(300).description)
+
+    let legacyJSON = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage?group=model", headers: auth))
+    let legacyObject = ((try? JSONSerialization.jsonObject(with: legacyJSON.body))
+        as? [String: Any])?["usage"] as? [String: Any]
+    check("the legacy forensic JSON keeps its aggregate schema on its old URL",
+          legacyJSON.status == 200 && legacyObject?["groups"] is [[String: Any]]
+            && legacyObject?["freshness"] == nil)
+    let legacyCSV = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage.csv", headers: auth))
+    check("the legacy forensic CSV route is byte-compatible with the ledger exporter",
+          legacyCSV.body == Data(UsageLedger.shared.exportCSV().utf8))
+    check("the public safe CSV lives only on the explicit analytics URL",
+          csvText.hasPrefix("interval_id,task_id,started_at,ended_at,")
+            && String(decoding: legacyCSV.body, as: UTF8.self)
+                .hasPrefix(UsageLedger.exportColumns.joined(separator: ",")))
+    UsageQueryService.jsonEncoderForTesting = { _ in nil }
+    defer { UsageQueryService.jsonEncoderForTesting = nil }
+    let failedJSON = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/analytics.json?timezone=UTC", headers: auth))
+    check("route-level JSON serialization failure is typed 500, never 200 empty",
+          failedJSON.status == 500 && remoteErrorCode(failedJSON) == "json_serialization_failed")
+}
+
+group("the shipped page contains the accessible Usage Analytics MVP") {
+    let page = try! String(contentsOfFile: "Resources/web/index.html", encoding: .utf8)
+    for evidence in ["usage-analytics", "usage-overview", "usage-agent-work",
+                     "usage-range", "usage-timezone", "usage-token-table",
+                     "usage-cost-table", "usage-coverage-panel", "usage-detail",
+                     "usage-export-csv", "usage-export-json"] {
+        check("the analytics DOM contains #\(evidence)", page.contains("id=\"\(evidence)\""))
+    }
+    check("charts have an accessible table or textual summary",
+          page.contains("aria-describedby=\"usage-token-summary\"")
+            && page.contains("id=\"usage-token-summary\"")
+            && page.contains("<table id=\"usage-token-table\""))
+    check("the page carries explicit 390px and 320px proofs",
+          page.contains("@media (max-width: 390px)")
+            && page.contains("@media (max-width: 320px)"))
+    check("partial state and ledger-versus-range freshness are visible",
+          page.contains("id=\"usage-availability\"")
+            && page.contains("Partial result:")
+            && page.contains("Ledger freshness:")
+            && page.contains("Range data through:"))
+    check("exports fetch first and build a Blob only after a 2xx response",
+          page.contains("if (!response.ok) return errorFrom(response);")
+            && page.contains("return response.blob();")
+            && page.contains("URL.createObjectURL(blob)"))
+    check("tabs use roving tabindex and arrow keys while view changes the request",
+          page.contains("event.key !== \"ArrowLeft\"")
+            && page.contains("tabIndex = overview ? 0 : -1")
+            && page.contains("query.set(\"view\", state.view)"))
+    check("sub-cent costs use significant digits instead of two-decimal zero",
+          page.contains("maximumSignificantDigits: 6")
+            && page.contains("significant(cost.value)"))
+    check("loading lifecycle queues refreshes instead of dropping them",
+          page.contains("state.pending = { cursor: cursor, append: append }")
+            && page.contains("Refresh queued…"))
+
+    let mutationGuard = Process()
+    mutationGuard.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    mutationGuard.arguments = ["node", "Tests/web-usage-analytics.mjs"]
+    let mutationOutput = Pipe()
+    mutationGuard.standardOutput = mutationOutput
+    mutationGuard.standardError = mutationOutput
+    do {
+        try mutationGuard.run()
+        let output = String(decoding: mutationOutput.fileHandleForReading.readDataToEndOfFile(),
+                            as: UTF8.self)
+        mutationGuard.waitQuietly()
+        check("the permanent web guard sees both named mutations go RED",
+              mutationGuard.terminationStatus == 0
+                && output.contains("web usage analytics guards: 11 checks passed"), output)
+    } catch {
+        check("the permanent web mutation guard starts", false, "\(error)")
+    }
+}
+
 group("the ledger agrees with the registry and the route, row by row on one task id") {
     let store = freshUsageLedger()
     defer { forgetUsageLedger(store) }
@@ -839,11 +1304,12 @@ group("each kind of work is counted exactly once, and the routes answer for the 
     let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
     let answered = RemoteServer.shared.route(
         remoteRequest("GET", "/v1/orchestrator/usage?group=origin", headers: auth))
-    expect("the aggregate route answers", answered.status, 200)
+    expect("the legacy forensic aggregate route answers", answered.status, 200)
     let body = ((try? JSONSerialization.jsonObject(with: answered.body)) as? [String: Any])?[
         "usage"] as? [String: Any]
     expect("under the grouping it was asked for", body?["groupBy"] as? String, "origin")
-    expect("with the same totals", ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
+    expect("with the same measured total",
+           ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
     expect("and it names the columns it has no answer for",
            (body?["unavailable"] as? [String: Any])?["columns"] as? [String],
            ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state", "disposition"])

@@ -21,8 +21,8 @@ orchestrator_lines=$(line_count Sources/Orchestrator.swift)
   || architecture_guard_fail "Sources/Orchestrator.swift grew beyond sealed baseline B (11564)"
 
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
-[ "$remote_server_lines" -le 5903 ] \
-  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond sealed baseline B (5903)"
+[ "$remote_server_lines" -le 6006 ] \
+  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved Local Usage receipt (6006)"
 
 if grep -q 'group(' Tests/main.swift; then
   architecture_guard_fail "new domain group found in Tests/main.swift"
@@ -38,8 +38,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 432 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 432"
+[ "$manifest_group_count" -eq 442 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 442"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do

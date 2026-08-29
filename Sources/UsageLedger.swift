@@ -62,7 +62,7 @@ final class UsageLedger {
     /// written from the key its own collector will compute next time. Adding a column, an index
     /// or a column *name* changes neither an identity nor the meaning of a stored value, and
     /// needs a number of its own.
-    static let storeVersion = 3
+    static let storeVersion = 4
 
     /// Which published price table produced a `list_price_estimate`. This is **not** protection
     /// against a historical month being re-priced — recorded costs are recorded and do not move.
@@ -426,8 +426,17 @@ final class UsageLedger {
         let parts = value.split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
               value.allSatisfy({ $0 == "-" || $0.isASCII && $0.isNumber }) else { return false }
-        guard let month = Int(parts[1]), let day = Int(parts[2]) else { return false }
-        return (1...12).contains(month) && (1...31).contains(day)
+        guard let year = Int(parts[0]), year > 0,
+              let month = Int(parts[1]), let day = Int(parts[2]) else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(calendar: calendar, timeZone: calendar.timeZone,
+                                        year: year, month: month, day: day)
+        guard components.isValidDate(in: calendar), let date = calendar.date(from: components)
+        else { return false }
+        let roundTrip = calendar.dateComponents([.year, .month, .day], from: date)
+        return roundTrip.year == year && roundTrip.month == month && roundTrip.day == day
     }
 
     /// The local calendar day a reading belongs to. Segments are cut at local midnight so a
@@ -799,6 +808,15 @@ final class UsageLedger {
             exec(db, """
                 ALTER TABLE usage_intervals
                 RENAME COLUMN coverage_reason TO coverage_reasons;
+                """)
+        }
+        if version < 4 {
+            // Analytics orders and bounds by the observed instant, not by the machine-local day
+            // stored for the forensic surface. This index keeps an old requested month bounded
+            // without first materialising every newer row on the Mac.
+            exec(db, """
+                CREATE INDEX IF NOT EXISTS usage_intervals_started
+                  ON usage_intervals (started_at DESC, interval_key DESC);
                 """)
         }
         // Each statement above is independent of the ones before it, which is what makes a
@@ -1593,6 +1611,105 @@ final class UsageLedger {
         }
     }
 
+    /// The complete analytics predicate, expressed at the SQLite boundary. `limit` is always the
+    /// public scan ceiling plus one: that extra row is the proof that the *matching query* was
+    /// truncated, while a narrow old range remains readable no matter how large the newer store
+    /// has grown. The forensic `rows(from:to:)` reader above deliberately keeps its historical
+    /// incomplete-first ordering; analytics has a separate, documented newest-first contract.
+    struct AnalyticsFilter {
+        var start: Date?
+        var end: Date?
+        var assistant: String?
+        var model: String?
+        var origin: String?
+        var project: String?
+        var limit: Int
+    }
+
+    struct AnalyticsRead {
+        var rows: [Row]
+        var corrections: Int
+        var latestLedgerObservation: Date?
+    }
+
+    func analyticsRead(_ filter: AnalyticsFilter) -> AnalyticsRead {
+        queue.sync {
+            guard let db = database() else {
+                return AnalyticsRead(rows: [], corrections: 0, latestLedgerObservation: nil)
+            }
+            let predicate = """
+                (? IS NULL OR started_at >= ?) AND (? IS NULL OR started_at < ?)
+                AND (? IS NULL OR assistant = ?)
+                AND (? IS NULL OR model = ?)
+                AND (? IS NULL OR origin = ?)
+                AND (? IS NULL OR rtrim(COALESCE(project_key, working_dir), '/') = ?
+                     OR rtrim(COALESCE(project_key, working_dir), '/') LIKE ? ESCAPE '\\')
+                """
+            func escapedLike(_ value: String) -> String {
+                value.replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_")
+            }
+            func bindFilter(_ statement: OpaquePointer?) {
+                let start = filter.start?.timeIntervalSince1970
+                let end = filter.end?.timeIntervalSince1970
+                bind(statement, 1, start); bind(statement, 2, start)
+                bind(statement, 3, end); bind(statement, 4, end)
+                bind(statement, 5, filter.assistant); bind(statement, 6, filter.assistant)
+                bind(statement, 7, filter.model); bind(statement, 8, filter.model)
+                bind(statement, 9, filter.origin); bind(statement, 10, filter.origin)
+                bind(statement, 11, filter.project); bind(statement, 12, filter.project)
+                bind(statement, 13, filter.project.map { "%/" + escapedLike($0) })
+            }
+
+            var rowsStatement: OpaquePointer?
+            defer { sqlite3_finalize(rowsStatement) }
+            var rows: [Row] = []
+            if sqlite3_prepare_v2(db, Self.selection + " WHERE " + predicate
+                + " ORDER BY started_at DESC, interval_key DESC LIMIT ?;",
+                -1, &rowsStatement, nil) == SQLITE_OK {
+                bindFilter(rowsStatement)
+                bind(rowsStatement, 14, filter.limit)
+                while sqlite3_step(rowsStatement) == SQLITE_ROW {
+                    rows.append(Self.row(from: rowsStatement))
+                }
+            }
+
+            // Corrections describe the same bounded subject as every other figure in a partial
+            // response. The subquery is bounded by the identical predicate and order, so this
+            // count cannot turn a capped analytics request back into an unbounded ledger read.
+            var correctionsStatement: OpaquePointer?
+            defer { sqlite3_finalize(correctionsStatement) }
+            var corrections = 0
+            let correctionsSQL = """
+                SELECT COUNT(*) FROM usage_corrections c JOIN (
+                  SELECT interval_key FROM usage_intervals WHERE \(predicate)
+                   ORDER BY started_at DESC, interval_key DESC LIMIT ?
+                ) matched ON matched.interval_key = c.interval_key;
+                """
+            if sqlite3_prepare_v2(db, correctionsSQL, -1, &correctionsStatement, nil)
+                == SQLITE_OK {
+                bindFilter(correctionsStatement)
+                bind(correctionsStatement, 14, filter.limit)
+                if sqlite3_step(correctionsStatement) == SQLITE_ROW {
+                    corrections = Int(sqlite3_column_int64(correctionsStatement, 0))
+                }
+            }
+
+            var latestStatement: OpaquePointer?
+            defer { sqlite3_finalize(latestStatement) }
+            var latest: Date?
+            if sqlite3_prepare_v2(db, "SELECT MAX(updated_at) FROM usage_intervals;", -1,
+                                  &latestStatement, nil) == SQLITE_OK,
+               sqlite3_step(latestStatement) == SQLITE_ROW,
+               let seconds = Self.double(latestStatement, 0) {
+                latest = Date(timeIntervalSince1970: seconds)
+            }
+            return AnalyticsRead(rows: rows, corrections: corrections,
+                                 latestLedgerObservation: latest)
+        }
+    }
+
     // MARK: - The aggregate
 
     enum GroupBy: String, CaseIterable {
@@ -2200,4 +2317,556 @@ extension UsageLedger {
         sample.costUnit = .usd
         return sample
     }
+}
+
+// MARK: - Usage Analytics query contract
+
+/// A bounded, privacy-preserving reader over the durable usage ledger.
+///
+/// The ledger owns collection and storage invariants; this service owns presentation invariants:
+/// a range is interpreted in the timezone the caller named, pagination is stable, paths and raw
+/// transcript material never cross the wire, and a quantity cannot leave without its availability,
+/// unit and basis. It intentionally stays in this file so a future reader cannot bypass
+/// `Row.measurement` by reaching for the SQLite token columns directly.
+final class UsageQueryService {
+    static let maxPageSize = 200
+    static let maxScannedRows = 100_000
+
+    enum View: String, CaseIterable { case overview, agentWork = "agent_work" }
+    enum Bucket: String, CaseIterable { case day, week, month }
+
+    struct Query {
+        var from: String?
+        var to: String?
+        var timezoneID: String
+        var groupBy: UsageLedger.GroupBy
+        var bucket: Bucket
+        var assistant: String?
+        var model: String?
+        var origin: String?
+        var project: String?
+        var view: View
+        var limit: Int
+        var cursor: String?
+
+        init(from: String? = nil, to: String? = nil,
+             timezoneID: String = TimeZone.autoupdatingCurrent.identifier,
+             groupBy: UsageLedger.GroupBy = .model, bucket: Bucket = .day,
+             assistant: String? = nil, model: String? = nil, origin: String? = nil,
+             project: String? = nil, view: View = .overview, limit: Int = 50,
+             cursor: String? = nil) {
+            self.from = from
+            self.to = to
+            self.timezoneID = timezoneID
+            self.groupBy = groupBy
+            self.bucket = bucket
+            self.assistant = assistant
+            self.model = model
+            self.origin = origin
+            self.project = project
+            self.view = view
+            self.limit = limit
+            self.cursor = cursor
+        }
+    }
+
+    struct ParseResult {
+        var query: Query?
+        var error: String?
+    }
+
+    /// The DTO shared by HTTP JSON, safe exports and the web MVP. `payload` is already in wire
+    /// spelling; `rows` and `allRows` remain typed only long enough to make pagination and export
+    /// use the exact same selected subjects.
+    struct UsageAnalyticsDTO {
+        var payload: [String: Any]
+        var rows: [UsageLedger.Row]
+        var allRows: [UsageLedger.Row]
+        var nextCursor: String?
+        var scanTruncated: Bool
+    }
+
+    private struct Cursor: Codable {
+        var at: Double
+        var key: String
+
+        var encoded: String {
+            guard let data = try? JSONEncoder().encode(self) else { return "" }
+            return data.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+
+        static func decode(_ text: String) -> Cursor? {
+            guard !text.isEmpty,
+                  text.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+            else { return nil }
+            var base64 = text.replacingOccurrences(of: "-", with: "+")
+                .replacingOccurrences(of: "_", with: "/")
+            while base64.count % 4 != 0 { base64 += "=" }
+            guard let data = Data(base64Encoded: base64),
+                  let cursor = try? JSONDecoder().decode(Cursor.self, from: data),
+                  cursor.at.isFinite, !cursor.key.isEmpty else { return nil }
+            return cursor
+        }
+    }
+
+    enum ExportError: Error { case jsonSerialization }
+    static var jsonEncoderForTesting: (([String: Any]) -> Data?)?
+
+    private let readRows: (UsageLedger.AnalyticsFilter) -> UsageLedger.AnalyticsRead
+    private let encodeJSON: ([String: Any]) -> Data?
+
+    init() {
+        readRows = { UsageLedger.shared.analyticsRead($0) }
+        encodeJSON = Self.jsonEncoderForTesting ?? {
+            try? JSONSerialization.data(withJSONObject: $0,
+                                        options: [.sortedKeys, .withoutEscapingSlashes])
+        }
+    }
+
+    /// Test seam for presentation invariants. Production never enters through this initializer:
+    /// its complete predicate and max+1 bound live in `UsageLedger.analyticsRead` above.
+    init(rows: @escaping () -> [UsageLedger.Row], corrections: @escaping () -> Int = { 0 },
+         jsonEncoder: @escaping ([String: Any]) -> Data? = {
+             try? JSONSerialization.data(withJSONObject: $0,
+                                         options: [.sortedKeys, .withoutEscapingSlashes])
+         }) {
+        readRows = { _ in
+            let rows = rows()
+            return UsageLedger.AnalyticsRead(
+                rows: rows, corrections: corrections(),
+                latestLedgerObservation: rows.map(\.updatedAt).max())
+        }
+        encodeJSON = jsonEncoder
+    }
+
+    /// Parse a closed query. Unknown and repeated keys are errors: accepting either would turn a
+    /// typo into a broader accounting query, which is the unsafe direction for this surface.
+    static func parse(_ values: [String: String], repeatedKeys: Set<String>) -> ParseResult {
+        let allowed: Set<String> = ["from", "to", "timezone", "group", "bucket", "assistant",
+                                    "model", "origin", "project", "view", "limit", "cursor"]
+        let unknown = Set(values.keys).subtracting(allowed)
+        guard unknown.isEmpty else {
+            return ParseResult(error: "Unknown usage query field: \(unknown.sorted().joined(separator: ", ")).")
+        }
+        guard repeatedKeys.isEmpty else {
+            return ParseResult(error: "Usage query fields may appear only once.")
+        }
+        let timezoneID = values["timezone"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? TimeZone.autoupdatingCurrent.identifier
+        guard TimeZone(identifier: timezoneID) != nil else {
+            return ParseResult(error: "timezone must be an IANA timezone identifier.")
+        }
+        let from = values["from"].flatMap { $0.isEmpty ? nil : $0 }
+        let to = values["to"].flatMap { $0.isEmpty ? nil : $0 }
+        guard [from, to].allSatisfy({ $0 == nil || UsageLedger.isLocalDay($0!) }) else {
+            return ParseResult(error: "from and to are local dates, YYYY-MM-DD.")
+        }
+        guard from == nil || to == nil || from! <= to! else {
+            return ParseResult(error: "from must not be after to.")
+        }
+        let group = values["group"].flatMap(UsageLedger.GroupBy.init(rawValue:)) ?? .model
+        if values["group"] != nil && UsageLedger.GroupBy(rawValue: values["group"]!) == nil {
+            return ParseResult(error: "group must be one of \(UsageLedger.GroupBy.allCases.map(\.rawValue).joined(separator: ", ")).")
+        }
+        let bucket = values["bucket"].flatMap(Bucket.init(rawValue:)) ?? .day
+        if values["bucket"] != nil && Bucket(rawValue: values["bucket"]!) == nil {
+            return ParseResult(error: "bucket must be day, week or month.")
+        }
+        let view = values["view"].flatMap(View.init(rawValue:)) ?? .overview
+        if values["view"] != nil && View(rawValue: values["view"]!) == nil {
+            return ParseResult(error: "view must be overview or agent_work.")
+        }
+        let parsedLimit = values["limit"].flatMap(Int.init)
+        if values["limit"] != nil && parsedLimit == nil {
+            return ParseResult(error: "limit must be an integer between 1 and \(maxPageSize).")
+        }
+        let limit = parsedLimit ?? 50
+        guard (1...maxPageSize).contains(limit) else {
+            return ParseResult(error: "limit must be between 1 and \(maxPageSize).")
+        }
+        let cursor = values["cursor"].flatMap { $0.isEmpty ? nil : $0 }
+        guard cursor == nil || Cursor.decode(cursor!) != nil else {
+            return ParseResult(error: "cursor is not a usage continuation issued by this service.")
+        }
+        func optional(_ name: String) -> String? {
+            values[name]?.trimmingCharacters(in: .whitespacesAndNewlines)
+                .nonEmpty
+        }
+        return ParseResult(query: Query(from: from, to: to, timezoneID: timezoneID,
+                                        groupBy: group, bucket: bucket,
+                                        assistant: optional("assistant"), model: optional("model"),
+                                        origin: optional("origin"), project: optional("project"),
+                                        view: view, limit: limit, cursor: cursor))
+    }
+
+    func query(_ query: Query, now: Date = Date()) -> UsageAnalyticsDTO {
+        let timezone = TimeZone(identifier: query.timezoneID) ?? TimeZone(secondsFromGMT: 0)!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.timeZone = timezone
+        let bounds = dateBounds(from: query.from, to: query.to, calendar: calendar)
+
+        let filter = UsageLedger.AnalyticsFilter(
+            start: bounds.start, end: bounds.end, assistant: query.assistant, model: query.model,
+            origin: query.origin, project: query.project, limit: Self.maxScannedRows + 1)
+        let reading = readRows(filter)
+        // Production has already applied this complete predicate in SQLite. Reapplying it here
+        // keeps the injectable test seam honest without changing the bounded production cost.
+        let matched = reading.rows.sorted(by: newestFirst).filter { row in
+            if let start = bounds.start, row.startedAt < start { return false }
+            if let end = bounds.end, row.startedAt >= end { return false }
+            if let assistant = query.assistant, row.assistant != assistant { return false }
+            if let model = query.model, row.model != model { return false }
+            if let origin = query.origin, row.origin != origin { return false }
+            if let project = query.project, Self.projectName(row) != project { return false }
+            return true
+        }
+        let truncated = matched.count > Self.maxScannedRows
+        let filtered = Array(matched.prefix(Self.maxScannedRows))
+
+        let continuation = query.cursor.flatMap(Cursor.decode)
+        let afterCursor = filtered.filter { row in
+            guard let continuation else { return true }
+            let at = row.startedAt.timeIntervalSince1970
+            return at < continuation.at || (at == continuation.at && row.intervalKey < continuation.key)
+        }
+        let page = Array(afterCursor.prefix(query.limit))
+        let hasMore = afterCursor.count > page.count
+        let next = hasMore ? page.last.map {
+            Cursor(at: $0.startedAt.timeIntervalSince1970, key: $0.intervalKey).encoded
+        } : nil
+        let corrections = reading.corrections
+
+        let totals = Self.summary(filtered)
+        let breakdown = Self.breakdown(filtered, groupBy: query.groupBy, calendar: calendar)
+        let trend = Self.trend(filtered, bucket: query.bucket, calendar: calendar)
+        let latest = reading.latestLedgerObservation
+        let rangeLatest = filtered.map(\.updatedAt).max()
+        let age = latest.map { max(0, Int(now.timeIntervalSince($0))) }
+        let rangeAge = rangeLatest.map { max(0, Int(now.timeIntervalSince($0))) }
+        let freshnessStatus: String
+        if latest == nil { freshnessStatus = "empty" }
+        else if (age ?? 0) > Int(UsageLedger.checkpointInterval * 2) { freshnessStatus = "stale" }
+        else { freshnessStatus = "current" }
+        let rangeFreshnessStatus: String
+        if rangeLatest == nil { rangeFreshnessStatus = "empty" }
+        else if (rangeAge ?? 0) > Int(UsageLedger.checkpointInterval * 2) {
+            rangeFreshnessStatus = "historical"
+        } else { rangeFreshnessStatus = "current" }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        var payload: [String: Any] = [
+            "schemaVersion": UsageLedger.schemaVersion,
+            "view": query.view.rawValue,
+            "range": ["from": query.from as Any? ?? NSNull(),
+                      "to": query.to as Any? ?? NSNull(),
+                      "timezone": timezone.identifier],
+            "freshness": ["generatedAt": formatter.string(from: now),
+                          "latestObservedAt": latest.map(formatter.string(from:)) as Any? ?? NSNull(),
+                          "ageSeconds": age as Any? ?? NSNull(), "status": freshnessStatus,
+                          "scanTruncated": truncated],
+            "rangeFreshness": [
+                "dataThrough": rangeLatest.map(formatter.string(from:)) as Any? ?? NSNull(),
+                "ageSeconds": rangeAge as Any? ?? NSNull(), "status": rangeFreshnessStatus,
+            ],
+            "capabilities": [
+                "views": View.allCases.map(\.rawValue),
+                "groupBy": UsageLedger.GroupBy.allCases.map(\.rawValue),
+                "buckets": Bucket.allCases.map(\.rawValue),
+                "filters": ["from", "to", "timezone", "assistant", "model", "origin", "project"],
+                "exports": ["csv", "json"], "maxPageSize": Self.maxPageSize,
+                "maxScannedRows": Self.maxScannedRows,
+            ],
+            "priceSnapshot": [
+                "activeId": UsageLedger.priceSnapshotID,
+                "observedIds": Array(Set(filtered.compactMap(\.priceSnapshotID))).sorted(),
+                "meaning": "Observed ids priced rows in this range; activeId is the current list-price table, not an actual bill.",
+            ],
+            "totals": totals,
+            "coverage": totals["coverage"] as Any,
+            "corrections": corrections,
+            "breakdown": breakdown,
+            "groupBy": query.groupBy.rawValue,
+            "trend": trend,
+            "bucket": query.bucket.rawValue,
+            "rows": page.map(Self.publicRow),
+            "rowCount": filtered.count,
+            "pagination": ["limit": query.limit, "nextCursor": next as Any? ?? NSNull(),
+                           "hasMore": hasMore],
+            "unavailableDimensions": [
+                "dimensions": UsageLedger.reservedColumns,
+                "reason": UsageLedger.reservedColumnsReason,
+                "graphView": false, "retryView": false, "landingView": false,
+            ],
+        ]
+        if truncated {
+            payload["availability"] = ["status": "partial", "reason": "scan_limit_reached"]
+        } else {
+            payload["availability"] = ["status": "complete"]
+        }
+        return UsageAnalyticsDTO(payload: payload, rows: page, allRows: filtered,
+                                 nextCursor: next, scanTruncated: truncated)
+    }
+
+    /// Safe, reconciliation-ready CSV. It is intentionally a public projection rather than the
+    /// ledger's forensic export: no session id, working directory, source bytes or raw object.
+    func exportCSV(_ result: UsageAnalyticsDTO) -> String {
+        let columns = ["interval_id", "task_id", "started_at", "ended_at", "assistant", "model", "origin",
+                       "project", "input_new", "output", "cache_read", "cache_write",
+                       "strict_total", "measured_floor", "unknown_token_parts", "source_total",
+                       "reconciliation", "input_basis", "cost_value", "cost_unit", "cost_basis",
+                       "price_snapshot_id", "missing_cost_reason", "coverage", "coverage_reasons"]
+        var lines = [columns.joined(separator: ",")]
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        for row in result.allRows {
+            let measurement = row.measurement
+            let fields: [String] = [
+                row.intervalKey, row.taskID ?? "", formatter.string(from: row.startedAt),
+                row.endedAt.map(formatter.string(from:)) ?? "",
+                row.assistant, row.model ?? "", row.origin, Self.projectName(row) ?? "",
+                measurement.counts.inputNew.map(String.init) ?? "",
+                measurement.counts.output.map(String.init) ?? "",
+                measurement.counts.cacheRead.map(String.init) ?? "",
+                measurement.counts.cacheWrite.map(String.init) ?? "",
+                measurement.total.map(String.init) ?? "",
+                measurement.unknown ? "" : String(measurement.measured),
+                measurement.unknownParts.map(\.rawValue).joined(separator: " "),
+                row.sourceTotal.map(String.init) ?? "", row.reconciliation ?? "",
+                row.inputBasis ?? "",
+                row.costValue.map { String($0) } ?? "", row.costUnit ?? "", row.costBasis,
+                row.priceSnapshotID ?? "", row.missingReason ?? "", row.coverage,
+                measurement.reasons.joined(separator: " "),
+            ]
+            lines.append(fields.map(Self.csvCell).joined(separator: ","))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// Lossless means lossless with respect to the public analytics contract: every null, zero,
+    /// unit, basis, availability mark and reason survives. Raw prompts and paths are not part of
+    /// that contract in the first place.
+    func exportJSON(_ result: UsageAnalyticsDTO) throws -> Data {
+        var object = result.payload
+        object["rows"] = result.allRows.map(Self.publicRow)
+        object["rowCount"] = result.allRows.count
+        object["truncated"] = result.scanTruncated
+        object.removeValue(forKey: "pagination")
+        guard let data = encodeJSON(object) else { throw ExportError.jsonSerialization }
+        return data
+    }
+
+    private func dateBounds(from: String?, to: String?, calendar: Calendar)
+        -> (start: Date?, end: Date?) {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let start = from.flatMap(formatter.date(from:))
+        let finalDay = to.flatMap(formatter.date(from:))
+        return (start, finalDay.flatMap { calendar.date(byAdding: .day, value: 1, to: $0) })
+    }
+
+    private func newestFirst(_ left: UsageLedger.Row, _ right: UsageLedger.Row) -> Bool {
+        if left.startedAt != right.startedAt { return left.startedAt > right.startedAt }
+        return left.intervalKey > right.intervalKey
+    }
+
+    private static func summary(_ rows: [UsageLedger.Row]) -> [String: Any] {
+        var tokenSums: [UsageLedger.Part: Int] = [:]
+        var tokenKnown: Set<UsageLedger.Part> = []
+        var partsUnknown: [String: Int] = [:]
+        var measuredFloor = 0
+        var measuredRows = 0
+        var strictTotal = 0
+        var strictAvailable = !rows.isEmpty
+        var unknownRows = 0
+        var coverageStates: [String: Int] = [:]
+        var coverageReasons: [String: Int] = [:]
+        var costs: [String: (unit: String, basis: String, value: Double, rows: Int,
+                            snapshots: Set<String>)] = [:]
+        var missingCosts: [String: Int] = [:]
+
+        for row in rows {
+            let measurement = row.measurement
+            if measurement.incomplete { unknownRows += 1 }
+            for part in UsageLedger.Part.allCases {
+                if let value = measurement.counts[part] {
+                    tokenKnown.insert(part)
+                    tokenSums[part, default: 0] += value
+                } else {
+                    partsUnknown[part.rawValue, default: 0] += 1
+                }
+            }
+            if measurement.unknown {
+                strictAvailable = false
+            } else {
+                measuredFloor += measurement.measured
+                measuredRows += 1
+                if let total = measurement.total { strictTotal += total }
+                else { strictAvailable = false }
+            }
+            coverageStates[row.coverage, default: 0] += 1
+            for reason in measurement.reasons { coverageReasons[reason, default: 0] += 1 }
+            if let value = row.costValue, let unit = row.costUnit {
+                let key = unit + "\u{1f}" + row.costBasis
+                var cost = costs[key] ?? (unit, row.costBasis, 0, 0, [])
+                cost.value += value
+                cost.rows += 1
+                if let snapshot = row.priceSnapshotID { cost.snapshots.insert(snapshot) }
+                costs[key] = cost
+            } else {
+                missingCosts[row.missingReason ?? UsageLedger.MissingCost.noCostRecorded.rawValue,
+                             default: 0] += 1
+            }
+        }
+        var tokenPayload: [String: Any] = [:]
+        for part in UsageLedger.Part.allCases {
+            tokenPayload[part.rawValue] = tokenKnown.contains(part)
+                ? tokenSums[part] as Any : NSNull()
+        }
+        let costPayload = costs.values.sorted {
+            $0.unit == $1.unit ? $0.basis < $1.basis : $0.unit < $1.unit
+        }.map { cost -> [String: Any] in
+            ["unit": cost.unit, "basis": cost.basis, "value": cost.value, "rows": cost.rows,
+             "priceSnapshotIds": cost.snapshots.sorted()]
+        }
+        return [
+            "rows": rows.count,
+            "tokens": tokenPayload,
+            "tokenPartsUnknown": partsUnknown,
+            "tokenRowsUnknown": unknownRows,
+            "measuredFloor": measuredRows == 0 ? NSNull() : measuredFloor,
+            "strictTotal": strictAvailable ? strictTotal : NSNull(),
+            "costs": costPayload,
+            "unavailableCost": ["rows": missingCosts.values.reduce(0, +),
+                                "reasons": missingCosts],
+            "coverage": ["states": coverageStates, "reasons": coverageReasons,
+                         "tokenRowsUnknown": unknownRows, "tokenPartsUnknown": partsUnknown],
+        ]
+    }
+
+    private static func breakdown(_ rows: [UsageLedger.Row], groupBy: UsageLedger.GroupBy,
+                                  calendar: Calendar)
+        -> [[String: Any]] {
+        var grouped: [String?: [UsageLedger.Row]] = [:]
+        for row in rows {
+            let key: String?
+            switch groupBy {
+            case .model: key = row.model
+            case .assistant: key = row.assistant
+            case .origin: key = row.origin
+            case .project: key = projectName(row)
+            case .day: key = UsageLedger.localDay(of: row.startedAt, calendar: calendar)
+            case .coverage: key = row.coverage
+            case .task: key = row.taskID
+            }
+            grouped[key, default: []].append(row)
+        }
+        return grouped.map { key, rows -> [String: Any] in
+            var out = summary(rows)
+            out["key"] = key as Any? ?? NSNull()
+            return out
+        }.sorted {
+            let left = ($0["measuredFloor"] as? Int) ?? -1
+            let right = ($1["measuredFloor"] as? Int) ?? -1
+            if left != right { return left > right }
+            return String(describing: $0["key"]) < String(describing: $1["key"])
+        }
+    }
+
+    private static func trend(_ rows: [UsageLedger.Row], bucket: Bucket, calendar: Calendar)
+        -> [[String: Any]] {
+        var grouped: [Date: [UsageLedger.Row]] = [:]
+        for row in rows {
+            let start: Date
+            switch bucket {
+            case .day:
+                start = calendar.startOfDay(for: row.startedAt)
+            case .week:
+                start = calendar.dateInterval(of: .weekOfYear, for: row.startedAt)?.start
+                    ?? calendar.startOfDay(for: row.startedAt)
+            case .month:
+                start = calendar.dateInterval(of: .month, for: row.startedAt)?.start
+                    ?? calendar.startOfDay(for: row.startedAt)
+            }
+            grouped[start, default: []].append(row)
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = bucket == .month ? "yyyy-MM" : "yyyy-MM-dd"
+        return grouped.keys.sorted().map { start in
+            let totals = summary(grouped[start] ?? [])
+            return ["bucket": formatter.string(from: start),
+                    "tokens": totals["tokens"] as Any,
+                    "measuredFloor": totals["measuredFloor"] as Any,
+                    "strictTotal": totals["strictTotal"] as Any,
+                    "coverage": totals["coverage"] as Any]
+        }
+    }
+
+    private static func publicRow(_ row: UsageLedger.Row) -> [String: Any] {
+        let measurement = row.measurement
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let cost: Any
+        if let value = row.costValue, let unit = row.costUnit {
+            cost = ["value": value, "unit": unit, "basis": row.costBasis,
+                    "priceSnapshotId": row.priceSnapshotID as Any? ?? NSNull()]
+        } else { cost = NSNull() }
+        var tokens: [String: Any] = [:]
+        for part in UsageLedger.Part.allCases {
+            tokens[part.rawValue] = measurement.counts[part] as Any? ?? NSNull()
+        }
+        return [
+            "id": row.intervalKey,
+            "taskId": row.taskID as Any? ?? NSNull(),
+            "startedAt": formatter.string(from: row.startedAt),
+            "endedAt": row.endedAt.map(formatter.string(from:)) as Any? ?? NSNull(),
+            "assistant": row.assistant,
+            "model": row.model as Any? ?? NSNull(),
+            "origin": row.origin,
+            "project": projectName(row) as Any? ?? NSNull(),
+            "tokens": tokens,
+            "strictTotal": measurement.total as Any? ?? NSNull(),
+            "measuredFloor": measurement.unknown ? NSNull() : measurement.measured,
+            "unknownTokenParts": measurement.unknownParts.map(\.rawValue),
+            "sourceTotal": row.sourceTotal as Any? ?? NSNull(),
+            "cost": cost,
+            "missingCostReason": row.missingReason as Any? ?? NSNull(),
+            "coverage": row.coverage,
+            "coverageReasons": measurement.reasons,
+            "reconciliation": row.reconciliation as Any? ?? NSNull(),
+            "inputBasis": row.inputBasis as Any? ?? NSNull(),
+        ]
+    }
+
+    private static func projectName(_ row: UsageLedger.Row) -> String? {
+        guard let raw = row.projectKey ?? row.workingDir, !raw.isEmpty else { return nil }
+        let name = URL(fileURLWithPath: raw).lastPathComponent
+        return name.isEmpty ? nil : name
+    }
+
+    /// RFC 4180 quoting after spreadsheet neutralization. Leading whitespace does not make a
+    /// formula safe: spreadsheets commonly trim it before deciding whether to evaluate a cell.
+    private static func csvCell(_ original: String) -> String {
+        var value = original
+        let first = value.drop(while: { $0 == " " }).first
+        if let first, "=+-@\t\r".contains(first) { value = "'" + value }
+        if value.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) {
+            return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        }
+        return value
+    }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }

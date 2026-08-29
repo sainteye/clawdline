@@ -2,13 +2,14 @@
 """Check load-time element lookups against the ids in the web page."""
 import re
 import sys
+import os
 from collections import defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "Resources" / "web"
-INDEX = WEB / "index.html"
+INDEX = Path(os.environ.get("CLAWDLINE_WEB_INDEX", WEB / "index.html"))
 JS_ROOT = WEB / "app" / "js"
 
 # An `id="…"` written in markup, wherever that markup is authored. `index.html` is not the only
@@ -38,6 +39,7 @@ MARKUP_ID = re.compile(r"\bid\s*=\s*['\"]([^'\"]+)['\"]")
 # ever come near 24, while every way of breaking the pattern that has been tried lands on 0.
 # If the registry ever legitimately shrinks past this, lower it in the commit that shrinks it.
 REGISTRY_FLOOR = 24
+USAGE_LOOKUP_FLOOR = 30
 
 # A `/` after one of these is a regular expression; after anything else it is division.  This is
 # what a JavaScript lexer does, and it is the whole of the ambiguity: the same character opens a
@@ -223,6 +225,11 @@ def top_level_ids(text, depths):
             for match in pattern.finditer(text) if depths[match.start()] == 0]
 
 
+def usage_helper_ids(text):
+    """Literal usage-* lookups through the inline analytics helper, at every brace depth."""
+    return set(re.findall(r"\bbyId\s*\(\s*['\"](usage-[^'\"]+)['\"]\s*\)", text))
+
+
 def main():
     try:
         html = INDEX.read_text()
@@ -276,6 +283,13 @@ def main():
     parser.feed(html)
     inline = "\n".join(parser.parts)
     inline_depths = scan("Resources/web/index.html (inline scripts)", inline)
+    usage_ids = usage_helper_ids(inline)
+    if len(usage_ids) < USAGE_LOOKUP_FLOOR:
+        fail(f"found {len(usage_ids)} literal usage-* lookups in the analytics IIFE, under the "
+             f"floor of {USAGE_LOOKUP_FLOOR}; the feature or its guard-visible lookups vanished")
+    for element_id in usage_ids:
+        required[element_id].append(("Resources/web/index.html (Usage Analytics IIFE)",
+                                     None, None))
     for element_id in registry_ids(inline):
         required[element_id].append(("Resources/web/index.html (inline registry)", None, None))
         registry.add(element_id)

@@ -598,7 +598,13 @@ final class RemoteServer: @unchecked Sendable {
             plan(request, on: conn)
             return
         }
-        // And these three are that same rule applied backwards, to routes written before anybody
+        // Analytics has its own bounded worker and admission budget: a full analytics queue must
+        // never spend the depth reserved for a phone's /info, transcript or places refresh.
+        if request.method == "GET", Self.isUsageAnalyticsReading(request.path) {
+            readUsageAnalytics(request, on: conn)
+            return
+        }
+        // And these bounded reads are that same rule applied backwards, to routes written before anybody
         // had said it out loud. None of them takes seconds the way the two above do — the dearest
         // is 0.531 — but they are what a phone asks for over and over, and on the shared queue a
         // request is not slow, it is *exclusive*: five `/info` in flight answered `/v1/health`, a
@@ -1856,10 +1862,9 @@ final class RemoteServer: @unchecked Sendable {
         // out of the registry — which keeps 200 rows and is why the ledger exists. Read-level,
         // like the schedules list: it answers a question, it starts nothing.
         //
-        // Two shapes and no third: an aggregate for reading, and a CSV of the same range for
-        // taking away. There is deliberately no page and no chart behind either — the data is
-        // the asset, and what a page should show is a question a month of real rows will answer
-        // better than a guess made today.
+        // Three shapes over one public projection: the dashboard contract, spreadsheet-safe CSV
+        // and lossless JSON. The query service removes raw paths/session ids once, before any of
+        // the three can see them, and keeps pagination/filtering off the shared HTTP queue.
         //
         // **Both are required to render an unknown as absent.** `tokens`, `total` and `cost` come
         // back `null` where nothing was measured, and the CSV leaves the field empty; a sealed
@@ -1873,6 +1878,9 @@ final class RemoteServer: @unchecked Sendable {
         // to be invented, `source_regressed` for a number measured across a replaced transcript.
         // Neither is visible in `coverage`, which says only how much of a source was read; both
         // came back from review as rows that reached this route looking perfectly healthy.
+        // These two URLs are the pre-existing forensic contracts. They deliberately retain the
+        // old aggregate schema and 44-column CSV byte shape; privacy-safe public analytics lives
+        // on the explicit versioned DTO paths below rather than changing old callers in place.
         case ("GET", "/v1/orchestrator/usage"), ("GET", "/v1/orchestrator/usage.csv"):
             let group = UsageLedger.GroupBy(rawValue: request.query["group"] ?? "")
             if request.query["group"] != nil, group == nil {
@@ -1896,6 +1904,46 @@ final class RemoteServer: @unchecked Sendable {
             let aggregate = UsageLedger.shared.aggregate(from: from, to: to,
                                                          groupBy: group ?? .model)
             return .json(["usage": UsageLedger.payload(of: aggregate)])
+
+        case ("GET", "/v1/orchestrator/usage/analytics"),
+             ("GET", "/v1/orchestrator/usage/analytics.csv"),
+             ("GET", "/v1/orchestrator/usage/analytics.json"):
+            let parsed = UsageQueryService.parse(request.query,
+                                                 repeatedKeys: request.repeatedQueryKeys)
+            guard let query = parsed.query else {
+                return .error(400, "bad_request", parsed.error ?? "Invalid usage query.")
+            }
+            let service = UsageQueryService()
+            let result = service.query(query)
+            if request.path.hasSuffix(".csv") {
+                guard !result.scanTruncated else {
+                    return .error(413, "export_too_large",
+                                  "The matching export exceeds \(UsageQueryService.maxScannedRows) rows; narrow the range.")
+                }
+                let csv = service.exportCSV(result)
+                return Response(status: 200,
+                                headers: ["Content-Type": "text/csv; charset=utf-8",
+                                          "Content-Disposition":
+                                            "attachment; filename=\"clawdline-usage.csv\""],
+                                body: Data(csv.utf8))
+            }
+            if request.path.hasSuffix(".json") {
+                guard !result.scanTruncated else {
+                    return .error(413, "export_too_large",
+                                  "The matching export exceeds \(UsageQueryService.maxScannedRows) rows; narrow the range.")
+                }
+                do {
+                    return Response(status: 200,
+                                    headers: ["Content-Type": "application/json; charset=utf-8",
+                                              "Content-Disposition":
+                                                "attachment; filename=\"clawdline-usage.json\""],
+                                    body: try service.exportJSON(result))
+                } catch {
+                    return .error(500, "json_serialization_failed",
+                                  "The lossless usage export could not be serialized.")
+                }
+            }
+            return .json(["usage": result.payload])
 
         case ("GET", "/v1/orchestrator/tasks"):
             return .json(["tasks": Orchestrator.records(),
@@ -3494,7 +3542,7 @@ final class RemoteServer: @unchecked Sendable {
 
     // MARK: - Readings too expensive for the shared queue
 
-    /// The three reads that had to leave `route`, for the reason dictation and the planner left
+    /// The reads that had to leave `route`, for the reason dictation and the planner left
     /// it and with a different kind of number behind them.
     ///
     /// Not one of these takes seconds. What they have instead is that each of them is a
@@ -3527,6 +3575,12 @@ final class RemoteServer: @unchecked Sendable {
         return parts[1] == "info" || parts[1] == "transcript"
     }
 
+    static func isUsageAnalyticsReading(_ path: String) -> Bool {
+        path == "/v1/orchestrator/usage/analytics"
+            || path == "/v1/orchestrator/usage/analytics.csv"
+            || path == "/v1/orchestrator/usage/analytics.json"
+    }
+
     /// The slow reads that may be refused before they enter the worker queue. Transcript is
     /// deliberately absent: it is the cheapest of the three, is quietly refreshed once a second,
     /// and a refusal used to replace a conversation already on screen with an error.
@@ -3540,9 +3594,9 @@ final class RemoteServer: @unchecked Sendable {
     /// **The gate stays on the server's queue** because that is where the state behind it lives,
     /// and because a request that is going to be refused must not first pay for a hop and a place
     /// in a line. It is the gate `dispatch` applies, with everything that cannot apply already
-    /// taken out: none of these three paths is in the open set, none is a pairing, shell, icon or
-    /// orchestrator route, and `writeOriginRefusal` has nothing to say about a GET. What is left
-    /// is the host check and whether this device is paired.
+    /// taken out. Usage is the one orchestrator read here and accepts that machine token; every
+    /// path also accepts an ordinary paired read. `writeOriginRefusal` has nothing to say about a
+    /// GET. What is left is the host check and either of those two read credentials.
     ///
     /// **The answer is `route(request)` and not a copy of the three cases**, which is the part
     /// worth defending. Those cases are also the seam the tests ask these routes through —
@@ -3588,12 +3642,36 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
+    /// Analytics is independently shed and independently executed. Its SQLite work is bounded,
+    /// but a full analytics queue still cannot be allowed to turn `/info` into 429 or park the
+    /// serial Apple-event reading worker behind an accounting export.
+    private func readUsageAnalytics(_ request: Request, on conn: NWConnection) {
+        if let refusal = slowReadingRefusal(request) {
+            send(withCachePolicy(refusal), on: conn)
+            return
+        }
+        guard usageAnalyticsLimiter.admit(depth: Self.usageAnalyticsDepth) else {
+            send(withCachePolicy(Self.usageAnalyticsBusyResponse()), on: conn)
+            return
+        }
+        usageAnalyticsQueue.async { [weak self] in
+            guard let self else { conn.cancel(); return }
+            let response = self.route(request)
+            self.queue.async {
+                self.usageAnalyticsLimiter.finish()
+                self.send(response, on: conn)
+            }
+        }
+    }
+
     /// The part of `readSlowly`'s gate that `dispatch` will apply again on the worker. Kept as a
     /// seam so a test can prove that leaving `route` did not invent a different authentication
     /// answer.
     func slowReadingRefusal(_ request: Request) -> Response? {
         if let refusal = crossOriginRefusal(request) { return refusal }
-        if case .denied = permission(for: request) {
+        let orchestratorAuthed = request.path.hasPrefix("/v1/orchestrator/")
+            && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
+        if case .denied = permission(for: request), !orchestratorAuthed {
             return .error(401, "unauthorized", "This needs a paired device.")
         }
         return nil
@@ -3632,10 +3710,14 @@ final class RemoteServer: @unchecked Sendable {
     /// today — that cost is unchanged, and it is now paid only by whoever opened four cards.
     private let readingQueue = DispatchQueue(label: "dev.sainteye.clawdline.remote.reading")
 
+    private let usageAnalyticsQueue = DispatchQueue(
+        label: "dev.sainteye.clawdline.remote.usage-analytics")
+
     /// How many of the bounded reads are on it. Touched only from the server's queue, like
     /// everything else here that is not behind a lock. Transcript uses the queue but not this
     /// limit; see `isLimitedSlowReading`.
     private var readingLimiter = ReadingLimiter()
+    private var usageAnalyticsLimiter = UsageAnalyticsLimiter()
 
     /// The counter operation as one testable unit. `finish` happens before the response is sent,
     /// so an already-interrupted connection cannot strand a place in the queue. An unbounded
@@ -3657,6 +3739,26 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
+    struct UsageAnalyticsLimiter {
+        private(set) var count = 0
+
+        mutating func admit(depth: Int) -> Bool {
+            guard count < depth else { return false }
+            count += 1
+            return true
+        }
+
+        mutating func finish() {
+            precondition(count > 0)
+            count -= 1
+        }
+    }
+
+    static func usageAnalyticsBusyResponse() -> Response {
+        .error(429, "usage_analytics_busy",
+               "This Mac already has \(usageAnalyticsDepth) usage analytics requests queued. Try again in a moment.")
+    }
+
     /// Eight, shared by `/info` and `/v1/places` because they stand in one line. Transcript stands
     /// in that line too, but is never refused by this number — it is the cheapest reading and a
     /// quiet refresh must not erase the conversation its reader already has.
@@ -3668,6 +3770,7 @@ final class RemoteServer: @unchecked Sendable {
     /// and while it does the eighth request can wait minutes. At that point rejecting the next
     /// bounded read is load shedding, not evidence that trying again immediately will work.
     static let readingDepth = 8
+    static let usageAnalyticsDepth = 2
 
     // MARK: - What the routes answer with
 
