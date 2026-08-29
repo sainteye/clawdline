@@ -168,7 +168,7 @@ export var SessionActions = {
             .catch(function (e) { toast(e.message, true); });
     },
 
-    end: function (sessionID, acceptLoss) {
+    end: function (sessionID, acceptLoss, closeabilityVersion) {
         var id = sessionID || S.openId;
         // The answer matters to the confirmation sheet, which has already disabled both of its
         // buttons on the assumption that a request is on its way: `false` is the only thing that
@@ -182,7 +182,7 @@ export var SessionActions = {
         Waits.end.start();
         render();
         ActionConfirm.sync();
-        api.end(id, acceptLoss).then(function () {
+        api.end(id, acceptLoss, closeabilityVersion).then(function () {
             self.finishEnd(id, ticket, true);
         }).catch(function (e) {
             self.finishEnd(id, ticket, false, e);

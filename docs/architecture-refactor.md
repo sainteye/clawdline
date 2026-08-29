@@ -44,12 +44,12 @@ act of guarding the baseline does not mint a new check and then call the new num
 `Sources/**/*.swift`; full test mode separately compares that partition and the test partition with
 `Sources/**/*.swift` and `Tests/**/*.swift`. A nested addition/removal or a Sources↔Tests partition
 swap therefore fails before compilation, while Tests-only drift cannot block an application build.
-The manifest currently contains 89 production and 40 test sources. `tools/check-architecture-boundaries.sh`
-also freezes `Orchestrator.swift` at 11,564 lines. `RemoteServer.swift` began at the 5,903-line
-Phase 0 baseline and now carries the approved 6,006-line Local Usage receipt in the executable
+The manifest currently contains 89 production and 41 test sources. `tools/check-architecture-boundaries.sh`
+also freezes `Orchestrator.swift` at the approved 12,398-line Closeability receipt. `RemoteServer.swift` began at the 5,903-line
+Phase 0 baseline and now carries the approved 6,316-line Closeability receipt in the executable
 guard; later approved features must move that receipt explicitly rather than silently weakening it. It keeps
 `Tests/main.swift` below 500 lines and free of domain `group()` calls, requires 24 ordered runners
-and 442 current manifest entries after approved Local Usage integration, and enforces the
+and 447 current manifest entries after approved Closeability integration, and enforces the
 2,000-line suite stop-growth boundary.
 
 ### Ordered suite and dependency manifest
@@ -280,8 +280,8 @@ Approve only Phases 0–1 initially. Phase 2 begins only when all of these are t
 candidate commit tree:
 
 1. independent review has sealed every finding as fixed, disproved or deferred with an owner;
-2. the 442-entry `expectedOrderedTestGroupTitles` equals the runtime order, the full result is
-   exactly 6,531 checks, and the existing Cloud receipt appears exactly once with the existing
+2. the 447-entry `expectedOrderedTestGroupTitles` equals the runtime order, the full result is
+   exactly 6,661 checks, and the existing Cloud receipt appears exactly once with the existing
    eleven suite names and counts;
 3. `tools/swift-source-manifest.sh` reports the exact on-disk recursive inventory, including a
    recorded red mutation for one missing nested source;

@@ -30,6 +30,8 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/RemoteServer.swift", "RemoteServer.sessionMessageSource(withID:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.state(of:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionWhoAmI", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.closeabilityIdentities", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.closeabilityInventory", 1),
 ]
 
 /// The production crossings the fixture at the end of this file drives for real and watches hop.
@@ -44,6 +46,7 @@ let dynamicallyExercisedCrossingSites: Set<String> = [
     "RemoteServer.session(withID:)",
     "RemoteServer.sessionMessageSource(withID:)",
     "RemoteServer.state(of:)",
+    "RemoteServer.closeabilityInventory",
 ]
 
 /// The file with its whole-line comments dropped, so this guard is about the code and not about
@@ -99,7 +102,18 @@ func sessionWatchReading(_ sessions: [TargetSession]) -> Bool {
                                     isComplete: true))
     }
     SessionWatch.shared.start()
-    return eventually { SessionWatch.shared.targets.map(\.id) == sessions.map(\.id) }
+    // `start()` asks immediately, but an earlier suite group may still have a real terminal read
+    // in flight. `read()` deliberately drops overlapping cadence work, so starting alone can
+    // leave this fixture waiting on the twenty-second timer while its three-second assertion
+    // reads the previous population. `refresh()` is the public single-debt path: it remembers one
+    // follow-up behind the in-flight read and gives us the completed sequence to wait beyond.
+    let receipt = SessionWatch.shared.refresh()
+    return eventually(timeout: 10) {
+        let snapshot = SessionWatch.shared.identitySnapshot()
+        return SessionWatch.shared.completedScanSequence > receipt.completedScanSequence
+            && snapshot.complete
+            && snapshot.targets.map(\.id) == sessions.map(\.id)
+    }
 }
 
 func runSessionWatchTests() {

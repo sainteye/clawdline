@@ -124,6 +124,7 @@ clawdline_test_sources=(
   Tests/ScheduleResumeTests.swift
   Tests/ScheduledDispatchTests.swift
   Tests/SessionCloseAndQuotaTests.swift
+  Tests/SessionCloseabilityTests.swift
   Tests/SessionLaunchTests.swift
   Tests/SessionRegistryTests.swift
   Tests/SessionWatchTests.swift

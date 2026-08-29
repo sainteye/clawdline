@@ -109,6 +109,12 @@ func sessionWatchCrossingProbe() async
                 if RemoteServer.sessionConversationIDForTesting != nil {
                     seamsLeftSet.append("RemoteServer.sessionConversationIDForTesting")
                 }
+                if RemoteServer.sessionWorkIdentityForTesting != nil {
+                    seamsLeftSet.append("RemoteServer.sessionWorkIdentityForTesting")
+                }
+                if RemoteServer.sessionEndForTesting != nil {
+                    seamsLeftSet.append("RemoteServer.sessionEndForTesting")
+                }
                 let targets = SessionWatch.shared.targets
                 var crossed = 0
                 for target in targets {

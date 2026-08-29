@@ -72,6 +72,25 @@ let cloudRunnerWatchdog = DispatchWorkItem {
     ))
     exit(124)
 }
+if !focusedTestGroups.isEmpty {
+    let missingFocusedTestGroups = focusedTestGroups.subtracting(matchedFocusedTestGroups).sorted()
+    if !missingFocusedTestGroups.isEmpty {
+        failures.append("focused test group(s) not found: "
+            + missingFocusedTestGroups.joined(separator: "; "))
+    }
+    if checks == 0 {
+        failures.append("focused test selection executed zero checks")
+    }
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
+    print("")
+    if failures.isEmpty {
+        print("\(checks) focused checks passed")
+        exit(0)
+    }
+    print("\(failures.count) of \(checks) focused checks failed:")
+    for failure in failures { print("  ✗ \(failure)") }
+    exit(1)
+}
 // The deadline is kept on a thread of its own rather than on a global dispatch queue. The suites
 // being watched park worker threads on semaphores, and a regression that leaks enough of those
 // saturates the pool the timer would need — measured here: with the pool full, a five-second

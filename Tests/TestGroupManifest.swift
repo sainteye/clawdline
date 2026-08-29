@@ -289,6 +289,11 @@ let expectedOrderedTestGroupTitles: [String] = [
     "work visibility decides from git, not from anybody's memory",
     "session work state is a closed broker projection, never an idle guess",
     "a session's own declaration is bounded, typed, and can never mint a check",
+    "closeability is four states, and doubt about the evidence outranks the list",
+    "every broker blocker has a record that produces it, and a closure that clears it",
+    "a closure attestation is bound to one process and one turn, and survives a restart",
+    "the close route asks to be proven only when a client says so",
+    "the closure route is closed at its edges",
     "session completion receipts are bound to the current process, not a reusable terminal",
     "a root session can report one delivered turn without becoming a child task",
     "only broker-verified target landing evidence can produce the double check",
@@ -453,6 +458,7 @@ let expectedOrderedTestGroupTitles: [String] = [
 ]
 
 func validateExecutedTestGroupManifest() {
+    if !focusedTestGroups.isEmpty { return }
     guard executedTestGroupTitles == expectedOrderedTestGroupTitles else {
         let mismatch = zip(executedTestGroupTitles, expectedOrderedTestGroupTitles)
             .enumerated().first { $0.element.0 != $0.element.1 }?.offset

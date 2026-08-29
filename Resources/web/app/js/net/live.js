@@ -473,10 +473,16 @@ export var LocalClient = {
     /// The server knows whether that means `/exit` or `/quit`; the page never sends a command.
     /// `acceptLoss` is sent only after the person has seen the list of what the close takes —
     /// without it, a close that would cancel live work is refused with that list.
-    end: function (id, acceptLoss) {
+    end: function (id, acceptLoss, closeabilityVersion) {
+        var body = {};
+        if (acceptLoss) body.accept_loss = true;
+        // Opt-in, and only when the page itself projected `safe`. A page that failed the
+        // projection closed sends no token and gets exactly the gate it had before; a page
+        // that sends one is asking the broker to refuse unless it can still prove the same
+        // thing at its end of the press.
+        if (closeabilityVersion) body.expected_closeability_version = closeabilityVersion;
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/end",
-                         post(acceptLoss ? { accept_loss: true } : {},
-                              { "Idempotency-Key": uuid() }));
+                         post(body, { "Idempotency-Key": uuid() }));
     },
 
     /// Branch and file changes are also fetched only when their panel opens. Unlike the command

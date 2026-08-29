@@ -33,7 +33,7 @@ Chinese (the first-class copy; every other language translates it).
 | `ready` | 📭 | **You can hand this one work.** An invitation, almost always the session's own declaration, marked as such. | `📭 可接新工作 · 自述` |
 | `unknown` | *(none, on purpose)* | Nothing is being asked of you. The broker has no positive evidence — an absence, not a category. Giving an absence a symbol is how `needs_triage` came to read as a demand, so this one has no icon at all. | `狀態未知`（灰、斜體、安靜） |
 | `milestone_complete` | ✓ (one CSS check) | **Review and accept it.** Delivered on authenticated evidence; review or landing may remain. | `✓ 已交付，等待驗收` |
-| `work_complete` | ✓✓ (two CSS checks) | **That task scope has landed.** This alone does not prove a root tab is safe to close; until the separate closeability projection ships, use the current root audit and `lost_if_closed` close gate. | `✓✓ 已驗收完成` |
+| `work_complete` | ✓✓ (two CSS checks) | **That task scope has landed.** This alone does not prove a root tab is safe to close — that is the separate [`closeability`](#the-fourth-projection-closeability) projection, and the `lost_if_closed` close gate still applies underneath it. | `✓✓ 已驗收完成` |
 
 The icons are meaning, not severity: a raised hand asks, a tray holds what you owe, an hourglass
 is somebody else's time, an "up next" sign moves on its own, an open empty mailbox can receive.
@@ -131,6 +131,31 @@ still not `ready` — but `ready` is no longer structurally unreachable for assi
 the session itself is the one witness who knows its assignment ended, and its authenticated,
 self-marked declaration is how that knowledge enters the projection without weakening the
 evidence-only checks.
+
+## The fourth projection: `closeability`
+
+`ready` means **able to accept work**. `safe` means **able to end**. They are independent, and the
+night this page was written they were being read off each other: a quiet row invites work and can
+still own a pending landing, a dirty isolated checkout, a waiter parked on its files, or a debt
+nobody has paid. So closeability rides beside `work_state` and `owed` as a projection of its own,
+with four values and one action each:
+
+| state | you should |
+| --- | --- |
+| `blocked` | **Do not close.** The broker sees a positive obligation, and the reasons name it. |
+| `needs_attestation` | **Ask that session.** The broker's blockers are clear; only the session itself can account for shared-tree hunks it owns, local todos, deployments and decisions nobody wrote down. |
+| `safe` | **The close button may proceed.** Blockers clear *and* a fresh closure attestation is bound to the exact current process. |
+| `unknown` | **Refresh or audit.** The evidence is stale, missing or ambiguous. It never renders as safe. |
+
+`unknown` deliberately outranks `blocked`. A stale or ambiguous source does not merely add a row
+to the obligation list — it makes that list's *completeness* unknown, and a reader handed an
+incomplete list reads it as a checklist. The obligations that were seen are still listed
+underneath; what changes is the headline.
+
+`work_complete` on a task row is not this. It proves that one task scope landed; a root tab's
+whole responsibility graph is a different question, and this is the one that answers it. The full
+contract — the closed reason vocabulary, the two generations, the attestation route and the
+compare-and-swap on close — is in [`session-closeability.md`](session-closeability.md).
 
 ## `lost_if_closed`: a gate, not a label
 

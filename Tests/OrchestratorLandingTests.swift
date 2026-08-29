@@ -1133,6 +1133,8 @@ group("a session's own declaration is bounded, typed, and can never mint a check
               .owed == nil)
 }
 
+    runSessionCloseabilityTests()
+
 group("session completion receipts are bound to the current process, not a reusable terminal") {
     let started = Date(timeIntervalSince1970: 100)
     let identity = Orchestrator.SessionWorkIdentity(

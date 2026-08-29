@@ -11,7 +11,9 @@ func coordinatorFixture(_ terminalID: String, assistant: Assistant = .codex,
                         conversation: String = "conversation-a",
                         workState: Orchestrator.SessionWorkState = .ready,
                         waitingOnSession: Bool = false,
-                        hasWaiters: Bool = false) -> Coordinator.LiveSession {
+                        hasWaiters: Bool = false,
+                        closeability: Orchestrator.SessionCloseability? = nil)
+    -> Coordinator.LiveSession {
     Coordinator.LiveSession(
         identity: Orchestrator.SessionWorkIdentity(
             terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
@@ -19,7 +21,8 @@ func coordinatorFixture(_ terminalID: String, assistant: Assistant = .codex,
             conversationID: conversation),
         label: terminalID == "father" ? "Clawdfather" : "ordinary work",
         cwd: "/Users/me/code/clawdline", workState: workState,
-        waitingOnSession: waitingOnSession, hasWaiters: hasWaiters)
+        waitingOnSession: waitingOnSession, hasWaiters: hasWaiters,
+        closeability: closeability)
 }
 
 
@@ -883,15 +886,19 @@ group("coordinator routes require the machine token and expose no implicit takeo
     try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
     Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
     Coordinator.forgetForTesting()
-    let father = coordinatorFixture("father")
-    let other = coordinatorFixture("other", pid: 411, conversation: "conversation-b")
+    let father = coordinatorFixture("father", closeability: .safe)
+    let other = coordinatorFixture(
+        "other", pid: 411, conversation: "conversation-b", closeability: .blocked)
     let unbound = Coordinator.LiveSession(
         identity: Orchestrator.SessionWorkIdentity(
             terminalID: "unbound", assistant: .claude, tty: "/dev/ttys099", pid: nil,
             processStart: nil, conversationID: nil),
         label: "Clawdfather by title only", cwd: "/Users/me/code/clawdline",
-        workState: .unknown, waitingOnSession: false, hasWaiters: false)
-    RemoteServer.coordinatorSessionsForTesting = [father, other, unbound]
+        workState: .unknown, waitingOnSession: false, hasWaiters: false,
+        closeability: .unknown)
+    let unprojected = coordinatorFixture(
+        "unprojected", pid: 412, conversation: "conversation-c", workState: .unknown)
+    RemoteServer.coordinatorSessionsForTesting = [father, other, unbound, unprojected]
     defer {
         RemoteServer.coordinatorSessionsForTesting = nil
         RemoteServer.coordinatorObservationEvidenceForTesting = nil
@@ -1007,6 +1014,22 @@ group("coordinator routes require the machine token and expose no implicit takeo
         as? [String: Any]
     expect("and it names presence",
            (deviceGetBody?["coordinator"] as? [String: Any])?["status"] as? String, "online")
+    let deviceBearings = deviceGetBody?["bearings"] as? [String: Any]
+    let closeabilityCounts = deviceBearings?["closeability_counts"] as? [String: Any]
+    check("Bearings counts all four states and keeps absence as not_projected",
+          closeabilityCounts?["safe"] as? Int == 1
+            && closeabilityCounts?["blocked"] as? Int == 1
+            && closeabilityCounts?["unknown"] as? Int == 1
+            && closeabilityCounts?["needs_attestation"] as? Int == 0
+            && closeabilityCounts?["not_projected"] as? Int == 1)
+    let unknownRows = deviceBearings?["unknown"] as? [[String: Any]] ?? []
+    let projectedUnknown = unknownRows.first { $0["id"] as? String == "unbound" }
+    check("the reduced Bearings row names its reduced schema distinctly",
+          projectedUnknown?["closeability_state"] as? String == "unknown"
+            && projectedUnknown?["closeability"] == nil)
+    let absentUnknown = unknownRows.first { $0["id"] as? String == "unprojected" }
+    check("a not_projected row does not counterfeit unknown",
+          absentUnknown?["closeability_state"] == nil)
     check("while the durable UUID and store health never cross the device boundary",
           (deviceGetBody?["coordinator"] as? [String: Any])?["id"] == nil
           && deviceGetBody?["store"] == nil)

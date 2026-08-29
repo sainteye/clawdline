@@ -2,10 +2,11 @@
 
 For task templates that dispatch on a clock, including catch-up and tab-close policy, see
 [`schedules.md`](schedules.md). Scheduled work enters the ordinary lifecycle described here.
-The planned distinction between task completion, Session work state and proof that a root Session
-is safe to close is specified separately in
-[`session-closeability.md`](session-closeability.md); do not infer closeability from `idle`, `ready`
-or a child task's `work_complete` check.
+The distinction between task completion, Session work state and proof that a root Session is safe
+to close is specified separately in [`session-closeability.md`](session-closeability.md), and its
+projection, attestation route and compare-and-swap close gate have shipped. Do not infer
+closeability from `idle`, `ready` or a child task's `work_complete` check: read the Session row's
+`closeability` block, which says so directly and names why when the answer is no.
 
 A session you are talking to is a session you are waiting on. Some of what people ask for does not
 need the conversation it was asked in — generate the image, run the suite, read this diff and tell
@@ -1447,7 +1448,13 @@ migrates to a matching label or the most recently active assistant.
 **Bearings**: one deterministic snapshot over existing Session metadata, active task records,
 pending landing records and open coordination-wait groups. It always counts the eight closed
 `work_state` values and names safe metadata for `unknown`, human/peer `waiting`, and owners
-`blocking` peers. It also carries the ordered `pending_landings` rows exposed by the landing GET,
+`blocking` peers. Beside that tally it carries a second, independent one — `closeability_counts`
+over the four closed [closeability](session-closeability.md) values plus `not_projected` — and
+each named session row carries its own `closeability_state`. The two tallies are never derived from each
+other: a row can be `ready` and not closeable, or quiet and closeable, and one number read as the
+other is exactly the collapse that projection exists to undo. A session whose closeability was not
+projected is counted under `not_projected` rather than folded into `unknown`, because absent and
+doubtful are different facts. It also carries the ordered `pending_landings` rows exposed by the landing GET,
 so the count and each owner/executor status share one task/landing registry observation. Named
 lists are independent filters and may honestly overlap when a session is
 both owner and waiter. RemoteServer takes one bounded SessionWatch observation and then one Orchestrator

@@ -11,6 +11,10 @@ import Foundation
 var checks = 0
 var failures: [String] = []
 var executedTestGroupTitles: [String] = []
+let focusedTestGroups: Set<String> = Set(
+    (ProcessInfo.processInfo.environment["CLAWDLINE_TEST_GROUPS"] ?? "")
+        .split(separator: "\n").map(String.init))
+var matchedFocusedTestGroups: Set<String> = []
 
 func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
     checks += 1
@@ -29,6 +33,10 @@ func expectClose(_ name: String, _ got: CGFloat, _ want: CGFloat, _ tolerance: C
 }
 
 func group(_ title: String, _ body: () -> Void) {
+    if !focusedTestGroups.isEmpty {
+        guard focusedTestGroups.contains(title) else { return }
+        matchedFocusedTestGroups.insert(title)
+    }
     executedTestGroupTitles.append(title)
     let before = failures.count
     body()
