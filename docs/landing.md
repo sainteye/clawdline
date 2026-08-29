@@ -23,6 +23,16 @@ start of every conversation, including the ones that would never land anything.
   files, test the exact integrated tree with a private `TMPDIR`, and record the resulting target
   commit. Then mark that same landing record `landed` with the commit. `SAFE TO LAND` is a pending
   state, not a completion phrase.
+- The exact integrated-tree run is normally the **only full suite in the graph**. Implementers and
+  reviewers use focused proof; confirmation reruns the questions a correction changed. Reuse a
+  receipt only when repository, tree SHA, question, command digest and environment match. A second
+  full run requires a typed inconclusive first result, not a desire to reconfirm green.
+- One independent review seals its complete finding set before correction begins. All fixes from
+  that set form one correction wave even when their write sets run in parallel. A third review
+  requires `scope_changed`, `new_external_evidence`, or `systemic_pattern`; a recurring class after
+  that is an architecture hold, not permission for an unbounded review/correction loop.
+  The receipt and verdict shapes are specified in
+  [`verification-workflow.md`](verification-workflow.md).
 - **HEAD must compile standing alone, and a commit is the only thing that can break that.** It
   happened twice on 2026-08-26, from two different sessions: a whole-file `git add` carried three
   lines whose type was defined in a file that stayed uncommitted, and a protocol requirement landed

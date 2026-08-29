@@ -33,7 +33,7 @@ Chinese (the first-class copy; every other language translates it).
 | `ready` | 📭 | **You can hand this one work.** An invitation, almost always the session's own declaration, marked as such. | `📭 可接新工作 · 自述` |
 | `unknown` | *(none, on purpose)* | Nothing is being asked of you. The broker has no positive evidence — an absence, not a category. Giving an absence a symbol is how `needs_triage` came to read as a demand, so this one has no icon at all. | `狀態未知`（灰、斜體、安靜） |
 | `milestone_complete` | ✓ (one CSS check) | **Review and accept it.** Delivered on authenticated evidence; review or landing may remain. | `✓ 已交付，等待驗收` |
-| `work_complete` | ✓✓ (two CSS checks) | **You can close the tab.** Broker-verified target landing for that task scope. | `✓✓ 已驗收完成` |
+| `work_complete` | ✓✓ (two CSS checks) | **That task scope has landed.** This alone does not prove a root tab is safe to close; until the separate closeability projection ships, use the current root audit and `lost_if_closed` close gate. | `✓✓ 已驗收完成` |
 
 The icons are meaning, not severity: a raised hand asks, a tray holds what you owe, an hourglass
 is somebody else's time, an "up next" sign moves on its own, an open empty mailbox can receive.

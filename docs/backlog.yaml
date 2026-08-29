@@ -646,3 +646,100 @@ items:
       request and does not say. Typed refusals elsewhere in this API name their field; this one
       should match them.
     opened: 2026-08-28
+
+  - id: B-CODEX-SUBAGENTS-ARE-NOT-READABLE
+    title: Native Codex subagents disappear behind their parent Session
+    problem: >-
+      A Codex Session can launch native subagents, but Clawdline cannot reliably list those children
+      or open the rollout that belongs to one exact parent process. The parent therefore looks like
+      one opaque working Session: a person cannot tell which delegated line is still running, which
+      one failed, or read the result that justified the parent's conclusion. Reusing an old partial
+      implementation is unsafe because rollout identity, process binding and bounded scans have all
+      changed since its base.
+    evidence: >-
+      The now-abandoned landing obligations `b2cef7f6` and `1aa050c5` point at one preserved dirty
+      candidate worktree based at `40bc690c`; the latter task row has no separate worktree.
+      It contains 495 added lines plus an untracked `Sources/CodexSubagents.swift`, no delivery
+      commit, no durable result artifact and no independent final review. Current main is
+      `04071d8a`; the old candidate predates the whoami, SessionWatch, ownership and test-harness
+      contracts now in production. The preserved worktree remains useful as research, not as a
+      landable patch.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      Reimplement after the Session/Orchestrator refactor defines the provider-agent boundary.
+      Reuse the old worktree only as test-vector evidence: exact process-bound parent identity,
+      bounded directory scans, symlink-safe rollout reads, readable child transcripts and explicit
+      running/done/failed states must be proved against current main.
+    opened: 2026-08-29
+
+  - id: B-CLAWDFATHER-CRASH-RECOVERY-IS-NOT-A-CURRENT-CONTRACT
+    title: A crashed Clawdfather has no current, reviewed recovery journey
+    problem: >-
+      The durable coordinator record can survive a crash, but the product does not yet offer one
+      reviewed journey that finds the exact prior conversation, distinguishes unknown from offline,
+      resumes it without duplicating it, and performs the generation-guarded rebind only after fresh
+      process evidence. Recovery therefore still depends on a coordinator who already knows the
+      protocol rather than on a user-visible product path.
+    evidence: >-
+      Task `ca5f5cfc` delivered a 612-line dirty worktree based at `ec5e0a6b`, with no commit and no
+      independent review. Its own report records 15 unrelated full-suite failures and blocked live
+      browser verification. Current main `04071d8a` has since replaced coordinator liveness with a
+      closed online/offline/unknown contract and added whoami, ownership projection and guarded
+      registration. Replaying the old patch would bypass the exact seams recovery now has to use.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      Reimplement after Status vNext defines safe/unknown closeability and a bounded close receipt.
+      The current-main feature must use the exact durable conversation, fresh SessionWatch evidence,
+      assistant/cwd/conversation guards, generation CAS, typed timeout/refusal states and real mobile
+      browser verification; the old worktree is specification evidence only.
+    opened: 2026-08-29
+
+  - id: B-VERIFICATION-PROOF-CANNOT-BE-REUSED
+    title: The same verified tree keeps paying for the same question
+    problem: >-
+      Verification is prose attached to one task rather than a durable receipt keyed by the tree,
+      question and environment. A correction, reviewer and landing root therefore rerun the full
+      suite even when two of them are asking the same thing, while malformed verification metadata
+      silently looks the same as no report. Quality remains high, but local fixes repeatedly pay
+      the repository's largest compile cost and the evidence cannot be audited mechanically.
+    evidence: >-
+      In the ownership/freshness line on 2026-08-29, implementation used 818 seconds, correction
+      515 seconds, final review 620 seconds and root still owed the exact-tree suite. The correction
+      and review contained four full-suite runs between them. Tasks `d86b3f9c` and `1d87577f` also
+      supplied malformed `verification` values (invalid `last`, floating `seconds`) which
+      `Orchestrator.verification(from:)` omitted without projecting invalid status. The proposed
+      ledger, verdict and runner contracts are in `docs/verification-workflow.md`.
+    severity: degrades
+    cost: days
+    who_hurts: us
+    trigger: >-
+      Implement the invalid-vs-absent projection first, then the append-only receipt ledger and
+      compile-once focused runner. Each step needs a guard that proves duplicate exact receipts do
+      not execute again and a targeted run cannot mint a full receipt.
+    opened: 2026-08-29
+
+  - id: B-ROOT-CLOSEABILITY-IS-NOT-PROVABLE
+    title: Idle and ready Sessions still cannot prove they are safe to close
+    problem: >-
+      Existing state can prove a child task landed or that a Session volunteered to accept more
+      work, but not that a root's full obligation graph and unregistered local work are clear. Most
+      idle roots therefore remain unknown, so a Clawdfather must reconstruct ownership from chat
+      before closing them. Treating idle, ready or task work_complete as safe would fail open.
+    evidence: >-
+      After the 2026-08-29 integration, 14 live Sessions projected only 2 ready and 9 unknown even
+      though the integration coordinator could prove nine Clawdline tabs were finished. All nine
+      passed the close route's instantaneous lost-work gate, but no pre-close projection could say
+      so. `docs/session-closeability.md` identifies the missing root closure attestation,
+      obligation generation and four-state closeability projection.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      Implement the read-only reason/provenance projection first. Add process-bound closure
+      attestation and CAS close only after stale/missing/ambiguous evidence is proved unable to
+      produce safe. A durable audit runner is last, not first.
+    opened: 2026-08-29

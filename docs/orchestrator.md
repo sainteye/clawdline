@@ -2,6 +2,10 @@
 
 For task templates that dispatch on a clock, including catch-up and tab-close policy, see
 [`schedules.md`](schedules.md). Scheduled work enters the ordinary lifecycle described here.
+The planned distinction between task completion, Session work state and proof that a root Session
+is safe to close is specified separately in
+[`session-closeability.md`](session-closeability.md); do not infer closeability from `idle`, `ready`
+or a child task's `work_complete` check.
 
 A session you are talking to is a session you are waiting on. Some of what people ask for does not
 need the conversation it was asked in — generate the image, run the suite, read this diff and tell
@@ -936,9 +940,11 @@ poking, and neither is a reason to finalize somebody's task.
 are non-negative integers, `last` is `pass`, `fail`, or `skipped`, and `scope` is a short free-text
 description. A well-formed object is stored on the task record. Older results without it work
 unchanged, and a malformed object is ignored rather than turning an otherwise authenticated
-success into failure. The briefing gives verification one third of `timeout_minutes` or three
-full-suite runs, whichever arrives first, while still requiring one relevant compile-and-test pass
-and red-before-green for every new test.
+success into failure. The briefing gives verification one third of `timeout_minutes`, while still
+requiring one relevant compile-and-test pass and red-before-green for every new test. Until a
+focused Swift runner ships, an implementer that cannot exercise its behavior more narrowly may use
+one full-suite run labelled `focused_runner_unavailable`; reviewers do not repeat it, and root
+still owns the exact integrated-tree acceptance.
 
 `symbols` names every identifier the child's change introduced: new functions and types, new
 fields, new string keys, the names of test groups it added. Names, not descriptions — the portrait

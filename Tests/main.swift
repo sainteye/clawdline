@@ -22794,9 +22794,10 @@ group("verification reports are optional, bounded metadata rather than a success
           brief.contains("ritual after every small edit")
             && brief.contains("unrelated to the paths this task claimed")
             && brief.contains("only purpose is to see whether something is flaky"))
-    check("the briefing gives the one-third-or-three-runs budget and reclaimed TMPDIR",
-          brief.contains("30 minutes") && brief.contains("three full-suite runs")
-            && brief.contains("/work/tmp"))
+    check("the briefing gives the focused-runner exception, one-third budget and reclaimed TMPDIR",
+          brief.contains("focused_runner_unavailable") && brief.contains("one full-suite run")
+            && !brief.contains("three full-suite runs")
+            && brief.contains("30 minutes") && brief.contains("/work/tmp"))
     check("the result example carries the optional verification shape",
           brief.contains(#""verification": {"runs": 2, "seconds": 940, "last": "pass""#))
 }

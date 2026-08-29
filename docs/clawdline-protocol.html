@@ -659,7 +659,7 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
 
   <ul>
     <li><strong>Do run one verification that actually proves the change</strong>: compile, the tests covering what was touched, and one red-before-green run for each test added. A test born green proves nothing — break the thing once, watch the test catch it, then fix it. Iterating until something first compiles and passes is ordinary work and is not what the budget is about.</li>
-    <li><strong>The budget is one third of <code>timeout_minutes</code>, or three full-suite runs, whichever comes first.</strong> On reaching it the child stops verifying and says in its result what state the work was in, rather than spending the rest of its time trying to reach green.</li>
+    <li><strong>The budget is one third of <code>timeout_minutes</code>.</strong> Until a focused Swift runner ships, an implementer whose behavior cannot be exercised more narrowly may use one full-suite run and label it <code>focused_runner_unavailable</code>; reviewers do not repeat it. At the time limit the child stops and reports the state reached.</li>
     <li><strong>Do not</strong> re-run a full suite after every small edit, run a suite unrelated to the paths claimed, repeat a green run to see whether it was flaky, or treat restarting the application and looking at it as acceptance.</li>
   </ul>
 

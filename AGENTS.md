@@ -179,9 +179,11 @@ runs.
   touched, and one red-before-green run for each test it added. Iterating until something first
   compiles and passes is ordinary work and is not what this rule is about. **Handing back code that
   does not compile costs root far more than one honest run costs anybody.**
-- The budget is one third of `timeout_minutes`, or three full-suite runs, whichever comes first. On
-  reaching it the child stops verifying and says in `result.json` what state the work was in, rather
-  than spending the rest of its time trying to get to green.
+- Until the repository ships a focused Swift runner, an implementer whose behavior cannot be
+  exercised any narrower may use **one** full-suite run and record
+  `focused_runner_unavailable` in its receipt. Reviewers do not repeat that run. The time budget is
+  still one third of `timeout_minutes`; on reaching it the child stops verifying and reports the
+  state reached rather than spending the rest of its time trying to get to green.
 - `result.json` reports what verification cost: `"verification": {"runs": 2, "seconds": 940, "last":
   "pass", "scope": "..."}`. Without a number, "it kept re-verifying" is an impression rather than a
   finding.
@@ -190,6 +192,32 @@ runs.
   `work/tmp`, so the test binary lands there too. Clawdline reclaims `work/` when the task ends;
   until that reclaim has landed, delete it yourself before writing `result.json`. Anything worth
   keeping is copied into `artifacts/` first.
+
+**One feature normally pays for one final full suite, and the landing root owns it.** Implementation,
+review and correction answer named questions with compile/typecheck, focused tests and mutations;
+they do not each buy another complete `./test.sh` run. The temporary implementer exception above
+exists only while no focused Swift runner can answer the feature question. The normal graph is implementation → one
+independent review → one consolidated correction wave → focused confirmation → one exact candidate-
+tree full suite by root → landing → build/smoke. A second full run is allowed only when the first is
+typed `inconclusive_environment` (crash, timeout, or a named sandbox capability), never merely to
+see whether a green result was flaky. Record the reason beside the second receipt.
+
+**Seal findings before correction.** One review returns the complete finding set before anybody
+edits it. Corrections with disjoint write sets may run in parallel, but together they are one wave;
+every finding ends `fixed`, `disproved`, or `deferred` with a named owner. Confirmation reopens only
+those findings and adjacent regressions. A third review wave requires one written reason:
+`scope_changed`, `new_external_evidence`, or `systemic_pattern`. Without one, stop the review loop.
+If a third wave finds another instance of the same defect class outside the correction seam, mark
+the feature `architecture_hold` and repair the boundary rather than dispatching a fourth patch.
+The staged extraction rules and anti-over-splitting gate are in
+[`docs/architecture-refactor.md`](docs/architecture-refactor.md).
+
+**A verification receipt names its subject and question.** At minimum keep the repository, exact
+tree SHA (or an explicit working-overlay digest), question id, command/variant, environment,
+duration, exit status and check counts. Only an exact commit-tree receipt may be reused across
+tasks. A dirty-overlay green is the child's self-proof, not root acceptance. Until the broker owns
+the durable receipt ledger, put these fields in the task artifact and do not rerun the same
+tree/question/environment tuple.
 
 **`./test.sh` still exits 133 occasionally, and one measurement would settle it.** Whoever hits it
 next records five things, each with its unit and how it was taken: `wc -c` bytes; `wc -l` lines;

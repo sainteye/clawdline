@@ -152,12 +152,14 @@ its verdict is spent — that repair is a delivery, and the focused diff and exa
 root's. It repairs only what does not change the design; a design-changing correction goes back to
 the implementer's session. Never one task per finding.
 
-**One review round per feature or batch, and count them.** Complementary reviewers side by side are
-one round; what is capped is re-reviewing after a correction, which feels free and is not. Measured
-on one line here: implementation $30.90, its four review rounds $57.39 — 1.9x the thing reviewed. A
-**second** round only when the first found a defect *class* that will recur elsewhere; "did the fix
-work" is answered by the test that was red. A **third** only with a written reason the coordinator
-has seen, or on either trigger below — decidable from the correction diff, and taken from that same
-line, where each correction introduced defects the next review caught: **(a) it touches a code path
-`main` is also on**; **(b) it deleted or weakened an existing assertion.** Past three, ask. Blanket
-multi-round review is rejected here.
+**One review round per feature or batch.** Parallel complementary reviewers count as one round.
+Seal findings before correction; disjoint fixes remain one wave, and confirmation reruns only named
+questions. A second round needs a recurring defect class. A third needs `scope_changed`,
+`new_external_evidence`, or `systemic_pattern`. If the same class escapes again, stop at
+`architecture_hold`; do not dispatch a fourth patch.
+
+**The landing root owns the normal full suite.** Children use focused proof. Until a focused Swift
+runner ships, an implementer may run one full suite only when labelled
+`focused_runner_unavailable`; reviewers do not repeat it. Root tests the exact target candidate.
+Never repeat a green tree/question/environment tuple; a second run needs a typed
+`inconclusive_environment` receipt.

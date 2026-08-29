@@ -9538,10 +9538,12 @@ enum Orchestrator {
 
         Do one verification that actually proves the change: compile, run the tests covering the
         paths this task touched, and see one red-before-green run for every test you add. Iterating
-        until the change first compiles and passes is ordinary work. Verification stops after one
-        third of this task's timeout (\(verificationMinutes) minutes) or three full-suite runs,
-        whichever comes first. If either limit arrives, stop and report the state reached in
-        `result.json`. Point verification's private `TMPDIR` at `\(dir)/work/tmp`; the repository's
+        until the change first compiles and passes is ordinary work. Until the repository ships a
+        focused Swift runner, an implementer whose behavior cannot be exercised more narrowly may
+        use one full-suite run and record `focused_runner_unavailable`; a reviewer does not repeat
+        it. Verification stops after one third of this task's timeout
+        (\(verificationMinutes) minutes). At the limit, stop and report the state reached in `result.json`. Point
+        verification's private `TMPDIR` at `\(dir)/work/tmp`; the repository's
         snapshot recipe remains unchanged, and its test binary is then reclaimed with the task.
 
         \(timelySection)
