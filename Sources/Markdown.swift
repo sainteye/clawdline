@@ -307,7 +307,7 @@ enum Markdown {
 
     // MARK: - Inline
 
-    /// `**bold**`, `*italic*`, `` `code` ``, `~~struck~~`, `[text](url)`.
+    /// `**bold**`, `*italic*`, `` `code` ``, `~~struck~~`, `[text](url)`, `<https://url>`.
     /// Unmatched markers stay as text: losing a sentence to a stray asterisk is far worse
     /// than showing the asterisk.
     static func inline(_ text: String, theme: Theme, style: NSParagraphStyle,
@@ -412,6 +412,30 @@ enum Markdown {
                 ]))
                 i = closeParen + 1
                 continue
+            }
+
+            // CommonMark autolinks use angle brackets to separate a URL from adjacent prose.
+            // Leaving those brackets as ordinary text lets NSTextView's own link detector make
+            // the closing `>` part of the destination, so the address looks right but does not
+            // open. Recognise only complete web URLs; comparisons such as `a < b > c` must remain
+            // untouched.
+            if c == "<", let close = find([">"], from: i + 1), close > i + 1 {
+                let url = String(chars[(i + 1)..<close])
+                if let parsed = URL(string: url),
+                   ["http", "https"].contains(parsed.scheme?.lowercased() ?? ""),
+                   parsed.host != nil,
+                   !url.contains(where: \.isWhitespace) {
+                    flush()
+                    out.append(NSAttributedString(string: url, attributes: [
+                        .font: face(),
+                        .foregroundColor: theme.accent,
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                        .link: url,
+                        .paragraphStyle: style,
+                    ]))
+                    i = close + 1
+                    continue
+                }
             }
 
             plain.append(c)
