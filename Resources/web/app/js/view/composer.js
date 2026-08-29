@@ -184,6 +184,8 @@ var sendMeasured = null;
 export function renderWaiting() {
     var box = els.waiting;
     if (!box) return;
+    var restoreRefreshFocus = document.activeElement && document.activeElement.closest &&
+        !!document.activeElement.closest("[data-refresh]");
     var open = S.openId ? byId(S.openId) : null;
     // The options, when the Mac managed to read them. When it did not — a dialog drawn in a
     // shape the parser does not know — the two sentences underneath are what this box has always
@@ -213,14 +215,15 @@ export function renderWaiting() {
     var sent = !rows && !!answeredMenu;
     // Only the local transport exposes this operation.  In particular, do not borrow the
     // Cloud client's reconnect/snapshot `refresh()` for a promise it cannot make: this button
-    // asks the Mac to perform a new inventory read and waits for generation evidence of it.
+    // asks the Mac to perform a new inventory read and waits for its completion receipt.
     var refreshState = !rows && api &&
         typeof api.refreshSessionEvidence === "function" &&
         typeof api.sessionRefreshEvidenceState === "function"
         ? api.sessionRefreshEvidenceState() : null;
     var refreshBusy = !!(refreshState && refreshState.busy);
-    var refreshStatus = refreshState && refreshState.status === "timed_out"
-        ? T.webGitRefresh + " — " + T.webEmptyWaitHint
+    var refreshStatus = refreshState &&
+        (refreshState.status === "timed_out" || refreshState.status === "failed")
+        ? T.webRequestFailed
         : refreshBusy ? T.webPullBusy
         : refreshState && refreshState.status === "complete" ? T.webGitRefresh + " ✓"
         : "";
@@ -250,9 +253,9 @@ export function renderWaiting() {
               '<div class="say">' + words(T.webWaitingSend) + "</div>" +
               (refreshState
                 ? '<button type="button" class="go" data-refresh="1" aria-label="' +
-                  esc(T.webGitRefresh + " — " + T.webWaitingTitle) + '" aria-disabled="' +
+                  esc(T.webGitRefresh) + '" aria-disabled="' +
                   (refreshBusy ? "true" : "false") + '"' +
-                  (refreshBusy ? ' disabled aria-busy="true"' : "") + ">" +
+                  (refreshBusy ? ' aria-busy="true"' : "") + ">" +
                   esc(T.webGitRefresh) + "</button>" +
                   '<span class="refresh-status" data-refresh-status="1" role="status" ' +
                   'aria-live="polite">' + esc(refreshStatus) + "</span>"
@@ -297,6 +300,10 @@ export function renderWaiting() {
     box.hidden = !want;
 
     if (!want) return;
+    if (restoreRefreshFocus) {
+        var replacement = box.querySelector("[data-refresh]");
+        if (replacement && replacement.focus) replacement.focus({ preventScroll: true });
+    }
     // A new button, drawn while somebody may be writing. Same reason the transcript says it:
     // the keyboard-bar guard has to put it back out of the tab order.
     document.dispatchEvent(new CustomEvent("clawdline:rendered"));
@@ -401,7 +408,9 @@ els.waiting.addEventListener("click", function (ev) {
 
     var refresh = ev.target.closest("[data-refresh]");
     if (refresh) {
-        if (refresh.disabled || !api || typeof api.refreshSessionEvidence !== "function") return;
+        if (refresh.getAttribute && refresh.getAttribute("aria-disabled") === "true") return;
+        if (refresh.ariaDisabled === "true" || !api ||
+            typeof api.refreshSessionEvidence !== "function") return;
         api.refreshSessionEvidence().catch(function (e) { toast(e.message, true); });
         return;
     }

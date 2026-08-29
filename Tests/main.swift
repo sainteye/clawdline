@@ -25520,6 +25520,13 @@ func occurrences(of needle: String, in haystack: String) -> Int {
     return count
 }
 
+/// Direct singleton call sites with formatting erased. This is deliberately a supported-syntax
+/// guard rather than a Swift parser: a direct call may wrap across lines, but aliases and dynamic
+/// dispatch are outside the production convention and therefore do not silently join the count.
+func compactCode(_ text: String) -> String {
+    String(codeOnly(text).filter { !$0.isWhitespace })
+}
+
 group("every main-queue crossing is a named production call site, in the source on disk") {
     // **Structural, and the name says so.** This group reads the four files rather than running
     // them, because nine of the nineteen call sites below cannot be driven from a test process:
@@ -25575,6 +25582,42 @@ group("every main-queue crossing is a named production call site, in the source 
     check("every site the fixture drives is one of the declared call sites",
           dynamicallyExercisedCrossingSites.isSubset(of: declared),
           "\(dynamicallyExercisedCrossingSites.subtracting(declared).sorted())")
+}
+
+group("every direct SessionWatch nudge call site is inventoried across production source") {
+    let expected = [
+        "Sources/RemoteServer.swift": 11,
+        "Sources/Orchestrator.swift": 6,
+        "Sources/main.swift": 1,
+    ]
+    let sourceFiles = (try? FileManager.default.contentsOfDirectory(atPath: "Sources"))?
+        .filter { $0.hasSuffix(".swift") }.map { "Sources/\($0)" } ?? []
+    var found: [String: Int] = [:]
+    let call = "SessionWatch.shared.nudge()"
+    let wrapped = "DispatchQueue.main.async{SessionWatch.shared.nudge()}"
+    for file in sourceFiles {
+        guard let source = try? String(contentsOfFile: file, encoding: .utf8) else {
+            check("\(file) can be read for the SessionWatch nudge guard", false)
+            continue
+        }
+        let compact = compactCode(source)
+        let count = occurrences(of: call, in: compact)
+        if count > 0 { found[file] = count }
+    }
+    expect("the complete direct-nudge file inventory is declared", found, expected)
+    if let remote = try? String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8) {
+        expect("every RemoteServer direct nudge explicitly re-enters main",
+               occurrences(of: wrapped, in: compactCode(remote)),
+               expected["Sources/RemoteServer.swift"] ?? 0)
+    } else {
+        check("RemoteServer source is readable for the direct nudge guard", false)
+    }
+    if let orchestrator = try? String(contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8) {
+        expect("the three cross-queue Orchestrator nudges explicitly re-enter main",
+               occurrences(of: wrapped, in: compactCode(orchestrator)), 3)
+    } else {
+        check("Orchestrator source is readable for the direct nudge guard", false)
+    }
 }
 
 // MARK: - A reading with something in it
@@ -25692,11 +25735,15 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
     let releaseStopped = DispatchSemaphore(value: 0)
     let releaseNudge = DispatchSemaphore(value: 0)
     var reads = 0
+    var publishedCompletions = 0
     var now: TimeInterval = 10_000
     var scheduled: [(delay: TimeInterval, work: DispatchWorkItem)] = []
     SessionWatch.refreshClockForTesting = { now }
     SessionWatch.refreshScheduleForTesting = { delay, work in
         scheduled.append((delay, work))
+    }
+    SessionWatch.shared.scanCompletionObservers["manual-refresh-test"] = {
+        publishedCompletions += 1
     }
     SessionWatch.inventoryForTesting = {
         lock.lock()
@@ -25706,6 +25753,12 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
         if thisRead == 1 { _ = releaseFirst.wait(timeout: .now() + 2) }
         if thisRead == 4 { _ = releaseStopped.wait(timeout: .now() + 2) }
         if thisRead == 5 { _ = releaseNudge.wait(timeout: .now() + 2) }
+        if thisRead == 6 {
+            return (scan: ITerm.AssistantProcessScan(
+                        assistants: [:], error: "fixture process inventory failed"),
+                    snapshot: Targets.Snapshot(sessions: [], currentID: nil, error: nil,
+                                               isComplete: false))
+        }
         return (scan: ITerm.AssistantProcessScan(assistants: [:], error: nil),
                 snapshot: Targets.Snapshot(sessions: retainedTargets, currentID: nil, error: nil,
                                            isComplete: true))
@@ -25716,6 +25769,7 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
         SessionWatch.inventoryForTesting = previousInventory
         SessionWatch.refreshClockForTesting = previousClock
         SessionWatch.refreshScheduleForTesting = previousSchedule
+        SessionWatch.shared.scanCompletionObservers.removeValue(forKey: "manual-refresh-test")
     }
 
     let reader = RemoteAuth.addDevice(name: "a phone refreshing session evidence", caps: [.read])
@@ -25729,6 +25783,15 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
             headers: ["Authorization": "Bearer \(reader.token)"]))
     }
     func state(_ response: RemoteServer.Response) -> String? { body(response)["state"] as? String }
+    func completed(_ payload: [String: Any]) -> [String: Any] {
+        ((payload["scan"] as? [String: Any])?["completed"] as? [String: Any]) ?? [:]
+    }
+    func dispositionIsCoherent(_ payload: [String: Any]) -> Bool {
+        guard let named = payload["state"] as? String else { return false }
+        return payload["accepted"] as? Bool == (named == "accepted")
+            && payload["coalesced"] as? Bool == (named == "coalesced")
+            && payload["throttled"] as? Bool == (named == "throttled")
+    }
 
     expect("an anonymous retry is refused",
            RemoteServer.shared.route(remoteRequest("POST", "/v1/sessions/refresh")).status, 401)
@@ -25742,7 +25805,7 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
     } else {
         check("RemoteServer source is readable for the nudge ownership guard", false)
     }
-    let generationBeforeRequest = SessionWatch.shared.scanGeneration
+    let completionBeforeRequest = SessionWatch.shared.completedScanSequence
     let accepted = request()
     expect("a paired read-only device may ask for fresh evidence", accepted.status, 200)
     expect("the response truthfully names a newly accepted read", state(accepted), "accepted")
@@ -25752,9 +25815,18 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
            true)
     expect("and is neither coalesced", acceptedBody["coalesced"] as? Bool, false)
     expect("nor throttled", acceptedBody["throttled"] as? Bool, false)
-    expect("the ack carries the coherent pre-request scan generation",
-           (acceptedBody["scan"] as? [String: Any])?["generation"] as? Int,
-           generationBeforeRequest)
+    expect("the acknowledgement has a closed top-level schema", Set(acceptedBody.keys),
+           Set(["ok", "state", "accepted", "coalesced", "throttled", "scan"]))
+    expect("the acknowledgement scan has only its completion baseline",
+           Set(((acceptedBody["scan"] as? [String: Any]) ?? [:]).keys), Set(["completed"]))
+    expect("the completion baseline object has a closed schema",
+           Set(completed(acceptedBody).keys), Set(["sequence"]))
+    expect("the ack carries the coherent pre-request completed-scan sequence",
+           completed(acceptedBody)["sequence"] as? Int, completionBeforeRequest)
+    check("the completion baseline is a non-negative JavaScript safe integer",
+          completionBeforeRequest >= 0 && completionBeforeRequest <= 9_007_199_254_740_991)
+    check("the accepted acknowledgement's state and Booleans agree",
+          dispositionIsCoherent(acceptedBody))
     check("the accepted retry starts a real SessionWatch reading", eventually {
         lock.lock(); defer { lock.unlock() }
         return reads == 1
@@ -25769,19 +25841,23 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
     expect("and explicitly marks the coalesced disposition", body(coalesced)["coalesced"] as? Bool,
            true)
     expect("without marking it throttled", body(coalesced)["throttled"] as? Bool, false)
+    check("the coalesced acknowledgement's state and Booleans agree",
+          dispositionIsCoherent(body(coalesced)))
     for _ in 0..<8 { expect("each extra in-flight request is coalesced", state(request()), "coalesced") }
     releaseFirst.signal()
     check("completion schedules exactly one floor-bounded follow-up", eventually {
         scheduled.filter { abs($0.delay - 1.2) < 0.001 }.count == 1
     })
+    expect("an unchanged completed read uses the completion publication lane",
+           publishedCompletions, 1)
     lock.lock(); let beforeFloor = reads; lock.unlock()
     expect("the debt does not run terminal automation before its floor", beforeFloor, 1)
     let firstFloor = scheduled.removeFirst()
-    let generationBeforeFollowup = SessionWatch.shared.scanGeneration
+    let completionBeforeFollowup = SessionWatch.shared.completedScanSequence
     now += firstFloor.delay
     firstFloor.work.perform()
     check("the one coalesced debt becomes one completed follow-up read", eventually {
-        SessionWatch.shared.scanGeneration > generationBeforeFollowup
+        SessionWatch.shared.completedScanSequence > completionBeforeFollowup
     })
     lock.lock(); let readsAfterFollowup = reads; lock.unlock()
     expect("the coalesced debt bought exactly one read", readsAfterFollowup, 2)
@@ -25795,15 +25871,17 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
     expect("and does not pretend it was accepted", throttledBody["accepted"] as? Bool, false)
     expect("or that it joined an already-scheduled request", throttledBody["coalesced"] as? Bool,
            false)
+    check("the throttled acknowledgement's state and Booleans agree",
+          dispositionIsCoherent(throttledBody))
     let schedulesAtFloor = scheduled.count
     for _ in 0..<20 { expect("a floor burst is coalesced", state(request()), "coalesced") }
     expect("a floor burst buys only one follow-up schedule", scheduled.count, schedulesAtFloor)
     let secondFloor = scheduled.removeFirst()
-    let generationBeforeFloorBurst = SessionWatch.shared.scanGeneration
+    let completionBeforeFloorBurst = SessionWatch.shared.completedScanSequence
     now += secondFloor.delay
     secondFloor.work.perform()
     check("the floor burst buys one completed inventory read", eventually {
-        SessionWatch.shared.scanGeneration > generationBeforeFloorBurst
+        SessionWatch.shared.completedScanSequence > completionBeforeFloorBurst
     })
     lock.lock(); let readsAfterFloorBurst = reads; lock.unlock()
     expect("the floor burst buys one and only one inventory read", readsAfterFloorBurst, 3)
@@ -25818,11 +25896,11 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
     })
     expect("a request behind the stop fixture is coalesced", state(request()), "coalesced")
     let schedulesBeforeStop = scheduled.count
-    let generationBeforeStoppedRead = SessionWatch.shared.scanGeneration
+    let completionBeforeStoppedRead = SessionWatch.shared.completedScanSequence
     SessionWatch.shared.stop()
     releaseStopped.signal()
     check("the already-started read is allowed to finish after stop", eventually {
-        SessionWatch.shared.scanGeneration > generationBeforeStoppedRead
+        SessionWatch.shared.completedScanSequence > completionBeforeStoppedRead
     })
     expect("stop clears debt and schedules no payment after the active read returns",
            scheduled.count, schedulesBeforeStop)
@@ -25843,13 +25921,38 @@ group("a manual session refresh has coherent evidence and bounded backpressure")
     expect("repeated nudges retain one bounded settle deadline", settleWorks.count, 1)
     check("and retain the original scheduled work item", settleWorks.first === firstSettle)
     SessionWatch.shared.stop()
-    let generationBeforeStoppedNudge = SessionWatch.shared.scanGeneration
+    let completionBeforeStoppedNudge = SessionWatch.shared.completedScanSequence
     releaseNudge.signal()
     check("the already-started nudge read is allowed to finish after stop", eventually {
-        SessionWatch.shared.scanGeneration > generationBeforeStoppedNudge
+        SessionWatch.shared.completedScanSequence > completionBeforeStoppedNudge
     })
     lock.lock(); let finalReads = reads; lock.unlock()
     expect("a stopped settle/debt pair performs no post-stop read", finalReads, 5)
+
+    // Completion and content are separate facts. This read fails before reconciliation, so it
+    // must publish a new completion receipt without manufacturing a successful content update.
+    now += 2
+    let contentBeforeFailure = SessionWatch.shared.scanGeneration
+    let completionBeforeFailure = SessionWatch.shared.completedScanSequence
+    expect("a post-stop manual failure fixture is admitted", state(request()), "accepted")
+    check("the failed inventory still publishes exact completion evidence", eventually {
+        SessionWatch.shared.completedScanSequence > completionBeforeFailure
+    })
+    expect("a failed inventory does not advance reconciled content generation",
+           SessionWatch.shared.scanGeneration, contentBeforeFailure)
+    expect("the exact completed scan is marked incomplete",
+           SessionWatch.shared.completedScanComplete, false)
+    let afterFailure = body(RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/sessions", headers: ["Authorization": "Bearer \(reader.token)"])))
+    expect("the sessions payload publishes the failed scan's exact sequence",
+           completed(afterFailure)["sequence"] as? Int,
+           SessionWatch.shared.completedScanSequence)
+    expect("the sessions payload makes the failed scan visible",
+           completed(afterFailure)["complete"] as? Bool, false)
+    check("the sessions completion sequence remains a JavaScript safe integer",
+          (completed(afterFailure)["sequence"] as? Int).map {
+              $0 >= 0 && $0 <= 9_007_199_254_740_991
+          } == true)
     check("the retry fixture preserves the live targets the crossing tests inherit", eventually {
         SessionWatch.shared.targets.map(\.id) == retainedTargets.map(\.id)
     })

@@ -19,6 +19,8 @@ export var LocalClient = {
     sessionRevision: 0,
     sessionGeneration: null,
     sessionEvidenceAt: 0,
+    completedScanSequence: null,
+    completedScanComplete: null,
     sessionRefreshEvidence: { status: "idle", busy: false, baseline: null,
                               disposition: null, promise: null, timer: null },
     sessionRefreshTimeout: 18000,
@@ -159,8 +161,12 @@ export var LocalClient = {
         data = data || {};
         var scan = data.scan || {};
         var generation = Number(scan.generation);
+        var completed = scan.completed || {};
+        var completedSequence = Number(completed.sequence);
         var observedAt = Number(data.at) || 0;
         var hasGeneration = Number.isSafeInteger(generation) && generation >= 0;
+        var hasCompletedScan = Number.isSafeInteger(completedSequence) && completedSequence >= 0 &&
+            typeof completed.complete === "boolean";
         if (!hasGeneration && this.sessionGeneration !== null) return Promise.resolve(false);
         if (hasGeneration && this.sessionGeneration !== null &&
             (generation < this.sessionGeneration ||
@@ -170,7 +176,15 @@ export var LocalClient = {
         if (hasGeneration) {
             this.sessionGeneration = generation;
             this.sessionEvidenceAt = Math.max(this.sessionEvidenceAt, observedAt);
-            this.observeSessionRefreshEvidence(generation);
+        }
+        // A completion outcome is immutable at one sequence. Lower, malformed and unversioned
+        // evidence may accompany otherwise newer content, but it cannot rewrite the receipt used
+        // to settle a manual refresh.
+        if (hasCompletedScan && (this.completedScanSequence === null ||
+            completedSequence > this.completedScanSequence)) {
+            this.completedScanSequence = completedSequence;
+            this.completedScanComplete = completed.complete;
+            this.observeSessionRefreshEvidence(completedSequence, completed.complete);
         }
         if (handlers.sessions(data.sessions, data.at, scan) !== false) {
             this.sessionRevision += 1;
@@ -244,7 +258,7 @@ export var LocalClient = {
             .catch(function (e) { toast(e.message, true); });
     },
 
-    /** A local-Mac operation: request evidence newer than the route's coherent baseline. */
+    /** A local-Mac operation: wait for the admitted inventory read to actually complete. */
     refreshSessionEvidence: function () {
         var current = this.sessionRefreshEvidence;
         if (current.busy) return current.promise;
@@ -266,28 +280,32 @@ export var LocalClient = {
 
         jsonFetch("/v1/sessions/refresh", post({})).then(function (ack) {
             if (self.sessionRefreshEvidence !== marker) return;
-            var generation = Number(ack && ack.scan && ack.scan.generation);
+            var completed = ack && ack.scan && ack.scan.completed;
+            var completedSequence = Number(completed && completed.sequence);
             var states = ["accepted", "coalesced", "throttled"];
             var state = ack && ack.state;
             var booleansAgree = ack && ack.accepted === (state === "accepted") &&
                 ack.coalesced === (state === "coalesced") &&
                 ack.throttled === (state === "throttled");
             if (!ack || ack.ok !== true || !states.includes(state) || !booleansAgree ||
-                !Number.isSafeInteger(generation) || generation < 0) {
+                !Number.isSafeInteger(completedSequence) || completedSequence < 0) {
                 var invalid = new Error(T.webRequestFailed);
                 invalid.code = "bad_refresh_ack";
                 throw invalid;
             }
-            marker.baseline = generation;
+            marker.baseline = completedSequence;
             marker.disposition = state;
-            if (self.sessionGeneration !== null && self.sessionGeneration > generation) {
-                self.finishSessionRefreshEvidence(marker, "complete",
-                    { state: "complete", generation: self.sessionGeneration });
+            if (self.completedScanSequence !== null &&
+                self.completedScanSequence > completedSequence) {
+                var completedState = self.completedScanComplete ? "complete" : "failed";
+                self.finishSessionRefreshEvidence(marker, completedState,
+                    { state: completedState, sequence: self.completedScanSequence,
+                      complete: self.completedScanComplete });
                 return;
             }
             marker.timer = self.scheduleSessionRefreshTimeout(function () {
                 self.finishSessionRefreshEvidence(marker, "timed_out",
-                    { state: "timed_out", generation: self.sessionGeneration });
+                    { state: "timed_out", sequence: self.completedScanSequence });
             }, self.sessionRefreshTimeout);
         }).catch(function (error) {
             self.finishSessionRefreshEvidence(marker, "failed", null, error);
@@ -301,11 +319,12 @@ export var LocalClient = {
                  disposition: state.disposition };
     },
 
-    observeSessionRefreshEvidence: function (generation) {
+    observeSessionRefreshEvidence: function (sequence, complete) {
         var marker = this.sessionRefreshEvidence;
-        if (!marker.busy || marker.baseline === null || generation <= marker.baseline) return;
-        this.finishSessionRefreshEvidence(marker, "complete",
-            { state: "complete", generation: generation });
+        if (!marker.busy || marker.baseline === null || sequence <= marker.baseline) return;
+        var status = complete ? "complete" : "failed";
+        this.finishSessionRefreshEvidence(marker, status,
+            { state: status, sequence: sequence, complete: complete });
     },
 
     finishSessionRefreshEvidence: function (marker, status, result, error) {
@@ -343,6 +362,8 @@ export var LocalClient = {
             disposition: null, promise: null, timer: null };
         this.sessionGeneration = null;
         this.sessionEvidenceAt = 0;
+        this.completedScanSequence = null;
+        this.completedScanComplete = null;
         this.announceSessionRefreshEvidence();
     },
 

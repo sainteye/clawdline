@@ -226,8 +226,11 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
 
 Five fields per session are picked out there so the reply fits on this page; the whole object is
 [below](#the-session-object). `at` is when the reply was built, not when the reading was taken.
-`scan.generation` changes only after another terminal/process scan has been reconciled;
-`scan.complete` says every terminal source was readable. `scan.emptyAuthoritative` is narrower:
+`scan.generation` orders published session content after terminal/process scans are reconciled;
+it is not a receipt for a caller's requested scan. `scan.completed.sequence` advances once when
+each inventory read actually finishes, including an unchanged or incomplete read, and
+`scan.completed.complete` reports whether every source in that exact read was usable.
+`scan.complete` describes the currently published inventory. `scan.emptyAuthoritative` is narrower:
 it is true only when an empty list came from a complete inventory or when the complete process
 list independently proved every previously known assistant tty had exited. A second HTTP read of
 the same generation is the same observation, not confirmation that an empty list is real.
@@ -249,20 +252,23 @@ It is read-level: a token with `read` is enough, the remote-write switch is not 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/refresh \
     -H "Authorization: Bearer $TOKEN"
-{"accepted":true,"coalesced":false,"ok":true,"scan":{"generation":42},"state":"accepted","throttled":false}
+{"accepted":true,"coalesced":false,"ok":true,"scan":{"completed":{"sequence":42}},"state":"accepted","throttled":false}
 ```
 
-The response acknowledges admission; it is not the completed reading. `scan.generation` is the
-coherent generation immediately before this request. Exactly one of `accepted`, `coalesced`, and
-`throttled` is true, matching `state`: `accepted` started a reading, `coalesced` joined an existing
-read or already-scheduled debt, and `throttled` scheduled one follow-up behind the completed-read
-floor. Repeated requests in the same floor buy at most that one follow-up, so a read-only device
-cannot keep terminal automation at 100% duty cycle.
+The response acknowledges admission; it is not the completed reading.
+`scan.completed.sequence` is the coherent completion baseline immediately before this request.
+Exactly one of `accepted`, `coalesced`, and `throttled` is true, matching `state`: `accepted`
+started a reading, `coalesced` joined an existing read or already-scheduled debt, and `throttled`
+scheduled one follow-up behind the completed-read floor. Repeated requests in the same floor buy at
+most that one follow-up, so a read-only device cannot keep terminal automation at 100% duty cycle.
 
-The client keeps the retry busy until a `sessions` event carries `scan.generation` greater than the
-acknowledged generation. Same-generation GETs are the old observation and do not count; lower or
-unversioned replies cannot overwrite newer evidence. A bounded client timeout makes the control
-retryable again and explicitly reports that the attempt completed without a newer reading.
+The client keeps the retry busy until a `sessions` event carries a safe-integer
+`scan.completed.sequence` greater than its acknowledged baseline. It reports success only when
+that receipt's `complete` is true; an incomplete/failed scan is visible and immediately retryable.
+An unrelated session-content generation cannot complete the operation. Lower, unsafe or
+unversioned completion evidence cannot overwrite a newer receipt, and `scan.generation` continues
+to order session frames independently. A bounded client timeout also makes the action retryable
+and reports a request failure rather than claiming that the event stream was empty.
 
 ### `GET /v1/sessions/:id`
 

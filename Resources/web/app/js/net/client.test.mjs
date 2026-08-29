@@ -24,6 +24,15 @@ const {
 
 const vectors = JSON.parse(await readFile(
     new URL("../../../../../Tests/protocol-vectors.json", import.meta.url), "utf8"));
+const composerCSS = await readFile(new URL("../../css/composer.css", import.meta.url), "utf8");
+assert.match(composerCSS, /\.refresh-status\s*\+\s*\.go\s*\{/,
+    "the spacing selector matches the status followed by the Show on Mac action");
+assert.doesNotMatch(composerCSS, /\.go\s*\+\s*\.go\s*\{/,
+    "the dead adjacent-button selector cannot return unnoticed");
+assert.match(composerCSS, /\.go:hover:not\(:disabled\):not\(\[aria-disabled="true"\]\)/,
+    "an aria-disabled focused retry cannot regain an active hover style");
+assert.match(composerCSS, /\.go:disabled,\s*\.composer \.waiting \.go\[aria-disabled="true"\]/,
+    "native and focus-preserving disabled actions share the same visual state");
 const masterKey = await importMasterSecret(vectors.master_secret);
 const senderKey = await importSenderPublicKey(vectors.ed25519_public_key);
 assert.equal(masterKey.extractable, false, "the imported master key is non-extractable");
@@ -99,13 +108,16 @@ function waitingButton(kind, tag) {
     dataset[kind] = "1";
     const aria = /aria-label="([^"]*)"/.exec(tag);
     const ariaBusy = /aria-busy="([^"]*)"/.exec(tag);
+    const ariaDisabled = /aria-disabled="([^"]*)"/.exec(tag);
     return {
         disabled: /(?:^|\s)disabled(?:\s|>)/.test(tag), dataset: dataset,
         ariaLabel: aria ? aria[1] : "",
         ariaBusy: ariaBusy ? ariaBusy[1] : null,
+        ariaDisabled: ariaDisabled ? ariaDisabled[1] : null,
         closest: function (selector) {
             return selector === "[data-" + kind + "]" ? this : null;
-        }
+        },
+        focus: function () { globalThis.document.activeElement = this; }
     };
 }
 const elements = new Map();
@@ -131,9 +143,12 @@ const inertElement = function (id) {
     Object.defineProperty(target, "innerHTML", {
         get: function () { return target._innerHTML || ""; },
         set: function (value) {
+            const replacedFocusedRefresh = target.refreshButton && globalThis.document &&
+                globalThis.document.activeElement === target.refreshButton;
             target._innerHTML = value;
             target.refreshButton = null;
             target.refreshStatus = null;
+            if (replacedFocusedRefresh) globalThis.document.activeElement = globalThis.document.body;
             if (id !== "waiting") return;
             const button = /<button[^>]*data-refresh="1"[^>]*>/.exec(value);
             if (button) target.refreshButton = waitingButton("refresh", button[0]);
@@ -213,6 +228,16 @@ function jsonResponse(body, ok) {
     return { ok: ok !== false, status: ok === false ? 503 : 200,
         text: async function () { return JSON.stringify(body); } };
 }
+function bounded(promise, name, ms) {
+    ms = ms || 250;
+    var timer;
+    return Promise.race([
+        promise,
+        new Promise(function (_, reject) {
+            timer = setTimeout(function () { reject(new Error(name)); }, ms);
+        })
+    ]).finally(function () { clearTimeout(timer); });
+}
 requests.length = 0;
 let answerRefresh;
 globalThis.fetch = function (path, options) {
@@ -224,16 +249,23 @@ globalThis.fetch = function (path, options) {
 };
 
 await LocalClient.receiveSessions({ sessions: S.sessions, at: 7,
-    scan: { generation: 7, complete: true, emptyAuthoritative: false } });
+    scan: { generation: 7, complete: true, emptyAuthoritative: false,
+        completed: { sequence: 40, complete: true } } });
 renderWaiting();
 let retryButton = waiting.querySelector("[data-refresh]");
 assert.ok(retryButton, "a local no-menu waiting card renders the retry control");
+assert.equal(retryButton.ariaLabel, "Refresh",
+    "the retry control is named for its action rather than the session state");
+retryButton.focus();
 waiting.dispatchClick(retryButton);
 retryButton = waiting.querySelector("[data-refresh]");
-assert.equal(retryButton.disabled, true,
-    "the retry control is disabled from client state while evidence is in flight");
-assert.ok(retryButton.ariaLabel, "the retry control keeps an accessible name while busy");
+assert.equal(retryButton.disabled, false,
+    "the busy retry remains in the keyboard focus order");
+assert.equal(retryButton.ariaDisabled, "true",
+    "the retry control exposes its semantic disabled state while evidence is in flight");
 assert.equal(retryButton.ariaBusy, "true", "the retry control exposes live busy progress");
+assert.equal(document.activeElement, retryButton,
+    "the busy rerender restores keyboard focus to the replacement retry control");
 assert.match(waiting.querySelector("[data-refresh-status]").textContent, /refresh/i,
     "the polite live status announces that fresh evidence is being requested");
 
@@ -242,36 +274,72 @@ S.sessions[0].menu = { question: "The question arrived without rows", options: [
 renderWaiting();
 const rebuiltRetryButton = waiting.querySelector("[data-refresh]");
 assert.notEqual(rebuiltRetryButton, retryButton, "question evidence really rebuilt the control");
-assert.equal(rebuiltRetryButton.disabled, true,
-    "a rebuilt retry control remains disabled while the first request is in flight");
+assert.equal(rebuiltRetryButton.ariaDisabled, "true",
+    "a rebuilt retry control remains semantically disabled while the first request is in flight");
 waiting.dispatchClick(rebuiltRetryButton);
 assert.equal(requests.filter(function (request) {
     return request.path === "/v1/sessions/refresh";
 }).length, 1, "press, rerender, press still starts only one refresh request");
+const directSingleFlight = LocalClient.refreshSessionEvidence();
+assert.equal(directSingleFlight, LocalClient.sessionRefreshEvidence.promise,
+    "the LocalClient single-flight layer directly returns its one in-flight promise");
+assert.equal(requests.filter(function (request) {
+    return request.path === "/v1/sessions/refresh";
+}).length, 1, "the LocalClient single-flight layer alone prevents a second POST");
+S.sessions.push({ id: "WAITING-TWO", state: "waiting", menu: null });
+S.openId = "WAITING-TWO";
+renderWaiting();
+assert.equal(waiting.querySelector("[data-refresh]").ariaDisabled, "true",
+    "global inventory refresh state remains busy when a different session card is rendered");
+assert.equal(requests.filter(function (request) {
+    return request.path === "/v1/sessions/refresh";
+}).length, 1, "rendering another session does not create per-session refresh work");
+S.openId = "WAITING-ONE";
+S.sessions.pop();
+renderWaiting();
 
 answerRefresh(jsonResponse({ ok: true, state: "accepted", accepted: true,
-    coalesced: false, throttled: false, scan: { generation: 7 } }));
+    coalesced: false, throttled: false, scan: { completed: { sequence: 40 } } }));
 for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
-assert.equal(LocalClient.sessionRefreshEvidenceState().baseline, 7,
-    "the acknowledgement baseline is installed before later evidence is sampled");
+assert.equal(LocalClient.sessionRefreshEvidenceState().baseline, 40,
+    "the acknowledgement completion baseline is installed before later evidence is sampled");
 assert.equal(LocalClient.sessionRefreshEvidenceState().busy, true,
     "an acknowledgement alone does not complete a refresh");
 await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", state: "waiting" }], at: 8,
-    scan: { generation: 7, complete: true, emptyAuthoritative: false } });
+    scan: { generation: 80, complete: true, emptyAuthoritative: false,
+        completed: { sequence: 40, complete: true } } });
 assert.equal(LocalClient.sessionRefreshEvidenceState().busy, true,
-    "same-generation evidence keeps the retry in flight");
+    "unrelated content generation does not complete this refresh");
 await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", state: "waiting",
     marker: "new" }], at: 9,
-    scan: { generation: 8, complete: true, emptyAuthoritative: false } });
+    scan: { generation: 80, complete: true, emptyAuthoritative: false,
+        completed: { sequence: 41, complete: true } } });
 retryButton = waiting.querySelector("[data-refresh]");
 assert.equal(retryButton.disabled, false,
     "newer evidence re-enables the retry control after an in-flight refresh");
+assert.equal(LocalClient.sessionRefreshEvidenceState().status, "complete",
+    "an unchanged successful scan settles promptly from its completion receipt");
+assert.equal(document.activeElement, retryButton,
+    "the completed rerender restores focus to the retry action");
+await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", marker: "newer-content" }],
+    at: 10, scan: { generation: 81, complete: true, emptyAuthoritative: false,
+        completed: { sequence: 40, complete: false } } });
+assert.equal(LocalClient.completedScanSequence, 41,
+    "a lower completion sequence cannot overwrite newer completion evidence");
+assert.equal(LocalClient.completedScanComplete, true,
+    "a lower completion sequence cannot turn a successful receipt into failure");
+await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", marker: "unsafe-completion" }],
+    at: 11, scan: { generation: 82, complete: true, emptyAuthoritative: false,
+        completed: { sequence: Number.MAX_SAFE_INTEGER + 1, complete: false } } });
+assert.equal(LocalClient.completedScanSequence, 41,
+    "an unsafe completion sequence cannot overwrite safe completion evidence");
 await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", marker: "old" }], at: 7,
-    scan: { generation: 7, complete: true, emptyAuthoritative: false } });
-assert.equal(appliedSessions.at(-1)[0].marker, "new",
+    scan: { generation: 7, complete: true, emptyAuthoritative: false,
+        completed: { sequence: 39, complete: false } } });
+assert.equal(appliedSessions.at(-1)[0].marker, "unsafe-completion",
     "an out-of-order generation cannot overwrite newer session evidence");
 await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", marker: "unversioned" }], at: 10 });
-assert.equal(appliedSessions.at(-1)[0].marker, "new",
+assert.equal(appliedSessions.at(-1)[0].marker, "unsafe-completion",
     "an unversioned response cannot overwrite evidence after generation ordering is known");
 
 LocalClient.resetSessionRefreshForTesting();
@@ -279,7 +347,7 @@ requests.length = 0;
 globalThis.fetch = function (path, options) {
     requests.push({ path: path, options: options });
     return Promise.resolve(jsonResponse({ ok: true, state: "throttled", accepted: false,
-        coalesced: false, throttled: true, scan: { generation: 8 } }));
+        coalesced: false, throttled: true, scan: { completed: { sequence: 41 } } }));
 };
 const timedOut = LocalClient.refreshSessionEvidence();
 for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
@@ -290,8 +358,52 @@ assert.equal((await timedOut).state, "timed_out",
     "a bounded wait reports that no newer reading arrived");
 assert.equal(LocalClient.sessionRefreshEvidenceState().busy, false,
     "a timed-out refresh is retryable rather than permanently disabled");
-assert.match(waiting.querySelector("[data-refresh-status]").textContent, /nothing|arriv|refresh/i,
-    "a bounded timeout visibly reports that the attempt found no newer reading");
+assert.equal(waiting.querySelector("[data-refresh-status]").textContent, "Request failed",
+    "a bounded timeout reports the action failure rather than blaming an empty stream");
+
+LocalClient.resetSessionRefreshForTesting();
+globalThis.fetch = function () {
+    return Promise.resolve(jsonResponse({ ok: true, state: "accepted", accepted: true,
+        coalesced: false, throttled: false, scan: { completed: { sequence: 41 } } }));
+};
+const incompleteScan = LocalClient.refreshSessionEvidence();
+for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+await LocalClient.receiveSessions({ sessions: S.sessions, at: 10,
+    scan: { generation: 83, complete: true, emptyAuthoritative: false,
+        completed: { sequence: 42, complete: false } } });
+assert.equal((await incompleteScan).state, "failed",
+    "a completed but incomplete inventory reports failure rather than success");
+assert.equal(LocalClient.sessionRefreshEvidenceState().busy, false,
+    "an incomplete inventory leaves the global action retryable");
+assert.equal(waiting.querySelector("[data-refresh-status]").textContent, "Request failed",
+    "an incomplete inventory is announced as a failed action");
+
+for (const badCompleted of [
+    { sequence: Number.MAX_SAFE_INTEGER + 1 }, { sequence: -1 }, { sequence: 42.5 }, {}
+]) {
+    LocalClient.resetSessionRefreshForTesting();
+    globalThis.fetch = function () {
+        return Promise.resolve(jsonResponse({ ok: true, state: "accepted", accepted: true,
+            coalesced: false, throttled: false, scan: { completed: badCompleted } }));
+    };
+    await assert.rejects(bounded(LocalClient.refreshSessionEvidence(),
+        "unsafe refresh acknowledgement did not settle within 250ms"), function (error) {
+        return error && error.code === "bad_refresh_ack";
+    }, "unsafe or unversioned completion baselines are rejected");
+}
+
+LocalClient.resetSessionRefreshForTesting();
+let inconsistentAnswer;
+globalThis.fetch = function () {
+    return new Promise(function (resolve) { inconsistentAnswer = resolve; });
+};
+const inconsistentAck = LocalClient.refreshSessionEvidence();
+inconsistentAnswer(jsonResponse({ ok: true, state: "accepted", accepted: false,
+    coalesced: true, throttled: false, scan: { completed: { sequence: 42 } } }));
+await assert.rejects(bounded(inconsistentAck,
+    "inconsistent refresh acknowledgement did not settle within 250ms"), function (error) {
+    return error && error.code === "bad_refresh_ack";
+}, "acknowledgement state and Boolean disagreement is rejected");
 
 LocalClient.resetSessionRefreshForTesting();
 let failedRefreshFetches = 0;
@@ -322,7 +434,9 @@ globalThis.fetch = function () {
 LocalClient.es = { close: function () {} };
 const retiredByDoor = LocalClient.refreshSessionEvidence();
 LocalClient.stop();
-assert.equal((await retiredByDoor).state, "stopped",
+const retiredByDoorResult = await bounded(retiredByDoor,
+    "session refresh stop did not settle within 250ms");
+assert.equal(retiredByDoorResult.state, "stopped",
     "raising the auth door retires an in-flight evidence retry without a rejection toast");
 answerAfterDoor(jsonResponse({ error: { code: "unauthorized", message: "unauthorized" } }, false));
 for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
