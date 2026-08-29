@@ -45,6 +45,9 @@ struct Indonesian: Copy {
     let scriptMissing = "iterm.js tidak ada — bundel aplikasi rusak?"
     let cannotList = "Tidak bisa membaca sesi iTerm2"
     let noOutput = "Belum ada yang bisa dibaca dari sesi ini."
+    let imageExpired = "Gambar kedaluwarsa"
+    let imagePreview = "Pratinjau gambar"
+    let imageClose = "Tutup pratinjau"
     func outputSize(_ pt: Int) -> String { "Ukuran teks keluaran \(pt) pt — ⌘J untuk melihat" }
     func foldedTools(_ count: Int) -> String { "\(count) langkah" }
     func outputOrder(newestFirst: Bool) -> String {

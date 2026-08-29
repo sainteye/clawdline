@@ -211,6 +211,9 @@ enum Transcript {
         var source: String? = nil
         var sourceMode: String? = nil
         var sourceAssistant: Assistant? = nil
+        /// Byte-free, typed references from a strictly decoded v2 Clawdline session message.
+        /// Paths and image data never enter a transcript entry.
+        var artifacts: [SessionImageArtifact] = []
         /// Internal receipt identity. It never crosses the API boundary; it only distinguishes
         /// two real deliveries of identical prose from Claude's enqueue/delivery double-write.
         var peerMessageID: String? = nil
@@ -914,7 +917,8 @@ enum Transcript {
         guard let message = ClawdlineSessionMessage.decode(raw) else { return nil }
         return Entry(kind: .message, text: message.body, tool: nil, time: time,
                      source: message.source.label, sourceMode: "clawdline",
-                     sourceAssistant: message.source.assistant)
+                     sourceAssistant: message.source.assistant,
+                     artifacts: message.artifacts)
     }
 
     /// One double-quoted attribute from the small, fixed opening tag above.
@@ -1223,7 +1227,9 @@ extension Transcript {
     /// tool calls comes back as one line, because the machinery is what makes the pane
     /// unreadable: a single answer can sit under thirty lines of paths and shell.
     static func render(_ entries: [Entry], size: CGFloat, mono: NSFont,
-                       expanded: Set<String> = [], newestFirst: Bool = false) -> NSAttributedString {
+                       expanded: Set<String> = [], newestFirst: Bool = false,
+                       imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
+                       now: Date = Date()) -> NSAttributedString {
         let body = NSFont.systemFont(ofSize: size + 1)
         let header = NSFont.systemFont(ofSize: max(8.5, size - 1.5), weight: .semibold)
         let toolFont = NSFont(descriptor: mono.fontDescriptor, size: max(8.5, size - 0.5)) ?? mono
@@ -1358,6 +1364,10 @@ extension Transcript {
                     .paragraphStyle: headerStyle,
                 ])
                 block.append(prose(entry.text, body: body, mono: mono))
+                for artifact in entry.artifacts {
+                    block.append(SessionImagePresentation.render(
+                        artifact, size: size, store: imageStore, now: now))
+                }
                 i += 1
 
             case .tool, .toolResult:

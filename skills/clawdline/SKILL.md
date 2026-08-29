@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.2.0
+version: 2.3.0
 description: |
   Hand a piece of work to another session: open a child session (Claude Code or Codex) through the
   Clawdline app, type the first message into it, wait for it to write result.json, and report back
@@ -15,13 +15,15 @@ description: |
   Also triggers on the same asks in Chinese: 「派任務」「派給 codex 做」「開一個 child／子 session」
   「背景幫我做 X」「dispatch 一個任務」「另開一個 session 去跑」「用 codex 生一張圖」「叫另一個 agent 去審」
   「使用 Clawdline Handoff」「handoff 給新 session」「交接給下一個 session」「明天用新 session 接著做」.
+  Also triggers when asked to send a message, report, status, finding, or coordination note to
+  another live session.
   Does not trigger on: anything this conversation can simply do (a child costs far more than doing
   it), search and analysis a Task/subagent already covers (that is a subagent, not a Clawdline
   child), or wanting to know which sessions are running (that is the Clawdline panel, or
   GET /v1/orchestrator/sessions). **When this session is itself a child, CHILD.md governs and this
   file does not** — see §0.
 user-invocable: true
-last-updated: 2026-08-26
+last-updated: 2026-08-29
 ---
 
 # Handing work to a child session
@@ -180,8 +182,18 @@ terminal-neutral session id; it preserves Markdown and draws the sender as a sep
 `Clawdline ↔` card. It must not be used to attach work or bypass `claims`, and it refuses a target
 that is showing an option menu with `409 target_busy`. Its `ok` means one typing attempt was
 accepted — not that the target transcript observed it or the assistant acknowledged it — so
-require an explicit reply when the outcome depends on receipt. The closed body and wire format are
+require an explicit reply when the outcome depends on receipt. Surface any typed refusal; never
+fall back to `/v1/sessions/:id/send` or a hand-written prefix. The closed body and wire format are
 in `docs/messages.md`.
+
+**Send a generated raster as a local image, not as prose.** When ImageGen or another local tool
+has produced a PNG/JPEG/WebP/GIF/TIFF that another live session should see, call
+`POST /v1/orchestrator/messages` with `images:[{"path":"/absolute/local/path.png"}]` and the
+ordinary source/target ids, token and idempotency key above. Never paste base64, invent or persist
+a public URL, or fall back to legacy `/send`: Clawdline reads the local file, normalizes it into
+its owned store and sends only an opaque expiring reference. The recipient sees a bounded
+thumbnail that opens in a preview; once the reference expires or is unavailable, that same place
+stays visible as an explicit **Image expired** tile.
 
 **An interrupted review is handed over, not restarted.** A reviewer that died, timed out or was
 cancelled has usually written part of its finding set already; give that file to whoever picks it

@@ -863,6 +863,15 @@ document.documentElement.className = "booting";
 
 <div class="toast" id="toast" hidden></div>
 
+<div class="image-lightbox" id="image-lightbox" role="dialog" aria-modal="true"
+     aria-labelledby="image-lightbox-title" hidden>
+    <div class="image-lightbox-frame">
+        <span id="image-lightbox-title" class="sr-only">Image preview</span>
+        <button id="image-lightbox-close" class="image-lightbox-close" type="button">Close preview</button>
+        <img id="image-lightbox-image" alt="">
+    </div>
+</div>
+
 <!-- The page's own code, split out of this file and served from `/app/js/`. `main.js` names every
      other module, so this document only has to know about one of them; the order they are named in
      there is the order they were written in here.

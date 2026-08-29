@@ -52,6 +52,9 @@ protocol Copy {
     var scriptMissing: String { get }
     var cannotList: String { get }
     var noOutput: String { get }
+    var imageExpired: String { get }
+    var imagePreview: String { get }
+    var imageClose: String { get }
     func outputSize(_ pt: Int) -> String
     func foldedTools(_ count: Int) -> String
     func outputOrder(newestFirst: Bool) -> String

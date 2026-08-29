@@ -84,6 +84,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var outputHost: NSScrollView!
     private var outputView: NSTextView!
     private var outputLine: NSView!
+    private let imagePreview = SessionImagePreview()
     /// What the session is doing right now. Hidden when it is not doing anything.
     private var activityLabel: ActivityLabel!
     /// The heading's own ground, so it reads as the top of the pane rather than as the bottom
@@ -695,6 +696,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// yank lands on the terminal and opens the panel again. You could not leave.
     func hide(returnFocus: Bool = true) {
         guard panel.isVisible, !dismissing else { return }
+        imagePreview.close()
         // Returning focus is what every deliberate dismissal does — Esc, sending, the hotkey —
         // and a deliberate dismissal means closed. Only the app-switch path (returnFocus: false)
         // leaves the return armed.
@@ -1461,7 +1463,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // Worked out before anything is read, because it is also the answer to "has this
         // changed": a session you switched away from and came back to is one stat away from
         // being on screen, rather than eight megabytes and a re-layout away.
-        if let kept = Transcript.cachedRender(for: signature) { return (kept, signature) }
+        if let kept = Transcript.cachedRender(for: signature),
+           SessionImagePresentation.cacheIsCurrent(kept) {
+            return (kept, signature + "-" + SessionImagePresentation.cacheSignature(kept))
+        }
 
         // Eight megabytes, because the limit that bites is bytes and not entries: at the
         // 400KB this used to read, a busy session yielded sixteen records and the reader
@@ -1472,7 +1477,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let rendered = Transcript.render(entries, size: size, mono: Style.outputFont,
                                          expanded: folds, newestFirst: newestFirst)
         Transcript.remember(rendered, for: signature)
-        return (rendered, signature)
+        return (rendered, signature + "-" + SessionImagePresentation.cacheSignature(rendered))
     }
 
     /// A folded run of tool calls was clicked. The pane is read-only, so a link is the only
@@ -1480,6 +1485,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// a disclosure triangle drawn into the text.
     func textView(_ view: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
         guard let url = (link as? URL)?.absoluteString ?? link as? String else { return false }
+        if let id = SessionImagePresentation.artifactID(url) {
+            switch SessionImageArtifactStore().lookup(id: id) {
+            case .live(_, let data):
+                imagePreview.show(data: data, over: panel, returnFocus: outputView)
+            case .expired, .missing:
+                Transcript.forgetRenders()
+                lastOutput = nil
+                refreshOutput()
+            }
+            return true
+        }
         // The way out of the log pane, and the tabs across the top of it.
         if url == "clawdline://stacklog-back" { clearStackLog(); return true }
         if url.hasPrefix("clawdline://stacklog/") {

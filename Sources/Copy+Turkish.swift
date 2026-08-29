@@ -45,6 +45,9 @@ struct Turkish: Copy {
     let scriptMissing = "iterm.js yok — uygulama paketi bozuk mu?"
     let cannotList = "iTerm2 oturumları okunamadı"
     let noOutput = "Bu oturumda okunacak bir şey henüz yok."
+    let imageExpired = "Görselin süresi doldu"
+    let imagePreview = "Görsel önizlemesi"
+    let imageClose = "Önizlemeyi kapat"
     func outputSize(_ pt: Int) -> String { "Çıktı yazı boyutu \(pt) pt — görmek için ⌘J" }
     func foldedTools(_ count: Int) -> String { "\(count) adım" }
     func outputOrder(newestFirst: Bool) -> String {

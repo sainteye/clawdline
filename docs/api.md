@@ -80,6 +80,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/sessions/refresh` | token | `read` |
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
+| `GET` | `/v1/artifacts/images/:artifactId` | token | `read` |
 | `GET` | `/v1/sessions/:id/agents/:agentId` | token | `read` |
 | `GET` | `/v1/sessions/:id/shells/:shellId` | token | `read` |
 | `GET` | `/v1/sessions/:id/links` | token | `read` |
@@ -307,6 +308,26 @@ meaning into either half.
 back with `200`, because a session that has not spoken yet and a session that could not be found are
 different things and only the second is a `404`. A shell that is not running an assistant answers
 the same way, and so does a session whose record could not be matched to it.
+
+For a strictly decoded version-2 session message, its `role: "message"` entry also carries an
+`artifacts` array. Each row contains only `id`, `media_type` (`image/png`), `byte_count`, `width`,
+`height`, and absolute Unix-seconds `expires_at`. There is no source path, filename, URL or raw
+image data in the transcript response.
+
+### `GET /v1/artifacts/images/:artifactId`
+
+Read the bytes for one artifact reference from the same authenticated origin as the transcript.
+The id is the opaque lowercase UUID published in a message entry; arbitrary path segments and
+percent-encoded path tricks are not filenames and return the unknown-id response.
+
+| result | status | response |
+|---|---:|---|
+| live | 200 | PNG bytes, `Content-Type: image/png`, `Cache-Control: private, no-store` |
+| known but expired, deleted or byte-missing | 410 | `artifact_expired` error envelope |
+| unknown or malformed id | 404 | `artifact_not_found` error envelope |
+
+Authentication is the ordinary `read` token/cookie gate and the existing Host / cross-site
+checks still run. There is no public artifact URL and no remote fetch proxy.
 
 ### `GET /v1/sessions/:id/agents/:agentId?limit=200`
 
@@ -1615,19 +1636,29 @@ $ curl -sS -X POST http://127.0.0.1:7717/v1/orchestrator/messages \
     -H 'Content-Type: application/json' \
     -d '{"from_session":"A0939BAC-569B-4B87-9DF4-DE493EC327EA",
          "to_session":"509F54A8-356E-420D-9EAC-73D676C9580E",
-         "text":"The correction is in the same round.\n\n## Status\n\nStill running."}'
-{"ok":true,"accepted_at":1787896806,"at":1787896806}
+         "text":"The correction is in the same round.\n\n## Status\n\nStill running.",
+         "images":[{"path":"/Users/you/Desktop/current-state.png"}]}'
+{"ok":true,"accepted_at":1787896806,"at":1787896806,"artifacts":[{"id":"46cb6d40-c13f-4fea-9cf0-936f86b78da4","media_type":"image/png","byte_count":18422,"width":1280,"height":720,"expires_at":1787983200}]}
 ```
 
 `from_session` is either the source's exact terminal-neutral id or its process-bound conversation
 id. `to_session` is the target's exact terminal-neutral id. Both must resolve to current Claude or
 Codex sessions; titles, prefixes and tty names are never matched, ambiguous source identity fails
-closed, and source and target must differ. `text` is 1…100000 characters. A target showing a menu
+closed, and source and target must differ. `text` is 0…100000 characters and may be empty only
+beside at least one image. Optional `images` contains 1…6 objects with exactly one normalized,
+absolute local `path`. Clawdline never fetches a URL and never trusts an extension or media claim:
+each file is bounded, decoded, normalized to PNG and copied into its owned cache before delivery.
+Malformed arrays, extra fields, relative/URL/dot-segment paths, unsupported rasters, oversized
+source/decoded bytes or dimensions, and storage failures are refused before any terminal send.
+A target showing a menu
 returns `409 target_busy`, because typing would answer the menu rather than deliver the message.
 
-The route types one version-1 `<clawdline-message>` envelope. Both transcript readers normalize it
+The route keeps text-only traffic on the strict version-1 `<clawdline-message>` schema. A message
+with images uses strict version 2, whose only addition is the bounded `artifacts` metadata array.
+Neither wire contains a path, URL or image bytes. Both transcript readers normalize either version
 to `role: "message"`, preserve the body's Markdown and expose only the resolved source label and
-assistant. The complete type inventory and wire schema are in [`messages.md`](messages.md).
+assistant plus v2 artifact metadata. The complete type inventory and wire schema are in
+[`messages.md`](messages.md).
 `ok` means the terminal transport accepted one typing attempt. It is not a transcript-observed or
 assistant-acknowledged receipt; the idempotency key prevents a network retry from becoming a
 second prompt.
@@ -1636,7 +1667,11 @@ second prompt.
 |---|---:|---|
 | `unauthorized` | 401 | neither a valid machine credential nor paired-device credential was supplied |
 | `forbidden` | 403 | a paired device reached the route without the machine credential |
-| `bad_request` | 400 | missing idempotency key, malformed/extra body field, empty or oversized text |
+| `bad_request` | 400 | missing idempotency key; malformed/extra fields; empty text without images; bad image count |
+| `invalid_image_path` | 400 | an image is not one normalized absolute readable local file path |
+| `image_too_large` | 413 | source bytes, normalized bytes, dimensions, pixels or batch bytes exceed a bound |
+| `unsupported_image` | 415 | bytes do not decode and re-encode as a supported raster image |
+| `artifact_storage_failed` | 500 | the owned cache could not persist the normalized image transaction |
 | `source_not_found` | 404 | no unique current source matches the exact terminal/conversation id |
 | `target_not_found` | 404 | the target terminal id is not a current assistant session |
 | `same_session` | 409 | source and target resolve to the same terminal |
@@ -3303,7 +3338,11 @@ counts only when it was announced **and** has no ending under it.
   "at": 1787049580,                // absent if the record carried no timestamp
   "source": "release-room",        // human-readable session name; peer only
   "sourceMode": "prompting",       // peer sender mode, or "clawdline" for message
-  "sourceAssistant": "claude"      // "claude" | "codex"; message only
+  "sourceAssistant": "claude",     // "claude" | "codex"; message only
+  "artifacts": [{                   // version-2 message only; 1…6 closed references
+    "id":"46cb6d40-c13f-4fea-9cf0-936f86b78da4","media_type":"image/png",
+    "byte_count":18422,"width":1280,"height":720,"expires_at":1787983200
+  }]
 }
 ```
 

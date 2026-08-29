@@ -466,6 +466,15 @@ Create `/tmp/.clawdline/<task-id>/task.json`, then register it with `POST /v1/or
 Put the complete instructions in `task.json`; the POST body carries only `task_id` and the task
 secret under the field name `secret` (the child's terminal `result.json` uses `task_secret`).
 
+### Cross-session assistant communication uses the message route
+
+When one live assistant sends a message, report, status, finding or coordination note to another,
+use `POST /v1/orchestrator/messages`. If that route refuses the message, surface its typed failure;
+never fall back to `POST /v1/sessions/:id/send` or a hand-written sender prefix, because those are
+ordinary `user` turns. A message is not an assignment: it cannot attach new work, transfer
+shared-tree ownership or bypass `claims`. See [`docs/messages.md`](docs/messages.md) for the closed
+envelope and [`docs/api.md`](docs/api.md) for the request contract.
+
 ### Prove a localhost failure before calling Clawdline offline
 
 An agent execution sandbox may refuse or isolate loopback even while the installed Clawdline app

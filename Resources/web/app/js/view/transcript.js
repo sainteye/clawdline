@@ -15,8 +15,14 @@ import { SessionActions } from "../input/detail-actions.js";
 import { coordinatorForSession } from "../input/coordinator-actions.js";
 import { GitPanel } from "../input/git-panel.js";
 import { ShellPanel } from "../input/shell-panel.js";
+import { connectArtifactTile, createImageLightbox } from "./transcript-images.js";
 
 /* ---- the transcript ------------------------------------------------------ */
+
+var artifactRenderQueue = [];
+var imageLightbox = createImageLightbox(
+    els["image-lightbox"], els["image-lightbox-image"],
+    els["image-lightbox-close"], document);
 
 export function renderDetailHead() {
     var s = S.openId ? byId(S.openId) : null;
@@ -101,6 +107,7 @@ export function renderTranscript() {
         error: !!(S.agent || S.tx).error
     });
     setOptimisticSpinners([]);
+    artifactRenderQueue = [];
     // Blank rather than the home screen while the list is still on its way — see `listUnknown`.
     // A pane that says "pick a session" and then opens one on its own is a pane that changed its
     // mind in front of the reader; a pane that is briefly empty is a pane that is loading.
@@ -176,6 +183,7 @@ export function renderTranscript() {
     }
     if (S.newestFirst) blocks.reverse();
     box.innerHTML = transcriptNotice + blocks.join("");
+    hydrateArtifactImages(box);
     var pending = box.querySelectorAll(".entry.pending canvas.spin");
     for (var p = 0; p < pending.length; p++) {
         drawSpinner(pending[p], spinPhase);
@@ -497,7 +505,7 @@ export function entryHTML(e) {
             whoHTML("message", e.at) +
             '<div class="body"><div class="message-card">' +
             '<div class="message-source"><span>' + esc(messageSource) + '</span>' + sourceMeta + '</div>' +
-            '<div>' + richText(e.text) + '</div>' +
+            '<div>' + richText(e.text) + '</div>' + artifactTilesHTML(e.artifacts) +
             '</div></div></div>';
     }
     if (role === "peer") {
@@ -522,6 +530,36 @@ export function entryHTML(e) {
     return '<div class="entry' + (e.pending ? ' pending' : '') + '" data-role="' + role + '">' +
         whoHTML(role, e.at) +
         '<div class="body">' + body + "</div></div>";
+}
+
+/** Static markup only. Artifact fields go into a private queue and are assigned as DOM
+ *  properties after parsing, so an attachment can never add HTML, an action or a URL. */
+function artifactTilesHTML(artifacts) {
+    if (!Array.isArray(artifacts) || !artifacts.length) return "";
+    var tiles = artifacts.map(function (artifact) {
+        var slot = artifactRenderQueue.push(artifact) - 1;
+        return '<button class="message-image-tile" type="button" disabled ' +
+            'data-artifact-slot="' + slot + '" aria-label="' + esc(T.webImagePreview) + '">' +
+            '<img class="message-image" alt="" hidden>' +
+            '<span class="message-image-state" role="status">' + esc(T.webLoading) + '</span>' +
+            '</button>';
+    }).join("");
+    return '<div class="message-images">' + tiles + '</div>';
+}
+
+function hydrateArtifactImages(box) {
+    var tiles = box.querySelectorAll("[data-artifact-slot]");
+    for (var i = 0; i < tiles.length; i++) {
+        var tile = tiles[i];
+        var artifact = artifactRenderQueue[Number(tile.dataset.artifactSlot)];
+        connectArtifactTile(tile, artifact, {
+            loadingLabel: T.webLoading,
+            expiredLabel: T.webImageExpired,
+            open: function (trigger, src, expire) {
+                imageLightbox.open(trigger, src, expire);
+            }
+        });
+    }
 }
 
 /**

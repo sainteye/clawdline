@@ -126,6 +126,8 @@ final class RemoteServer: @unchecked Sendable {
     /// Replaces the route body only after a non-send terminal mutation entered the production
     /// bounded worker. This keeps queue/isolation tests away from real ttys.
     static var terminalRouteForTesting: ((Request) -> Response)?
+    /// Deterministic expiry seam for artifact route and relay lifecycle tests.
+    static var imageArtifactNowForTesting: (() -> Date)?
     /// Already-serialized full snapshots for bridge lifecycle integration tests. Production keeps
     /// using the SessionWatch/Orchestrator serializers on the main thread.
     static var cloudSnapshotDataForTesting: (sessions: Data, orchestrator: Data)?
@@ -876,6 +878,27 @@ final class RemoteServer: @unchecked Sendable {
                 "throttled": receipt.disposition == .throttled,
                 "scan": ["generation": receipt.generation],
             ])
+        // Same-origin authenticated bytes for a reference already published in a transcript.
+        // The URL carries only an opaque id; paths and source filenames never cross this route.
+        case ("GET", let path) where path.hasPrefix("/v1/artifacts/images/"):
+            let id = String(path.dropFirst("/v1/artifacts/images/".count))
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(404, "artifact_not_found", "No image artifact named that.")
+            }
+            let now = Self.imageArtifactNowForTesting?() ?? Date()
+            switch SessionImageArtifactStore().lookup(id: id, now: now) {
+            case .live(let artifact, let data):
+                return Response(
+                    status: 200,
+                    headers: ["Content-Type": artifact.mediaType,
+                              "Cache-Control": "private, no-store"],
+                    body: data)
+            case .expired:
+                return .error(410, "artifact_expired",
+                              "That image artifact has expired or been pruned.")
+            case .missing:
+                return .error(404, "artifact_not_found", "No image artifact named that.")
+            }
 
         // Everything about this project that has an address.
         //
@@ -1378,14 +1401,38 @@ final class RemoteServer: @unchecked Sendable {
                               "Relaying a session message needs the orchestrator token.")
             }
             return orchestratorWriting(request) { body in
-                guard Set(body.keys) == Set(["from_session", "to_session", "text"]),
+                let required = Set(["from_session", "to_session", "text"])
+                let allowed = required.union(["images"])
+                guard Set(body.keys).isSubset(of: allowed),
+                      required.isSubset(of: Set(body.keys)),
                       let sourceID = body["from_session"] as? String, !sourceID.isEmpty,
                       let targetID = body["to_session"] as? String, !targetID.isEmpty,
-                      let text = body["text"] as? String, !text.isEmpty,
+                      let text = body["text"] as? String,
                       text.count <= 100_000 else {
                     return .error(400, "bad_request",
-                                  "The closed body needs from_session, to_session and "
-                                  + "1…100000 characters of text.")
+                                  "The closed body needs only from_session, to_session, "
+                                  + "0…100000 characters of text and optional images.")
+                }
+                var imagePaths: [String] = []
+                if let raw = body["images"] {
+                    guard let images = raw as? [[String: Any]], !images.isEmpty,
+                          images.count <= SessionImageArtifactStore.productionPolicy
+                            .maxImagesPerMessage else {
+                        return .error(400, "bad_request",
+                                      "images must be a non-empty bounded array of local paths.")
+                    }
+                    for image in images {
+                        guard Set(image.keys) == Set(["path"]),
+                              let path = image["path"] as? String, !path.isEmpty else {
+                            return .error(400, "bad_request",
+                                          "Each image accepts only one string path field.")
+                        }
+                        imagePaths.append(path)
+                    }
+                }
+                guard !text.isEmpty || !imagePaths.isEmpty else {
+                    return .error(400, "bad_request",
+                                  "A session message needs text or at least one local image.")
                 }
                 guard let source = self.sessionMessageSource(withID: sourceID),
                       let sourceAssistant = source.assistant else {
@@ -1407,25 +1454,55 @@ final class RemoteServer: @unchecked Sendable {
                                   + "of delivering the message.")
                 }
 
+                let now = Self.imageArtifactNowForTesting?() ?? Date()
+                let store = SessionImageArtifactStore()
+                let stored: [SessionImageArtifactStore.Stored]
+                if imagePaths.isEmpty {
+                    stored = []
+                } else {
+                    do {
+                        stored = try store.importPaths(imagePaths, now: now)
+                    } catch let refusal as SessionImageArtifactStore.Refusal {
+                        return .error(refusal.status, refusal.code, refusal.message)
+                    } catch {
+                        return .error(500, "artifact_storage_failed",
+                                      "Clawdline could not persist the image artifacts.")
+                    }
+                }
+
                 let message = ClawdlineSessionMessage.Message(
                     source: .init(id: source.id, label: source.displayLabel,
                                   assistant: sourceAssistant),
-                    body: text)
+                    body: text,
+                    artifacts: stored.map(\.artifact))
                 let wire = ClawdlineSessionMessage.encode(message)
                 guard wire.hasPrefix(ClawdlineSessionMessage.opening) else {
+                    store.delete(ids: stored.map { $0.artifact.id }, now: now)
                     return .error(500, "encoding_failed",
                                   "The session message could not be encoded safely.")
                 }
-                if let failure = Targets.send(wire, to: target) {
+                let failure: String?
+                if let seam = Self.terminalSendForTesting {
+                    failure = seam(wire, target)
+                } else {
+                    failure = Targets.send(wire, to: target)
+                }
+                if let failure {
+                    store.delete(ids: stored.map { $0.artifact.id }, now: now)
                     return .error(502, "delivery_failed", failure)
                 }
                 RemoteAuth.audit("orchestrator.message", [
                     "from": source.id, "to": target.id,
                     "assistant": sourceAssistant.rawValue, "chars": "\(text.count)",
+                    "images": "\(stored.count)",
                 ])
                 DispatchQueue.main.async { SessionWatch.shared.nudge() }
                 let at = Int(Date().timeIntervalSince1970)
-                return .json(["ok": true, "accepted_at": at, "at": at])
+                var answer: [String: Any] = ["ok": true, "accepted_at": at, "at": at]
+                if !stored.isEmpty {
+                    answer["artifacts"] = stored.map { $0.artifact.object }
+                }
+                return .json(answer)
             }
 
         // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
@@ -3880,6 +3957,12 @@ final class RemoteServer: @unchecked Sendable {
     }
 
     private func sessionMessageSource(withID id: String) -> TargetSession? {
+        if let supplied = Self.sessionPayloadForTesting?.0 {
+            return Self.sessionMessageSource(withID: id, among: supplied) { session in
+                Self.sessionIdentity(assistant: session.assistant,
+                                     processBound: session.id)
+            }
+        }
         let sessions = onMain(from: "RemoteServer.sessionMessageSource(withID:)") {
             SessionWatch.shared.targets
         }
@@ -3890,7 +3973,10 @@ final class RemoteServer: @unchecked Sendable {
     }
 
     private func state(of sessionID: String) -> SessionState {
-        onMain(from: "RemoteServer.state(of:)") {
+        if let supplied = Self.sessionPayloadForTesting?.1 {
+            return supplied[sessionID] ?? .unknown
+        }
+        return onMain(from: "RemoteServer.state(of:)") {
             SessionWatch.shared.states[sessionID] ?? .unknown
         }
     }
@@ -4235,6 +4321,9 @@ final class RemoteServer: @unchecked Sendable {
             if let assistant = entry.sourceAssistant {
                 row["sourceAssistant"] = assistant.rawValue
             }
+            if !entry.artifacts.isEmpty {
+                row["artifacts"] = entry.artifacts.map(\.object)
+            }
             if let notice = entry.notice {
                 row["notice"] = ClawdlineMessage.webObject(for: notice)
             }
@@ -4371,6 +4460,9 @@ final class RemoteServer: @unchecked Sendable {
             "webReading": t.webReading,
             "webLoading": t.webLoading,
             "webTranscriptFailed": t.webTranscriptFailed,
+            "webImageExpired": t.imageExpired,
+            "webImagePreview": t.imagePreview,
+            "webImageClose": t.imageClose,
             "webWhoYou": t.webWhoYou,
             "webWhoTool": t.webWhoTool,
             "webNoticeTask": t.webNoticeTask,
@@ -5518,6 +5610,8 @@ extension RemoteServer {
             case 401: return "Unauthorized"
             case 403: return "Forbidden"
             case 404: return "Not Found"
+            case 410: return "Gone"
+            case 415: return "Unsupported Media Type"
             case 409: return "Conflict"
             case 429: return "Too Many Requests"
             case 413: return "Payload Too Large"

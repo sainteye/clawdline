@@ -1850,10 +1850,16 @@ keys and wrong types are typed `400 bad_request`. Reconciliation requires one JS
 containing only optional string `task_id` and JSON-boolean `include_dead_letter`.
 
 This is separate from a live session reporting to another live session. That uses machine-token
-`POST /v1/orchestrator/messages`, a version-1 `<clawdline-message>` envelope, and transcript role
-`message`; App and Web name the resolved source instead of drawing the words as the person's user
-turn. The closed inventory, including which first lines intentionally remain ordinary `user`
-prompts, is [`messages.md`](messages.md).
+`POST /v1/orchestrator/messages` and transcript role `message`; App and Web name the resolved
+source instead of drawing the words as the person's user turn. Text-only reports retain the strict
+version-1 `<clawdline-message>` envelope. An optional closed list of local image paths advances
+only that message to version 2: Clawdline bounds, decodes and re-encodes each file into its owned
+expiring cache, while the envelope and transcript carry only opaque id, PNG type, byte count,
+dimensions and absolute expiry. Authenticated clients read bytes from
+`GET /v1/artifacts/images/:id`; expiry/deletion is `410 artifact_expired`, not the
+`404 artifact_not_found` used for unknown ids. No URL, source path or base64 enters a transcript.
+The closed inventory, including which first lines intentionally remain ordinary `user` prompts,
+is [`messages.md`](messages.md).
 
 `orchestrator_notify_root` turns it off for anybody who would rather poll. Every task change also
 goes out on [the event stream](api.md#the-event-stream) as an `orchestrator` frame, which is how the
@@ -1871,6 +1877,13 @@ Heavyweight `work/` storage has a shorter, separate life. It is removed during a
 finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and
 `result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
 is success, and a filesystem refusal never delays or reverses the terminal task state.
+
+Session-message image artifacts are not task artifacts and do not live under `/tmp/.clawdline`.
+Their Clawdline-owned cache has its own deterministic bounds: 24-hour TTL, 64 live files, 64 MiB
+total, six per message, bounded input/decoded size and bounded tombstone metadata. Each write and
+read prunes only opaque-id files inside that store. `CLAWDLINE_SESSION_IMAGE_DIR` moves the entire
+deleting store for test isolation; it never changes which source paths a request is allowed to
+name.
 
 Worktrees follow a separate, fail-safe policy: an empty clean checkout whose `HEAD` remains on its
 task branch is removed with that empty branch when the child tab closes; after 24 hours a clean
