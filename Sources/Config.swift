@@ -8,7 +8,7 @@ import AppKit
 /// that answer takes a `dispatch_sync` onto the queue that already owns its thread, and
 /// libdispatch does not deadlock on that — it traps. A trap in a background reading is a process
 /// that disappears with no failing test, no log line and nothing on screen; that is what
-/// ``Orchestrator/records()`` did (36054dfa) and it cost a day to find.
+/// ``Orchestrator/records()`` did (fixed in b6d1939a) and it cost a day to find.
 ///
 /// It lives in this file because two of the three crossings that ask this are here and in
 /// ``Transcript``, and both are inside one change's write set. ``Orchestrator/isOnMainQueue`` asks
@@ -718,8 +718,15 @@ final class Config {
     ///
     /// **Queue identity, not thread identity** — see ``MainQueue``. This asked
     /// `Thread.isMainThread` until it was fixed alongside the crossing in
-    /// ``Transcript/sessionID(of:)``, which meant that the first time a reading with live targets
-    /// in it reached this from a main-queue block, the hop below would have trapped.
+    /// ``Transcript/sessionID(of:)``.
+    ///
+    /// **This is not a production defect, and the distinction is worth keeping.** The app runs
+    /// `app.run()`, where NSApplication drains the main queue on the main thread, so the thread
+    /// predicate agrees with the queue there and this never fires. It is a process that parks its
+    /// main thread and lets a worker drain the queue — which is what the test binary does after
+    /// `dispatchMain()` — where the two disagree and the hop below would have trapped. An earlier
+    /// version of this comment said the app would trap; it would not, and overstating a defect in
+    /// a comment is a false claim nothing tests.
     func hookSessionID(of target: TargetSession) -> String? {
         MainQueue.hop(from: "Config.hookSessionID(of:)", alreadyOnMain: MainQueue.isCurrent) {
             HookBridge.note(for: target)?.session
