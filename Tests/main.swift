@@ -22191,9 +22191,16 @@ group("Bearings is a closed deterministic projection without transcript data") {
     check("Bearings uses one Orchestrator registry snapshot after its SessionWatch observation",
           serverSource.contains("Orchestrator.coordinatorSnapshot(")
           && !serverSource.contains("let counts = Orchestrator.coordinatorCounts()"))
-    let coordinatorSource = try! String(contentsOfFile: "Sources/Coordinator.swift", encoding: .utf8)
-    check("the four connected reads are the only enabled advertisement",
-          coordinatorSource.components(separatedBy: "\"enabled\": true").count == 2)
+    let coordinatorCommands =
+        Coordinator.sessionProjection(for: sessions[0])?["commands"] as? [[String: Any]] ?? []
+    let enabledCoordinatorTypes = Set(coordinatorCommands.compactMap { command -> String? in
+        command["enabled"] as? Bool == true ? command["type"] as? String : nil
+    })
+    check("the four connected reads and deep audit are the only enabled advertisement",
+          enabledCoordinatorTypes == Set([
+            "status_report", "duplicates_conflicts_ownership", "landing_closure",
+            "scope_permissions", "deep_status_audit",
+          ]))
 }
 
 group("Bearings takes one coherent Orchestrator snapshot for every session fact") {
@@ -22363,20 +22370,45 @@ group("coordinator routes require the machine token and expose no implicit takeo
         guard let record = row["coordinator"] as? [String: Any],
               record["label"] as? String == "Clawdfather",
               record["status"] as? String == "online",
-              let commands = record["commands"] as? [[String: Any]], commands.count == 11
+              let commands = record["commands"] as? [[String: Any]]
         else { return false }
-        let connectedReads: Set<String> = ["status_report", "duplicates_conflicts_ownership",
-                                           "landing_closure", "scope_permissions"]
-        let closedReasons: Set<String> = ["no_return_ledger", "no_command_route",
-                                          "device_cannot_spawn", "machine_token_only"]
+        let expected: [String: (enabled: Bool, effort: String, basis: String,
+                                reason: String?)] = [
+            "status_report": (true, "low", "registry_read", nil),
+            "duplicates_conflicts_ownership": (true, "low", "registry_read", nil),
+            "landing_closure": (true, "low", "registry_read", nil),
+            "scope_permissions": (true, "low", "registry_read", nil),
+            "since_away": (false, "unknown", "unbuilt", "no_return_ledger"),
+            "coordinate_work": (false, "unknown", "unbuilt", "no_command_route"),
+            "dispatch_independent_work":
+                (false, "high", "spawns_session", "device_cannot_spawn"),
+            "ask_coordinator":
+                (false, "medium", "single_session_message", "no_command_route"),
+            "deep_status_audit": (true, "high", "session_fanout", nil),
+            "quiet_watch": (false, "unknown", "unbuilt", "no_command_route"),
+            "stop": (false, "low", "broker_only", "no_command_route"),
+            "reconnect": (false, "low", "broker_only", "machine_token_only"),
+        ]
+        guard commands.count == expected.count,
+              Set(commands.compactMap { $0["type"] as? String }) == Set(expected.keys)
+        else { return false }
         return Set(record.keys) == Set(["label", "status", "commands"])
             && commands.allSatisfy { command in
-                let type = command["type"] as? String ?? ""
-                if connectedReads.contains(type) {
-                    return command["enabled"] as? Bool == true && command["reason"] == nil
+                guard let type = command["type"] as? String,
+                      let specification = expected[type],
+                      command["enabled"] as? Bool == specification.enabled,
+                      command["token_effort"] as? String == specification.effort,
+                      command["token_effort_basis"] as? String == specification.basis
+                else { return false }
+                if specification.enabled {
+                    return Set(command.keys) == Set([
+                        "type", "enabled", "token_effort", "token_effort_basis",
+                    ])
                 }
-                return command["enabled"] as? Bool == false
-                    && closedReasons.contains(command["reason"] as? String ?? "")
+                return Set(command.keys) == Set([
+                    "type", "enabled", "reason", "token_effort", "token_effort_basis", "why",
+                ])
+                    && command["reason"] as? String == specification.reason
                     && !(command["why"] as? String ?? "").isEmpty
             }
     }

@@ -567,6 +567,20 @@ protocol Copy {
     var webCoordCmdStopSay: String { get }
     var webCoordCmdReconnect: String { get }
     var webCoordCmdReconnectSay: String { get }
+    var webCoordCmdDeepAudit: String { get }
+    var webCoordCmdDeepAuditSay: String { get }
+    var webCoordTokenExpected: String { get }
+    var webCoordTokenLow: String { get }
+    var webCoordTokenMedium: String { get }
+    var webCoordTokenHigh: String { get }
+    var webCoordTokenUnknown: String { get }
+    var webCoordAuditPreview: String { get }
+    var webCoordAuditWhyOffline: String { get }
+    var webCoordAuditWhyDisconnected: String { get }
+    var webCoordAuditWhyNoWrite: String { get }
+    var webCoordAuditSending: String { get }
+    var webCoordAuditSent: String { get }
+    var webCoordAuditFailed: String { get }
     /// The safety meaning under each command, and the state word beside its name.
     var webCoordEffectRead: String { get }
     var webCoordEffectAdvisory: String { get }

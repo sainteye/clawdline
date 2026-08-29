@@ -419,7 +419,9 @@ function fillCoordinatorMark(node, s) {
                 coordinatorRoute(current, "mark") !== "controls") return;
             event.preventDefault();
             event.stopPropagation();
-            CoordinatorControls.open(current, button, { connected: S.conn === "live" });
+            CoordinatorControls.open(current, button, {
+                connected: S.conn === "live", write: S.write === true
+            });
         });
     }
     button.setAttribute("aria-haspopup", model.mark.ariaHaspopup);

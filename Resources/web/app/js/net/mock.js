@@ -62,27 +62,40 @@ export var Mock = (function () {
           isClaude: false, assistant: "codex", sessionId: "clawdfather-mock", icon: clawdline,
           coordinator: {
               label: "Clawdfather", status: "online",
-              // The advertisement the Mac sends today: four connected reads, everything that
-              // would send, spawn or mutate disabled with a closed reason code.
+              // The advertisement the Mac sends today: four connected reads, one confirmed
+              // user-attributed audit send, and closed reasons for the remaining disabled work.
               commands: [
-                  { type: "status_report", enabled: true },
-                  { type: "duplicates_conflicts_ownership", enabled: true },
-                  { type: "landing_closure", enabled: true },
-                  { type: "scope_permissions", enabled: true },
+                  { type: "status_report", enabled: true,
+                    token_effort: "low", token_effort_basis: "registry_read" },
+                  { type: "duplicates_conflicts_ownership", enabled: true,
+                    token_effort: "low", token_effort_basis: "registry_read" },
+                  { type: "landing_closure", enabled: true,
+                    token_effort: "low", token_effort_basis: "registry_read" },
+                  { type: "scope_permissions", enabled: true,
+                    token_effort: "low", token_effort_basis: "registry_read" },
                   { type: "since_away", enabled: false, reason: "no_return_ledger",
+                    token_effort: "unknown", token_effort_basis: "unbuilt",
                     why: "This Mac does not record a return point yet, so there is nothing to read one against." },
                   { type: "coordinate_work", enabled: false, reason: "no_command_route",
+                    token_effort: "unknown", token_effort_basis: "unbuilt",
                     why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
                   { type: "dispatch_independent_work", enabled: false,
                     reason: "device_cannot_spawn",
+                    token_effort: "high", token_effort_basis: "spawns_session",
                     why: "A paired device can never start a session — that separation is deliberate, and this command will not cross it." },
                   { type: "ask_coordinator", enabled: false, reason: "no_command_route",
+                    token_effort: "medium", token_effort_basis: "single_session_message",
                     why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "deep_status_audit", enabled: true,
+                    token_effort: "high", token_effort_basis: "session_fanout" },
                   { type: "quiet_watch", enabled: false, reason: "no_command_route",
+                    token_effort: "unknown", token_effort_basis: "unbuilt",
                     why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
                   { type: "stop", enabled: false, reason: "no_command_route",
+                    token_effort: "low", token_effort_basis: "broker_only",
                     why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
                   { type: "reconnect", enabled: false, reason: "machine_token_only",
+                    token_effort: "low", token_effort_basis: "broker_only",
                     why: "Reconnecting needs the Mac's own orchestrator token, which a paired device deliberately does not hold." }
               ]
           } },

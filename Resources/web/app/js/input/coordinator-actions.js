@@ -11,9 +11,9 @@ import { api } from "../net/api.js";
 
    The four read-only commands are connected: pressing one reads the device-readable Bearings
    projection at `GET /v1/orchestrator/coordinator/bearings` and renders the answer here.
-   Nothing in this module sends a command into a session, starts one, or mutates coordinator
-   state — those buttons arrive disabled from the server with a closed `reason` code, said in
-   this page's own language below.
+   Deep status audit is the deliberately narrow exception: after a second explicit press it uses
+   the existing user-attributed Session send. It never receives the machine token, starts a
+   session, or adds a machine mutation route.
 
    Every visible word is a `T` name resolved at render time, never at module load: the
    translated strings arrive from `/v1/strings` after this module is evaluated, and a label
@@ -58,6 +58,10 @@ var COMMANDS = {
         label: "webCoordCmdAsk", section: "coordinate", effect: "advisory",
         summary: "webCoordCmdAskSay"
     },
+    deep_status_audit: {
+        label: "webCoordCmdDeepAudit", section: "coordinate", effect: "advisory",
+        summary: "webCoordCmdDeepAuditSay"
+    },
     quiet_watch: {
         label: "webCoordCmdQuietWatch", section: "presence", effect: "advisory",
         summary: "webCoordCmdQuietWatchSay"
@@ -91,6 +95,23 @@ var STATE_LABELS = {
     disabled: "webCoordStateDisabled"
 };
 
+var TOKEN_EFFORT_LABELS = {
+    low: "webCoordTokenLow",
+    medium: "webCoordTokenMedium",
+    high: "webCoordTokenHigh",
+    unknown: "webCoordTokenUnknown"
+};
+
+var TOKEN_EFFORT_ICONS = { low: "↓", medium: "◆", high: "▲", unknown: "?" };
+var TOKEN_EFFORT_BASES = {
+    registry_read: true,
+    unbuilt: true,
+    spawns_session: true,
+    single_session_message: true,
+    broker_only: true,
+    session_fanout: true
+};
+
 // The server's closed disabled-reason codes, said in this page's language. A code this page
 // does not know falls back to the server's prose `why`, and a row with neither gets the
 // generic sentence — never an empty explanation on a disabled button.
@@ -103,6 +124,74 @@ var REASON_KEYS = {
 
 function nonempty(value) {
     return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** Missing and future wire values fail unknown. They can never make work look cheap. */
+export function normalizeTokenEffort(value) {
+    return Object.prototype.hasOwnProperty.call(TOKEN_EFFORT_LABELS, value)
+        ? value : "unknown";
+}
+
+function normalizeTokenEffortBasis(value) {
+    return Object.prototype.hasOwnProperty.call(TOKEN_EFFORT_BASES, value)
+        ? value : "unbuilt";
+}
+
+function tokenEffortText(effort) {
+    return fill(T.webCoordTokenExpected, { effort: T[TOKEN_EFFORT_LABELS[effort]] });
+}
+
+/**
+ * Stable Layer-A instruction. Clawdfather performs the bounded, agent-driven audit; the broker
+ * does not yet persist a run or probe state for this first slice.
+ */
+export function deepStatusAuditInstruction() {
+    return [
+        "Run a deep status audit now. This is a high-token, multi-session, agent-driven audit request; it is not a broker-persisted audit run.",
+        "First snapshot the sessions, tasks, landings, and waits registries. Then contact every relevant idle or root Session and require exactly four separate sections from each reply:",
+        "1. Unfinished — for every item name its owner, blocker, and exactly one next action.",
+        "2. Completed but not landed.",
+        "3. Landed — include commit and target evidence.",
+        "4. User decisions — keep these separate from technical next steps and present each decision as its own explicit options prompt.",
+        "Wait for replies with a bounded deadline, then re-read all four registries. Compare the same task, Session, and commit across surfaces. Verify Git ancestry only when a delivery commit exists.",
+        "Report unreachable, timeout, stale snapshot, contradiction, missing delivery commit, and already-integrated-but-unclosed separately; do not collapse one into another.",
+        "Do not auto-dispatch, auto-land, auto-close, or start technical work. Only report and propose next actions. Never treat titles, paths, or commit messages as proof."
+    ].join("\n");
+}
+
+/** A standalone capability fact used by tests and callers that need the send boundary. */
+export function coordinatorAuditCanSend(session, context) {
+    var coordinator = coordinatorForSession(session);
+    return !!(coordinator && coordinator.status === "online" && context &&
+        context.connected === true && context.write === true);
+}
+
+function auditError(code, message) {
+    var error = new Error(message);
+    error.code = code;
+    return error;
+}
+
+/** One confirmed audit request, through the injected ordinary Session client. */
+export function sendDeepStatusAudit(client, session, context) {
+    var coordinator = coordinatorForSession(session);
+    if (!coordinator || coordinator.status !== "online") {
+        return Promise.reject(auditError("coordinator_offline", T.webCoordAuditWhyOffline));
+    }
+    if (!context || context.connected !== true) {
+        return Promise.reject(auditError("connection_offline", T.webCoordAuditWhyDisconnected));
+    }
+    if (context.write !== true) {
+        return Promise.reject(auditError("write_disabled", T.webCoordAuditWhyNoWrite));
+    }
+    if (!client || typeof client.send !== "function") {
+        return Promise.reject(auditError("send_unavailable", T.webCoordAuditWhyNoWrite));
+    }
+    try {
+        return Promise.resolve(client.send(session.id, deepStatusAuditInstruction(), []));
+    } catch (error) {
+        return Promise.reject(error);
+    }
 }
 
 /** The honest words under a disabled command: known code first, prose second, never silence. */
@@ -143,8 +232,13 @@ export function coordinatorRowModel(session) {
     };
 }
 
-function stateFor(definition, command, online) {
-    if (command.enabled === false) return "disabled";
+function stateFor(definition, command, online, context) {
+    // The authenticated server always emits this boolean. Missing is not permission.
+    if (command.enabled !== true) return "disabled";
+    if (command.type === "deep_status_audit") {
+        return online && context && context.connected === true && context.write === true
+            ? "available" : "unavailable";
+    }
     if (!online) {
         if (definition.effect === "read_only") return "available";
         if (definition.effect === "advisory") return "draft";
@@ -154,7 +248,7 @@ function stateFor(definition, command, online) {
 }
 
 /**
- * Select known commands and downgrade them for the current connection.
+ * Select known commands and downgrade them for the current connection and write capability.
  *
  * Read-only controls remain visible offline. Judgement becomes a draft; anything that would
  * start a session or mutate coordinator state becomes unavailable. A server-disabled command
@@ -174,7 +268,14 @@ export function coordinatorGroups(session, context) {
         var definition = type && COMMANDS[type];
         if (!definition || seen[type]) return;
         seen[type] = true;
-        var state = stateFor(definition, command, online);
+        var state = stateFor(definition, command, online, context || {});
+        var tokenEffort = normalizeTokenEffort(command.token_effort);
+        var why = state === "disabled" ? coordinatorReason(command) : "";
+        if (type === "deep_status_audit" && state === "unavailable") {
+            why = coordinator.status !== "online" ? T.webCoordAuditWhyOffline
+                : (!context || context.connected !== true ? T.webCoordAuditWhyDisconnected
+                    : T.webCoordAuditWhyNoWrite);
+        }
         grouped[definition.section].push({
             type: type,
             label: T[definition.label],
@@ -184,7 +285,10 @@ export function coordinatorGroups(session, context) {
             effectLabel: T[EFFECT_LABELS[definition.effect]],
             state: state,
             stateLabel: T[STATE_LABELS[state]],
-            why: state === "disabled" ? coordinatorReason(command) : ""
+            why: why,
+            tokenEffort: tokenEffort,
+            tokenEffortBasis: normalizeTokenEffortBasis(command.token_effort_basis),
+            tokenEffortText: tokenEffortText(tokenEffort)
         });
     });
 
@@ -272,12 +376,14 @@ export function coordinatorAnswerHTML(action, data) {
     return out.join("");
 }
 
-/** The preview receipt for anything that is not a connected read. Nothing behind it sends. */
+/** Preview state for non-read commands; only deep audit exposes a live second press. */
 export function coordinatorPreview(action) {
     var mutation = action && action.effect === "mutation";
     var note;
     if (!action) {
         note = T.webCoordPreviewNone;
+    } else if (action.type === "deep_status_audit") {
+        note = T.webCoordAuditPreview;
     } else if (mutation) {
         note = T.webCoordPreviewMutation;
     } else if (action.state === "draft") {
@@ -287,13 +393,18 @@ export function coordinatorPreview(action) {
     } else {
         note = T.webCoordPreviewContract;
     }
-    return {
+    var preview = {
         title: action ? action.label : T.webCoordPreviewTitle,
         summary: action ? action.summary : "",
         note: note,
         requiresConfirmation: mutation,
         confirmDisabled: true
     };
+    if (action && action.type === "deep_status_audit") {
+        preview.requiresConfirmation = true;
+        preview.confirmDisabled = action.state !== "available";
+    }
+    return preview;
 }
 
 function actionHTML(action) {
@@ -305,6 +416,10 @@ function actionHTML(action) {
         '<span class="coordinator-command-state">' + esc(action.stateLabel) + "</span></span>" +
         '<span class="coordinator-command-summary">' + esc(action.summary) + "</span>" +
         '<span class="coordinator-command-effect">' + esc(action.effectLabel) + "</span>" +
+        '<span class="coordinator-command-effort" data-effort="' +
+        esc(action.tokenEffort) + '" aria-label="' + esc(action.tokenEffortText) + '">' +
+        '<span aria-hidden="true">' + esc(TOKEN_EFFORT_ICONS[action.tokenEffort]) +
+        '</span> ' + esc(action.tokenEffortText) + "</span>" +
         (action.why ? '<span class="coordinator-command-why">' + esc(action.why) + "</span>" : "") +
         "</button>";
 }
@@ -339,6 +454,7 @@ export var CoordinatorControls = {
     session: null,
     opener: null,
     onSessionActions: null,
+    auditPending: false,
     // A ticket per connected read, so an answer that arrives after the sheet closed or after
     // another command was pressed is dropped rather than drawn over the wrong heading.
     ticket: 0,
@@ -360,6 +476,12 @@ export var CoordinatorControls = {
                 var id = self.session && self.session.id;
                 self.close(false);
                 if (id && self.onSessionActions) self.onSessionActions(id);
+                return;
+            }
+            var auditConfirm = event.target.closest &&
+                event.target.closest("[data-confirm-deep-status-audit]");
+            if (auditConfirm) {
+                if (!auditConfirm.disabled) self.sendAudit(auditConfirm);
                 return;
             }
             var button = event.target.closest && event.target.closest("[data-command]");
@@ -418,11 +540,43 @@ export var CoordinatorControls = {
             panel.innerHTML = '<h3>' + esc(preview.title) + '</h3><p>' +
                 esc(preview.summary) + '</p><p class="coordinator-preview-note">' +
                 esc(preview.note) + "</p>" + (preview.requiresConfirmation
-                    ? '<button class="chip" type="button" disabled>' +
+                    ? '<button class="chip" type="button"' +
+                      (preview.confirmDisabled ? " disabled" :
+                       ' data-confirm-deep-status-audit') + '>' +
                       esc(T.webConfirm) + "</button>" : "");
         }
         panel.setAttribute("tabindex", "-1");
         panel.focus({ preventScroll: true });
+    },
+
+    /** The second press. Synchronous pending state makes a double click one logical send. */
+    sendAudit: function (button) {
+        if (this.auditPending || !this.session || !this.dom) return;
+        var context = this.dom.context ? this.dom.context() : {};
+        var target = this.session;
+        var panel = button.closest(".coordinator-preview");
+        if (!panel) return;
+        this.auditPending = true;
+        button.disabled = true;
+        button.textContent = T.webCoordAuditSending;
+        var self = this;
+        var mine = ++this.ticket;
+        sendDeepStatusAudit(api, target, context).then(function () {
+            self.auditPending = false;
+            if (mine !== self.ticket || !self.dom || self.dom.overlay.hidden ||
+                self.session !== target) return;
+            panel.innerHTML = '<h3>' + esc(T.webCoordCmdDeepAudit) + '</h3>' +
+                '<p class="coordinator-answer-line">' + esc(T.webCoordAuditSent) + "</p>";
+        }).catch(function (error) {
+            self.auditPending = false;
+            if (mine !== self.ticket || !self.dom || self.dom.overlay.hidden ||
+                self.session !== target) return;
+            var code = nonempty(error && error.code) || "send_failed";
+            var message = nonempty(error && error.message) || T.webRequestFailed;
+            panel.innerHTML = '<h3>' + esc(T.webCoordCmdDeepAudit) + '</h3>' +
+                '<p class="coordinator-answer-err">' +
+                esc(fill(T.webCoordAuditFailed, { code: code, message: message })) + "</p>";
+        });
     },
 
     /** The connected read behind the four read-only commands. */

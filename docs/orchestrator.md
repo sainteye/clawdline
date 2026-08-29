@@ -1409,14 +1409,21 @@ inventory is `stale`, never silently complete. The route returns only the
 opaque coordinator UUID and terminal-neutral session id, assistant, cwd/label/work-state. It never
 returns transcript text/path, assistant conversation id, tty, pid or process start.
 
-All commands are disabled in A1. The four vocabulary entries for status report,
-duplicate/conflict/ownership inspection, landing closure advice and scope/permissions explain that
-Bearings exists at authenticated `GET /v1/orchestrator/coordinator`, but their web actions are
-preview-only and not connected. The renderer must say Disabled/Preview, never Available.
-Since-away, cross-session coordination judgement, ask/quiet-watch, dispatch, stop and reconnect are
-also explicitly disabled with a specific Phase A1 reason. There is no command execution route,
-no transcript grant/read, no typing into sessions, no dispatch or task/landing/wait mutation, no
-Build, no model wake and no inference.
+Four commands—status report, duplicate/conflict/ownership inspection, landing closure and
+scope/permissions—are connected read-only views over the device-safe Bearings projection.
+`deep_status_audit` is the one connected user-attributed send: only while the exact Clawdfather is
+online and the current browser has write/send capability, a first press displays a high-token,
+multi-session preview and a second explicit press sends one stable instruction through the existing
+Session `/send` route. Since-away, cross-session coordination judgement, ask/quiet-watch, dispatch,
+stop and reconnect remain explicitly disabled with their specific reason codes. There is still no
+device dispatch, task/landing/wait mutation, autonomous close, Build, or machine-token grant.
+
+Every command row also carries closed `token_effort` and `token_effort_basis` fields. The badge is
+an expected relative Token workload (`low|medium|high|unknown`), not actual usage and never dollars;
+it remains visible on disabled rows and does not imply availability. Reads are low, a single
+Session question is medium, spawning or multi-Session fan-out is high, and work whose unbuilt shape
+is not known stays unknown. A missing or invented effort value is rendered unknown rather than
+quietly cheap.
 
 Registering this optional role does not enter the task registry. It cannot change parent links,
 depth or caps, root keys, claim ownership, wait/landing writers, terminal `state`, `work_state`, or
@@ -1487,6 +1494,23 @@ target's terminal-neutral id, because that is the `id` on the Session row it dre
 over in the instruction. Whether the role was taken is read back the way it always was: the
 authenticated `session.coordinator` projection appears on the exact bound row, and the item turns
 into a statement of who holds it. The recipe that item asks for is the next section.
+
+### Deep status audit: the agent-driven first slice
+
+The Clawdfather panel's **Deep status audit** item is another narrow use of the same ordinary
+user-attributed Session send. It does not start a broker audit run. Its stable instruction tells
+Clawdfather to first snapshot sessions, tasks, landings and waits; contact every relevant idle/root
+Session; require exactly four separate reply sections—unfinished work with owner, blocker and one
+next action; completed but not landed; landed with commit/target evidence; and user decisions—and
+wait with a bounded deadline. Clawdfather then rereads all registries, compares the same
+task/Session/commit across surfaces, and verifies Git ancestry only when a delivery commit exists.
+
+The report must distinguish `unreachable`, `timeout`, `stale snapshot`, `contradiction`,
+`missing delivery commit`, and `already-integrated-but-unclosed`. It must not auto-dispatch,
+auto-land, auto-close, start technical work, or accept a title, path, or commit message as proof.
+The `/send` receipt proves only that this instruction reached the terminal handoff. Persistent run
+records, broker-owned probes and durable timeouts belong to a future protocol and are not shipped
+by this slice.
 
 ### Becoming Clawdfather: the recipe a session runs on itself
 

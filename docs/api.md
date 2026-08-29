@@ -905,6 +905,14 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/send \
 With the switch on it answers `{"ok":true,"at":<unix seconds>}`. `text` must be a non-empty string;
 anything else is `400 bad_request`.
 
+The Clawdfather controls panel's `deep_status_audit` action uses this exact route after a visible
+second-press confirmation. It sends the stable audit instruction to the exact Session carrying the
+authenticated `session.coordinator` projection. This remains a user-attributed Session message:
+the ordinary device token, `send` capability, remote write switch and `Idempotency-Key` all remain
+required. The browser neither receives the orchestrator token nor calls a new machine-mutation
+route. A successful HTTP receipt means only that the audit request was sent; it does not mean the
+multi-session audit finished.
+
 Authentication, the write-origin check, session lookup, body validation and the idempotency
 reservation all happen on the server's serial state queue. The terminal handoff then moves to a
 separate serial command queue shared with `/key`, `/focus`, `/end`, `/start`, `/resume`, background
@@ -1890,7 +1898,21 @@ The optional `session.coordinator` record is projected on both `GET /v1/sessions
 `GET /v1/orchestrator/sessions` for the exact bound row only. It advertises
 `status_report`, `duplicates_conflicts_ownership`, `landing_closure` and `scope_permissions` with
 `enabled:true`: the panel answers them from `GET /v1/orchestrator/coordinator/bearings` above.
-Every command that would send, spawn or mutate stays `enabled:false` and carries two fields:
+It also advertises `deep_status_audit` with `enabled:true`. When the exact coordinator is online
+and the browser has current send/write capability, its first press previews the high-token,
+multi-session request and its explicit second press uses `POST /v1/sessions/:id/send`. Offline or
+without that capability, the row remains visible and says why it is unavailable.
+
+Every command row, enabled or disabled, carries `token_effort` (`low`, `medium`, `high`, or
+`unknown`) and `token_effort_basis` (`registry_read`, `unbuilt`, `spawns_session`,
+`single_session_message`, `broker_only`, or `session_fanout`). These fields describe relative
+expected Token work, never observed usage or money. The four Bearings reads are
+`low/registry_read`; since-away, coordinate-work and quiet-watch are `unknown/unbuilt`; dispatch is
+`high/spawns_session`; ask is `medium/single_session_message`; stop and reconnect are
+`low/broker_only`; deep audit is `high/session_fanout`. Clients must render a missing or unknown
+effort value as `unknown`, never `low`, and must show effort independently of command availability.
+
+Every remaining command that would send, spawn or mutate stays `enabled:false` and carries two fields:
 `reason`, a closed code the client says in its own language — `no_return_ledger` (since_away),
 `no_command_route` (coordinate_work, ask_coordinator, quiet_watch, stop), `device_cannot_spawn`
 (dispatch_independent_work) and `machine_token_only` (reconnect) — and `why`, honest English
@@ -1899,6 +1921,11 @@ that does not still shows a true sentence. Reconnect is deliberately machine-tok
 not the web menu command. Dispatch would start a session from a device, which is the one thing
 the device/orchestrator credential split exists to prevent. The record is absent from every
 ordinary row, preserving their old JSON behavior.
+
+This first deep-audit slice is agent-driven. The instruction asks Clawdfather to snapshot sessions,
+tasks, landings and waits; question relevant idle/root Sessions; wait to a bounded deadline; reread
+the registries; and report four separate sections plus distinct degradation states. There is no
+persistent broker audit-run/probe protocol yet, and this API does not claim one.
 
 #### Proposed observer provenance for any future liveness action
 

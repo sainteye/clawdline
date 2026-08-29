@@ -71,7 +71,7 @@ CoordinatorControls.bind({
     title: document.getElementById("coordinator-controls-title"),
     body: document.getElementById("coordinator-controls-body"),
     close: document.getElementById("coordinator-controls-close"),
-    context: function () { return { connected: S.conn === "live" }; },
+    context: function () { return { connected: S.conn === "live", write: S.write === true }; },
     onSessionActions: function (id) {
         openSession(id);
         setTimeout(function () { SessionActions.open(els["detail-focus"]); }, 0);

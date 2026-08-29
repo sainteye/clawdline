@@ -101,6 +101,7 @@
 .coordinator-command[data-state="disabled"] .coordinator-command-state { color: var(--faint); }
 .coordinator-command-summary,
 .coordinator-command-effect,
+.coordinator-command-effort,
 .coordinator-command-why { display: block; }
 .coordinator-command-summary {
     margin-top: 5px; color: var(--dim); font-size: 11.5px; line-height: 1.45;
@@ -112,6 +113,14 @@
 .coordinator-command[data-effect="advisory"] .coordinator-command-effect { color: var(--warn); }
 .coordinator-command[data-effect="spawns_session"] .coordinator-command-effect { color: var(--peer); }
 .coordinator-command[data-effect="mutation"] .coordinator-command-effect { color: #d88f7b; }
+.coordinator-command-effort {
+    margin-top: 6px; color: var(--dim); font: 10.5px/1.3 var(--mono);
+}
+.coordinator-command-effort[data-effort="medium"] { color: var(--warn); }
+.coordinator-command-effort[data-effort="high"] { color: #d88f7b; }
+.coordinator-command-effort[data-effort="unknown"] {
+    color: var(--faint); font-style: italic;
+}
 .coordinator-command-why {
     margin-top: 6px; color: #d8a585; font-size: 11px; line-height: 1.4;
 }
@@ -147,4 +156,5 @@
 @media (max-width: 619px) {
     .coordinator-groups { grid-template-columns: 1fr; gap: 10px; }
     .coordinator-controls-sheet { max-height: calc(var(--vvh) - 28px); }
+    .coordinator-command { min-height: 0; }
 }

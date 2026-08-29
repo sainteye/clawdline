@@ -422,39 +422,54 @@ enum Coordinator {
     /// device-readable Bearings projection at `GET /v1/orchestrator/coordinator/bearings`,
     /// which the page can reach with its own token.
     ///
-    /// Everything that would send, spawn or mutate stays disabled, and each carries a closed
+    /// The deep audit is the one connected send: the page uses the ordinary user-attributed
+    /// Session send route after an explicit confirmation. It grants no machine credential and
+    /// creates no mutation route. Everything else that would send, spawn or mutate stays
+    /// disabled, and each carries a closed
     /// `reason` code the client renders in its own language — a code cannot drift out of the
     /// client's vocabulary the way a sentence can. The prose `why` stays on the wire for pages
     /// that predate the codes, and says the same honest thing in English; neither field cites
     /// a phase number, because a phase label means nothing to the person holding the phone.
     private static let commands: [[String: Any]] = {
-        let reads = ["status_report", "duplicates_conflicts_ownership",
-                     "landing_closure", "scope_permissions"].map {
-            ["type": $0, "enabled": true] as [String: Any]
-        }
         let unrouted = "No route carries a command from this panel into a session yet, "
             + "so nothing can be sent."
-        let closed: [[String: Any]] = [
+        return [
+            ["type": "status_report", "enabled": true,
+             "token_effort": "low", "token_effort_basis": "registry_read"],
+            ["type": "duplicates_conflicts_ownership", "enabled": true,
+             "token_effort": "low", "token_effort_basis": "registry_read"],
+            ["type": "landing_closure", "enabled": true,
+             "token_effort": "low", "token_effort_basis": "registry_read"],
+            ["type": "scope_permissions", "enabled": true,
+             "token_effort": "low", "token_effort_basis": "registry_read"],
             ["type": "since_away", "enabled": false, "reason": "no_return_ledger",
+             "token_effort": "unknown", "token_effort_basis": "unbuilt",
              "why": "This Mac does not record a return point yet, so there is nothing "
                 + "to read one against."],
             ["type": "coordinate_work", "enabled": false, "reason": "no_command_route",
+             "token_effort": "unknown", "token_effort_basis": "unbuilt",
              "why": unrouted],
             ["type": "dispatch_independent_work", "enabled": false,
              "reason": "device_cannot_spawn",
+             "token_effort": "high", "token_effort_basis": "spawns_session",
              "why": "A paired device can never start a session — that separation is "
                 + "deliberate, and this command will not cross it."],
             ["type": "ask_coordinator", "enabled": false, "reason": "no_command_route",
+             "token_effort": "medium", "token_effort_basis": "single_session_message",
              "why": unrouted],
+            ["type": "deep_status_audit", "enabled": true,
+             "token_effort": "high", "token_effort_basis": "session_fanout"],
             ["type": "quiet_watch", "enabled": false, "reason": "no_command_route",
+             "token_effort": "unknown", "token_effort_basis": "unbuilt",
              "why": unrouted],
             ["type": "stop", "enabled": false, "reason": "no_command_route",
+             "token_effort": "low", "token_effort_basis": "broker_only",
              "why": unrouted],
             ["type": "reconnect", "enabled": false, "reason": "machine_token_only",
+             "token_effort": "low", "token_effort_basis": "broker_only",
              "why": "Reconnecting needs the Mac's own orchestrator token, which a paired "
                 + "device deliberately does not hold."],
-        ]
-        return reads + closed
+        ] as [[String: Any]]
     }()
 
     /// The device-readable half of ``inspection`` — what a paired phone may see.
