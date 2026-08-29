@@ -1135,6 +1135,8 @@ group("A3 owner visibility: the page draws the same two sides as the Mac") {
     // `transcript.js` is held one group over: by reading the source and pinning the shape of it.
     let js = (try? String(contentsOfFile: "Resources/web/app/js/view/list.js",
                           encoding: .utf8)) ?? ""
+    let derive = (try? String(contentsOfFile: "Resources/web/app/js/view/derive.js",
+                              encoding: .utf8)) ?? ""
     let mock = (try? String(contentsOfFile: "Resources/web/app/js/net/mock.js",
                             encoding: .utf8)) ?? ""
     let fallback = (try? String(contentsOfFile: "Resources/web/app/js/core/i18n.js",
@@ -1147,7 +1149,9 @@ group("A3 owner visibility: the page draws the same two sides as the Mac") {
           js.contains("T.sessionWaitedOnByMany") && js.contains("fill(T.sessionWaitedOnByMany")
               && js.contains("T.sessionWaitedOnByOne"))
     check("and it is escaped like every other value on the row",
-          js.contains("esc(peerText)") || js.contains("esc(ownedText)"))
+          js.contains("esc(peerText)") || js.contains("esc(ownedText)") ||
+              (js.contains(#"sessionStatusGlyphHTML("⏳", peerText)"#) &&
+               derive.contains(#"session-status-label">' + attr(copy)"#)))
     // The cache key decides whether the row is redrawn at all. A row that gains a waiter while
     // the page is open and keeps the shape it had is a row that never says so.
     check("the redraw key changes when the owner's half changes",
