@@ -1347,8 +1347,7 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Seventeen refusals, checked in the order they are listed, and a client should branch on every
-applicable code:
+Dispatch refusals are closed and typed; a client should branch on every applicable code:
 
 | `code` | status | |
 |---|---|---|
@@ -1362,6 +1361,7 @@ applicable code:
 | `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, `serialize`, or contradictory `root.poll_only`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `root_session_required` | 422 | `root.session_id` is null or empty and `root.poll_only` is not `true`. Nothing is registered or opened; send the current assistant conversation id, or explicitly opt into detached polling |
+| `root_assistant_required` | 422 | a non-null `root.session_id` was supplied without an explicit `root.assistant` of `claude` or `codex`. Nothing is registered or opened and the provisional rate ticket is refunded. New ordinary HTTP dispatch never applies the historical Claude default |
 | `root_unresolved` | 422 | the supplied non-null root id resolves to no live process-bound session for `root.assistant`. Nothing is registered or opened; correct the id, or use null plus `root.poll_only:true` and poll |
 | `conversation_ambiguous` | 409 | more than one live process of `root.assistant` proves the same conversation id; no owner is selected and nothing is registered or opened |
 | `root_identity_is_terminal` | 422 | positive active-terminal or durable-Coordinator evidence proves `root.session_id` is a physical terminal id. The evidence is collected independently of caller-declared `root.assistant`; the error returns the actual `canonical_root_session_id` and `canonical_root_assistant`. Conflicting/unknown evidence remains nullable rather than guessed. The task is not registered and the provisional dispatch-rate ticket is refunded |
@@ -1410,8 +1410,11 @@ At registration, a non-null `root.session_id` is the assistant's process-bound c
 never the watched terminal id. The broker resolves it against `root.assistant` and stores that
 conversation id, so completion notification, grouping, per-root capacity and the root-close
 cascade use one key. No matching live owner returns `422 root_unresolved`; more than one
-same-assistant process proving the conversation returns `409 conversation_ambiguous`. Both are
-refused before registration. If no interactive owner exists by design, send
+same-assistant process proving the conversation returns `409 conversation_ambiguous`. Both tuple
+fields are required for a new ordinary HTTP dispatch: omission or explicit null for
+`root.assistant` returns `422 root_assistant_required` before capacity, registration or terminal
+opening. Every ownership refusal above occurs before registration. If no interactive owner exists
+by design, send
 `"root":{"session_id":null,"poll_only":true,…}`; that explicit mode registers a detached task and
 the caller owns polling it.
 
@@ -1970,6 +1973,9 @@ This returns durable presence and deterministic read-only Bearings:
       "unknown": 2, "milestone_complete": 1, "work_complete": 0
     },
     "active_task_count": 2, "pending_landing_count": 1, "open_wait_count": 1,
+    "pending_landings": [{"id":"3f9a21bc-…","root_key":"9f1c2e7a",
+      "ownership":{"version":1,"status":"observed_working","subject":"root",
+        "task_id":"3f9a21bc-…","task_state":"success","root_key":"9f1c2e7a"}}],
     "unknown": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
                        "work_state":"unknown"}],
     "waiting": [{"id":"…","assistant":"codex","label":"…","cwd":"…",
@@ -1989,7 +1995,9 @@ This returns durable presence and deterministic read-only Bearings:
 
 All eight `work_state_counts` keys are always present. Active tasks are non-terminal task records;
 pending landings are task landings in `pending`; open waits count durable wait groups with at least
-one unreleased waiter. `unknown` selects that work state, `waiting` selects
+one unreleased waiter. `pending_landings` is the same ordered row set returned by
+`GET /v1/orchestrator/landings`, including its fail-closed owner/executor projection; the count and
+rows therefore come from the same registry snapshot. `unknown` selects that work state, `waiting` selects
 `waiting_you`/`waiting_session`, and `blocking` selects live owner sessions with waiters. Each
 named row is limited to terminal-neutral `id`, assistant, cwd, label and `work_state`. These are
 independent filters, not a partition: a session that is both waiting on a peer and owns another
@@ -1999,7 +2007,11 @@ SessionWatch is observed once, then all Orchestrator-derived per-session work/ow
 the task/landing/wait totals are built under one Orchestrator registry lock window. The two sources
 cannot be transactional together: their distinct `observed_at`, provenance and freshness fields
 state that boundary instead of advertising an all-source instant. An incomplete terminal scan marks
-only the Session source `stale`; missing facts are not guessed.
+only the Session source `stale`; missing facts are not guessed. These coordination reads never wait
+indefinitely for the main queue: one single-flight bounded SessionWatch read refreshes a cache (so
+repeated reads cannot accumulate main-queue work), and an unavailable
+read uses stale cached evidence or explicit `missing`. Either degraded state keeps durable registry
+rows and makes ownership `unknown`; it never turns missing observation into absence.
 If the durable binding is valid but no exact current process matches, the coordinator is
 `status:"offline", lifecycle:"offline"`, retains the last safe session metadata, and is attached
 to no live Session row. An absent, corrupt or unsupported record produces
@@ -2036,15 +2048,20 @@ full answer never reaches this one by omission. What survives: `version`, `obser
 unrecognised value leaves as `blocked`; `coordinator` reduced to `configured`, `label`, `scope`,
 `status`, `lifecycle` and the safe `session` row (`id`, `assistant`, `label`, `cwd`,
 `work_state`); `bearings` with its
-`observed_at`, `coordinator_lifecycle`, `work_state_counts`, the three counts, the
+`observed_at`, `coordinator_lifecycle`, `work_state_counts`, the three counts,
+`pending_landings`, the
 `unknown`/`waiting`/`blocking` rows (same five session fields), and `sources` reduced to
-`observed_at` and `freshness` per source. Everything in it is either an aggregate count or a
-session fact a paired device can already read from `GET /v1/sessions`.
+`observed_at` and `freshness` per source. Pending landing rows, their ownership object, the three
+evidence sources and each source field are separately allowlisted; no opaque nested dictionary is
+copied. Those rows are already readable by the same paired-device capability at the landing GET.
 
 Deliberately withheld, beyond Bearings' own exclusions (tty, pid, process start, conversation
 ids): the durable coordinator UUID, `generation`, `registered_at` and `rebound_at` — the
 compare-and-swap bookkeeping of the machine-token rebind flow, which a device cannot use —
-plus `store` health, source `provenance` names and the session-watch `generation` counter.
+plus `store` health, top-level source `provenance` names and the session-watch `generation`
+counter. Pending-row ownership evidence retains only its fixed source names and the explicit
+`observed_at`, `generation`, `provenance`, and `freshness` fields needed for comparison; repository
+paths and process/transcript evidence cannot cross that projector.
 `registration.state` is the one thing derived from `store` health that does cross, because it is
 what a device needs in order not to ask for something the machine would refuse; it is one of
 three words and discloses nothing about the store behind it.
@@ -2529,8 +2546,10 @@ not a value derived from any request credential.
 
 `child.terminalId` is in the same space as every `id` in `/v1/sessions`, which is what makes the
 child row in a session list joinable to the task that opened it. `root.assistant` preserves the
-validated `task.json` field; an absent or explicit-null input is omitted, preserving legacy rows,
-which resolve as Claude. Empty strings and values other than `claude` or `codex` are refused.
+validated `task.json` field. New ordinary dispatch requires it whenever `root.session_id` is
+non-null. Persisted legacy rows remain readable, but absence is unknown in ownership decisions;
+the old Claude default remains only in compatibility readers that do not assert ownership.
+Empty strings and values other than `claude` or `codex` are refused.
 `root.terminalId` is resolved live — directly from `root.taskId` when there is one; otherwise the
 declared assistant must own the current process-bound identity. Claude's exact transcript must
 belong to its current process and must have been named by the process registry or hook; title/time
@@ -2621,10 +2640,21 @@ reused); `delivery` and `note` are optional non-empty strings up to 500 characte
 repeated request for `pending` or `abandoned` preserves the original `since` while
 updating any supplied `target`, `delivery`, or `note`. A repeated `landed` request is an immutable
 no-op. Moving to either `landed` or `abandoned` requires a terminal task; `landed` also requires a
-machine credential. Before writing it, the broker resolves `commit` as a commit object inside the
-task's `project_dir`, resolves `refs/heads/<target>` as a local branch, and proves the former is an
-ancestor of or equal to the latter. Caller revision expressions are replaced by canonical object
-ids in the receipt. Both terminal states are final and cannot move to another state; reopening
+machine credential. Before writing it, the broker resolves `commit` inside the task's durable Git
+repository identity, resolves `refs/heads/<target>` as a local branch, and proves the former is an
+ancestor of or equal to the latter. Every new task in a Git project persists the canonical common
+Git directory regardless of isolation, because a non-isolated legacy task may still have been
+dispatched from a disposable worktree. A readable `project_dir` or retained worktree repository is
+independent evidence and must agree. A stale stored absolute path may fall back only to such
+independently derived evidence.
+
+The bounded legacy migration accepts one additional shape: a missing `project_dir` must be under
+Clawdline's own worktree root with a valid broker task-id component, and its repository slug must
+match exactly one still-readable retained worktree receipt in the private 0600 registry. Conflicting
+candidates, arbitrary missing paths, basename searches and caller-supplied repositories all fail
+closed. This is why the two historical `.none` rows whose deleted path was the broker worktree
+`69b79f6d-…` can close without weakening named-local-branch ancestry verification. Caller revision
+expressions are replaced by canonical object ids in the receipt. Both terminal states are final and cannot move to another state; reopening
 work requires a new task. `since` remains when the obligation began, while `landed_at` records
 when the target proof was captured. Verification runs outside the registry lock and a CAS refuses
 the write if its pending record changed meanwhile.
@@ -2648,13 +2678,29 @@ Lists only current `pending` obligations, oldest first. Authentication is identi
 {"landings":[{"id":"3f9a21bc-…","title":"Edit the orchestrator",
  "root_key":"9f1c2e7a","root_label":"clawdline main",
  "paths":["Sources/Orchestrator.swift"],"since":1787100110,"age_seconds":42,
- "target":"main","note":"waiting for the shared tree"}],"at":1787100152}
+ "target":"main","note":"waiting for the shared tree",
+ "ownership":{"version":1,"status":"observed_working","subject":"root",
+   "reason":"exact_root_observation","task_id":"3f9a21bc-…","task_state":"success",
+   "root_key":"9f1c2e7a","root_assistant":"codex",
+   "observed_work_state":"working"}}],
+ "sources":{"sessions":{"observed_at":1787100151,"generation":42,
+   "provenance":"session_watch","freshness":"current"},
+   "tasks":{"observed_at":1787100152,"provenance":"orchestrator_task_registry","freshness":"current"},
+   "landings":{"observed_at":1787100152,"provenance":"orchestrator_landing_registry","freshness":"current"}},
+ "at":1787100152}
 ```
 
 `paths` is the task's original relative `claims`. `age_seconds` uses the same
 `max(0, now - since)` integer-seconds formula as `workspace_busy`, so a clock rollback reports zero.
 Nullable `target`, `note`, and `root_label` remain present in this list so a dashboard can render a
-stable row shape. A row is a signpost, not a gate: callers decide whether to wait or continue.
+stable row shape. `ownership.status` is closed: `observed_working`,
+`observed_ready_or_holding`, `observed_other`, `task_still_live`, `not_observed`, or `unknown`.
+Only a complete timestamped SessionWatch inventory may produce `not_observed`; missing, stale,
+ambiguous or assistant-less legacy root evidence is `unknown`, never dead/offline. The bounded
+observation path preserves all durable rows even if the main queue or live watcher is unavailable.
+Stable hashed root/task ids and closed evidence fields make the same row comparable with Bearings
+without exposing a conversation id, transcript, token, tty, pid, process start or repository path.
+A row is a signpost, not a gate: callers decide whether to wait or continue.
 Pending landing obligations are exempt from the registry's ordinary newest-200 cleanup cap; they
 remain queryable until a root explicitly marks them `landed` or `abandoned`.
 

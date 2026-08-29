@@ -108,6 +108,9 @@ final class RemoteServer: @unchecked Sendable {
     private var cloudPublishTail: Task<Void, Never>?
     private var cloudLifecycleTask: Task<Void, Never>?
     private var cloudLifecycleGeneration: UInt64 = 0
+    private let coordinatorInventoryLock = NSLock()
+    private var coordinatorInventoryCache: CoordinatorSessionInventory?
+    private var coordinatorInventoryRefreshPending = false
     /// Main-thread mirror used only to decide whether SessionWatch still needs its observer when
     /// the loopback listener is off.
     private var cloudAttached = false
@@ -117,6 +120,10 @@ final class RemoteServer: @unchecked Sendable {
     static var coordinatorSessionsForTesting: [Coordinator.LiveSession]?
     static var coordinatorObservationEvidenceForTesting:
         (observedAt: Date?, generation: Int?, complete: Bool)?
+    /// Failure injection for the SessionWatch observation boundary. The production path never
+    /// sets it; route tests use it to prove landings remain readable when live observation is
+    /// unavailable.
+    static var coordinatorObservationUnavailableForTesting = false
     /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
     /// replace only SessionWatch's external terminal inventory with deterministic rows.
     static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
@@ -1321,6 +1328,7 @@ final class RemoteServer: @unchecked Sendable {
                     sessionsFresh: observation.sessionsFresh,
                     activeTaskCount: registry.activeTasks,
                     pendingLandingCount: registry.pendingLandings,
+                    pendingLandingRows: registry.pendingLandingRows,
                     openWaitCount: registry.openWaits,
                     sessionsObservedAt: observation.sessionsObservedAt,
                     registryObservedAt: registry.observedAt,
@@ -1343,6 +1351,7 @@ final class RemoteServer: @unchecked Sendable {
                     sessionsFresh: observation.sessionsFresh,
                     activeTaskCount: registry.activeTasks,
                     pendingLandingCount: registry.pendingLandings,
+                    pendingLandingRows: registry.pendingLandingRows,
                     openWaitCount: registry.openWaits,
                     sessionsObservedAt: observation.sessionsObservedAt,
                     registryObservedAt: registry.observedAt,
@@ -1353,8 +1362,12 @@ final class RemoteServer: @unchecked Sendable {
                           "at": Int(Date().timeIntervalSince1970)])
 
         case ("GET", "/v1/orchestrator/landings"):
-            return .json(["landings": Orchestrator.landingRecords(),
-                          "at": Int(Date().timeIntervalSince1970)])
+            let observation = coordinatorObservation()
+            return .json([
+                "landings": observation.registry.pendingLandingRows,
+                "sources": observation.registry.landingSources,
+                "at": Int(observation.registry.observedAt.timeIntervalSince1970),
+            ])
 
         case ("GET", "/v1/orchestrator/storage"):
             return .json(Orchestrator.storageInventory())
@@ -3906,12 +3919,88 @@ final class RemoteServer: @unchecked Sendable {
         let cwd: String?
     }
 
+    private struct CoordinatorSessionInventory {
+        let targets: [TargetSession]
+        let states: [String: SessionState]
+        let complete: Bool
+        let observedAt: Date?
+        let generation: Int?
+    }
+
+    private enum CoordinatorInventoryAvailability {
+        case current(CoordinatorSessionInventory)
+        case stale(CoordinatorSessionInventory)
+        case missing
+    }
+
     private struct CoordinatorObservation {
         let sessions: [Coordinator.LiveSession]
         let sessionsObservedAt: Date?
         let sessionsGeneration: Int?
         let sessionsFresh: Bool
         let registry: Orchestrator.CoordinatorSnapshot
+    }
+
+    private func cachedCoordinatorInventory() -> CoordinatorSessionInventory? {
+        coordinatorInventoryLock.lock(); defer { coordinatorInventoryLock.unlock() }
+        return coordinatorInventoryCache
+    }
+
+    private func storeCoordinatorInventory(_ inventory: CoordinatorSessionInventory) {
+        coordinatorInventoryLock.lock()
+        coordinatorInventoryCache = inventory
+        coordinatorInventoryLock.unlock()
+    }
+
+    private func beginCoordinatorInventoryRefresh() -> Bool {
+        coordinatorInventoryLock.lock(); defer { coordinatorInventoryLock.unlock() }
+        guard !coordinatorInventoryRefreshPending else { return false }
+        coordinatorInventoryRefreshPending = true
+        return true
+    }
+
+    private func finishCoordinatorInventoryRefresh(_ inventory: CoordinatorSessionInventory) {
+        coordinatorInventoryLock.lock()
+        coordinatorInventoryCache = inventory
+        coordinatorInventoryRefreshPending = false
+        coordinatorInventoryLock.unlock()
+    }
+
+    private func readCoordinatorInventoryOnMain() -> CoordinatorSessionInventory {
+        let watch = SessionWatch.shared
+        let acceptedScanEvidence = (watch.scanObservedAt, watch.scanGeneration)
+        return CoordinatorSessionInventory(
+            targets: watch.targets, states: watch.states, complete: watch.scanComplete,
+            observedAt: acceptedScanEvidence.0, generation: acceptedScanEvidence.1)
+    }
+
+    /// Coordination reads cannot inherit an unbounded synchronous dependency on AppKit's main
+    /// queue. A successful observation refreshes a cache; a wedged queue returns that cache as
+    /// stale, or explicit missing evidence when the process has never observed SessionWatch.
+    private func boundedCoordinatorInventory() -> CoordinatorInventoryAvailability {
+        if Self.coordinatorObservationUnavailableForTesting { return .missing }
+        if MainQueue.isCurrent {
+            let inventory = readCoordinatorInventoryOnMain()
+            storeCoordinatorInventory(inventory)
+            return .current(inventory)
+        }
+        guard beginCoordinatorInventoryRefresh() else {
+            if let cached = cachedCoordinatorInventory() { return .stale(cached) }
+            return .missing
+        }
+        let completed = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async { [weak self] in
+            if let self = self {
+                self.finishCoordinatorInventoryRefresh(self.readCoordinatorInventoryOnMain())
+            }
+            completed.signal()
+        }
+        if completed.wait(timeout: .now() + 0.25) == .success,
+           let inventory = cachedCoordinatorInventory() {
+            return .current(inventory)
+        }
+        if let cached = cachedCoordinatorInventory() { return .stale(cached) }
+        return .missing
     }
 
     /// SessionWatch and Orchestrator are independent sources, so they are observed in that order
@@ -3921,26 +4010,46 @@ final class RemoteServer: @unchecked Sendable {
         if let supplied = Self.coordinatorSessionsForTesting {
             let evidence = Self.coordinatorObservationEvidenceForTesting
             let observedAt: Date? = evidence.map(\.observedAt) ?? Date()
+            let observations = supplied.map {
+                Orchestrator.CoordinatorSessionObservation(
+                    identity: $0.identity, terminalState: .unknown,
+                    projectedWorkState: $0.workState)
+            }
             return CoordinatorObservation(
                 sessions: supplied, sessionsObservedAt: observedAt,
                 sessionsGeneration: evidence?.generation,
                 sessionsFresh: evidence?.complete ?? true,
-                registry: Orchestrator.coordinatorSnapshot([]))
+                registry: Orchestrator.coordinatorSnapshot(
+                    observations, sessionsFresh: evidence?.complete ?? true,
+                    sessionsObservedAt: observedAt,
+                    sessionsGeneration: evidence?.generation))
         }
-        let observation = onMain(from: "RemoteServer.coordinatorObservation") {
-            let watch = SessionWatch.shared
-            return (watch.targets, watch.states, watch.scanComplete,
-                    watch.scanObservedAt, watch.scanGeneration)
+        let inventory: CoordinatorSessionInventory
+        let sessionsFresh: Bool
+        switch boundedCoordinatorInventory() {
+        case .current(let current):
+            inventory = current
+            sessionsFresh = current.complete
+        case .stale(let cached):
+            inventory = cached
+            sessionsFresh = false
+        case .missing:
+            inventory = CoordinatorSessionInventory(
+                targets: [], states: [:], complete: false, observedAt: nil, generation: nil)
+            // `fresh + no observed_at` is the closed `missing` source state; ownership still sees
+            // a timestamp-less inventory and therefore returns unknown for every row.
+            sessionsFresh = true
         }
-        let bases = observation.0.filter(\.isAssistant).map { session in
+        let bases = inventory.targets.filter(\.isAssistant).map { session in
             CoordinatorSessionBase(
                 identity: Self.sessionWorkIdentity(session),
-                state: observation.1[session.id] ?? .unknown,
+                state: inventory.states[session.id] ?? .unknown,
                 label: session.displayLabel, cwd: Targets.workingDirectory(of: session))
         }
-        let registry = Orchestrator.coordinatorSnapshot(bases.map {
-            .init(identity: $0.identity, terminalState: $0.state)
-        })
+        let registry = Orchestrator.coordinatorSnapshot(
+            bases.map { .init(identity: $0.identity, terminalState: $0.state) },
+            sessionsFresh: sessionsFresh, sessionsObservedAt: inventory.observedAt,
+            sessionsGeneration: inventory.generation)
         let sessions = zip(bases, registry.sessions).map { base, facts in
             Coordinator.LiveSession(
                 identity: base.identity, label: base.label, cwd: base.cwd,
@@ -3949,9 +4058,9 @@ final class RemoteServer: @unchecked Sendable {
                 hasWaiters: !facts.coordination.waitedOnBy.isEmpty)
         }
         return CoordinatorObservation(
-            sessions: sessions, sessionsObservedAt: observation.3,
-            sessionsGeneration: observation.4,
-            sessionsFresh: observation.2, registry: registry)
+            sessions: sessions, sessionsObservedAt: inventory.observedAt,
+            sessionsGeneration: inventory.generation,
+            sessionsFresh: sessionsFresh, registry: registry)
     }
 
     /// Shared by both Session JSON surfaces. Keeping this one optional assignment as the whole

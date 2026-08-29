@@ -25,17 +25,20 @@ enum Coordinator {
         let sessionsFresh: Bool
         let activeTaskCount: Int
         let pendingLandingCount: Int
+        let pendingLandingRows: [[String: Any]]
         let openWaitCount: Int
         let sessionsObservedAt: Date?
         let registryObservedAt: Date?
         let sessionsGeneration: Int?
 
         init(sessionsFresh: Bool, activeTaskCount: Int, pendingLandingCount: Int,
+             pendingLandingRows: [[String: Any]] = [],
              openWaitCount: Int, sessionsObservedAt: Date? = nil,
              registryObservedAt: Date? = nil, sessionsGeneration: Int? = nil) {
             self.sessionsFresh = sessionsFresh
             self.activeTaskCount = activeTaskCount
             self.pendingLandingCount = pendingLandingCount
+            self.pendingLandingRows = pendingLandingRows
             self.openWaitCount = openWaitCount
             self.sessionsObservedAt = sessionsObservedAt
             self.registryObservedAt = registryObservedAt
@@ -380,6 +383,11 @@ enum Coordinator {
     }
 
     /// Durable presence plus a deterministic read-only projection over current broker facts.
+    static func sessionSourceFreshness(sessionsFresh: Bool, observedAt: Date?) -> String {
+        if !sessionsFresh { return "stale" }
+        return observedAt == nil ? "missing" : "current"
+    }
+
     static func inspection(liveSessions: [LiveSession], bearings input: BearingsInput,
                            now: Date = Date()) -> [String: Any] {
         let observed = Int(now.timeIntervalSince1970)
@@ -414,8 +422,11 @@ enum Coordinator {
             ["observed_at": at.map { Int($0.timeIntervalSince1970) } ?? NSNull(),
              "provenance": provenance, "freshness": freshness]
         }
-        var sessionSource = source("session_watch", input.sessionsFresh ? "current" : "stale",
-                                   input.sessionsObservedAt)
+        var sessionSource = source(
+            "session_watch",
+            sessionSourceFreshness(
+                sessionsFresh: input.sessionsFresh, observedAt: input.sessionsObservedAt),
+            input.sessionsObservedAt)
         if let generation = input.sessionsGeneration {
             sessionSource["generation"] = generation
         }
@@ -425,6 +436,7 @@ enum Coordinator {
             "work_state_counts": counts,
             "active_task_count": max(0, input.activeTaskCount),
             "pending_landing_count": max(0, input.pendingLandingCount),
+            "pending_landings": input.pendingLandingRows,
             "open_wait_count": max(0, input.openWaitCount),
             "unknown": unknown,
             "waiting": waiting,
@@ -543,6 +555,8 @@ enum Coordinator {
                         "active_task_count", "pending_landing_count", "open_wait_count"] {
                 if let value = record[key] { bearings[key] = value }
             }
+            bearings["pending_landings"] = ((record["pending_landings"]
+                as? [[String: Any]]) ?? []).map(allowedPendingLanding)
             for key in ["unknown", "waiting", "blocking"] {
                 bearings[key] = ((record[key] as? [[String: Any]]) ?? []).map(allowedSession)
             }
@@ -570,6 +584,34 @@ enum Coordinator {
         for key in ["id", "assistant", "label", "cwd", "work_state"] {
             if let value = row[key] { out[key] = value }
         }
+        return out
+    }
+
+    private static func allowedPendingLanding(_ row: [String: Any]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for key in ["id", "title", "root_key", "root_label", "paths", "since",
+                    "age_seconds", "target", "note"] {
+            if let value = row[key] { out[key] = value }
+        }
+        guard let ownership = row["ownership"] as? [String: Any] else { return out }
+        var allowedOwnership: [String: Any] = [:]
+        for key in ["version", "status", "subject", "reason", "task_id", "task_state",
+                    "root_key", "root_assistant", "observed_work_state"] {
+            if let value = ownership[key] { allowedOwnership[key] = value }
+        }
+        var allowedEvidence: [String: Any] = [:]
+        if let evidence = ownership["evidence"] as? [String: Any] {
+            for name in ["sessions", "tasks", "landings"] {
+                guard let source = evidence[name] as? [String: Any] else { continue }
+                var allowedSource: [String: Any] = [:]
+                for key in ["observed_at", "generation", "provenance", "freshness"] {
+                    if let value = source[key] { allowedSource[key] = value }
+                }
+                allowedEvidence[name] = allowedSource
+            }
+        }
+        allowedOwnership["evidence"] = allowedEvidence
+        out["ownership"] = allowedOwnership
         return out
     }
 

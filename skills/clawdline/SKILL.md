@@ -577,7 +577,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
 | `timeout_minutes` | 1…240, 30 if absent |
 | `root.session_id` | this assistant's current process-bound conversation id. A terminal-neutral id belongs only on terminal-addressed routes; an ordinary dispatch must resolve to a live owner |
-| `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
+| `root.assistant` | **required for every ordinary dispatch with a non-null owner**: the assistant dispatching this task, `claude` or `codex`; it is not the child named by top-level `assistant`. Omission/null is `root_assistant_required`; a legacy missing assistant is unknown for ownership (the old Claude fallback survives only in non-ownership compatibility readers) |
 | `root.parent_task` | **leave it out.** It existed for a dispatching child, and a child cannot dispatch; every dispatch this app now accepts comes from a root, where the field is `null`. It is still validated and still read, because a stored record from an older build carries it |
 | `root.poll_only` | default `false`. Set `true` only for deliberate detached automation with a null session id; it will not receive completion notification or own a child row, so the caller must poll |
 
@@ -721,6 +721,7 @@ Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`. **Bra
 | `over_capacity` | the allowance is full | `message` says whether it is your session's allowance or the whole Mac's. The error carries `retry_after` in seconds. Wait and resend, or send fewer / in batches. **Do not hammer it** |
 | `bad_task` | `task.json` does not validate | read `message`, fix the file, resend the same `task_id` (same id is idempotent). A bad `model` lands here too |
 | `root_session_required` | `root.session_id` is empty and the task did not explicitly opt into polling | find this assistant's current conversation id. Use `root.poll_only:true` only for intentionally detached automation |
+| `root_assistant_required` | a non-null owner omitted `root.assistant` | set the actual dispatching assistant to `claude` or `codex`; do not rely on the legacy Claude read fallback |
 | `root_unresolved` | the supplied root id matches no live process-bound owner | refresh the current conversation id; do not let the child open under a stale or guessed id |
 | `conversation_ambiguous` | multiple live processes of the declared assistant prove the same conversation id | stop and resolve the duplicate ownership; do not select an arbitrary terminal |
 | `root_identity_is_terminal` | `root.session_id` is positively proved to be a physical terminal id | replace it with `canonical_root_session_id` from the error; never broaden task resolution to terminal ids |
@@ -898,8 +899,18 @@ When claimed child work comes back, root records the open obligation on that tas
 secret: `POST /v1/orchestrator/tasks/:id/landing` and `{"state":"pending","target":"<ref>"}`.
 A named root that accepted a handoff may use the machine-level orchestrator token instead, like
 cancel and claims release. By convention children do not call this route, although they necessarily
-hold their own task secret. `GET /v1/orchestrator/landings` is the shared signpost; it does not
-retain claims or block another dispatch.
+hold their own task secret. `GET /v1/orchestrator/landings` is the shared signpost; reading it does
+not retain claim locks or block another dispatch.
+
+Read each pending row's closed `ownership.status` before deciding what to do. Exact observed work,
+observed ready/holding, a still-live task, absence from a complete inventory and unknown/stale
+evidence are different answers. Incomplete, missing, or assistant-less legacy SessionWatch evidence is always `unknown`,
+never proof that an owner is dead/offline; compare the stable task/root ids with the same row in
+Coordinator Bearings. This read is bounded and cached, so a wedged live observer still returns
+durable rows with stale/missing evidence and unknown ownership. Landing target verification uses
+the task's durable Git common-directory receipt for every Git task regardless of isolation. A
+legacy deleted broker-worktree path is derived only from one uniquely matching retained repository
+slug; missing, ambiguous, arbitrary, or mismatched evidence fails closed without guessing a checkout.
 
 ### Close a code delivery
 
