@@ -31,6 +31,17 @@ function attr(value) {
 }
 
 /**
+ * A platform emoji is taller than this row's mono text on iOS. Keeping it in the same text run
+ * made the row's `overflow: hidden` shave off its top at `line-height: 1`; this separate flex
+ * child owns a taller line box while only the words remain eligible for ellipsis. The glyph is
+ * decorative because the adjacent localized copy is the status's accessible name.
+ */
+export function sessionStatusGlyphHTML(icon, copy) {
+    return '<span class="session-status-glyph" aria-hidden="true">' + attr(icon) +
+        '</span><span class="session-status-label">' + attr(copy) + '</span>';
+}
+
+/**
  * The browser repeats the safety precedence so an old or partial server frame cannot turn a
  * question, peer wait, or unreadable screen into a check. Every other missing/unknown value is
  * one explicit state too: unknown — the broker's honest absence — never an empty line.
@@ -225,7 +236,8 @@ export function sessionCloseabilityHTML(s) {
     var title = moverSaid ? copy + " · " + moverSaid : copy;
     var icon = CLOSEABILITY_ICON[projected.state];
     return '<span class="session-closeability" data-closeability="' + projected.state +
-        '" title="' + attr(title) + '">' + attr(icon ? icon + " " + copy : copy) + "</span>";
+        '" title="' + attr(title) + '">' +
+        (icon ? sessionStatusGlyphHTML(icon, copy) : attr(copy)) + "</span>";
 }
 
 /** A debt's age in the coarsest honest unit. Under an hour it is simply fresh; the value of
@@ -246,12 +258,12 @@ function owedAge(since) {
 export function owedBadgeHTML(s) {
     var owed = s && s.owed;
     if (!owed || typeof owed !== "object" || Array.isArray(owed)) return "";
-    var copy = "📥 " + (owed.note || T.sessionWorkOwed);
+    var copy = owed.note || T.sessionWorkOwed;
     var age = owedAge(owed.since);
     if (age) copy += " · " + age;
     return '<span class="session-work-owed" data-person-needed="' +
         (owed.person_needed === false ? "no" : "yes") + '" title="' + attr(copy) + '">' +
-        attr(copy) + "</span>";
+        sessionStatusGlyphHTML("📥", copy) + "</span>";
 }
 
 /** Check glyphs are CSS strokes, not a platform emoji. The quiet states carry their meaning in
@@ -281,7 +293,7 @@ export function sessionWorkStateHTML(s) {
             (projected.state === "ready" ? T.sessionWorkReady : T.sessionWorkHolding);
         if (s && s.work_provenance === "self") copy += " · " + T.sessionWorkSelfStated;
         said = '<span class="session-work-copy" data-work-state="' + projected.state +
-            '" title="' + attr(copy) + '">' + attr(icon + " " + copy) + "</span>";
+            '" title="' + attr(copy) + '">' + sessionStatusGlyphHTML(icon, copy) + "</span>";
     } else if (projected.state === "unknown") {
         said = '<span class="session-work-copy" data-work-state="unknown" title="' +
             attr(T.sessionWorkUnknown) + '">' + attr(T.sessionWorkUnknown) + "</span>";

@@ -111,6 +111,9 @@ assert.ok(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(unknownHTML),
 const readyHTML = html({ state: "idle", work_state: "ready", work_provenance: "self",
     work_note: "fix landed; can take new work" });
 assert.match(readyHTML, /📭/, "ready reads as an open, empty box you can hand work to");
+assert.match(readyHTML,
+    /class="session-status-glyph" aria-hidden="true">📭<\/span><span class="session-status-label">/,
+    "the mailbox is a decorative glyph with its own line box, separate from readable copy");
 assert.match(readyHTML, /fix landed; can take new work/,
     "a declared ready leads with the session's own words");
 assert.match(readyHTML, /self-reported/,
@@ -127,11 +130,14 @@ const owedHTML = html({ state: "idle", work_state: "unknown",
     owed: { note: "the schedules design is still your call",
             since: Math.floor(Date.now() / 1000) - 3 * 86400, person_needed: true } });
 assert.match(owedHTML, /📥/, "a debt reads as something sitting in your tray");
+assert.match(owedHTML,
+    /class="session-status-glyph" aria-hidden="true">📥<\/span><span class="session-status-label">/,
+    "the debt tray uses the same unclipped decorative-glyph contract");
 assert.match(owedHTML, /the schedules design is still your call/);
 assert.match(owedHTML, /· 3d/, "the debt ages in plain sight — that age is its whole risk");
 assert.match(html({ state: "working", work_state: "working",
     owed: { note: "still yours to call", since: 0, person_needed: true } }),
-    /📥 still yours to call/,
+    /📥[\s\S]*still yours to call/,
     "the second axis rides beside a working row instead of being silenced by it");
 assert.doesNotMatch(html({ state: "idle", work_state: "unknown",
     owed: { note: '"><img src=x onerror=alert(1)>', since: 0, person_needed: true } }),
@@ -175,6 +181,12 @@ assert.match(listSource,
     "the visible completion explanation identifies which closed state it describes");
 assert.match(listSource, /work\.state === "waiting_session"[^}]+webTaskTasks/s,
     "a root waiting for live children names that task wait on its state line");
+assert.match(listSource, /sessionStatusGlyphHTML\("🙋", T\.sessionWaiting\)/,
+    "the human-wait hand uses the same unclipped glyph box as the quiet status badges");
+assert.match(listSource, /sessionStatusGlyphHTML\("⏳", peerText\)/,
+    "the peer-wait hourglass uses the same unclipped glyph box as the quiet status badges");
+assert.doesNotMatch(listSource, /class="wants">🙋/,
+    "the human-wait hand is never left inside the clipped mono text run");
 
 const infoSource = await readFile(
     new URL("../Resources/web/app/js/input/info.js", import.meta.url), "utf8");
@@ -203,6 +215,10 @@ assert.match(css, /\.session-work-mark\s*\{[^}]*color:\s*var\(--ok\)/s,
     "completed Session checks use the shared success green");
 assert.match(css, /\.session-work-copy\s*\{[^}]*min-width:\s*0[^}]*text-overflow:\s*ellipsis/s,
     "readable ready and triage copy yields to the phone width");
+assert.match(css, /\.session-status-glyph\s*\{[^}]*line-height:\s*1\.4[^}]*overflow:\s*visible/s,
+    "platform emoji receive a taller visible line box instead of inheriting the clipped mono line");
+assert.match(css, /\.session-status-label\s*\{[^}]*min-width:\s*0[^}]*text-overflow:\s*ellipsis/s,
+    "only the status words, never the glyph, own narrow-row ellipsis");
 assert.doesNotMatch(css, /session-work[^}]*animation:/s,
     "the disposition marker adds no motion, reduced or otherwise");
 

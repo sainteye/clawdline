@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
-import { byId, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, sessionCloseabilityHTML, sessionCloseabilityShape, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
+import { byId, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
@@ -591,7 +591,7 @@ function fillRow(node, s) {
     var peerTitle = "";
     if (peerWait) {
         var owner = peerWait.ownerLabel || peerWait.ownerSessionId || "Clawdline";
-        peerText = "⏳ " + owner + " · " + (peerWait.releaseCondition || "release");
+        peerText = owner + " · " + (peerWait.releaseCondition || "release");
         if (waitingOn.length > 1) peerText += "  +" + String(waitingOn.length - 1);
         // Waiting leads when a session is on both sides of the board — the rule the API already
         // states, since `coordination.state` is `waiting_on_session` whenever `waitingOn` is not
@@ -603,7 +603,7 @@ function fillRow(node, s) {
                 .filter(Boolean).join(" · ");
         }).join("\n");
     } else if (owedWait) {
-        peerText = "⏳ " + owedSaid + " · " + (owedWait.releaseCondition || "release");
+        peerText = owedSaid + " · " + (owedWait.releaseCondition || "release");
         // Who is parked on this session, one per line, because the row only has room for the
         // number. Names where this Mac can still see the tab, ids where it cannot — an
         // unresolved relationship is the one most worth being able to read.
@@ -613,7 +613,7 @@ function fillRow(node, s) {
         }).join("\n");
     }
     var peerSaid = peerText ? '<span class="coordination-wait" title="' +
-        esc(peerTitle) + '">' + esc(peerText) + "</span>" : "";
+        esc(peerTitle) + '">' + sessionStatusGlyphHTML("⏳", peerText) + "</span>" : "";
     // The server sends exactly one closed work_state. Re-project the safety precedence here so
     // a partial/old frame fails closed to readable triage rather than leaving an ambiguous gap.
     var work = projectSessionWorkState(s);
@@ -623,8 +623,8 @@ function fillRow(node, s) {
             var childWait = T.webTaskTasks + ": " + liveRoots.map(function (task) {
                 return task.title || task.id;
             }).join(" · ");
-            peerSaid = '<span class="coordination-wait" title="' + esc(childWait) + '">⏳ ' +
-                esc(childWait) + "</span>";
+            peerSaid = '<span class="coordination-wait" title="' + esc(childWait) + '">' +
+                sessionStatusGlyphHTML("⏳", childWait) + "</span>";
         }
     }
     var workSaid = sessionWorkStateHTML(s);
@@ -662,14 +662,15 @@ function fillRow(node, s) {
                 esc(T.webClosing) + "</span>";
         } else if (pending) {
             state.innerHTML = (s.state === "waiting"
-                ? '<span class="wants">🙋 ' + esc(T.sessionWaiting) + "</span>"
+                ? '<span class="wants">' + sessionStatusGlyphHTML("🙋", T.sessionWaiting) + "</span>"
                 : "") + '<canvas class="spin"></canvas><span class="line">' +
                 esc(T.webPending) + "</span>";
         } else if (work.state === "waiting_you") {
             // 🙋 someone is asking and stopped, waiting on you — the one state whose whole
             // meaning is "act now". The owed badge still rides along in workSaid: answering
             // the question on screen does not pay an older debt.
-            state.innerHTML = '<span class="wants">🙋 ' + esc(T.sessionWaiting) + "</span>" +
+            state.innerHTML = '<span class="wants">' +
+                sessionStatusGlyphHTML("🙋", T.sessionWaiting) + "</span>" +
                 peerSaid + workSaid + shellsSaid;
         } else if (work.state === "working") {
             // The shells go after the live line rather than instead of it. A session can be

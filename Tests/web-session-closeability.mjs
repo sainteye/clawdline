@@ -145,6 +145,9 @@ const blockedBadge = html({ state: "idle", closeability: block({
     mover: { kind: "session", self: true, person_needed: false } }) });
 assert.match(blockedBadge, /2 obligations remain/,
     "the count is the obligations, filled into the reader's own sentence");
+assert.match(blockedBadge,
+    /class="session-status-glyph" aria-hidden="true">🔒<\/span><span class="session-status-label">/,
+    "the lock has its own decorative line box, separate from the readable closeability copy");
 assert.match(blockedBadge, /title="2 obligations remain · this session moves it"/,
     "and the full sentence, with its mover, stays reachable when the row ellipsises it");
 const oneBlockedBadge = html({ state: "idle", closeability: block({

@@ -6,11 +6,28 @@ that does not change what the reader does is a field riding on the row, not a st
 is the contract in both directions — what a person may conclude on seeing a state, and what a
 session must mean when it declares one.
 
-The wire carries this as two independent things on every Session row:
+## Reading one row
 
-- `work_state` — one closed value: `ready`, `working`, `holding`, `waiting_you`,
-  `waiting_session`, `unknown`, `milestone_complete`, `work_complete`.
-- `owed` — an optional debt object that rides beside *any* state.
+Not every mark in the list is a status. The pixel picture at the far left identifies the
+**project**; repeated pictures mean repeated projects. The small Claude or Codex logo identifies
+the **assistant**. A crown identifies the machine's authenticated **Clawdfather coordinator**.
+None of those three says whether the Session is working, waiting, finished or safe to close.
+
+Status is four independent axes. They can appear together and must not be collapsed into one
+"good/bad" icon:
+
+| axis | wire field | question it answers |
+| --- | --- | --- |
+| terminal activity | `state` | What is visible in the terminal now: working, waiting for you, idle, or unreadable? |
+| work disposition | `work_state` | What should the reader do next about this line of work? |
+| durable debt | `owed` | Is a decision or obligation still owed even while other work continues? |
+| ending the Session | `closeability` | Is there enough current evidence to safely close this exact Session process? |
+
+The close route also computes `lost_if_closed` at the instant the button is pressed. That is a
+last-moment loss gate, not a fifth status stored on the row.
+
+Every emoji in the UI is decorative and is paired with localized text. The words are the
+authoritative meaning; the icon is only a fast visual index. `unknown` deliberately has no icon.
 
 Two of the old names are gone. `waiting_human` is now `waiting_you` — the state is an
 instruction to the reader, not a taxonomy of blockers. `needs_triage` is now `unknown`, because
@@ -18,7 +35,7 @@ what that case has always meant is *"the broker has no positive evidence"* — a
 name wrote the observer's ignorance down as the reader's to-do, and one evening it put five rows
 of demands on a phone when not one of them needed anything.
 
-## The vocabulary
+## The `work_state` vocabulary
 
 For each state: what it means, what you do, and what a row looks like on a phone in Traditional
 Chinese (the first-class copy; every other language translates it).
@@ -140,12 +157,12 @@ still own a pending landing, a dirty isolated checkout, a waiter parked on its f
 nobody has paid. So closeability rides beside `work_state` and `owed` as a projection of its own,
 with four values and one action each:
 
-| state | you should |
-| --- | --- |
-| `blocked` | **Do not close.** The broker sees a positive obligation, and the reasons name it. |
-| `needs_attestation` | **Ask that session.** The broker's blockers are clear; only the session itself can account for shared-tree hunks it owns, local todos, deployments and decisions nobody wrote down. |
-| `safe` | **The close button may proceed.** Blockers clear *and* a fresh closure attestation is bound to the exact current process. |
-| `unknown` | **Refresh or audit.** The evidence is stale, missing or ambiguous. It never renders as safe. |
+| state | icon | you should | zh-Hant row |
+| --- | --- | --- | --- |
+| `blocked` | 🔒 | **Do not close.** The broker sees one or more positive obligations, and the reasons name them. | `🔒 還有 2 項未了結` |
+| `needs_attestation` | 🗝 | **Ask that session.** The broker's blockers are clear; only the session itself can account for shared-tree hunks it owns, local todos, deployments and decisions nobody wrote down. | `🗝 等這個 session 自己確認` |
+| `safe` | 🔓 | **The close button may proceed.** Blockers clear *and* a fresh closure attestation is bound to the exact current process. | `🔓 可以安全關閉` |
+| `unknown` | *(none, on purpose)* | **Refresh or audit.** The evidence is stale, missing or ambiguous. It never renders as safe. | `無法判斷能否關閉`（灰、斜體） |
 
 `unknown` deliberately outranks `blocked`. A stale or ambiguous source does not merely add a row
 to the obligation list — it makes that list's *completeness* unknown, and a reader handed an
@@ -156,6 +173,15 @@ underneath; what changes is the headline.
 whole responsibility graph is a different question, and this is the one that answers it. The full
 contract — the closed reason vocabulary, the two generations, the attestation route and the
 compare-and-swap on close — is in [`session-closeability.md`](session-closeability.md).
+
+### The important combinations
+
+- `ready` + `blocked`: it can accept another task, but it still owns something and must not close.
+- `working` + `blocked`: it is executing now and also has a known closing obligation.
+- `work_complete` + `needs_attestation`: the named task landed, but the whole root Session has not
+  yet accounted for local or external work.
+- `unknown` work state + `unknown` closeability: neither absence asks the user to act immediately,
+  and neither may be upgraded to "idle" or "safe" by guessing.
 
 ## `lost_if_closed`: a gate, not a label
 

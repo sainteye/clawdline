@@ -669,6 +669,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | | |
 | --- | --- |
 | [The bar, up close](docs/interface.md) | the session list, the <kbd>⌘</kbd><kbd>J</kbd> pane, dictation, files, the notch |
+| [Session states and list icons](docs/session-states.md) | every status glyph, the four independent axes, what you should do, and why finished is not the same as safe to close |
 | [Handing work off](docs/orchestrator.md) | one session dispatching another: the protocol, the credentials, the lifecycle |
 | [Scheduled tasks](docs/schedules.md) | task templates that dispatch on local wall-clock time, catch-up, and tab-close policy |
 | [Continuing work in a new session](docs/handoff.md) | one session handing its whole line of work to the next |

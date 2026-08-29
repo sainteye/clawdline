@@ -66,6 +66,11 @@ Each row wears its project's own pixel mark, from the same registry the footer a
 status line use. A tab title is the *task*, and two projects can be working on tasks that read
 alike; the mark is the part you do not have to read.
 
+The complete row vocabulary—including 🙋, 📥, ⏳, 🔜, 📭, the one/two check marks, 🔒, 🗝 and
+🔓—is in [Session states](session-states.md). It also explains why project marks, assistant logos
+and the Clawdfather crown are identity, not status, and why "work complete" and "safe to close"
+are deliberately separate answers.
+
 **The menu bar carries it too.** The ✳ was a fixed character that opened a menu — permanently
 visible and permanently saying nothing. It has a count on it now, and a mark when something is
 waiting.
