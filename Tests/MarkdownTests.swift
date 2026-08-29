@@ -1399,6 +1399,29 @@ group("the documented example files") {
 
     expect("the health example is ok", ProjectStatus.health(load("health--Users-you-code-atrium.json"))?.state, "ok")
 
+    // `/links` receives the whole project registry row. The reader itself selects `health` once;
+    // selecting it in RemoteServer too turns `health["health"]` into nil and silently drops the
+    // public site even though the probe cache is green.
+    let linkedProject = "/tmp/clawdline-linked-project-\(UUID().uuidString)"
+    let linkedCache = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-linked-cache-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: linkedCache,
+                                             withIntermediateDirectories: true)
+    let priorStatusDir = Config.shared.statusDir
+    Config.shared.statusDir = linkedCache.path
+    defer {
+        Config.shared.statusDir = priorStatusDir
+        try? FileManager.default.removeItem(at: linkedCache)
+    }
+    let linkedHealth = linkedCache.appendingPathComponent(
+        "health-\(ProjectStatus.key(forPath: linkedProject)).json")
+    try! #"{"state":"ok","label":"clawdline.com"}"#.data(using: .utf8)!.write(to: linkedHealth)
+    let linked = ProjectStatus.read(
+        cwd: linkedProject, remote: nil,
+        registry: ["label": "clawdline.com", "url": "https://clawdline.com/"])
+    expect("the Links reader keeps the registered site URL",
+           linked.health?.url, "https://clawdline.com/")
+
     // The file names in the page have to be the names the app looks for.
     expect("a path becomes a file name the documented way",
            ProjectStatus.key(forPath: "/Users/you/code/atrium"), "-Users-you-code-atrium")

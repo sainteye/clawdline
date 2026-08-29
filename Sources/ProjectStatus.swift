@@ -74,8 +74,9 @@ enum ProjectStatus {
         }
         let stem = key(forPath: cwd)
         out.backlog = backlog(json(dir.appendingPathComponent("backlog-\(stem).json")))
+        let healthRegistry = registry?["health"] as? [String: Any] ?? registry
         out.health = health(json(dir.appendingPathComponent("health-\(stem).json")),
-                            registry: registry?["health"] as? [String: Any])
+                            registry: healthRegistry)
         return out
     }
 
