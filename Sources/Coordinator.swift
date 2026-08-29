@@ -19,6 +19,23 @@ enum Coordinator {
         let workState: Orchestrator.SessionWorkState
         let waitingOnSession: Bool
         let hasWaiters: Bool
+        /// The fourth projection, carried beside the work state rather than folded into it.
+        /// `ready` says this session can take work; this says whether it can end, and Bearings
+        /// keeps them apart because a coordinator deciding what to close needs both.
+        let closeability: Orchestrator.SessionCloseability?
+
+        init(identity: Orchestrator.SessionWorkIdentity, label: String, cwd: String?,
+             workState: Orchestrator.SessionWorkState, waitingOnSession: Bool,
+             hasWaiters: Bool,
+             closeability: Orchestrator.SessionCloseability? = nil) {
+            self.identity = identity
+            self.label = label
+            self.cwd = cwd
+            self.workState = workState
+            self.waitingOnSession = waitingOnSession
+            self.hasWaiters = hasWaiters
+            self.closeability = closeability
+        }
     }
 
     struct BearingsInput {
@@ -480,6 +497,18 @@ enum Coordinator {
         for session in liveSessions {
             counts[session.workState.rawValue] = (counts[session.workState.rawValue] as? Int ?? 0) + 1
         }
+        // A second, independent tally. A row can be `ready` and not closeable, or quiet and
+        // closeable; one number cannot be read as the other, so neither is derived from it.
+        // Sessions whose closeability was not projected are counted under `not_projected`
+        // rather than folded into `unknown`, because absent and doubtful are different facts.
+        var closeabilityCounts: [String: Any] = ["not_projected": 0]
+        for state in Orchestrator.SessionCloseability.allCases {
+            closeabilityCounts[state.rawValue] = 0
+        }
+        for session in liveSessions {
+            let key = session.closeability?.rawValue ?? "not_projected"
+            closeabilityCounts[key] = (closeabilityCounts[key] as? Int ?? 0) + 1
+        }
         let sorted = liveSessions.sorted {
             $0.identity.terminalID < $1.identity.terminalID
         }
@@ -505,6 +534,7 @@ enum Coordinator {
             "observed_at": observed,
             "coordinator_lifecycle": lifecycle,
             "work_state_counts": counts,
+            "closeability_counts": closeabilityCounts,
             "active_task_count": max(0, input.activeTaskCount),
             "pending_landing_count": max(0, input.pendingLandingCount),
             "pending_landings": input.pendingLandingRows,
@@ -624,6 +654,7 @@ enum Coordinator {
         var bearings: [String: Any] = [:]
         if let record = full["bearings"] as? [String: Any] {
             for key in ["observed_at", "coordinator_lifecycle", "work_state_counts",
+                    "closeability_counts",
                         "active_task_count", "pending_landing_count", "open_wait_count"] {
                 if let value = record[key] { bearings[key] = value }
             }
@@ -653,7 +684,7 @@ enum Coordinator {
 
     private static func allowedSession(_ row: [String: Any]) -> [String: Any] {
         var out: [String: Any] = [:]
-        for key in ["id", "assistant", "label", "cwd", "work_state"] {
+        for key in ["id", "assistant", "label", "cwd", "work_state", "closeability"] {
             if let value = row[key] { out[key] = value }
         }
         return out
@@ -694,6 +725,9 @@ enum Coordinator {
         ]
         if let assistant = session.identity.assistant { row["assistant"] = assistant.rawValue }
         if let cwd = session.cwd { row["cwd"] = cwd }
+        if let closeability = session.closeability {
+            row["closeability"] = closeability.rawValue
+        }
         return row
     }
 
@@ -708,6 +742,9 @@ enum Coordinator {
         ]
         if let cwd = live?.cwd ?? record.cwd { session["cwd"] = cwd }
         if let workState = live?.workState { session["work_state"] = workState.rawValue }
+        if let closeability = live?.closeability {
+            session["closeability"] = closeability.rawValue
+        }
         let observationCurrent = sessionsFresh && sessionsObservedAt.map {
             representableTimestamp($0.timeIntervalSince1970)
         } == true
