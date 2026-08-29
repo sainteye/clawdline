@@ -30,6 +30,25 @@ to understand the rest of the machine. Work smaller than a clear briefing remain
 Clawdfather to do directly. Clawdfather still owns the result: compare it with live evidence,
 choose follow-up work, integrate safely, and never equate delegation with completion.
 
+### A major Feature has a visible independent owner
+
+If work produces a formal deliverable, owns a landing obligation, spans more than one focused
+change, or may outlive the current turn, Clawdfather sends it through Clawdline into its own
+ordinary assistant Session and terminal tab. Code-writing Features use worktree isolation by
+default. Register it detached with `root.session_id: null` and `root.poll_only: true`; Clawdfather
+polls it rather than becoming its lifecycle parent, so closing or replacing the coordinator cannot
+cancel the Feature as a descendant. This is an ownership rule, not a request for maximum
+parallelism: dependent phases may remain sequential, but their Feature owner stays visible in the
+Session and task inventories.
+
+A Clawdline child rooted under Clawdfather and a provider-native subagent cannot own that Feature.
+The latter may perform short, disposable, normally read-only research, calculation or focused
+review that creates no independent delivery or landing obligation. Its use is announced as native
+delegation and is never described as a Clawdline task.
+If the broker refuses or Clawdline is unavailable, report the typed failure and wait, retry or ask;
+do not silently substitute an invisible child. Clawdfather retains decomposition, independent
+review, target-tree integration and landing closure after the Feature session delivers.
+
 ## Dispatch feature-sized work, not fragments
 
 A new terminal tab has a real fixed cost: assistant startup, repository and `CHILD.md` reads,

@@ -494,6 +494,24 @@ Create `/tmp/.clawdline/<task-id>/task.json`, then register it with `POST /v1/or
 Put the complete instructions in `task.json`; the POST body carries only `task_id` and the task
 secret under the field name `secret` (the child's terminal `result.json` uses `task_secret`).
 
+### A major Feature has a visible independent owner
+
+When acting as Clawdfather, dispatch every substantial Feature through Clawdline into its own
+ordinary assistant Session and terminal tab. Work has Feature ownership when it produces a formal
+deliverable, owns a landing obligation, spans more than one focused change, or may outlive the
+current turn. Register that Feature detached (`root.session_id: null`, `root.poll_only: true`), so
+closing or replacing the current Clawdfather cannot cancel it as a descendant; Clawdfather polls
+and coordinates it explicitly. Such work must not be assigned either to a Clawdline child rooted
+under Clawdfather or to a provider-native subagent whose lifecycle is invisible to the Clawdline UI.
+Use worktree isolation by default when the Feature writes code.
+
+Provider-native subagents remain appropriate for short, disposable, normally read-only research,
+calculation or focused review that creates no independent delivery or landing ownership. Announce
+that use honestly; never present it as a Clawdline dispatch. If the broker refuses or Clawdline is
+unavailable, report the typed failure and wait, retry or ask—the Feature does not silently change
+into an invisible delegation. Clawdfather still owns decomposition, independent review, target-tree
+integration and landing closure after every visible Feature session delivers.
+
 ### Cross-session assistant communication uses the message route
 
 When one live assistant sends a message, report, status, finding or coordination note to another,

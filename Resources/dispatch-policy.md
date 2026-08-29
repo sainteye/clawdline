@@ -39,6 +39,20 @@ which does not vanish, it accumulates. See below.
 sends substantial diagnosis, implementation, research and review out as separate tasks whenever
 capacity allows. It also owns the small-work pool below.
 
+**A major Feature always has a visible independent owner.** If work produces a formal deliverable,
+owns a landing obligation, spans more than one focused change, or may outlive the current turn,
+Clawdfather dispatches it through Clawdline into its own ordinary assistant Session and terminal
+tab. Its task is detached (`root.session_id: null`, `root.poll_only: true`), so closing or replacing
+the current Clawdfather cannot cancel it as a descendant; Clawdfather polls it explicitly.
+Code-writing Features use worktree isolation by default. Neither a Clawdline child rooted under
+Clawdfather nor a provider-native subagent is a substitute.
+
+Provider-native subagents remain useful for short, disposable, normally read-only research,
+calculation or focused review with no independent delivery. Announce them honestly and never call
+them a Clawdline dispatch. If Clawdline refuses the task or is unavailable, report the typed failure
+and wait, retry or ask; do not silently turn the Feature into invisible delegation. Clawdfather
+continues to own decomposition, independent review, exact-tree integration and landing closure.
+
 ## How big one task is
 
 **One task is one coherent, independently reviewable feature slice** — production change, red-before-
