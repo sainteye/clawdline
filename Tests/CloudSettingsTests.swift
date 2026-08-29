@@ -201,7 +201,6 @@ private final class ChangeRecorder {
     func record() { count += 1 }
 }
 
-@main
 private struct CloudSettingsTests {
     static var checks = 0
     static var failures: [String] = []
@@ -540,7 +539,7 @@ private struct CloudSettingsTests {
     }
 
     @MainActor
-    static func main() async {
+    static func run() async throws -> Int {
         testRestore()
         await testConfirmationAndPolling()
         await testProductionAdapterUsesCompleteURLAfterConfirmation()
@@ -552,12 +551,23 @@ private struct CloudSettingsTests {
         await testDeinitCancelsOwnedStartWithoutLatePublication()
         testSignOutOrdering()
 
-        if failures.isEmpty {
-            print("CloudSettingsTests: \(checks) checks passed")
-        } else {
-            print("CloudSettingsTests: \(failures.count)/\(checks) failed")
-            failures.forEach { print("FAIL: \($0)") }
-            exit(1)
+        guard failures.isEmpty else {
+            throw CloudSettingsTestFailure(failures: failures, checks: checks)
         }
+        return checks
     }
+}
+
+private struct CloudSettingsTestFailure: Error, CustomStringConvertible {
+    let failures: [String]
+    let checks: Int
+
+    var description: String {
+        "CloudSettingsTests: \(failures.count)/\(checks) failed — "
+            + failures.joined(separator: "; ")
+    }
+}
+
+func runCloudSettingsTests() async throws -> Int {
+    try await CloudSettingsTests.run()
 }

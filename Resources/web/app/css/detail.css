@@ -23,6 +23,15 @@
 }
 .detail-head .detail-mark:disabled { opacity: 0.45; cursor: default; }
 .detail-head .detail-actions { position: relative; flex: 0 0 auto; }
+.detail-head .detail-actions > .clawdfather-crown {
+    position: absolute; top: -4px; left: -5px; z-index: 2;
+    width: 15px; height: 10px; pointer-events: none;
+    background: #f0c75e;
+    clip-path: polygon(0 18%, 27% 52%, 43% 0, 58% 52%, 100% 18%, 86% 100%, 14% 100%);
+    transform: rotate(-30deg); transform-origin: 50% 80%;
+    filter: drop-shadow(0 1px 0 rgba(80, 49, 10, 0.85));
+}
+.detail-head .detail-actions > .clawdfather-crown[hidden] { display: none; }
 .detail-head .detail-who {
     text-align: left; overflow: hidden; border-radius: 5px;
     padding: 3px 5px; margin: -3px -5px;
@@ -248,4 +257,3 @@
 .chip[data-busy="on"] { border-color: var(--accent-ed); color: var(--accent); }
 .chip[data-busy="on"] .ico { animation: spin 900ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-

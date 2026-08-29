@@ -125,6 +125,13 @@
    press does and a gap between them would make it look like two. */
 .sheet #start-resume { align-items: center; gap: 6px; margin: 0 0 12px 0; flex-wrap: wrap; }
 .sheet #start-resume:empty { display: none; }
+.sheet #start-clawdfather-row {
+    align-items: center; gap: 8px; margin: -4px 0 12px 0; flex-wrap: wrap;
+}
+.sheet #start-clawdfather-row[hidden] { display: none; }
+.sheet #start-clawdfather-row .clawdfather-state {
+    min-width: 0; color: var(--faint); font: 10.5px/1.35 var(--mono);
+}
 /* A tick box drawn as a chip, because a chip is what every other switch in this sheet is and a
    native checkbox on a phone is a nine-pixel target next to a forty-four-pixel one. */
 .sheet .chip.check { padding-left: 9px; display: inline-flex; align-items: center; gap: 7px; }

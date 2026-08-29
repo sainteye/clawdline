@@ -273,6 +273,8 @@ document.documentElement.className = "booting";
                  menu. Buttons rather than click handlers on drawn pixels and text, so the menu is
                  available from a keyboard and both handles have names for assistive technology. -->
             <div class="detail-actions">
+                <span class="clawdfather-crown" id="detail-clawdfather-crown"
+                      role="img" aria-label="Clawdfather" hidden></span>
                 <button class="detail-mark" id="detail-focus" type="button"
                         aria-haspopup="menu" aria-expanded="false">
                     <canvas id="detail-mark" width="0" height="0"></canvas>
@@ -282,12 +284,6 @@ document.documentElement.className = "booting";
                         <div class="session-action-level" id="session-actions-main" data-place="current">
                             <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
                             <button id="session-info" type="button" role="menuitem">Session info</button>
-                            <!-- Nothing privileged happens here: this types one instruction into
-                                 the session through the same send route the composer uses, and
-                                 the session — a local process that can read the orchestrator
-                                 token — registers itself. Its label and disabled state are
-                                 written per session by `SessionActions.syncClawdfather`. -->
-                            <button id="session-clawdfather" type="button" role="menuitem" hidden>Make this session Clawdfather</button>
                             <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
                             <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
                         </div>
@@ -519,6 +515,22 @@ document.documentElement.className = "booting";
                  one is on screen — the way back to the projects. Drawn from the script like the
                  row above it, because both are lists the Mac decides the contents of. -->
             <div class="row" id="start-resume" hidden></div>
+            <!-- A role chosen only while creating a genuinely new Session. Its disabled state
+                 comes from the durable coordinator Bearings record, so an offline Clawdfather
+                 closes it exactly as an online one does. -->
+            <div class="row" id="start-clawdfather-row" hidden>
+                <button class="chip check" id="start-clawdfather" type="button"
+                        aria-pressed="false" disabled>
+                    <svg class="tick" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+                        <rect class="box" x="0.5" y="0.5" width="13" height="13" rx="3.5"></rect>
+                        <path class="mark" d="M3.6 7.1 5.9 9.4 10.4 4.6"
+                              stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                    <span id="start-clawdfather-label">Name the new session Clawdfather</span>
+                </button>
+                <span class="clawdfather-state" id="start-clawdfather-state"
+                    role="status" aria-live="polite"></span>
+            </div>
             <input class="find" id="start-filter" type="search" name="p2k" placeholder="Filter projects" hidden
                    autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
                    data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"

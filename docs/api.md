@@ -77,6 +77,7 @@ stream being the one that stays open, which is its whole job.
 |---|---|---|---|
 | `GET` | `/v1/health` | — | — |
 | `GET` | `/v1/sessions` | token | `read` |
+| `POST` | `/v1/sessions/refresh` | token | `read` |
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
 | `GET` | `/v1/sessions/:id/agents/:agentId` | token | `read` |
@@ -234,6 +235,33 @@ the same generation is the same observation, not confirmation that an empty list
 holding `~/.config/clawdline/orchestrator-token` and nothing else gets `401 unauthorized` here, so
 an agent looking for the session ids a coordination wait names wants
 [`GET /v1/orchestrator/sessions`](#get-v1orchestratorsessions) instead.
+
+### `POST /v1/sessions/refresh`
+
+Ask the Mac to take a new terminal/process reading. This is the local-only action behind the retry
+button shown when a session is known to be waiting but its question was not captured. It is
+deliberately distinct from the web client's ordinary snapshot/reconnect refresh and is not exposed
+by the Cloud transport.
+It is read-level: a token with `read` is enough, the remote-write switch is not consulted, and no
+`Idempotency-Key` is required because nothing is typed into or changed in a session.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/sessions/refresh \
+    -H "Authorization: Bearer $TOKEN"
+{"accepted":true,"coalesced":false,"ok":true,"scan":{"generation":42},"state":"accepted","throttled":false}
+```
+
+The response acknowledges admission; it is not the completed reading. `scan.generation` is the
+coherent generation immediately before this request. Exactly one of `accepted`, `coalesced`, and
+`throttled` is true, matching `state`: `accepted` started a reading, `coalesced` joined an existing
+read or already-scheduled debt, and `throttled` scheduled one follow-up behind the completed-read
+floor. Repeated requests in the same floor buy at most that one follow-up, so a read-only device
+cannot keep terminal automation at 100% duty cycle.
+
+The client keeps the retry busy until a `sessions` event carries `scan.generation` greater than the
+acknowledged generation. Same-generation GETs are the old observation and do not count; lower or
+unversioned replies cannot overwrite newer evidence. A bounded client timeout makes the control
+retryable again and explicitly reports that the attempt completed without a newer reading.
 
 ### `GET /v1/sessions/:id`
 
@@ -1921,7 +1949,9 @@ Every remaining command that would send, spawn or mutate stays `enabled:false` a
 (dispatch_independent_work) and `machine_token_only` (reconnect) — and `why`, honest English
 prose kept for pages that predate the codes. A client that knows the code ignores the prose; one
 that does not still shows a true sentence. Reconnect is deliberately machine-token-only; it is
-not the web menu command. Dispatch would start a session from a device, which is the one thing
+not the registration-only new-Session creation helper, whose local assistant registers itself
+only when no coordinator is configured and never rebinds an offline owner.
+Dispatch would start a session from a device, which is the one thing
 the device/orchestrator credential split exists to prevent. The record is absent from every
 ordinary row, preserving their old JSON behavior.
 

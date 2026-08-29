@@ -93,22 +93,77 @@ globalThis.window = {
     devicePixelRatio: 1,
     innerHeight: 800
 };
-const inertElement = function () { return {
-    hidden: false, textContent: "", innerHTML: "", value: "", dataset: {},
-    children: [], childNodes: [],
-    style: { setProperty: function () {}, removeProperty: function () {} },
-    classList: { add: function () {}, remove: function () {}, toggle: function () {} },
-    addEventListener: function () {}, querySelector: function () { return inertElement(); },
-    querySelectorAll: function () { return []; }, appendChild: function () {},
-    setAttribute: function () {}, removeAttribute: function () {}, focus: function () {}
-}; };
+function waitingButton(kind, tag) {
+    tag = tag || "";
+    const dataset = {};
+    dataset[kind] = "1";
+    const aria = /aria-label="([^"]*)"/.exec(tag);
+    const ariaBusy = /aria-busy="([^"]*)"/.exec(tag);
+    return {
+        disabled: /(?:^|\s)disabled(?:\s|>)/.test(tag), dataset: dataset,
+        ariaLabel: aria ? aria[1] : "",
+        ariaBusy: ariaBusy ? ariaBusy[1] : null,
+        closest: function (selector) {
+            return selector === "[data-" + kind + "]" ? this : null;
+        }
+    };
+}
+const elements = new Map();
+const inertElement = function (id) {
+    const listeners = {};
+    const target = {
+        hidden: false, textContent: "", value: "", dataset: {},
+        children: [], childNodes: [], offsetWidth: 40,
+        style: { setProperty: function () {}, removeProperty: function () {} },
+        classList: { add: function () {}, remove: function () {}, toggle: function () {} },
+        addEventListener: function (name, fn) { listeners[name] = fn; },
+        querySelector: function (selector) {
+            if (selector === "[data-refresh]") return target.refreshButton || null;
+            if (selector === "[data-refresh-status]") return target.refreshStatus || null;
+            return inertElement();
+        },
+        querySelectorAll: function () { return []; }, appendChild: function () {},
+        setAttribute: function () {}, removeAttribute: function () {}, focus: function () {},
+        dispatchClick: function (node) {
+            if (listeners.click) listeners.click({ target: node });
+        }
+    };
+    Object.defineProperty(target, "innerHTML", {
+        get: function () { return target._innerHTML || ""; },
+        set: function (value) {
+            target._innerHTML = value;
+            target.refreshButton = null;
+            target.refreshStatus = null;
+            if (id !== "waiting") return;
+            const button = /<button[^>]*data-refresh="1"[^>]*>/.exec(value);
+            if (button) target.refreshButton = waitingButton("refresh", button[0]);
+            const status = /<span[^>]*data-refresh-status="1"[^>]*>([^<]*)<\/span>/.exec(value);
+            if (status) target.refreshStatus = { textContent: status[1] };
+        }
+    });
+    return target;
+};
+function elementWithID(id) {
+    if (!elements.has(id)) elements.set(id, inertElement(id));
+    return elements.get(id);
+}
+const documentListeners = new Map();
 globalThis.document = {
     hidden: false, activeElement: null, body: inertElement(),
     documentElement: Object.assign(inertElement(), { lang: "en" }),
-    getElementById: inertElement,
+    getElementById: elementWithID,
     createElement: inertElement,
-    addEventListener: function () {}
+    addEventListener: function (name, fn) {
+        if (!documentListeners.has(name)) documentListeners.set(name, []);
+        documentListeners.get(name).push(fn);
+    },
+    dispatchEvent: function (event) {
+        (documentListeners.get(event.type) || []).forEach(function (fn) { fn(event); });
+    }
 };
+if (!globalThis.CustomEvent) {
+    globalThis.CustomEvent = class { constructor(type) { this.type = type; } };
+}
 globalThis.MutationObserver = class { observe() {} disconnect() {} };
 globalThis.requestAnimationFrame = function (callback) { return setTimeout(callback, 0); };
 
@@ -127,7 +182,164 @@ assert.deepEqual(requests.map(function (request) { return request.path; }), [
     "/v1/sessions/session%20one/transcript?limit=200"
 ], "string and (machine, session) local identities make byte-identical requests");
 
+assert.equal(typeof LocalClient.refreshSessionEvidence, "function",
+    "the local client exposes a session-evidence retry distinct from reconnect refresh");
+
+const { useApi } = await import("./api.js");
+const { handlers } = await import("./handlers.js");
+const { S } = await import("../core/state.js");
+const { renderWaiting } = await import("../view/composer.js");
+const waiting = elementWithID("waiting");
+const originalSessionsHandler = handlers.sessions;
+const originalConnectionHandler = handlers.conn;
+const appliedSessions = [];
+handlers.sessions = function (list) { appliedSessions.push(list); return true; };
+handlers.conn = function () {};
+useApi(LocalClient);
+S.openId = "WAITING-ONE";
+S.sessions = [{ id: "WAITING-ONE", state: "waiting", menu: null }];
+LocalClient.es = {};
+LocalClient.resetSessionRefreshForTesting();
+
+const refreshTimers = [];
+LocalClient.scheduleSessionRefreshTimeout = function (fn, ms) {
+    const timer = { fn: fn, ms: ms, cancelled: false };
+    refreshTimers.push(timer);
+    return timer;
+};
+LocalClient.cancelSessionRefreshTimeout = function (timer) { timer.cancelled = true; };
+
+function jsonResponse(body, ok) {
+    return { ok: ok !== false, status: ok === false ? 503 : 200,
+        text: async function () { return JSON.stringify(body); } };
+}
+requests.length = 0;
+let answerRefresh;
+globalThis.fetch = function (path, options) {
+    requests.push({ path: path, options: options });
+    if (path !== "/v1/sessions/refresh") {
+        return Promise.resolve(jsonResponse({ sessions: [] }));
+    }
+    return new Promise(function (resolve) { answerRefresh = resolve; });
+};
+
+await LocalClient.receiveSessions({ sessions: S.sessions, at: 7,
+    scan: { generation: 7, complete: true, emptyAuthoritative: false } });
+renderWaiting();
+let retryButton = waiting.querySelector("[data-refresh]");
+assert.ok(retryButton, "a local no-menu waiting card renders the retry control");
+waiting.dispatchClick(retryButton);
+retryButton = waiting.querySelector("[data-refresh]");
+assert.equal(retryButton.disabled, true,
+    "the retry control is disabled from client state while evidence is in flight");
+assert.ok(retryButton.ariaLabel, "the retry control keeps an accessible name while busy");
+assert.equal(retryButton.ariaBusy, "true", "the retry control exposes live busy progress");
+assert.match(waiting.querySelector("[data-refresh-status]").textContent, /refresh/i,
+    "the polite live status announces that fresh evidence is being requested");
+
+// A changed question rebuilds waiting.innerHTML and therefore creates another button node.
+S.sessions[0].menu = { question: "The question arrived without rows", options: [] };
+renderWaiting();
+const rebuiltRetryButton = waiting.querySelector("[data-refresh]");
+assert.notEqual(rebuiltRetryButton, retryButton, "question evidence really rebuilt the control");
+assert.equal(rebuiltRetryButton.disabled, true,
+    "a rebuilt retry control remains disabled while the first request is in flight");
+waiting.dispatchClick(rebuiltRetryButton);
+assert.equal(requests.filter(function (request) {
+    return request.path === "/v1/sessions/refresh";
+}).length, 1, "press, rerender, press still starts only one refresh request");
+
+answerRefresh(jsonResponse({ ok: true, state: "accepted", accepted: true,
+    coalesced: false, throttled: false, scan: { generation: 7 } }));
+for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+assert.equal(LocalClient.sessionRefreshEvidenceState().baseline, 7,
+    "the acknowledgement baseline is installed before later evidence is sampled");
+assert.equal(LocalClient.sessionRefreshEvidenceState().busy, true,
+    "an acknowledgement alone does not complete a refresh");
+await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", state: "waiting" }], at: 8,
+    scan: { generation: 7, complete: true, emptyAuthoritative: false } });
+assert.equal(LocalClient.sessionRefreshEvidenceState().busy, true,
+    "same-generation evidence keeps the retry in flight");
+await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", state: "waiting",
+    marker: "new" }], at: 9,
+    scan: { generation: 8, complete: true, emptyAuthoritative: false } });
+retryButton = waiting.querySelector("[data-refresh]");
+assert.equal(retryButton.disabled, false,
+    "newer evidence re-enables the retry control after an in-flight refresh");
+await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", marker: "old" }], at: 7,
+    scan: { generation: 7, complete: true, emptyAuthoritative: false } });
+assert.equal(appliedSessions.at(-1)[0].marker, "new",
+    "an out-of-order generation cannot overwrite newer session evidence");
+await LocalClient.receiveSessions({ sessions: [{ id: "WAITING-ONE", marker: "unversioned" }], at: 10 });
+assert.equal(appliedSessions.at(-1)[0].marker, "new",
+    "an unversioned response cannot overwrite evidence after generation ordering is known");
+
+LocalClient.resetSessionRefreshForTesting();
+requests.length = 0;
+globalThis.fetch = function (path, options) {
+    requests.push({ path: path, options: options });
+    return Promise.resolve(jsonResponse({ ok: true, state: "throttled", accepted: false,
+        coalesced: false, throttled: true, scan: { generation: 8 } }));
+};
+const timedOut = LocalClient.refreshSessionEvidence();
+for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+const timeoutTimer = refreshTimers.at(-1);
+assert.ok(timeoutTimer && timeoutTimer.ms > 0, "refresh evidence installs a bounded timeout");
+timeoutTimer.fn();
+assert.equal((await timedOut).state, "timed_out",
+    "a bounded wait reports that no newer reading arrived");
+assert.equal(LocalClient.sessionRefreshEvidenceState().busy, false,
+    "a timed-out refresh is retryable rather than permanently disabled");
+assert.match(waiting.querySelector("[data-refresh-status]").textContent, /nothing|arriv|refresh/i,
+    "a bounded timeout visibly reports that the attempt found no newer reading");
+
+LocalClient.resetSessionRefreshForTesting();
+let failedRefreshFetches = 0;
+globalThis.fetch = function () {
+    failedRefreshFetches += 1;
+    return Promise.resolve(jsonResponse({ error: { code: "refresh_failed",
+        message: "refresh failed" } }, false));
+};
+await assert.rejects(LocalClient.refreshSessionEvidence(), /refresh failed/,
+    "a failed refresh POST rejects instead of being swallowed as success");
+assert.equal(LocalClient.sessionRefreshEvidenceState().busy, false,
+    "a failed refresh POST re-enables the retry control");
+
+const callsBeforeDisconnectedRetry = failedRefreshFetches;
+LocalClient.es = null;
+await assert.rejects(LocalClient.refreshSessionEvidence(), /reach|connect|offline/i,
+    "a disconnected evidence retry refuses locally instead of stacking a 401 over the door");
+assert.equal(failedRefreshFetches, callsBeforeDisconnectedRetry,
+    "a disconnected evidence retry sends no request behind the door");
+
+LocalClient.resetSessionRefreshForTesting();
+let answerAfterDoor;
+let requestsBehindDoor = 0;
+globalThis.fetch = function () {
+    requestsBehindDoor += 1;
+    return new Promise(function (resolve) { answerAfterDoor = resolve; });
+};
+LocalClient.es = { close: function () {} };
+const retiredByDoor = LocalClient.refreshSessionEvidence();
+LocalClient.stop();
+assert.equal((await retiredByDoor).state, "stopped",
+    "raising the auth door retires an in-flight evidence retry without a rejection toast");
+answerAfterDoor(jsonResponse({ error: { code: "unauthorized", message: "unauthorized" } }, false));
+for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+assert.equal(LocalClient.sessionRefreshEvidenceState().status, "idle",
+    "a late 401 cannot revive or fail the retry after the door owns the page");
+assert.equal(requestsBehindDoor, 1,
+    "auth stop does not chain a second refresh request behind the door");
+handlers.sessions = originalSessionsHandler;
+handlers.conn = originalConnectionHandler;
+
 const { CloudClient } = await import("./cloud-client.js");
+assert.equal(typeof CloudClient.prototype.refreshSessionEvidence, "undefined",
+    "the Cloud reconnect client does not inherit the local inventory-evidence operation");
+useApi({ focus: function () { return Promise.resolve(); } });
+document.dispatchEvent(new CustomEvent("clawdline:session-refresh"));
+assert.equal(waiting.querySelector("[data-refresh]"), null,
+    "a transport without local inventory evidence renders no ambiguous refresh control");
 const canonicalChallenge = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 const malformedChallenges = [
     {

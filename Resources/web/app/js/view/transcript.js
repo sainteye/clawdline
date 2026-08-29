@@ -12,6 +12,7 @@ import { copyCodeBlock, inlineMd, richText } from "./markdown.js";
 import { Optimistic, Waits, listUnknown, txSkeleton } from "./waits.js";
 import { agentTokens } from "../session/agent.js";
 import { SessionActions } from "../input/detail-actions.js";
+import { coordinatorForSession } from "../input/coordinator-actions.js";
 import { GitPanel } from "../input/git-panel.js";
 import { ShellPanel } from "../input/shell-panel.js";
 
@@ -27,6 +28,7 @@ export function renderDetailHead() {
     els["detail-name"].textContent = s ? (s.label || s.tty || s.id)
         : (listUnknown() ? "" : T.webNoSessionOpen);
     els["detail-name"].style.color = s && s.icon ? tint(s.icon.accent) : "";
+    els["detail-clawdfather-crown"].hidden = !coordinatorForSession(s);
     var sub = [];
     if (s) {
         sub.push(shortPath(s.cwd));

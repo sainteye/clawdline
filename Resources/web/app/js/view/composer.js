@@ -211,6 +211,19 @@ export function renderWaiting() {
     var hushed = !!(dismissedMenu && dismissedMenu.key === menuKey(menu));
     var folded = !!(foldedMenu && foldedMenu.key === menuKey(menu));
     var sent = !rows && !!answeredMenu;
+    // Only the local transport exposes this operation.  In particular, do not borrow the
+    // Cloud client's reconnect/snapshot `refresh()` for a promise it cannot make: this button
+    // asks the Mac to perform a new inventory read and waits for generation evidence of it.
+    var refreshState = !rows && api &&
+        typeof api.refreshSessionEvidence === "function" &&
+        typeof api.sessionRefreshEvidenceState === "function"
+        ? api.sessionRefreshEvidenceState() : null;
+    var refreshBusy = !!(refreshState && refreshState.busy);
+    var refreshStatus = refreshState && refreshState.status === "timed_out"
+        ? T.webGitRefresh + " — " + T.webEmptyWaitHint
+        : refreshBusy ? T.webPullBusy
+        : refreshState && refreshState.status === "complete" ? T.webGitRefresh + " ✓"
+        : "";
     if (sent) {
         rows = answeredMenu.rows;
         submit = answeredMenu.submit || null;
@@ -234,7 +247,16 @@ export function renderWaiting() {
             ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"
               + menuHTML(rows, sent, submit)
             : '<div class="say">' + words(T.webWaitingSay) + "</div>" +
-              '<div class="say">' + words(T.webWaitingSend) + "</div>") +
+              '<div class="say">' + words(T.webWaitingSend) + "</div>" +
+              (refreshState
+                ? '<button type="button" class="go" data-refresh="1" aria-label="' +
+                  esc(T.webGitRefresh + " — " + T.webWaitingTitle) + '" aria-disabled="' +
+                  (refreshBusy ? "true" : "false") + '"' +
+                  (refreshBusy ? ' disabled aria-busy="true"' : "") + ">" +
+                  esc(T.webGitRefresh) + "</button>" +
+                  '<span class="refresh-status" data-refresh-status="1" role="status" ' +
+                  'aria-live="polite">' + esc(refreshStatus) + "</span>"
+                : "")) +
         '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>" +
         "</div>");
     // The live line, from the same reading, and **above the early return below** — that return
@@ -377,10 +399,25 @@ els.waiting.addEventListener("click", function (ev) {
         return;
     }
 
+    var refresh = ev.target.closest("[data-refresh]");
+    if (refresh) {
+        if (refresh.disabled || !api || typeof api.refreshSessionEvidence !== "function") return;
+        api.refreshSessionEvidence().catch(function (e) { toast(e.message, true); });
+        return;
+    }
+
     if (!ev.target.closest("[data-focus]")) return;
     if (!S.openId) return;
     api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
         .catch(function (e) { toast(e.message, true); });
+});
+
+// The operation outlives every particular button node.  A fold, a new question, or any other
+// render can replace that node while the request is in flight, so module state announces each
+// transition and the replacement is rebuilt from the same state.
+document.addEventListener("clawdline:session-refresh", function () {
+    waitingDrawn = null;
+    renderWaiting();
 });
 
 /**

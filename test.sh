@@ -53,16 +53,32 @@ node Tests/test-sh-streaming.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 
+required_cloud_test_files=(
+  Tests/CloudEnvelopeTests.swift
+  Tests/CloudAccountTests.swift
+  Tests/CloudTransportTests.swift
+  Tests/CloudAppBridgeTests.swift
+  Tests/CloudSettingsTests.swift
+  Tests/ScheduleResumeTests.swift
+  Tests/CloudClockTests.swift
+  Tests/CloudCanonicalJSONTests.swift
+  Tests/CloudCommandLedgerTests.swift
+  Tests/CloudOutboundSpoolTests.swift
+  Tests/CloudPairingTests.swift
+)
+for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
+  if ! test -f "$required_cloud_test_file"; then
+    echo "required Cloud test suite is missing: $required_cloud_test_file" >&2
+    exit 1
+  fi
+done
+
 swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
   -o "$BIN" \
   $(ls Sources/*.swift | grep -v 'Sources/main.swift') \
-  Tests/ScheduleResumeTests.swift \
-  Tests/CloudEnvelopeTests.swift \
-  Tests/CloudTransportTests.swift \
-  Tests/CloudAppBridgeTests.swift \
-  Tests/main.swift \
+  Tests/*.swift \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
 
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
@@ -138,9 +154,10 @@ fi
 # A zero process status is insufficient: removing dispatchMain() lets top-level code return before
 # either async suite or the final result path runs. Require the receipt emitted only by that path,
 # with full-suite counts so a targeted-case environment cannot make CI green either.
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE CloudEnvelope=64 CloudTransport=29 CloudAppBridge=49'
-if ! grep -Fqx "$expected_cloud_receipt" "$LOG"; then
-  echo "missing or incomplete Cloud test completion receipt — full output kept at $LOG" >&2
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:11,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166'
+cloud_receipt_count=$(grep -Fxc "$expected_cloud_receipt" "$LOG" || true)
+if [ "$cloud_receipt_count" -ne 1 ]; then
+  echo "Cloud test completion receipt appeared $cloud_receipt_count times, expected exactly once — full output kept at $LOG" >&2
   exit 125
 fi
 rm -f "$LOG"

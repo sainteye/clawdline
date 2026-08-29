@@ -86,6 +86,13 @@ final class SessionWatch {
 
     private var timer: Timer?
     private var reading = false
+    /// One event/manual request that arrived while a read was already paying for terminal
+    /// automation. A Boolean is deliberate: ten hooks or taps still buy one follow-up, never an
+    /// Apple-event backlog that outlives the question they were trying to reveal.
+    private var refreshPending = false
+    private var settleRead: DispatchWorkItem?
+    private var refreshFloorRead: DispatchWorkItem?
+    private var lastReadCompletedAt: TimeInterval?
     private var watchingRegistry = false
     /// The last incomplete-scan sentence written to the log. Keeping the signature makes a
     /// persistent iTerm dialog one useful line rather than one line every 1.2 seconds.
@@ -138,8 +145,15 @@ final class SessionWatch {
     }
 
     func stop() {
+        dispatchPrecondition(condition: .onQueue(.main))
         timer?.invalidate()
         timer = nil
+        settleRead?.cancel()
+        settleRead = nil
+        refreshFloorRead?.cancel()
+        refreshFloorRead = nil
+        refreshPending = false
+        lastReadCompletedAt = nil
     }
 
     /// Read now, because something said it was worth it.
@@ -151,8 +165,8 @@ final class SessionWatch {
     /// A note says something has happened. The cadence underneath does not change; it just stops
     /// being the only thing that decides when to look.
     ///
-    /// Not a separate path: it calls the same reading, and drops out under the same guard if one
-    /// is already running.
+    /// Not a separate path: it calls the same reading. If one is already running, one follow-up is
+    /// remembered; this matters when the event itself arrives during a slow or blocked inventory.
     ///
     /// **Two readings, not one**, and the second is the one that does the work. Measured against a
     /// real session: Claude Code draws its live line about two seconds after you press Return, so
@@ -161,18 +175,89 @@ final class SessionWatch {
     /// follow-up costs one more round trip per turn, and it removes the need for anything to
     /// *claim* that a session is working, which was the part that could be wrong.
     func nudge() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        _ = refresh()
+        // The first nudge fixes the deadline. A noisy hook must not keep pushing the one reading
+        // intended to see the terminal after it has repainted farther into the future.
+        guard settleRead == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.settleRead = nil
+            _ = self?.refresh()
+        }
+        settleRead = work
+        schedule(work, after: settleDelay)
+    }
+
+    enum RefreshDisposition: String { case accepted, coalesced, throttled }
+    struct RefreshReceipt {
+        let generation: Int
+        let disposition: RefreshDisposition
+    }
+
+    /// Ask for fresh evidence. The receipt names the coherent generation before this request and
+    /// whether it started work, joined an existing debt, or was held by the completed-read floor.
+    /// One Boolean carries the debt: any number of requests within that floor can buy at most one
+    /// follow-up terminal inventory.
+    @discardableResult
+    func refresh() -> RefreshReceipt {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let receiptGeneration = scanGeneration
+        if reading {
+            refreshPending = true
+            return RefreshReceipt(generation: receiptGeneration, disposition: .coalesced)
+        }
+        if refreshFloorRead != nil {
+            refreshPending = true
+            return RefreshReceipt(generation: receiptGeneration, disposition: .coalesced)
+        }
+        let now = Self.refreshClockForTesting?() ?? ProcessInfo.processInfo.systemUptime
+        if let completed = lastReadCompletedAt, now - completed < refreshFloor {
+            refreshPending = true
+            scheduleRefreshFloor(after: max(0, refreshFloor - (now - completed)))
+            return RefreshReceipt(generation: receiptGeneration, disposition: .throttled)
+        }
         read()
-        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay) { [weak self] in self?.read() }
+        return RefreshReceipt(generation: receiptGeneration, disposition: .accepted)
     }
 
     /// How long to wait before looking again. Just past the two seconds it takes the live line to
     /// appear, and comfortably inside the twenty-second gap it exists to cover.
     private let settleDelay: TimeInterval = 2.5
+    /// A read-only remote must not be able to keep terminal automation at 100% duty cycle.
+    private let refreshFloor: TimeInterval = 1.2
+
+    private func schedule(_ work: DispatchWorkItem, after delay: TimeInterval) {
+        if let testSchedule = Self.refreshScheduleForTesting {
+            testSchedule(delay, work)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+
+    private func scheduleRefreshFloor(after delay: TimeInterval) {
+        guard refreshFloorRead == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.refreshFloorRead = nil
+            guard self.refreshPending else { return }
+            self.read()
+        }
+        refreshFloorRead = work
+        schedule(work, after: delay)
+    }
 
     /// Read every session's screen, once. Overlapping readings are dropped rather than queued:
     /// on a loaded machine a slow round trip would otherwise pile up behind itself.
     private func read() {
         guard !reading else { return }
+        // A cadence or floor read that starts while one explicit debt exists is that debt's single
+        // follow-up. Clear it at the start, so requests arriving during this read can describe a
+        // new (still bounded) debt rather than being erased by its completion.
+        if refreshPending {
+            refreshPending = false
+            refreshFloorRead?.cancel()
+            refreshFloorRead = nil
+        }
         reading = true
         // Taken here, on the main thread, because that is the only thread that writes them.
         let notes = Config.shared.hooks ? HookBridge.notes : [:]
@@ -191,9 +276,9 @@ final class SessionWatch {
                 // published field exactly as it was; even re-reading the old sessions here would
                 // turn one failed prerequisite into a collection of secondary "gone" answers.
                 DispatchQueue.main.async {
-                    self.reading = false
                     self.recordScan(complete: false, error: processScan.error,
                                     preserved: knownTargets.count, observed: 0)
+                    self.finishReading()
                 }
                 return
             }
@@ -332,7 +417,6 @@ final class SessionWatch {
             }
 
             DispatchQueue.main.async {
-                self.reading = false
                 self.recordScan(complete: inventoryComplete, error: scanError,
                                 preserved: reconciled.preserved, observed: scanned.count,
                                 confirmedRemoved: reconciled.confirmedRemoved)
@@ -344,8 +428,21 @@ final class SessionWatch {
                 self.apply(targets: sessions, states: states,
                            scanComplete: inventoryComplete,
                            emptyInventoryAuthoritative: emptyAuthoritative)
+                self.finishReading()
             }
         }
+    }
+
+    /// Close one reading and put the single explicit refresh debt behind the completed-read floor.
+    /// Only `refresh()`/`nudge()` callers — including the registry watcher — set this Boolean;
+    /// cadence timer ticks call `read()` directly. A burst on any explicit path therefore remains
+    /// one debt rather than an inventory queue.
+    private func finishReading() {
+        reading = false
+        lastReadCompletedAt = Self.refreshClockForTesting?()
+            ?? ProcessInfo.processInfo.systemUptime
+        guard refreshPending else { return }
+        scheduleRefreshFloor(after: refreshFloor)
     }
 
     /// Log confidence transitions, not polling cadence. The sentence names both what was usable
@@ -476,4 +573,8 @@ final class SessionWatch {
     /// about the same instant.
     static var inventoryForTesting: (() -> (scan: ITerm.AssistantProcessScan,
                                             snapshot: Targets.Snapshot))?
+    /// Monotonic time and delayed-main scheduling, replaced together by the rate-limit fixture.
+    /// Production leaves both nil.
+    static var refreshClockForTesting: (() -> TimeInterval)?
+    static var refreshScheduleForTesting: ((TimeInterval, DispatchWorkItem) -> Void)?
 }

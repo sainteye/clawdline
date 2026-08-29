@@ -3,6 +3,28 @@ import Carbon.HIToolbox
 import Foundation
 import SQLite3
 
+// CloudAccount's deadlock regressions re-exec this shared binary with a mode flag and a
+// two-second parent deadline. Dispatch them before any ordinary suite so the child does not spend
+// that deadline running the thousands of checks below before it reaches the requested scenario.
+let cloudAccountSharedRegressionModeKey = "CLAWDLINE_CLOUD_ACCOUNT_REGRESSION_MODE"
+if let cloudAccountRegressionMode = ProcessInfo.processInfo.environment[
+    cloudAccountSharedRegressionModeKey
+] {
+    Task {
+        do {
+            try await runCloudAccountRegressionScenario(mode: cloudAccountRegressionMode)
+            print("CloudAccount regression \(cloudAccountRegressionMode) passed")
+            exit(EXIT_SUCCESS)
+        } catch {
+            FileHandle.standardError.write(Data(
+                "CloudAccount regression \(cloudAccountRegressionMode) failed: \(error)\n".utf8
+            ))
+            exit(EXIT_FAILURE)
+        }
+    }
+    dispatchMain()
+}
+
 /// A subprocess-only entry used by the coordinator singleton race test near the end of this
 /// file. Both workers deliberately cache initial absence before the parent releases them; the
 /// production registration path must force a post-flock reload rather than trust that cache.
@@ -24965,6 +24987,7 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/Orchestrator.swift", "Orchestrator.rootTargets", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.titleState(of:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.coordinatorObservation", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.sessionRefresh", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.session(withID:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionMessageSource(withID:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.state(of:)", 1),
@@ -25165,6 +25188,180 @@ group("a reading with live sessions in it reaches the ledger, both ways") {
            SessionWatch.shared.targets.map(\.id), ["TERM-WATCH-CLAUDE"])
 }
 
+group("a manual session refresh has coherent evidence and bounded backpressure") {
+    SessionWatch.shared.stop()
+    let previousInventory = SessionWatch.inventoryForTesting
+    let previousClock = SessionWatch.refreshClockForTesting
+    let previousSchedule = SessionWatch.refreshScheduleForTesting
+    let retainedTargets = SessionWatch.shared.targets
+    let lock = NSLock()
+    let releaseFirst = DispatchSemaphore(value: 0)
+    let releaseStopped = DispatchSemaphore(value: 0)
+    let releaseNudge = DispatchSemaphore(value: 0)
+    var reads = 0
+    var now: TimeInterval = 10_000
+    var scheduled: [(delay: TimeInterval, work: DispatchWorkItem)] = []
+    SessionWatch.refreshClockForTesting = { now }
+    SessionWatch.refreshScheduleForTesting = { delay, work in
+        scheduled.append((delay, work))
+    }
+    SessionWatch.inventoryForTesting = {
+        lock.lock()
+        reads += 1
+        let thisRead = reads
+        lock.unlock()
+        if thisRead == 1 { _ = releaseFirst.wait(timeout: .now() + 2) }
+        if thisRead == 4 { _ = releaseStopped.wait(timeout: .now() + 2) }
+        if thisRead == 5 { _ = releaseNudge.wait(timeout: .now() + 2) }
+        return (scan: ITerm.AssistantProcessScan(assistants: [:], error: nil),
+                snapshot: Targets.Snapshot(sessions: retainedTargets, currentID: nil, error: nil,
+                                           isComplete: true))
+    }
+    defer {
+        releaseFirst.signal(); releaseStopped.signal(); releaseNudge.signal()
+        SessionWatch.shared.stop()
+        SessionWatch.inventoryForTesting = previousInventory
+        SessionWatch.refreshClockForTesting = previousClock
+        SessionWatch.refreshScheduleForTesting = previousSchedule
+    }
+
+    let reader = RemoteAuth.addDevice(name: "a phone refreshing session evidence", caps: [.read])
+    defer { RemoteAuth.revoke(id: reader.id) }
+    func body(_ response: RemoteServer.Response) -> [String: Any] {
+        ((try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]) ?? [:]
+    }
+    func request() -> RemoteServer.Response {
+        RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/sessions/refresh",
+            headers: ["Authorization": "Bearer \(reader.token)"]))
+    }
+    func state(_ response: RemoteServer.Response) -> String? { body(response)["state"] as? String }
+
+    expect("an anonymous retry is refused",
+           RemoteServer.shared.route(remoteRequest("POST", "/v1/sessions/refresh")).status, 401)
+    if let remoteSource = try? String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8) {
+        let nudgeLines = codeOnly(remoteSource).split(separator: "\n").filter {
+            $0.contains("SessionWatch.shared.nudge()")
+        }
+        check("every RemoteServer nudge re-enters the main queue", !nudgeLines.isEmpty &&
+              nudgeLines.allSatisfy { $0.contains("DispatchQueue.main.async") },
+              nudgeLines.joined(separator: " | "))
+    } else {
+        check("RemoteServer source is readable for the nudge ownership guard", false)
+    }
+    let generationBeforeRequest = SessionWatch.shared.scanGeneration
+    let accepted = request()
+    expect("a paired read-only device may ask for fresh evidence", accepted.status, 200)
+    expect("the response truthfully names a newly accepted read", state(accepted), "accepted")
+    let acceptedBody = body(accepted)
+    expect("the accepted response body carries ok", acceptedBody["ok"] as? Bool, true)
+    expect("an accepted response sets only its matching disposition", acceptedBody["accepted"] as? Bool,
+           true)
+    expect("and is neither coalesced", acceptedBody["coalesced"] as? Bool, false)
+    expect("nor throttled", acceptedBody["throttled"] as? Bool, false)
+    expect("the ack carries the coherent pre-request scan generation",
+           (acceptedBody["scan"] as? [String: Any])?["generation"] as? Int,
+           generationBeforeRequest)
+    check("the accepted retry starts a real SessionWatch reading", eventually {
+        lock.lock(); defer { lock.unlock() }
+        return reads == 1
+    })
+
+    // The first inventory is deliberately blocked. Every later request joins one Boolean debt;
+    // none can create a second worker or claim that it was independently accepted.
+    let coalesced = request()
+    expect("a request behind an in-flight read says coalesced", state(coalesced), "coalesced")
+    expect("the coalesced response body is not accepted", body(coalesced)["accepted"] as? Bool,
+           false)
+    expect("and explicitly marks the coalesced disposition", body(coalesced)["coalesced"] as? Bool,
+           true)
+    expect("without marking it throttled", body(coalesced)["throttled"] as? Bool, false)
+    for _ in 0..<8 { expect("each extra in-flight request is coalesced", state(request()), "coalesced") }
+    releaseFirst.signal()
+    check("completion schedules exactly one floor-bounded follow-up", eventually {
+        scheduled.filter { abs($0.delay - 1.2) < 0.001 }.count == 1
+    })
+    lock.lock(); let beforeFloor = reads; lock.unlock()
+    expect("the debt does not run terminal automation before its floor", beforeFloor, 1)
+    let firstFloor = scheduled.removeFirst()
+    let generationBeforeFollowup = SessionWatch.shared.scanGeneration
+    now += firstFloor.delay
+    firstFloor.work.perform()
+    check("the one coalesced debt becomes one completed follow-up read", eventually {
+        SessionWatch.shared.scanGeneration > generationBeforeFollowup
+    })
+    lock.lock(); let readsAfterFollowup = reads; lock.unlock()
+    expect("the coalesced debt bought exactly one read", readsAfterFollowup, 2)
+
+    // A completed read starts a new floor. The first request is explicitly throttled, and all
+    // requests after it join the same scheduled purchase rather than extending the deadline.
+    let throttled = request()
+    expect("a request inside the completed-read floor says throttled", state(throttled), "throttled")
+    let throttledBody = body(throttled)
+    expect("the throttled body marks throttled", throttledBody["throttled"] as? Bool, true)
+    expect("and does not pretend it was accepted", throttledBody["accepted"] as? Bool, false)
+    expect("or that it joined an already-scheduled request", throttledBody["coalesced"] as? Bool,
+           false)
+    let schedulesAtFloor = scheduled.count
+    for _ in 0..<20 { expect("a floor burst is coalesced", state(request()), "coalesced") }
+    expect("a floor burst buys only one follow-up schedule", scheduled.count, schedulesAtFloor)
+    let secondFloor = scheduled.removeFirst()
+    let generationBeforeFloorBurst = SessionWatch.shared.scanGeneration
+    now += secondFloor.delay
+    secondFloor.work.perform()
+    check("the floor burst buys one completed inventory read", eventually {
+        SessionWatch.shared.scanGeneration > generationBeforeFloorBurst
+    })
+    lock.lock(); let readsAfterFloorBurst = reads; lock.unlock()
+    expect("the floor burst buys one and only one inventory read", readsAfterFloorBurst, 3)
+
+    // stop() does not claim to cancel terminal work already in flight. It does cancel the debt
+    // behind that work, so its eventual completion must not make another read after the stop.
+    now += 2
+    expect("a post-floor request can start another read", state(request()), "accepted")
+    check("the stop fixture has one read in flight", eventually {
+        lock.lock(); defer { lock.unlock() }
+        return reads == 4
+    })
+    expect("a request behind the stop fixture is coalesced", state(request()), "coalesced")
+    let schedulesBeforeStop = scheduled.count
+    let generationBeforeStoppedRead = SessionWatch.shared.scanGeneration
+    SessionWatch.shared.stop()
+    releaseStopped.signal()
+    check("the already-started read is allowed to finish after stop", eventually {
+        SessionWatch.shared.scanGeneration > generationBeforeStoppedRead
+    })
+    expect("stop clears debt and schedules no payment after the active read returns",
+           scheduled.count, schedulesBeforeStop)
+    lock.lock(); let readsAfterStop = reads; lock.unlock()
+    expect("stop does not launch a hidden follow-up", readsAfterStop, 4)
+
+    // The first nudge owns the settle deadline. Repeated nudges cannot cancel and recreate it,
+    // which would otherwise postpone fresh evidence forever on a noisy event stream.
+    now += 2
+    SessionWatch.shared.nudge()
+    check("the nudge fixture starts its read", eventually {
+        lock.lock(); defer { lock.unlock() }
+        return reads == 5
+    })
+    let firstSettle = scheduled.first { abs($0.delay - 2.5) < 0.001 }?.work
+    for _ in 0..<12 { SessionWatch.shared.nudge() }
+    let settleWorks = scheduled.filter { abs($0.delay - 2.5) < 0.001 }.map(\.work)
+    expect("repeated nudges retain one bounded settle deadline", settleWorks.count, 1)
+    check("and retain the original scheduled work item", settleWorks.first === firstSettle)
+    SessionWatch.shared.stop()
+    let generationBeforeStoppedNudge = SessionWatch.shared.scanGeneration
+    releaseNudge.signal()
+    check("the already-started nudge read is allowed to finish after stop", eventually {
+        SessionWatch.shared.scanGeneration > generationBeforeStoppedNudge
+    })
+    lock.lock(); let finalReads = reads; lock.unlock()
+    expect("a stopped settle/debt pair performs no post-stop read", finalReads, 5)
+    check("the retry fixture preserves the live targets the crossing tests inherit", eventually {
+        SessionWatch.shared.targets.map(\.id) == retainedTargets.map(\.id)
+    })
+}
+
 group("what a terminal's spend is filed under, and what the backfill hands over") {
     Orchestrator.forget()
     defer { Orchestrator.forget() }
@@ -25242,41 +25439,52 @@ group("what a terminal's spend is filed under, and what the backfill hands over"
           backfill.allSatisfy { $0["secret_hash"] == nil && $0["queued_secret"] == nil })
 }
 
-// MARK: - Schedule session resume
-
-checks += 1
-do {
-    let scheduleChecks = try runScheduleResumeTests()
-    checks += scheduleChecks
-    print("  ✓ ScheduleResume (\(scheduleChecks) checks)")
-} catch {
-    failures.append("ScheduleResume — \(error)")
-    print("  ✗ ScheduleResume")
-}
-
-// MARK: - Cloud protocol and transport
+// MARK: - Cloud suite registry
 
 let cloudVectorsURL = URL(
     fileURLWithPath: FileManager.default.currentDirectoryPath,
     isDirectory: true
 ).appendingPathComponent("Tests/protocol-vectors.json")
-var cloudEnvelopeChecks = 0
-var cloudTransportChecks = 0
-var cloudAppBridgeChecks = 0
 
-// Count the attempt itself before entering each throwing suite. A suite that throws therefore
-// still contributes one check to the final failure denominator; checks returned by a successful
-// suite are added separately below.
-checks += 1
-do {
-    let cloudChecks = try runCloudEnvelopeTests(vectorsURL: cloudVectorsURL)
-    cloudEnvelopeChecks = cloudChecks
-    checks += cloudChecks
-    print("  ✓ CloudEnvelope (\(cloudChecks) checks)")
-} catch {
-    failures.append("CloudEnvelope — \(error)")
-    print("  ✗ CloudEnvelope")
+struct CloudTestSuite {
+    let name: String
+    let run: () async throws -> Int
 }
+
+struct CloudTestHarnessFailure: Error, CustomStringConvertible {
+    let description: String
+}
+
+let expectedCloudSuiteNames = [
+    "CloudEnvelope", "CloudAccount", "CloudTransport", "CloudAppBridge", "CloudSettings",
+    "ScheduleResume", "CloudClock", "CloudCanonicalJSON", "CloudCommandLedger",
+    "CloudOutboundSpool", "CloudPairing",
+]
+let cloudTestSuites: [CloudTestSuite] = [
+    CloudTestSuite(name: "CloudEnvelope", run: {
+        try runCloudEnvelopeTests(vectorsURL: cloudVectorsURL)
+    }),
+    CloudTestSuite(name: "CloudAccount", run: { try await runCloudAccountTests() }),
+    CloudTestSuite(name: "CloudTransport", run: { try await runCloudTransportTests() }),
+    CloudTestSuite(name: "CloudAppBridge", run: { try await runCloudAppBridgeTests() }),
+    CloudTestSuite(name: "CloudSettings", run: { try await runCloudSettingsTests() }),
+    CloudTestSuite(name: "ScheduleResume", run: { try runScheduleResumeTests() }),
+    CloudTestSuite(name: "CloudClock", run: { try await runCloudClockTests() }),
+    CloudTestSuite(name: "CloudCanonicalJSON", run: {
+        try await runCloudCanonicalJSONTests()
+    }),
+    // The ledger suite creates unstructured tasks to prove duplicate coalescing. Run its complete
+    // lifecycle from the generic executor, matching its independently verified standalone entry,
+    // instead of inheriting this top-level task's main-queue executor preference.
+    CloudTestSuite(name: "CloudCommandLedger", run: {
+        try await Task.detached { try await runCloudCommandLedgerTests() }.value
+    }),
+    CloudTestSuite(name: "CloudOutboundSpool", run: {
+        try await runCloudOutboundSpoolTests()
+    }),
+    CloudTestSuite(name: "CloudPairing", run: { try await runCloudPairingTests() }),
+]
+let cloudTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites="
 
 // The transport runner is async. Entering the dispatch main loop keeps Foundation callbacks
 // available while its task runs. A process-wide watchdog prevents an await regression from
@@ -25350,26 +25558,79 @@ Task {
     check("the two earlier SessionWatch crossings remain queue-identity safe",
           earlier.isEmpty, "\(earlier)")
 
-    checks += 1
+    var completedCloudSuiteNames: [String] = []
+    var completedCloudSuiteReceipts: [String] = []
+    var cloudReceiptReady = false
     do {
-        let cloudChecks = try await runCloudTransportTests()
-        cloudTransportChecks = cloudChecks
-        checks += cloudChecks
-        print("  ✓ CloudTransport (\(cloudChecks) checks)")
-    } catch {
-        failures.append("CloudTransport — \(error)")
-        print("  ✗ CloudTransport")
-    }
+        let registeredNames = cloudTestSuites.map(\.name)
+        guard cloudTestSuites.count == 11 else {
+            throw CloudTestHarnessFailure(
+                description: "Cloud suite registry has \(cloudTestSuites.count) entries, expected 11")
+        }
+        let (afterRegistryCountCheck, registryCountOverflow) = checks.addingReportingOverflow(1)
+        guard !registryCountOverflow else {
+            throw CloudTestHarnessFailure(description: "total check count overflow")
+        }
+        checks = afterRegistryCountCheck
 
-    checks += 1
-    do {
-        let cloudChecks = try await runCloudAppBridgeTests()
-        cloudAppBridgeChecks = cloudChecks
-        checks += cloudChecks
-        print("  ✓ CloudAppBridge (\(cloudChecks) checks)")
+        guard Set(registeredNames).count == registeredNames.count else {
+            throw CloudTestHarnessFailure(
+                description: "Cloud suite registry contains duplicate names")
+        }
+        let (afterDuplicateCheck, duplicateCheckOverflow) = checks.addingReportingOverflow(1)
+        guard !duplicateCheckOverflow else {
+            throw CloudTestHarnessFailure(description: "total check count overflow")
+        }
+        checks = afterDuplicateCheck
+
+        guard registeredNames.sorted() == expectedCloudSuiteNames.sorted() else {
+            throw CloudTestHarnessFailure(
+                description: "Cloud suite registry does not match the expected suite set")
+        }
+        let (afterExpectedSetCheck, expectedSetCheckOverflow) = checks.addingReportingOverflow(1)
+        guard !expectedSetCheckOverflow else {
+            throw CloudTestHarnessFailure(description: "total check count overflow")
+        }
+        checks = afterExpectedSetCheck
+
+        for suite in cloudTestSuites {
+            try Task.checkCancellation()
+            let suiteChecks: Int
+            do {
+                suiteChecks = try await suite.run()
+            } catch {
+                throw CloudTestHarnessFailure(description: "\(suite.name) — \(error)")
+            }
+            try Task.checkCancellation()
+            guard suiteChecks > 0 else {
+                throw CloudTestHarnessFailure(
+                    description: "\(suite.name) returned non-positive check count \(suiteChecks)")
+            }
+            let (newTotal, overflow) = checks.addingReportingOverflow(suiteChecks)
+            guard !overflow else {
+                throw CloudTestHarnessFailure(
+                    description: "total check count overflow after \(suite.name)")
+            }
+            checks = newTotal
+            completedCloudSuiteNames.append(suite.name)
+            completedCloudSuiteReceipts.append("\(suite.name):\(suiteChecks)")
+            print("  ✓ \(suite.name) (\(suiteChecks) checks)")
+        }
+
+        guard completedCloudSuiteNames.count == 11,
+              completedCloudSuiteNames == expectedCloudSuiteNames else {
+            throw CloudTestHarnessFailure(
+                description: "Cloud suite completion order/count did not match the expected registry")
+        }
+        let (afterCompletionCheck, completionCheckOverflow) = checks.addingReportingOverflow(1)
+        guard !completionCheckOverflow else {
+            throw CloudTestHarnessFailure(description: "total check count overflow")
+        }
+        checks = afterCompletionCheck
+        cloudReceiptReady = true
     } catch {
-        failures.append("CloudAppBridge — \(error)")
-        print("  ✗ CloudAppBridge")
+        failures.append("Cloud suite harness — \(error)")
+        print("  ✗ Cloud suite harness")
     }
 
     // MARK: - Result
@@ -25387,10 +25648,9 @@ Task {
         for failure in failures { print("  ✗ \(failure)") }
         finalStatus = 1
     }
-    print("CLAWDLINE_CLOUD_TESTS_COMPLETE "
-        + "CloudEnvelope=\(cloudEnvelopeChecks) "
-        + "CloudTransport=\(cloudTransportChecks) "
-        + "CloudAppBridge=\(cloudAppBridgeChecks)")
+    if cloudReceiptReady {
+        print(cloudTestCompletionReceiptPrefix + completedCloudSuiteReceipts.joined(separator: ","))
+    }
     exit(finalStatus)
 }
 dispatchMain()

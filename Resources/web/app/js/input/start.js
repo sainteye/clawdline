@@ -1,7 +1,7 @@
 import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
-import { clockOf, shortPath, tint } from "../core/util.js";
+import { clockOf, shortPath, tint, toast } from "../core/util.js";
 import { bandSpin, drawIcon, drawSpinner, setBandSpin, setStartSpin, spinPhase, spinners, startSpin } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId, bySessionId } from "../view/derive.js";
@@ -9,6 +9,12 @@ import { renderList } from "../view/list.js";
 import { renderComposer } from "../view/composer.js";
 import { Waits } from "../view/waits.js";
 import { openSession } from "../session/open.js";
+import {
+    clawdfatherCreationChoice,
+    clawdfatherCreationLabel,
+    createClawdfatherAssignmentState,
+    createClawdfatherCoordinatorLoader
+} from "./clawdfather.js";
 
 /* ---- starting a session -------------------------------------------------- */
 
@@ -64,6 +70,8 @@ export var Start = (function () {
     var pasts = null;    // as the Mac sent them, for `at`; null until an answer has arrived
     var capped = false;  // the Mac stopped listing before the end, and said so
     var reading = false;
+    var coordinatorPayload = null; // durable device Bearings; null while its read is in flight
+    var coordinatorFailed = false;
     var wait = null;     // { id, from, late, place } — started, and not in the list yet
     var timer = null;
     var placeholderNode = null;
@@ -71,6 +79,37 @@ export var Start = (function () {
     // paint is the promised in-place replacement; after it, ordinary list ordering takes over
     // through the same FLIP path as every other move rather than making the arrival itself jump.
     var landed = null;
+
+    var assignmentState = createClawdfatherAssignmentState({
+        timeoutMs: HOLD,
+        onTimeout: function () {
+            toast("The new session did not become ready in time to name it Clawdfather.", true);
+        },
+        onSettled: function (result) {
+            if (result && result.state === "sent") {
+                toast("The new session was asked to become Clawdfather.");
+                return;
+            }
+            if (result && result.state === "blocked") {
+                var choice = result.choice || {};
+                var coordinator = choice.coordinator || {};
+                if (choice.state === "assigned") {
+                    toast(fill(coordinator.status === "online" ? T.webCoordOnline : T.webCoordOffline,
+                               { name: coordinator.label || "Clawdfather" }));
+                } else {
+                    toast(T.webCoordReadFailed, true);
+                }
+                return;
+            }
+            var error = result && result.error;
+            toast(error && error.message ? error.message : T.webCoordReadFailed, true);
+        }
+    });
+    var coordinatorLoader = createClawdfatherCoordinatorLoader(api, function (state) {
+        coordinatorPayload = state.payload;
+        coordinatorFailed = state.failed === true;
+        draw();
+    });
 
     function say(words) { els["start-say"].textContent = words || ""; }
     function said(words) { els["start-said"].textContent = words || ""; }
@@ -234,8 +273,47 @@ export var Start = (function () {
         chip.querySelector(".label").textContent = T.webResumeWith;
         chip.disabled = !!pressing || !!wait || !resumable();
         chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false");
-        chip.onclick = function () { resume = !resume; draw(); };
+        chip.onclick = function () {
+            resume = !resume;
+            if (resume) assignmentState.choose(false);
+            draw();
+        };
         row.appendChild(chip);
+    }
+
+    /**
+     * A creation-only role switch, closed by any durable coordinator record.
+     *
+     * The live Session list cannot answer the offline case: its coordinator projection is on the
+     * exact bound process only. Bearings can, and only an explicit `configured:false` enables
+     * this button. A failed or unfinished read therefore looks disabled rather than guessing that
+     * an absent live crown means the machine is unowned.
+     */
+    function drawClawdfather() {
+        var row = els["start-clawdfather-row"];
+        var button = els["start-clawdfather"];
+        var state = els["start-clawdfather-state"];
+        var choice = clawdfatherCreationChoice(
+            coordinatorPayload, assignmentState.selected(), !resume && !at);
+        row.hidden = !choice.shown;
+        if (!choice.shown) return;
+        els["start-clawdfather-label"].textContent = clawdfatherCreationLabel();
+        button.disabled = !choice.enabled || !!pressing || !!wait || !S.write;
+        button.classList.toggle("on", choice.checked);
+        button.setAttribute("aria-pressed", choice.checked ? "true" : "false");
+        button.dataset.state = choice.state;
+
+        var words = "";
+        if (choice.state === "checking") words = T.webLoading;
+        else if (choice.state === "unavailable" || coordinatorFailed) {
+            words = T.webCoordReadFailed;
+        } else if (choice.state === "assigned") {
+            var coordinator = choice.coordinator || {};
+            words = fill(coordinator.status === "online" ? T.webCoordOnline : T.webCoordOffline,
+                         { name: coordinator.label || "Clawdfather" });
+        }
+        state.textContent = words;
+        button.title = words;
     }
 
     /** Whether the list is hiding anything below its own edge, which is what the fade at the
@@ -261,12 +339,14 @@ export var Start = (function () {
             box.hidden = true;
             els["start-with"].hidden = true;
             els["start-resume"].hidden = true;
+            els["start-clawdfather-row"].hidden = true;
             list.innerHTML = "";
             return;
         }
 
         drawWith();
         drawResume();
+        drawClawdfather();
 
         if (at) { drawPast(list, box); return; }
 
@@ -420,6 +500,13 @@ export var Start = (function () {
         });
     }
 
+    /** Read the durable owner independently of the places list; either may be slow without
+     *  holding the other off screen. Every opening gets a fresh answer because coordinator
+     *  registration can change between two visits to the sheet. */
+    function loadCoordinator() {
+        return coordinatorLoader.load();
+    }
+
     /** Show what has already been said in a place. Asked every time rather than remembered: a
      *  conversation can be started, renamed or deleted between two looks at the same project,
      *  and `live` is a fact about this instant that a cache would be wrong about immediately. */
@@ -478,6 +565,7 @@ export var Start = (function () {
         // row of it.
         if (resume && resumable() && place) { enter(place); return; }
         pressing = id;
+        var makeClawdfather = assignmentState.selected();
         said("");
         draw();
         Waits.startPress.start();
@@ -486,11 +574,12 @@ export var Start = (function () {
                 pressing = null;
                 // From here the tab exists on the Mac. Nothing after this line is allowed to read
                 // as "it might not have worked", and nothing after it presses this again.
-                began(d && d.id, place);
+                began(d && d.id, place, makeClawdfather);
             });
         }).catch(function (e) {
             Waits.startPress.settle(function () {
                 pressing = null;
+                assignmentState.choose(false);
                 if (e && e.code === "write_disabled") {
                     // The switch was turned off while this sheet was open. The server is the one
                     // that knows, so take its word for it — the composer answers to the same flag.
@@ -567,7 +656,8 @@ export var Start = (function () {
     }
 
     /** Started. The sheet has done its job, and what is left is a wait. */
-    function began(id, place) {
+    function began(id, place, makeClawdfather) {
+        assignmentState.begin(id, makeClawdfather === true);
         close();
         if (!id) {
             // A reply with no id is nothing to watch the list for. The tab was still opened —
@@ -605,13 +695,17 @@ export var Start = (function () {
     }
 
     function open() {
+        assignmentState.open();
         els.start.hidden = false;
         said("");
         // Always at the projects. The switch survives — it is a preference — but a sheet that
         // reopened inside whichever project was last looked at would be a sheet whose first
         // screen depends on something nobody remembers doing.
         leave();
-        if (S.write && !wait) load();
+        if (S.write) {
+            if (!wait) load();
+            loadCoordinator();
+        }
         draw();
         els["start-close"].focus({ preventScroll: true });
     }
@@ -677,6 +771,13 @@ export var Start = (function () {
         began: began,
         press: press,
         pick: pick,
+        toggleClawdfather: function () {
+            var choice = clawdfatherCreationChoice(
+                coordinatorPayload, assignmentState.selected(), !resume && !at);
+            if (choice.enabled !== true || pressing || wait || !S.write) return;
+            assignmentState.choose(!assignmentState.selected());
+            draw();
+        },
         typed: function (value) { find = value; draw(); },
         scrolled: edge,
         placeholder: placeholder,
@@ -705,6 +806,7 @@ export var Start = (function () {
          * there through a session that had already started fine.
          */
         check: function () {
+            attemptAssignment();
             if (!wait && landed) {
                 landed = null;
                 renderList();
@@ -728,6 +830,21 @@ export var Start = (function () {
             return true;
         }
     };
+
+    /**
+     * Type the registration recipe only after the assistant process exists.
+     *
+     * The terminal id appears in `/v1/sessions` before Claude or Codex does. Sending on that
+     * first frame would type a paragraph into the newborn shell; waiting for the closed assistant
+     * field makes it the assistant's first instruction instead. Bearings is read once more at
+     * this last boundary so a coordinator registered while the tab was starting wins the race
+     * and the new Session is never asked to take over.
+     */
+    function attemptAssignment() {
+        var id = assignmentState.pendingID();
+        if (!id) return;
+        assignmentState.attempt(byId(id), api, { timeoutMs: 8000 });
+    }
 })();
 
 els["start-go"].addEventListener("click", function () { Start.open(); });
@@ -735,6 +852,7 @@ els.start.addEventListener("click", function () { Start.close(); });
 els["start-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
 els["start-close"].addEventListener("click", function () { Start.close(); });
 els["start-filter"].addEventListener("input", function () { Start.typed(this.value); });
+els["start-clawdfather"].addEventListener("click", function () { Start.toggleClawdfather(); });
 els["start-list"].addEventListener("scroll", function () { Start.scrolled(); }, { passive: true });
 els["start-list"].addEventListener("click", function (ev) {
     var row = ev.target.closest ? ev.target.closest(".place") : null;

@@ -859,6 +859,24 @@ final class RemoteServer: @unchecked Sendable {
         case ("GET", "/v1/sessions"):
             return .json(sessionsPayload())
 
+        // Read-level despite being a POST: this types nothing and changes no session. It asks the
+        // Mac to replace its published evidence, which a plain GET cannot do when the last scan
+        // happened to collide with an iTerm automation stall. SessionWatch bounds repeated asks to
+        // one in-flight read plus one remembered follow-up.
+        case ("POST", "/v1/sessions/refresh"):
+            let receipt = onMain(from: "RemoteServer.sessionRefresh") {
+                SessionWatch.shared.refresh()
+            }
+            let state = receipt.disposition.rawValue
+            return .json([
+                "ok": true,
+                "state": state,
+                "accepted": receipt.disposition == .accepted,
+                "coalesced": receipt.disposition == .coalesced,
+                "throttled": receipt.disposition == .throttled,
+                "scan": ["generation": receipt.generation],
+            ])
+
         // Everything about this project that has an address.
         //
         // **A route rather than a field on the session.** The session list goes out on the event
@@ -1912,7 +1930,7 @@ final class RemoteServer: @unchecked Sendable {
                 if let failure = Targets.end(session) {
                     return Self.terminalFailure(failure, backend: session.backend)
                 }
-                SessionWatch.shared.nudge()
+                DispatchQueue.main.async { SessionWatch.shared.nudge() }
                 return .json(["ok": true])
             }
 
@@ -2006,7 +2024,7 @@ final class RemoteServer: @unchecked Sendable {
                 RemoteAuth.audit("shell.kill", ["id": session.id, "shell": shell])
                 switch Shells.stop(shell, of: session) {
                 case .stopped:
-                    SessionWatch.shared.nudge()
+                    DispatchQueue.main.async { SessionWatch.shared.nudge() }
                     return .json(["ok": true])
                 case .gone:
                     return .error(404, "not_found", "That command is not running")
@@ -2054,7 +2072,7 @@ final class RemoteServer: @unchecked Sendable {
                 }
                 RemoteAuth.audit("session.key", ["id": session.id, "key": key])
                 // A reading now would still show the menu — the terminal has not repainted yet.
-                SessionWatch.shared.nudge()
+                DispatchQueue.main.async { SessionWatch.shared.nudge() }
                 return .json(["ok": true])
             }
 

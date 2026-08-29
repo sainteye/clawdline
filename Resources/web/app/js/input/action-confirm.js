@@ -154,11 +154,6 @@ els["session-actions"].addEventListener("click", function (ev) {
     if (ev.target.closest && ev.target.closest("#session-info")) {
         SessionActions.close(); Info.open(); return;
     }
-    // Its own confirmation, opened by the action rather than by this delegate: the sheet needs
-    // the composed sentence and the target id, and only that method has both.
-    if (ev.target.closest && ev.target.closest("#session-clawdfather")) {
-        SessionActions.clawdfather(); return;
-    }
     if (ev.target.closest && ev.target.closest("#session-git-more")) {
         SessionActions.level("git", true); return;
     }

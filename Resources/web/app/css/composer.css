@@ -387,7 +387,13 @@
     background: var(--card); color: var(--dim);
     font-size: 11.5px; padding: 4px 10px;
 }
-.composer .waiting .go:hover { background: var(--card-hi); color: var(--ink); }
+.composer .waiting .go:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.composer .waiting .go + .go { margin-left: 6px; }
+.composer .waiting .go:disabled { background: var(--card); color: var(--faint); cursor: default; }
+.composer .waiting .refresh-status {
+    display: inline-block; min-height: 1em; margin-left: 7px;
+    color: var(--faint); font-size: 11px;
+}
 
 /* The menu itself, as things a finger can hit.
    ---------------------------------------------------------------------------

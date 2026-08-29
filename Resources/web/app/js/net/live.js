@@ -3,6 +3,7 @@ import { toast, uuid } from "../core/util.js";
 import { handlers } from "./handlers.js";
 import { adoptToken, jsonFetch, post } from "./fetch.js";
 import { Door } from "../door/door.js";
+import { T } from "../core/i18n.js";
 import { LOCAL_MACHINE, sessionIdentity } from "./client.js";
 
 var eventSubscribers = new Set();
@@ -16,6 +17,14 @@ export var LocalClient = {
     countdown: null,
     sessionProbe: null,
     sessionRevision: 0,
+    sessionGeneration: null,
+    sessionEvidenceAt: 0,
+    sessionRefreshEvidence: { status: "idle", busy: false, baseline: null,
+                              disposition: null, promise: null, timer: null },
+    sessionRefreshTimeout: 18000,
+
+    scheduleSessionRefreshTimeout: function (fn, delay) { return setTimeout(fn, delay); },
+    cancelSessionRefreshTimeout: function (timer) { clearTimeout(timer); },
 
     /** The transport-neutral event lane. Existing handlers remain the first subscriber. */
     events: function (listener) {
@@ -87,6 +96,7 @@ export var LocalClient = {
     stop: function () {
         this.clearTimers();
         if (this.es) { this.es.close(); this.es = null; }
+        this.cancelSessionRefreshEvidence();
         this.sessionProbe = null;
         this.sessionRevision += 1;
         this.attempt = 0;
@@ -148,6 +158,20 @@ export var LocalClient = {
     receiveSessions: function (data) {
         data = data || {};
         var scan = data.scan || {};
+        var generation = Number(scan.generation);
+        var observedAt = Number(data.at) || 0;
+        var hasGeneration = Number.isSafeInteger(generation) && generation >= 0;
+        if (!hasGeneration && this.sessionGeneration !== null) return Promise.resolve(false);
+        if (hasGeneration && this.sessionGeneration !== null &&
+            (generation < this.sessionGeneration ||
+             (generation === this.sessionGeneration && observedAt < this.sessionEvidenceAt))) {
+            return Promise.resolve(false);
+        }
+        if (hasGeneration) {
+            this.sessionGeneration = generation;
+            this.sessionEvidenceAt = Math.max(this.sessionEvidenceAt, observedAt);
+            this.observeSessionRefreshEvidence(generation);
+        }
         if (handlers.sessions(data.sessions, data.at, scan) !== false) {
             this.sessionRevision += 1;
             this.sessionProbe = null;
@@ -208,12 +232,118 @@ export var LocalClient = {
         this.timer = this.countdown = null;
     },
 
-    /** Ask again by hand — the phone's pull-to-refresh, and the connection chip. */
+    /** Pull-to-refresh and the connection chip retain their old snapshot/reconnect meaning. */
     refresh: function () {
         var self = this;
-        if (!this.es) { this.clearTimers(); this.attempt = 0; return this.check(); }
+        if (!this.es) {
+            this.clearTimers();
+            this.attempt = 0;
+            return this.check();
+        }
         return jsonFetch("/v1/sessions").then(function (d) { return self.receiveSessions(d); })
             .catch(function (e) { toast(e.message, true); });
+    },
+
+    /** A local-Mac operation: request evidence newer than the route's coherent baseline. */
+    refreshSessionEvidence: function () {
+        var current = this.sessionRefreshEvidence;
+        if (current.busy) return current.promise;
+        if (!this.es) {
+            var offline = new Error(T.webOffline);
+            offline.code = "offline";
+            return Promise.reject(offline);
+        }
+
+        var self = this;
+        var marker = { status: "busy", busy: true, baseline: null, disposition: null,
+                       promise: null, timer: null, resolve: null, reject: null };
+        marker.promise = new Promise(function (resolve, reject) {
+            marker.resolve = resolve;
+            marker.reject = reject;
+        });
+        this.sessionRefreshEvidence = marker;
+        this.announceSessionRefreshEvidence();
+
+        jsonFetch("/v1/sessions/refresh", post({})).then(function (ack) {
+            if (self.sessionRefreshEvidence !== marker) return;
+            var generation = Number(ack && ack.scan && ack.scan.generation);
+            var states = ["accepted", "coalesced", "throttled"];
+            var state = ack && ack.state;
+            var booleansAgree = ack && ack.accepted === (state === "accepted") &&
+                ack.coalesced === (state === "coalesced") &&
+                ack.throttled === (state === "throttled");
+            if (!ack || ack.ok !== true || !states.includes(state) || !booleansAgree ||
+                !Number.isSafeInteger(generation) || generation < 0) {
+                var invalid = new Error(T.webRequestFailed);
+                invalid.code = "bad_refresh_ack";
+                throw invalid;
+            }
+            marker.baseline = generation;
+            marker.disposition = state;
+            if (self.sessionGeneration !== null && self.sessionGeneration > generation) {
+                self.finishSessionRefreshEvidence(marker, "complete",
+                    { state: "complete", generation: self.sessionGeneration });
+                return;
+            }
+            marker.timer = self.scheduleSessionRefreshTimeout(function () {
+                self.finishSessionRefreshEvidence(marker, "timed_out",
+                    { state: "timed_out", generation: self.sessionGeneration });
+            }, self.sessionRefreshTimeout);
+        }).catch(function (error) {
+            self.finishSessionRefreshEvidence(marker, "failed", null, error);
+        });
+        return marker.promise;
+    },
+
+    sessionRefreshEvidenceState: function () {
+        var state = this.sessionRefreshEvidence;
+        return { status: state.status, busy: state.busy, baseline: state.baseline,
+                 disposition: state.disposition };
+    },
+
+    observeSessionRefreshEvidence: function (generation) {
+        var marker = this.sessionRefreshEvidence;
+        if (!marker.busy || marker.baseline === null || generation <= marker.baseline) return;
+        this.finishSessionRefreshEvidence(marker, "complete",
+            { state: "complete", generation: generation });
+    },
+
+    finishSessionRefreshEvidence: function (marker, status, result, error) {
+        if (this.sessionRefreshEvidence !== marker) return;
+        if (marker.timer !== null) this.cancelSessionRefreshTimeout(marker.timer);
+        this.sessionRefreshEvidence = { status: status, busy: false,
+            baseline: marker.baseline, disposition: marker.disposition, promise: null, timer: null };
+        this.announceSessionRefreshEvidence();
+        if (error) marker.reject(error); else marker.resolve(result);
+    },
+
+    announceSessionRefreshEvidence: function () {
+        if (typeof document !== "undefined" && typeof document.dispatchEvent === "function") {
+            document.dispatchEvent(new CustomEvent("clawdline:session-refresh"));
+        }
+    },
+
+    // Raising the auth door retires the local operation without manufacturing a 401 toast. The
+    // POST may already be on the wire, but its late answer no longer owns the marker and cannot
+    // change the page or revive the operation.
+    cancelSessionRefreshEvidence: function () {
+        var marker = this.sessionRefreshEvidence;
+        if (!marker || !marker.busy) return;
+        if (marker.timer !== null) this.cancelSessionRefreshTimeout(marker.timer);
+        this.sessionRefreshEvidence = { status: "idle", busy: false, baseline: null,
+            disposition: null, promise: null, timer: null };
+        this.announceSessionRefreshEvidence();
+        marker.resolve({ state: "stopped" });
+    },
+
+    resetSessionRefreshForTesting: function () {
+        var marker = this.sessionRefreshEvidence;
+        if (marker && marker.timer !== null) this.cancelSessionRefreshTimeout(marker.timer);
+        this.sessionRefreshEvidence = { status: "idle", busy: false, baseline: null,
+            disposition: null, promise: null, timer: null };
+        this.sessionGeneration = null;
+        this.sessionEvidenceAt = 0;
+        this.announceSessionRefreshEvidence();
     },
 
     /** The REST half of the interface; start()/events() owns the SSE half. */

@@ -492,6 +492,17 @@ private func cloudAccountRunSameMachineRevokeABAScenario() async throws {
     }
 }
 
+func runCloudAccountRegressionScenario(mode: String) async throws {
+    switch mode {
+    case "crossed-lock":
+        try await cloudAccountRunCrossedLockScenario()
+    case "revoke-aba":
+        try await cloudAccountRunSameMachineRevokeABAScenario()
+    default:
+        throw CloudAccountTestFailure(description: "unknown CloudAccount regression mode: \(mode)")
+    }
+}
+
 func runCloudAccountTests() async throws -> Int {
     switch ProcessInfo.processInfo.environment[cloudAccountRegressionModeKey] {
     case "crossed-lock":
@@ -1100,13 +1111,3 @@ func runCloudAccountTests() async throws -> Int {
 
     return checks
 }
-
-#if CLOUD_ACCOUNT_STANDALONE
-@main
-private struct CloudAccountStandaloneTests {
-    static func main() async throws {
-        let count = try await runCloudAccountTests()
-        print("\(count) CloudAccount checks passed")
-    }
-}
-#endif

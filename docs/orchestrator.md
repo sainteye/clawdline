@@ -1486,19 +1486,26 @@ menu's `reconnect` command. The menu remains disabled; an authenticated local op
 already-live replacement. Future start/restore or health-driven behavior must keep the separate
 observer provenance and explicit policy boundaries rather than widening this endpoint.
 
-**The web app's *Make this session Clawdfather* item is not a fourth coordinator route.** None of
-the three endpoints above became reachable from a paired device, and none of them types into
-anything. What that item does is compose one instruction and send it over the existing
-`POST /v1/sessions/:id/send`, which the page could already reach; the session that receives it is a
+**The web app's new-Session *Name the new session Clawdfather* choice is not a fourth coordinator
+route.** None of the three endpoints above became reachable from a paired device, and none of them
+types into anything. When the creation sheet opens it reads the device-safe Bearings projection;
+only an explicit `coordinator.configured:false` enables the choice, so an offline durable owner
+closes it exactly as an online one does. That projection contains no machine credential or durable
+compare-and-swap fields.
+
+After the new tab appears in `/v1/sessions`, the page waits until its `assistant` field proves that
+Claude or Codex is ready rather than typing a paragraph into the newborn shell. It then reads
+Bearings once more to close the start-up race and sends one instruction over the existing
+`POST /v1/sessions/:id/send`, which the page could already reach. The session that receives it is a
 local process running as the owner of this Mac, so it reads the orchestrator token and performs the
-register or rebind itself — the same act as a person typing the curl by hand, and the same trust
-boundary every Clawdline dispatch already stands on. The browser therefore never holds the
-machine credential, never learns the durable record, and cannot take over a live coordinator, since
-the refusals below still apply at the only place the decision is made. What it *does* know is the
-target's terminal-neutral id, because that is the `id` on the Session row it drew, so it hands that
-over in the instruction. Whether the role was taken is read back the way it always was: the
-authenticated `session.coordinator` projection appears on the exact bound row, and the item turns
-into a statement of who holds it. The recipe that item asks for is the next section.
+register itself — the same act as a person typing the curl by hand, and the same trust boundary
+every Clawdline dispatch already stands on. The browser therefore never holds the machine
+credential and cannot take over a configured coordinator. What it *does* know is the target's
+terminal-neutral id, because that is the `id` on the Session row it drew, so it hands that over in
+the instruction. Whether the role was taken is read back through the authenticated
+`session.coordinator` projection: the exact bound row and its SessionChat header wear the crown.
+There is no Clawdfather assignment item in an existing Session's action menu. The recipe the new
+Session is asked to follow is the next section.
 
 ### Deep status audit: the agent-driven first slice
 
@@ -1522,10 +1529,16 @@ by this slice.
 There is no route by which anything but a local process holding the orchestrator token can register
 the machine coordinator, and there is deliberately not going to be one. So "make that session
 Clawdfather" is never carried out *for* a session; it is carried out *by* it. A person types the
-curl, or the web app's **Make this session Clawdfather** item types an instruction into the session
-through the ordinary `POST /v1/sessions/:id/send` and the session does exactly what is written
-below. This section is the authoritative copy of it, so that a session which has just been asked
-has something to follow rather than Swift source to reverse-engineer.
+curl, or the web app's new-Session **Name the new session Clawdfather** choice types a
+registration-only instruction into the newly created session through the ordinary
+`POST /v1/sessions/:id/send`; the session does exactly what is written below. This section is the
+authoritative copy of it, so that a session which has just been asked has something to follow
+rather than Swift source to reverse-engineer.
+
+For the web creation helper, **registration-only** is a hard boundary: after step 2 it follows
+step 3 only when `coordinator.configured` is `false`. If any record is configured, whether online
+or offline, it reports that owner and stops. Steps 4 and 5 remain a manual local repair procedure;
+the creation sheet never asks a new Session to rebind or replace an offline owner.
 
 **The two local facts.** The token is `~/.config/clawdline/orchestrator-token`, mode `0600` and
 readable only by a process running as its owner; the port is `remote_port` in
