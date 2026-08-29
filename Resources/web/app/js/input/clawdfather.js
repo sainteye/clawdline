@@ -20,6 +20,8 @@
    instruction rather than left to `$ITERM_SESSION_ID` archaeology at the other end.
    -------------------------------------------------------------------------- */
 
+import { T, fill } from "../core/i18n.js";
+
 /**
  * Whether the creation sheet may offer the Clawdfather choice.
  *
@@ -65,21 +67,61 @@ export function clawdfatherCreationChoice(payload, selected, fresh) {
     };
 }
 
-/** Reliable creation-only fallback while the server's former per-Session strings age out. */
+/* --------------------------------------------------------------------------
+   The words, and the two that are kept here as well
+
+   Both sentences below come from the Mac: `T.webMakeClawdfather` is the chip on the creation
+   sheet and `T.webClawdfatherAsk` is the line typed into the new session, translated into every
+   language in `L.catalog`. `core/i18n.js` already carries an English copy of each for a page
+   whose `/v1/strings` read failed, and `applyStrings` refuses an empty value, so the ordinary
+   missing-translation case never reaches this module.
+
+   What does reach it is a value that arrived and cannot be used, which `applyStrings` cannot
+   judge because it only looks at the type. Three shapes matter, and each is a real sentence
+   somebody would otherwise be shown or an assistant would otherwise be told:
+
+   * **Blank.** A chip with no words on it is a switch nobody can read.
+   * **No `{id}` hole.** The far end would be asked to register "this session" with no way to say
+     which, which is the archaeology the browser exists to save it — so the line is unusable
+     rather than merely worse.
+   * **Names `rebind`.** The retired branch. This flow registers an unregistered coordinator and
+     nothing else, and a translation that still teaches reconnecting an offline owner would be
+     typed into something that acts on it. Refusing it here makes the contract enforced rather
+     than merely written down.
+
+   In all three the English below is typed instead, because a wrong sentence is worse than an
+   untranslated one when the reader is going to act on it.
+   -------------------------------------------------------------------------- */
+
+var CREATION_LABEL_EN = "Name the new session Clawdfather";
+
+var CREATION_ASK_EN =
+    "Please register this new session as this Mac's Clawdfather, the machine coordinator. "
+    + "Your terminal-neutral session id is {id}. Read the coordinator record using "
+    + "the orchestrator token at ~/.config/clawdline/orchestrator-token. If and only if no "
+    + "coordinator is configured, follow the registration branch of “Becoming Clawdfather” "
+    + "in docs/orchestrator.md. If any coordinator is already configured, including one that "
+    + "is offline, do not replace it. Then report what happened.";
+
+/** A served string, or the English, when what arrived is not a sentence at all. */
+function served(value, english) {
+    return typeof value === "string" && value.trim() ? value : english;
+}
+
+/** The chip on the creation sheet, in this browser's language. */
 export function clawdfatherCreationLabel() {
-    return "Name the new session Clawdfather";
+    return served(T.webMakeClawdfather, CREATION_LABEL_EN);
 }
 
 /** The one line typed into the new session. It never offers offline replacement. */
 export function clawdfatherInstruction(session) {
     var id = session && typeof session.id === "string" ? session.id.trim() : "";
     if (!id) return "";
-    return "Please register this new session as this Mac's Clawdfather, the machine coordinator. "
-        + "Your terminal-neutral session id is " + id + ". Read the coordinator record using "
-        + "the orchestrator token at ~/.config/clawdline/orchestrator-token. If and only if no "
-        + "coordinator is configured, follow the registration branch of “Becoming Clawdfather” "
-        + "in docs/orchestrator.md. If any coordinator is already configured, including one that "
-        + "is offline, do not replace it. Then report what happened.";
+    var template = served(T.webClawdfatherAsk, CREATION_ASK_EN);
+    if (template.indexOf("{id}") < 0 || /\brebind\b/i.test(template)) {
+        template = CREATION_ASK_EN;
+    }
+    return fill(template, { id: id });
 }
 
 function timeoutError(code, message) {

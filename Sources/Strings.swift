@@ -523,15 +523,32 @@ protocol Copy {
     /// The line above the list of what a close would take with it — live children, stranded
     /// waiters — shown at the moment of the confirming press, never as a list column.
     var webConfirmEndLoses: String { get }
-    /// Turning a chosen session into this Mac's Clawdfather.
+    /// Naming a newly created Session this Mac's Clawdfather.
+    ///
+    /// **Registration-only, in every language.** The choice lives on the creation sheet, it is
+    /// offered only when this Mac has no coordinator record at all, and the sentence it types
+    /// says so: a configured coordinator is left where it is, *including one that is offline*.
+    /// Reconnecting an offline owner is the manual repair below the recipe in
+    /// `docs/orchestrator.md` and belongs to a person at the machine, not to a web sheet, so no
+    /// translation here may name `rebind` or offer to take an existing owner's place.
     ///
     /// The browser cannot register a coordinator — that needs the orchestrator token, and a
-    /// paired device does not have one. So the item does not do it: it types
-    /// `webClawdfatherAsk` into the session through the ordinary send route, and the session,
-    /// which is a local process that *can* read the token, carries out the recipe itself.
+    /// paired device does not have one. So the sheet does not do it: it types
+    /// `webClawdfatherAsk` into the new session through the ordinary send route, and the
+    /// session, which is a local process that *can* read the token, carries out the
+    /// registration itself.
+    ///
     /// `{name}` in `webClawdfatherIs` is the label from the authenticated `session.coordinator`
-    /// projection; `{id}` in `webClawdfatherAsk` is that session's terminal-neutral id, which the
-    /// page already holds and hands over rather than leaving it to be worked out at the far end.
+    /// projection; `{id}` in `webClawdfatherAsk` is the new session's terminal-neutral id, which
+    /// the page already holds and hands over rather than leaving it to be worked out at the far
+    /// end. A translation that drops that hole would be addressed to nobody, so
+    /// `input/clawdfather.js` refuses it and types the English — see the fallbacks there, which
+    /// are the layer below the baked-in English in `core/i18n.js`.
+    ///
+    /// The member names still read `webMake…`/`web…Ask`/`web…Asked` from the retired Session
+    /// menu item. Renaming them means renaming the keys `/v1/strings` sends, which is a
+    /// `RemoteServer.swift` change this copy contract does not own; the words are what the page
+    /// and the far end read, and those are creation-only.
     var webMakeClawdfather: String { get }
     var webClawdfatherIs: String { get }
     var webConfirmClawdfatherTitle: String { get }

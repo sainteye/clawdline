@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
+import { T, fill } from "../Resources/web/app/js/core/i18n.js";
 import {
     attemptClawdfatherAssignment,
     clawdfatherCreationChoice,
@@ -402,6 +403,191 @@ const controls = await readFile(
 );
 assert.match(controls, /confirmDisabled: true/,
     "the Clawdfather command preview gate is untouched by this affordance");
+
+/* ---- the localized creation copy contract --------------------------------- */
+
+/*
+   The choice on the creation sheet used to be a menu item on an existing Session, and its words
+   still were: fourteen translations of *Make this session Clawdfather*, and fourteen instructions
+   telling the far end to `rebind` a coordinator that had gone offline. Both are now wrong in the
+   same direction — this flow registers a genuinely unregistered coordinator and nothing else — and
+   copy that says otherwise is not cosmetic here, because the sentence is typed into an assistant
+   that will act on it.
+
+   So three things are checked, in the three places a word crosses on its way to the page.
+
+   * **Every locale in `L.catalog`**, read out of the one catalog rather than a list written here,
+     translates all five keys, and none of them still names `rebind`. That term survived
+     untranslated in all fourteen old instructions, which makes it the one language-independent
+     fingerprint of the retired branch.
+   * **The retired labels are frozen below by value.** A locale quietly put back the way it was
+     has no other tell — "make this session" has no shape a regular expression can find in Hindi.
+   * **The page consumes the served string.** Not by grepping for `T.`, which a hardcoded literal
+     beside it would satisfy, but by serving a different one and reading what comes out.
+*/
+
+const CREATION_KEYS = ["webMakeClawdfather", "webConfirmClawdfatherTitle",
+                       "webConfirmClawdfatherSay", "webClawdfatherAsk", "webClawdfatherAsked"];
+
+// The exact sentences withdrawn with the Session menu item. Listed rather than described: the
+// point of the list is that a translator or a bad merge cannot put one back unnoticed.
+const RETIRED_COPY = [
+    "Make this session Clawdfather",
+    "讓這個 session 成為 Clawdfather",
+    "让这个 session 成为 Clawdfather",
+    "このセッションを Clawdfather にする",
+    "이 세션을 Clawdfather로 만들기",
+    "Hacer de esta sesión el Clawdfather",
+    "Tornar esta sessão o Clawdfather",
+    "Faire de cette session le Clawdfather",
+    "Diese Sitzung zum Clawdfather machen",
+    "Сделать эту сессию Clawdfather",
+    "Rendi questa sessione il Clawdfather",
+    "इस session को Clawdfather बनाएँ",
+    "Jadikan sesi ini Clawdfather",
+    "Bu oturumu Clawdfather yap",
+    "Make this session Clawdfather?",
+    "One instruction is typed into the session. It reads the machine coordinator record itself "
+    + "and registers, or reconnects an offline one — never taking over a coordinator that is "
+    + "still live.",
+    "Asked the session to become Clawdfather"
+];
+
+const stringsSwift = await readFile(
+    new URL("../Sources/Strings.swift", import.meta.url), "utf8"
+);
+
+// The typed contract, and the paragraph above it that says what the five members are for.
+const docStart = stringsSwift.indexOf("/// Naming a newly created Session");
+assert.notEqual(docStart, -1,
+    "the Strings protocol documents naming a new Session, not turning this one into Clawdfather");
+const lastMember = "var webClawdfatherAsked: String { get }";
+const docEnd = stringsSwift.indexOf(lastMember, docStart);
+assert.notEqual(docEnd, -1, "the declarations follow the paragraph that explains them");
+const contract = stringsSwift.slice(docStart, docEnd + lastMember.length);
+assert.match(contract, /registration-only/i,
+    "the documented contract names the one branch this flow performs");
+// Prose may name what it forbids — the same rule the source scan below stands on — so the ban on
+// `rebind` is checked where it bites: on the fourteen values, and on the sentence actually typed.
+assert.match(contract, /offline/i,
+    "the paragraph says out loud that an offline configured coordinator is still not replaceable");
+for (const key of CREATION_KEYS) {
+    assert.ok(contract.includes(`var ${key}: String { get }`),
+        `${key} is declared inside the creation paragraph it belongs to`);
+}
+
+// Which languages there are is the catalog's business, not this file's — a fifteenth added
+// without these five strings has to fail here rather than ship in English.
+const catalogAt = stringsSwift.indexOf("static let catalog:");
+assert.notEqual(catalogAt, -1);
+const catalogBody = stringsSwift.slice(catalogAt, stringsSwift.indexOf("\n    ]", catalogAt));
+const localeTypes = [...new Set(
+    [...catalogBody.matchAll(/\("[A-Za-z-]+",\s*([A-Za-z]+)\(\)\)/g)].map((m) => m[1])
+)];
+assert.ok(localeTypes.length >= 14,
+    `the catalog should name every translation, found ${localeTypes.length}`);
+
+const copyBodies = new Map();
+for (const name of (await readdir(new URL("../Sources/", import.meta.url))).sort()) {
+    if (!name.startsWith("Copy+") || !name.endsWith(".swift")) continue;
+    const text = await readFile(new URL("../Sources/" + name, import.meta.url), "utf8");
+    const marks = [...text.matchAll(/^struct ([A-Za-z]+): Copy \{$/gm)];
+    for (let i = 0; i < marks.length; i += 1) {
+        const end = i + 1 < marks.length ? marks[i + 1].index : text.length;
+        copyBodies.set(marks[i][1], { file: name, body: text.slice(marks[i].index, end) });
+    }
+}
+
+function localeString(body, key) {
+    const found = body.match(new RegExp('^\\s*let ' + key + ' = "([^"\\n]*)"$', "m"));
+    return found ? found[1] : null;
+}
+
+for (const type of localeTypes) {
+    const entry = copyBodies.get(type);
+    assert.ok(entry, `${type} is named by the catalog and has a Copy conformance to read`);
+    for (const key of CREATION_KEYS) {
+        const value = localeString(entry.body, key);
+        assert.ok(value && value.trim(),
+            `${type} (${entry && entry.file}) translates ${key}`);
+        assert.doesNotMatch(value, /\brebind\b/i,
+            `${type}'s ${key} no longer names the retired offline-reconnect branch`);
+        assert.ok(!RETIRED_COPY.includes(value),
+            `${type}'s ${key} is not one of the withdrawn "make this session" sentences`);
+    }
+    // The instruction is typed into an assistant, so what it must carry is not a phrase but the
+    // four things the far end cannot work out for itself.
+    const ask = localeString(entry.body, "webClawdfatherAsk");
+    assert.ok(ask.includes("{id}"),
+        `${type} keeps the id hole, or the line is addressed to nobody`);
+    assert.ok(ask.includes("~/.config/clawdline/orchestrator-token"),
+        `${type} names the one credential only the session can read`);
+    assert.ok(ask.includes("docs/orchestrator.md"),
+        `${type} sends the session to the written recipe`);
+    assert.ok(ask.includes("Clawdfather"),
+        `${type} names the role, which is not translated`);
+}
+
+// The baked-in English on the page and the English the Mac would send are one sentence, not two.
+// `check-web-strings.py` compares the names at this boundary; nothing compared the words.
+const englishCopy = copyBodies.get("English");
+assert.ok(englishCopy, "there is an English Copy to compare the page's fallback against");
+for (const key of CREATION_KEYS) {
+    assert.equal(T[key], localeString(englishCopy.body, key),
+        `the page's baked-in ${key} is the same sentence /v1/strings would send in English`);
+}
+
+/* ---- the page prints what it was sent ------------------------------------- */
+
+const bakedLabel = T.webMakeClawdfather;
+const bakedAsk = T.webClawdfatherAsk;
+
+T.webMakeClawdfather = "把新的 session 命名為 Clawdfather";
+assert.equal(clawdfatherCreationLabel(), "把新的 session 命名為 Clawdfather",
+    "the sheet prints the served translation rather than a hardcoded English literal");
+
+for (const unusable of ["", "   ", null, 42]) {
+    T.webMakeClawdfather = unusable;
+    assert.equal(clawdfatherCreationLabel(), bakedLabel,
+        "an unusable served value falls back to English on purpose, never to a blank chip");
+}
+T.webMakeClawdfather = bakedLabel;
+
+assert.match(start, /start-clawdfather-label"\]\.textContent = clawdfatherCreationLabel\(\)/,
+    "the creation sheet overwrites the markup's English with the localized label on every draw");
+
+const englishLine = fill(bakedAsk, { id: ordinary.id });
+
+T.webClawdfatherAsk = "請把 {id} 註冊成這台 Mac 的 Clawdfather。"
+    + "先讀 ~/.config/clawdline/orchestrator-token。";
+const localizedLine = clawdfatherInstruction(ordinary);
+assert.match(localizedLine, /^請把 35D87610-E7F4-4A9A-95A0-11947CF5115C 註冊成/,
+    "the typed sentence is localized too, with the id filled into the served translation");
+
+// A translation is copy, and copy can be wrong. These three shapes are refused rather than typed,
+// because the thing on the other end acts on the sentence it is given.
+T.webClawdfatherAsk = "Register this session as Clawdfather, and reconnect an offline one "
+    + "with rebind. Your id is {id}.";
+const rebindLine = clawdfatherInstruction(ordinary);
+assert.doesNotMatch(rebindLine, /rebind/i,
+    "a translation that still teaches offline replacement is refused, not typed into a session");
+assert.equal(rebindLine, englishLine,
+    "and what is typed instead is the registration-only English");
+
+T.webClawdfatherAsk = "Register this new session as this Mac's Clawdfather.";
+assert.equal(clawdfatherInstruction(ordinary), englishLine,
+    "a translation with no id hole would address nobody, so the English line is sent instead");
+
+for (const unusable of ["", "   ", null, 42]) {
+    T.webClawdfatherAsk = unusable;
+    assert.equal(clawdfatherInstruction(ordinary), englishLine,
+        "an unusable served instruction falls back to English rather than sending nothing");
+}
+T.webClawdfatherAsk = bakedAsk;
+assert.equal(clawdfatherInstruction(ordinary), englishLine,
+    "and the default page is back where it started");
+assert.equal(clawdfatherInstruction(null), "",
+    "no session is still no instruction, whichever language is loaded");
 
 console.log("web clawdfather tests passed");
 process.exit(0);
