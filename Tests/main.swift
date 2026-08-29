@@ -23464,7 +23464,7 @@ func mainQueueIdentityProbe() async
     }
 }
 
-/// The two crossings a reading with live targets in it leads to, asked from the one place they
+/// The crossings a reading with live targets in it leads to, asked from the one place they
 /// can be wrong: a main-queue block after `dispatchMain()`, where the main thread is parked and
 /// this block is running on a worker.
 ///
@@ -23473,19 +23473,41 @@ func mainQueueIdentityProbe() async
 /// check — it is a suite that stops printing, which is exactly why the same mistake in
 /// ``Orchestrator/records()`` took a day to find. So the mistake is caught one step earlier, by
 /// ``MainQueue/hop(from:alreadyOnMain:_:)``, which records the site and runs the work where it
-/// already is. Reverting either caller's predicate to `Thread.isMainThread` turns the checks below
-/// red and leaves the process alive to report them.
+/// already is. Reverting any caller's predicate to `Thread.isMainThread` turns a file-specific
+/// check below red and leaves the process alive to report it.
+///
+/// **The site names are observed, not declared.** Each `exerciseQueueCrossingsForTesting` below
+/// returns nothing; which sites crossed comes from ``MainQueue/endRecordingHopsForTesting()``,
+/// which sees the hop itself. The earlier version returned a hard-coded list after doing the same
+/// work, and a crossing deleted outright — `StartPoints.live` reading `SessionWatch.shared.targets`
+/// straight from a worker — was still reported as having happened.
+///
+/// **The seams are read first, on purpose.** `resolveAttachment` and two of the RemoteServer
+/// readers answer out of a fixture when their `…ForTesting` inventory is set, taking no crossing at
+/// all. A group that forgot to clear one would leave this fixture proving nothing, quietly, so the
+/// three are named here and checked rather than assumed.
 ///
 /// The targets come from ``SessionWatch``, filled by a real reading earlier in this file, because
-/// an empty target list is the whole reason both crossings were dormant.
+/// an empty target list is the whole reason these crossings were dormant.
 func sessionWatchCrossingProbe() async
     -> (isMainThread: Bool, isOnMainQueue: Bool, targets: Int, crossed: Int,
+        seamsLeftSet: [String], observedSites: [String], hopsOverflowed: Bool,
         reentrantHops: [String]) {
     await withCheckedContinuation { continuation in
         Thread.detachNewThread {
             Thread.sleep(forTimeInterval: 0.25)
             DispatchQueue.main.async {
                 MainQueue.forgetReentrantHopsForTesting()
+                var seamsLeftSet: [String] = []
+                if Orchestrator.attachmentInventoryForTesting != nil {
+                    seamsLeftSet.append("Orchestrator.attachmentInventoryForTesting")
+                }
+                if RemoteServer.coordinatorSessionsForTesting != nil {
+                    seamsLeftSet.append("RemoteServer.coordinatorSessionsForTesting")
+                }
+                if RemoteServer.sessionPayloadForTesting != nil {
+                    seamsLeftSet.append("RemoteServer.sessionPayloadForTesting")
+                }
                 let targets = SessionWatch.shared.targets
                 var crossed = 0
                 for target in targets {
@@ -23493,8 +23515,18 @@ func sessionWatchCrossingProbe() async
                     _ = Transcript.sessionID(of: target)
                     crossed += 1
                 }
+                MainQueue.beginRecordingHopsForTesting()
+                if let target = targets.first {
+                    StartPoints.exerciseQueueCrossingsForTesting()
+                    RemoteIcon.exerciseQueueCrossingsForTesting(size: 37)
+                    Orchestrator.exerciseQueueCrossingsForTesting(
+                        sessionID: target.id, assistant: target.assistant ?? .codex)
+                    RemoteServer.shared.exerciseQueueCrossingsForTesting(sessionID: target.id)
+                }
+                let recorded = MainQueue.endRecordingHopsForTesting()
                 continuation.resume(returning: (
                     Thread.isMainThread, MainQueue.isCurrent, targets.count, crossed,
+                    seamsLeftSet, recorded.sites, recorded.overflowed,
                     MainQueue.reentrantHopsForTesting
                 ))
             }
@@ -24809,6 +24841,124 @@ group("the watcher decides when to read, and what a session leaves behind when i
            ["source_unreadable_at_close"])
 }
 
+// MARK: - Where the main-queue crossings are, as source
+
+/// Every synchronous main-queue crossing in the app: which file holds the call site, the exact
+/// site name it hands ``MainQueue/hop(from:alreadyOnMain:_:)``, and how many call sites in that
+/// file spell it. `RemoteIcon` is three render callers sharing one helper and therefore one name.
+let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] = [
+    ("Sources/StartPoints.swift", "StartPoints.openTranscripts", 1),
+    ("Sources/StartPoints.swift", "StartPoints.live", 1),
+    ("Sources/StartPoints.swift", "StartPoints.runningApps", 1),
+    ("Sources/RemoteIcon.swift", "RemoteIcon.onMain", 3),
+    ("Sources/Orchestrator.swift", "Orchestrator.resolveAttachment", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.dispatch.attachFailure", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.startQueuedTaskIfEligible.secretFailure", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.startQueuedTaskIfEligible.spawnFailure", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.cancel.child", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.cancel.task", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.records", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.record(id:)", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.target(withID:)", 1),
+    ("Sources/Orchestrator.swift", "Orchestrator.rootTargets", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.titleState(of:)", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.coordinatorObservation", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.session(withID:)", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.sessionMessageSource(withID:)", 1),
+    ("Sources/RemoteServer.swift", "RemoteServer.state(of:)", 1),
+]
+
+/// The ten of those the fixture at the end of this file drives for real and watches hop.
+let dynamicallyExercisedCrossingSites: Set<String> = [
+    "StartPoints.openTranscripts",
+    "StartPoints.live",
+    "StartPoints.runningApps",
+    "RemoteIcon.onMain",
+    "Orchestrator.resolveAttachment",
+    "RemoteServer.titleState(of:)",
+    "RemoteServer.coordinatorObservation",
+    "RemoteServer.session(withID:)",
+    "RemoteServer.sessionMessageSource(withID:)",
+    "RemoteServer.state(of:)",
+]
+
+/// The file with its whole-line comments dropped, so this guard is about the code and not about
+/// the prose around it. Written after the first run of it went red on a doc comment that named the
+/// very call it exists to forbid: a guard a contributor cannot describe in a comment is a guard
+/// that teaches people to stop describing things.
+func codeOnly(_ text: String) -> String {
+    text.split(separator: "\n", omittingEmptySubsequences: false)
+        .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+        .joined(separator: "\n")
+}
+
+func occurrences(of needle: String, in haystack: String) -> Int {
+    guard !needle.isEmpty else { return 0 }
+    var count = 0
+    var index = haystack.startIndex
+    while let hit = haystack.range(of: needle, range: index..<haystack.endIndex) {
+        count += 1
+        index = hit.upperBound
+    }
+    return count
+}
+
+group("every main-queue crossing is a named production call site, in the source on disk") {
+    // **Structural, and the name says so.** This group reads the four files rather than running
+    // them, because nine of the nineteen call sites below cannot be driven from a test process:
+    // `Orchestrator.dispatch` opens a terminal tab, all five of its failure and cancellation tails
+    // call `finalize`, which types into somebody's session, and the four registry readers answer
+    // through paths the async fixture already covers by other means. The other ten *are* driven
+    // for real at the end of this file and watched hopping by name.
+    //
+    // What went wrong without this: the crossing fixture used to return a hard-coded list of site
+    // names after calling some production functions, so restoring
+    // `Orchestrator.dispatch.attachFailure` to its old `Thread.isMainThread`/`main.sync` shape, or
+    // deleting `StartPoints.live`'s crossing outright, both left the suite at 5421 of 5421 green.
+    // A guard that cannot go red is worse than no guard, because somebody believes it.
+    let crossingFiles = ["Sources/StartPoints.swift", "Sources/RemoteIcon.swift",
+                         "Sources/Orchestrator.swift", "Sources/RemoteServer.swift"]
+    var sources: [String: String] = [:]
+    for file in crossingFiles {
+        guard let text = try? String(contentsOfFile: file, encoding: .utf8) else {
+            check("\(file) can be read for the crossing guard", false)
+            continue
+        }
+        sources[file] = codeOnly(text)
+    }
+
+    for site in productionCrossingCallSites {
+        let text = sources[site.file] ?? ""
+        expect("\(site.site) crosses at its own named call site",
+               occurrences(of: "onMain(from: \"\(site.site)\"", in: text), site.callSites)
+    }
+
+    for file in crossingFiles {
+        let text = sources[file] ?? ""
+        // A restored true shape reintroduces the one call this whole change exists to remove, so
+        // this is the check that answers "did somebody put it back".
+        expect("\(file) takes no synchronous main hop of its own",
+               occurrences(of: "DispatchQueue.main.sync", in: text), 0)
+        // Every hop in these files names its site with a literal. Passing a variable is how the
+        // old fixture simulated five call sites it never reached: a loop over names calling the
+        // shared helper reads exactly like the real thing to everything except this line.
+        expect("\(file) names every hop site with a literal",
+               occurrences(of: "onMain(from: \"", in: text),
+               occurrences(of: "onMain(from:", in: text))
+        // And the table above is the whole list for that file, so a new crossing has to be
+        // declared here rather than added quietly.
+        expect("\(file) has no crossing missing from the table",
+               occurrences(of: "onMain(from: \"", in: text),
+               productionCrossingCallSites.filter { $0.file == file }
+                   .reduce(0) { $0 + $1.callSites })
+    }
+
+    let declared = Set(productionCrossingCallSites.map { $0.site })
+    check("every site the fixture drives is one of the declared call sites",
+          dynamicallyExercisedCrossingSites.isSubset(of: declared),
+          "\(dynamicallyExercisedCrossingSites.subtracting(declared).sorted())")
+}
+
 // MARK: - A reading with something in it
 
 /// Take one reading with ``SessionWatch``, with the terminals replaced, and wait for it to be
@@ -25077,8 +25227,26 @@ Task {
           !crossings.isMainThread && crossings.isOnMainQueue)
     check("both crossings answer for every one of them",
           crossings.crossed == crossings.targets, "\(crossings.crossed) of \(crossings.targets)")
-    check("and neither decided to hop onto the queue it was already standing on",
-          crossings.reentrantHops.isEmpty, "\(crossings.reentrantHops)")
+    check("no inventory seam was left set to answer a production read out of a fixture",
+          crossings.seamsLeftSet.isEmpty, "\(crossings.seamsLeftSet)")
+    check("the hop recorder did not overflow, so the observed sites are the whole list",
+          !crossings.hopsOverflowed)
+    let observedCrossingSites = Set(crossings.observedSites)
+    let missingCrossingSites = dynamicallyExercisedCrossingSites
+        .subtracting(observedCrossingSites).sorted()
+    check("every crossing the fixture drives is observed hopping, by its own name",
+          missingCrossingSites.isEmpty,
+          "missing \(missingCrossingSites) — observed \(observedCrossingSites.sorted())")
+    for file in ["StartPoints", "RemoteIcon", "Orchestrator", "RemoteServer"] {
+        let wrong = crossings.reentrantHops.filter { $0.hasPrefix(file + ".") }
+        check("\(file) never mistakes main-thread identity for main-queue identity",
+              wrong.isEmpty, "\(wrong)")
+    }
+    let earlier = crossings.reentrantHops.filter {
+        $0 == "Config.hookSessionID(of:)" || $0 == "Transcript.sessionID(of:)"
+    }
+    check("the two earlier SessionWatch crossings remain queue-identity safe",
+          earlier.isEmpty, "\(earlier)")
 
     checks += 1
     do {

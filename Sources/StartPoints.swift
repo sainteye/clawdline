@@ -574,6 +574,13 @@ enum StartPoints {
 
     // MARK: - Plumbing for the conversation list
 
+    /// Cross main-queue-owned APIs by queue identity. In the app the main thread drains this
+    /// queue; after the test runner calls `dispatchMain()` a worker does, so thread identity is
+    /// no longer an answer to the question this hop asks.
+    private static func onMain<T>(from site: String, _ work: () -> T) -> T {
+        MainQueue.hop(from: site, alreadyOnMain: MainQueue.isCurrent, work)
+    }
+
     private static var fronts: [String: Front] = [:]
 
     /// Remembered against the **path alone**, unlike the title, which is kept against a stamp.
@@ -610,9 +617,9 @@ enum StartPoints {
     /// file. Codex's rollouts come back in here too and simply never match a Claude Code
     /// transcript path, which costs nothing and keeps the rule in one place.
     private static func openTranscripts() -> Set<String> {
-        let sessions = Thread.isMainThread
-            ? SessionWatch.shared.targets
-            : DispatchQueue.main.sync { SessionWatch.shared.targets }
+        let sessions = onMain(from: "StartPoints.openTranscripts") {
+            SessionWatch.shared.targets
+        }
         return Set(sessions.compactMap { Transcript.record(of: $0)?.url }
             .map { $0.resolvingSymlinksInPath().path })
     }
@@ -757,9 +764,7 @@ enum StartPoints {
     /// a directory somebody opened an assistant in five seconds ago, before anything was written
     /// down.
     static func live(now: Date = Date()) -> [Place] {
-        let sessions = Thread.isMainThread
-            ? SessionWatch.shared.targets
-            : DispatchQueue.main.sync { SessionWatch.shared.targets }
+        let sessions = onMain(from: "StartPoints.live") { SessionWatch.shared.targets }
         return sessions.compactMap { session in
             guard let cwd = Targets.workingDirectory(of: session) else { return nil }
             return Place(id: id(for: cwd), path: cwd, label: label(for: cwd), at: now)
@@ -989,7 +994,18 @@ enum StartPoints {
     /// having to ask. On the main thread, because `NSWorkspace` is.
     private static func runningApps() -> Set<String> {
         let read = { Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)) }
-        return Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
+        return onMain(from: "StartPoints.runningApps", read)
+    }
+
+    /// Run the three production readers from a main-queue fixture. It deliberately returns
+    /// nothing: which sites crossed is read from ``MainQueue/endRecordingHopsForTesting()``, so a
+    /// crossing that was deleted or renamed cannot be reported by the seam that was supposed to
+    /// prove it. The values are discarded — reachability, not the machine's current transcript or
+    /// application inventory, is what this exercises.
+    static func exerciseQueueCrossingsForTesting() {
+        _ = openTranscripts()
+        _ = live()
+        _ = runningApps()
     }
 
     /// Whether there is a tmux **server** to open a window on, not merely a tmux binary. Without

@@ -10,10 +10,10 @@ import AppKit
 /// that disappears with no failing test, no log line and nothing on screen; that is what
 /// ``Orchestrator/records()`` did (fixed in b6d1939a) and it cost a day to find.
 ///
-/// It lives in this file because two of the three crossings that ask this are here and in
-/// ``Transcript``, and both are inside one change's write set. ``Orchestrator/isOnMainQueue`` asks
-/// the same question through a key of its own; folding it into this belongs to whoever next edits
-/// that file.
+/// It lives in this file because the first two crossings to ask it were here and in
+/// ``Transcript``, and both were inside one change's write set. Every synchronous main-queue
+/// crossing in the app now asks it through ``hop(from:alreadyOnMain:_:)``, and
+/// ``Orchestrator/isOnMainQueue`` is this key rather than one of its own.
 enum MainQueue {
 
     private static let key: DispatchSpecificKey<Bool> = {
@@ -38,6 +38,7 @@ enum MainQueue {
     /// decision: what it buys is that a wrong predicate becomes an observable mistake — a line in
     /// the log and a red check — instead of a process that vanishes mid-reading.
     static func hop<T>(from site: String, alreadyOnMain: Bool, _ work: () -> T) -> T {
+        noteHopIfRecording(site)
         if alreadyOnMain { return work() }
         guard isCurrent else { return DispatchQueue.main.sync(execute: work) }
         reentryLock.lock()
@@ -68,6 +69,60 @@ enum MainQueue {
         reentrantHops = []
         loggedReentry = []
         reentryLock.unlock()
+    }
+
+    // MARK: - Which sites actually crossed
+
+    /// Every site that reached ``hop(from:alreadyOnMain:_:)`` while recording was on, in order.
+    ///
+    /// **Why this exists.** A suite can only tell a real crossing from a helper wearing its name if
+    /// the names it checks are *observed* rather than written down. The first version of the
+    /// crossing fixture returned a hard-coded list after calling some production functions, so
+    /// deleting a crossing outright — reading `SessionWatch.shared.targets` straight from a worker
+    /// with no hop at all — left the suite at 5421 of 5421 green. This is that hole closed at the
+    /// one place every crossing passes through.
+    ///
+    /// **What it costs the app.** One uncontended `NSLock` acquisition per crossing, and nothing
+    /// else: `recordingHops` is false in every shipping build, so no array is touched and nothing
+    /// is allocated. Crossings happen at HTTP-request and panel-reading rate, not in a loop. The
+    /// flag is read under the lock rather than beside it because a `Bool` read racing an append is
+    /// a data race whether or not it is benign in practice.
+    ///
+    /// Bounded on purpose: a test that forgets to stop recording would otherwise grow this without
+    /// limit for the rest of the process. Past the ceiling the sites stop being appended and
+    /// ``endRecordingHopsForTesting()`` says so, which is a fact a check can fail on rather than a
+    /// list that quietly stopped being true.
+    private static var recordingHops = false
+    private static var recordedHops: [String] = []
+    private static var recordedHopsOverflowed = false
+    private static let recordedHopCeiling = 512
+
+    private static func noteHopIfRecording(_ site: String) {
+        reentryLock.lock()
+        defer { reentryLock.unlock() }
+        guard recordingHops else { return }
+        if recordedHops.count < recordedHopCeiling { recordedHops.append(site) }
+        else { recordedHopsOverflowed = true }
+    }
+
+    /// Start over. Calling this twice without an end in between is not an error; it resets.
+    static func beginRecordingHopsForTesting() {
+        reentryLock.lock()
+        recordedHops = []
+        recordedHopsOverflowed = false
+        recordingHops = true
+        reentryLock.unlock()
+    }
+
+    static func endRecordingHopsForTesting() -> (sites: [String], overflowed: Bool) {
+        reentryLock.lock()
+        defer { reentryLock.unlock() }
+        recordingHops = false
+        let seen = recordedHops
+        let over = recordedHopsOverflowed
+        recordedHops = []
+        recordedHopsOverflowed = false
+        return (seen, over)
     }
 }
 

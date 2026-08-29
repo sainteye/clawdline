@@ -4219,10 +4219,8 @@ enum Orchestrator {
         let inventory: ([TargetSession], [String: SessionState])
         if let supplied = attachmentInventoryForTesting {
             inventory = supplied
-        } else if Thread.isMainThread {
-            inventory = (SessionWatch.shared.targets, SessionWatch.shared.states)
         } else {
-            inventory = DispatchQueue.main.sync {
+            inventory = onMain(from: "Orchestrator.resolveAttachment") {
                 (SessionWatch.shared.targets, SessionWatch.shared.states)
             }
         }
@@ -4479,7 +4477,7 @@ enum Orchestrator {
                 let fail = {
                     finalize(taskID, as: .spawnFailed, summary: opened.summary)
                 }
-                if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
+                onMain(from: "Orchestrator.dispatch.attachFailure", fail)
                 task = held(taskID) ?? opened
                 attachDeliveryFailed = true
             } else {
@@ -4843,7 +4841,7 @@ enum Orchestrator {
                          summary: "The queued task secret could not be recovered.",
                          pumpQueue: false)
             }
-            if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
+            onMain(from: "Orchestrator.startQueuedTaskIfEligible.secretFailure", fail)
             return held(id)
         }
 
@@ -4875,7 +4873,7 @@ enum Orchestrator {
             let fail = {
                 finalize(id, as: .spawnFailed, summary: opened.summary, pumpQueue: false)
             }
-            if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
+            onMain(from: "Orchestrator.startQueuedTaskIfEligible.spawnFailure", fail)
             return held(id)
         }
         guard replaceTask(opened, expecting: .spawning) else { return nil }
@@ -5316,15 +5314,14 @@ enum Orchestrator {
                     finalize(below.id, as: .cancelled, summary: "Cancelled with its parent.",
                              pumpQueue: false)
                 }
-                if Thread.isMainThread { finish() }
-                else { DispatchQueue.main.sync(execute: finish) }
+                onMain(from: "Orchestrator.cancel.child", finish)
             } else {
                 cancelInPlace(below)
             }
         }
         if task.state == .queued {
             let finish = { finalize(task.id, as: .cancelled, summary: "Cancelled.") }
-            if Thread.isMainThread { finish() } else { DispatchQueue.main.sync(execute: finish) }
+            onMain(from: "Orchestrator.cancel.task", finish)
         } else {
             cancelInPlace(task)
         }
@@ -9549,30 +9546,43 @@ enum Orchestrator {
 
     // MARK: - What the API answers with
 
-    private static let mainQueueKey: DispatchSpecificKey<Bool> = {
-        let key = DispatchSpecificKey<Bool>()
-        DispatchQueue.main.setSpecific(key: key, value: true)
-        return key
-    }()
+    static var isOnMainQueue: Bool { MainQueue.isCurrent }
 
-    static var isOnMainQueue: Bool {
-        DispatchQueue.getSpecific(key: mainQueueKey) == true
+    private static func onMain<T>(from site: String, _ work: () -> T) -> T {
+        MainQueue.hop(from: site, alreadyOnMain: MainQueue.isCurrent, work)
+    }
+
+    /// Reach the inventory reader — the one crossing in this file a fixture can take for real.
+    ///
+    /// **The other five are not driven from here, and an earlier version of this function pretended
+    /// otherwise.** It looped over their site names calling `onMain` with a harmless closure, which
+    /// exercised the shared helper and nothing else: restoring
+    /// `Orchestrator.dispatch`'s attached-delivery failure tail to its old
+    /// `Thread.isMainThread`/`DispatchQueue.main.sync` shape left the whole suite green. Driving
+    /// those tails properly is not something a test process may do — `dispatch` opens a terminal
+    /// tab and every one of them calls `finalize`, which types into somebody's session — so the
+    /// five are held by the source-shape guard in `Tests/main.swift` instead, which is checked
+    /// against the file on disk and says in its own name that it is structural.
+    static func exerciseQueueCrossingsForTesting(sessionID: String, assistant: Assistant) {
+        _ = resolveAttachment(sessionID: sessionID, assistant: assistant)
     }
 
     /// Every task, newest first, in the wire shape. Hops to the main queue for the live
     /// resolutions (which terminal is the root, right now) the way `session(withID:)` does.
     static func records() -> [[String: Any]] {
-        if !isOnMainQueue { return DispatchQueue.main.sync { records() } }
-        lock.lock()
-        let all = tasks.values.sorted { $0.created > $1.created }
-        lock.unlock()
-        return all.map { record(of: $0) }
+        onMain(from: "Orchestrator.records") {
+            lock.lock()
+            let all = tasks.values.sorted { $0.created > $1.created }
+            lock.unlock()
+            return all.map { record(of: $0) }
+        }
     }
 
     static func record(id: String) -> [String: Any]? {
-        if !isOnMainQueue { return DispatchQueue.main.sync { record(id: id) } }
-        guard let task = held(id) else { return nil }
-        return record(of: task)
+        onMain(from: "Orchestrator.record(id:)") {
+            guard let task = held(id) else { return nil }
+            return record(of: task)
+        }
     }
 
     /// The durable handoff envelope, in its registry spelling. There is intentionally no public
@@ -10975,8 +10985,9 @@ enum Orchestrator {
     }
 
     private static func target(withID id: String) -> TargetSession? {
-        if isOnMainQueue { return SessionWatch.shared.targets.first { $0.id == id } }
-        return DispatchQueue.main.sync { SessionWatch.shared.targets.first { $0.id == id } }
+        onMain(from: "Orchestrator.target(withID:)") {
+            SessionWatch.shared.targets.first { $0.id == id }
+        }
     }
 
     /// Task roots are conversation identities and therefore require the process-bound reader.
@@ -11026,8 +11037,7 @@ enum Orchestrator {
     }
 
     private static func rootTargets() -> [TargetSession] {
-        if isOnMainQueue { return SessionWatch.shared.targets }
-        return DispatchQueue.main.sync { SessionWatch.shared.targets }
+        onMain(from: "Orchestrator.rootTargets") { SessionWatch.shared.targets }
     }
 
     private static func activeRootIdentityEvidence(claimed: String?)

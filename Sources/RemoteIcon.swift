@@ -52,7 +52,7 @@ enum RemoteIcon {
         if let hit = cache[size] { lock.unlock(); return hit }
         lock.unlock()
 
-        let made = onMain { render(size: size) }
+        let made = onMain(from: "RemoteIcon.onMain") { render(size: size) }
         guard let made else { return nil }
         lock.lock()
         cache[size] = made
@@ -60,9 +60,18 @@ enum RemoteIcon {
         return made
     }
 
-    private static func onMain<T>(_ work: () -> T) -> T {
-        if Thread.isMainThread { return work() }
-        return DispatchQueue.main.sync(execute: work)
+    private static func onMain<T>(from site: String, _ work: () -> T) -> T {
+        MainQueue.hop(from: site, alreadyOnMain: MainQueue.isCurrent, work)
+    }
+
+    /// Clear one otherwise harmless cache slot so the production `png` path must cross through
+    /// `onMain`. Which site that was is read from ``MainQueue/endRecordingHopsForTesting()``, not
+    /// returned from here.
+    static func exerciseQueueCrossingsForTesting(size: Int) {
+        lock.lock()
+        cache.removeValue(forKey: size)
+        lock.unlock()
+        _ = png(size: size)
     }
 
     private static func render(size: Int) -> Data? {
@@ -134,7 +143,9 @@ enum RemoteIcon {
         if let hit = splashes[key] { lock.unlock(); return hit }
         lock.unlock()
 
-        let made = onMain { renderSplash(width: width, height: height) }
+        let made = onMain(from: "RemoteIcon.onMain") {
+            renderSplash(width: width, height: height)
+        }
         guard let made else { return nil }
         lock.lock()
         // Bounded: a device asks for one size and asks again next launch, so the cache should hold
@@ -234,7 +245,9 @@ enum RemoteIcon {
         if let hit = projects[key] { lock.unlock(); return hit }
         lock.unlock()
 
-        let made = onMain { renderProject(cells: cells, size: size) }
+        let made = onMain(from: "RemoteIcon.onMain") {
+            renderProject(cells: cells, size: size)
+        }
         guard let made else { return nil }
         lock.lock()
         // Bounded, and emptied rather than evicted one at a time. These are a kilobyte each and

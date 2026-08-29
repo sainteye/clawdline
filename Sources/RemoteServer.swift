@@ -76,6 +76,14 @@ final class RemoteServer: @unchecked Sendable {
     static let shared = RemoteServer()
     private init() {}
 
+    /// SessionWatch is main-queue-owned, but queue ownership and main-thread identity diverge
+    /// after the test runner calls `dispatchMain()`. The app still drains this queue on its main
+    /// thread; this helper preserves that production shape while asking the identity that the
+    /// synchronous crossing actually depends on.
+    private func onMain<T>(from site: String, _ work: () -> T) -> T {
+        MainQueue.hop(from: site, alreadyOnMain: MainQueue.isCurrent, work)
+    }
+
     /// Bumped when a client would have to be changed. The path carries the same number, so a
     /// client that speaks `/v1` never has to look at this — it exists for the health route, where
     /// a person is asking "what am I talking to".
@@ -1933,11 +1941,7 @@ final class RemoteServer: @unchecked Sendable {
                 // the person can already see.
                 let durable = config.save()
 
-                let state: SessionState = Thread.isMainThread
-                    ? (SessionWatch.shared.states[session.id] ?? .unknown)
-                    : DispatchQueue.main.sync {
-                        SessionWatch.shared.states[session.id] ?? .unknown
-                    }
+                let state = titleState(of: session.id)
                 let action = SessionTitleSync.confirmed(
                     SessionTitleSync.action(
                         assistant: session.assistant, state: state, clearing: title == nil,
@@ -3720,17 +3724,10 @@ final class RemoteServer: @unchecked Sendable {
                 sessionsFresh: evidence?.complete ?? true,
                 registry: Orchestrator.coordinatorSnapshot([]))
         }
-        let observation: ([TargetSession], [String: SessionState], Bool, Date?, Int)
-        if Thread.isMainThread {
+        let observation = onMain(from: "RemoteServer.coordinatorObservation") {
             let watch = SessionWatch.shared
-            observation = (watch.targets, watch.states, watch.scanComplete,
-                           watch.scanObservedAt, watch.scanGeneration)
-        } else {
-            observation = DispatchQueue.main.sync {
-                let watch = SessionWatch.shared
-                return (watch.targets, watch.states, watch.scanComplete,
-                        watch.scanObservedAt, watch.scanGeneration)
-            }
+            return (watch.targets, watch.states, watch.scanComplete,
+                    watch.scanObservedAt, watch.scanGeneration)
         }
         let bases = observation.0.filter(\.isAssistant).map { session in
             CoordinatorSessionBase(
@@ -3858,16 +3855,15 @@ final class RemoteServer: @unchecked Sendable {
         if let supplied = Self.sessionPayloadForTesting?.0 {
             return Self.session(withID: id, among: supplied)
         }
-        if Thread.isMainThread { return Self.session(withID: id, among: SessionWatch.shared.targets) }
-        return DispatchQueue.main.sync {
+        return onMain(from: "RemoteServer.session(withID:)") {
             Self.session(withID: id, among: SessionWatch.shared.targets)
         }
     }
 
     private func sessionMessageSource(withID id: String) -> TargetSession? {
-        let sessions: [TargetSession]
-        if Thread.isMainThread { sessions = SessionWatch.shared.targets }
-        else { sessions = DispatchQueue.main.sync { SessionWatch.shared.targets } }
+        let sessions = onMain(from: "RemoteServer.sessionMessageSource(withID:)") {
+            SessionWatch.shared.targets
+        }
         return Self.sessionMessageSource(withID: id, among: sessions) { session in
             Self.sessionIdentity(assistant: session.assistant,
                                  processBound: Transcript.sessionID(of: session))
@@ -3875,10 +3871,27 @@ final class RemoteServer: @unchecked Sendable {
     }
 
     private func state(of sessionID: String) -> SessionState {
-        if Thread.isMainThread { return SessionWatch.shared.states[sessionID] ?? .unknown }
-        return DispatchQueue.main.sync {
+        onMain(from: "RemoteServer.state(of:)") {
             SessionWatch.shared.states[sessionID] ?? .unknown
         }
+    }
+
+    private func titleState(of sessionID: String) -> SessionState {
+        onMain(from: "RemoteServer.titleState(of:)") {
+            SessionWatch.shared.states[sessionID] ?? .unknown
+        }
+    }
+
+    /// Exercise all five production SessionWatch readers. The fixture supplies an id from
+    /// SessionWatch itself, keeping the reads non-empty without replacing the inventory through a
+    /// test seam. Which sites crossed is read from ``MainQueue/endRecordingHopsForTesting()``, so
+    /// a reader whose crossing was deleted cannot still be named by the list it used to return.
+    func exerciseQueueCrossingsForTesting(sessionID: String) {
+        _ = titleState(of: sessionID)
+        _ = coordinatorObservation()
+        _ = session(withID: sessionID)
+        _ = sessionMessageSource(withID: sessionID)
+        _ = state(of: sessionID)
     }
 
     /// Whether Clawdline may type a coordination-wait notice into that session right now, in the
