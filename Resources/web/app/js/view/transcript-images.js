@@ -1,16 +1,20 @@
 /* Expiring image artifacts in a transcript. Data decides state; markup never comes from it. */
 
 const artifactID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const artifactTileBindings = new WeakMap();
 
-/** The initial client state for one closed artifact reference. */
-export function artifactPresentation(artifact, now = Math.floor(Date.now() / 1000)) {
-    var a = artifact || {};
-    var valid = typeof a.id === "string" && artifactID.test(a.id) &&
+function validArtifact(a) {
+    return typeof a.id === "string" && artifactID.test(a.id) &&
         a.media_type === "image/png" && Number.isSafeInteger(a.byte_count) && a.byte_count > 0 &&
         Number.isSafeInteger(a.width) && a.width > 0 &&
         Number.isSafeInteger(a.height) && a.height > 0 &&
         Number.isSafeInteger(a.expires_at) && a.expires_at > 0;
-    if (!valid || a.expires_at <= now) return { state: "expired" };
+}
+
+/** The initial client state for one closed artifact reference. */
+export function artifactPresentation(artifact, now = Math.floor(Date.now() / 1000)) {
+    var a = artifact || {};
+    if (!validArtifact(a) || a.expires_at <= now) return { state: "expired" };
     return {
         state: "loading",
         // Relative and same-origin on purpose: localhost today and clawdline.com later have the
@@ -21,11 +25,75 @@ export function artifactPresentation(artifact, now = Math.floor(Date.now() / 100
     };
 }
 
+/** The identity of DOM state which is safe to carry across a transcript redraw. */
+function artifactReconciliationKey(artifact, now) {
+    var a = artifact || {};
+    if (!validArtifact(a)) return null;
+    return [
+        a.id, a.media_type, a.byte_count, a.width, a.height, a.expires_at,
+        a.expires_at <= now ? "expired" : "available"
+    ].join("\u001f");
+}
+
+/**
+ * Move unchanged, already-connected tiles into freshly parsed transcript markup.
+ *
+ * Existing bindings live in a WeakMap: artifact data never enters markup, and removing a
+ * message leaves no registry holding its detached image alive. The caller hydrates only `fresh`
+ * before installing the new fragment, then calls `restoreFocus` after installation.
+ */
+export function reconcileArtifactTiles(currentTiles, nextTiles, artifacts, options = {}) {
+    var now = options.now == null ? Math.floor(Date.now() / 1000) : options.now;
+    var available = new Map();
+    var active = options.activeElement || null;
+    var focus = null;
+
+    Array.from(currentTiles || []).forEach(function (tile) {
+        var binding = artifactTileBindings.get(tile);
+        if (!binding || !binding.key) return;
+        var matches = available.get(binding.key) || [];
+        matches.push(tile);
+        available.set(binding.key, matches);
+    });
+
+    var fresh = [];
+    var reused = [];
+    var tiles = [];
+    Array.from(nextTiles || []).forEach(function (placeholder) {
+        var slot = Number(placeholder.dataset.artifactSlot);
+        var artifact = Number.isSafeInteger(slot) ? artifacts[slot] : null;
+        var key = artifactReconciliationKey(artifact, now);
+        var matches = key ? available.get(key) : null;
+        var tile = matches && matches.length ? matches.shift() : null;
+        if (!tile) {
+            fresh.push(placeholder);
+            tiles.push(placeholder);
+            return;
+        }
+        tile.dataset.artifactSlot = String(slot);
+        placeholder.replaceWith(tile);
+        reused.push(tile);
+        tiles.push(tile);
+        if (active && (active === tile || (tile.contains && tile.contains(active)))) focus = active;
+    });
+
+    return {
+        fresh: fresh,
+        reused: reused,
+        tiles: tiles,
+        restoreFocus: function () {
+            if (focus && focus.focus) focus.focus({ preventScroll: true });
+        }
+    };
+}
+
 /** Connect a static, locally-authored tile to artifact data using DOM properties only. */
 export function connectArtifactTile(tile, artifact, options = {}) {
     var image = tile.querySelector(".message-image");
     var status = tile.querySelector(".message-image-state");
-    var presentation = artifactPresentation(artifact, options.now);
+    var now = options.now == null ? Math.floor(Date.now() / 1000) : options.now;
+    var presentation = artifactPresentation(artifact, now);
+    artifactTileBindings.set(tile, { key: artifactReconciliationKey(artifact, now) });
 
     function expire() {
         tile.dataset.imageState = "expired";
@@ -33,6 +101,7 @@ export function connectArtifactTile(tile, artifact, options = {}) {
         image.hidden = true;
         image.removeAttribute("src");
         status.hidden = false;
+        status.setAttribute("role", "status");
         status.textContent = options.expiredLabel || "Image expired";
     }
 
@@ -45,6 +114,7 @@ export function connectArtifactTile(tile, artifact, options = {}) {
     tile.disabled = true;
     image.hidden = true;
     status.hidden = false;
+    status.setAttribute("role", "status");
     status.textContent = options.loadingLabel || "Loading…";
     image.addEventListener("load", function () {
         tile.dataset.imageState = "live";

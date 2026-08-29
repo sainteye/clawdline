@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
-    artifactPresentation, connectArtifactTile, createImageLightbox
+    artifactPresentation, connectArtifactTile, createImageLightbox, reconcileArtifactTiles
 } from "../Resources/web/app/js/view/transcript-images.js";
 
 class FakeElement {
@@ -10,19 +10,36 @@ class FakeElement {
         this.dataset = {};
         this.hidden = false;
         this.disabled = false;
-        this.textContent = "";
-        this.src = "";
+        this._textContent = "";
+        this.textWrites = 0;
+        this._src = "";
+        this.srcWrites = 0;
         this.listeners = {};
         this.focuses = 0;
         this.children = {};
+        this.replacement = null;
+        this.attributes = {};
+        this.attributeWrites = {};
     }
+    get textContent() { return this._textContent; }
+    set textContent(value) { this._textContent = value; this.textWrites += 1; }
+    get src() { return this._src; }
+    set src(value) { this._src = value; this.srcWrites += 1; }
     addEventListener(kind, fn) { (this.listeners[kind] ||= []).push(fn); }
     emit(kind, event = {}) {
         event.target ||= this;
         for (const fn of this.listeners[kind] || []) fn(event);
     }
     querySelector(selector) { return this.children[selector] || null; }
-    removeAttribute(name) { if (name === "src") this.src = ""; }
+    contains(node) {
+        return this === node || Object.values(this.children).some(child => child.contains(node));
+    }
+    replaceWith(node) { this.replacement = node; }
+    setAttribute(name, value) {
+        this.attributes[name] = value;
+        this.attributeWrites[name] = (this.attributeWrites[name] || 0) + 1;
+    }
+    removeAttribute(name) { if (name === "src") this._src = ""; }
     focus() { this.focuses += 1; }
 }
 
@@ -39,6 +56,15 @@ const tileBuilder = transcriptSource.split("function artifactTilesHTML")[1]
 assert.ok(tileBuilder.includes("artifactRenderQueue.push(artifact)"));
 assert.ok(!/artifact\.(id|media_type|width|height|expires_at)/.test(tileBuilder),
     "attachment fields are queued as data and never interpolated into HTML");
+assert.ok(!tileBuilder.includes('role="status"'),
+    "an inert replacement placeholder cannot make a premature live announcement");
+const reconciliationSource = transcriptSource.split("function replaceTranscriptContents")[1];
+assert.ok(reconciliationSource.includes("reconcileArtifactTiles("));
+assert.ok(reconciliationSource.includes("hydrateArtifactImages(reconciliation.fresh)"),
+    "only genuinely new image tiles acquire listeners and a request");
+assert.ok(reconciliationSource.includes("box.appendChild(template.content)"));
+assert.ok(reconciliationSource.includes("child.remove()"),
+    "old transcript rows leave only after reusable image nodes move into the new rows");
 
 const live = artifactPresentation(liveArtifact, 1_800_000_000);
 assert.equal(live.state, "loading");
@@ -57,6 +83,24 @@ function tileFixture() {
     tile.children[".message-image"] = new FakeElement();
     tile.children[".message-image-state"] = new FakeElement();
     return tile;
+}
+
+function reconcileFixture(previous, artifacts, now, activeElement = null) {
+    const placeholders = artifacts.map(function (_, index) {
+        const next = tileFixture();
+        next.dataset.artifactSlot = String(index);
+        return next;
+    });
+    const result = reconcileArtifactTiles(previous, placeholders, artifacts, {
+        now: now, activeElement: activeElement
+    });
+    for (const fresh of result.fresh) {
+        connectArtifactTile(fresh, artifacts[Number(fresh.dataset.artifactSlot)], {
+            now: now, loadingLabel: "Loading…", expiredLabel: "Image expired"
+        });
+    }
+    result.restoreFocus();
+    return { ...result, tiles: placeholders.map(tile => tile.replacement || tile) };
 }
 
 const tile = tileFixture();
@@ -78,6 +122,34 @@ assert.equal(tile.disabled, false);
 tile.emit("click");
 assert.equal(opened, 1, "only a loaded thumbnail opens the preview");
 
+const firstRequestCount = thumb.srcWrites;
+const firstAnnouncementCount = tile.children[".message-image-state"].textWrites;
+const firstLiveRoleCount = tile.children[".message-image-state"].attributeWrites.role;
+const unchanged = reconcileFixture([tile], [liveArtifact], 1_800_000_001, tile);
+assert.equal(unchanged.tiles[0], tile,
+    "an unchanged artifact keeps the exact tile and image nodes");
+assert.equal(unchanged.tiles[0].children[".message-image"], thumb);
+assert.equal(thumb.srcWrites, firstRequestCount,
+    "an unchanged render does not create another image request");
+assert.equal(tile.children[".message-image-state"].textWrites, firstAnnouncementCount,
+    "an unchanged render does not repeat the live status text transition");
+assert.equal(tile.children[".message-image-state"].attributeWrites.role, firstLiveRoleCount,
+    "an unchanged render does not recreate the role=status announcement");
+assert.equal(tile.focuses, 1,
+    "reconciliation restores focus to the unchanged tile after the transcript replacement");
+
+const replacementArtifact = {
+    ...liveArtifact, id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+};
+const changed = reconcileFixture([tile], [replacementArtifact], 1_800_000_001);
+assert.notEqual(changed.tiles[0], tile, "a changed opaque id gets a different tile node");
+assert.equal(changed.tiles[0].children[".message-image"].srcWrites, 1,
+    "a changed opaque id starts exactly one new request");
+
+const metadataChange = reconcileFixture([tile], [{ ...liveArtifact, width: 641 }], 1_800_000_001);
+assert.notEqual(metadataChange.tiles[0], tile,
+    "changed safe semantic metadata cannot reuse the old tile");
+
 const failed = tileFixture();
 connectArtifactTile(failed, liveArtifact, {
     now: 1_800_000_000, loadingLabel: "Loading…", expiredLabel: "Image expired"
@@ -89,6 +161,23 @@ assert.equal(failed.children[".message-image"].hidden, true);
 assert.equal(failed.children[".message-image"].src, "",
     "the browser's broken-image rendering is removed");
 assert.equal(failed.children[".message-image-state"].textContent, "Image expired");
+
+const repeatedFailure = reconcileFixture([failed], [liveArtifact], 1_800_000_001);
+assert.equal(repeatedFailure.tiles[0], failed,
+    "a request failure stays visible without retrying on an unchanged render");
+assert.equal(repeatedFailure.tiles[0].dataset.imageState, "expired");
+assert.equal(repeatedFailure.tiles[0].children[".message-image"].srcWrites, 1);
+
+const expired = reconcileFixture([tile], [liveArtifact], liveArtifact.expires_at);
+assert.notEqual(expired.tiles[0], tile, "crossing expires_at replaces the formerly live tile");
+assert.equal(expired.tiles[0].dataset.imageState, "expired");
+assert.equal(expired.tiles[0].children[".message-image"].srcWrites, 0,
+    "an expiry transition is visible without another byte request");
+assert.equal(expired.tiles[0].children[".message-image-state"].textContent, "Image expired");
+
+const removed = reconcileFixture([tile], [], 1_800_000_001);
+assert.deepEqual(removed.tiles, [], "removing a message retains no stale artifact node");
+assert.deepEqual(removed.reused, []);
 
 const documentFixture = new FakeElement();
 const dialog = new FakeElement();

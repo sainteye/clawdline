@@ -15,7 +15,9 @@ import { SessionActions } from "../input/detail-actions.js";
 import { coordinatorForSession } from "../input/coordinator-actions.js";
 import { GitPanel } from "../input/git-panel.js";
 import { ShellPanel } from "../input/shell-panel.js";
-import { connectArtifactTile, createImageLightbox } from "./transcript-images.js";
+import {
+    connectArtifactTile, createImageLightbox, reconcileArtifactTiles
+} from "./transcript-images.js";
 
 /* ---- the transcript ------------------------------------------------------ */
 
@@ -182,8 +184,7 @@ export function renderTranscript() {
         blocks[liveAt] = runHTML(liveRun, true);
     }
     if (S.newestFirst) blocks.reverse();
-    box.innerHTML = transcriptNotice + blocks.join("");
-    hydrateArtifactImages(box);
+    replaceTranscriptContents(box, transcriptNotice + blocks.join(""));
     var pending = box.querySelectorAll(".entry.pending canvas.spin");
     for (var p = 0; p < pending.length; p++) {
         drawSpinner(pending[p], spinPhase);
@@ -541,14 +542,13 @@ function artifactTilesHTML(artifacts) {
         return '<button class="message-image-tile" type="button" disabled ' +
             'data-artifact-slot="' + slot + '" aria-label="' + esc(T.webImagePreview) + '">' +
             '<img class="message-image" alt="" hidden>' +
-            '<span class="message-image-state" role="status">' + esc(T.webLoading) + '</span>' +
+            '<span class="message-image-state"></span>' +
             '</button>';
     }).join("");
     return '<div class="message-images">' + tiles + '</div>';
 }
 
-function hydrateArtifactImages(box) {
-    var tiles = box.querySelectorAll("[data-artifact-slot]");
+function hydrateArtifactImages(tiles) {
     for (var i = 0; i < tiles.length; i++) {
         var tile = tiles[i];
         var artifact = artifactRenderQueue[Number(tile.dataset.artifactSlot)];
@@ -560,6 +560,29 @@ function hydrateArtifactImages(box) {
             }
         });
     }
+}
+
+/** Stage the next rows, move safe keyed image state into them, then discard the old rows. */
+function replaceTranscriptContents(box, html) {
+    var currentTiles = box.querySelectorAll("[data-artifact-slot]");
+    var oldChildren = Array.from(box.childNodes);
+    var template = document.createElement("template");
+    template.innerHTML = html;
+    var nextTiles = template.content.querySelectorAll("[data-artifact-slot]");
+    // Attach the inert, empty placeholders first. Moving an old tile between two connected
+    // transcript entries then keeps its live region in the accessibility tree throughout.
+    box.appendChild(template.content);
+    var reconciliation = reconcileArtifactTiles(
+        currentTiles,
+        nextTiles,
+        artifactRenderQueue,
+        { activeElement: document.activeElement }
+    );
+    // Only fresh tiles acquire a live role, text, listeners or src. An unchanged tile is
+    // deliberately absent here, so its request and announcement state stay untouched.
+    hydrateArtifactImages(reconciliation.fresh);
+    oldChildren.forEach(function (child) { child.remove(); });
+    reconciliation.restoreFocus();
 }
 
 /**
