@@ -7832,6 +7832,7 @@ group("terminal writes cannot hold the remote server queue") {
         ITerm.completeInventoryForTesting()
     }
     Config.shared.remoteWrite = true
+    ITerm.completeInventoryForTesting()
     let writer = RemoteAuth.addDevice(name: "terminal queue test", caps: [.read, .send])
     defer { RemoteAuth.revoke(id: writer.id) }
 
