@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.2.1
+version: 2.3.0
 description: |
   Hand a piece of work to another session: open a child session (Claude Code or Codex) through the
   Clawdline app, type the first message into it, wait for it to write result.json, and report back
@@ -185,6 +185,15 @@ accepted — not that the target transcript observed it or the assistant acknowl
 require an explicit reply when the outcome depends on receipt. Surface any typed refusal; never
 fall back to `/v1/sessions/:id/send` or a hand-written prefix. The closed body and wire format are
 in `docs/messages.md`.
+
+**Send a generated raster as a local image, not as prose.** When ImageGen or another local tool
+has produced a PNG/JPEG/WebP/GIF/TIFF that another live session should see, call
+`POST /v1/orchestrator/messages` with `images:[{"path":"/absolute/local/path.png"}]` and the
+ordinary source/target ids, token and idempotency key above. Never paste base64, invent or persist
+a public URL, or fall back to legacy `/send`: Clawdline reads the local file, normalizes it into
+its owned store and sends only an opaque expiring reference. The recipient sees a bounded
+thumbnail that opens in a preview; once the reference expires or is unavailable, that same place
+stays visible as an explicit **Image expired** tile.
 
 **An interrupted review is handed over, not restarted.** A reviewer that died, timed out or was
 cancelled has usually written part of its finding set already; give that file to whoever picks it

@@ -47,6 +47,9 @@ struct TraditionalChinese: Copy {
     let scriptMissing = "找不到 iterm.js——app bundle 壞了？"
     let cannotList = "讀不到 iTerm2 的 session"
     let noOutput = "還讀不到這個分頁的內容。"
+    let imageExpired = "圖片已過期"
+    let imagePreview = "圖片預覽"
+    let imageClose = "關閉預覽"
     func outputSize(_ pt: Int) -> String { "輸出字級 \(pt)pt——按 ⌘J 看" }
     func foldedTools(_ count: Int) -> String { "\(count) 個動作" }
     func outputOrder(newestFirst: Bool) -> String {
@@ -786,6 +789,9 @@ struct SimplifiedChinese: Copy {
     let scriptMissing = "找不到 iterm.js——app bundle 坏了？"
     let cannotList = "读不到 iTerm2 的 session"
     let noOutput = "还读不到这个标签页的内容。"
+    let imageExpired = "图片已过期"
+    let imagePreview = "图片预览"
+    let imageClose = "关闭预览"
     func outputSize(_ pt: Int) -> String { "输出字号 \(pt)pt——按 ⌘J 看" }
     func foldedTools(_ count: Int) -> String { "\(count) 个动作" }
     func outputOrder(newestFirst: Bool) -> String {

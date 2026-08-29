@@ -83,10 +83,17 @@ closed references:
 No reference contains image bytes, a source path, filename, URL, HTML or presentation fields.
 `expires_at` is absolute Unix seconds. The same array reaches `Transcript.Entry` and
 `GET /v1/sessions/:id/transcript` as `artifacts`; attribution remains all-or-nothing because a
-malformed or extra field invalidates the entire v2 envelope. Authenticated same-origin clients
-construct `GET /v1/artifacts/images/:artifactId`: a live PNG is `200`, a known expired or pruned id
+malformed or extra field invalidates the entire v2 envelope. Authenticated clients derive the
+relative same-origin route `/v1/artifacts/images/:artifactId` from the opaque id; that retrieval
+URL is presentation state, never a stored public URL or part of the message. A live PNG is `200`, a known expired or pruned id
 is typed `410 artifact_expired`, and an id the store never owned is typed
 `404 artifact_not_found`.
+
+App and Web render a live reference as a bounded thumbnail with an enlarged in-app preview. A
+past `expires_at`, native missing/expired lookup, or Web retrieval failure stays in the transcript
+as an explicit localized expired tile rather than a broken image or an omission. A future hosted
+store may back the same opaque relative route; callers and transcripts do not learn or persist its
+storage URL.
 
 The store defaults to 24-hour TTL, 64 live artifacts and 64 MiB total, with a 12 MiB source and
 normalized-image cap, 12,000-pixel edge cap and 40-megapixel decoded cap. Tombstones are bounded

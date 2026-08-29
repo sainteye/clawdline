@@ -3283,6 +3283,84 @@ group("session image artifacts are owned, bounded and expire explicitly") {
     }
 }
 
+group("native session images render live thumbnails and explicit expiry") {
+    let root = isolatedTestSessionImagesDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let source = root.appendingPathComponent("source.png")
+    let drawn = NSImage(size: NSSize(width: 640, height: 360))
+    drawn.lockFocus()
+    NSColor.systemTeal.setFill()
+    NSRect(x: 0, y: 0, width: 640, height: 360).fill()
+    drawn.unlockFocus()
+    let png = NSBitmapImageRep(data: drawn.tiffRepresentation!)!
+        .representation(using: .png, properties: [:])!
+    try! png.write(to: source)
+
+    let policy = SessionImageArtifactStore.Policy(
+        ttl: 10, maxCount: 2, maxTotalBytes: 1 << 20,
+        maxInputBytes: 1 << 20, maxEncodedBytes: 1 << 20,
+        maxDimension: 1_000, maxPixels: 1_000_000, tombstoneTTL: 20,
+        maxMetadataCount: 8, maxImagesPerMessage: 2)
+    let store = SessionImageArtifactStore(directory: root, policy: policy)
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let artifact = try! store.importPaths([source.path], now: now).first!.artifact
+    let live = SessionImagePresentation.render(
+        artifact, size: 12, store: store, now: now.addingTimeInterval(1))
+    var attachment: NSTextAttachment?
+    var previewLink: String?
+    live.enumerateAttributes(in: NSRange(location: 0, length: live.length)) { attrs, _, _ in
+        attachment = attachment ?? attrs[.attachment] as? NSTextAttachment
+        previewLink = previewLink ?? (attrs[.link] as? String)
+    }
+    check("a live native artifact becomes an actual image attachment", attachment != nil)
+    check("the native thumbnail stays inside its documented bounds",
+          (attachment?.bounds.width ?? 1_000) <= SessionImagePresentation.maximumThumbnail.width
+            && (attachment?.bounds.height ?? 1_000)
+                <= SessionImagePresentation.maximumThumbnail.height)
+    expect("the thumbnail's private link routes only by opaque artifact id",
+           previewLink.flatMap(SessionImagePresentation.artifactID), artifact.id)
+    check("native presentation never prints an id, path, URL or image bytes",
+          !live.string.contains(artifact.id) && !live.string.contains(source.path)
+            && !live.string.contains("http") && !live.string.contains("data:"))
+
+    let transcript = Transcript.render([
+        .init(kind: .message, text: "A retained caption", tool: nil, time: nil,
+              artifacts: [artifact]),
+    ], size: 12, mono: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+       imageStore: store, now: now.addingTimeInterval(1))
+    var transcriptAttachmentCount = 0
+    transcript.enumerateAttribute(.attachment,
+                                  in: NSRange(location: 0, length: transcript.length)) {
+        value, _, _ in
+        if value is NSTextAttachment { transcriptAttachmentCount += 1 }
+    }
+    check("the native transcript keeps text and appends one image thumbnail",
+          transcript.string.contains("A retained caption") && transcriptAttachmentCount == 1)
+
+    let expired = SessionImagePresentation.render(
+        artifact, size: 12, store: store, now: now.addingTimeInterval(10))
+    check("past expires_at is a localized visible tile rather than a broken attachment",
+          expired.string.contains(L.t.imageExpired)
+            && expired.attribute(.attachment, at: 0, effectiveRange: nil) == nil)
+    let missingReference = SessionImageArtifact(
+        id: "99999999-8888-4777-8666-555555555555", mediaType: "image/png",
+        byteCount: 73, width: 640, height: 360, expiresAt: 1_800_000_100)
+    let missing = SessionImagePresentation.render(
+        missingReference, size: 12, store: store, now: now)
+    check("a native missing lookup uses the same unmistakable expired tile",
+          missing.string.contains(L.t.imageExpired))
+    check("English and Traditional Chinese name expiry explicitly",
+          English().imageExpired == "Image expired"
+            && TraditionalChinese().imageExpired == "圖片已過期")
+    let webFallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
+    let webServer = try! String(contentsOfFile: "Sources/RemoteServer.swift")
+    for key in ["webImageExpired", "webImagePreview", "webImageClose"] {
+        check("the browser fallback and /v1/strings both carry \(key)",
+              webFallback.contains("\(key):") && webServer.contains("\"\(key)\":"))
+    }
+}
+
 group("session image artifact HTTP retrieval is typed and authenticated") {
     let sourceSession = TargetSession(
         backend: .iterm, id: "IMAGE-SOURCE", name: "image source",
@@ -9165,7 +9243,8 @@ group("every word the page can draw is a word the page is sent") {
     // the Mac's own screen already draws is the same word here, which is a translation not made a
     // second time rather than a string nobody can change.
     let derived: Set<String> = ["webOrderNewest", "webOrderOldest",  // t.outputOrder(newestFirst:)
-                                "webScheduleNext"]                  // t.settingsScheduleNext
+                                "webScheduleNext",                  // t.settingsScheduleNext
+                                "webImageExpired", "webImagePreview", "webImageClose"]
 
     var missing: [String] = []
     for child in Mirror(reflecting: English()).children {

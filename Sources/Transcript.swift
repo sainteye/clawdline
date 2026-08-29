@@ -1227,7 +1227,9 @@ extension Transcript {
     /// tool calls comes back as one line, because the machinery is what makes the pane
     /// unreadable: a single answer can sit under thirty lines of paths and shell.
     static func render(_ entries: [Entry], size: CGFloat, mono: NSFont,
-                       expanded: Set<String> = [], newestFirst: Bool = false) -> NSAttributedString {
+                       expanded: Set<String> = [], newestFirst: Bool = false,
+                       imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
+                       now: Date = Date()) -> NSAttributedString {
         let body = NSFont.systemFont(ofSize: size + 1)
         let header = NSFont.systemFont(ofSize: max(8.5, size - 1.5), weight: .semibold)
         let toolFont = NSFont(descriptor: mono.fontDescriptor, size: max(8.5, size - 0.5)) ?? mono
@@ -1362,6 +1364,10 @@ extension Transcript {
                     .paragraphStyle: headerStyle,
                 ])
                 block.append(prose(entry.text, body: body, mono: mono))
+                for artifact in entry.artifacts {
+                    block.append(SessionImagePresentation.render(
+                        artifact, size: size, store: imageStore, now: now))
+                }
                 i += 1
 
             case .tool, .toolResult:

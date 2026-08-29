@@ -28,6 +28,8 @@ export function paintStatic() {
     text(els["tx-refresh-label"], T.webGitRefresh);
     attr(els["tx-refresh"], "title", T.webGitRefresh);
     text(els["tx-focus-label"], T.webShowOnMac);
+    text(els["image-lightbox-title"], T.webImagePreview);
+    text(els["image-lightbox-close"], T.webImageClose);
     attr(els["session-actions"], "aria-label", T.webSessionActions);
     text(els["session-focus"], T.webShowOnMac);
     text(els["session-info"], T.webSessionInfo);

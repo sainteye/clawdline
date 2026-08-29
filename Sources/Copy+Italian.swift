@@ -45,6 +45,9 @@ struct Italian: Copy {
     let scriptMissing = "Manca iterm.js — bundle dell'app danneggiato?"
     let cannotList = "Non è stato possibile leggere le sessioni di iTerm2"
     let noOutput = "In questa sessione non c'è ancora nulla da leggere."
+    let imageExpired = "Immagine scaduta"
+    let imagePreview = "Anteprima immagine"
+    let imageClose = "Chiudi anteprima"
     func outputSize(_ pt: Int) -> String { "Testo dell'output \(pt) pt — ⌘J per vederlo" }
     func foldedTools(_ count: Int) -> String { "\(count) passaggi" }
     func outputOrder(newestFirst: Bool) -> String {

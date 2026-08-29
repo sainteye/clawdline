@@ -49,6 +49,9 @@ struct Hindi: Copy {
     let scriptMissing = "iterm.js नहीं मिला — app bundle खराब है?"
     let cannotList = "iTerm2 के sessions पढ़े नहीं जा सके"
     let noOutput = "इस session में अभी पढ़ने को कुछ नहीं है।"
+    let imageExpired = "छवि की समय-सीमा समाप्त हो गई"
+    let imagePreview = "छवि पूर्वावलोकन"
+    let imageClose = "पूर्वावलोकन बंद करें"
     func outputSize(_ pt: Int) -> String { "आउटपुट का अक्षर आकार \(pt)pt — देखने के लिए ⌘J" }
     func foldedTools(_ count: Int) -> String { "\(count) चरण" }
     func outputOrder(newestFirst: Bool) -> String {

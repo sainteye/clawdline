@@ -11,6 +11,7 @@ export var els = {};
  "shell-panel", "shell-title", "shell-stop", "shell-close", "shell-body",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
+ "image-lightbox", "image-lightbox-title", "image-lightbox-image", "image-lightbox-close",
  "status-line", "status-line-open", "status-line-files", "status-line-deploy", "status-line-limits", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",

@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.2.1
+version: 2.3.0
 description: |
   把工作派給另一個 session 做：透過 Clawdline app 開一個 child session（Claude 或 Codex），
   注入第一句話、等它寫回 result.json，完成時回報給你。適合「這件事我不想在這條對話裡做」
@@ -158,6 +158,14 @@ Markdown，並把來源畫成獨立的 `Clawdline ↔` 卡片。不能拿它來 
 不表示目標 transcript 已觀察到、更不表示 assistant 已確認；結果取決於送達時，要要求對方明確
 回覆。任何 typed refusal 都要如實呈現；不得退回 `/v1/sessions/:id/send` 或手寫 sender prefix。
 closed body 與 wire 格式見 `docs/messages.md`。
+
+**生成的點陣圖要當本機圖片送，不要塞進文字。** ImageGen 或其他本機工具產生
+PNG／JPEG／WebP／GIF／TIFF 後，若要讓另一個 live session 看見，請用上面同一組來源／目標 id、
+token 與 idempotency key 呼叫 `POST /v1/orchestrator/messages`，並帶
+`images:[{"path":"/絕對/本機/路徑.png"}]`。絕不貼 base64、不自造或保存 public URL，也不退回
+舊的 `/send`：Clawdline 會讀本機檔、正規化後放進自己管理的 store，訊息只帶 opaque、會過期的
+reference。收件者看到的是有界縮圖，點開可預覽；reference 過期或不可用後，同一位置仍會明確顯示
+**圖片已過期**，不會靜默消失。
 
 **被中斷的 review 用交接，不要重跑。** 死掉、逾時或被取消的 reviewer，通常已經寫了一部分
 finding set；把那個檔案交給接手的人。review 是這裡最貴的節點，也是被丟掉比例最高的節點——101 次

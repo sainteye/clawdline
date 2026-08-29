@@ -43,6 +43,9 @@ struct Korean: Copy {
     let scriptMissing = "iterm.js가 없습니다 — 앱 번들이 손상되었을 수 있습니다"
     let cannotList = "iTerm2 세션을 읽지 못했습니다"
     let noOutput = "이 세션에서 아직 읽을 것이 없습니다."
+    let imageExpired = "이미지가 만료되었습니다"
+    let imagePreview = "이미지 미리보기"
+    let imageClose = "미리보기 닫기"
     func outputSize(_ pt: Int) -> String { "출력 글자 크기 \(pt)pt — ⌘J로 보기" }
     func foldedTools(_ count: Int) -> String { "\(count)단계" }
     func outputOrder(newestFirst: Bool) -> String {

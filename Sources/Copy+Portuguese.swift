@@ -48,6 +48,9 @@ struct Portuguese: Copy {
     let scriptMissing = "Falta o iterm.js — pacote do app corrompido?"
     let cannotList = "Não foi possível ler as sessões do iTerm2"
     let noOutput = "Ainda não há nada para ler nesta sessão."
+    let imageExpired = "Imagem expirada"
+    let imagePreview = "Pré-visualização da imagem"
+    let imageClose = "Fechar pré-visualização"
     func outputSize(_ pt: Int) -> String { "Texto da saída \(pt) pt — ⌘J para ver" }
     func foldedTools(_ count: Int) -> String { "\(count) passos" }
     func outputOrder(newestFirst: Bool) -> String {
