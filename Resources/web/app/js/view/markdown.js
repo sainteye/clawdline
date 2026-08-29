@@ -275,7 +275,8 @@ function listHTML(block) {
 }
 
 /**
- * `**bold**`, `*italic*`, `_italic_`, `` `code` ``, `~~struck~~`, `[text](url)`.
+ * `**bold**`, `*italic*`, `_italic_`, `` `code` ``, `~~struck~~`, `[text](url)`,
+ * `<https://url>`.
  *
  * Unmatched markers stay as text, the same rule the bar follows. The one thing this does that
  * the bar does not have to think about is *where a link may point*: a transcript is somebody
@@ -319,12 +320,12 @@ export function inlineMd(text) {
     function opening(html) { tags.push(html); return "<t" + (tags.length - 1) + ">"; }
 
     s = s
-        // Written links and bare ones in **one pass, alternating**, and the order inside the
-        // pattern is the whole trick: at each position the `[label](href)` form is tried first,
-        // so it is consumed whole and the bare rule never sees the URL inside it. Two passes
-        // cannot do this — autolinking afterwards would match the `href="…"` the first pass just
-        // produced and nest an anchor inside an anchor, and autolinking first would eat the
-        // target out of every written link before the markdown rule could read it.
+        // CommonMark autolinks, written links and bare ones in **one pass, alternating**, and the
+        // order inside the pattern is the whole trick: at each position the delimited forms are
+        // tried first, so they are consumed whole and the bare rule never sees the URL inside.
+        // Two passes cannot do this — autolinking afterwards would match the `href="…"` the first
+        // pass just produced and nest an anchor inside an anchor, and autolinking first would eat
+        // the target out of every written link before the markdown rule could read it.
         //
         // Safe because `esc` has already run: what is matched here is escaped text, and what is
         // put in the attribute is the same escaped text, so a `"` in the source is `&quot;` and
@@ -338,8 +339,14 @@ export function inlineMd(text) {
         // Full-width brackets stay allowed, because a URL can genuinely contain them
         // (`…/wiki/中文（消歧義）`) and the balanced-closer rule below already handles the ones
         // that are really the sentence's.
-        .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)|(\bhttps?:\/\/[^\s<，。、；：！？]+)/g,
-                 function (all, label, href, bare) {
+        .replace(/&lt;(https?:\/\/[^\s<]+?)&gt;|\[([^\]\n]+)\]\(([^)\s]+)\)|(\bhttps?:\/\/[^\s<，。、；：！？]+)/g,
+                 function (all, autolink, label, href, bare) {
+            if (autolink) {
+                return safeHref(autolink)
+                    ? opening('<a href="' + autolink + '" target="_blank" rel="noopener noreferrer">')
+                        + autolink + "</a>"
+                    : all;
+            }
             if (!bare) {
                 return safeHref(href)
                     ? opening('<a href="' + href + '" target="_blank" rel="noopener noreferrer">')

@@ -115,6 +115,16 @@ const inline = richText("run `ls -l` now");
 assert.ok(!inline.includes("codecopy"), "inline code is not a block and keeps its shape");
 assert.ok(inline.includes("<code>ls -l</code>"));
 
+/* ---- angle-bracket autolinks -------------------------------------------- */
+
+const autolink = richText("首頁：<https://clawdline.com>");
+assert.ok(autolink.includes('href="https://clawdline.com"'),
+    "a CommonMark autolink points to the URL without its closing angle bracket");
+assert.ok(autolink.includes('>https://clawdline.com</a>'),
+    "the address is the link label");
+assert.ok(!autolink.includes("&lt;") && !autolink.includes("&gt;"),
+    "the autolink delimiters are syntax, not visible text or part of the destination");
+
 /* ---- the words on it ------------------------------------------------------ */
 
 for (const key of ["webCodeCopy", "webCodeCopied", "webCodeCopyFailed"]) {
