@@ -6345,7 +6345,11 @@ group("devstack: the documented example files") {
     expect("it declares its ports", tier0?.declared.count, 2)
     check("without a status command", tier0?.status == nil)
     // The rung that makes this a format rather than an integration: no supervisor, still visible.
-    expect("so it is read by probing", DevStack.probeDeclared(tier0!).processes.count, 2)
+    if let tier0 {
+        expect("so it is read by probing", DevStack.probeDeclared(tier0).processes.count, 2)
+    } else {
+        check("so it is read by probing", false, "the tier 0 example was unavailable")
+    }
 
     let state = load("devstack-state.json").flatMap { DevStack.parseState($0) }
     check("the state example is there", state != nil)
@@ -24341,6 +24345,13 @@ group("completion transport failure injection is typed and bounded") {
                 && advanced.nextRetryAt!.timeIntervalSince1970 <= 101
                     + Orchestrator.completionRetryMaximum)
     }
+    var penultimate = Orchestrator.CompletionDelivery(
+        noticeID: UUID().uuidString.lowercased(), created: Date(timeIntervalSince1970: 100),
+        state: .pending, attempts: Orchestrator.completionAttemptLimit - 2,
+        nextRetryAt: Date(timeIntervalSince1970: 100))
+    penultimate = Orchestrator.completionTransition(
+        penultimate, at: Date(timeIntervalSince1970: 101),
+        result: .failed(.rootMissing, "one retry remains"))
     var last = Orchestrator.CompletionDelivery(
         noticeID: UUID().uuidString.lowercased(), created: Date(timeIntervalSince1970: 100),
         state: .pending, attempts: Orchestrator.completionAttemptLimit - 1,
@@ -24348,6 +24359,13 @@ group("completion transport failure injection is typed and bounded") {
     last = Orchestrator.completionTransition(
         last, at: Date(timeIntervalSince1970: 101),
         result: .failed(.rootMissing, "still missing"))
+    check("the cells immediately inside and at the dead-letter boundary stay distinct",
+          penultimate.attempts == Orchestrator.completionAttemptLimit - 1
+            && penultimate.state == .pending && penultimate.deadLetterAt == nil
+            && penultimate.nextRetryAt != nil
+            && last.attempts == Orchestrator.completionAttemptLimit
+            && last.state == .deadLetter && last.deadLetterAt != nil
+            && last.nextRetryAt == nil)
     check("the retry budget ends in a typed dead letter",
           last.state == .deadLetter && last.deadLetterAt != nil && last.nextRetryAt == nil)
 }
@@ -24800,8 +24818,29 @@ group("the protocol page carries the durable completion contract") {
     // authority is `docs/clawdline-protocol.html` now, so the substance is asserted there and the
     // moment-in-time metadata is gone rather than maintained.
     let page = try! String(contentsOfFile: "docs/clawdline-protocol.html", encoding: .utf8)
-    check("the page names the stable notice id and the route that consumes it",
-          page.contains("notice_id") && page.contains("completion/ack"))
+    let orchestratorSource = try! String(
+        contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8)
+    let completionStorageBody = orchestratorSource
+        .components(separatedBy: "static func stored(_ delivery: CompletionDelivery)")
+        .dropFirst().first?.components(separatedBy: "static func completionDelivery(from").first
+        ?? ""
+    let completionFieldPattern = try! NSRegularExpression(
+        pattern: #""([^"\n]+)": delivery\.noticeID"#)
+    let completionFieldRange = NSRange(
+        completionStorageBody.startIndex..<completionStorageBody.endIndex,
+        in: completionStorageBody)
+    let completionFields = completionFieldPattern.matches(
+        in: completionStorageBody, range: completionFieldRange).compactMap { match -> String? in
+            guard let range = Range(match.range(at: 1), in: completionStorageBody) else {
+                return nil
+            }
+            return String(completionStorageBody[range])
+        }
+    check("the page names production's one authoritative completion id and its ACK route",
+          completionFields.count == 1 && completionFields.first == "notice_id"
+            && page.contains("<dt><code>\(completionFields.first ?? "")</code></dt>")
+            && page.contains("completion/ack"),
+          "source fields \(completionFields)")
     check("and says a send is not an observation",
           page.contains("a successful send is not an observation"))
     check("the page names the dead letter and how it is read back",
