@@ -23464,6 +23464,44 @@ func mainQueueIdentityProbe() async
     }
 }
 
+/// The two crossings a reading with live targets in it leads to, asked from the one place they
+/// can be wrong: a main-queue block after `dispatchMain()`, where the main thread is parked and
+/// this block is running on a worker.
+///
+/// **This cannot be written as "call it and see whether it survives".** A `dispatch_sync` onto the
+/// queue that already owns the calling thread traps inside libdispatch, and a trap is not a failing
+/// check — it is a suite that stops printing, which is exactly why the same mistake in
+/// ``Orchestrator/records()`` took a day to find. So the mistake is caught one step earlier, by
+/// ``MainQueue/hop(from:alreadyOnMain:_:)``, which records the site and runs the work where it
+/// already is. Reverting either caller's predicate to `Thread.isMainThread` turns the checks below
+/// red and leaves the process alive to report them.
+///
+/// The targets come from ``SessionWatch``, filled by a real reading earlier in this file, because
+/// an empty target list is the whole reason both crossings were dormant.
+func sessionWatchCrossingProbe() async
+    -> (isMainThread: Bool, isOnMainQueue: Bool, targets: Int, crossed: Int,
+        reentrantHops: [String]) {
+    await withCheckedContinuation { continuation in
+        Thread.detachNewThread {
+            Thread.sleep(forTimeInterval: 0.25)
+            DispatchQueue.main.async {
+                MainQueue.forgetReentrantHopsForTesting()
+                let targets = SessionWatch.shared.targets
+                var crossed = 0
+                for target in targets {
+                    _ = Config.shared.hookSessionID(of: target)
+                    _ = Transcript.sessionID(of: target)
+                    crossed += 1
+                }
+                continuation.resume(returning: (
+                    Thread.isMainThread, MainQueue.isCurrent, targets.count, crossed,
+                    MainQueue.reentrantHopsForTesting
+                ))
+            }
+        }
+    }
+}
+
 // MARK: - The usage ledger
 
 /// A store of its own per group, so one group's rows can never explain another's totals.
@@ -24771,6 +24809,110 @@ group("the watcher decides when to read, and what a session leaves behind when i
            ["source_unreadable_at_close"])
 }
 
+// MARK: - A reading with something in it
+
+/// Take one reading with ``SessionWatch``, with the terminals replaced, and wait for it to be
+/// published.
+///
+/// **`start()`, not a private entry point.** Starting this class is the thing the suite had never
+/// done, and it is the single cause behind two unrelated-looking gaps: the usage ledger's forced
+/// checkpoints hang off a reading and were asserted nowhere, and every main-queue crossing a live
+/// target leads to was dormant because `targets` was permanently empty.
+///
+/// The scan carries no assistant processes, which is what keeps a reading inside a test process
+/// off the two paths that would leave it — no screen captures and no registry walk. Everything
+/// this fixture exists for still runs: reconciliation, the ledger, and the publish onto main.
+@discardableResult
+func sessionWatchReading(_ sessions: [TargetSession]) -> Bool {
+    SessionWatch.inventoryForTesting = {
+        (scan: ITerm.AssistantProcessScan(assistants: [:], error: nil),
+         snapshot: Targets.Snapshot(sessions: sessions, currentID: nil, error: nil,
+                                    isComplete: true))
+    }
+    SessionWatch.shared.start()
+    return eventually { SessionWatch.shared.targets.map(\.id) == sessions.map(\.id) }
+}
+
+group("a reading with live sessions in it reaches the ledger, both ways") {
+    let fm = FileManager.default
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    Orchestrator.forget()
+    UsageLedger.forgetWatchedForTesting()
+
+    let codexHome = store.appendingPathComponent("codex", isDirectory: true)
+    let day = codexHome.appendingPathComponent("sessions/2026/08/29", isDirectory: true)
+    try! fm.createDirectory(at: day, withIntermediateDirectories: true)
+    let project = store.appendingPathComponent("project", isDirectory: true).path
+    let rollout = day.appendingPathComponent("rollout-2026-08-29T09-00-00-watch-live.jsonl")
+    try! Data("""
+    {"type":"session_meta","payload":{"session_id":"watch-live","cwd":"\(project)",\
+    "originator":"codex-tui","thread_source":"user","source":"cli"}}
+    {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":\
+    {"input_tokens":10,"output_tokens":5,"cached_input_tokens":85,\
+    "cache_write_input_tokens":0,"total_tokens":100}}}}
+    """.utf8).write(to: rollout)
+
+    let previousCodexHome = Config.shared.codexHome
+    let previousAutoName = Config.shared.codexAutoName
+    Config.shared.codexHome = codexHome.path
+    Config.shared.codexAutoName = false
+    defer {
+        Config.shared.codexHome = previousCodexHome
+        Config.shared.codexAutoName = previousAutoName
+        Orchestrator.forget()
+        // The timer `start()` installed is on `RunLoop.main` in the common modes, and
+        // `eventually` pumps that run loop all through the rest of the suite — so a watch left
+        // running would take a real `ps` and a real Apple-event inventory somewhere in the middle
+        // of an unrelated group. The seam is deliberately *not* cleared with it: the registry
+        // watcher `start()` installed outlives `stop()`, and a reading that got through it after
+        // this point should still be answered from a fixture rather than from the machine.
+        SessionWatch.shared.stop()
+        try? fm.removeItem(at: codexHome)
+    }
+
+    // A Codex tab whose rollout can be found, and a Claude tab whose transcript cannot. Both are
+    // live targets; only the first is something the ledger can measure, which is the split the
+    // collector already documents.
+    let codexTab = TargetSession(backend: .iterm, id: "TERM-WATCH-CODEX", name: "codex",
+                                 tty: "/dev/ttys900", windowIndex: 0, tabIndex: 0,
+                                 assistant: .codex, cwd: project)
+    let claudeTab = TargetSession(backend: .iterm, id: "TERM-WATCH-CLAUDE", name: "claude",
+                                  tty: "/dev/ttys901", windowIndex: 0, tabIndex: 1,
+                                  assistant: .claude,
+                                  cwd: store.appendingPathComponent("nowhere").path)
+
+    check("a reading publishes what the inventory found", sessionWatchReading([codexTab, claudeTab]))
+    expect("both tabs are live targets", SessionWatch.shared.targets.count, 2)
+
+    // The wiring, not the arithmetic. What round one proved was that `checkpoint` computes the
+    // right row when it is called; what nothing proved was that a reading calls it at all.
+    check("the reading checkpointed the session it could resolve",
+          eventually { UsageLedger.shared.rows().contains { $0.sessionID == "watch-live" } },
+          "\(UsageLedger.shared.rows().map(\.sessionID))")
+    let live = UsageLedger.shared.rows().first { $0.sessionID == "watch-live" }
+    expect("carrying what that rollout says", live?.total, 100)
+    expect("filed as a session a person opened", live?.origin, "manual")
+    expect("and open, because the session is still there", live?.sealed, false)
+
+    // The other half of the same wire. A session that leaves a *complete* reading is one of the
+    // three forced checkpoints, and `apply` is the only caller of it in the app.
+    check("a second reading without it publishes the loss", sessionWatchReading([claudeTab]))
+    check("the session that disappeared is sealed by the reading that lost it",
+          eventually {
+              UsageLedger.shared.rows().first { $0.sessionID == "watch-live" }?.sealed == true
+          },
+          "\(UsageLedger.shared.rows().map { ($0.sessionID, $0.sealed) })")
+    expect("sealed complete, because its rollout was still readable",
+           UsageLedger.shared.rows().first { $0.sessionID == "watch-live" }?.coverage, "complete")
+
+    // Left behind on purpose: the crossings probe in the asynchronous half of this file asks
+    // `SessionWatch` for a target, and a target that came out of a real reading is the whole
+    // point — an empty list is how both of those crossings stayed dormant for a release.
+    expect("and the Claude tab is still live for the crossings to be asked about",
+           SessionWatch.shared.targets.map(\.id), ["TERM-WATCH-CLAUDE"])
+}
+
 group("what a terminal's spend is filed under, and what the backfill hands over") {
     Orchestrator.forget()
     defer { Orchestrator.forget() }
@@ -24927,6 +25069,16 @@ Task {
           mainQueueIdentity.recordsReturned)
     check("record(id:) returns without synchronously dispatching onto its current queue",
           mainQueueIdentity.missingRecord)
+
+    let crossings = await sessionWatchCrossingProbe()
+    check("a reading left a live target behind for the crossings to be asked about",
+          crossings.targets > 0)
+    check("the crossings are asked from a main-queue block that is not the main thread",
+          !crossings.isMainThread && crossings.isOnMainQueue)
+    check("both crossings answer for every one of them",
+          crossings.crossed == crossings.targets, "\(crossings.crossed) of \(crossings.targets)")
+    check("and neither decided to hop onto the queue it was already standing on",
+          crossings.reentrantHops.isEmpty, "\(crossings.reentrantHops)")
 
     checks += 1
     do {
