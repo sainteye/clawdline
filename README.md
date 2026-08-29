@@ -1,7 +1,7 @@
 # Clawdline
 
-**Every Claude Code and Codex session on your Mac — including the child agents your sessions
-dispatched — as one live tree, on your Mac and on your phone.**
+**A local control plane for Claude Code and Codex: see every live session, hand work across
+assistants, review it independently, and ship the exact tree.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)
@@ -9,6 +9,67 @@ dispatched — as one live tree, on your Mac and on your phone.**
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
 
 English · [繁體中文](README.zh-TW.md)
+
+[Website](https://clawdline.com/) · [Install](#install) ·
+[The Clawdfather loop](#the-clawdfather-delivery-loop) ·
+[Protocol](docs/clawdline-protocol.html) · [Documentation](#documentation)
+
+## The Clawdfather delivery loop
+
+Most agent tools optimize one conversation or start more workers. Clawdline starts where that
+stops being enough: several real terminal sessions, Claude and Codex in the same project, work that
+can collide, a result that still needs an independent reader, and a target branch that must contain
+the reviewed bytes before anybody calls it done.
+
+**Clawdfather is the durable, machine-wide coordination role.** It keeps the map of Sessions,
+tasks, waits and pending landings; turns one intent into owned work; routes each part to the right
+assistant; asks a different session to review the delivery; sends findings through one bounded
+correction; and keeps integration at the root until the exact commit tree has been verified and
+released.
+
+<img src="docs/assets/clawdfather-loop.gif" width="760" alt="The Clawdfather delivery loop, rendered from the current Clawdline Cloud source demo: a root owns the plan and landing, two claimed work lanes run in parallel, an independent reviewer checks a delivery it did not author, one bounded correction closes the finding set, and the target commit changes from blocked to verified before the durable outcome is shown.">
+
+```text
+intent
+  → plan + landing owner
+  → claims + parallel Claude / Codex dispatch
+  → independent review
+  → one bounded correction
+  → root-owned landing
+  → exact-tree verification
+  → authorized build, restart and live receipt
+```
+
+This is deliberately more than a spawn button:
+
+- **Delivered is not reviewed.** A child returning `success` proves that an answer arrived. A
+  reviewer who did not author it decides whether it is safe, and names reproducible evidence.
+- **Reviewed is not landed.** `SAFE TO LAND` opens integration; it does not finish it. The root
+  stages named paths, reads the actual staged diff, records the target commit and remains the
+  owner until the broker can verify the landing.
+- **Green is about a subject.** A working-tree check proves a child's overlay. Release acceptance
+  runs against the exact candidate tree, then build/restart and live health get their own receipts.
+- **Parallelism has boundaries.** Declared write paths are checked before a shared-tree task starts;
+  non-file operations can serialize; waits, releases and completion acknowledgements are typed
+  records rather than lines somebody hopes another Session noticed.
+
+Today this workflow runs through one explicitly registered Clawdfather Session and Clawdline's
+existing resume, dispatch, review, landing, closeability and verification primitives. The native
+graph/control sheet is still the next product surface; the working orchestration path does not
+depend on pretending those buttons have shipped. Decisions about product intent, irreversible
+effects, spend, credentials, privacy and security still belong to a person.
+
+## Why Clawdline is different
+
+| | |
+| --- | --- |
+| **It coordinates the sessions you already have.** | No wrapper, replacement runtime or special way to start work. A Claude Code or Codex process you opened by hand appears beside the sessions Clawdline dispatched; quit the app and they keep running. |
+| **Claude and Codex are peers, not separate worlds.** | Either assistant can dispatch the other. Every child remains a visible terminal Session with a transcript, state, question, task record and usage — on the Mac and on your phone. |
+| **The delivery graph survives the chat.** | Claims, waits, results, reviews, landing records, completion ACKs and closeability are durable evidence. A tab going quiet cannot silently turn pending work into completion. |
+| **The project is the unit.** | Sessions, tasks, schedules, dev servers, branches, backlog, health and deploy state meet on one project row instead of being scattered across a terminal, a CI tab and a status page. |
+| **Local first; Cloud adds reach.** | The free Mac app works without an account and installs nothing into either assistant. [Clawdline Cloud](https://clawdline.com/) is the optional encrypted route to another Mac, a phone or a runner; execution and the content key stay on hardware you own. |
+
+## The fleet it coordinates
 
 <img src="docs/assets/fleet-wide.png" width="760" alt="Clawdline in a browser: every Claude Code and Codex session on the Mac in one list, the sessions that were dispatched by another session indented under it, and the transcript of the selected one beside the list.">
 
@@ -53,10 +114,11 @@ so a Claude Code session can send work to a Codex child, or the other way round.
 
 Nothing to migrate, nothing to undo. Quit it and your setup is exactly as it was.
 
-## Features
+## Everything around the loop
 
 | | |
 | --- | --- |
+| **Clawdfather: plan, delegate, review, correct, land**<br><br>One registered machine-wide role keeps Session, task, wait and landing evidence in view while feature-sized work stays in independent tabs. It can decompose across projects, route around one exhausted assistant, require independent review and retain root-owned integration.<br><br>[How feature-sized dispatch is governed →](docs/dispatching.md) · [Verification and review →](docs/verification-workflow.md) | <img src="docs/assets/clawdfather-loop.gif" width="380" alt="Clawdfather coordinates claimed parallel work, independent review, correction and exact-tree delivery."> |
 | **The fleet, and who dispatched whom** `⌘K`<br><br>Every Claude Code and Codex session on the Mac in one list — the ones you opened yourself, and the ones a session dispatched sitting indented under whoever asked for them. One glance answers what a row of tabs cannot: which of them is waiting on you, and which of them is another session's errand.<br><br>[Handing work to another session →](#handing-work-to-another-session) | <img src="docs/assets/fleet-phone.png" width="300" alt="The session list on a phone: parent sessions each with a dispatched child indented beneath, one child running Claude Code and one running Codex, and the session that is waiting for an answer picked out in the accent colour."> |
 | **Which session wants you** `⌘K`<br><br>A working session carries the live line Claude Code draws for itself; a session with a question on screen is the loud one, because that is the only state costing you something for every second it goes unnoticed. Each row wears its project's own mark.<br><br>[How each state is decided →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking."> |
 | **Read a session back** `⌘J`<br><br>Not a screenshot of a terminal. Clawdline reads the session's transcript file, so you get real message boundaries, full history, headings, bordered tables and code — with finished runs of tool calls folded to one line each. `⌘F` fills the screen.<br><br>[What the pane does →](docs/interface.md#reading-a-session-back) | <img src="docs/assets/transcript.png" width="380" alt="The transcript pane: a heading, a bordered table and a code block, laid out rather than scraped."> |
@@ -72,6 +134,15 @@ removes it entirely. [More →](docs/interface.md#the-notch)
 
 Also:
 
+- **Close is a proof, not an idle colour** — the broker projects whether a Session is blocked,
+  needs an attestation, is safe, or is unknown from current process identity plus tasks, waits,
+  pending landings, handoffs, completion delivery and declared obligations. An opted-in close uses
+  an opaque compare-and-swap version and fails closed if the evidence moved.
+  [Contract →](docs/session-closeability.md)
+- **Local usage analytics, with the gaps still visible** — filter and group by model, assistant,
+  origin, project, day, coverage or task; cost is never invented for an unknown model or billed
+  plan, and missing-source coverage stays separate from a deliberate zero.
+  [API →](docs/api.md#get-v1orchestratorusageanalytics-analyticscsv-analyticsjson)
 - **Your dev servers, where you already type** — `⌘S` lists each project's long-running processes,
   how long they have been up, every port as a link, and start/stop/restart. Clawdline never spawns a
   process of its own; it runs the commands your repo declares in `.devstack.json`.
@@ -123,7 +194,8 @@ Also:
 
 ## Handing work to another session
 
-A session you are talking to is a session you are waiting on, and some of what gets asked for —
+The delivery loop above is built from an intentionally small broker. A session you are talking to
+is a session you are waiting on, and some of what gets asked for —
 draw this, run the suite, read this diff — does not need the conversation it was asked in. A
 session holding the `clawdline` skill writes the task down and asks the app to run it. Clawdline
 opens a terminal tab, starts the assistant the task named, types the briefing into it, watches for
@@ -670,7 +742,10 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | --- | --- |
 | [The bar, up close](docs/interface.md) | the session list, the <kbd>⌘</kbd><kbd>J</kbd> pane, dictation, files, the notch |
 | [Session states and list icons](docs/session-states.md) | every status glyph, the four independent axes, what you should do, and why finished is not the same as safe to close |
+| [Clawdfather and feature-sized dispatch](docs/dispatching.md) | how the machine-wide context owner decomposes, delegates, reviews and retains landing ownership without turning every small task into a new tab |
 | [Handing work off](docs/orchestrator.md) | one session dispatching another: the protocol, the credentials, the lifecycle |
+| [Verification and review](docs/verification-workflow.md) | implementation → independent review → bounded correction → focused confirmation → exact-tree acceptance |
+| [Session closeability](docs/session-closeability.md) | broker evidence, closure attestations and the compare-and-swap that makes safe-to-close a proof rather than a colour |
 | [Scheduled tasks](docs/schedules.md) | task templates that dispatch on local wall-clock time, catch-up, and tab-close policy |
 | [Continuing work in a new session](docs/handoff.md) | one session handing its whole line of work to the next |
 | [Where a dispatched session stops](docs/dispatch-permissions.md) | the four gates in order, and the flag that means the opposite on the cheapest model |
