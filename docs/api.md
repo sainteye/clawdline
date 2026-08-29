@@ -1304,7 +1304,9 @@ applicable code:
 | `attach_session_occupied` | 409 | the Session already has one live Clawdline task; attached sessions are single-flight |
 | `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
 | `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, or `serialize`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, `serialize`, or contradictory `root.poll_only`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `root_session_required` | 422 | `root.session_id` is null or empty and `root.poll_only` is not `true`. Nothing is registered or opened; send the current assistant conversation id, or explicitly opt into detached polling |
+| `root_unresolved` | 422 | the supplied non-null root id does not resolve to exactly one live process-bound session for `root.assistant`. Nothing is registered or opened; correct the id, or use null plus `root.poll_only:true` and poll |
 | `root_identity_is_terminal` | 422 | positive active-terminal or durable-Coordinator evidence proves `root.session_id` is a physical terminal id. The evidence is collected independently of caller-declared `root.assistant`; the error returns the actual `canonical_root_session_id` and `canonical_root_assistant`. Conflicting/unknown evidence remains nullable rather than guessed. The task is not registered and the provisional dispatch-rate ticket is refunded |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
@@ -1350,9 +1352,10 @@ this answers and the child has typed nothing yet; watch the record, or wait to b
 At registration, a non-null `root.session_id` may be either the watched terminal id or the
 assistant's process-bound conversation id. The broker resolves both against `root.assistant` and
 stores only the conversation id, so completion notification, grouping, per-root capacity and the
-root-close cascade use one key. If it cannot resolve exactly one live owner, dispatch remains
-compatible but the response includes `warnings:[{"code":"root_unresolved",…}]`; callers must
-poll and must not assume that owner grouping or cascade is available.
+root-close cascade use one key. If it cannot resolve exactly one live owner, HTTP dispatch returns
+`422 root_unresolved` before registration. If no interactive owner exists by design, send
+`"root":{"session_id":null,"poll_only":true,…}`; that explicit mode registers a detached task and
+the caller owns polling it.
 
 `"isolation":"worktree"` asks for a clean private checkout and a delivery branch named
 `clawdline/task/<complete-task-id>`. Optional `isolation_base` is resolved to a commit; without it,

@@ -390,15 +390,19 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
-| `root.session_id` | the dispatcher's assistant conversation id, or its watched terminal id. At dispatch the broker resolves either spelling against the declared assistant and stores the process-bound conversation id; `null` when unavailable |
+| `root.session_id` | the dispatcher's assistant conversation id, or its watched terminal id. HTTP dispatch requires a live resolvable owner unless `root.poll_only` is explicitly `true` |
 | `root.assistant` | optional `claude` or `codex`. New dispatchers send it; absence or explicit `null` is read as missing, and missing is resolved as `claude` for registries and task writers from before this field existed. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
+| `root.poll_only` | optional boolean, default `false`. `true` explicitly opts into a detached task and is legal only with a null `root.session_id`; the caller must poll because no completion notice or owner grouping exists |
 
-`root.session_id` being nullable is deliberate. A root that cannot work out its own id still gets
-to dispatch. **A best-effort field must not be a required one**, or the honest answer "I don't
-know" becomes a reason to invent something. Codex normally exports `CODEX_THREAD_ID` (with
-`CODEX_SESSION_ID` as the compatible spelling) and that value is the rollout session id. Claude
-has no direct self-query and uses the transcript nonce procedure in the skill.
+`root.session_id` is nullable only for an intentionally detached caller that writes
+`root.poll_only: true`. Ordinary HTTP dispatch fails with `422 root_session_required` when the
+field is null or empty. A non-null spelling that cannot be resolved to one live process-bound
+owner fails with `422 root_unresolved`; it is no longer a warning followed by an orphan-shaped
+task. Codex normally exports `CODEX_THREAD_ID` (with `CODEX_SESSION_ID` as the compatible spelling)
+and that value is the rollout session id. Claude has no direct self-query and uses the transcript
+nonce procedure in the skill. A caller that genuinely has no interactive owner can still say so
+without inventing one, but it must also accept polling as the only completion path.
 
 A watched terminal id is **not** a substitute for that conversation id. On a new dispatch the
 broker compares `root.session_id` with positive process-bound evidence from the active terminal
@@ -406,12 +410,13 @@ inventory and with the durable Coordinator's current binding. When either safely
 supplied value is the physical terminal id, dispatch is refused as
 `422 root_identity_is_terminal`; evidence is collected independently of the caller-declared
 `root.assistant`, and the error includes both `canonical_root_session_id` and the proved
-`canonical_root_assistant`. Correct both values and resend the same task id, or use `null` and
-poll. Unknown, offline and conflicting actual tuples are not guessed and are not rejected merely
-because they cannot be resolved. Existing persisted tasks keep their historical root value, and
-task mounting still accepts conversation ids only.
+`canonical_root_assistant`. Correct both values and resend the same task id. An intentionally
+detached caller instead writes a null session id together with `root.poll_only: true` and polls.
+Unknown, offline and conflicting tuples are not guessed: an HTTP dispatch is refused as
+`root_unresolved`. Existing persisted tasks keep their historical root value, and task mounting
+still accepts conversation ids only.
 
-Two things follow from leaving it out, and the second one surprises people. The task is not told
+Two things follow from explicit poll-only mode, and the second one surprises people. The task is not told
 when it finishes, so the dispatcher has to poll. And **its row has nothing to sit under**: the
 list indents a child beneath the session that asked for it, that session is found through this
 id, and a task that named nobody is filed under nobody. The row still says `Child`, because being
@@ -423,9 +428,9 @@ the id and `root.assistant` together.
 Resolution happens once, before capacity, grouping and the task record are chosen. A terminal id
 and the current conversation id therefore become the same durable root key. Completion
 notification, `liveTasks(dispatchedBy:)`, session grouping and root-close cascade all consume that
-canonical key. If a non-null spelling matches no one (or is ambiguous), dispatch still proceeds
-for compatibility but returns a `root_unresolved` item in `warnings`; the task may require polling
-and cannot be assumed to participate in those owner paths.
+canonical key. If a non-null spelling matches no one (or is ambiguous), HTTP dispatch returns
+`422 root_unresolved` before registering or opening anything. Poll-only automation uses a null id
+plus the explicit flag instead of disguising an unresolved owner as a warning.
 
 The broker does not trust either string on its own. For Claude it resolves the exact current
 process's transcript (using the validated process registry when available, otherwise a hook id

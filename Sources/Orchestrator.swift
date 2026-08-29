@@ -2940,6 +2940,10 @@ enum Orchestrator {
         var rootAssistant: Assistant?
         var rootLabel: String?
         var parentTaskId: String?
+        /// An explicit detached API dispatch. Without this opt-in, a root-less HTTP request is
+        /// almost certainly a caller that forgot to identify itself and would never receive the
+        /// completion notice or own the child row.
+        var pollOnly = false
         var plan: String?
         var serialize: [String] = []
         var claims: [String] = []
@@ -2956,8 +2960,8 @@ enum Orchestrator {
 
     /// Positive evidence that a caller put a physical terminal id where the task protocol needs
     /// the assistant process's conversation id. Its assistant is an observed fact, not filtered
-    /// through the caller's label. Empty or conflicting evidence is deliberately inconclusive:
-    /// new dispatches keep the nullable/manual-poll compatibility instead of guessing an identity.
+    /// through the caller's label. Empty or conflicting evidence is deliberately inconclusive;
+    /// the HTTP boundary then refuses an unresolved owner unless detached polling was explicit.
     struct RootIdentityEvidence: Equatable {
         let source: String
         let terminalID: String
@@ -2977,13 +2981,27 @@ enum Orchestrator {
         return .refused(
             status: 422, code: "root_identity_is_terminal",
             message: "root.session_id is a physical terminal id; use the assistant process-bound "
-                + "conversation id returned as canonical_root_session_id, or null to poll.",
+                + "conversation id returned as canonical_root_session_id, or use null together "
+                + "with root.poll_only true for intentionally detached automation.",
             extra: [
                 "supplied_root_session_id": claimed,
                 "canonical_root_session_id": proof.canonicalSessionID,
                 "canonical_root_assistant": proof.assistant.rawValue,
                 "evidence": matching.map(\.source).sorted(),
             ])
+    }
+
+    /// The HTTP boundary requires an owner unless detached polling is a deliberate choice.
+    /// Kept pure so the refusal can be proved without registering a task or opening a terminal.
+    static func rootSessionRequirementRefusal(sessionID: String?, pollOnly: Bool) -> Reply? {
+        guard sessionID == nil, !pollOnly else { return nil }
+        return .refused(
+            status: 422, code: "root_session_required",
+            message: "root.session_id is required for API dispatch so the child can be "
+                + "grouped, closed and reported back to its owner. Use this assistant's "
+                + "current conversation id, or set root.poll_only to true for an "
+                + "intentionally detached task that the caller will poll.",
+            extra: [:])
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -3271,7 +3289,9 @@ enum Orchestrator {
             made.timeoutMinutes = minutes
         }
         let rootObj = obj["root"] as? [String: Any] ?? [:]
-        made.rootSessionId = rootObj["session_id"] as? String
+        made.rootSessionId = (rootObj["session_id"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        }
         if let rawAssistant = rootObj["assistant"], !(rawAssistant is NSNull) {
             guard let name = rawAssistant as? String,
                   let assistant = Assistant(rawValue: name) else {
@@ -3280,6 +3300,15 @@ enum Orchestrator {
             made.rootAssistant = assistant
         }
         made.rootLabel = (rootObj["label"] as? String).map { String($0.prefix(120)) }
+        if let raw = rootObj["poll_only"] {
+            guard let pollOnly = raw as? Bool else {
+                return .bad("root.poll_only must be true or false")
+            }
+            made.pollOnly = pollOnly
+        }
+        if made.pollOnly, made.rootSessionId != nil {
+            return .bad("root.poll_only is only valid when root.session_id is null")
+        }
         // A child knows its own task id — it is in the first line it was ever sent — long before
         // this app has worked out what the session inside that tab calls itself. Naming it here
         // is how a dispatch from one level down is recognised as such on the first try, and for
@@ -4246,6 +4275,7 @@ enum Orchestrator {
     }
 
     static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil,
+                         requireRootSession: Bool = false,
                          respawn: RespawnOrigin? = nil) -> Reply {
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
@@ -4274,6 +4304,12 @@ enum Orchestrator {
         case .bad(let why): return .refused(422, "bad_task", why)
         case .ok(let ok): made = ok
         }
+        if requireRootSession,
+           let refusal = rootSessionRequirementRefusal(
+                sessionID: made.rootSessionId, pollOnly: made.pollOnly) {
+            refundDispatchRate(rateTicket)
+            return refusal
+        }
         let identityEvidence = rootIdentityEvidenceForTesting
             ?? activeRootIdentityEvidence(claimed: made.rootSessionId)
                 + Coordinator.rootIdentityEvidence(claimed: made.rootSessionId)
@@ -4286,6 +4322,15 @@ enum Orchestrator {
         let rootBinding = canonicalRootSession(
             made.rootSessionId, assistant: made.rootAssistant,
             among: rootTargets(), sessionID: Transcript.sessionID(of:))
+        if requireRootSession, let warning = rootBinding.warning {
+            refundDispatchRate(rateTicket)
+            return .refused(
+                status: 422, code: "root_unresolved",
+                message: (warning["message"] as? String ?? "root.session_id is unresolved.")
+                    + " Use the current process-bound conversation id, or use a null "
+                    + "root.session_id with root.poll_only true and poll the task explicitly.",
+                extra: [:])
+        }
         made.rootSessionId = rootBinding.sessionID
         let rootWarnings = rootBinding.warning.map { [$0] } ?? []
 

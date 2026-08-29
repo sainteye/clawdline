@@ -528,6 +528,7 @@ jq -n \
   --arg root_session "$ROOT_SESSION" \
   --arg root_assistant "$ROOT_ASSISTANT" \
   --arg root_label "clawdline root session" \
+  --argjson poll_only "${POLL_ONLY:-false}" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
@@ -535,7 +536,8 @@ jq -n \
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
-          assistant:$root_assistant, project_dir:$dir, label:$root_label}}' \
+          assistant:$root_assistant, project_dir:$dir, label:$root_label,
+          poll_only:$poll_only}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
@@ -562,9 +564,10 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |
 | `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
 | `timeout_minutes` | 1…240, 30 if absent |
-| `root.session_id` | this assistant's current conversation id (preferred) or watched terminal id; `null` if unavailable — never invented |
+| `root.session_id` | this assistant's current conversation id (preferred) or watched terminal id. An ordinary dispatch must resolve to a live owner |
 | `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
 | `root.parent_task` | **leave it out.** It existed for a dispatching child, and a child cannot dispatch; every dispatch this app now accepts comes from a root, where the field is `null`. It is still validated and still read, because a stored record from an older build carries it |
+| `root.poll_only` | default `false`. Set `true` only for deliberate detached automation with a null session id; it will not receive completion notification or own a child row, so the caller must poll |
 
 **Declaring `claims` costs about twenty output tokens, and most dispatches skip it anyway.**
 Measured across 206 dispatches on this machine: 60.7% declared nothing at all. A collision costs a
@@ -586,14 +589,15 @@ is the other one, and it announces itself: a claimed path blocks other trees whe
 ever touch it, and at terminal state the broker names every claim the task never touched. Same
 error, pointing the other way — take that report seriously and declare narrower next time.
 
-### Finding your own assistant and session id (best-effort; `null` if you cannot)
+### Finding your own assistant and session id (required unless deliberately poll-only)
 
 > `root.session_id` prefers the assistant's own conversation id — the Claude transcript uuid or
 > Codex rollout id — but the broker also accepts the watched terminal id. At dispatch it resolves
 > either spelling against `root.assistant` and stores one process-bound conversation key for
 > completion notification, grouping, capacity and close cascade. Always inspect `warnings`: a
-> non-null spelling that matches no live owner returns `root_unresolved`; that child may require
-> polling and must not be assumed to close with its root.
+> non-null spelling that matches no live owner is refused as `root_unresolved`. If there truly is
+> no interactive owner, set `POLL_ONLY=true` deliberately and accept that polling is the only
+> completion path; never let an empty lookup silently choose that mode.
 
 
 **Codex:** its current rollout id is exported directly. Do this in the same shell call that writes
@@ -651,15 +655,15 @@ esac
 echo "root session = ${ROOT_SESSION:-null}"
 ```
 
-If call B still comes back empty, try once more a call later; if it is still empty, put `null` and
-move on rather than getting stuck here.
+If call B still comes back empty, try once more a call later. If it is still empty, do not dispatch:
+report that the current root identity could not be proved. Only automation deliberately designed
+to be detached may set `ROOT_SESSION=""` and `POLL_ONLY=true`, and that caller must keep polling.
 
 **This is worth two things, and the second one is easy to forget:** one, the app needs to know
 which terminal to notify when the task finishes; two, **the child's row in the list is indented
-under you because of this id**. With `null` the task still runs, but you have to poll for the
-finish yourself, and that row floats in the middle of the list marked `Child` with nobody above it,
-looking like the grouping is broken. Use `null` when you cannot find it — never a guess — but when
-you can find it, fill it in. `ROOT_SESSION` and `ROOT_ASSISTANT` have to be in the same bash call
+under you because of this id**. A null id is refused unless the task explicitly declares
+`root.poll_only:true`; that mode is for detached automation, not a fallback for a failed lookup.
+Never guess an id. `ROOT_SESSION` and `ROOT_ASSISTANT` have to be in the same bash call
 as step 4's `jq`, or the variables will not survive; alternatively paste both strings straight
 into `--arg`.
 
@@ -667,8 +671,8 @@ Do not put the physical iTerm/tmux/Clawdline row id in `root.session_id`. For a 
 broker positively recognizes an active physical id or the durable Coordinator's physical binding
 and returns `422 root_identity_is_terminal` with `canonical_root_session_id` and
 `canonical_root_assistant`. Evidence is independent of what you put in `root.assistant`, so replace
-both values with that actual tuple, or use `null`. Unknown, conflicting or offline identities are
-not guessed, so absence alone is not this error.
+both values with that actual tuple. Unknown, conflicting or offline identities are not guessed and
+are refused as `root_unresolved`; detached automation uses null plus `root.poll_only:true`.
 
 ---
 
@@ -696,7 +700,9 @@ Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`. **Bra
 | `depth_exceeded` | **you are already at the bottom of the tree** | stop now, tell the user as in §0, and do this one yourself. Do not route around it |
 | `over_capacity` | the allowance is full | `message` says whether it is your session's allowance or the whole Mac's. The error carries `retry_after` in seconds. Wait and resend, or send fewer / in batches. **Do not hammer it** |
 | `bad_task` | `task.json` does not validate | read `message`, fix the file, resend the same `task_id` (same id is idempotent). A bad `model` lands here too |
-| `root_identity_is_terminal` | `root.session_id` is positively proved to be a physical terminal id | replace it with `canonical_root_session_id` from the error, or `null` and poll; never broaden task resolution to terminal ids |
+| `root_session_required` | `root.session_id` is empty and the task did not explicitly opt into polling | find this assistant's current conversation id. Use `root.poll_only:true` only for intentionally detached automation |
+| `root_unresolved` | the supplied root id is not one live process-bound owner | refresh the current conversation id; do not let the child open under a stale or guessed id |
+| `root_identity_is_terminal` | `root.session_id` is positively proved to be a physical terminal id | replace it with `canonical_root_session_id` from the error; never broaden task resolution to terminal ids |
 | `forbidden` | wrong token or none | re-read the token file; still failing means the app regenerated it, so ask the user to restart Clawdline |
 | `rate_limited` | more than 10 dispatches in 10 minutes | wait for the window to roll |
 | `not_found` | no such route | this Clawdline has no orchestrator; ask the user to update |
@@ -1204,6 +1210,11 @@ else
   slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
   f=$(grep -l "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
   ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+fi
+
+if [ -z "$ROOT_SESSION" ]; then
+  echo "refusing detached dispatch: current root conversation id was not found" >&2
+  exit 2
 fi
 
 jq -n --arg id "$task_id" --arg dir "$PWD" --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \

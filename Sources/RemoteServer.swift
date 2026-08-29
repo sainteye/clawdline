@@ -1186,7 +1186,8 @@ final class RemoteServer: @unchecked Sendable {
                   let secret = body["secret"] as? String else {
                 return .error(400, "bad_request", "task_id and secret are required.")
             }
-            return answer(Orchestrator.dispatch(taskID: taskID, secret: secret))
+            return answer(Orchestrator.dispatch(taskID: taskID, secret: secret,
+                                                requireRootSession: true))
 
         case ("POST", "/v1/orchestrator/notify"):
             guard orchestratorAuthed else {

@@ -451,6 +451,7 @@ jq -n \
   --arg root_session "$ROOT_SESSION" \
   --arg root_assistant "$ROOT_ASSISTANT" \
   --arg root_label "clawdline 主控 session" \
+  --argjson poll_only "${POLL_ONLY:-false}" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
@@ -458,7 +459,8 @@ jq -n \
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
-          assistant:$root_assistant, project_dir:$dir, label:$root_label}}' \
+          assistant:$root_assistant, project_dir:$dir, label:$root_label,
+          poll_only:$poll_only}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
@@ -484,9 +486,10 @@ jq -n \
 | `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |
 | `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
-| `root.session_id` | 目前這個助理的 conversation id（優先）或受監看的 terminal id；查不到就 `null`，不要瞎編 |
+| `root.session_id` | 目前這個助理的 conversation id（優先）或受監看的 terminal id；一般派工一定要能解析到 live owner |
 | `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
 | `root.parent_task` | **不要填。** 這個欄位是給「會往下派的 child」用的，而 child 已經不能派工；現在這個 app 收得到的每一次派工都來自 root，這一格就是 `null`。它還是會被驗證、還是會被讀，因為舊版留下來的紀錄裡有 |
+| `root.poll_only` | 預設 `false`。只有故意做無 root 的自動化時才設為 `true` 並搭配 null session id；它不會收到完成通知或擁有 child row，呼叫者必須自行 poll |
 
 **宣告 `claims` 大約只花 root 二十個 output token，而多數派工還是沒寫。** 這台機器 206 筆派工
 裡有 60.7% 什麼都沒宣告。撞一次的代價是整件 task 重來——同一份紀錄上是三百萬到一千八百萬 tokens。
@@ -504,13 +507,14 @@ jq -n \
 時，broker 會把「宣告了卻從沒碰過」的路徑一條條點名。同一個錯誤的反方向——收到那份報告就當真，
 下一次宣告窄一點。
 
-### 查自己的助理與 session id（best-effort，查不到就 null）
+### 查自己的助理與 session id（除非明確 poll-only，否則必填）
 
 > `root.session_id` 優先填助理自己的 conversation id——Claude 的 transcript uuid 或 Codex 的
 > rollout id；broker 現在也接受受監看的 terminal id。派工當下會把兩種拼法依
 > `root.assistant` 解析成同一個 process-bound conversation key，完成通知、分組、容量與 root 關閉
 > cascade 全部用這一把 key。一定要讀 response 的 `warnings`：非 null 的值若找不到唯一 live owner，
-> 會回 `root_unresolved`；這種 Child 可能得自己 poll，也不能假設會隨 Root 關閉。
+> 會以 `root_unresolved` 拒絕，不會先開出孤兒形狀的 Child。真的沒有互動式 owner 時，才明確設定
+> `POLL_ONLY=true`，並接受只能靠 polling 得知完成；查詢失敗不能默默替你選這個模式。
 
 
 **Codex：**目前 rollout id 已直接放在環境變數裡。要跟寫 `task.json` 放在同一個 shell
@@ -565,12 +569,13 @@ esac
 echo "root session = ${ROOT_SESSION:-null}"
 ```
 
-呼叫 B 還是撈到空的，就再隔一個呼叫補撈一次；仍然沒有就填 `null` 往下走，不要卡在這裡。
+呼叫 B 還是撈到空的，就再隔一個呼叫補撈一次；仍然沒有就不要派工，直接回報目前無法證明 root
+身分。只有本來就設計成 detached 的自動化才能設定 `ROOT_SESSION=""` 與 `POLL_ONLY=true`，而且
+呼叫端必須持續 polling。
 
 **這件事有兩個用途，第二個很容易忘：** 一是完成時 app 要知道該回頭通知哪個終端機；二是
-**清單裡那個 child 的 row 要縮排掛在你底下**，靠的就是這個 id。填 `null` 的話任務照樣跑，
-但完成通知只能自己 poll，而且那一行會孤零零地浮在清單中間——上面標著 `Child`，卻不在任何人
-底下，看起來像分組壞掉。查不到就填 `null`（不要瞎編），但查得到就一定要填。
+**清單裡那個 child 的 row 要縮排掛在你底下**，靠的就是這個 id。null id 會被拒絕，除非 task
+明確宣告 `root.poll_only:true`；那是 detached automation，不是查詢失敗時的 fallback。不要瞎編 id。
 `ROOT_SESSION` 與 `ROOT_ASSISTANT` 都要跟步驟 4 的 `jq` 在同一個 bash 呼叫裡，不然變數
 不會留下來——或者直接把兩個字串貼進 `--arg`。
 
@@ -578,8 +583,8 @@ echo "root session = ${ROOT_SESSION:-null}"
 active physical id 或 durable Coordinator 的 physical binding，會回
 `422 root_identity_is_terminal`，並附 `canonical_root_session_id` 與
 `canonical_root_assistant`。證據不受你填的 `root.assistant` 影響；請把 session 與 assistant
-一起換成錯誤回傳的實際 tuple，或改填 `null` 自己 poll。未知、衝突或離線的身分不會被猜測，
-單純查不到不等於這個錯誤。
+一起換成錯誤回傳的實際 tuple。未知、衝突或離線的身分不會被猜測，會以 `root_unresolved`
+拒絕；detached automation 才使用 null 搭配 `root.poll_only:true`。
 
 ---
 
@@ -607,7 +612,9 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 | `depth_exceeded` | **你已經在樹的最底層** | 立刻停，照 §0 回報使用者，然後這件事自己做。不要繞路重試 |
 | `over_capacity` | 額度滿了 | `message` 會說是你這個 session 的額度滿了、還是整台 Mac 的。錯誤物件裡有 `retry_after`（秒）。等它再送，或減件數／分批。**不要連續重打** |
 | `bad_task` | `task.json` 不合格 | 讀 `message`，改檔案，同一個 `task_id` 再送一次（同 id 是冪等的）。`model` 打錯也走這條 |
-| `root_identity_is_terminal` | `root.session_id` 已被正面證明是實體 terminal id | 改用錯誤裡的 `canonical_root_session_id` 與 `canonical_root_assistant`，或填 `null` 自己 poll；不要放寬 task resolver 去接受 terminal id |
+| `root_session_required` | `root.session_id` 是空的，而且沒有明確選 poll-only | 找出目前助理的 conversation id；只有故意做 detached automation 時才用 `root.poll_only:true` |
+| `root_unresolved` | 填入的 root id 不是唯一 live process-bound owner | 重新取得目前 conversation id；不要讓 child 掛在過期或猜來的 id 下 |
+| `root_identity_is_terminal` | `root.session_id` 已被正面證明是實體 terminal id | 改用錯誤裡的 `canonical_root_session_id` 與 `canonical_root_assistant`；不要放寬 task resolver 去接受 terminal id |
 | `forbidden` | token 錯或沒帶 | 重讀 token 檔；還是不行就是 app 重生過 token，請使用者重開 Clawdline |
 | `rate_limited` | 10 分鐘內派超過 10 次 | 等窗口滾過去 |
 | `not_found` | 路由不存在 | 這台的 Clawdline 沒有 orchestrator，請使用者更新 |
@@ -1057,6 +1064,11 @@ else
   slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
   f=$(grep -l "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
   ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+fi
+
+if [ -z "$ROOT_SESSION" ]; then
+  echo "拒絕 detached 派工：找不到目前 root conversation id" >&2
+  exit 2
 fi
 
 jq -n --arg id "$task_id" --arg dir "$PWD" --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
