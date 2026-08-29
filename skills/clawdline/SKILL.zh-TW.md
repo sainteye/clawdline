@@ -498,7 +498,7 @@ jq -n \
 | `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
 | `root.session_id` | 目前這個助理 process-bound conversation id；terminal-neutral id 只屬於 terminal-addressed route，一般派工一定要能解析到 live owner |
-| `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
+| `root.assistant` | **所有 owner 非 null 的一般派工都必填**：派出這件 task 的助理，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child。省略／null 會回 `root_assistant_required`；legacy 缺 assistant 在 ownership 一律是 unknown，舊 Claude fallback 只留在非 ownership 相容讀路徑 |
 | `root.parent_task` | **不要填。** 這個欄位是給「會往下派的 child」用的，而 child 已經不能派工；現在這個 app 收得到的每一次派工都來自 root，這一格就是 `null`。它還是會被驗證、還是會被讀，因為舊版留下來的紀錄裡有 |
 | `root.poll_only` | 預設 `false`。只有故意做無 root 的自動化時才設為 `true` 並搭配 null session id；它不會收到完成通知或擁有 child row，呼叫者必須自行 poll |
 
@@ -631,6 +631,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 | `over_capacity` | 額度滿了 | `message` 會說是你這個 session 的額度滿了、還是整台 Mac 的。錯誤物件裡有 `retry_after`（秒）。等它再送，或減件數／分批。**不要連續重打** |
 | `bad_task` | `task.json` 不合格 | 讀 `message`，改檔案，同一個 `task_id` 再送一次（同 id 是冪等的）。`model` 打錯也走這條 |
 | `root_session_required` | `root.session_id` 是空的，而且沒有明確選 poll-only | 找出目前助理的 conversation id；只有故意做 detached automation 時才用 `root.poll_only:true` |
+| `root_assistant_required` | 非 null owner 沒有明填 `root.assistant` | 填入實際派工助理 `claude` 或 `codex`；不要依賴只供 legacy 紀錄讀取的 Claude fallback |
 | `root_unresolved` | 填入的 root id 找不到任何 live process-bound owner | 重新取得目前 conversation id；不要讓 child 掛在過期或猜來的 id 下 |
 | `conversation_ambiguous` | 同一助理有多個 live process 證明同一個 conversation id | 停止並排除重複 owner；不要任選一個 terminal |
 | `root_identity_is_terminal` | `root.session_id` 已被正面證明是實體 terminal id | 改用錯誤裡的 `canonical_root_session_id` 與 `canonical_root_assistant`；不要放寬 task resolver 去接受 terminal id |
@@ -794,6 +795,14 @@ Child 工作；這是等待，不是待分流，也不是已交付。Root 同時
 claims release 使用機器層級的 orchestrator token。Child 不呼叫這條路由是協定慣例，不是機制隔離：
 child 必然持有自己的 task secret；
 `GET /v1/orchestrator/landings` 是大家都能查的告示牌，不會延長 claims 或擋住另一個 dispatch。
+
+決定下一步前要讀 pending row 的封閉 `ownership.status`。精確觀測到工作中、觀測到
+ready／holding、task 仍 live、完整 inventory 裡未觀測到，以及 unknown／stale 是不同答案。
+SessionWatch 缺失、不完整或 legacy assistant 缺欄位一律是 `unknown`，絕不是 owner 已 dead／offline
+的證明；用穩定 task／root id 對照 Coordinator Bearings 裡的同一 row。這條讀路徑有界且有 cache，
+live observer 卡住時仍回 durable rows，證據標 stale／missing、ownership 為 unknown。每個 Git task
+不論 isolation 都持久化 common-directory receipt；legacy 已刪 broker worktree path 只有在 repository
+slug 唯一匹配 retained receipt 時才推導，缺失、衝突、任意路徑或不符證據都 fail closed，不猜 checkout。
 
 ### 關閉一份 code delivery
 

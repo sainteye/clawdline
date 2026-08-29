@@ -1208,6 +1208,10 @@ enum Orchestrator {
         var branch: String
         var base: String
         var repository: String
+        /// Canonical common Git directory shared by every checkout of this repository. Unlike
+        /// `repository`, which may itself be a linked worktree used at dispatch time, this
+        /// identity remains usable after that checkout is disposed.
+        var repositoryCommonDir: String? = nil
         var cwd: String
         var head: String? = nil
         var commits: Int? = nil
@@ -1390,6 +1394,10 @@ enum Orchestrator {
         /// Mac's ceiling was applied to what the task asked for.
         var permission = Permission.ask
         var projectDir: String
+        /// Canonical common Git directory captured at dispatch for every task whose project is
+        /// inside a repository. This is the durable landing identity; projectDir may name a
+        /// disposable checkout even when isolation itself was not declared.
+        var repositoryCommonDir: String? = nil
         var timeoutMinutes: Int
         var created: Date
         var spawnedAt: Date?
@@ -3005,6 +3013,21 @@ enum Orchestrator {
             extra: [:])
     }
 
+    /// New ordinary HTTP dispatch must bind both halves of its owner tuple. A missing assistant
+    /// used to fall through ``canonicalRootSession``'s historical Claude default, silently
+    /// turning an omitted wire field into ownership. Persisted rows keep that compatibility;
+    /// this is an ingress-only refusal and detached polling remains explicitly ownerless.
+    static func rootAssistantRequirementRefusal(sessionID: String?, pollOnly: Bool,
+                                                 assistant: Assistant?) -> Reply? {
+        guard sessionID != nil, !pollOnly, assistant == nil else { return nil }
+        return .refused(
+            status: 422, code: "root_assistant_required",
+            message: "root.assistant is required when root.session_id names an owner; send "
+                + "claude or codex. The historical Claude fallback exists only in persisted "
+                + "legacy compatibility readers, not ownership decisions.",
+            extra: [:])
+    }
+
     /// A live task whose working directory intersects the one being dispatched. The task is a
     /// value snapshot: warning is advisory, so a task finishing while the new tab opens does not
     /// turn a truthful observation at dispatch time into a reason to change the reply.
@@ -3389,10 +3412,11 @@ enum Orchestrator {
     /// through a shell, optional locks are disabled, and a wedged repository cannot hold the
     /// broker queue indefinitely.
     private static func git(_ arguments: [String], cwd: String,
+                            gitDirectory: String? = nil,
                             timeout: TimeInterval = 15) -> GitAnswer? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
+        process.arguments = gitDirectory.map { ["--git-dir", $0] + arguments } ?? arguments
         process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_OPTIONAL_LOCKS"] = "0"
@@ -3412,20 +3436,134 @@ enum Orchestrator {
                          status: process.terminationStatus)
     }
 
+    /// Stable repository identity for linked worktrees. The returned path is Git's common
+    /// directory, not whichever disposable checkout happened to be the caller's cwd.
+    private static func gitCommonDirectory(at cwd: String) -> String? {
+        guard let answer = git(["rev-parse", "--git-common-dir"], cwd: cwd),
+              answer.status == 0 else { return nil }
+        let raw = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        let absolute = raw.hasPrefix("/") ? raw
+            : URL(fileURLWithPath: cwd, isDirectory: true).appendingPathComponent(raw).path
+        let canonical = canonicalFilesystemPath(absolute)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: canonical, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        return canonical
+    }
+
+    private static func usableGitDirectory(_ stored: String) -> String? {
+        let canonical = canonicalFilesystemPath(stored)
+        guard git(["rev-parse", "--git-dir"], cwd: "/",
+                  gitDirectory: canonical)?.status == 0 else { return nil }
+        return canonical
+    }
+
+    /// A deleted legacy project_dir may still name one of the broker's own worktree slots. Only
+    /// that exact bounded shape is eligible for migration; an arbitrary missing path is not.
+    private static func brokerWorktreeRepositorySlug(containing path: String) -> String? {
+        let root = canonicalFilesystemPath(worktreeRoot.path)
+        let candidate = canonicalFilesystemPath(path)
+        let rootParts = URL(fileURLWithPath: root).pathComponents
+        let parts = URL(fileURLWithPath: candidate).pathComponents
+        guard parts.count >= rootParts.count + 2,
+              Array(parts.prefix(rootParts.count)) == rootParts else { return nil }
+        let suffix = parts.dropFirst(rootParts.count)
+        guard let slug = suffix.first, !slug.isEmpty,
+              let taskID = suffix.dropFirst().first, isTaskID(String(taskID)) else { return nil }
+        return String(slug)
+    }
+
+    /// Independently re-derive repository identities from still-readable local evidence in the
+    /// same 0600 registry. The broker slug binds a deleted worktree path to the canonical
+    /// repository path that created it; collisions or contradictory candidates fail closed.
+    private static func legacyRepositoryCommonDirectory(
+        forDeletedProjectDir projectDir: String, among evidence: [Task]
+    ) -> String? {
+        guard let wantedSlug = brokerWorktreeRepositorySlug(containing: projectDir) else {
+            return nil
+        }
+        var candidates: Set<String> = []
+        for peer in evidence {
+            guard let worktree = peer.worktree,
+                  worktree.path == worktreePath(project: worktree.repository, taskID: peer.id),
+                  worktree.branch == worktreeBranch(for: peer.id),
+                  worktreeRepositorySlug(worktree.repository) == wantedSlug,
+                  let derived = gitCommonDirectory(at: worktree.repository) else { continue }
+            let stored = peer.repositoryCommonDir ?? worktree.repositoryCommonDir
+            if let stored, let usable = usableGitDirectory(stored), usable != derived { return nil }
+            candidates.insert(derived)
+        }
+        guard candidates.count == 1 else { return nil }
+        return candidates.first
+    }
+
+    /// Select the repository identity that a landing may trust. New tasks persist one receipt
+    /// regardless of isolation. Live project/worktree paths and the bounded legacy derivation are
+    /// independent evidence: every available source must agree, and an obsolete stored absolute
+    /// path may fall back only when one of those sources proves the same repository locally.
+    private static func landingGitDirectory(for task: Task, among evidence: [Task]) -> String? {
+        var projectIsDirectory: ObjCBool = false
+        let projectExists = FileManager.default.fileExists(
+            atPath: task.projectDir, isDirectory: &projectIsDirectory)
+        let projectCommon = projectExists && projectIsDirectory.boolValue
+            ? gitCommonDirectory(at: task.projectDir) : nil
+        if projectExists, projectCommon == nil { return nil }
+
+        var derived: Set<String> = []
+        if let projectCommon { derived.insert(projectCommon) }
+
+        if task.isolation == .worktree {
+            guard let worktree = task.worktree,
+                  worktree.path == worktreePath(project: worktree.repository, taskID: task.id),
+                  worktree.branch == worktreeBranch(for: task.id) else { return nil }
+            var repositoryIsDirectory: ObjCBool = false
+            let repositoryExists = FileManager.default.fileExists(
+                atPath: worktree.repository, isDirectory: &repositoryIsDirectory)
+            let repositoryCommon = repositoryExists && repositoryIsDirectory.boolValue
+                ? gitCommonDirectory(at: worktree.repository) : nil
+            if repositoryExists, repositoryCommon == nil { return nil }
+            if let repositoryCommon { derived.insert(repositoryCommon) }
+        }
+
+        if !projectExists,
+           let legacy = legacyRepositoryCommonDirectory(
+                forDeletedProjectDir: task.projectDir, among: evidence) {
+            derived.insert(legacy)
+        }
+
+        guard derived.count <= 1 else { return nil }
+        let independentlyDerived = derived.first
+        let storedPath = task.repositoryCommonDir ?? task.worktree?.repositoryCommonDir
+        let stored = storedPath.flatMap(usableGitDirectory)
+        if let stored, let independentlyDerived, stored != independentlyDerived { return nil }
+        if let stored { return stored }
+        // A stale absolute receipt is not itself fallback evidence. Reaching this return requires
+        // a live project/repository or the uniquely matched broker-owned legacy slug above.
+        return independentlyDerived
+    }
+
     /// Resolve a landing inside the task's own repository and prove that the named commit is in
     /// the named *local* target branch. All arguments reach git without a shell; canonical object
     /// ids are what survive into the registry, not caller-supplied revision expressions.
     static func verifyTargetLanding(projectDir: String, target: String,
                                     commit: String) -> LandingVerification? {
-        guard let branchCheck = git(["check-ref-format", "--branch", target], cwd: projectDir),
+        guard let common = gitCommonDirectory(at: projectDir) else { return nil }
+        return verifyTargetLanding(gitDirectory: common, target: target, commit: commit)
+    }
+
+    private static func verifyTargetLanding(gitDirectory: String, target: String,
+                                            commit: String) -> LandingVerification? {
+        guard let branchCheck = git(["check-ref-format", "--branch", target], cwd: "/",
+                                    gitDirectory: gitDirectory),
               branchCheck.status == 0 else { return nil }
         let targetRef = "refs/heads/\(target)"
         guard let resolvedCommit = git(
                 ["rev-parse", "--verify", "--end-of-options", "\(commit)^{commit}"],
-                cwd: projectDir), resolvedCommit.status == 0,
+                cwd: "/", gitDirectory: gitDirectory), resolvedCommit.status == 0,
               let resolvedTarget = git(
                 ["rev-parse", "--verify", "--end-of-options", "\(targetRef)^{commit}"],
-                cwd: projectDir), resolvedTarget.status == 0 else { return nil }
+                cwd: "/", gitDirectory: gitDirectory), resolvedTarget.status == 0 else { return nil }
         let commitID = resolvedCommit.output.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetID = resolvedTarget.output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard [commitID, targetID].allSatisfy({ id in
@@ -3433,7 +3571,8 @@ enum Orchestrator {
                 && id.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
         }) else { return nil }
         guard let contained = git(["merge-base", "--is-ancestor", commitID, targetID],
-                                  cwd: projectDir), contained.status == 0 else { return nil }
+                                  cwd: "/", gitDirectory: gitDirectory),
+              contained.status == 0 else { return nil }
         return LandingVerification(origin: "local_target_branch", commit: commitID,
                                    targetCommit: targetID)
     }
@@ -3530,8 +3669,13 @@ enum Orchestrator {
                 ])
             }
         }
+        guard let repositoryCommonDir = gitCommonDirectory(at: canonicalRepository) else {
+            return .bad("isolation:\"worktree\" could not resolve the repository's durable "
+                + "Git identity.")
+        }
         var worktree = Worktree(path: path, branch: branch, base: base,
                                 repository: canonicalRepository, cwd: childCwd)
+        worktree.repositoryCommonDir = repositoryCommonDir
         worktree.baseDirty = dirty
         worktree.requestedBase = requested
         return .ready(worktree, warnings: warnings)
@@ -4311,6 +4455,13 @@ enum Orchestrator {
             refundDispatchRate(rateTicket)
             return refusal
         }
+        if requireRootSession,
+           let refusal = rootAssistantRequirementRefusal(
+                sessionID: made.rootSessionId, pollOnly: made.pollOnly,
+                assistant: made.rootAssistant) {
+            refundDispatchRate(rateTicket)
+            return refusal
+        }
         let identityEvidence = rootIdentityEvidenceForTesting
             ?? activeRootIdentityEvidence(claimed: made.rootSessionId)
                 + Coordinator.rootIdentityEvidence(claimed: made.rootSessionId)
@@ -4434,6 +4585,8 @@ enum Orchestrator {
                         serialize: made.serialize, claims: made.claims,
                         claimsDeclared: made.claimsDeclared,
                         secretHash: hash(ofSecret: secret))
+        task.repositoryCommonDir = preparedWorktree?.repositoryCommonDir
+            ?? gitCommonDirectory(at: made.projectDir)
         task.scheduleID = schedule?.id
         task.scheduleCloseTab = schedule?.closeTab ?? .onSuccess
         task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
@@ -5010,6 +5163,17 @@ enum Orchestrator {
     struct CoordinatorSessionObservation {
         let identity: SessionWorkIdentity
         let terminalState: SessionState
+        /// Test-only preprojection for route fixtures which replace SessionWatch with already
+        /// projected Coordinator rows. Production always leaves this nil and derives the state
+        /// under the registry lock below.
+        let projectedWorkState: SessionWorkState?
+
+        init(identity: SessionWorkIdentity, terminalState: SessionState,
+             projectedWorkState: SessionWorkState? = nil) {
+            self.identity = identity
+            self.terminalState = terminalState
+            self.projectedWorkState = projectedWorkState
+        }
     }
 
     struct CoordinatorSessionFacts {
@@ -5024,7 +5188,177 @@ enum Orchestrator {
         let sessions: [CoordinatorSessionFacts]
         let activeTasks: Int
         let pendingLandings: Int
+        let pendingLandingRows: [[String: Any]]
+        let landingSources: [String: Any]
         let openWaits: Int
+    }
+
+    enum LandingOwnershipStatus: String {
+        case observedWorking = "observed_working"
+        case observedReadyOrHolding = "observed_ready_or_holding"
+        case observedOther = "observed_other"
+        case taskStillLive = "task_still_live"
+        case notObserved = "not_observed"
+        case unknown
+    }
+
+    private struct LandingSessionFact {
+        let identity: SessionWorkIdentity
+        let workState: SessionWorkState
+    }
+
+    private static func observationSource(provenance: String, freshness: String,
+                                          observedAt: Date?, generation: Int? = nil)
+        -> [String: Any] {
+        var out: [String: Any] = [
+            "provenance": provenance, "freshness": freshness,
+            "observed_at": observedAt.map { Int($0.timeIntervalSince1970) } as Any? ?? NSNull(),
+        ]
+        if let generation { out["generation"] = generation }
+        return out
+    }
+
+    private static func landingSources(sessionsFresh: Bool, sessionsObservedAt: Date?,
+                                       sessionsGeneration: Int?, registryObservedAt: Date)
+        -> [String: Any] {
+        let sessionFreshness = Coordinator.sessionSourceFreshness(
+            sessionsFresh: sessionsFresh, observedAt: sessionsObservedAt)
+        return [
+            "sessions": observationSource(
+                provenance: "session_watch", freshness: sessionFreshness,
+                observedAt: sessionsObservedAt, generation: sessionsGeneration),
+            "tasks": observationSource(
+                provenance: "orchestrator_task_registry", freshness: "current",
+                observedAt: registryObservedAt),
+            "landings": observationSource(
+                provenance: "orchestrator_landing_registry", freshness: "current",
+                observedAt: registryObservedAt),
+        ]
+    }
+
+    private static func observedLandingStatus(_ state: SessionWorkState)
+        -> LandingOwnershipStatus {
+        switch state {
+        case .working: return .observedWorking
+        case .ready, .holding: return .observedReadyOrHolding
+        default: return .observedOther
+        }
+    }
+
+    /// One landing row's owner/executor projection. Every match uses the same process-bound task
+    /// and root tuples as Session work state. An incomplete or timestamp-less inventory can say
+    /// only unknown; it can never manufacture offline/dead from absence.
+    private static func landingOwnershipRecord(
+        task: Task, root: Task, landing: Landing, sessions: [LandingSessionFact],
+        sessionsFresh: Bool, sessionsObservedAt: Date?, sessionsGeneration: Int?,
+        registryObservedAt: Date
+    ) -> [String: Any] {
+        let inventoryCurrent = sessionsFresh && sessionsObservedAt != nil
+        let rootAssistant = root.rootAssistant
+        let executorMatches = sessions.filter {
+            taskMatchesCurrentSession(task, identity: $0.identity)
+        }
+        let rootMatches = sessions.filter { fact in
+            guard let rootSession = root.rootSessionId,
+                  let assistant = rootAssistant else { return false }
+            return fact.identity.assistant == assistant
+                && fact.identity.conversationID == rootSession
+        }
+
+        let status: LandingOwnershipStatus
+        let subject: String
+        let observedWorkState: SessionWorkState?
+        let reason: String
+        if !inventoryCurrent {
+            subject = task.state.isTerminal ? "root" : "executor"
+            status = .unknown
+            observedWorkState = nil
+            reason = "session_inventory_incomplete"
+        } else if !task.state.isTerminal {
+            subject = "executor"
+            if executorMatches.count == 1, let match = executorMatches.first {
+                status = observedLandingStatus(match.workState)
+                observedWorkState = match.workState
+                reason = "exact_executor_observation"
+            } else if executorMatches.count > 1 {
+                status = .unknown
+                observedWorkState = nil
+                reason = "executor_observation_ambiguous"
+            } else {
+                status = .taskStillLive
+                observedWorkState = nil
+                reason = "live_task_without_exact_executor_observation"
+            }
+        } else {
+            subject = "root"
+            if rootMatches.count == 1, let match = rootMatches.first {
+                status = observedLandingStatus(match.workState)
+                observedWorkState = match.workState
+                reason = "exact_root_observation"
+            } else if rootMatches.count > 1 {
+                status = .unknown
+                observedWorkState = nil
+                reason = "root_observation_ambiguous"
+            } else if root.rootSessionId == nil || rootAssistant == nil {
+                status = .unknown
+                observedWorkState = nil
+                reason = "root_identity_missing"
+            } else {
+                status = .notObserved
+                observedWorkState = nil
+                reason = "root_absent_from_complete_inventory"
+            }
+        }
+
+        return [
+            "version": 1,
+            "status": status.rawValue,
+            "subject": subject,
+            "reason": reason,
+            "task_id": task.id,
+            "task_state": task.state.rawValue,
+            "root_key": landing.ownerRootKey,
+            "root_assistant": rootAssistant?.rawValue as Any? ?? NSNull(),
+            "observed_work_state": observedWorkState?.rawValue as Any? ?? NSNull(),
+            "evidence": landingSources(
+                sessionsFresh: sessionsFresh, sessionsObservedAt: sessionsObservedAt,
+                sessionsGeneration: sessionsGeneration,
+                registryObservedAt: registryObservedAt),
+        ]
+    }
+
+    private static func pendingLandingRecordsLocked(
+        sessions: [LandingSessionFact], sessionsFresh: Bool, sessionsObservedAt: Date?,
+        sessionsGeneration: Int?, registryObservedAt: Date, now: Date
+    ) -> [[String: Any]] {
+        let indexed = tasks
+        return tasks.values.compactMap { task -> [String: Any]? in
+            guard let landing = task.landing, landing.state == .pending else { return nil }
+            let root = rootTask(of: task, among: indexed)
+            return [
+                "id": task.id,
+                "title": task.title,
+                "root_key": landing.ownerRootKey,
+                "root_label": (root.rootLabel ?? task.rootLabel) as Any? ?? NSNull(),
+                "paths": task.claims,
+                "since": Int(landing.since.timeIntervalSince1970),
+                "age_seconds": ageSeconds(since: landing.since, now: now),
+                "target": landing.target as Any? ?? NSNull(),
+                "note": landing.note as Any? ?? NSNull(),
+                "ownership": landingOwnershipRecord(
+                    task: task, root: root, landing: landing, sessions: sessions,
+                    sessionsFresh: sessionsFresh, sessionsObservedAt: sessionsObservedAt,
+                    sessionsGeneration: sessionsGeneration,
+                    registryObservedAt: registryObservedAt),
+            ]
+        }.sorted { left, right in
+            let first = left["since"] as? Int ?? 0
+            let second = right["since"] as? Int ?? 0
+            if first == second {
+                return (left["id"] as? String ?? "") < (right["id"] as? String ?? "")
+            }
+            return first < second
+        }
     }
 
     /// Build every Orchestrator-derived Bearings fact during one registry lock window. The
@@ -5032,19 +5366,37 @@ enum Orchestrator {
     /// is represented by distinct timestamps/provenance in the response rather than called
     /// transactional.
     static func coordinatorSnapshot(_ observations: [CoordinatorSessionObservation],
+                                    sessionsFresh: Bool = true,
+                                    sessionsObservedAt: Date? = nil,
+                                    sessionsGeneration: Int? = nil,
                                     now: Date = Date()) -> CoordinatorSnapshot {
         load()
         lock.lock(); defer { lock.unlock() }
+        let sessionFacts = observations.map { observation -> CoordinatorSessionFacts in
+            let work = observation.projectedWorkState.map {
+                SessionWorkProjection(state: $0, disposition: nil)
+            } ?? sessionWorkProjectionLocked(
+                identity: observation.identity, terminalState: observation.terminalState)
+            return CoordinatorSessionFacts(
+                work: work,
+                coordination: coordinationLocked(forTerminal: observation.identity.terminalID))
+        }
+        let landingSessions = zip(observations, sessionFacts).map {
+            LandingSessionFact(identity: $0.0.identity, workState: $0.1.work.state)
+        }
+        let pendingRows = pendingLandingRecordsLocked(
+            sessions: landingSessions, sessionsFresh: sessionsFresh,
+            sessionsObservedAt: sessionsObservedAt, sessionsGeneration: sessionsGeneration,
+            registryObservedAt: now, now: now)
         return CoordinatorSnapshot(
             observedAt: now,
-            sessions: observations.map {
-                CoordinatorSessionFacts(
-                    work: sessionWorkProjectionLocked(
-                        identity: $0.identity, terminalState: $0.terminalState),
-                    coordination: coordinationLocked(forTerminal: $0.identity.terminalID))
-            },
+            sessions: sessionFacts,
             activeTasks: tasks.values.filter { !$0.state.isTerminal }.count,
-            pendingLandings: tasks.values.filter { $0.landing?.state == .pending }.count,
+            pendingLandings: pendingRows.count,
+            pendingLandingRows: pendingRows,
+            landingSources: landingSources(
+                sessionsFresh: sessionsFresh, sessionsObservedAt: sessionsObservedAt,
+                sessionsGeneration: sessionsGeneration, registryObservedAt: now),
             openWaits: coordinationWaits.values.filter { wait in
                 wait.waiters.contains { $0.releaseDeliveredAt == nil }
             }.count)
@@ -5545,13 +5897,17 @@ enum Orchestrator {
         // concurrent pending edit from being overwritten with evidence for its old target.
         let expectedState = current.state
         let expectedLanding = existing
-        let projectDir = current.projectDir
+        let repositoryTask = current
+        let repositoryEvidence = Array(tasks.values)
         let requestedCommit = fields["commit"]!
         let requestedTarget = target!
         lock.unlock()
 
-        guard let verification = verifyTargetLanding(
-                projectDir: projectDir, target: requestedTarget, commit: requestedCommit) else {
+        guard let repositoryIdentity = landingGitDirectory(
+                for: repositoryTask, among: repositoryEvidence),
+              let verification = verifyTargetLanding(
+                gitDirectory: repositoryIdentity,
+                target: requestedTarget, commit: requestedCommit) else {
             RemoteAuth.audit("orchestrator.landing", [
                 "task": taskID, "ok": "0", "why": "target_not_verified",
                 "target": requestedTarget,
@@ -5608,32 +5964,10 @@ enum Orchestrator {
     /// gate: reading or ignoring it changes no claim and blocks no dispatch.
     static func landingRecords(now: Date = Date()) -> [[String: Any]] {
         load()
-        lock.lock()
-        let indexed = tasks
-        let rows = tasks.values.compactMap { task -> [String: Any]? in
-            guard let landing = task.landing, landing.state == .pending else { return nil }
-            let root = rootTask(of: task, among: indexed)
-            return [
-                "id": task.id,
-                "title": task.title,
-                "root_key": landing.ownerRootKey,
-                "root_label": (root.rootLabel ?? task.rootLabel) as Any? ?? NSNull(),
-                "paths": task.claims,
-                "since": Int(landing.since.timeIntervalSince1970),
-                "age_seconds": ageSeconds(since: landing.since, now: now),
-                "target": landing.target as Any? ?? NSNull(),
-                "note": landing.note as Any? ?? NSNull(),
-            ]
-        }.sorted { left, right in
-            let first = left["since"] as? Int ?? 0
-            let second = right["since"] as? Int ?? 0
-            if first == second {
-                return (left["id"] as? String ?? "") < (right["id"] as? String ?? "")
-            }
-            return first < second
-        }
-        lock.unlock()
-        return rows
+        lock.lock(); defer { lock.unlock() }
+        return pendingLandingRecordsLocked(
+            sessions: [], sessionsFresh: false, sessionsObservedAt: nil,
+            sessionsGeneration: nil, registryObservedAt: now, now: now)
     }
 
     // MARK: - Owned storage inventory
@@ -10353,6 +10687,9 @@ enum Orchestrator {
         if let v = task.rootSessionId { out["root_session"] = v }
         if let v = task.rootAssistant { out["root_assistant"] = v.rawValue }
         if let v = task.rootLabel { out["root_label"] = v }
+        if let v = task.repositoryCommonDir ?? task.worktree?.repositoryCommonDir {
+            out["repository_common_dir"] = v
+        }
         if let v = task.parentTaskId { out["parent_task"] = v }
         if let v = task.respawnOf {
             out["respawn_of"] = v
@@ -10767,6 +11104,10 @@ enum Orchestrator {
         task.rootSessionId = obj["root_session"] as? String
         task.rootAssistant = (obj["root_assistant"] as? String).flatMap(Assistant.init(rawValue:))
         task.rootLabel = obj["root_label"] as? String
+        if let common = obj["repository_common_dir"] as? String {
+            guard StartPoints.usable(common) else { return nil }
+            task.repositoryCommonDir = canonicalFilesystemPath(common)
+        }
         task.parentTaskId = obj["parent_task"] as? String
         // A chain position is only meaningful beside the task it descends from, so a row missing
         // one is missing both: a generation with no origin would count against a cap for a chain
@@ -10838,12 +11179,20 @@ enum Orchestrator {
             else { return nil }
             var worktree = Worktree(path: path, branch: branch, base: base,
                                     repository: repository, cwd: cwd)
+            if let common = raw["repository_common_dir"] as? String {
+                guard StartPoints.usable(common) else { return nil }
+                worktree.repositoryCommonDir = canonicalFilesystemPath(common)
+            }
             worktree.head = raw["head"] as? String
             worktree.commits = raw["commits"] as? Int
             worktree.dirty = raw["dirty"] as? Bool
             worktree.baseDirty = raw["base_dirty"] as? Int ?? 0
             worktree.requestedBase = requestedBase
             task.worktree = worktree
+            // Migrate the old nested receipt into the task-wide source of truth on the next save.
+            if task.repositoryCommonDir == nil {
+                task.repositoryCommonDir = worktree.repositoryCommonDir
+            }
         }
         task.queuedSecret = obj["queued_secret"] as? String
         task.attachSessionId = (obj["attach_session"] as? String).flatMap {

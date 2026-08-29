@@ -391,14 +391,15 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
 | `root.session_id` | the dispatcher's process-bound assistant conversation id. HTTP dispatch requires a live resolvable owner unless `root.poll_only` is explicitly `true`; a terminal-neutral id belongs only on terminal-addressed routes |
-| `root.assistant` | optional `claude` or `codex`. New dispatchers send it; absence or explicit `null` is read as missing, and missing is resolved as `claude` for registries and task writers from before this field existed. Other values, including an empty string, are refused |
+| `root.assistant` | required `claude` or `codex` whenever a new ordinary HTTP dispatch has a non-null `root.session_id`. Omission or explicit `null` is `422 root_assistant_required`; no capacity is spent, task registered or terminal opened. Persisted legacy rows remain readable; absence is unknown in ownership decisions, while the old Claude default remains only in non-ownership compatibility readers. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 | `root.poll_only` | optional boolean, default `false`. `true` explicitly opts into a detached task and is legal only with a null `root.session_id`; the caller must poll because no completion notice or owner grouping exists |
 
 `root.session_id` is nullable only for an intentionally detached caller that writes
 `root.poll_only: true`. Ordinary HTTP dispatch fails with `422 root_session_required` when the
 field is null or empty. A non-null spelling with no live process-bound owner fails with
-`422 root_unresolved`; two same-assistant processes proving the same conversation fail with
+`422 root_unresolved`; a non-null id without explicit `root.assistant` fails first with
+`422 root_assistant_required`; two same-assistant processes proving the same conversation fail with
 `409 conversation_ambiguous`. Neither is a warning followed by an orphan-shaped task. Codex
 normally exports `CODEX_THREAD_ID` (with `CODEX_SESSION_ID` as the compatible spelling)
 and that value is the rollout session id. Claude has no direct self-query and uses the transcript
@@ -1189,14 +1190,31 @@ verified delivery, root posts `{"state":"landed","target":"main","commit":"<sha>
 machine credential. The broker resolves both commit and `refs/heads/main` inside the task's project
 repository, proves the former is an ancestor of or equal to the latter, and persists canonical
 `verified_commit`, `verified_target_commit`, and `verification_origin = local_target_branch`.
-Arbitrary text, a remote-only ref, or an unrelated commit is refused; a pending edit racing the git
+Every new task in a Git project persists the canonical common Git directory, regardless of
+isolation: a legacy `.none` task may still have been dispatched from somebody else's disposable
+worktree. Readable project/worktree evidence must agree with the receipt. A stale stored path may
+fall back only to independently derived evidence. For legacy missing paths, derivation is bounded
+to an exact broker-worktree-root/task-id shape whose repository slug matches one unique readable
+worktree receipt in the private registry; arbitrary paths, conflicts and basename searches fail
+closed. Arbitrary text, a
+remote-only ref, or an unrelated commit is refused; a pending edit racing the git
 checks is rejected by CAS. `landed_at` records when that proof was captured. Both `landed` and
 `abandoned` require a terminal task and are final: neither
 can return to another state, and genuinely reopened work gets a new task. `abandoned` is an
 explicit decision not to land the delivery, not a temporary pause.
 
 `GET /v1/orchestrator/landings` lists every current pending obligation with its title, owner root,
-original claims, target, note, and non-negative age. Pending obligations are exempt from the
+original claims, target, note, non-negative age, and a closed owner/executor observation. The
+status distinguishes exact observed work, an observed ready/holding session, a still-live task,
+absence from a complete inventory, and unknown/stale evidence. Only a complete timestamped
+SessionWatch inventory can produce `not_observed`; missing assistant identity, incomplete or ambiguous evidence is
+`unknown`, never dead/offline. Every row retains stable task/root ids and source times,
+provenance/freshness without transcript, token, tty, pid or filesystem-secret data. The same rows
+appear in Coordinator Bearings beside `pending_landing_count`, from the same registry snapshot.
+The route uses a single-flight bounded SessionWatch observation that refreshes a cache; repeated
+reads cannot accumulate main-queue work, and a wedged main queue
+degrades the evidence to stale/missing and every owner to `unknown` while preserving registry rows.
+Pending obligations are exempt from the
 registry's ordinary newest-200 cleanup cap, so age alone cannot erase an unresolved row. When a
 claimed task reaches terminal state without any landing record, its one completion line reminds
 root to record one; the reminder is suppressed when every claim was judged untouched.
@@ -1415,12 +1433,18 @@ migrates to a matching label or the most recently active assistant.
 **Bearings**: one deterministic snapshot over existing Session metadata, active task records,
 pending landing records and open coordination-wait groups. It always counts the eight closed
 `work_state` values and names safe metadata for `unknown`, human/peer `waiting`, and owners
-`blocking` peers. Named lists are independent filters and may honestly overlap when a session is
-both owner and waiter. RemoteServer takes one SessionWatch observation and then one Orchestrator
+`blocking` peers. It also carries the ordered `pending_landings` rows exposed by the landing GET,
+so the count and each owner/executor status share one task/landing registry observation. Named
+lists are independent filters and may honestly overlap when a session is
+both owner and waiter. RemoteServer takes one bounded SessionWatch observation and then one Orchestrator
 snapshot; every Orchestrator-derived row flag plus task, landing and open-wait total is computed in
 that single registry lock window. SessionWatch and the registry are not cross-source atomic. Each
 source therefore carries its own observation time, provenance and freshness; an incomplete Session
-inventory is `stale`, never silently complete. The route returns only the
+inventory is `stale`, never silently complete. If the main queue is unavailable, a cached inventory
+is explicitly stale (or missing before the first successful read), landing rows remain present and
+ownership is `unknown`. The device projector allowlists each pending row, ownership record,
+evidence source and evidence field independently; it never copies an opaque nested dictionary.
+The route returns only the
 opaque coordinator UUID and terminal-neutral session id, assistant, cwd/label/work-state. It never
 returns transcript text/path, assistant conversation id, tty, pid or process start.
 

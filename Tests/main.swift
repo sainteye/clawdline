@@ -13930,6 +13930,196 @@ group("landing records enforce the root-owned state machine and keep idempotent 
     }
 }
 
+group("landing verification survives a disposed worktree but refuses a repository mismatch") {
+    let repository = makeLandingRepository()
+    let otherRepository = makeLandingRepository()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        try? FileManager.default.removeItem(at: repository.url)
+        try? FileManager.default.removeItem(at: otherRepository.url)
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    func isolatedTask(_ id: String, projectDir: String,
+                      durableRepository: URL, secret: String,
+                      worktreeRepository: String? = nil) -> Orchestrator.Task {
+        let repositoryPath = worktreeRepository ?? durableRepository.path
+        let worktreePath = Orchestrator.worktreePath(
+            project: repositoryPath, taskID: id)!
+        var task = Orchestrator.Task(
+            id: id, state: .success, kind: "custom", title: "durable landing repository",
+            assistant: .codex, projectDir: projectDir, timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1), rootSessionId: "landing-repository-root",
+            rootAssistant: .codex, claims: ["Sources/Landing.swift"], claimsDeclared: true,
+            secretHash: Orchestrator.hash(ofSecret: secret))
+        task.finishedAt = Date(timeIntervalSince1970: 2)
+        task.repositoryCommonDir = durableRepository
+            .appendingPathComponent(".git", isDirectory: true).path
+        task.isolation = .worktree
+        var worktree = Orchestrator.Worktree(
+            path: worktreePath, branch: "clawdline/task/\(id)", base: repository.commit,
+            repository: repositoryPath, cwd: worktreePath)
+        worktree.repositoryCommonDir = nil
+        task.worktree = worktree
+        return task
+    }
+
+    let disposedID = "31313131-4141-5151-6161-717171717171"
+    let disposedSecret = String(repeating: "a7", count: 32)
+    let deletedRepositoryPath = repository.url.deletingLastPathComponent()
+        .appendingPathComponent("deleted-repository-\(UUID().uuidString)", isDirectory: true).path
+    let disposedPath = Orchestrator.worktreePath(
+        project: deletedRepositoryPath, taskID: disposedID)!
+    check("the landing fixture's isolated cwd is genuinely absent",
+          !FileManager.default.fileExists(atPath: disposedPath))
+    Orchestrator.holdScheduleTaskForTesting(isolatedTask(
+        disposedID, projectDir: disposedPath,
+        durableRepository: repository.url, secret: disposedSecret,
+        worktreeRepository: deletedRepositoryPath))
+    Orchestrator.saveForTesting()
+    let storedRoot = (try? JSONSerialization.jsonObject(with: Data(contentsOf: store)))
+        as? [String: Any]
+    let storedDisposed = (storedRoot?["tasks"] as? [[String: Any]])?
+        .first { $0["id"] as? String == disposedID }
+    check("repository identity is persisted at task scope, not only inside worktree metadata",
+          storedDisposed?["repository_common_dir"] as? String
+                == repository.url.appendingPathComponent(".git", isDirectory: true).path
+            && (storedDisposed?["worktree"] as? [String: Any])?["repository_common_dir"] == nil)
+    Orchestrator.forget()
+    _ = Orchestrator.updateLanding(
+        taskID: disposedID, secret: disposedSecret,
+        raw: ["state": "pending", "target": "main"])
+    let recovered = Orchestrator.updateLanding(
+        taskID: disposedID, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "target": "main", "commit": repository.commit])
+    if case .ok(let body) = recovered,
+       let row = (body["task"] as? [String: Any])?["landing"] as? [String: Any] {
+        check("a disposed worktree closes through its persisted canonical repository receipt",
+              row["state"] as? String == "landed"
+                && row["verified_commit"] as? String == repository.commit)
+    } else {
+        check("a disposed worktree closes through its persisted canonical repository receipt",
+              false, "\(recovered)")
+    }
+
+    let mismatchID = "32323232-4242-5252-6262-727272727272"
+    let mismatchSecret = String(repeating: "b8", count: 32)
+    Orchestrator.holdScheduleTaskForTesting(isolatedTask(
+        mismatchID, projectDir: repository.url.path,
+        durableRepository: otherRepository.url, secret: mismatchSecret))
+    _ = Orchestrator.updateLanding(
+        taskID: mismatchID, secret: mismatchSecret,
+        raw: ["state": "pending", "target": "main"])
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: mismatchID, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "target": "main", "commit": otherRepository.commit]) {
+        check("a readable task cwd from another repository fails closed",
+              status == 409 && code == "unverified_landing")
+    } else {
+        check("a readable task cwd from another repository fails closed", false,
+              "the mismatched repository was accepted")
+    }
+
+    let movedID = "33333333-4343-5353-6363-737373737373"
+    let movedSecret = String(repeating: "ba", count: 32)
+    var moved = Orchestrator.Task(
+        id: movedID, state: .success, kind: "custom", title: "moved repository receipt",
+        assistant: .codex, projectDir: repository.url.path, timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 1), finishedAt: Date(timeIntervalSince1970: 2),
+        rootSessionId: "moved-repository-root", rootAssistant: .codex,
+        claims: ["Sources/Landing.swift"], claimsDeclared: true,
+        secretHash: Orchestrator.hash(ofSecret: movedSecret))
+    moved.repositoryCommonDir = repository.url.deletingLastPathComponent()
+        .appendingPathComponent("old-location/.git", isDirectory: true).path
+    Orchestrator.holdScheduleTaskForTesting(moved)
+    _ = Orchestrator.updateLanding(
+        taskID: movedID, secret: movedSecret,
+        raw: ["state": "pending", "target": "main"])
+    let movedReply = Orchestrator.updateLanding(
+        taskID: movedID, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "target": "main", "commit": repository.commit])
+    if case .ok = movedReply {
+        check("a stale stored path falls back to independently derived same-repository evidence",
+              true)
+    } else {
+        check("a stale stored path falls back to independently derived same-repository evidence",
+              false, "\(movedReply)")
+    }
+
+    let unboundID = "34343434-4444-5454-6464-747474747474"
+    let unboundSecret = String(repeating: "cb", count: 32)
+    var unbound = Orchestrator.Task(
+        id: unboundID, state: .success, kind: "custom", title: "unbound stale receipt",
+        assistant: .codex, projectDir: "/tmp/unowned-deleted-project-\(UUID().uuidString)",
+        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
+        finishedAt: Date(timeIntervalSince1970: 2), rootSessionId: "unbound-root",
+        rootAssistant: .codex, claims: ["Sources/Landing.swift"], claimsDeclared: true,
+        secretHash: Orchestrator.hash(ofSecret: unboundSecret))
+    unbound.repositoryCommonDir = moved.repositoryCommonDir
+    Orchestrator.holdScheduleTaskForTesting(unbound)
+    _ = Orchestrator.updateLanding(
+        taskID: unboundID, secret: unboundSecret,
+        raw: ["state": "pending", "target": "main"])
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: unboundID, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "target": "main", "commit": repository.commit]) {
+        check("a stale stored path without independent repository evidence fails closed",
+              status == 409 && code == "unverified_landing")
+    } else {
+        check("a stale stored path without independent repository evidence fails closed", false)
+    }
+
+    // These are the two production row ids that exposed the legacy shape: isolation was absent
+    // (therefore `.none`) and project_dir named a broker-owned worktree that was later disposed.
+    // A separate retained worktree receipt for the same broker repository slug is bounded,
+    // authoritative local evidence; no basename search or caller-supplied repository participates.
+    let staleProjectDir = Orchestrator.worktreePath(
+        project: repository.url.path,
+        taskID: "69b79f6d-8b70-4c43-bdb2-3d6590d79113")!
+    check("the legacy non-isolated project_dir is genuinely disposed",
+          !FileManager.default.fileExists(atPath: staleProjectDir))
+    let evidenceID = "71717171-8181-9191-a1a1-b1b1b1b1b1b1"
+    var evidence = isolatedTask(
+        evidenceID, projectDir: repository.url.path,
+        durableRepository: repository.url, secret: String(repeating: "c9", count: 32))
+    evidence.state = .briefed
+    evidence.landing = nil
+    Orchestrator.holdScheduleTaskForTesting(evidence)
+    for (id, byte) in [
+        ("1a060155-998c-42c5-b9e0-cb05d5bf7893", "d1"),
+        ("1cb35b50-2613-43f2-b4d8-3ab2f806d15d", "e2"),
+    ] {
+        let secret = String(repeating: byte, count: 32)
+        var legacy = Orchestrator.Task(
+            id: id, state: .success, kind: "custom", title: "legacy pending row",
+            assistant: .codex, projectDir: staleProjectDir, timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1), finishedAt: Date(timeIntervalSince1970: 2),
+            rootSessionId: "legacy-landing-root", rootAssistant: .codex,
+            claims: ["Sources/Landing.swift"], claimsDeclared: true,
+            secretHash: Orchestrator.hash(ofSecret: secret))
+        legacy.isolation = .none
+        Orchestrator.holdScheduleTaskForTesting(legacy)
+        _ = Orchestrator.updateLanding(
+            taskID: id, secret: secret, raw: ["state": "pending", "target": "main"])
+        let reply = Orchestrator.updateLanding(
+            taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+            raw: ["state": "landed", "target": "main", "commit": repository.commit])
+        if case .ok(let body) = reply,
+           let row = (body["task"] as? [String: Any])?["landing"] as? [String: Any] {
+            check("legacy pending row \(id) closes from bounded same-repository evidence",
+                  row["state"] as? String == "landed"
+                    && row["verified_commit"] as? String == repository.commit)
+        } else {
+            check("legacy pending row \(id) closes from bounded same-repository evidence",
+                  false, "\(reply)")
+        }
+    }
+}
+
 group("landing routes accept a matching task or machine credential and list pending obligations") {
     let repository = makeLandingRepository()
     defer { try? FileManager.default.removeItem(at: repository.url) }
@@ -14086,6 +14276,187 @@ group("landing routes accept a matching task or machine credential and list pend
     let listedJSON = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
     expect("the GET route returns the same one pending row",
            (listedJSON?["landings"] as? [[String: Any]])?.count, 1)
+}
+
+group("pending landing ownership is one fail-closed observation across list and Bearings") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        RemoteServer.coordinatorSessionsForTesting = nil
+        RemoteServer.coordinatorObservationEvidenceForTesting = nil
+        RemoteServer.coordinatorObservationUnavailableForTesting = false
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    let observedAt = Date(timeIntervalSince1970: 1_800_001_000)
+    let processStart = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func pendingTask(_ id: String, state: Orchestrator.State,
+                     root: String, title: String) -> Orchestrator.Task {
+        var task = Orchestrator.Task(
+            id: id, state: state, kind: "custom", title: title, assistant: .codex,
+            projectDir: "/tmp", timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1),
+            finishedAt: state.isTerminal ? Date(timeIntervalSince1970: 2) : nil,
+            rootSessionId: root, rootAssistant: .codex,
+            rootLabel: title + " owner", claims: ["Sources/\(title).swift"],
+            claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
+        task.landing = Orchestrator.Landing(
+            state: .pending, target: "main", delivery: nil,
+            ownerRootKey: Orchestrator.rootKeyDigest(root),
+            since: Date(timeIntervalSince1970: 10), commit: nil, note: nil)
+        return task
+    }
+
+    let liveObservedID = "41414141-5151-6161-7171-818181818181"
+    var liveObserved = pendingTask(
+        liveObservedID, state: .briefed, root: "root-live-observed", title: "live-observed")
+    liveObserved.childTerminalId = "EXECUTOR-WORKING"
+    liveObserved.childTTY = "/dev/ttys301"
+    liveObserved.childPID = 1_301
+    liveObserved.childProcStart = processStart
+    liveObserved.childSessionId = "executor-working-conversation"
+    liveObserved.transcriptProven = true
+    Orchestrator.holdScheduleTaskForTesting(liveObserved)
+
+    let liveUnobservedID = "42424242-5252-6262-7272-828282828282"
+    Orchestrator.holdScheduleTaskForTesting(pendingTask(
+        liveUnobservedID, state: .briefed,
+        root: "root-live-unobserved", title: "live-unobserved"))
+
+    let terminalWorkingID = "43434343-5353-6363-7373-838383838383"
+    Orchestrator.holdScheduleTaskForTesting(pendingTask(
+        terminalWorkingID, state: .success,
+        root: "owner-working-conversation", title: "terminal-working"))
+
+    let ownerReadyID = "44444444-5454-6464-7474-848484848484"
+    Orchestrator.holdScheduleTaskForTesting(pendingTask(
+        ownerReadyID, state: .success,
+        root: "owner-ready-conversation", title: "owner-ready"))
+
+    let absentID = "45454545-5555-6565-7575-858585858585"
+    Orchestrator.holdScheduleTaskForTesting(pendingTask(
+        absentID, state: .success, root: "owner-absent-conversation", title: "owner-absent"))
+
+    let missingAssistantID = "46464646-5656-6666-7676-868686868686"
+    var missingAssistant = pendingTask(
+        missingAssistantID, state: .success,
+        root: "legacy-codex-owner-conversation", title: "missing-root-assistant")
+    missingAssistant.rootAssistant = nil
+    Orchestrator.holdScheduleTaskForTesting(missingAssistant)
+
+    RemoteServer.coordinatorSessionsForTesting = [
+        coordinatorFixture(
+            "EXECUTOR-WORKING", tty: "/dev/ttys301", pid: 1_301,
+            processStart: processStart, conversation: "executor-working-conversation",
+            workState: .working),
+        coordinatorFixture(
+            "OWNER-WORKING", tty: "/dev/ttys302", pid: 1_302,
+            processStart: processStart, conversation: "owner-working-conversation",
+            workState: .working),
+        coordinatorFixture(
+            "OWNER-READY", tty: "/dev/ttys303", pid: 1_303,
+            processStart: processStart, conversation: "owner-ready-conversation",
+            workState: .ready),
+        coordinatorFixture(
+            "LEGACY-CODEX-OWNER", tty: "/dev/ttys304", pid: 1_304,
+            processStart: processStart, conversation: "legacy-codex-owner-conversation",
+            workState: .working),
+    ]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: observedAt, generation: 77, complete: true)
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    func json(_ path: String) -> [String: Any]? {
+        let response = RemoteServer.shared.route(remoteRequest("GET", path, headers: auth))
+        return (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+    }
+    func rows(_ payload: [String: Any]?) -> [[String: Any]] {
+        payload?["landings"] as? [[String: Any]] ?? []
+    }
+    func ownership(_ id: String, in rows: [[String: Any]]) -> [String: Any]? {
+        rows.first { $0["id"] as? String == id }?["ownership"] as? [String: Any]
+    }
+    let listed = json("/v1/orchestrator/landings")
+    let listedRows = rows(listed)
+    expect("an exact live child is observed working", ownership(liveObservedID, in: listedRows)?["status"] as? String,
+           "observed_working")
+    expect("live child evidence names the executor", ownership(liveObservedID, in: listedRows)?["subject"] as? String,
+           "executor")
+    expect("a live registry row without an observed executor stays explicitly live",
+           ownership(liveUnobservedID, in: listedRows)?["status"] as? String,
+           "task_still_live")
+    check("terminal success remains pending and attributes current root work without reviving the child",
+          ownership(terminalWorkingID, in: listedRows)?["status"] as? String
+                == "observed_working"
+            && ownership(terminalWorkingID, in: listedRows)?["subject"] as? String == "root"
+            && ownership(terminalWorkingID, in: listedRows)?["task_state"] as? String == "success")
+    expect("a ready owner is distinguished from active work",
+           ownership(ownerReadyID, in: listedRows)?["status"] as? String,
+           "observed_ready_or_holding")
+    expect("absence under one complete inventory is not-observed, not dead",
+           ownership(absentID, in: listedRows)?["status"] as? String, "not_observed")
+    check("a live Codex-root legacy row with no assistant fails closed instead of inventing Claude",
+          ownership(missingAssistantID, in: listedRows)?["status"] as? String == "unknown"
+            && ownership(missingAssistantID, in: listedRows)?["reason"] as? String
+                == "root_identity_missing"
+            && ownership(missingAssistantID, in: listedRows)?["root_assistant"] is NSNull)
+    check("the list carries closed source freshness without process or transcript secrets",
+          ((listed?["sources"] as? [String: Any])?["sessions"] as? [String: Any])?["freshness"] as? String
+                == "current"
+            && listedRows.allSatisfy { row in
+                guard let owner = row["ownership"] as? [String: Any] else { return false }
+                let closedKeys: Set<String> = [
+                    "version", "status", "subject", "reason", "task_id", "task_state",
+                    "root_key", "root_assistant", "observed_work_state", "evidence",
+                ]
+                guard Set(owner.keys) == closedKeys,
+                      let evidence = owner["evidence"] as? [String: Any],
+                      Set(evidence.keys) == ["sessions", "tasks", "landings"] else {
+                    return false
+                }
+                return owner["task_id"] as? String == row["id"] as? String
+                    && owner["root_key"] as? String == row["root_key"] as? String
+                    && owner["root_session_id"] == nil
+                    && owner["pid"] == nil && owner["tty"] == nil
+                    && owner["transcript"] == nil && owner["token"] == nil
+            })
+
+    let coordinator = json("/v1/orchestrator/coordinator")
+    let bearingsRows = ((coordinator?["bearings"] as? [String: Any])?["pending_landings"]
+        as? [[String: Any]]) ?? []
+    check("the same absent subject has the same identity and status in Bearings",
+          ownership(absentID, in: listedRows)?["status"] as? String
+                == ownership(absentID, in: bearingsRows)?["status"] as? String
+            && bearingsRows.first { $0["id"] as? String == absentID }?["root_key"] as? String
+                == listedRows.first { $0["id"] as? String == absentID }?["root_key"] as? String)
+
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: observedAt, generation: 78, complete: false)
+    let staleListed = rows(json("/v1/orchestrator/landings"))
+    expect("absence under an incomplete inventory fails closed as unknown",
+           ownership(absentID, in: staleListed)?["status"] as? String, "unknown")
+    check("stale evidence can never be rendered offline or dead",
+          !["offline", "dead"].contains(
+            ownership(absentID, in: staleListed)?["status"] as? String ?? ""))
+    expect("even a matching session under an incomplete inventory stays unknown",
+           ownership(liveObservedID, in: staleListed)?["status"] as? String, "unknown")
+
+    RemoteServer.coordinatorSessionsForTesting = nil
+    RemoteServer.coordinatorObservationEvidenceForTesting = nil
+    RemoteServer.coordinatorObservationUnavailableForTesting = true
+    let unavailable = json("/v1/orchestrator/landings")
+    let unavailableRows = rows(unavailable)
+    check("a failed live observation still returns every registry landing with unknown ownership",
+          unavailableRows.count == 6
+            && unavailableRows.allSatisfy {
+                ($0["ownership"] as? [String: Any])?["status"] as? String == "unknown"
+            })
+    expect("unavailable observation is not rendered as a complete absence",
+           ((unavailable?["sources"] as? [String: Any])?["sessions"]
+                as? [String: Any])?["freshness"] as? String,
+           "missing")
 }
 
 group("cleanup retains pending landing obligations beyond the ordinary registry cap") {
@@ -22477,7 +22848,41 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
         liveSessions: [father, coordinatorFixture(
             "triage", pid: 412, conversation: "conversation-c", workState: .unknown)],
         bearings: .init(sessionsFresh: false, activeTaskCount: 3, pendingLandingCount: 2,
-                        openWaitCount: 1,
+                        pendingLandingRows: [[
+                            "id": "pending-device-row", "title": "safe title",
+                            "root_key": "12345678", "root_label": "safe root",
+                            "paths": ["Sources/Safe.swift"], "since": 1_800_000_001,
+                            "age_seconds": 19, "target": "main", "note": "safe note",
+                            "repository_common_dir": "/private/repository/.git",
+                            "transcript": "/private/transcript.jsonl",
+                            "ownership": [
+                                "version": 1, "status": "unknown", "subject": "root",
+                                "reason": "session_inventory_incomplete",
+                                "task_id": "pending-device-row", "task_state": "success",
+                                "root_key": "12345678", "root_assistant": "codex",
+                                "observed_work_state": NSNull(),
+                                "root_session_id": "private-root-conversation",
+                                "pid": 9_999,
+                                "evidence": [
+                                    "sessions": [
+                                        "observed_at": NSNull(), "generation": 42,
+                                        "provenance": "session_watch", "freshness": "stale",
+                                        "process_start": 1_800_000_000.0,
+                                    ],
+                                    "tasks": [
+                                        "observed_at": 1_800_000_006,
+                                        "provenance": "orchestrator_task_registry",
+                                        "freshness": "current", "repository": "/private/repo",
+                                    ],
+                                    "landings": [
+                                        "observed_at": 1_800_000_006,
+                                        "provenance": "orchestrator_landing_registry",
+                                        "freshness": "current", "token": "private-token",
+                                    ],
+                                    "private_source": ["transcript": "private-transcript"],
+                                ],
+                            ],
+                        ]], openWaitCount: 1,
                         sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_005),
                         registryObservedAt: Date(timeIntervalSince1970: 1_800_000_006),
                         sessionsGeneration: 42),
@@ -22494,6 +22899,25 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
     let deviceFacts = device["bearings"] as? [String: Any] ?? [:]
     expect("aggregate counts survive the allowlist", deviceFacts["active_task_count"] as? Int, 3)
     expect("and the landing count", deviceFacts["pending_landing_count"] as? Int, 2)
+    let deviceLanding = (deviceFacts["pending_landings"] as? [[String: Any]])?.first ?? [:]
+    let deviceOwner = deviceLanding["ownership"] as? [String: Any] ?? [:]
+    let deviceEvidence = deviceOwner["evidence"] as? [String: Any] ?? [:]
+    check("device pending rows, owners and evidence are closed allowlists",
+          Set(deviceLanding.keys) == [
+            "id", "title", "root_key", "root_label", "paths", "since", "age_seconds",
+            "target", "note", "ownership",
+          ]
+            && Set(deviceOwner.keys) == [
+                "version", "status", "subject", "reason", "task_id", "task_state",
+                "root_key", "root_assistant", "observed_work_state", "evidence",
+            ]
+            && Set(deviceEvidence.keys) == ["sessions", "tasks", "landings"]
+            && deviceEvidence.values.allSatisfy { value in
+                guard let source = value as? [String: Any] else { return false }
+                return Set(source.keys).isSubset(of: [
+                    "observed_at", "generation", "provenance", "freshness",
+                ])
+            })
     expect("the triage rows survive with their session facts",
            ((deviceFacts["unknown"] as? [[String: Any]])?.first?["id"]) as? String, "triage")
     let deviceSessionsSource = ((deviceFacts["sources"] as? [String: Any])?["sessions"])
@@ -22506,7 +22930,9 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
                             as: UTF8.self)
     check("no private binding evidence crosses the device boundary",
           !deviceJSON.contains("conversation-") && !deviceJSON.contains("ttys0")
-          && !deviceJSON.contains("\"pid\"") && !deviceJSON.contains("1800000000.0"))
+          && !deviceJSON.contains("\"pid\"") && !deviceJSON.contains("1800000000.0")
+          && !deviceJSON.contains("/private/") && !deviceJSON.contains("private-token")
+          && !deviceJSON.contains("private-transcript"))
 
     // The route-level gate difference — 401 unpaired, 403 for a paired device on the full
     // inspection, 200 for a paired device on the projection — is exercised in the coordinator
@@ -23578,6 +24004,65 @@ group("task completion ingress and delivery are durable protocol facts") {
           Orchestrator.rootIdentityRefusal(
             claimed: nil, evidence: [physical]) == nil)
 
+    // New ordinary HTTP work must never choose Claude merely because the owner assistant was
+    // omitted. This exercises the real dispatch boundary, including its terminal starter seam;
+    // a pure draft check would not prove registration and opening stayed untouched.
+    Orchestrator.forget()
+    let missingAssistantID = UUID().uuidString.lowercased()
+    let missingAssistantDir = Orchestrator.root
+        .appendingPathComponent(missingAssistantID, isDirectory: true)
+    defer {
+        try? FileManager.default.removeItem(at: missingAssistantDir)
+        Orchestrator.forget()
+    }
+    try! FileManager.default.createDirectory(at: missingAssistantDir,
+                                             withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": missingAssistantID, "kind": "custom",
+        "assistant": "codex", "project_dir": "/tmp", "title": "owner assistant gate",
+        "instructions": "must refuse before spawn", "timeout_minutes": 5,
+        "root": ["session_id": "conversation-root"],
+    ]).write(to: missingAssistantDir.appendingPathComponent("task.json"), options: .atomic)
+    var openedWithoutOwnerAssistant = 0
+    Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
+        openedWithoutOwnerAssistant += 1
+        return .started(id: "SHOULD-NOT-OPEN", backend: .iterm)
+    }
+    Orchestrator.rootIdentityEvidenceForTesting = []
+    let missingRateBefore = Orchestrator.dispatchRateCountForTesting()
+    guard case .refused(let missingStatus, let missingCode, _, _) = Orchestrator.dispatch(
+            taskID: missingAssistantID, secret: String(repeating: "9a", count: 32),
+            requireRootSession: true) else {
+        check("ordinary dispatch refuses an omitted root assistant", false)
+        return
+    }
+    expect("omitted root assistant is an actionable ingress refusal", missingStatus, 422)
+    expect("omitted root assistant has its own typed error", missingCode,
+           "root_assistant_required")
+    expect("the owner-assistant refusal opens no terminal", openedWithoutOwnerAssistant, 0)
+    check("the owner-assistant refusal registers no task",
+          Orchestrator.record(id: missingAssistantID) == nil)
+    expect("the owner-assistant refusal refunds its provisional rate ticket",
+           Orchestrator.dispatchRateCountForTesting(), missingRateBefore)
+
+    let claudeRoot = TargetSession(
+        backend: .iterm, id: "CLAUDE-ROOT", name: "Claude root", tty: "/dev/ttys201",
+        windowIndex: 0, tabIndex: 0, assistant: .claude, cwd: "/tmp")
+    let codexRoot = TargetSession(
+        backend: .iterm, id: "CODEX-ROOT", name: "Codex root", tty: "/dev/ttys202",
+        windowIndex: 0, tabIndex: 1, assistant: .codex, cwd: "/tmp")
+    let exactConversations = ["CLAUDE-ROOT": "claude-conversation",
+                              "CODEX-ROOT": "codex-conversation"]
+    let explicitClaude = Orchestrator.canonicalRootSession(
+        "claude-conversation", assistant: .claude, among: [claudeRoot, codexRoot],
+        sessionID: { exactConversations[$0.id] })
+    let explicitCodex = Orchestrator.canonicalRootSession(
+        "codex-conversation", assistant: .codex, among: [claudeRoot, codexRoot],
+        sessionID: { exactConversations[$0.id] })
+    check("explicit Claude and Codex owners continue through the exact process-bound resolver",
+          explicitClaude.sessionID == "claude-conversation" && explicitClaude.warning == nil
+            && explicitCodex.sessionID == "codex-conversation" && explicitCodex.warning == nil)
+
     // Exercise the real ingress gate. This refusal occurs before registration or spawn, so no
     // terminal is opened; the fixture also proves the provisional rate ticket is refunded.
     Orchestrator.forget()
@@ -24447,6 +24932,10 @@ func sessionWatchCrossingProbe() async
                 }
                 if RemoteServer.coordinatorSessionsForTesting != nil {
                     seamsLeftSet.append("RemoteServer.coordinatorSessionsForTesting")
+                }
+                if RemoteServer.coordinatorObservationUnavailableForTesting {
+                    seamsLeftSet.append(
+                        "RemoteServer.coordinatorObservationUnavailableForTesting")
                 }
                 if RemoteServer.sessionPayloadForTesting != nil {
                     seamsLeftSet.append("RemoteServer.sessionPayloadForTesting")
@@ -25817,7 +26306,6 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/Orchestrator.swift", "Orchestrator.target(withID:)", 1),
     ("Sources/Orchestrator.swift", "Orchestrator.rootTargets", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.titleState(of:)", 1),
-    ("Sources/RemoteServer.swift", "RemoteServer.coordinatorObservation", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionRefresh", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.session(withID:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionMessageSource(withID:)", 1),
@@ -25825,7 +26313,7 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/RemoteServer.swift", "RemoteServer.sessionWhoAmI", 1),
 ]
 
-/// The ten of those the fixture at the end of this file drives for real and watches hop.
+/// The production crossings the fixture at the end of this file drives for real and watches hop.
 let dynamicallyExercisedCrossingSites: Set<String> = [
     "StartPoints.openTranscripts",
     "StartPoints.live",
@@ -25834,7 +26322,6 @@ let dynamicallyExercisedCrossingSites: Set<String> = [
     "SessionImagePresentation.materialize",
     "Orchestrator.resolveAttachment",
     "RemoteServer.titleState(of:)",
-    "RemoteServer.coordinatorObservation",
     "RemoteServer.session(withID:)",
     "RemoteServer.sessionMessageSource(withID:)",
     "RemoteServer.state(of:)",
