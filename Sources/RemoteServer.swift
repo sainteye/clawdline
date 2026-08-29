@@ -120,6 +120,12 @@ final class RemoteServer: @unchecked Sendable {
     /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
     /// replace only SessionWatch's external terminal inventory with deterministic rows.
     static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
+    /// Replaces only the process-bound conversation reader used by whoami. The route still takes
+    /// a real coherent target snapshot and executes both exact-resolution passes.
+    static var sessionConversationIDForTesting: ((TargetSession) -> String?)?
+    /// Runs after the first identity pass, for a fixture that changes real registry/rollout
+    /// bytes between observations. It changes timing only and never supplies an identity.
+    static var sessionIdentityPassDidFinishForTesting: ((Int) -> Void)?
     /// Replaces only the final terminal handoff. Parsing, gates, lookup, reservation and response
     /// settlement still use the production path.
     static var terminalSendForTesting: ((String, TargetSession) -> String?)?
@@ -1371,10 +1377,10 @@ final class RemoteServer: @unchecked Sendable {
         // answers the orchestrator token with a 401. So the one route that registers a wait was
         // reachable and the ids it takes were not.
         //
-        // The two fallbacks that were left cover everything except the case waits exist for. A
-        // session's own id is the UUID after the colon in `$ITERM_SESSION_ID`, which answers
-        // "who am I" and nothing else; `GET /v1/orchestrator/waits` names the sessions already
-        // inside a wait, which is no help to the first session to wait on somebody.
+        // The remaining fallback covers only sessions already inside a wait:
+        // `GET /v1/orchestrator/waits` cannot help the first session to wait on somebody. A
+        // caller finding its own address uses the exact conversation-bound whoami route below;
+        // `$ITERM_SESSION_ID` is only a cached terminal hint and can survive restart/resume.
         //
         // A route of its own rather than a wider door on `/v1/sessions`: that one carries the
         // screen — the line a session is working on, the question a waiting one is showing, the
@@ -1390,6 +1396,96 @@ final class RemoteServer: @unchecked Sendable {
             return .json(["sessions": Self.coordinationSessionRows(watch.targets,
                                                                    states: watch.states),
                           "at": Int(Date().timeIntervalSince1970)])
+
+        // A process asks which terminal-neutral address currently holds its exact conversation.
+        // The environment's iTerm id is not an input: after iTerm restarts and the assistant is
+        // resumed it can name a terminal which no longer exists. Resolution uses the same strict
+        // process-bound root resolver as dispatch, over one SessionWatch publication, then runs
+        // that resolution again before returning so a concurrent detach/rebind refuses stale.
+        case ("GET", "/v1/orchestrator/whoami"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Resolving session identity needs the orchestrator token.")
+            }
+            guard Set(request.query.keys) == Set(["conversation_id"]),
+                  request.repeatedQueryKeys.isEmpty,
+                  let conversationID = request.query["conversation_id"],
+                  !conversationID.isEmpty else {
+                return .error(400, "conversation_id_required",
+                              "The closed query needs exactly one conversation_id.")
+            }
+            guard StartPoints.sessionName(conversationID) != nil else {
+                return .error(400, "conversation_id_malformed",
+                              "conversation_id must be one lowercase UUID.")
+            }
+            let supplied = Self.sessionPayloadForTesting?.0
+            let snapshot = onMain(from: "RemoteServer.sessionWhoAmI") {
+                supplied.map {
+                    SessionWatch.IdentitySnapshot(targets: $0, generation: -1,
+                                                  complete: true,
+                                                  observedAt: Date(timeIntervalSince1970: 0))
+                } ?? SessionWatch.shared.identitySnapshot()
+            }
+            guard snapshot.complete else {
+                return .error(
+                    409, "registry_stale",
+                    "The live session registry is incomplete; retry after the next scan.",
+                    extra: ["retryable": true,
+                            "registry_generation": snapshot.generation])
+            }
+            let identityPass: () -> [String: String]
+            if let suppliedIdentity = Self.sessionConversationIDForTesting {
+                identityPass = {
+                    var values: [String: String] = [:]
+                    for session in snapshot.targets {
+                        if let value = suppliedIdentity(session) { values[session.id] = value }
+                    }
+                    return values
+                }
+            } else {
+                identityPass = {
+                    Transcript.freshIdentityPass(among: snapshot.targets).identities
+                }
+            }
+            let answer: Response
+            switch Self.sessionWhoAmI(
+                    conversationID: conversationID, among: snapshot.targets,
+                    identityPass: identityPass,
+                    afterPass: Self.sessionIdentityPassDidFinishForTesting) {
+                case .notFound:
+                    answer = .error(
+                        404, "conversation_not_found",
+                        "No live session is bound to that exact conversation id.")
+                case .ambiguous:
+                    answer = .error(
+                        409, "conversation_ambiguous",
+                        "More than one live session claims that conversation id; none was chosen.")
+                case .stale:
+                    answer = .error(
+                        409, "session_identity_stale",
+                        "The conversation binding changed while it was being resolved; retry.",
+                        extra: ["retryable": true,
+                                "registry_generation": snapshot.generation])
+                case .resolved(let target, let assistant, let canonicalConversationID):
+                    var provenance: [String: Any] = [
+                        "source": "live_session_registry",
+                        "registry_generation": snapshot.generation,
+                        "registry_complete": snapshot.complete,
+                        "consistency": "single_snapshot_revalidated",
+                    ]
+                    if let observed = snapshot.observedAt {
+                        provenance["registry_observed_at"] =
+                            Int(observed.timeIntervalSince1970)
+                    }
+                    answer = .json([
+                        "conversation_id": canonicalConversationID,
+                        "terminal_id": target.id,
+                        "assistant": assistant.rawValue,
+                        "provenance": provenance,
+                        "at": Int(Date().timeIntervalSince1970),
+                    ])
+            }
+            return answer
 
         // A live assistant session speaking to another through Clawdline. This is not the
         // paired-device `/send` route: the source is resolved against current process-bound
@@ -3942,6 +4038,42 @@ final class RemoteServer: @unchecked Sendable {
             session.id == id || conversationID(session) == id
         }
         return matches.count == 1 ? matches[0] : nil
+    }
+
+    enum SessionWhoAmIResolution {
+        case resolved(TargetSession, Assistant, String)
+        case notFound
+        case ambiguous
+        case stale
+    }
+
+    /// Resolve only the conversation namespace through the broker's exact root-session seam.
+    /// A second full pass is the consistency boundary: if the process binding moved, vanished or
+    /// became ambiguous between passes, the caller gets `stale` and never a terminal from mixed
+    /// observations. Labels, cwd, terminal state and terminal ids are not consulted.
+    static func sessionWhoAmI(conversationID wanted: String,
+                              among sessions: [TargetSession],
+                              identityPass: () -> [String: String],
+                              afterPass: ((Int) -> Void)? = nil)
+        -> SessionWhoAmIResolution {
+        func matches(_ observed: [String: String]) -> [TargetSession] {
+            Orchestrator.targets(forRootSession: wanted, assistant: nil, resolution: .task,
+                                 among: sessions, sessionID: { session in
+                observed[session.id]
+            })
+        }
+        let firstObserved = identityPass()
+        let first = matches(firstObserved)
+        guard !first.isEmpty else { return .notFound }
+        guard first.count == 1 else { return .ambiguous }
+        guard let assistant = first[0].assistant else { return .notFound }
+        afterPass?(1)
+        let secondObserved = identityPass()
+        let second = matches(secondObserved)
+        guard second.count == 1, second[0].id == first[0].id,
+              second[0].assistant == assistant,
+              let canonical = secondObserved[second[0].id] else { return .stale }
+        return .resolved(second[0], assistant, canonical)
     }
 
     /// The reading lives on the main thread and this runs on the server's queue, so the crossing

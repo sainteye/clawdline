@@ -576,7 +576,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |
 | `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
 | `timeout_minutes` | 1…240, 30 if absent |
-| `root.session_id` | this assistant's current conversation id (preferred) or watched terminal id. An ordinary dispatch must resolve to a live owner |
+| `root.session_id` | this assistant's current process-bound conversation id. A terminal-neutral id belongs only on terminal-addressed routes; an ordinary dispatch must resolve to a live owner |
 | `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
 | `root.parent_task` | **leave it out.** It existed for a dispatching child, and a child cannot dispatch; every dispatch this app now accepts comes from a root, where the field is `null`. It is still validated and still read, because a stored record from an older build carries it |
 | `root.poll_only` | default `false`. Set `true` only for deliberate detached automation with a null session id; it will not receive completion notification or own a child row, so the caller must poll |
@@ -603,13 +603,20 @@ error, pointing the other way — take that report seriously and declare narrowe
 
 ### Finding your own assistant and session id (required unless deliberately poll-only)
 
-> `root.session_id` prefers the assistant's own conversation id — the Claude transcript uuid or
-> Codex rollout id — but the broker also accepts the watched terminal id. At dispatch it resolves
-> either spelling against `root.assistant` and stores one process-bound conversation key for
+> `root.session_id` is the assistant's own conversation id — the Claude transcript uuid or
+> Codex rollout id — never the watched terminal id. At dispatch it resolves that spelling against
+> `root.assistant` and stores one process-bound conversation key for
 > completion notification, grouping, capacity and close cascade. Always inspect `warnings`: a
 > non-null spelling that matches no live owner is refused as `root_unresolved`. If there truly is
 > no interactive owner, set `POLL_ONLY=true` deliberately and accept that polling is the only
 > completion path; never let an empty lookup silently choose that mode.
+
+Two same-assistant processes proving the same conversation fail as `conversation_ambiguous`; they
+are never deduplicated into one owner. If this assistant genuinely cannot establish its provider
+conversation id, use authenticated `GET /v1/orchestrator/sessions` as the explicit fallback only
+for terminal-addressed operations. Select the live row deliberately and never substitute
+`$ITERM_SESSION_ID`. The index does not manufacture `root.session_id`; dispatch without a
+conversation owner is explicit poll-only automation.
 
 
 **Codex:** its current rollout id is exported directly. Do this in the same shell call that writes
@@ -683,8 +690,9 @@ Do not put the physical iTerm/tmux/Clawdline row id in `root.session_id`. For a 
 broker positively recognizes an active physical id or the durable Coordinator's physical binding
 and returns `422 root_identity_is_terminal` with `canonical_root_session_id` and
 `canonical_root_assistant`. Evidence is independent of what you put in `root.assistant`, so replace
-both values with that actual tuple. Unknown, conflicting or offline identities are not guessed and
-are refused as `root_unresolved`; detached automation uses null plus `root.poll_only:true`.
+both values with that actual tuple. Unknown or offline identities are not guessed and are refused
+as `root_unresolved`; multiple same-assistant process owners are refused as
+`conversation_ambiguous`. Detached automation uses null plus `root.poll_only:true`.
 
 ---
 
@@ -713,7 +721,8 @@ Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`. **Bra
 | `over_capacity` | the allowance is full | `message` says whether it is your session's allowance or the whole Mac's. The error carries `retry_after` in seconds. Wait and resend, or send fewer / in batches. **Do not hammer it** |
 | `bad_task` | `task.json` does not validate | read `message`, fix the file, resend the same `task_id` (same id is idempotent). A bad `model` lands here too |
 | `root_session_required` | `root.session_id` is empty and the task did not explicitly opt into polling | find this assistant's current conversation id. Use `root.poll_only:true` only for intentionally detached automation |
-| `root_unresolved` | the supplied root id is not one live process-bound owner | refresh the current conversation id; do not let the child open under a stale or guessed id |
+| `root_unresolved` | the supplied root id matches no live process-bound owner | refresh the current conversation id; do not let the child open under a stale or guessed id |
+| `conversation_ambiguous` | multiple live processes of the declared assistant prove the same conversation id | stop and resolve the duplicate ownership; do not select an arbitrary terminal |
 | `root_identity_is_terminal` | `root.session_id` is positively proved to be a physical terminal id | replace it with `canonical_root_session_id` from the error; never broaden task resolution to terminal ids |
 | `forbidden` | wrong token or none | re-read the token file; still failing means the app regenerated it, so ask the user to restart Clawdline |
 | `rate_limited` | more than 10 dispatches in 10 minutes | wait for the window to roll |
@@ -863,14 +872,10 @@ draws one check, **delivered; awaiting approval**, and can never claim independe
 broker-verified landing.
 
 ```bash
-if [ -n "${TMUX_PANE:-}" ]; then
-  ROOT_TERMINAL="$TMUX_PANE"
-elif [[ "${ITERM_SESSION_ID:-}" == *:* ]]; then
-  ROOT_TERMINAL="${ITERM_SESSION_ID##*:}"
-else
-  echo "cannot resolve this root's terminal-neutral Clawdline id" >&2
-  exit 1
-fi
+ROOT_CONVERSATION='<this assistant process-bound conversation id>'
+ROOT_TERMINAL=$(curl -fsSG "http://127.0.0.1:$PORT/v1/orchestrator/whoami" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  --data-urlencode "conversation_id=$ROOT_CONVERSATION" | jq -er .terminal_id)
 jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
   | curl -sS -X POST \
       "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
@@ -982,9 +987,13 @@ or an assistant conversation id. The broker boundary is Clawdline:
    and — for tabs Clawdline opened — `taskId`. Address sessions by that `id`, never a
    provider-specific `sessionId`. **`GET /v1/sessions` and `GET /v1/sessions/:id/git` are the
    paired-device API and answer the orchestrator credential with `401 unauthorized`**, so read the
-   repository's own state by running `git` in the checkout instead. Your *own* id is the UUID after
-   the colon in `$ITERM_SESSION_ID`, and `GET /v1/orchestrator/waits` names the ids already inside
-   a wait — neither reaches a session nobody is waiting on yet, which is why the index exists.
+   repository's own state by running `git` in the checkout instead. Resolve your *own* id by
+   calling `GET /v1/orchestrator/whoami` with this assistant's exact process-bound conversation id.
+   `$ITERM_SESSION_ID` is only a cached hint and can be stale after restart/resume.
+   `GET /v1/orchestrator/waits` names only ids already inside a wait — it cannot reach a session
+   nobody is waiting on yet, which is why the index exists. If the provider conversation id cannot
+   be established, use the authenticated sessions index as a deliberate fallback for a
+   terminal-addressed operation; it is not authority for `root.session_id`.
 2. Register the relationship with `POST /v1/orchestrator/waits`, using the local orchestrator
    credential. Name `repository`, exact `paths`, `owner_session_id`, `waiter_session_id`, `reason`
    and `release_condition`. Clawdline canonicalizes paths, deduplicates the waiter, persists the
@@ -1013,12 +1022,15 @@ it types this procedure's instruction into your session over the ordinary send r
 it out. The full text with every refusal is in [`docs/orchestrator.md`](../../docs/orchestrator.md);
 this is the short form.
 
-1. **Your own terminal-neutral id** is the UUID after the colon in `$ITERM_SESSION_ID` — the pane,
-   not the conversation. Same line for Codex: `CODEX_THREAD_ID` / `CODEX_SESSION_ID` is the
-   rollout's `session_meta.session_id`, a different value that these routes refuse with
-   `404 session_not_found`. Under tmux the id is a pane id and the environment cannot answer it;
-   read it off `GET /v1/orchestrator/sessions` instead. Either way, confirm it appears in that
-   list before sending it anywhere.
+1. **Resolve your own terminal-neutral id** through
+   `GET /v1/orchestrator/whoami?conversation_id=…`, using this assistant's exact process-bound
+   conversation id. For Codex that input is `CODEX_THREAD_ID` / `CODEX_SESSION_ID`; Claude uses
+   the transcript UUID from the nonce procedure above. The response's `terminal_id` is the pane
+   address these routes take. Never substitute `$ITERM_SESSION_ID`: after iTerm restart/resume it
+   may still name the vanished old terminal. The same resolver works under tmux; labels, cwd and
+   state are not identity fallbacks. If the provider conversation id genuinely cannot be
+   established, read authenticated `GET /v1/orchestrator/sessions` and deliberately select the
+   live row for terminal-addressed work only; ownerless dispatch remains explicit poll-only.
 2. **Read the state first** — `GET /v1/orchestrator/coordinator`, with `$TOKEN` from step 1 of this
    skill. `coordinator.configured` false means nobody holds it; otherwise `coordinator.status` is
    `online` or `offline`, and `coordinator.id` and `coordinator.generation` are the pair a

@@ -390,16 +390,17 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
-| `root.session_id` | the dispatcher's assistant conversation id, or its watched terminal id. HTTP dispatch requires a live resolvable owner unless `root.poll_only` is explicitly `true` |
+| `root.session_id` | the dispatcher's process-bound assistant conversation id. HTTP dispatch requires a live resolvable owner unless `root.poll_only` is explicitly `true`; a terminal-neutral id belongs only on terminal-addressed routes |
 | `root.assistant` | optional `claude` or `codex`. New dispatchers send it; absence or explicit `null` is read as missing, and missing is resolved as `claude` for registries and task writers from before this field existed. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 | `root.poll_only` | optional boolean, default `false`. `true` explicitly opts into a detached task and is legal only with a null `root.session_id`; the caller must poll because no completion notice or owner grouping exists |
 
 `root.session_id` is nullable only for an intentionally detached caller that writes
 `root.poll_only: true`. Ordinary HTTP dispatch fails with `422 root_session_required` when the
-field is null or empty. A non-null spelling that cannot be resolved to one live process-bound
-owner fails with `422 root_unresolved`; it is no longer a warning followed by an orphan-shaped
-task. Codex normally exports `CODEX_THREAD_ID` (with `CODEX_SESSION_ID` as the compatible spelling)
+field is null or empty. A non-null spelling with no live process-bound owner fails with
+`422 root_unresolved`; two same-assistant processes proving the same conversation fail with
+`409 conversation_ambiguous`. Neither is a warning followed by an orphan-shaped task. Codex
+normally exports `CODEX_THREAD_ID` (with `CODEX_SESSION_ID` as the compatible spelling)
 and that value is the rollout session id. Claude has no direct self-query and uses the transcript
 nonce procedure in the skill. A caller that genuinely has no interactive owner can still say so
 without inventing one, but it must also accept polling as the only completion path.
@@ -412,9 +413,10 @@ supplied value is the physical terminal id, dispatch is refused as
 `root.assistant`, and the error includes both `canonical_root_session_id` and the proved
 `canonical_root_assistant`. Correct both values and resend the same task id. An intentionally
 detached caller instead writes a null session id together with `root.poll_only: true` and polls.
-Unknown, offline and conflicting tuples are not guessed: an HTTP dispatch is refused as
-`root_unresolved`. Existing persisted tasks keep their historical root value, and task mounting
-still accepts conversation ids only.
+Unknown and offline tuples are not guessed: an HTTP dispatch is refused as `root_unresolved`.
+Conflicting same-assistant process owners are also not guessed and are refused as
+`conversation_ambiguous`. Existing persisted tasks keep their historical root value, and task
+mounting still accepts conversation ids only.
 
 Two things follow from explicit poll-only mode, and the second one surprises people. The task is not told
 when it finishes, so the dispatcher has to poll. And **its row has nothing to sit under**: the
@@ -425,11 +427,12 @@ floats at whatever position the sort gave it, which reads at a glance like a bug
 rather than a task that declined to say who asked. If a row belonging under yours matters, send
 the id and `root.assistant` together.
 
-Resolution happens once, before capacity, grouping and the task record are chosen. A terminal id
-and the current conversation id therefore become the same durable root key. Completion
+Resolution happens once, before capacity, grouping and the task record are chosen. The supplied
+current conversation id becomes the durable root key. Completion
 notification, `liveTasks(dispatchedBy:)`, session grouping and root-close cascade all consume that
-canonical key. If a non-null spelling matches no one (or is ambiguous), HTTP dispatch returns
-`422 root_unresolved` before registering or opening anything. Poll-only automation uses a null id
+canonical key. If a non-null spelling matches no one, HTTP dispatch returns `422 root_unresolved`;
+two same-assistant processes proving the same conversation return
+`409 conversation_ambiguous`. Both happen before registering or opening anything. Poll-only automation uses a null id
 plus the explicit flag instead of disguising an unresolved owner as a warning.
 
 The broker does not trust either string on its own. For Claude it resolves the exact current
@@ -1321,10 +1324,17 @@ complete operational sentence the owner acts on.
 orchestrator credential can open: `GET /v1/sessions` lists the
 same ids and is the paired-device route, so it answers that credential with `401 unauthorized`. The
 index gives an `id`, `assistant`, `cwd`, `label`, `state`, and a `taskId` for tabs this app opened —
-enough to pick an owner, and nothing off the session's screen. Two older ways still work and neither
-is complete: a session's *own* id is the UUID after the colon in `$ITERM_SESSION_ID`, and
-`GET /v1/orchestrator/waits` names the ids already inside a wait, which is no help to the first
-session that needs to wait on somebody.
+enough to pick an owner, and nothing off the session's screen. A session resolves its *own* id by
+sending its exact process-bound conversation id to `GET /v1/orchestrator/whoami`; the broker returns
+the currently bound terminal-neutral id from the live registry. The UUID cached in
+`$ITERM_SESSION_ID` can survive an iTerm restart/resume and name a terminal which no longer exists,
+so it is a hint, never identity. `GET /v1/orchestrator/waits` names only ids already inside a wait,
+which is no help to the first session that needs to wait on somebody.
+
+If the provider conversation id genuinely cannot be established, the authenticated session index
+is the explicit fallback for terminal-addressed operations: select the live assistant row there,
+never substitute `$ITERM_SESSION_ID`. It does not create a conversation identity and therefore
+cannot be used as `root.session_id`; a dispatch with no conversation owner is explicitly poll-only.
 
 **Two different namespaces, and only one of them is what these routes list.** A root
 identifies itself in `task.json` with whatever id its own assistant gave it — Claude Code's own
@@ -1550,27 +1560,27 @@ PORT=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.co
 ```
 
 **1. Your own terminal-neutral id.** It is not your conversation id and not your transcript's name.
-It is the id of the *terminal pane* you are running in — the value `GET /v1/sessions` and
-`GET /v1/orchestrator/sessions` both call `id`. Under iTerm2 the terminal exports it, and the UUID
-after the colon is the whole of it:
+It is the id of the *terminal pane currently bound to this conversation* — the value
+`GET /v1/sessions` and `GET /v1/orchestrator/sessions` both call `id`. Resolve it from the exact
+process-bound conversation id:
 
 ```bash
-SESSION_ID="${ITERM_SESSION_ID##*:}"     # w0t12p0:9A36BDF4-… → 9A36BDF4-…
+CONVERSATION_ID='<this assistant process-bound conversation id>'
+SESSION_ID=$(curl -fsSG "http://127.0.0.1:$PORT/v1/orchestrator/whoami" \
+  -H "X-Clawdline-Orchestrator: $ORCH" \
+  --data-urlencode "conversation_id=$CONVERSATION_ID" | jq -er .terminal_id)
 ```
 
-**This is the same line for Codex as for Claude, and `CODEX_THREAD_ID` is not it.** iTerm2 sets
-`ITERM_SESSION_ID` for whatever runs in the pane, so both assistants read their own id from it;
-`CODEX_THREAD_ID` (and its compatible spelling `CODEX_SESSION_ID`) names the rollout's
-`session_meta.session_id`, which is a different value in a different namespace and is refused here
-as `404 session_not_found`. Measured on one Mac: the Codex tab listed as
-`AE8A927C-D144-4BF8-8DF7-47E0D5463418` had exactly that UUID in its `ITERM_SESSION_ID` while
-holding rollout `01a0462b-9ef7-7161-b0c0-e117929656ff` open. The first is the id these routes take.
-
-Under tmux, or a terminal that exports nothing, the id is a tmux pane id instead and the
-environment cannot answer. Then read it, rather than guess: `GET /v1/orchestrator/sessions` lists
-every live assistant with its `assistant`, `cwd` and `label`, and yours is the row whose working
-directory and title are yours. Either way, **check the id you found appears in that list before
-sending it anywhere** — a value that is not there is not an id, whatever exported it.
+For Codex, `CODEX_THREAD_ID` (or compatible `CODEX_SESSION_ID`) is the conversation input to that
+request, not its terminal result. Claude obtains its transcript UUID through the nonce procedure in
+the Clawdline skill. The response's provenance says `live_session_registry` and
+`single_snapshot_revalidated`; behind it are two uncached process-evidence passes, each shared by
+every row in the frozen SessionWatch target population. A detach or rebind during resolution
+returns a typed retry instead of an id. Never substitute `$ITERM_SESSION_ID`: measured after
+restart/resume, that cached value can name a terminal absent from the live registry. Under tmux the
+same route works unchanged. If the conversation id itself cannot be established, read the
+authenticated `GET /v1/orchestrator/sessions` index and deliberately select a row only for a
+terminal-addressed operation; labels/cwd/state are not proof for `root.session_id`.
 
 **2. Read the current state before deciding anything.** One request answers all three cases, and
 the two fields a reconnect needs come only from here:
@@ -1822,8 +1832,8 @@ in already was — an ordinary user turn, or a peer message when the lookalike w
 cross-session envelope. Claude transcripts and Codex rollouts decode the same envelope to a
 dedicated notice entry; no reader reconstructs semantics from `body`.
 
-Delivery and consumption are intentionally different. `root_missing`, `root_choosing`,
-`iterm_modal`, `terminal_timeout`, `identity_stale`, and other transport failures retry with capped
+Delivery and consumption are intentionally different. `root_missing`, `conversation_ambiguous`,
+`root_choosing`, `iterm_modal`, `terminal_timeout`, `identity_stale`, and other transport failures retry with capped
 exponential delay; a transport success also retries until the root explicitly ACKs the same
 `notice_id`. The stable id makes duplicate terminal lines one consumption, and ACK is idempotent.
 Eight delivery attempts is the bound; exhaustion becomes `dead_letter`, visible through

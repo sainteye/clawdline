@@ -497,7 +497,7 @@ jq -n \
 | `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |
 | `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
-| `root.session_id` | 目前這個助理的 conversation id（優先）或受監看的 terminal id；一般派工一定要能解析到 live owner |
+| `root.session_id` | 目前這個助理 process-bound conversation id；terminal-neutral id 只屬於 terminal-addressed route，一般派工一定要能解析到 live owner |
 | `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
 | `root.parent_task` | **不要填。** 這個欄位是給「會往下派的 child」用的，而 child 已經不能派工；現在這個 app 收得到的每一次派工都來自 root，這一格就是 `null`。它還是會被驗證、還是會被讀，因為舊版留下來的紀錄裡有 |
 | `root.poll_only` | 預設 `false`。只有故意做無 root 的自動化時才設為 `true` 並搭配 null session id；它不會收到完成通知或擁有 child row，呼叫者必須自行 poll |
@@ -520,12 +520,18 @@ jq -n \
 
 ### 查自己的助理與 session id（除非明確 poll-only，否則必填）
 
-> `root.session_id` 優先填助理自己的 conversation id——Claude 的 transcript uuid 或 Codex 的
-> rollout id；broker 現在也接受受監看的 terminal id。派工當下會把兩種拼法依
-> `root.assistant` 解析成同一個 process-bound conversation key，完成通知、分組、容量與 root 關閉
-> cascade 全部用這一把 key。一定要讀 response 的 `warnings`：非 null 的值若找不到唯一 live owner，
+> `root.session_id` 就填助理自己的 conversation id——Claude 的 transcript uuid 或 Codex 的
+> rollout id，不能填受監看的 terminal id。派工當下會依 `root.assistant` 解析成同一個
+> process-bound conversation key，完成通知、分組、容量與 root 關閉
+> cascade 全部用這一把 key。一定要讀 response 的 `warnings`：非 null 的值若找不到任何 live owner，
 > 會以 `root_unresolved` 拒絕，不會先開出孤兒形狀的 Child。真的沒有互動式 owner 時，才明確設定
 > `POLL_ONLY=true`，並接受只能靠 polling 得知完成；查詢失敗不能默默替你選這個模式。
+
+同一助理若有兩個 process 證明同一個 conversation，會回 `conversation_ambiguous`，絕不把兩列
+去重成一個 owner。若這個助理真的無法建立 provider conversation id，authenticated
+`GET /v1/orchestrator/sessions` 是 terminal-addressed operation 的明確 fallback：刻意選 live row，
+絕不能拿 `$ITERM_SESSION_ID` 代替。Index 不會製造 `root.session_id`；沒有 conversation owner 的
+dispatch 只能明確採 poll-only。
 
 
 **Codex：**目前 rollout id 已直接放在環境變數裡。要跟寫 `task.json` 放在同一個 shell
@@ -594,8 +600,9 @@ echo "root session = ${ROOT_SESSION:-null}"
 active physical id 或 durable Coordinator 的 physical binding，會回
 `422 root_identity_is_terminal`，並附 `canonical_root_session_id` 與
 `canonical_root_assistant`。證據不受你填的 `root.assistant` 影響；請把 session 與 assistant
-一起換成錯誤回傳的實際 tuple。未知、衝突或離線的身分不會被猜測，會以 `root_unresolved`
-拒絕；detached automation 才使用 null 搭配 `root.poll_only:true`。
+一起換成錯誤回傳的實際 tuple。未知或離線的身分不會被猜測，會以 `root_unresolved`
+拒絕；同一助理有多個 process owner 時則以 `conversation_ambiguous` 拒絕。detached automation
+才使用 null 搭配 `root.poll_only:true`。
 
 ---
 
@@ -624,7 +631,8 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 | `over_capacity` | 額度滿了 | `message` 會說是你這個 session 的額度滿了、還是整台 Mac 的。錯誤物件裡有 `retry_after`（秒）。等它再送，或減件數／分批。**不要連續重打** |
 | `bad_task` | `task.json` 不合格 | 讀 `message`，改檔案，同一個 `task_id` 再送一次（同 id 是冪等的）。`model` 打錯也走這條 |
 | `root_session_required` | `root.session_id` 是空的，而且沒有明確選 poll-only | 找出目前助理的 conversation id；只有故意做 detached automation 時才用 `root.poll_only:true` |
-| `root_unresolved` | 填入的 root id 不是唯一 live process-bound owner | 重新取得目前 conversation id；不要讓 child 掛在過期或猜來的 id 下 |
+| `root_unresolved` | 填入的 root id 找不到任何 live process-bound owner | 重新取得目前 conversation id；不要讓 child 掛在過期或猜來的 id 下 |
+| `conversation_ambiguous` | 同一助理有多個 live process 證明同一個 conversation id | 停止並排除重複 owner；不要任選一個 terminal |
 | `root_identity_is_terminal` | `root.session_id` 已被正面證明是實體 terminal id | 改用錯誤裡的 `canonical_root_session_id` 與 `canonical_root_assistant`；不要放寬 task resolver 去接受 terminal id |
 | `forbidden` | token 錯或沒帶 | 重讀 token 檔；還是不行就是 app 重生過 token，請使用者重開 Clawdline |
 | `rate_limited` | 10 分鐘內派超過 10 次 | 等窗口滾過去 |
@@ -760,14 +768,10 @@ report 當成最後一個 tool action，再向使用者給 final answer。這是
 landing。
 
 ```bash
-if [ -n "${TMUX_PANE:-}" ]; then
-  ROOT_TERMINAL="$TMUX_PANE"
-elif [[ "${ITERM_SESSION_ID:-}" == *:* ]]; then
-  ROOT_TERMINAL="${ITERM_SESSION_ID##*:}"
-else
-  echo "無法解析這個 Root 的 terminal-neutral Clawdline id" >&2
-  exit 1
-fi
+ROOT_CONVERSATION='<這個助理目前 process-bound conversation id>'
+ROOT_TERMINAL=$(curl -fsSG "http://127.0.0.1:$PORT/v1/orchestrator/whoami" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  --data-urlencode "conversation_id=$ROOT_CONVERSATION" | jq -er .terminal_id)
 jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
   | curl -sS -X POST \
       "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
@@ -862,8 +866,11 @@ session 就是上面「要提早收掉」講的那個動作——先看它會帶
    分頁還會有 `taskId`。地址用那個 `id`，不用 provider-specific `sessionId`。
    **`GET /v1/sessions` 與 `GET /v1/sessions/:id/git` 是配對裝置的 API，對 orchestrator credential
    一律回 `401 unauthorized`**，所以 repository 的狀態改成在該 checkout 裡自己跑 `git` 讀。自己的 id
-   是 `$ITERM_SESSION_ID` 冒號後面那段 UUID；`GET /v1/orchestrator/waits` 只認得已經在某個 wait 裡的
-   id——兩者都構不到「還沒有人等過的 session」，那正是這條 index 存在的理由。
+   要把這個助理精確的 process-bound conversation id 交給 `GET /v1/orchestrator/whoami` 解析；
+   `$ITERM_SESSION_ID` 只是 cache hint，restart/resume 後可能已 stale。`GET /v1/orchestrator/waits`
+   只認得已經在某個 wait 裡的 id，構不到「還沒有人等過的 session」，那正是這條 index 存在的理由。
+   Provider conversation id 若真的無法建立，可刻意從 authenticated sessions index 選 terminal row，
+   但它不能當 `root.session_id` 的 authority。
 2. 用本機 orchestrator credential 呼叫 `POST /v1/orchestrator/waits` 登記 relationship，寫出
    `repository`、精確 `paths`、`owner_session_id`、`waiter_session_id`、`reason` 與
    `release_condition`。Clawdline 會 canonicalize paths、deduplicate waiter、持久保存 group，並把
@@ -887,11 +894,14 @@ app 上那個 **讓這個 session 成為 Clawdfather** 不會去打它們——�
 route 打進你的 session，真正做事的是你。完整版連每一種拒絕都寫在
 [`docs/orchestrator.md`](../../docs/orchestrator.md)，這裡是短的。
 
-1. **自己的 terminal-neutral id** 是 `$ITERM_SESSION_ID` 冒號後面那段 UUID——那是分頁，不是對話。
-   Codex 也是同一行：`CODEX_THREAD_ID`／`CODEX_SESSION_ID` 是 rollout 的
-   `session_meta.session_id`，是另一個 namespace 的值，送過去只會拿到 `404 session_not_found`。
-   在 tmux 底下那個 id 是 pane id，環境變數答不出來，改去 `GET /v1/orchestrator/sessions` 讀。
-   不管哪一種，送出去之前先確認它真的出現在那份清單裡。
+1. **自己的 terminal-neutral id** 要呼叫
+   `GET /v1/orchestrator/whoami?conversation_id=…`，輸入這個助理精確的 process-bound
+   conversation id。Codex 的輸入是 `CODEX_THREAD_ID`／`CODEX_SESSION_ID`；Claude 使用上面 nonce
+   程序得到的 transcript UUID。Response 的 `terminal_id` 才是這些 route 要的 pane address。
+   絕不能拿 `$ITERM_SESSION_ID` 代替：iTerm restart/resume 後它可能還指向已消失的舊 terminal。
+   tmux 也走同一條 resolver；label、cwd、state 都不是 identity fallback。Provider conversation id
+   若真的無法建立，改讀 authenticated `GET /v1/orchestrator/sessions`，只為 terminal-addressed work
+   刻意選 live row；沒有 owner 的 dispatch 仍須明確 poll-only。
 2. **先讀現況**——`GET /v1/orchestrator/coordinator`，用本 skill 第 1 節的 `$TOKEN`。
    `coordinator.configured` 是 false 代表沒有人擔任；否則看 `coordinator.status` 是 `online` 還是
    `offline`，而 `coordinator.id` 與 `coordinator.generation` 是重新接上時必須原樣帶回去的那一對。
