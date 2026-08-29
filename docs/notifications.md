@@ -20,7 +20,7 @@ around it.
 | | what it is |
 | --- | --- |
 | **Push** | A phone in another room buzzes. Sealed per subscription under RFC 8291, so the push service sees a P-256 point, a salt and ciphertext. The only thing in the app that leaves the machine on its own — see `WebPush`. |
-| **A typed line** | One sentence typed into a terminal on this Mac, so the conversation that asked for the work is the conversation that hears it finished — `Orchestrator.notifyRoot`. |
+| **A typed line** | One versioned sentence typed into a terminal on this Mac by the durable completion postman, so the conversation that asked for the work hears it finished. Its stable `notice_id` is ACKed after observation. |
 | **The island** | The notch leans out. Waiting wins, then a finish held for 3.4 seconds, then whatever is running underneath — `NotchIsland.refresh`. |
 | **Your own program** | `on_state_change` runs an argv array with the event in environment variables. No shell, four at a time, ten seconds each — `StateHook.fire`. |
 
@@ -31,8 +31,8 @@ around it.
 | root stops to ask | you | push | Unconditional, ahead of every preference. The one interruption in the app that earns itself. |
 | root ends a long turn | you | push | Only past `finishThreshold` (120s), and only with `push_on_finish` on. With `smart_notifications`, Haiku gets the bounded last request and answer and replaces the generic body with one sentence. |
 | child stops to ask | you, and only you | push | Louder than a root asking, and it carries the clock. |
-| child finishes (depth 1) | the root session | typed line, no push | The id, the state, the path to `result.json`. |
-| a task below a task finishes (depth 2) | the task that dispatched it | typed line, no push | The same, plus how many of that task's own children are still running. Unreachable in a live tree, where a child dispatches nothing; kept for a stored record an older build left behind. |
+| child finishes (depth 1) | the root session | durable typed line, no push | The id, the state, the path to `result.json`, a stable notice id and the ACK route. |
+| a task below a task finishes (depth 2) | the task that dispatched it | durable typed line, no push | The same, plus how many of that task's own children are still running. Unreachable in a live tree, where a child dispatches nothing; kept for a stored record an older build left behind. |
 | the last of a fan-out ends | you | push | One notification for the whole subtree, with a count and how many failed. With `smart_notifications`, the task titles, states and authored summaries become one sentence instead. |
 | an agent has timely content you are waiting for | you | push | The task-secret or root `/notify` route, only with `orchestrator_agent_notify` on. When it is off, `409 agent_notify_disabled` spends no allowance; the agent does not retry and keeps the content in `result.json`. |
 | a tab whose task is over | nobody | silent | A child's terminal lingers for `orchestrator_child_linger` (180s) after the work ends. |
@@ -78,6 +78,28 @@ found by — and the first guard in `notifyRoot` failed at depth 2, so the line 
 silence; the fix was the parent task's own terminal, which `record(of:)` had been resolving all
 along. Nothing reaches that lane now, because a child dispatches nothing. It is kept because a
 stored record from an older build still can.
+
+**The line to a grandchild's parent had never fired.** A root writes `root.session_id` into the
+task it dispatches, so a depth-1 task can be traced back to a tab through the hook notes. The
+briefing tells a child to dispatch with `root.parent_task` and nothing else — deliberately, because
+a Codex child has no hook note to be found by — so at depth 2 the old notification guard
+failed and the line was dropped in silence. What was left was the polling loop the briefing
+prescribes: a child spending turns on `sleep`. The parent task's own terminal is the answer, and
+`record(of:)` had been resolving it that way all along. That direct route is still process-bound:
+terminal id, assistant, tty, PID, process start, transcript marker proof and conversation id must
+all match the stored parent task before a byte is sent. Terminal/TTY reuse is `identity_stale`.
+
+**A terminal-send return is not observation.** Finalization first persists the task outcome and
+completion outbox in one atomic registry snapshot. A utility-queue postman then retries
+`root_missing`, `root_choosing`, `iterm_modal`, `terminal_timeout`, `identity_stale`, and ordinary
+transport failure with bounded backoff; it also retries a successful send until the root ACKs the
+same stable `notice_id`. Duplicate lines therefore name one consumption. Eight delivery attempts
+end in a visible dead letter, and result/task polling never goes away. Accepted, executed, result-verified,
+transport-delivered, observed and acknowledged are six separate facts; HTTP, SSE and Apple Event
+success never manufacture the last two.
+An ACK store failure compare-and-swaps only that notice's delivery transition back; it does not
+replace the latest whole task and therefore cannot erase concurrent worktree, landing or close
+receipts.
 
 ## The project's mark, and what an iPhone does with it
 

@@ -112,8 +112,11 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/notify` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/tasks` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/completions` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/completions/reconcile` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
+| `POST` | `/v1/orchestrator/tasks/:id/completion/ack` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret **or** orchestrator token for pending/abandoned; **orchestrator token only for landed** | — |
 | `POST` | `/v1/orchestrator/tasks/:id/progress` | that task's secret | — |
 | `GET` | `/v1/orchestrator/tasks/:id/inflight` | that task's secret | — |
@@ -1280,8 +1283,8 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Attached follow-ups add seven typed refusals, checked in the order they are listed; a client should
-branch on every applicable code:
+Seventeen refusals, checked in the order they are listed, and a client should branch on every
+applicable code:
 
 | `code` | status | |
 |---|---|---|
@@ -1294,6 +1297,7 @@ branch on every applicable code:
 | `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
 | `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, or `serialize`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `root_identity_is_terminal` | 422 | positive active-terminal or durable-Coordinator evidence proves `root.session_id` is a physical terminal id. The evidence is collected independently of caller-declared `root.assistant`; the error returns the actual `canonical_root_session_id` and `canonical_root_assistant`. Conflicting/unknown evidence remains nullable rather than guessed. The task is not registered and the provisional dispatch-rate ticket is refunded |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
 | `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, advisory `retry_after`, `age_seconds` (`now` minus the blocking task's `created`, an integer), and `root_key` (the blocking task's root tree, hashed — see below). The rejected task is not registered and does not spend dispatch rate-limit budget |
@@ -1786,6 +1790,12 @@ caller to refresh Bearings;
 `409 coordinator_not_configured` requires explicit registration; and store/unbound errors retain
 the meanings above. Reconnect does not start a tab, wake a model, resume a transcript, grant
 transcript access, dispatch work, mutate git, stop a process or delete anything.
+
+The private binding history also keeps terminal completion routing safe across this move. An old
+task authenticates its alias interval with its historical `root.assistant`, but the outbox resolves
+and targets the replacement binding's canonical conversation id and current assistant. Both
+Codex-to-Claude and Claude-to-Codex reconnects therefore bypass the stale assistant rather than
+dead-lettering a valid completion or transporting to the old process.
 
 #### `GET /v1/orchestrator/coordinator`
 
@@ -2873,6 +2883,69 @@ way the app still opens `result.json` if it is there, for the artifact list.
 No `Idempotency-Key`: `already_done` is the honest answer to a repeat, and a stored-reply header
 would turn "you are too late" into a silent success.
 
+### Completion delivery ledger, reconciliation and ACK
+
+`GET /v1/orchestrator/completions` is machine-token-only and has a closed query schema: no query,
+or exactly one `pending` whose value is `true`, `1`, `false`, or `0`. `1` means exactly `true` and
+`0` exactly `false`. Any other key or value, or a repeated `pending`, is `400 bad_request` rather
+than a silently broadened ledger read. `pending=true` and `pending=1` limit the answer to unacknowledged,
+non-dead-letter envelopes; a transport-delivered notice remains pending until ACK:
+
+```jsonc
+{"completions":[{
+  "task_id":"3f9a21bc-…", "task_state":"success",
+  "accepted_at":1787100000, "executed_at":1787100300,
+  "result_verified_at":1787100300,
+  "delivery":{
+    "notice_id":"6b1d46cb-1111-4222-8333-444444444444",
+    "state":"delivered", "attempts":2,
+    "created_at":1787100300, "last_attempt_at":1787100310,
+    "next_retry_at":1787100330,
+    "transport_delivered_at":1787100301,
+    "observed_at":null, "acknowledged_at":null,
+    "last_error":null
+  }
+}],"pending_only":true,"at":1787100312}
+```
+
+The six lifecycle facts are not aliases. `accepted_at` is dispatch registration;
+`executed_at` is terminal task state; `result_verified_at` exists only after the file secret is
+checked; `transport_delivered_at` means the terminal bridge returned success. None of those, and
+no GET, SSE frame or Apple Event, proves observation. Only an explicit matching ACK records
+`observed_at` and `acknowledged_at` and stops retry:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/completion/ack \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"notice_id":"6b1d46cb-1111-4222-8333-444444444444"}'
+{"ok":true,"acknowledged":true,"changed":true,"notice_id":"6b1d46cb-…"}
+```
+
+The ACK request schema is closed and the operation is idempotent: the second matching request is
+`200` with `changed:false`. A different UUID is `409 completion_notice_mismatch`; a legacy task
+without an outbox is `409 completion_not_reconciled`; the brief in-process interval before the
+outcome-plus-outbox snapshot reaches disk is `409 completion_not_persisted`; a store failure is
+`500 completion_store_failed`, and the caller retries. That failure compare-and-swaps only this
+notice's ACK transition back to its previous `completion_delivery`; it never restores an older
+whole Task over concurrent worktree, landing, close or other receipts.
+
+`POST /v1/orchestrator/completions/reconcile` requires one JSON object and accepts only optional
+string `task_id` and JSON-boolean `include_dead_letter`. Empty or malformed JSON, arrays/scalars,
+extra keys, and wrong types (including `0`/`1` in place of a boolean) are `400 bad_request`. It
+creates durable envelopes for at most 25 identifiable terminal tasks per call from the last seven
+days, or rearms matching dead letters when explicitly requested:
+
+```json
+{"task_id":"3f9a21bc-…","include_dead_letter":true}
+```
+
+The response reports `created`, `rearmed`, `limited`, `batch_limit`, and `lookback_seconds`.
+Null-root tasks, older history and unknown identities remain available through ordinary task and
+`result.json` polling. Reconciliation never rewrites `root.session_id`; a Coordinator conversation
+can follow a rebind only through its persisted process-bound binding history. The historical task
+assistant validates the old alias interval, while terminal delivery uses the canonical current
+binding's conversation id and assistant; cross-assistant reconnect never targets the stale process.
+
 ### `POST /v1/orchestrator/tasks/:id/cancel`
 
 Stop it. The task goes to `cancelled` and the child's terminal is ended the polite way
@@ -3206,6 +3279,8 @@ closed `kind` and `state` fields instead of parsing `text`:
     "task": {"id": "3f9a21bc-…", "title": "Project portrait"},
     "state": "timeout",            // success | failure | timeout | cancelled | spawn_failed
     "result_path": "/tmp/.clawdline/3f9a21bc-…/result.json",
+    "notice_id": "6b1d46cb-1111-4222-8333-444444444444",
+    "ack_path": "/v1/orchestrator/tasks/3f9a21bc-…/completion/ack",
     "outstanding": 0,
     "claims_released": true,
     "child_may_still_write": true
@@ -3216,7 +3291,10 @@ closed `kind` and `state` fields instead of parsing `text`:
 Version 1 is a closed legacy schema containing only `task_finished` and `workspace_overlap`, and
 literal version-1 transcript rows continue to decode. Version 2 is the current writer schema and
 has exactly five kinds: those two plus `file_wait_request`, `file_wait_release`, and
-`handoff_receipt`. For `workspace_overlap`, `notice` has `kind`, `audience`, `task`, and a non-empty
+`handoff_receipt`. Current `task_finished` writers include `notice_id` and `ack_path`; readers also
+accept the original version-2 completion shape without them for transcript compatibility, but that
+legacy shape has no delivery identity and cannot be ACKed. For `workspace_overlap`, `notice` has
+`kind`, `audience`, `task`, and a non-empty
 `overlaps` array of `{"task":{"id":…,"title":…},"path":…}`. The file-wait shapes are:
 
 ```jsonc

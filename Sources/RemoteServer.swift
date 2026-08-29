@@ -1676,6 +1676,76 @@ final class RemoteServer: @unchecked Sendable {
             return .json(["tasks": Orchestrator.records(),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        case ("GET", "/v1/orchestrator/completions"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reading completion delivery needs the orchestrator token.")
+            }
+            guard Set(request.query.keys).isSubset(of: ["pending"]),
+                  request.repeatedQueryKeys.isEmpty else {
+                return .error(400, "bad_request",
+                              "The closed completion query accepts one pending=true|false|1|0.")
+            }
+            let pending: Bool
+            switch request.query["pending"] {
+            case nil, "false", "0": pending = false
+            case "true", "1": pending = true
+            default:
+                return .error(400, "bad_request",
+                              "The closed completion query accepts one pending=true|false|1|0.")
+            }
+            return .json(["completions": Orchestrator.completionRecords(pendingOnly: pending),
+                          "pending_only": pending,
+                          "at": Int(Date().timeIntervalSince1970)])
+
+        case ("POST", "/v1/orchestrator/completions/reconcile"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reconciling completion delivery needs the orchestrator token.")
+            }
+            guard !request.body.isEmpty,
+                  let decoded = try? JSONSerialization.jsonObject(with: request.body),
+                  let body = decoded as? [String: Any] else {
+                return .error(400, "bad_request",
+                              "The reconcile body must be one JSON object.")
+            }
+            guard Set(body.keys).isSubset(of: ["task_id", "include_dead_letter"]),
+                  (body["task_id"] == nil || body["task_id"] is String) else {
+                return .error(400, "bad_request",
+                              "Only task_id and boolean include_dead_letter are accepted.")
+            }
+            let includeDeadLetters: Bool
+            if let raw = body["include_dead_letter"] {
+                guard let number = raw as? NSNumber,
+                      CFGetTypeID(number) == CFBooleanGetTypeID() else {
+                    return .error(400, "bad_request",
+                                  "Only task_id and boolean include_dead_letter are accepted.")
+                }
+                includeDeadLetters = number.boolValue
+            } else {
+                includeDeadLetters = false
+            }
+            return answer(Orchestrator.reconcileCompletions(
+                taskID: body["task_id"] as? String,
+                includeDeadLetters: includeDeadLetters))
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/completion/ack"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Acknowledging completion needs the orchestrator token.")
+            }
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/completion/ack".count))
+            guard let body = try? JSONSerialization.jsonObject(with: request.body)
+                    as? [String: Any], Set(body.keys) == ["notice_id"],
+                  let noticeID = body["notice_id"] as? String else {
+                return .error(400, "bad_request",
+                              "The closed ACK schema requires only notice_id.")
+            }
+            return answer(Orchestrator.acknowledgeCompletion(
+                taskID: id.removingPercentEncoding ?? id, noticeID: noticeID))
+
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
             && path.hasSuffix("/complete"):
             let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
@@ -5284,6 +5354,7 @@ extension RemoteServer {
         var method = "GET"
         var path = "/"
         var query: [String: String] = [:]
+        var repeatedQueryKeys: Set<String> = []
         var headers: [String: String] = [:]
         var contentLength = 0
         var body: Data = Data()
@@ -5328,6 +5399,7 @@ extension RemoteServer {
                 for pair in target[target.index(after: mark)...].split(separator: "&") {
                     let kv = pair.split(separator: "=", maxSplits: 1)
                     guard let key = kv.first?.removingPercentEncoding else { continue }
+                    if query[key] != nil { repeatedQueryKeys.insert(key) }
                     query[key] = kv.count > 1 ? (kv[1].removingPercentEncoding ?? "") : ""
                 }
             } else {

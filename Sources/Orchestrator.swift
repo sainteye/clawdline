@@ -1306,6 +1306,75 @@ enum Orchestrator {
         let releasedAt: Date
     }
 
+    /// Durable state for the terminal completion postman. A terminal task outcome and this
+    /// envelope are written in the same orchestrator-store snapshot before any terminal API is
+    /// called. `delivered` means only that the terminal transport accepted the line; observation
+    /// and acknowledgement remain separate facts until the root explicitly ACKs `noticeID`.
+    enum CompletionDeliveryState: String, Equatable {
+        case pending, delivered, acknowledged
+        case deadLetter = "dead_letter"
+    }
+
+    enum CompletionFailureCode: String, Equatable {
+        case rootMissing = "root_missing"
+        case rootChoosing = "root_choosing"
+        case itermModal = "iterm_modal"
+        case terminalTimeout = "terminal_timeout"
+        case identityStale = "identity_stale"
+        case transportFailed = "transport_failed"
+        case acknowledgementTimeout = "acknowledgement_timeout"
+    }
+
+    struct CompletionFailure: Equatable {
+        let code: CompletionFailureCode
+        let message: String
+        let at: Date
+    }
+
+    struct CompletionDelivery: Equatable {
+        let noticeID: String
+        let created: Date
+        var state: CompletionDeliveryState
+        var attempts: Int
+        var nextRetryAt: Date?
+        var lastAttemptAt: Date? = nil
+        var transportDeliveredAt: Date? = nil
+        var observedAt: Date? = nil
+        var acknowledgedAt: Date? = nil
+        var lastError: CompletionFailure? = nil
+        var deadLetterAt: Date? = nil
+        var legacyReconciled = false
+        /// Process-local eligibility barrier. New envelopes stay false until the exact registry
+        /// snapshot containing them reaches disk; decoded envelopes default true.
+        var persisted: Bool
+
+        init(noticeID: String, created: Date, state: CompletionDeliveryState,
+             attempts: Int, nextRetryAt: Date?, lastAttemptAt: Date? = nil,
+             transportDeliveredAt: Date? = nil, observedAt: Date? = nil,
+             acknowledgedAt: Date? = nil, lastError: CompletionFailure? = nil,
+             deadLetterAt: Date? = nil, legacyReconciled: Bool = false,
+             persisted: Bool = true) {
+            self.noticeID = noticeID
+            self.created = created
+            self.state = state
+            self.attempts = attempts
+            self.nextRetryAt = nextRetryAt
+            self.lastAttemptAt = lastAttemptAt
+            self.transportDeliveredAt = transportDeliveredAt
+            self.observedAt = observedAt
+            self.acknowledgedAt = acknowledgedAt
+            self.lastError = lastError
+            self.deadLetterAt = deadLetterAt
+            self.legacyReconciled = legacyReconciled
+            self.persisted = persisted
+        }
+    }
+
+    enum CompletionTransportResult: Equatable {
+        case delivered
+        case failed(CompletionFailureCode, String)
+    }
+
     struct Task {
         let id: String
         var state: State
@@ -1325,6 +1394,9 @@ enum Orchestrator {
         var spawnedAt: Date?
         var briefedAt: Date?
         var finishedAt: Date?
+        /// Set only after `result.json` passed the task-secret check. A terminal state reported by
+        /// `/complete` may exist without it, which is why this is not derived from `finishedAt`.
+        var resultVerifiedAt: Date?
         var rootSessionId: String?
         /// Which assistant owns `rootSessionId`. Older registry rows predate the field and are
         /// Claude roots, so nil retains that spelling rather than making them unresolvable.
@@ -1455,6 +1527,9 @@ enum Orchestrator {
         /// What crosses the restart is the deadline and nothing else. Whether that tab is still
         /// the child's is asked again, of a reading this process took — see ``closeStep``.
         var closeAt: Date?
+        /// The idempotent completion envelope. Nil on live tasks, manual-poll tasks and legacy
+        /// terminal rows which have not yet passed bounded reconciliation.
+        var completionDelivery: CompletionDelivery?
         /// Why an automatic terminal cleanup is deliberately still pending. The kind is durable:
         /// an iTerm modal may be tried once after a fresh list proves recovery, while a process
         /// scan/still-running/tmux failure must stay stopped for a person instead of sending the
@@ -1901,6 +1976,12 @@ enum Orchestrator {
     /// Terminal delivery leaves the registry lock before it types. Serializing coordination
     /// mutations closes the otherwise possible gap where two retries both see a missing receipt.
     private static let coordinationDeliveryLock = NSLock()
+    private static let completionDeliveryQueue = DispatchQueue(
+        label: "dev.sainteye.clawdline.orchestrator.completion", qos: .utility)
+    static let completionAttemptLimit = 8
+    static let completionRetryMaximum: TimeInterval = 300
+    static let legacyCompletionLookback: TimeInterval = 7 * 24 * 3600
+    static let legacyCompletionBatchLimit = 25
     private static var loaded = false
     private static var tasks: [String: Task] = [:]
     private static var handoffs: [String: HandoffEnvelope] = [:]
@@ -1937,6 +2018,14 @@ enum Orchestrator {
         label: "dev.sainteye.clawdline.orchestrator.schedules", qos: .utility)
     static var scheduleRunnerForTesting: ((Schedule) -> Reply)?
     static var scheduleDispatchEnqueuerForTesting: ((@escaping () -> Void) -> Void)?
+    static var completionPumpEnqueuerForTesting: ((@escaping () -> Void) -> Void)?
+    /// Deterministic persistence seam. Returning non-nil replaces the filesystem write with that
+    /// result; production leaves it nil. The serialized snapshot is handed over after the task
+    /// lock is released so an injected concurrent mutation exercises the real save window.
+    static var storeSaveInterceptorForTesting: ((Data) -> Bool?)?
+    /// Overrides only the positive ingress evidence. Nil uses current process-bound terminal and
+    /// Coordinator facts; an empty array is a deliberate unknown/offline fixture.
+    static var rootIdentityEvidenceForTesting: [RootIdentityEvidence]?
     /// Test seam: observes the warning decision before optional terminal delivery.
     static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
     /// Test receipt for the semantic root-notification boundary. The terminal transport itself
@@ -2863,6 +2952,38 @@ enum Orchestrator {
         /// else: `unknown` and `ok` already dispatch without this, and `low` only ever warns.
         var ignoreQuota = false
         var attachSessionId: String?
+    }
+
+    /// Positive evidence that a caller put a physical terminal id where the task protocol needs
+    /// the assistant process's conversation id. Its assistant is an observed fact, not filtered
+    /// through the caller's label. Empty or conflicting evidence is deliberately inconclusive:
+    /// new dispatches keep the nullable/manual-poll compatibility instead of guessing an identity.
+    struct RootIdentityEvidence: Equatable {
+        let source: String
+        let terminalID: String
+        let canonicalSessionID: String
+        let assistant: Assistant
+    }
+
+    static func rootIdentityRefusal(claimed: String?, evidence: [RootIdentityEvidence]) -> Reply? {
+        guard let claimed, !claimed.isEmpty else { return nil }
+        let matching = evidence.filter {
+            $0.terminalID == claimed && $0.canonicalSessionID != claimed
+        }
+        let tuples = Set(matching.map {
+            $0.canonicalSessionID + "\u{0}" + $0.assistant.rawValue
+        })
+        guard tuples.count == 1, let proof = matching.first else { return nil }
+        return .refused(
+            status: 422, code: "root_identity_is_terminal",
+            message: "root.session_id is a physical terminal id; use the assistant process-bound "
+                + "conversation id returned as canonical_root_session_id, or null to poll.",
+            extra: [
+                "supplied_root_session_id": claimed,
+                "canonical_root_session_id": proof.canonicalSessionID,
+                "canonical_root_assistant": proof.assistant.rawValue,
+                "evidence": matching.map(\.source).sorted(),
+            ])
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -4155,6 +4276,15 @@ enum Orchestrator {
         case .bad(let why): return .refused(422, "bad_task", why)
         case .ok(let ok): made = ok
         }
+        let identityEvidence = rootIdentityEvidenceForTesting
+            ?? activeRootIdentityEvidence(claimed: made.rootSessionId)
+                + Coordinator.rootIdentityEvidence(claimed: made.rootSessionId)
+        if let refusal = rootIdentityRefusal(claimed: made.rootSessionId,
+                                             evidence: identityEvidence) {
+            refundDispatchRate(rateTicket)
+            return refusal
+        }
+
         let rootBinding = canonicalRootSession(
             made.rootSessionId, assistant: made.rootAssistant,
             among: rootTargets(), sessionID: Transcript.sessionID(of:))
@@ -6322,6 +6452,29 @@ enum Orchestrator {
         }
         let rearmed = rearmLingers()
         if !orphaned.isEmpty || !interruptedHandoffs.isEmpty || rearmed { save() }
+        lock.lock()
+        let beforeCompletionRecovery = tasks
+        lock.unlock()
+        let completionRecovery = reconcileCompletionOutbox(
+            taskID: nil, includeDeadLetters: false, now: Date())
+        let resultRecovery = reconcileResultReceipts(taskID: nil,
+                                                     limit: legacyCompletionBatchLimit)
+        let recoveryChanged = completionRecovery.changed || !resultRecovery.isEmpty
+        let recoveryPersisted = !recoveryChanged || save()
+        if !recoveryPersisted {
+            // A due envelope that exists only in memory must never become eligible on the next
+            // timer beat. Startup owns this phase, so restoring the just-loaded snapshot is safe.
+            lock.lock()
+            tasks = beforeCompletionRecovery
+            reindex()
+            lock.unlock()
+            RemoteAuth.audit("orchestrator.completion.defer", [
+                "why": "startup_store_failed",
+            ])
+        } else if recoveryChanged {
+            markCompletionEnvelopesPersisted(completionRecovery.changedTaskIDs)
+        }
+        if recoveryPersisted { scheduleCompletionPump() }
         scheduleSerializePump()
     }
 
@@ -6416,6 +6569,7 @@ enum Orchestrator {
         // tab, the last task of a fan-out leaves nothing in `liveIDs` at all — and a batch that
         // announces only while something is still on the list is one that never announces.
         sweepBatches()
+        scheduleCompletionPump()
 
         for id in liveHandoffs { scheduleHandoffStep(id) }
         if fromTimer, !liveHandoffs.isEmpty { SessionWatch.shared.nudge() }
@@ -7422,8 +7576,10 @@ enum Orchestrator {
               RemoteAuth.constantTimeEquals(task.secretHash, hash(ofSecret: secret)) else {
             // Somebody wrote a result they could not have been asked for. Once in the log is
             // enough — the file is left alone so the evidence is where the log says it is.
-            if !badResults.contains(task.id) {
-                badResults.insert(task.id)
+            lock.lock()
+            let first = badResults.insert(task.id).inserted
+            lock.unlock()
+            if first {
                 RemoteAuth.audit("orchestrator.result", ["task": task.id, "ok": "0", "why": "bad_secret"])
             }
             return nil
@@ -7450,6 +7606,13 @@ enum Orchestrator {
         task.queuedSecret = nil
         if let summary { task.summary = summary }
         if !artifacts.isEmpty { task.artifacts = artifacts }
+        if task.completionDelivery == nil,
+           task.parentTaskId != nil || task.rootSessionId != nil {
+            let now = task.finishedAt ?? Date()
+            task.completionDelivery = CompletionDelivery(
+                noticeID: UUID().uuidString.lowercased(), created: now,
+                state: .pending, attempts: 0, nextRetryAt: now, persisted: false)
+        }
         if let verification { task.verification = verification }
         secrets.removeValue(forKey: taskID)
         let linger = Config.shared.orchestratorChildLinger
@@ -7510,6 +7673,7 @@ enum Orchestrator {
             if task.summary == nil { task.summary = result.summary }
             if task.artifacts.isEmpty { task.artifacts = result.artifacts }
             if task.verification == nil { task.verification = result.verification }
+            task.resultVerifiedAt = task.resultVerifiedAt ?? Date()
             tasks[taskID] = task
             lock.unlock()
         }
@@ -7591,10 +7755,29 @@ enum Orchestrator {
     /// Main-thread tail of finalization, after any worktree receipt has arrived.
     private static func completeFinalization(_ task: Task, outcome: State,
                                              pumpQueue: Bool) {
-        save()
+        let persisted = save()
         RemoteAuth.audit("orchestrator.finish", ["task": task.id, "state": outcome.rawValue])
         RemoteServer.shared.broadcastOrchestrator()
-        notifyRoot(task)
+        if persisted {
+            if let noticeID = task.completionDelivery?.noticeID {
+                markCompletionEnvelopePersisted(taskID: task.id, noticeID: noticeID)
+            }
+            scheduleCompletionPump()
+        } else if task.completionDelivery != nil {
+            // The terminal outcome and its envelope were one attempted snapshot. If that write
+            // failed, leave no in-memory-only envelope for a later beat to deliver. Explicit
+            // reconciliation (or the next restart) can create and persist a fresh envelope.
+            lock.lock()
+            if var current = tasks[task.id],
+               current.completionDelivery?.noticeID == task.completionDelivery?.noticeID {
+                current.completionDelivery = nil
+                tasks[task.id] = current
+            }
+            lock.unlock()
+            RemoteAuth.audit("orchestrator.completion.defer", [
+                "task": task.id, "why": "store_failed",
+            ])
+        }
         let scheduleFailure = task.scheduleID != nil && task.scheduleNotifyFailure
             && (outcome == .failure || outcome == .timeout || outcome == .spawnFailed)
         // A schedule failure has its own immediate, policy-controlled notification. Do not also
@@ -7861,7 +8044,8 @@ enum Orchestrator {
     /// The semantic completion message and its human/model-readable fallback. Kept pure so the
     /// terminal delivery, both transcript readers, and tests all meet at one boundary.
     static func taskFinishedNotice(for task: Task, audience: ClawdlineMessage.Audience,
-                                   outstanding: Int = 0) -> ClawdlineMessage.Notice? {
+                                   outstanding: Int = 0,
+                                   noticeID: String? = nil) -> ClawdlineMessage.Notice? {
         guard let state = noticeState(for: task.state) else { return nil }
         let short = String(task.id.prefix(8))
         let resultPath = "/tmp/.clawdline/\(task.id)/result.json"
@@ -7876,6 +8060,11 @@ enum Orchestrator {
         body += timeoutClaimNotice(for: task)
         body += untouchedClaimsNotice(for: task)
         body += landingNotice(for: task)
+        let acknowledgement = noticeID.map { id -> ClawdlineMessage.CompletionAcknowledgement in
+            let path = "/v1/orchestrator/tasks/\(task.id)/completion/ack"
+            body += " — after observing, ACK notice \(id) at \(path)"
+            return .init(noticeID: id, path: path)
+        }
         return ClawdlineMessage.Notice(
             event: .taskFinished(
                 task: .init(id: task.id, title: task.title), state: state,
@@ -7884,8 +8073,49 @@ enum Orchestrator {
                 claimsReleased: task.state == .timeout && !task.claims.isEmpty,
                 childMayStillWrite: task.state == .timeout && !task.claims.isEmpty
             ),
-            body: body
+            body: body,
+            completionAcknowledgement: acknowledgement
         )
+    }
+
+    static func completionRetryDelay(after attempts: Int) -> TimeInterval {
+        guard attempts > 0 else { return 0 }
+        let exponent = min(attempts - 1, 10)
+        return min(5 * pow(2, Double(exponent)), completionRetryMaximum)
+    }
+
+    static func completionTransition(_ original: CompletionDelivery, at now: Date,
+                                     result: CompletionTransportResult)
+        -> CompletionDelivery {
+        guard original.state != .acknowledged, original.state != .deadLetter else {
+            return original
+        }
+        var delivery = original
+        delivery.attempts += 1
+        delivery.lastAttemptAt = now
+        switch result {
+        case .delivered:
+            delivery.state = .delivered
+            delivery.transportDeliveredAt = delivery.transportDeliveredAt ?? now
+            delivery.lastError = nil
+            delivery.nextRetryAt = now.addingTimeInterval(
+                completionRetryDelay(after: delivery.attempts))
+        case .failed(let code, let message):
+            delivery.lastError = CompletionFailure(code: code,
+                message: String(message.prefix(1_000)), at: now)
+            if delivery.attempts >= completionAttemptLimit {
+                delivery.state = .deadLetter
+                delivery.deadLetterAt = now
+                delivery.nextRetryAt = nil
+            } else {
+                // A prior transport success remains a fact even when its unacknowledged retry
+                // fails. `last_error` and `next_retry_at` say why it is still pending.
+                if delivery.transportDeliveredAt == nil { delivery.state = .pending }
+                delivery.nextRetryAt = now.addingTimeInterval(
+                    completionRetryDelay(after: delivery.attempts))
+            }
+        }
+        return delivery
     }
 
     private static func notifyRoot(_ task: Task) {
@@ -7929,6 +8159,536 @@ enum Orchestrator {
         if !admitted {
             Log.write("orchestrator: could not send \(label) — terminal broker full")
         }
+    }
+
+    private static var completionPumpScheduled = false
+    private static var completionPumpGeneration = 0
+
+    private static func markCompletionEnvelopePersisted(taskID: String, noticeID: String) {
+        lock.lock()
+        if var task = tasks[taskID], var delivery = task.completionDelivery,
+           delivery.noticeID == noticeID {
+            delivery.persisted = true
+            task.completionDelivery = delivery
+            tasks[taskID] = task
+        }
+        lock.unlock()
+    }
+
+    private static func markCompletionEnvelopesPersisted(_ taskIDs: [String]) {
+        lock.lock()
+        for id in taskIDs {
+            guard var task = tasks[id], var delivery = task.completionDelivery else { continue }
+            delivery.persisted = true
+            task.completionDelivery = delivery
+            tasks[id] = task
+        }
+        lock.unlock()
+    }
+
+    static func scheduleCompletionPump() {
+        lock.lock()
+        guard !completionPumpScheduled else { lock.unlock(); return }
+        completionPumpScheduled = true
+        let generation = completionPumpGeneration
+        lock.unlock()
+        let work = { completionPump(generation: generation) }
+        if let enqueue = completionPumpEnqueuerForTesting {
+            enqueue(work)
+        } else {
+            completionDeliveryQueue.async(execute: work)
+        }
+    }
+
+    private static func completionPump(generation: Int, now: Date = Date()) {
+        lock.lock()
+        guard generation == completionPumpGeneration else { lock.unlock(); return }
+        lock.unlock()
+        defer {
+            lock.lock()
+            if generation == completionPumpGeneration { completionPumpScheduled = false }
+            lock.unlock()
+        }
+        guard Config.shared.orchestratorNotifyRoot else { return }
+        // Every scheduling site already has a loaded registry. Calling `load()` here would let a
+        // superseded test/restart generation repopulate memory after `forget()` invalidated it.
+        lock.lock()
+        let due = tasks.values.filter { task in
+            guard let delivery = task.completionDelivery,
+                  delivery.persisted,
+                  delivery.state != .acknowledged, delivery.state != .deadLetter else {
+                return false
+            }
+            return delivery.nextRetryAt.map { $0 <= now } ?? false
+        }.sorted {
+            ($0.completionDelivery?.nextRetryAt ?? .distantFuture)
+                < ($1.completionDelivery?.nextRetryAt ?? .distantFuture)
+        }.prefix(8).compactMap { task in
+            task.completionDelivery.map { (task.id, $0.noticeID) }
+        }
+        lock.unlock()
+        let inventory = due.isEmpty ? [] : rootTargets()
+        for (id, noticeID) in due {
+            lock.lock()
+            let currentGeneration = completionPumpGeneration
+            lock.unlock()
+            guard currentGeneration == generation else { break }
+            let attempt = {
+                _ = completionAttempt(
+                    taskID: id, now: Date(), expectedNoticeID: noticeID,
+                    expectedPumpGeneration: generation,
+                    deliver: { productionCompletionDelivery($0, $1, targets: inventory) })
+            }
+            // An attempt that will type into a terminal is admitted by the same bounded lane as
+            // every other terminal write; one that cannot resolve a recipient never reaches a
+            // terminal at all, so it runs here and records its typed refusal without spending a
+            // slot. Admission being refused is backpressure, not a delivery failure: the attempt
+            // is not made, no attempt is counted against the retry budget, and the next beat
+            // brings it back. Counting it would let a busy terminal exhaust the budget of a task
+            // whose root was never even asked.
+            guard let task = held(id),
+                  case .found(let recipient) = completionRecipient(
+                      task, targets: inventory,
+                      identity: RemoteServer.sessionWorkIdentity) else {
+                attempt()
+                continue
+            }
+            if !RemoteServer.shared.enqueueTerminalCommand(channel: recipient.id, attempt) {
+                RemoteAuth.audit("orchestrator.completion.deferred",
+                                 ["task": id, "why": "terminal_busy"])
+            }
+        }
+    }
+
+    /// Deterministic failure-injection seam. The current delivery is copied, the terminal call is
+    /// made without the registry lock, then the transition is committed only if the same notice
+    /// is still unacknowledged. An ACK racing the transport therefore always wins.
+    @discardableResult
+    static func completionAttempt(taskID: String, now: Date,
+                                  expectedNoticeID: String? = nil,
+                                  expectedPumpGeneration: Int? = nil,
+                                  deliver: (Task, String) -> CompletionTransportResult) -> Bool {
+        if let expectedPumpGeneration {
+            lock.lock()
+            let isCurrentPump = expectedPumpGeneration == completionPumpGeneration
+            lock.unlock()
+            guard isCurrentPump else { return false }
+        }
+        let task: Task?
+        if let expectedPumpGeneration {
+            // A scheduled pump must never call a lazy loader after its generation was revoked.
+            // Result receipts are reconciled at finalization, startup, and the explicit endpoint;
+            // delivery itself only consumes the already-loaded durable envelope.
+            lock.lock()
+            task = expectedPumpGeneration == completionPumpGeneration ? tasks[taskID] : nil
+            lock.unlock()
+        } else {
+            if !reconcileResultReceipts(taskID: taskID, limit: 1).isEmpty { _ = save() }
+            task = held(taskID)
+        }
+        guard let task, let delivery = task.completionDelivery,
+              delivery.persisted,
+              expectedNoticeID == nil || expectedNoticeID == delivery.noticeID,
+              delivery.state != .acknowledged, delivery.state != .deadLetter,
+              delivery.nextRetryAt.map({ $0 <= now }) == true else { return false }
+        if delivery.attempts >= completionAttemptLimit {
+            var exhausted = delivery
+            exhausted.state = .deadLetter
+            exhausted.nextRetryAt = nil
+            exhausted.deadLetterAt = now
+            exhausted.lastError = CompletionFailure(
+                code: .acknowledgementTimeout,
+                message: "No root acknowledgement arrived within the bounded retry budget.",
+                at: now)
+            var exhaustedStored = false
+            lock.lock()
+            if (expectedPumpGeneration == nil
+                    || expectedPumpGeneration == completionPumpGeneration),
+               var current = tasks[taskID],
+               current.completionDelivery?.noticeID == delivery.noticeID,
+               current.completionDelivery?.state != .acknowledged {
+                current.completionDelivery = exhausted
+                tasks[taskID] = current
+                exhaustedStored = true
+            }
+            lock.unlock()
+            guard exhaustedStored else { return false }
+            _ = save()
+            return true
+        }
+        let audience: ClawdlineMessage.Audience = task.parentTaskId == nil ? .root : .parent
+        let outstanding = task.parentTaskId.map { liveTasks(under: [$0]).count } ?? 0
+        guard let notice = taskFinishedNotice(for: task, audience: audience,
+                                              outstanding: outstanding,
+                                              noticeID: delivery.noticeID) else { return false }
+        let result = deliver(task, ClawdlineMessage.encode(notice))
+        let advanced = completionTransition(delivery, at: now, result: result)
+        lock.lock()
+        if let expectedPumpGeneration,
+           expectedPumpGeneration != completionPumpGeneration {
+            lock.unlock()
+            return false
+        }
+        guard var current = tasks[taskID],
+              current.completionDelivery?.noticeID == delivery.noticeID,
+              current.completionDelivery?.state != .acknowledged else {
+            lock.unlock()
+            return false
+        }
+        current.completionDelivery = advanced
+        tasks[taskID] = current
+        lock.unlock()
+        _ = save()
+        let error = advanced.lastError?.code.rawValue ?? "none"
+        RemoteAuth.audit("orchestrator.completion.attempt", [
+            "task": taskID, "notice": delivery.noticeID,
+            "attempt": String(advanced.attempts), "state": advanced.state.rawValue,
+            "error": error,
+        ])
+        DispatchQueue.main.async { RemoteServer.shared.broadcastOrchestrator() }
+        return true
+    }
+
+    private static func productionCompletionDelivery(_ task: Task, _ line: String)
+        -> CompletionTransportResult {
+        productionCompletionDelivery(task, line, targets: rootTargets())
+    }
+
+    /// `rootTargets()` hops to the main queue and blocks, so a pump pass reads the inventory once
+    /// and hands the same view to every task it delivers. One snapshot per pass is also the more
+    /// honest subject: the recipient a task is admitted against and the recipient it is typed
+    /// into are then the same reading, and a terminal that appears or leaves mid-pass shows up as
+    /// a typed refusal on the next one rather than as a disagreement inside this one.
+    private static func productionCompletionDelivery(
+        _ task: Task, _ line: String, targets: [TargetSession]
+    ) -> CompletionTransportResult {
+        completionDelivery(
+            task, line, targets: targets, identity: RemoteServer.sessionWorkIdentity,
+            isChoosing: Targets.isChoosing, send: { Targets.send($0, to: $1) })
+    }
+
+    /// Production-shaped completion seam. Tests supply the observed terminal inventory and
+    /// transport, while the live path above supplies those same facts from SessionWatch/Targets.
+    /// Which terminal this completion is owed to, decided before anything is typed.
+    ///
+    /// Split out of the delivery below because the attempt has to name that terminal as its
+    /// broker channel, and the terminal is not known until the parent/root resolution has run.
+    /// Sending outside the terminal broker would put an Apple Event for a notice beside the
+    /// bounded lane every other terminal write goes through, which is the one thing the lane
+    /// exists to prevent. Pure: it reads the registry and the inventory it is handed, and
+    /// changes neither.
+    /// Not `Result`: a refusal here is not an error to be thrown and handled, it is already the
+    /// transport's own typed answer, and the caller's job is to return it unchanged.
+    enum CompletionRecipient {
+        case found(TargetSession)
+        case refused(CompletionTransportResult)
+    }
+
+    static func completionRecipient(
+        _ task: Task, targets: [TargetSession],
+        identity: (TargetSession) -> SessionWorkIdentity
+    ) -> CompletionRecipient {
+        let recipient: TargetSession
+        if let parentID = task.parentTaskId {
+            guard let parent = held(parentID), !parent.state.isTerminal,
+                  let terminalID = parent.childTerminalId else {
+                return .refused(.failed(.rootMissing,
+                    "The parent task session is no longer available."))
+            }
+            guard let found = targets.first(where: { $0.id == terminalID }) else {
+                return .refused(.failed(.rootMissing,
+                    "The parent task terminal is not in inventory."))
+            }
+            guard taskMatchesCurrentSession(parent, identity: identity(found)) else {
+                return .refused(.failed(.identityStale,
+                    "The parent terminal now belongs to a different process."))
+            }
+            recipient = found
+        } else {
+            guard let storedRoot = task.rootSessionId else {
+                return .refused(.failed(.rootMissing,
+                    "This task has no root conversation to notify."))
+            }
+            let historicalAssistant = task.rootAssistant ?? .claude
+            let rebound = Coordinator.deliveryBinding(
+                for: storedRoot, historicalAssistant: historicalAssistant,
+                taskCreated: task.created)
+            let deliveryRoot = rebound?.conversationID ?? storedRoot
+            let deliveryAssistant = rebound?.assistant ?? historicalAssistant
+            if let found = target(forRootSession: deliveryRoot, assistant: deliveryAssistant,
+                                  resolution: .task, among: targets,
+                                  sessionID: { identity($0).conversationID }) {
+                recipient = found
+            } else {
+                let physicalCollision = targets.contains { target in
+                    target.id == storedRoot || (identity(target).conversationID == deliveryRoot
+                        && target.assistant != deliveryAssistant)
+                }
+                return .refused(.failed(physicalCollision ? .identityStale : .rootMissing,
+                    physicalCollision
+                    ? "The stored root identity is physical, stale, or assistant-mismatched."
+                    : "No active process currently proves the root conversation identity."))
+            }
+        }
+        return .found(recipient)
+    }
+
+    static func completionDelivery(
+        _ task: Task, _ line: String, targets: [TargetSession],
+        identity: (TargetSession) -> SessionWorkIdentity,
+        isChoosing: (TargetSession) -> Bool,
+        send: (String, TargetSession) -> String?
+    ) -> CompletionTransportResult {
+        let recipient: TargetSession
+        switch completionRecipient(task, targets: targets, identity: identity) {
+        case .refused(let result): return result
+        case .found(let found): recipient = found
+        }
+        guard !isChoosing(recipient) else {
+            return .failed(.rootChoosing, "The root is showing a chooser; no text was sent.")
+        }
+        guard let failure = send(line, recipient) else { return .delivered }
+        let lower = failure.lowercased()
+        if recipient.backend == .iterm, failure == L.t.itermBusy {
+            return .failed(.itermModal, failure)
+        }
+        if lower.contains("timed out") || lower.contains("timeout")
+            || lower.contains("did not respond") {
+            return .failed(.terminalTimeout, failure)
+        }
+        return .failed(.transportFailed, failure)
+    }
+
+    static func acknowledgeCompletion(taskID: String, noticeID: String,
+                                      now: Date = Date()) -> Reply {
+        guard UUID(uuidString: noticeID) != nil else {
+            return .refused(400, "bad_request", "notice_id must be a UUID.")
+        }
+        load()
+        lock.lock()
+        guard var task = tasks[taskID] else {
+            lock.unlock()
+            return .refused(404, "not_found", "No task named \(taskID).")
+        }
+        guard var delivery = task.completionDelivery else {
+            lock.unlock()
+            return .refused(409, "completion_not_reconciled",
+                            "This terminal task has no durable completion envelope; reconcile it "
+                                + "or poll result.json.")
+        }
+        guard delivery.persisted else {
+            lock.unlock()
+            return .refused(409, "completion_not_persisted",
+                            "This completion envelope has not reached durable storage yet; retry.")
+        }
+        guard RemoteAuth.constantTimeEquals(delivery.noticeID, noticeID.lowercased()) else {
+            lock.unlock()
+            return .refused(409, "completion_notice_mismatch",
+                            "The notice id does not identify this task's completion envelope.")
+        }
+        if delivery.state == .acknowledged {
+            lock.unlock()
+            return .ok(["ok": true, "acknowledged": true, "changed": false,
+                        "notice_id": delivery.noticeID])
+        }
+        let previousDelivery = delivery
+        delivery.state = .acknowledged
+        delivery.observedAt = delivery.observedAt ?? now
+        delivery.acknowledgedAt = now
+        delivery.nextRetryAt = nil
+        delivery.lastError = nil
+        task.completionDelivery = delivery
+        tasks[taskID] = task
+        lock.unlock()
+        guard save() else {
+            lock.lock()
+            // Compare-and-swap only the transition this request installed. Worktree refresh,
+            // landing, close and every other field may have advanced while the atomic store write
+            // was in flight; replacing the whole earlier Task would silently erase those facts.
+            if var latest = tasks[taskID],
+               let current = latest.completionDelivery,
+               current.noticeID == delivery.noticeID,
+               current.state == .acknowledged,
+               current.observedAt == delivery.observedAt,
+               current.acknowledgedAt == delivery.acknowledgedAt {
+                latest.completionDelivery = previousDelivery
+                tasks[taskID] = latest
+            }
+            lock.unlock()
+            return .refused(500, "completion_store_failed",
+                            "The acknowledgement could not be persisted; retry it.")
+        }
+        RemoteAuth.audit("orchestrator.completion.ack", [
+            "task": taskID, "notice": delivery.noticeID,
+        ])
+        DispatchQueue.main.async { RemoteServer.shared.broadcastOrchestrator() }
+        return .ok(["ok": true, "acknowledged": true, "changed": true,
+                    "notice_id": delivery.noticeID])
+    }
+
+    /// Machine-readable outbox view. `pendingOnly` includes transport-delivered-but-unacknowledged
+    /// envelopes; transport success is not observation.
+    static func completionRecords(pendingOnly: Bool = false) -> [[String: Any]] {
+        load()
+        lock.lock()
+        let values = tasks.values.filter { task in
+            guard let delivery = task.completionDelivery else { return false }
+            return !pendingOnly
+                || (delivery.state != .acknowledged && delivery.state != .deadLetter)
+        }.sorted { $0.created < $1.created }
+        lock.unlock()
+        return values.compactMap { task in
+            guard let delivery = task.completionDelivery else { return nil }
+            var row: [String: Any] = [
+                "task_id": task.id, "task_state": task.state.rawValue,
+                "accepted_at": Int(task.created.timeIntervalSince1970),
+                "executed_at": task.finishedAt.map { Int($0.timeIntervalSince1970) } as Any? ?? NSNull(),
+                "result_verified_at": task.resultVerifiedAt.map {
+                    Int($0.timeIntervalSince1970)
+                } as Any? ?? NSNull(),
+                "delivery": completionRecord(delivery),
+            ]
+            if let parent = task.parentTaskId { row["parent_task_id"] = parent }
+            return row
+        }
+    }
+
+    private static func completionRecord(_ delivery: CompletionDelivery) -> [String: Any] {
+        var out = stored(delivery)
+        let optionalDates = ["next_retry_at", "last_attempt_at",
+                    "transport_delivered_at", "observed_at", "acknowledged_at",
+                    "dead_letter_at"]
+        for key in ["created_at"] + optionalDates {
+            if let raw = out[key] as? Double { out[key] = Int(raw) }
+        }
+        for key in optionalDates where out[key] == nil { out[key] = NSNull() }
+        if var error = out["last_error"] as? [String: Any],
+           let raw = error["at"] as? Double {
+            error["at"] = Int(raw)
+            out["last_error"] = error
+        }
+        if out["last_error"] == nil { out["last_error"] = NSNull() }
+        return out
+    }
+
+    private static func reconcileCompletionOutbox(taskID: String?, includeDeadLetters: Bool,
+                                                  now: Date)
+        -> (created: Int, rearmed: Int, limited: Bool, changed: Bool,
+            changedTaskIDs: [String]) {
+        load()
+        let floor = now.addingTimeInterval(-legacyCompletionLookback)
+        var created = 0
+        var rearmed = 0
+        var eligible = 0
+        var changedTaskIDs: [String] = []
+        lock.lock()
+        let ordered = tasks.values.sorted {
+            ($0.finishedAt ?? $0.created) > ($1.finishedAt ?? $1.created)
+        }
+        for snapshot in ordered {
+            guard taskID == nil || snapshot.id == taskID,
+                  snapshot.state.isTerminal,
+                  snapshot.parentTaskId != nil || snapshot.rootSessionId != nil else { continue }
+            var task = snapshot
+            if task.completionDelivery == nil {
+                guard let finished = task.finishedAt, finished >= floor else { continue }
+                eligible += 1
+                guard created + rearmed < legacyCompletionBatchLimit else { continue }
+                task.completionDelivery = CompletionDelivery(
+                    noticeID: UUID().uuidString.lowercased(), created: now,
+                    state: .pending, attempts: 0, nextRetryAt: now,
+                    legacyReconciled: true, persisted: false)
+                tasks[task.id] = task
+                created += 1
+                changedTaskIDs.append(task.id)
+            } else if includeDeadLetters,
+                      var delivery = task.completionDelivery,
+                      delivery.state == .deadLetter {
+                eligible += 1
+                guard created + rearmed < legacyCompletionBatchLimit else { continue }
+                delivery.state = .pending
+                delivery.attempts = 0
+                delivery.nextRetryAt = now
+                delivery.lastAttemptAt = nil
+                delivery.lastError = nil
+                delivery.deadLetterAt = nil
+                delivery.persisted = false
+                task.completionDelivery = delivery
+                tasks[task.id] = task
+                rearmed += 1
+                changedTaskIDs.append(task.id)
+            }
+        }
+        lock.unlock()
+        return (created, rearmed, eligible > created + rearmed,
+                created > 0 || rearmed > 0, changedTaskIDs)
+    }
+
+    /// Best-effort legacy and `/complete` follow-up: a result file can appear after the terminal
+    /// transition. Only a secret-verified file advances this receipt, and the scan is bounded so
+    /// reconciliation never turns into an unbounded scratch-root walk.
+    private static func reconcileResultReceipts(taskID: String?, limit: Int) -> [String] {
+        lock.lock()
+        let candidates = tasks.values.filter {
+            ($0.state.isTerminal && $0.resultVerifiedAt == nil)
+                && (taskID == nil || $0.id == taskID)
+        }.sorted { ($0.finishedAt ?? $0.created) > ($1.finishedAt ?? $1.created) }
+        lock.unlock()
+        var changed: [String] = []
+        for task in candidates.prefix(max(0, limit)) where readResult(of: task) != nil {
+            lock.lock()
+            if var current = tasks[task.id], current.resultVerifiedAt == nil {
+                current.resultVerifiedAt = Date()
+                tasks[task.id] = current
+                changed.append(task.id)
+            }
+            lock.unlock()
+        }
+        return changed
+    }
+
+    static func reconcileCompletions(taskID: String?, includeDeadLetters: Bool,
+                                     now: Date = Date()) -> Reply {
+        if let taskID, !isTaskID(taskID) {
+            return .refused(400, "bad_request", "task_id must be a lowercase UUID.")
+        }
+        if let taskID, held(taskID) == nil {
+            return .refused(404, "not_found", "No task named \(taskID).")
+        }
+        lock.lock()
+        let beforeRecovery = tasks
+        lock.unlock()
+        let outcome = reconcileCompletionOutbox(taskID: taskID,
+                                                includeDeadLetters: includeDeadLetters, now: now)
+        let resultReceipts = reconcileResultReceipts(taskID: taskID,
+                                                     limit: legacyCompletionBatchLimit)
+        if outcome.changed || !resultReceipts.isEmpty {
+            guard save() else {
+                lock.lock()
+                for id in outcome.changedTaskIDs {
+                    if var current = tasks[id], current.completionDelivery?.persisted == false {
+                        current.completionDelivery = beforeRecovery[id]?.completionDelivery
+                        tasks[id] = current
+                    }
+                }
+                for id in resultReceipts {
+                    if var current = tasks[id] {
+                        current.resultVerifiedAt = beforeRecovery[id]?.resultVerifiedAt
+                        tasks[id] = current
+                    }
+                }
+                lock.unlock()
+                return .refused(500, "completion_store_failed",
+                                "The reconciled completion envelopes could not be persisted.")
+            }
+            markCompletionEnvelopesPersisted(outcome.changedTaskIDs)
+            scheduleCompletionPump()
+        }
+        return .ok(["ok": true, "created": outcome.created, "rearmed": outcome.rearmed,
+                    "result_verified": resultReceipts.count,
+                    "limited": outcome.limited,
+                    "batch_limit": legacyCompletionBatchLimit,
+                    "lookback_seconds": Int(legacyCompletionLookback)])
     }
 
     /// Tell both roots that two live tasks can touch the same directory. Advisory and one-shot:
@@ -8822,7 +9582,7 @@ enum Orchestrator {
         return stored(envelope)
     }
 
-    static func saveForTesting() { save() }
+    static func saveForTesting() { _ = save() }
 
     /// The stored fields only — safe off the main thread, used where a route already holds the
     /// answer and only needs its shape.
@@ -8848,6 +9608,15 @@ enum Orchestrator {
     /// only through ordinary dispatch registration on the remote serial queue.
     static func holdScheduleTaskForTesting(_ task: Task) {
         lock.lock(); tasks[task.id] = task; loaded = true; lock.unlock()
+    }
+
+    static func mutateTaskForTesting(_ id: String, _ mutate: (inout Task) -> Void) {
+        lock.lock()
+        if var task = tasks[id] {
+            mutate(&task)
+            tasks[id] = task
+        }
+        lock.unlock()
     }
 
     static func handledScheduleFireForTesting(_ id: String) -> Date? {
@@ -8906,6 +9675,9 @@ enum Orchestrator {
         if let at = task.spawnedAt { out["spawnedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.briefedAt { out["briefedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.finishedAt { out["finishedAt"] = Int(at.timeIntervalSince1970) }
+        if let at = task.resultVerifiedAt {
+            out["resultVerifiedAt"] = Int(at.timeIntervalSince1970)
+        }
         var root: [String: Any] = [:]
         if let id = task.rootSessionId { root["sessionId"] = id }
         if let assistant = task.rootAssistant { root["assistant"] = assistant.rawValue }
@@ -8934,6 +9706,9 @@ enum Orchestrator {
             out["terminal_intervention"] = payload
         }
         if let summary = task.summary { out["summary"] = summary }
+        if let delivery = task.completionDelivery {
+            out["completion_delivery"] = completionRecord(delivery)
+        }
         if let session = task.attachSessionId {
             out["attached"] = true
             out["attachSession"] = session
@@ -9386,7 +10161,11 @@ enum Orchestrator {
         }
     }
 
-    private static func save() {
+    /// Atomically replace the registry and report whether the exact snapshot reached disk. Most
+    /// callers can remain best-effort; completion delivery is the exception and will not touch a
+    /// terminal unless this returns true for the outcome-plus-outbox snapshot.
+    @discardableResult
+    private static func save() -> Bool {
         storeSaveLock.lock(); defer { storeSaveLock.unlock() }
         lock.lock()
         reindex()
@@ -9408,14 +10187,29 @@ enum Orchestrator {
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
             Log.write("orchestrator: could not serialise the store, nothing written")
-            return
+            return false
+        }
+        if let intercepted = storeSaveInterceptorForTesting?(data) { return intercepted }
+        do {
+            try FileManager.default.createDirectory(at: RemoteAuth.directory,
+                                                    withIntermediateDirectories: true)
+            try data.write(to: storeURL, options: .atomic)
+        } catch {
+            Log.write("orchestrator: could not persist the store — \(error)")
+            return false
         }
         try? FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         try? data.write(to: storeURL, options: .atomic)
         // Every time, not only at creation — same reason as `RemoteAuth.save`.
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                               ofItemAtPath: storeURL.path)
+        do {
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: storeURL.path)
+            return true
+        } catch {
+            Log.write("orchestrator: could not protect the store — \(error)")
+            return false
+        }
     }
 
     private static func landingRecord(_ landing: Landing) -> [String: Any] {
@@ -9495,6 +10289,9 @@ enum Orchestrator {
         if let at = task.spawnedAt { out["spawned_at"] = at.timeIntervalSince1970 }
         if let at = task.briefedAt { out["briefed_at"] = at.timeIntervalSince1970 }
         if let at = task.finishedAt { out["finished_at"] = at.timeIntervalSince1970 }
+        if let at = task.resultVerifiedAt {
+            out["result_verified_at"] = at.timeIntervalSince1970
+        }
         if let v = task.rootSessionId { out["root_session"] = v }
         if let v = task.rootAssistant { out["root_assistant"] = v.rawValue }
         if let v = task.rootLabel { out["root_label"] = v }
@@ -9555,6 +10352,9 @@ enum Orchestrator {
         if let v = task.transcriptPath { out["transcript"] = v }
         if task.transcriptProven { out["transcript_proven"] = true }
         if let v = task.summary { out["summary"] = v }
+        if let delivery = task.completionDelivery {
+            out["completion_delivery"] = stored(delivery)
+        }
         if let verification = task.verification {
             out["verification"] = verificationRecord(verification)
         }
@@ -9567,6 +10367,79 @@ enum Orchestrator {
             out["usage"] = counts
         }
         return out
+    }
+
+    static func stored(_ delivery: CompletionDelivery) -> [String: Any] {
+        var out: [String: Any] = [
+            "notice_id": delivery.noticeID,
+            "created_at": delivery.created.timeIntervalSince1970,
+            "state": delivery.state.rawValue,
+            "attempts": delivery.attempts,
+            "legacy_reconciled": delivery.legacyReconciled,
+        ]
+        if let at = delivery.nextRetryAt { out["next_retry_at"] = at.timeIntervalSince1970 }
+        if let at = delivery.lastAttemptAt { out["last_attempt_at"] = at.timeIntervalSince1970 }
+        if let at = delivery.transportDeliveredAt {
+            out["transport_delivered_at"] = at.timeIntervalSince1970
+        }
+        if let at = delivery.observedAt { out["observed_at"] = at.timeIntervalSince1970 }
+        if let at = delivery.acknowledgedAt {
+            out["acknowledged_at"] = at.timeIntervalSince1970
+        }
+        if let failure = delivery.lastError {
+            out["last_error"] = [
+                "code": failure.code.rawValue, "message": failure.message,
+                "at": failure.at.timeIntervalSince1970,
+            ] as [String: Any]
+        }
+        if let at = delivery.deadLetterAt { out["dead_letter_at"] = at.timeIntervalSince1970 }
+        return out
+    }
+
+    static func completionDelivery(from obj: [String: Any]) -> CompletionDelivery? {
+        func date(_ key: String) -> Date? {
+            guard let value = obj[key] as? Double, value.isFinite, value > 0 else { return nil }
+            return Date(timeIntervalSince1970: value)
+        }
+        guard let noticeID = obj["notice_id"] as? String,
+              UUID(uuidString: noticeID) != nil,
+              let created = date("created_at"),
+              let rawState = obj["state"] as? String,
+              let state = CompletionDeliveryState(rawValue: rawState),
+              let attempts = obj["attempts"] as? Int, (0...1_000).contains(attempts)
+        else { return nil }
+        var failure: CompletionFailure?
+        if let row = obj["last_error"] as? [String: Any] {
+            guard let rawCode = row["code"] as? String,
+                  let code = CompletionFailureCode(rawValue: rawCode),
+                  let message = row["message"] as? String, !message.isEmpty,
+                  message.count <= 1_000,
+                  let rawAt = row["at"] as? Double, rawAt.isFinite, rawAt > 0 else { return nil }
+            failure = CompletionFailure(code: code, message: message,
+                                        at: Date(timeIntervalSince1970: rawAt))
+        }
+        let next = date("next_retry_at")
+        let last = date("last_attempt_at")
+        let transported = date("transport_delivered_at")
+        let observed = date("observed_at")
+        let acknowledged = date("acknowledged_at")
+        let dead = date("dead_letter_at")
+        guard (state != .acknowledged || (observed != nil && acknowledged != nil && next == nil)),
+              (state != .deadLetter || (dead != nil && next == nil)),
+              (state != .delivered || transported != nil),
+              (obj["next_retry_at"] == nil || next != nil),
+              (obj["last_attempt_at"] == nil || last != nil),
+              (obj["transport_delivered_at"] == nil || transported != nil),
+              (obj["observed_at"] == nil || observed != nil),
+              (obj["acknowledged_at"] == nil || acknowledged != nil),
+              (obj["dead_letter_at"] == nil || dead != nil),
+              (obj["last_error"] == nil || failure != nil) else { return nil }
+        return CompletionDelivery(
+            noticeID: noticeID.lowercased(), created: created, state: state,
+            attempts: attempts, nextRetryAt: next, lastAttemptAt: last,
+            transportDeliveredAt: transported, observedAt: observed,
+            acknowledgedAt: acknowledged, lastError: failure, deadLetterAt: dead,
+            legacyReconciled: obj["legacy_reconciled"] as? Bool ?? false)
     }
 
     static func stored(_ envelope: HandoffEnvelope) -> [String: Any] {
@@ -9831,6 +10704,8 @@ enum Orchestrator {
         task.spawnedAt = (obj["spawned_at"] as? Double).map(Date.init(timeIntervalSince1970:))
         task.briefedAt = (obj["briefed_at"] as? Double).map(Date.init(timeIntervalSince1970:))
         task.finishedAt = (obj["finished_at"] as? Double).map(Date.init(timeIntervalSince1970:))
+        task.resultVerifiedAt = (obj["result_verified_at"] as? Double)
+            .map(Date.init(timeIntervalSince1970:))
         task.rootSessionId = obj["root_session"] as? String
         task.rootAssistant = (obj["root_assistant"] as? String).flatMap(Assistant.init(rawValue:))
         task.rootLabel = obj["root_label"] as? String
@@ -9956,6 +10831,12 @@ enum Orchestrator {
             task.transcriptProven = false
         }
         task.summary = obj["summary"] as? String
+        if let rawDelivery = obj["completion_delivery"] as? [String: Any] {
+            task.completionDelivery = completionDelivery(from: rawDelivery)
+            if task.completionDelivery == nil {
+                Log.write("orchestrator: ignored invalid completion delivery for task \(task.id)")
+            }
+        }
         task.artifacts = obj["artifacts"] as? [String] ?? []
         task.verification = verification(from: obj["verification"])
         if let counts = obj["usage"] as? [String: Any] {
@@ -10149,6 +11030,20 @@ enum Orchestrator {
         return DispatchQueue.main.sync { SessionWatch.shared.targets }
     }
 
+    private static func activeRootIdentityEvidence(claimed: String?)
+        -> [RootIdentityEvidence] {
+        guard let claimed, !claimed.isEmpty else { return [] }
+        return rootTargets().compactMap { target in
+            guard target.id == claimed, let actualAssistant = target.assistant,
+                  let canonical = Transcript.sessionID(of: target), !canonical.isEmpty else {
+                return nil
+            }
+            return RootIdentityEvidence(source: "active_terminal", terminalID: target.id,
+                                        canonicalSessionID: canonical,
+                                        assistant: actualAssistant)
+        }
+    }
+
     /// Test seam: forget everything in memory.
     static func forget() {
         lock.lock()
@@ -10163,6 +11058,7 @@ enum Orchestrator {
         dispatchTimes = []
         notifyTimes = []
         notifyCredentialFailureTimes = []
+        badResults = []
         handledScheduleFires = [:]
         pendingScheduleFires = [:]
         lastMissedScheduleFires = [:]
@@ -10171,6 +11067,11 @@ enum Orchestrator {
         scheduleWriteTimes = []
         scheduleRunnerForTesting = nil
         scheduleDispatchEnqueuerForTesting = nil
+        completionPumpEnqueuerForTesting = nil
+        storeSaveInterceptorForTesting = nil
+        rootIdentityEvidenceForTesting = nil
+        completionPumpScheduled = false
+        completionPumpGeneration += 1
         workspaceOverlapObserverForTesting = nil
         rootNotificationObserverForTesting = nil
         attachedSenderForTesting = nil

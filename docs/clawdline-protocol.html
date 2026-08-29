@@ -619,6 +619,36 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
 
   <p>Every finalized task carries a <code>usage</code> object, and it is best-effort by construction: harvesting it never blocks a finalize and never fails one. A task that finished is finished whether or not the accounting worked. The numbers come from the ordinary transcript the child left behind, not from anywhere new. A dollar figure is computed only for models with a published per-token price, and is <code>null</code> otherwise — including for plan-billed assistants, where a currency figure would be a made-up number wearing a currency symbol. Tokens are still counted, and that is the honest reading rather than a gap.</p>
 
+  <h3 id="completion-notice">The notice the root is owed, and how it stops</h3>
+  <p>A finished task is a fact on disk. Telling the root about it used to be a send: one line typed
+  into a terminal, once. If that terminal was busy, the app restarting, or the root's process
+  already replaced, the line was gone and the only trace was a <code>result.json</code> nobody had
+  been told about. <strong>The notice is a record now, and it has its own small state machine.</strong></p>
+  <dl class="kv">
+    <dt><code>notice_id</code></dt>
+    <dd>Written with the outcome, in the same registry save, and stable across a restart. A retry
+    carries the same id, so a root that sees the line twice knows it is one ending, not two.</dd>
+    <dt><code>POST /v1/orchestrator/tasks/:id/completion/ack</code></dt>
+    <dd>How the root says it consumed that <code>notice_id</code>. Until an ACK arrives the notice
+    keeps its place in the queue: <strong>a successful send is not an observation, and neither is
+    an HTTP 200.</strong></dd>
+    <dt><code>dead_letter</code></dt>
+    <dd>Where a notice goes when its bounded retry budget runs out, with the failure that ended it.
+    It is reportable rather than merely stored — <code>completions/reconcile</code> takes
+    <code>include_dead_letter</code> — because <strong>a dead letter nobody can read is the same as
+    a notice that was never owed.</strong></dd>
+    <dt><code>root_identity_is_terminal</code></dt>
+    <dd>Refused at dispatch when positive evidence proves <code>root.session_id</code> is a physical
+    terminal id where the conversation id belongs. The error returns the
+    <code>canonical_root_session_id</code> and <code>canonical_root_assistant</code> it actually
+    found. Unknown or conflicting evidence stays nullable rather than guessed.</dd>
+  </dl>
+  <p>Accepted, executed, result-verified, transport-delivered, observed and acknowledged are
+  <strong>six separate facts</strong>, and no HTTP, SSE or Apple Event success manufactures the last
+  two. Delivery goes through the same bounded terminal lane as every other write, named against the
+  terminal it will type into; admission being refused is backpressure and costs the task nothing
+  from its retry budget.</p>
+
   <!-- 08 -->
   <h2 id="verification"><span class="n">08</span>Verification is budgeted</h2>
   <p class="sub">One relevant proof, reported as a number rather than an impression.</p>
