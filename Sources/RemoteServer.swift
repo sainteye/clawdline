@@ -2169,13 +2169,16 @@ final class RemoteServer: @unchecked Sendable {
                 //
                 // Omitting the field leaves every existing client exactly where it was: the
                 // `lost_if_closed` gate below is unchanged and is still the whole contract.
-                if let rawExpected = body["expected_closeability_version"] {
-                    guard let expected = rawExpected as? String, !expected.isEmpty else {
-                        return .error(400, "bad_request",
-                                      "expected_closeability_version must be a non-empty string.")
-                    }
+                switch Self.closeProofRequest(body["expected_closeability_version"]) {
+                case .malformed:
+                    return .error(400, "bad_request",
+                                  "expected_closeability_version must be a non-empty string.")
+                case .notRequested:
+                    break
+                case .expecting(let expected):
                     let projected = self.closeability(of: session)
-                    if projected.state != .safe || projected.version != expected {
+                    if !Self.closeIsProven(projected, expected: expected,
+                                           acceptLoss: body["accept_loss"] as? Bool == true) {
                         RemoteAuth.audit("session.end.refused",
                                          ["id": session.id,
                                           "closeability": projected.state.rawValue])
@@ -4091,6 +4094,32 @@ final class RemoteServer: @unchecked Sendable {
             inventoryComplete: evidence.complete, inventoryObservedAt: evidence.observedAt,
             inventoryGeneration: evidence.generation,
             identityMatches: sessionIdentityMatchCount(for: resolved))
+    }
+
+    enum CloseProofRequest: Equatable {
+        /// No `expected_closeability_version`: the close keeps exactly the contract it had.
+        case notRequested
+        case expecting(String)
+        case malformed
+    }
+
+    static func closeProofRequest(_ raw: Any?) -> CloseProofRequest {
+        guard let raw else { return .notRequested }
+        guard let expected = raw as? String, !expected.isEmpty else { return .malformed }
+        return .expecting(expected)
+    }
+
+    /// **`acceptLoss` is a parameter this deliberately does not read.**
+    ///
+    /// It is here so the claim is a thing a test can break rather than a sentence in a comment:
+    /// `accept_loss` is the human override for a positive `lost_if_closed` list somebody was
+    /// shown, and stale, ambiguous, unattested or merely superseded evidence produces no such
+    /// list. Accepting a loss nobody can enumerate is not consent, and the one honest answer to
+    /// "the broker cannot prove this" is to refuse and say why.
+    static func closeIsProven(_ projection: Orchestrator.SessionCloseabilityProjection,
+                              expected: String, acceptLoss: Bool) -> Bool {
+        _ = acceptLoss
+        return projection.state == .safe && projection.version == expected
     }
 
     private struct CoordinatorSessionBase {

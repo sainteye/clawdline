@@ -42,6 +42,7 @@ node Tests/web-session-resilience.mjs
 node Tests/web-viewport.mjs
 node Tests/web-layout-diagnostics.mjs
 node Tests/web-session-disposition.mjs
+node Tests/web-session-closeability.mjs
 node Tests/web-title-transport.mjs
 node Tests/web-code-copy.mjs
 node Tests/web-message-images.mjs
