@@ -226,6 +226,11 @@ assert.match(css, /\.session-work-completion\s*\{[^}]*display:\s*inline-flex/s,
     "the receipt check and copy share one visual group");
 assert.match(css, /\.session-work-mark\s*\{[^}]*color:\s*var\(--ok\)/s,
     "completed Session checks use the shared success green");
+assert.match(css, /\.session-work-mark\s*\{[^}]*gap:\s*0/s,
+    "the double-check mark does not put whitespace between its two strokes");
+assert.match(css,
+    /\.session-work-check\s*\+\s*\.session-work-check\s*\{[^}]*margin-left:\s*-3px/s,
+    "the second check overlaps the first into one compact read-receipt mark");
 assert.match(css, /\.session-work-copy\s*\{[^}]*min-width:\s*0[^}]*text-overflow:\s*ellipsis/s,
     "readable ready and triage copy yields to the phone width");
 assert.match(css, /\.session-status-glyph\s*\{[^}]*line-height:\s*1\.4[^}]*overflow:\s*visible/s,
