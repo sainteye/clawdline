@@ -2,8 +2,8 @@
 name: clawdline
 description: |
   使用 Clawdline 派 bounded child（目前 Root 保留綜合、整合與 landing）、把既有工作線完整 handoff
-  給下一個 session，或傳送 message、report、status、finding、coordination note 給另一個 live
-  session。觸發語句包括「派任務」「開 child」「叫 Codex review」「使用 Clawdline Handoff」
+  給下一個 session，或傳送 message、report、status、finding、coordination note
+  給另一個 live session。觸發語句包括「派任務」「開 child」「叫 Codex review」「使用 Clawdline Handoff」
   「交接給下一個 session」及等義英文。
   Handoff 會移轉 sender 的 REFERENCES、VERIFICATION、OPEN THREADS。poll-only detached task 只供
   無人值守 automation，絕不是 Root 或 Major Feature owner。Root Assignment / Feature Launch 尚未

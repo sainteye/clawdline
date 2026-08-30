@@ -59,4 +59,18 @@ for (const file of surfaces) {
     }
 }
 
+const skillTriggers = [
+    ["skills/clawdline/SKILL.md", "another live session"],
+    ["skills/clawdline/SKILL.zh-TW.md", "另一個 live session"],
+];
+for (const [file, destination] of skillTriggers) {
+    const text = fs.readFileSync(path.join(root, file), "utf8");
+    const frontmatter = text.split("---")[1]?.toLowerCase() ?? "";
+    assert.ok(frontmatter.includes(destination.toLowerCase()),
+        `${file}: missing cross-session destination trigger`);
+    for (const trigger of ["send", "message", "report", "status", "finding", "coordination"]) {
+        assert.ok(frontmatter.includes(trigger), `${file}: missing ${trigger} trigger`);
+    }
+}
+
 console.log(`dispatch role contract: ${surfaces.length} surfaces, ${clauses.length} clauses`);
