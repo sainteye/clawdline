@@ -21,7 +21,7 @@ struct CloudTestHarnessFailure: Error, CustomStringConvertible {
 let expectedCloudSuiteNames = [
     "CloudEnvelope", "CloudAccount", "CloudTransport", "CloudAppBridge", "CloudSettings",
     "ScheduleResume", "CloudClock", "CloudCanonicalJSON", "CloudCommandLedger",
-    "CloudOutboundSpool", "CloudPairing",
+    "CloudOutboundSpool", "CloudPairing", "CloudLifecycle",
 ]
 let cloudTestSuites: [CloudTestSuite] = [
     CloudTestSuite(name: "CloudEnvelope", run: {
@@ -46,8 +46,13 @@ let cloudTestSuites: [CloudTestSuite] = [
         try await runCloudOutboundSpoolTests()
     }),
     CloudTestSuite(name: "CloudPairing", run: { try await runCloudPairingTests() }),
+    // Last, and reading the same checked-in vectors the envelope suite does: the handover half
+    // of this suite is a cross-runtime agreement, not a self-consistency check.
+    CloudTestSuite(name: "CloudLifecycle", run: {
+        try await runCloudLifecycleTests(vectorsURL: cloudVectorsURL)
+    }),
 ]
-let cloudTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites="
+let cloudTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites="
 
 // The transport runner is async. Entering the dispatch main loop keeps Foundation callbacks
 // available while its task runs. A process-wide watchdog prevents an await regression from
@@ -157,9 +162,9 @@ Task {
     var cloudReceiptReady = false
     do {
         let registeredNames = cloudTestSuites.map(\.name)
-        guard cloudTestSuites.count == 11 else {
+        guard cloudTestSuites.count == 12 else {
             throw CloudTestHarnessFailure(
-                description: "Cloud suite registry has \(cloudTestSuites.count) entries, expected 11")
+                description: "Cloud suite registry has \(cloudTestSuites.count) entries, expected 12")
         }
         let (afterRegistryCountCheck, registryCountOverflow) = checks.addingReportingOverflow(1)
         guard !registryCountOverflow else {
@@ -211,7 +216,7 @@ Task {
             print("  ✓ \(suite.name) (\(suiteChecks) checks)")
         }
 
-        guard completedCloudSuiteNames.count == 11,
+        guard completedCloudSuiteNames.count == 12,
               completedCloudSuiteNames == expectedCloudSuiteNames else {
             throw CloudTestHarnessFailure(
                 description: "Cloud suite completion order/count did not match the expected registry")

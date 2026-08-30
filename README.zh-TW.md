@@ -661,6 +661,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [開發環境](docs/devstack.md) · [怎麼導入](docs/devstack-adopting.md) | `.devstack.json`，以及導入的三種深度 |
 | [專案狀態檔](docs/project-status.md) | 圖示、顏色、部署、backlog |
 | [從別的地方連進來](docs/remote.md) · [API](docs/api.md) | 完整的威脅模型，以及那層 HTTP 介面 |
+| [Clawdline Cloud](docs/cloud.md) | Mac 這端的橋接、雲端主控台、金鑰交接，以及哪些事還沒對真的帳號跑過 |
 | [Hook](docs/hooks.md) | 那八個事件，以及為什麼說了算的仍然是螢幕 |
 | [通知](docs/notifications.md) | 誰會聽到什麼，以及為什麼決定聽眾的是深度而不是音量 |
 | [等待](docs/waiting.md) | 工作跑在哪條執行緒上，以及等一個子行程曾經怎麼弄壞這個 app |

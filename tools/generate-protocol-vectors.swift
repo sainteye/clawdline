@@ -117,6 +117,53 @@ private struct VectorDocument: Encodable {
         }
     }
 
+    /// The seven-member `CloudPairingWrapper` the Mac writes into the one ciphertext slot
+    /// `POST /v1/pairing/complete` carries.
+    struct PairingWrapper: Encodable {
+        let v: Int
+        let phase: String
+        let pairingID: String
+        let senderDeviceID: String
+        let ephemeralKey: String
+        let nonce: String
+        let ct: String
+
+        enum CodingKeys: String, CodingKey {
+            case v, phase, nonce, ct
+            case pairingID = "pairing_id"
+            case senderDeviceID = "sender_device_id"
+            case ephemeralKey = "ephemeral_key"
+        }
+    }
+
+    /// One complete viewer/Mac key handover, generated here so three implementations —
+    /// this script, `Sources/CloudHandover.swift` and
+    /// `Resources/web/app/js/net/cloud-pairing.js` — have to agree on the same bytes rather
+    /// than on a shared reading of the same paragraph.
+    struct PairingHandover: Encodable {
+        let name: String
+        let nowMilliseconds: Int64
+        let viewerEphemeralPrivateKey: String
+        let machineEphemeralPrivateKey: String
+        let offer: String
+        let offerFragment: String
+        let phaseKey: String
+        let aad: String
+        let wrapper: PairingWrapper
+        let handover: String
+        let senderDeviceID: String
+
+        enum CodingKeys: String, CodingKey {
+            case name, offer, wrapper, handover, aad
+            case nowMilliseconds = "now_milliseconds"
+            case viewerEphemeralPrivateKey = "viewer_ephemeral_private_key"
+            case machineEphemeralPrivateKey = "machine_ephemeral_private_key"
+            case offerFragment = "offer_fragment"
+            case phaseKey = "phase_key"
+            case senderDeviceID = "sender_device_id"
+        }
+    }
+
     let format = 1
     let cipher = "AES-256-GCM"
     let nonceBytes = 12
@@ -126,10 +173,12 @@ private struct VectorDocument: Encodable {
     let envelopes: [Entry]
     let receipts: [Receipt]
     let controlResponse: ControlResponse
+    let pairingHandover: PairingHandover
 
     enum CodingKeys: String, CodingKey {
         case format, cipher, envelopes, receipts
         case controlResponse = "control_response"
+        case pairingHandover = "pairing_handover"
         case nonceBytes = "nonce_bytes"
         case ed25519Seed = "ed25519_seed"
         case ed25519PublicKey = "ed25519_public_key"
@@ -370,13 +419,199 @@ func generateProtocolVectorBytes() throws -> Data {
         masterSecret: masterRaw.base64EncodedString(),
         envelopes: entries,
         receipts: receipts,
-        controlResponse: controlResponse
+        controlResponse: controlResponse,
+        pairingHandover: try makePairingHandoverVector(masterSecretRaw: masterRaw)
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     var output = try encoder.encode(document)
     output.append(0x0a)
     return output
+}
+
+// MARK: - Pairing handover (viewer <-> Mac key handover, PROTOCOL §5 "start/complete/claim")
+
+/// RFC 8785 §3.2.2.2 escaping, written out here so this script agrees with
+/// `CloudCanonicalJSON.appendEscaped` by construction rather than by a shared `JSONEncoder`
+/// setting. Base64 values contain `/`, which a default encoder escapes and canonical JSON
+/// does not.
+private func canonicalJSONString(_ text: String) -> String {
+    let hexDigits = Array("0123456789abcdef")
+    var out = "\""
+    for scalar in text.unicodeScalars {
+        switch scalar {
+        case "\u{22}": out += "\\\""
+        case "\u{5C}": out += "\\\\"
+        case "\u{08}": out += "\\b"
+        case "\u{09}": out += "\\t"
+        case "\u{0A}": out += "\\n"
+        case "\u{0C}": out += "\\f"
+        case "\u{0D}": out += "\\r"
+        default:
+            if scalar.value < 0x20 {
+                out += "\\u00"
+                out.append(hexDigits[Int(scalar.value >> 4)])
+                out.append(hexDigits[Int(scalar.value & 0xF)])
+            } else {
+                out.unicodeScalars.append(scalar)
+            }
+        }
+    }
+    return out + "\""
+}
+
+/// Members are given as already-serialized JSON values; keys are sorted by UTF-16 code unit,
+/// which is what RFC 8785 asks for and what both other implementations do.
+private func canonicalJSONObject(_ members: [String: String]) -> String {
+    let keys = members.keys.sorted { $0.utf16.lexicographicallyPrecedes($1.utf16) }
+    return "{" + keys.map { canonicalJSONString($0) + ":" + members[$0]! }.joined(separator: ",")
+        + "}"
+}
+
+private func lengthPrefixed(_ bytes: Data) -> Data {
+    Data([UInt8(bytes.count >> 8), UInt8(bytes.count & 0xFF)]) + bytes
+}
+
+private func hmacSHA256(key: Data, data: Data) -> Data {
+    Data(HMAC<SHA256>.authenticationCode(for: data, using: SymmetricKey(data: key)))
+}
+
+private func base32Fingerprint(publicKeyRaw: Data) -> String {
+    let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+    let digest = Data(SHA256.hash(data: publicKeyRaw).prefix(10))
+    var characters: [Character] = []
+    var accumulator: UInt32 = 0
+    var bits = 0
+    for byte in digest {
+        accumulator = (accumulator << 8) | UInt32(byte)
+        bits += 8
+        while bits >= 5 {
+            bits -= 5
+            characters.append(alphabet[Int((accumulator >> UInt32(bits)) & 0x1F)])
+        }
+    }
+    if bits > 0 {
+        characters.append(alphabet[Int((accumulator << UInt32(5 - bits)) & 0x1F)])
+    }
+    return stride(from: 0, to: characters.count, by: 4)
+        .map { String(characters[$0..<min($0 + 4, characters.count)]) }
+        .joined(separator: "-")
+}
+
+private func base64URLWithoutPadding(_ data: Data) -> String {
+    data.base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+}
+
+/// One deterministic handover. Every key, nonce and identifier below is TEST-ONLY; production
+/// callers sample fresh randomness for all of them.
+private func makePairingHandoverVector(
+    masterSecretRaw: Data
+) throws -> VectorDocument.PairingHandover {
+    let viewerEphemeralRaw = Data((0..<32).map { UInt8(0x10 + $0) })
+    let machineEphemeralRaw = Data((0..<32).map { UInt8(0x50 + $0) })
+    let viewerSigningSeed = Data((0..<32).map { UInt8(0x80 + $0) })
+    let machineSigningSeed = Data((0..<32).map { UInt8(0xb0 + $0) })
+    let claimNonce = Data((0..<32).map { UInt8(0x01 + $0) })
+    let pairingNonce = Data((0..<32).map { UInt8(0x21 + $0) })
+    let sealNonce = Data(repeating: 0, count: 11) + Data([0x2a])
+
+    let viewerEphemeral = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: viewerEphemeralRaw)
+    let machineEphemeral = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: machineEphemeralRaw)
+    let viewerSigning = try Curve25519.Signing.PrivateKey(rawRepresentation: viewerSigningSeed)
+    let machineSigning = try Curve25519.Signing.PrivateKey(rawRepresentation: machineSigningSeed)
+
+    let pairingID = "pairing-vector-01"
+    let accountID = "account-vector-01"
+    let machineID = "mac-vector-01"
+    let viewerDeviceID = "viewer-vector-01"
+    let expiresAt: Int64 = 1_787_817_900_000
+    let nowMilliseconds: Int64 = 1_787_817_600_000
+
+    let offerMembers: [String: String] = [
+        "v": "1",
+        "type": canonicalJSONString("pairing_offer"),
+        "pairing_id": canonicalJSONString(pairingID),
+        "claim_nonce": canonicalJSONString(claimNonce.base64EncodedString()),
+        "pairing_nonce": canonicalJSONString(pairingNonce.base64EncodedString()),
+        "account_id": canonicalJSONString(accountID),
+        "viewer_device_id": canonicalJSONString(viewerDeviceID),
+        "viewer_signing_key": canonicalJSONString(
+            viewerSigning.publicKey.rawRepresentation.base64EncodedString()),
+        "viewer_ephemeral_key": canonicalJSONString(
+            viewerEphemeral.publicKey.rawRepresentation.base64EncodedString()),
+        "viewer_fingerprint": canonicalJSONString(
+            base32Fingerprint(publicKeyRaw: viewerSigning.publicKey.rawRepresentation)),
+        "expires_at": String(expiresAt),
+    ]
+    let offer = canonicalJSONObject(offerMembers)
+
+    // The KDF of `CloudPairing.derive`, phase `grant`.
+    let shared = try machineEphemeral.sharedSecretFromKeyAgreement(
+        with: viewerEphemeral.publicKey
+    ).withUnsafeBytes { Data($0) }
+    var saltPreimage = lengthPrefixed(Data("clawdline-pair-salt-v1".utf8))
+    saltPreimage.append(lengthPrefixed(pairingNonce))
+    saltPreimage.append(lengthPrefixed(Data(pairingID.utf8)))
+    saltPreimage.append(lengthPrefixed(claimNonce))
+    let salt = Data(SHA256.hash(data: saltPreimage))
+    let prk = hmacSHA256(key: salt, data: shared)
+    var info = lengthPrefixed(Data("clawdline-pair-v1".utf8))
+    info.append(lengthPrefixed(Data("grant".utf8)))
+    let phaseKey = hmacSHA256(key: prk, data: info + Data([0x01]))
+
+    let handoverMembers: [String: String] = [
+        "v": "1",
+        "type": canonicalJSONString("pairing_handover"),
+        "account_id": canonicalJSONString(accountID),
+        "machine_id": canonicalJSONString(machineID),
+        "machine_signing_key": canonicalJSONString(
+            machineSigning.publicKey.rawRepresentation.base64EncodedString()),
+        "machine_fingerprint": canonicalJSONString(
+            base32Fingerprint(publicKeyRaw: machineSigning.publicKey.rawRepresentation)),
+        "key_id": canonicalJSONString("ms-1"),
+        "master_secret": canonicalJSONString(masterSecretRaw.base64EncodedString()),
+    ]
+    let handover = canonicalJSONObject(handoverMembers)
+
+    let machineEphemeralPublic = machineEphemeral.publicKey.rawRepresentation.base64EncodedString()
+    let aad = canonicalJSONObject([
+        "v": "1",
+        "phase": canonicalJSONString("grant"),
+        "pairing_id": canonicalJSONString(pairingID),
+        "sender_device_id": canonicalJSONString(machineID),
+        "ephemeral_key": canonicalJSONString(machineEphemeralPublic),
+    ])
+    let sealed = try AES.GCM.seal(
+        Data(handover.utf8),
+        using: SymmetricKey(data: phaseKey),
+        nonce: try AES.GCM.Nonce(data: sealNonce),
+        authenticating: Data(aad.utf8)
+    )
+
+    return VectorDocument.PairingHandover(
+        name: "viewer-key-handover",
+        nowMilliseconds: nowMilliseconds,
+        viewerEphemeralPrivateKey: viewerEphemeralRaw.base64EncodedString(),
+        machineEphemeralPrivateKey: machineEphemeralRaw.base64EncodedString(),
+        offer: offer,
+        offerFragment: base64URLWithoutPadding(Data(offer.utf8)),
+        phaseKey: phaseKey.base64EncodedString(),
+        aad: aad,
+        wrapper: VectorDocument.PairingWrapper(
+            v: 1,
+            phase: "grant",
+            pairingID: pairingID,
+            senderDeviceID: machineID,
+            ephemeralKey: machineEphemeralPublic,
+            nonce: sealNonce.base64EncodedString(),
+            ct: (sealed.ciphertext + sealed.tag).base64EncodedString()
+        ),
+        handover: handover,
+        senderDeviceID: machineID
+    )
 }
 
 private func nonce(_ lastByte: UInt8) -> Data {

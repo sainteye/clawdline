@@ -29,6 +29,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Reads the config and does nothing at all when it says off, which is what it says
         // until somebody changes it.
         RemoteServer.shared.apply()
+        // Cloud keeps the same rhythm as the local server: applied at launch, re-applied on
+        // every config change, and told directly by Settings when this Mac is signed in or out
+        // so that connecting does not need a relaunch to take effect. It does nothing at all
+        // until there is a machine credential in the Keychain, which is what signing in makes.
+        // AppKit runs every one of these on the main thread, but the older SDK annotations the
+        // plain-swiftc build compiles against do not carry that fact through NSObject — the
+        // same gap `Settings.swift` names where it builds `CloudSettingsModel`. Keep the actor
+        // boundary explicit rather than making the delegate's AppKit callbacks `@MainActor`.
+        MainActor.assumeIsolated {
+            CloudSettingsModel.onConnectionChange = { CloudBridgeLifecycle.shared.apply() }
+            CloudBridgeLifecycle.shared.apply()
+        }
         // Somebody, somewhere, is asking to pair. The code is shown **here and nowhere else** —
         // it is never in the reply the asker got — so finishing requires being able to see this
         // screen. That is the whole of the security property, and it is why this interrupts
@@ -422,6 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchIsland.shared.install()
         RemoteServer.shared.apply()
         RemoteTunnel.shared.apply()
+        MainActor.assumeIsolated { CloudBridgeLifecycle.shared.apply() }
         CodexNaming.shared.apply()
         refreshStatusItem()
     }
@@ -452,6 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchIsland.shared.install()
         RemoteServer.shared.apply()
         RemoteTunnel.shared.apply()
+        MainActor.assumeIsolated { CloudBridgeLifecycle.shared.apply() }
         CodexNaming.shared.apply()
         refreshStatusItem()
     }

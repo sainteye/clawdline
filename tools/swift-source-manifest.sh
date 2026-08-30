@@ -13,10 +13,12 @@ clawdline_production_sources=(
   Sources/ClawdlineSessionMessage.swift
   Sources/CloudAccount.swift
   Sources/CloudAppBridge.swift
+  Sources/CloudBridgeLifecycle.swift
   Sources/CloudCanonicalJSON.swift
   Sources/CloudClock.swift
   Sources/CloudCommandLedger.swift
   Sources/CloudEnvelope.swift
+  Sources/CloudHandover.swift
   Sources/CloudKeys.swift
   Sources/CloudOutboundSpool.swift
   Sources/CloudPairing.swift
@@ -105,6 +107,7 @@ clawdline_test_sources=(
   Tests/CloudClockTests.swift
   Tests/CloudCommandLedgerTests.swift
   Tests/CloudEnvelopeTests.swift
+  Tests/CloudLifecycleTests.swift
   Tests/CloudOutboundSpoolTests.swift
   Tests/CloudPairingTests.swift
   Tests/CloudSettingsTests.swift

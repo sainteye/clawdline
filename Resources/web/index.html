@@ -106,6 +106,17 @@ document.documentElement.className = "booting";
      mode — and `main.js` falls back to the fetch, which is what it did before this existed. -->
 <!-- clawdline:strings -->
 
+<!-- Which Clawdline this copy of the page belongs to.
+     Empty here, and empty in every copy the Mac serves: a page served by the app talks to the
+     app, and that includes the page reached through the Cloudflare tunnel, whose hostname is
+     not localhost and never was the discriminator.
+     `tools/build-web-app.sh` replaces this comment, and only this comment, with one line
+     setting `window.__clawdlineCloud` to the origins that build is for — the same slot
+     mechanism as the two either side of it. `net/cloud-boot.js` checks the declared app origin
+     against `location.origin` before believing any of it, so a hosted bundle copied elsewhere
+     refuses rather than half-works. -->
+<!-- clawdline:cloud -->
+
 <!-- The page's own styles, split out of this file and served from `/app/css/`. The order below is
      the order they were written in, and it is load-bearing: several rules are overridden later by a
      rule with exactly the same specificity — `.app[data-pane="off"] .pane-detail` is set in
@@ -966,6 +977,34 @@ document.documentElement.className = "booting";
         </section>
 
         <p class="say" id="door-say" role="status" aria-live="polite"></p>
+    </div>
+</div>
+
+<!-- The cloud door. The same shape as the door above and the opposite direction: what has
+     to cross the room is the account's content key, and only the Mac has one, so this browser
+     asks the control plane for a one-time claim handle and shows the offer that goes with it.
+     The Mac seals its key for exactly that offer; the cloud carries a blob it cannot read.
+     Three lines here are English in every language — the string table is served by the Mac and
+     the change that added this screen does not own that file. See docs/cloud.md. -->
+<div class="door" id="cloud-door" hidden>
+    <div class="door-card" role="dialog" aria-modal="true" aria-label="Pair this browser">
+        <div class="door-head"><canvas id="cloud-door-mark"></canvas><b>clawdline</b></div>
+
+        <section>
+            <p class="lede" id="cloud-door-lede">Look at the Mac.</p>
+            <p class="fine">Open Clawdline on the Mac, go to Settings &rarr; Cloud, and give it the
+                code below. It is only good for a few minutes and only once.</p>
+            <label for="cloud-door-offer">Pairing code</label>
+            <input id="cloud-door-offer" type="text" readonly spellcheck="false"
+                   autocomplete="off" autocapitalize="off"
+                   data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+            <p class="fine">This browser&rsquo;s fingerprint is
+                <b id="cloud-door-fingerprint"></b> &mdash; the Mac shows the same one.</p>
+            <button class="go" id="cloud-door-confirm" type="button">Pair this device</button>
+            <button class="alt" id="cloud-door-restart" type="button" hidden>Start again</button>
+        </section>
+
+        <p class="say" id="cloud-door-say" role="status" aria-live="polite"></p>
     </div>
 </div>
 

@@ -147,6 +147,27 @@
   "format" : 1,
   "master_secret" : "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
   "nonce_bytes" : 12,
+  "pairing_handover" : {
+    "aad" : "{\"ephemeral_key\":\"OS0XSjizsb6vrx/oJIcIQcX6UxvG6v22QCwSRmRIjBw=\",\"pairing_id\":\"pairing-vector-01\",\"phase\":\"grant\",\"sender_device_id\":\"mac-vector-01\",\"v\":1}",
+    "handover" : "{\"account_id\":\"account-vector-01\",\"key_id\":\"ms-1\",\"machine_fingerprint\":\"DTGF-MRHB-3IYP-RIER\",\"machine_id\":\"mac-vector-01\",\"machine_signing_key\":\"dPyio7OJ+xpk2b9SzA3UwpZPOATAz3x1XoUTxtuBmNw=\",\"master_secret\":\"oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=\",\"type\":\"pairing_handover\",\"v\":1}",
+    "machine_ephemeral_private_key" : "UFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm8=",
+    "name" : "viewer-key-handover",
+    "now_milliseconds" : 1787817600000,
+    "offer" : "{\"account_id\":\"account-vector-01\",\"claim_nonce\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\",\"expires_at\":1787817900000,\"pairing_id\":\"pairing-vector-01\",\"pairing_nonce\":\"ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=\",\"type\":\"pairing_offer\",\"v\":1,\"viewer_device_id\":\"viewer-vector-01\",\"viewer_ephemeral_key\":\"2J47rXlDfb7Z+ENBgwT0YP8Fx/6B/kqVd6gEy5Nn/2Y=\",\"viewer_fingerprint\":\"KGOK-5E7J-HLIB-DV4F\",\"viewer_signing_key\":\"zRSzf5VulTGU/3+3Oz2B3MVh1hp1OAlLfD4aZD7l86o=\"}",
+    "offer_fragment" : "eyJhY2NvdW50X2lkIjoiYWNjb3VudC12ZWN0b3ItMDEiLCJjbGFpbV9ub25jZSI6IkFRSURCQVVHQndnSkNnc01EUTRQRUJFU0V4UVZGaGNZR1JvYkhCMGVIeUE9IiwiZXhwaXJlc19hdCI6MTc4NzgxNzkwMDAwMCwicGFpcmluZ19pZCI6InBhaXJpbmctdmVjdG9yLTAxIiwicGFpcmluZ19ub25jZSI6IklTSWpKQ1VtSnlncEtpc3NMUzR2TURFeU16UTFOamM0T1RvN1BEMCtQMEE9IiwidHlwZSI6InBhaXJpbmdfb2ZmZXIiLCJ2IjoxLCJ2aWV3ZXJfZGV2aWNlX2lkIjoidmlld2VyLXZlY3Rvci0wMSIsInZpZXdlcl9lcGhlbWVyYWxfa2V5IjoiMko0N3JYbERmYjdaK0VOQmd3VDBZUDhGeC82Qi9rcVZkNmdFeTVObi8yWT0iLCJ2aWV3ZXJfZmluZ2VycHJpbnQiOiJLR09LLTVFN0otSExJQi1EVjRGIiwidmlld2VyX3NpZ25pbmdfa2V5IjoielJTemY1VnVsVEdVLzMrM096MkIzTVZoMWhwMU9BbExmRDRhWkQ3bDg2bz0ifQ",
+    "phase_key" : "ycGNgFGwDXASs1V7Tkzb+wGFDjkZNc6NLf1uIS50HO8=",
+    "sender_device_id" : "mac-vector-01",
+    "viewer_ephemeral_private_key" : "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8=",
+    "wrapper" : {
+      "ct" : "SgDT9JqYptLBaDIqoiNm73SKAv9FQEgPScFk30JXtPcjIIMzztxt28W5JjnGqrF/DFFt/a9dasdA+IocU/QblXvvV+vNlYeFk+Ty8OlefcmQYBm6M8GWt8VwamoUpMUMr8N8bMIM3+Q8VWNzSGjPkAGjXbdsT1MXdSQ2Okw5uoMDJsqCFEfsL1nBf+wlloVU6C0mSSLxvTx9gKlFn0HrTn+yrFe+WMPevTFIOkgu93qrgS+X7gYQIlmihP2g5OniL6jywZrRo9grWOVK2VlSFbw4yXN/NI2/5eAHA27ztwFlgqRUZgpsWFL0sNNVhm3K2dFw4XrjKINZ6NfnC8mKkCRNk4Azuoiz5LubI1u8R1Dam0dKtgexNmwAj71DOyocMgEDFn0hDde6/f4Ddx4Y",
+      "ephemeral_key" : "OS0XSjizsb6vrx/oJIcIQcX6UxvG6v22QCwSRmRIjBw=",
+      "nonce" : "AAAAAAAAAAAAAAAq",
+      "pairing_id" : "pairing-vector-01",
+      "phase" : "grant",
+      "sender_device_id" : "mac-vector-01",
+      "v" : 1
+    }
+  },
   "receipts" : [
     {
       "body" : "{\"confirm_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"finalized_at\":\"2026-08-27T12:34:56.789Z\",\"pairing_id\":\"pair-0001\",\"released_bytes\":270336,\"released_rows\":1,\"rotation_id\":\"rot-0001\",\"status\":\"delivered\",\"v\":1,\"viewer_device_id\":\"viewer-0001\"}",

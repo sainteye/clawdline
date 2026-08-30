@@ -6,13 +6,13 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166,CloudLifecycle:75'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
-# and the typed planning graph adds 14.
+# the typed planning graph adds 14, and the Cloud bridge lifecycle adds 75.
 # The exact candidate-tree run remains authoritative and must update this guard if its observed
 # final count differs.
-expected_swift_receipt='6976 checks passed'
+expected_swift_receipt='7051 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -94,6 +94,11 @@ node Tests/web-title-transport.mjs
 node Tests/web-code-copy.mjs
 node Tests/web-message-images.mjs
 node Tests/web-project-artifacts.mjs
+# The hosted console: which transport it is, the pairing mirror against the checked-in
+# vectors, and that the static bundle a person uploads by hand is the same bytes twice.
+node Tests/web-cloud-boot.mjs
+node Tests/web-cloud-pairing.mjs
+node Tests/web-app-build.mjs
 node Tests/dispatch-role-contract.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/release-signing-contract.mjs
@@ -118,6 +123,7 @@ required_cloud_test_files=(
   Tests/CloudCommandLedgerTests.swift
   Tests/CloudOutboundSpoolTests.swift
   Tests/CloudPairingTests.swift
+  Tests/CloudLifecycleTests.swift
 )
 for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
   if ! test -f "$required_cloud_test_file"; then

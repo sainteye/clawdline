@@ -181,6 +181,11 @@ struct CloudOpaquePairingBlob: Equatable, Sendable,
 
     var description: String { "CloudOpaquePairingBlob(<redacted>)" }
     var debugDescription: String { description }
+
+    /// The exact bytes the wire carries. Named so that reading them is a deliberate act: the
+    /// only caller is the suite, proving that what went to `POST /v1/pairing/complete` is what
+    /// a viewer can open.
+    var wireBase64ForTesting: String { base64 }
 }
 
 struct CloudPairingStart: Equatable, Sendable,

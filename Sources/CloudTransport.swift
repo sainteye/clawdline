@@ -16,6 +16,11 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
     case alreadyConnected
     case invalidRelayURL
     case invalidTokenResponse
+    /// The control plane refused this device's credential outright — 401, or the 403 a revoked
+    /// machine or device gets from `POST /v1/tokens/device`. Separate from
+    /// `invalidTokenResponse` because retrying it is pointless: the reconnect loop here treats
+    /// every failure as transient, so somebody above has to be able to tell the two apart.
+    case unauthorized
     case notConnected
     case unexpectedFrame(String)
     case relay(String, String)
@@ -28,6 +33,8 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
             return "The cloud relay URL is invalid."
         case .invalidTokenResponse:
             return "The device-token response is invalid."
+        case .unauthorized:
+            return "Clawdline Cloud refused this device's credential."
         case .notConnected:
             return "CloudTransport is not connected."
         case .unexpectedFrame(let type):
@@ -80,7 +87,16 @@ struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
         request.setValue(try await authorizationHeader(), forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else {
+            throw CloudTransportError.invalidTokenResponse
+        }
+        // 401 is "that credential is not one of ours" and 403 is `ApiError.forbidden("revoked")`.
+        // Both are answers rather than outages, and the difference decides whether anything
+        // above this should keep reconnecting.
+        guard http.statusCode != 401, http.statusCode != 403 else {
+            throw CloudTransportError.unauthorized
+        }
+        guard (200..<300).contains(http.statusCode) else {
             throw CloudTransportError.invalidTokenResponse
         }
         let wire = try JSONDecoder().decode(DeviceTokenResponse.self, from: data)

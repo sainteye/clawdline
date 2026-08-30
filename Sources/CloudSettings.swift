@@ -94,6 +94,12 @@ final class CloudSettingsModel {
 
     private(set) var phase: Phase = .signedOut
     var onChange: (() -> Void)?
+    /// Set once, by the app, so that signing in or out takes effect without a relaunch.
+    ///
+    /// Deliberately not `onChange`: that one belongs to whichever window is on screen, and the
+    /// cloud bridge has to follow this state whether or not Settings is open. It is a type
+    /// property because the model is rebuilt with the window and the bridge is not.
+    static var onConnectionChange: (@MainActor () -> Void)?
 
     private let services: CloudSettingsServices
     private let metadata: CloudMachineMetadata
@@ -262,7 +268,18 @@ final class CloudSettingsModel {
 
     private func setPhase(_ next: Phase) {
         guard next != phase else { return }
+        let wasConnected = Self.isConnected(phase)
         phase = next
         onChange?()
+        // Only the transitions that change whether this Mac has a usable credential. The code,
+        // waiting and slow-down phases are a login in progress and mean nothing to the bridge.
+        if wasConnected != Self.isConnected(next) { Self.onConnectionChange?() }
+    }
+
+    private static func isConnected(_ phase: Phase) -> Bool {
+        switch phase {
+        case .connected, .signOutFailed: return true
+        default: return false
+        }
     }
 }

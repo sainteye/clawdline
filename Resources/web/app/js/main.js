@@ -17,11 +17,15 @@ import { clockOf } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
 import { api, useApi } from "./net/api.js";
 import "./net/build.js";
-import "./net/handlers.js";
 import "./net/fetch.js";
 import { Schedules } from "./net/schedules.js";
 import { Live } from "./net/live.js";
 import { Mock } from "./net/mock.js";
+import {
+    CloudViewerSession, chooseTransport, idleClient, keepConnected, readCloudConfig
+} from "./net/cloud-boot.js";
+import { handlers } from "./net/handlers.js";
+import { showCloudPairing } from "./input/cloud-pairing.js";
 import "./door/door.js";
 import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
@@ -61,14 +65,64 @@ import "./input/edges.js";
    ========================================================================== */
 
 // The one thing that has to happen before anything on this page can call the API: which of the
-// two it is. `net/api.js` holds the name and knows about neither — see the note there.
-useApi(MOCK ? Mock : Live);
-if (typeof api.events === "function") {
-    api.events(createTranscriptEventRouter(
-        function () { return S.openId; },
-        observeTranscriptFileRevision,
-        function (id) { loadTranscript(id, true); }
-    ));
+// three it is. `net/api.js` holds the name and knows about none of them — see the note there,
+// and `net/cloud-boot.js` for why the third is decided by a build declaration rather than by
+// looking at the hostname.
+function bindTranscriptEvents(transport) {
+    if (transport && typeof transport.events === "function") {
+        transport.events(createTranscriptEventRouter(
+            function () { return S.openId; },
+            observeTranscriptFileRevision,
+            function (id) { loadTranscript(id, true); }
+        ));
+    }
+}
+
+var cloudConfig = null;
+try {
+    cloudConfig = readCloudConfig(window);
+} catch (cloudConfigError) {
+    // A build that declares a cloud console badly must not quietly become a local one.
+    console.error("clawdline: " + cloudConfigError.message);
+}
+var transportKind = chooseTransport({
+    mock: MOCK, origin: location.origin, config: cloudConfig
+});
+
+if (transportKind === "cloud") {
+    // The seam is filled before anything can call it, and filled again — with the same live
+    // binding — once the relay handshake has actually completed.
+    useApi(idleClient());
+    handlers.conn("connecting");
+    var cloudSession = new CloudViewerSession({ config: cloudConfig, handlers: handlers });
+    var startCloudViewer = function () {
+        keepConnected(cloudSession, {
+            onState: function (update) {
+                if (update.state === "connected") {
+                    useApi(update.client);
+                    bindTranscriptEvents(update.client);
+                } else if (update.state === "sign_in") {
+                    location.replace(update.url);
+                } else if (update.state === "pairing_required") {
+                    // Signed in, but this browser holds no account key yet. Pairing is the one
+                    // thing that can produce one, and it cannot be done from the relay.
+                    handlers.conn("locked");
+                    showCloudPairing(cloudSession).then(startCloudViewer);
+                } else if (update.state === "revoked") {
+                    handlers.conn("locked");
+                }
+            }
+        });
+    };
+    startCloudViewer();
+} else if (transportKind === "blocked") {
+    useApi(idleClient());
+    handlers.conn("offline");
+    console.error("clawdline: this console build is for " + cloudConfig.appOrigin
+        + " and is being served from " + location.origin);
+} else {
+    useApi(transportKind === "mock" ? Mock : Live);
+    bindTranscriptEvents(api);
 }
 Diagnostics.bind({ state: S, elements: els });
 

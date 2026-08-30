@@ -49,7 +49,7 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 36 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 36"
+[ "$suite_count" -eq 37 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 37"
 
 echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count"

@@ -3521,6 +3521,10 @@ private final class CloudSettingsControl: NSView, SelfSizing {
     private let model: CloudSettingsModel
     private let card = NoteCard()
     private var buttons: [ChipButton] = []
+    /// The result of the last pairing attempt, shown under the connection line. It is the only
+    /// place the two fingerprints a person is comparing appear on this side.
+    private var pairingNote: String?
+    private var pairing = false
 
     init(model: CloudSettingsModel) {
         self.model = model
@@ -3577,9 +3581,14 @@ private final class CloudSettingsControl: NSView, SelfSizing {
             actions = [("Cancel", false, { [weak model] in model?.cancel() })]
         case .connected(let identity, let origin):
             let restored = origin == .restored ? " Restored from this Mac's Keychain." : ""
-            text = "Connected to Clawdline Cloud. Account \(identity.accountID), Mac \(identity.machineID).\(restored)"
+            let note = pairingNote.map { "\n" + $0 } ?? ""
+            text = "Connected to Clawdline Cloud. Account \(identity.accountID), Mac \(identity.machineID).\(restored)\(note)"
             dot = .live
-            actions = [("Sign Out", false, { [weak model] in model?.signOut() })]
+            actions = [
+                (pairing ? "Pairing…" : "Pair a Phone…", true,
+                 { [weak self] in self?.askForPairingCode() }),
+                ("Sign Out", false, { [weak model] in model?.signOut() }),
+            ]
         case .denied:
             text = "GitHub connection was denied. No Cloud identity was added."
             dot = .warn
@@ -3613,6 +3622,54 @@ private final class CloudSettingsControl: NSView, SelfSizing {
         }
         needsLayout = true
         if notifyResize { onResize?() }
+    }
+
+    /// Ask for the code the phone is showing, then finish the handover.
+    ///
+    /// A paste field rather than a camera: the offer is what the *browser* generated, so the
+    /// picture to scan is on the phone and the reader would have to be here. Until this window
+    /// can scan one, the code is short enough to send to yourself and long enough that nobody
+    /// types it by hand — which is the same trade the local door's six digits make in reverse.
+    private func askForPairingCode() {
+        guard !pairing else { return }
+        let alert = NSAlert()
+        alert.messageText = "Pair a phone with this Mac"
+        alert.informativeText = "Open app.clawdline.com on the phone, sign in, and paste the "
+            + "pairing code it shows. Then check that the fingerprint below matches the one on "
+            + "the phone before you use it."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Pair")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
+        field.placeholderString = "Pairing code"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let fragment = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fragment.isEmpty else { return }
+
+        pairing = true
+        pairingNote = nil
+        refresh()
+        let completer = CloudPairingCompleter.production()
+        Task { [weak self] in
+            let note: String
+            do {
+                let outcome = try await completer.complete(offerFragment: fragment)
+                note = "Paired \(outcome.viewerDeviceID). Phone fingerprint "
+                    + "\(outcome.viewerFingerprint); this Mac's is \(outcome.machineFingerprint)."
+            } catch {
+                let described = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+                note = "Pairing failed: \(described)"
+            }
+            await MainActor.run {
+                guard let self else { return }
+                self.pairing = false
+                self.pairingNote = note
+                self.refresh()
+            }
+        }
     }
 }
 

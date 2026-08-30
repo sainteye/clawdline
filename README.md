@@ -765,6 +765,7 @@ link to them.
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |
 | [Project status files](docs/project-status.md) | the mark, the colour, the deploy, the backlog |
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
+| [Clawdline Cloud](docs/cloud.md) | the bridge on the Mac, the hosted console, the key handover, and what has never been run against a real account |
 | [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |
 | [Notifications](docs/notifications.md) | who hears what, and why depth decides the audience rather than the volume |
 | [Waiting](docs/waiting.md) | where the work runs, and the two ways waiting for a subprocess has broken this |
