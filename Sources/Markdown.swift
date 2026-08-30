@@ -86,9 +86,46 @@ enum Markdown {
                 continue
             }
 
-            if let (marker, text) = listItem(line) {
-                appendListItem(marker, text, to: out, theme: theme)
-                i += 1
+            if listItem(line) != nil {
+                var nextOrderedNumber: [Int: Int] = [:]
+                while i < lines.count {
+                    let current = lines[i].trimmingCharacters(in: .whitespaces)
+                    // Preserve the block priority above: a list-shaped table header is still a
+                    // table when its separator row proves that structure.
+                    if looksLikeTableRow(current), i + 1 < lines.count,
+                       isTableSeparator(lines[i + 1].trimmingCharacters(in: .whitespaces)) {
+                        break
+                    }
+
+                    if let item = listItem(lines[i]) {
+                        for depth in nextOrderedNumber.keys where depth > item.indentation {
+                            nextOrderedNumber.removeValue(forKey: depth)
+                        }
+                        if item.marker == "•" {
+                            nextOrderedNumber.removeValue(forKey: item.indentation)
+                            appendListItem(item.marker, item.text, to: out, theme: theme)
+                        } else if let writtenNumber = item.orderedNumber {
+                            let renderedNumber = nextOrderedNumber[item.indentation] ?? writtenNumber
+                            appendListItem("\(renderedNumber).", item.text, to: out, theme: theme)
+                            nextOrderedNumber[item.indentation] = renderedNumber + 1
+                        } else {
+                            // Character.isNumber includes full-width digits, fractions and Roman
+                            // numerals that Int cannot parse. They remain literal list markers.
+                            nextOrderedNumber.removeValue(forKey: item.indentation)
+                            appendListItem(item.marker, item.text, to: out, theme: theme)
+                        }
+                        i += 1
+                        continue
+                    }
+
+                    // Blank lines make a Markdown list loose; they do not start a new list.
+                    guard current.isEmpty else { break }
+                    var next = i + 1
+                    while next < lines.count,
+                          lines[next].trimmingCharacters(in: .whitespaces).isEmpty { next += 1 }
+                    guard next < lines.count, listItem(lines[next]) != nil else { break }
+                    i = next
+                }
                 continue
             }
 
@@ -117,16 +154,22 @@ enum Markdown {
         return (level, rest.trimmingCharacters(in: .whitespaces))
     }
 
-    private static func listItem(_ line: String) -> (String, String)? {
+    private static func listItem(_ line: String) ->
+        (marker: String, text: String, orderedNumber: Int?, indentation: Int)? {
+        let indentation = line.prefix(while: \.isWhitespace).reduce(0) {
+            $0 + ($1 == "\t" ? 4 : 1)
+        }
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         for bullet in ["- ", "* ", "+ "] where trimmed.hasPrefix(bullet) {
-            return ("•", String(trimmed.dropFirst(2)))
+            return ("•", String(trimmed.dropFirst(2)), nil, indentation)
         }
         // "1. " through "999. "
         let digits = trimmed.prefix(while: \.isNumber)
         if !digits.isEmpty, digits.count <= 3 {
             let after = trimmed.dropFirst(digits.count)
-            if after.hasPrefix(". ") { return (digits + ".", String(after.dropFirst(2))) }
+            if after.hasPrefix(". ") {
+                return (digits + ".", String(after.dropFirst(2)), Int(digits), indentation)
+            }
         }
         return nil
     }

@@ -224,6 +224,14 @@ group("markdown: lists") {
     check("numbers are kept as markers", numbers.string.contains("1."))
     check("both items survive", numbers.string.contains("first") && numbers.string.contains("second"))
 
+    expect("repeated one markers are rendered as an ordered sequence",
+           mdPlain("1. first\n1. second"), "1.\tfirst\n2.\tsecond\n")
+    expect("ordered numbering continues across loose-list blank lines",
+           mdPlain("1. first\n\n1. second\n\n1. third"),
+           "1.\tfirst\n2.\tsecond\n3.\tthird\n")
+    expect("non-ASCII numeric-looking markers do not crash the renderer",
+           mdPlain("１. first\n１. second"), "１.\tfirst\n１.\tsecond\n")
+
     // Hanging indent is what makes a wrapped list item readable.
     let style = attr(bullets, .paragraphStyle, near: "one") as? NSParagraphStyle
     check("list items hang", (style?.headIndent ?? 0) > 0)
