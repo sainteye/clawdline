@@ -62,10 +62,6 @@ export function renderDetailHead() {
     }
     els["detail-sub"].textContent = sub.join("  ·  ");
     drawIcon(els["detail-mark"], s && s.icon, 5);
-    // Nothing to ask the Mac about with no session open. The chip stays on screen: a control
-    // that comes and goes with the selection
-    // is a header that moves under whoever is reading it.
-    els["tx-refresh"].disabled = !s || ending;
     // **Hidden unless this page is being read on the Mac itself.**
     //
     // The button brings a session's terminal to the front over there. Pressed from a phone it
@@ -81,14 +77,15 @@ export function renderDetailHead() {
     els["tx-focus"].hidden = !atMac();
     els["tx-focus"].disabled = !s || !S.write || ending;
     els["tx-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
-    // The mark and title open the same compact action menu. The Git row is read-only, so the
-    // menu remains reachable when sending is off; its mutating rows each keep their own gate.
-    els["detail-focus"].disabled = !s || ending;
-    els["detail-focus"].title = T.webSessionActions;
-    els["detail-focus"].setAttribute("aria-label", T.webSessionActions);
-    els["detail-actions-title"].disabled = !s || ending;
-    els["detail-actions-title"].title = T.webSessionActions;
-    els["detail-actions-title"].setAttribute("aria-label", T.webSessionActions);
+    // The whole identity block is the quick route to information; the familiar overflow button
+    // owns the menu. Keeping those destinations separate means neither press has to reveal what
+    // it meant.
+    els["detail-info"].disabled = !s || ending;
+    els["detail-info"].title = T.webSessionInfo;
+    els["detail-info"].setAttribute("aria-label", T.webSessionInfo);
+    els["detail-actions-trigger"].disabled = !s || ending;
+    els["detail-actions-trigger"].title = T.webSessionActions;
+    els["detail-actions-trigger"].setAttribute("aria-label", T.webSessionActions);
     els["session-focus"].disabled = !s || !S.write || ending;
     // Reading needs no write switch; the menu it sits in already does, and the day the menu
     // opens for a read-only device this row is the one that should still work.

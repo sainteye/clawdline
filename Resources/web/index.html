@@ -288,45 +288,51 @@ document.documentElement.className = "booting";
     <section class="pane pane-detail" id="pane-detail">
         <div class="detail-head" id="detail-head">
             <button class="back" id="back" aria-label="Back to the session list">‹ Sessions</button>
-            <!-- The project mark and the title beside it are both ways into this session's action
-                 menu. Buttons rather than click handlers on drawn pixels and text, so the menu is
-                 available from a keyboard and both handles have names for assistive technology. -->
-            <div class="detail-actions">
-                <span class="clawdfather-crown" id="detail-clawdfather-crown"
-                      role="img" aria-label="Clawdfather" hidden></span>
-                <button class="detail-mark" id="detail-focus" type="button"
-                        aria-haspopup="menu" aria-expanded="false">
+            <!-- The whole identity block leads to this Session's information. One real button
+                 around the mark, title and path makes the generous phone target match what the
+                 reader sees, while the separate overflow button remains the actions entrance. -->
+            <button class="detail-session" id="detail-info" type="button"
+                    aria-haspopup="dialog">
+                <span class="detail-identity">
+                    <span class="clawdfather-crown" id="detail-clawdfather-crown"
+                          role="img" aria-label="Clawdfather" hidden></span>
                     <canvas id="detail-mark" width="0" height="0"></canvas>
-                </button>
-                <div class="session-actions" id="session-actions" role="menu" hidden>
-                    <div class="session-action-stage">
-                        <div class="session-action-level" id="session-actions-main" data-place="current">
-                            <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
-                            <button id="session-info" type="button" role="menuitem">Session info</button>
-                            <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
-                            <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
-                        </div>
-                        <div class="session-action-level" id="session-actions-git" data-place="right" aria-hidden="true" inert>
-                            <button class="level-back" id="session-actions-back" type="button" role="menuitem">‹ Session actions</button>
-                            <button id="session-git" type="button" role="menuitem">Git changes</button>
-                            <button id="session-commit" type="button" role="menuitem" data-action="commit">commit</button>
-                            <button id="session-push" type="button" role="menuitem" data-action="push">push</button>
+                </span>
+                <span class="who detail-who">
+                    <span class="name" id="detail-name">No session open</span>
+                    <span class="sub" id="detail-sub"></span>
+                </span>
+            </button>
+            <div class="tools">
+                <!-- A screen, because what this does happens on one that is somewhere else. -->
+                <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>
+                <!-- The familiar overflow mark is the explicit entrance to everything else. -->
+                <div class="detail-actions">
+                    <button class="chip detail-more" id="detail-actions-trigger" type="button"
+                            aria-haspopup="menu" aria-expanded="false">
+                        <svg viewBox="0 0 18 14" aria-hidden="true" focusable="false">
+                            <circle cx="3" cy="7" r="1.5"></circle>
+                            <circle cx="9" cy="7" r="1.5"></circle>
+                            <circle cx="15" cy="7" r="1.5"></circle>
+                        </svg>
+                    </button>
+                    <div class="session-actions" id="session-actions" role="menu" hidden>
+                        <div class="session-action-stage">
+                            <div class="session-action-level" id="session-actions-main" data-place="current">
+                                <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
+                                <button id="session-info" type="button" role="menuitem">Session info</button>
+                                <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
+                                <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
+                            </div>
+                            <div class="session-action-level" id="session-actions-git" data-place="right" aria-hidden="true" inert>
+                                <button class="level-back" id="session-actions-back" type="button" role="menuitem">‹ Session actions</button>
+                                <button id="session-git" type="button" role="menuitem">Git changes</button>
+                                <button id="session-commit" type="button" role="menuitem" data-action="commit">commit</button>
+                                <button id="session-push" type="button" role="menuitem" data-action="push">push</button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            <button class="who detail-who" id="detail-actions-title" type="button"
-                    aria-haspopup="menu" aria-expanded="false">
-                <div class="name" id="detail-name">No session open</div>
-                <div class="sub" id="detail-sub"></div>
-            </button>
-            <div class="tools">
-                <!-- A fresh read of the conversation. Links moved into the project-mark menu:
-                     they describe the project, while this slot is always within reach on a
-                     phone precisely when somebody needs the newest line of this transcript. -->
-                <button class="chip" id="tx-refresh" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M11.5 5.6A4.8 4.8 0 1 0 11 9.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path><path d="M9.1 2.4h2.8v2.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tx-refresh-label">Refresh</span></button>
-                <!-- A screen, because what this does happens on one that is somewhere else. -->
-                <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>
             </div>
         </div>
         <!-- The same pane, reading one of the session's background agents instead of the session.

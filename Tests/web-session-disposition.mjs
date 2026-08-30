@@ -206,6 +206,41 @@ assert.match(infoSource,
 assert.match(infoSource, /closeabilityLines\(s\)/,
     "the closeability explanation names the current reasons instead of only defining the key");
 
+const pageSource = await readFile(
+    new URL("../Resources/web/index.html", import.meta.url), "utf8");
+assert.match(pageSource,
+    /<button class="detail-session" id="detail-info"[^>]*aria-haspopup="dialog"[\s\S]*?<canvas id="detail-mark"[\s\S]*?<span class="who detail-who">[\s\S]*?id="detail-name"[\s\S]*?id="detail-sub"[\s\S]*?<\/button>/,
+    "the whole Session identity block is an explicit, accessible entrance to Session info");
+assert.match(pageSource,
+    /<button class="chip detail-more" id="detail-actions-trigger"[^>]*aria-haspopup="menu"[\s\S]*?<circle[^>]*>[\s\S]*?<circle[^>]*>[\s\S]*?<circle/,
+    "the transcript header exposes the Session menu through a recognizable three-dot button");
+assert.doesNotMatch(pageSource, /id="tx-refresh"/,
+    "the rarely used transcript refresh button no longer occupies the phone header");
+assert.doesNotMatch(pageSource, /id="detail-actions-title"/,
+    "the Session title no longer doubles as an unlabeled menu trigger");
+
+const detailActionsSource = await readFile(
+    new URL("../Resources/web/app/js/input/detail-actions.js", import.meta.url), "utf8");
+assert.match(detailActionsSource,
+    /els\["detail-actions-trigger"\]\.addEventListener\("click"[\s\S]*SessionActions\.toggle/,
+    "the three-dot button opens the existing Session actions menu");
+assert.doesNotMatch(detailActionsSource, /tx-refresh/,
+    "removing the refresh control also removes its dead interaction path");
+
+const actionConfirmSource = await readFile(
+    new URL("../Resources/web/app/js/input/action-confirm.js", import.meta.url), "utf8");
+assert.match(actionConfirmSource,
+    /els\["detail-info"\]\.addEventListener\("click"[\s\S]*Info\.open/,
+    "pressing the Session identity block opens Session info directly");
+
+const detailCSS = await readFile(
+    new URL("../Resources/web/app/css/detail.css", import.meta.url), "utf8");
+assert.match(detailCSS,
+    /\.detail-head \.detail-more\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s,
+    "the three-dot control keeps a phone-sized touch target");
+assert.match(detailCSS, /\.session-actions\s*\{[^}]*right:\s*-7px;/s,
+    "the menu is anchored to its new right-side trigger instead of the retired avatar trigger");
+
 const sessionInfoSource = await readFile(
     new URL("../Sources/SessionInfo.swift", import.meta.url), "utf8");
 assert.match(sessionInfoSource,

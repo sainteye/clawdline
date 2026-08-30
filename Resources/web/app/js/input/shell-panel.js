@@ -220,8 +220,8 @@ export var ShellPanel = (function () {
             drawn = false; meta = null;
             els["shell-panel"].hidden = true;
             delete els["pane-detail"].dataset.panel;
-            if (restore && !els["detail-focus"].disabled) {
-                els["detail-focus"].focus({ preventScroll: true });
+            if (restore && !els["detail-actions-trigger"].disabled) {
+                els["detail-actions-trigger"].focus({ preventScroll: true });
             }
         },
 

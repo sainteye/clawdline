@@ -17,13 +17,17 @@
     padding: 6px 10px 6px 4px;
 }
 .detail-head canvas { display: block; image-rendering: pixelated; flex: 0 0 auto; }
-.detail-head .detail-mark {
-    flex: 0 0 auto;
-    border-radius: 4px;
+.detail-head .detail-session {
+    display: flex; align-items: center; gap: 10px;
+    min-width: 0; flex: 1 1 auto;
+    padding: 4px 5px; margin: -4px -5px;
+    border-radius: 7px; text-align: left;
 }
-.detail-head .detail-mark:disabled { opacity: 0.45; cursor: default; }
+.detail-head .detail-session:hover:not(:disabled) { background: var(--card); }
+.detail-head .detail-session:disabled { opacity: 0.45; cursor: default; }
+.detail-head .detail-identity { position: relative; flex: 0 0 auto; }
 .detail-head .detail-actions { position: relative; flex: 0 0 auto; }
-.detail-head .detail-actions > .clawdfather-crown {
+.detail-head .detail-identity > .clawdfather-crown {
     position: absolute; top: -4px; left: -5px; z-index: 2;
     width: 15px; height: 10px; pointer-events: none;
     background: #f0c75e;
@@ -31,24 +35,29 @@
     transform: rotate(-30deg); transform-origin: 50% 80%;
     filter: drop-shadow(0 1px 0 rgba(80, 49, 10, 0.85));
 }
-.detail-head .detail-actions > .clawdfather-crown[hidden] { display: none; }
+.detail-head .detail-identity > .clawdfather-crown[hidden] { display: none; }
 .detail-head .detail-who {
-    text-align: left; overflow: hidden; border-radius: 5px;
-    padding: 3px 5px; margin: -3px -5px;
+    min-width: 0; overflow: hidden;
 }
-.detail-head .detail-who:disabled { opacity: 0.45; cursor: default; }
-.detail-head .detail-who:hover:not(:disabled) { background: var(--card); }
 /* **A rule that sets `display` outranks the `hidden` attribute.** The header above sets `flex`,
    so without this the session's header stays on screen behind an agent's. Same trap the chip in
    the list fell into, noted there too. */
 .detail-head[hidden] { display: none; }
 .detail-head .who { min-width: 0; flex: 1 1 auto; }
-.detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-head .name { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-head .sub {
+    display: block;
     font-family: var(--mono); font-size: 11px; color: var(--faint);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.detail-head .tools { display: flex; gap: 6px; flex: 0 0 auto; }
+.detail-head .tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.detail-head .detail-more {
+    display: grid; place-items: center;
+    min-width: 44px; min-height: 44px; padding: 4px 7px;
+}
+.detail-head .detail-more svg {
+    display: block; width: 18px; height: 14px; fill: currentColor;
+}
 
 /* The same pane, one of the session's agents in it.
    ---------------------------------------------------------------------------
@@ -85,7 +94,7 @@
 }
 .session-actions {
     position: absolute; z-index: 45;
-    top: calc(100% + 9px); left: -7px;
+    top: calc(100% + 9px); right: -7px;
     width: 184px;
     padding: 5px;
     border: 1px solid var(--line); border-radius: 10px;
@@ -116,7 +125,7 @@
     transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear 190ms;
 }
 .session-actions::before {
-    content: ""; position: absolute; top: -5px; left: 14px;
+    content: ""; position: absolute; top: -5px; right: 14px;
     width: 8px; height: 8px;
     border-left: 1px solid var(--line); border-top: 1px solid var(--line);
     background: #1a1a20; transform: rotate(45deg);
@@ -240,20 +249,3 @@
 .chip .ico { display: inline-block; vertical-align: -2px; width: 13px; height: 13px; margin-right: 5px; }
 .chip .ico.arrow { transition: transform 180ms var(--ease); }
 .chip.on .ico.arrow { transform: rotate(180deg); }
-
-/* **Refresh, while it is refreshing.**
-
-   The transcript is refetched quietly — the reader is reading the last version of it and a
-   skeleton over the top would take that away — which meant pressing this button did nothing
-   visible at all. On a desk that is a shrug; on a phone, where nothing else on the screen is
-   moving, it is a button somebody presses three times because they cannot tell whether it
-   worked, and then stops trusting.
-
-   So the control answers for itself: the circular arrow turns, and the chip takes the accent
-   while it is out. Two signals rather than one because the colour is the half that survives a
-   still frame and a reader who has asked for less movement — and because the label is *not*
-   swapped for "Refreshing…", which is four characters wider than "Refresh" and would squeeze
-   the session's name out of a phone header for half a second every press. */
-.chip[data-busy="on"] { border-color: var(--accent-ed); color: var(--accent); }
-.chip[data-busy="on"] .ico { animation: spin 900ms linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }

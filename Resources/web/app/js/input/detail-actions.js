@@ -12,30 +12,6 @@ import { closeAgent, openAgent } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
 
 els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
-/**
- * Refresh, and be seen doing it.
- *
- * A local transcript comes back in a few milliseconds, which is faster than anybody can see: a
- * spinner that appears and vanishes inside three frames is not feedback, it is a flicker. So the
- * working state is held for a beat whatever the network does — long enough to have been a state
- * somebody watched — and then goes. Not disabled while it is out: on a phone a disabled chip in
- * this header is `display: none`, so disabling it would make the button somebody just pressed
- * disappear. The flag is what stops a second press, and the chip stays where it was put.
- */
-var refreshing = false;
-els["tx-refresh"].addEventListener("click", function () {
-    if (!S.openId || refreshing) return;
-    refreshing = true;
-    var chip = els["tx-refresh"], started = Date.now(), HELD = 550;
-    chip.dataset.busy = "on";
-    function done() {
-        setTimeout(function () {
-            chip.dataset.busy = "off";
-            refreshing = false;
-        }, Math.max(0, HELD - (Date.now() - started)));
-    }
-    Promise.resolve(loadTranscript(S.openId, true)).then(done, done);
-});
 els.back.addEventListener("click", function () { closeDetail(); });
 // One listener on the box rather than one per row: the strip repaints every time an agent
 // reaches for a tool, and rebinding half a dozen buttons a second to do nothing new is work
@@ -60,14 +36,9 @@ els["tx-focus"].addEventListener("click", function () {
         .catch(function (e) { toast(e.message, true); });
 });
 
-els["detail-focus"].addEventListener("click", function () {
+els["detail-actions-trigger"].addEventListener("click", function () {
     if (!S.openId) return;
-    SessionActions.toggle(els["detail-focus"]);
-});
-
-els["detail-actions-title"].addEventListener("click", function () {
-    if (!S.openId) return;
-    SessionActions.toggle(els["detail-actions-title"]);
+    SessionActions.toggle(els["detail-actions-trigger"]);
 });
 
 function actionTriggerKey(ev) {
@@ -77,15 +48,13 @@ function actionTriggerKey(ev) {
     var first = SessionActions.items()[0];
     if (first) first.focus({ preventScroll: true });
 }
-els["detail-focus"].addEventListener("keydown", actionTriggerKey);
-els["detail-actions-title"].addEventListener("keydown", actionTriggerKey);
+els["detail-actions-trigger"].addEventListener("keydown", actionTriggerKey);
 
 /**
- * The project mark and its title are two handles for the same menu. Bringing the terminal
- * forward is a menu action of its own, so opening the menu never moves focus away from the
- * browser. Git is a read-only view; `commit` and `push` are ordinary prompts, while ending
- * uses the server's named two-step route so the assistant quits cleanly before its terminal tab
- * is closed.
+ * The overflow button is the one handle for this menu. Bringing the terminal forward is a menu
+ * action of its own, so opening the menu never moves focus away from the browser. Git is a
+ * read-only view; `commit` and `push` are ordinary prompts, while ending uses the server's named
+ * two-step route so the assistant quits cleanly before its terminal tab is closed.
  */
 export var SessionActions = {
     opener: null,
@@ -118,19 +87,17 @@ export var SessionActions = {
 
     open: function (opener) {
         if (!S.openId) return;
-        this.opener = opener || this.opener || els["detail-focus"];
+        this.opener = opener || this.opener || els["detail-actions-trigger"];
         this.level("main", false);
         els["session-actions"].hidden = false;
-        els["detail-focus"].setAttribute("aria-expanded", "true");
-        els["detail-actions-title"].setAttribute("aria-expanded", "true");
+        els["detail-actions-trigger"].setAttribute("aria-expanded", "true");
     },
 
     close: function (restore) {
         if (els["session-actions"].hidden) return;
         els["session-actions"].hidden = true;
         this.level("main", false);
-        els["detail-focus"].setAttribute("aria-expanded", "false");
-        els["detail-actions-title"].setAttribute("aria-expanded", "false");
+        els["detail-actions-trigger"].setAttribute("aria-expanded", "false");
         if (restore && this.opener && document.contains(this.opener)) {
             this.opener.focus({ preventScroll: true });
         }

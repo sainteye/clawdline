@@ -74,7 +74,7 @@ CoordinatorControls.bind({
     context: function () { return { connected: S.conn === "live", write: S.write === true }; },
     onSessionActions: function (id) {
         openSession(id);
-        setTimeout(function () { SessionActions.open(els["detail-focus"]); }, 0);
+        setTimeout(function () { SessionActions.open(els["detail-actions-trigger"]); }, 0);
     }
 });
 

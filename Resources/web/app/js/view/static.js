@@ -25,8 +25,6 @@ export function paintStatic() {
     // The chevron is drawn, not typed: it points the way back whichever language is beside it.
     text(els.back, "‹ " + T.webBack);
     attr(els.back, "aria-label", T.webBackLabel);
-    text(els["tx-refresh-label"], T.webGitRefresh);
-    attr(els["tx-refresh"], "title", T.webGitRefresh);
     text(els["tx-focus-label"], T.webShowOnMac);
     text(els["image-lightbox-title"], T.webImagePreview);
     text(els["image-lightbox-close"], T.webImageClose);

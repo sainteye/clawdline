@@ -35,7 +35,7 @@ export var ActionConfirm = {
         var id = sessionID || S.openId;
         if (!id || !S.write) return;
         var action = kind === "end" ? T.webEndSession : kind;
-        var returnFocus = opener || SessionActions.opener || els["detail-focus"];
+        var returnFocus = opener || SessionActions.opener || els["detail-actions-trigger"];
         SessionActions.close();
         // `lost_if_closed`, at the only moment it can still change the outcome. Confirming a
         // sheet that showed the list is the acceptance the server's close gate asks for.
@@ -167,6 +167,12 @@ export var ActionConfirm = {
     }
 };
 
+els["detail-info"].addEventListener("click", function () {
+    if (!S.openId) return;
+    SessionActions.close();
+    Info.open();
+});
+
 els["session-actions"].addEventListener("click", function (ev) {
     var action = ev.target.closest ? ev.target.closest("[data-action]") : null;
     if (action) { ActionConfirm.open(action.dataset.action); return; }
@@ -237,7 +243,7 @@ els["session-actions"].addEventListener("keydown", function (ev) {
 
 document.addEventListener("pointerdown", function (ev) {
     if (els["session-actions"].hidden ||
-        ev.target.closest(".detail-actions, #detail-actions-title")) return;
+        ev.target.closest(".detail-actions")) return;
     SessionActions.close();
 });
 

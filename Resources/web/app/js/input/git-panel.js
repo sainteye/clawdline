@@ -114,8 +114,8 @@ export var GitPanel = (function () {
             forId = null; snapshot = null; loading = false; error = null;
             els["git-panel"].hidden = true;
             delete els["pane-detail"].dataset.panel;
-            if (restore && !els["detail-focus"].disabled) {
-                els["detail-focus"].focus({ preventScroll: true });
+            if (restore && !els["detail-actions-trigger"].disabled) {
+                els["detail-actions-trigger"].focus({ preventScroll: true });
             }
         },
 
