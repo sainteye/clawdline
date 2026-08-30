@@ -47,7 +47,12 @@ be the minimum safe metadata that explains the work: canonical Project id, task 
 schedule identity, explicit plan/Feature hints, and lineage. Task titles can contain sensitive
 text, so remote classification requires an explicit product policy; local-only is the default.
 
-The classifier emits a `proposed` attribution event with confidence, classifier/prompt version and
+The classifier design is not yet wired to a production producer. Today the ledger accepts manual
+or external attribution events and the dashboard aggregates accepted heads, but it does not
+automatically create or accept Feature events. The UI says so explicitly instead of presenting an
+empty table as though classification had run.
+
+When a classifier is added, it emits a `proposed` attribution event with confidence, classifier/prompt version and
 an evidence digest. A deterministic policy may append an `accepted` event above a configured
 threshold, or leave the proposal for manual review. Manual correction appends another decision
 that supersedes the prior one. The accounting row never changes.
@@ -75,9 +80,11 @@ bounded rows as the range totals. It never reclassifies ledger evidence in the b
   production depth (`1`) is child work. Scheduled origin stays a separate scheduled class rather
   than being guessed as either; missing evidence is `unavailable` or `partial`. Parent labels and
   terminal state do not fill the gap, and impossible depth-2 fixtures are not evidence.
-- Comparable Project cost is available only when every row is priced and all values share one
-  unit and basis. `partial_cost_coverage`, `mixed_cost_series`, and `no_cost_series` are reason
-  codes, not zero-valued totals.
+- Estimated Project spending is currently scoped to Claude Code. Codex plan-billed rows are left
+  outside that estimate rather than treated as zero or allowed to hide a valid Claude estimate.
+  Within the Claude-only scope every row must still be priced and all values must share one unit
+  and basis. `partial_cost_coverage`, `mixed_cost_series`, and `no_cost_series` are reason codes,
+  not zero-valued totals.
 - Change compares generated output against the immediately preceding range with the same number
   of local calendar days. Both `from` and `to` are required, both matching reads must stay below
   the scan ceiling, and every output value in both subjects must be known. Otherwise the response

@@ -147,7 +147,7 @@ function renderProjects(context, projects) {
         tableCell(doc, row, "Agent work", formatUsageNumber(project.runs), "usage-value");
         tableCell(doc, row, "Scheduled", formatUsageNumber(project.scheduledRuns), "usage-value");
         tableCell(doc, row, "Root / child", lineageText(project.lineage));
-        tableCell(doc, row, "Comparable cost", costText(project.cost));
+        tableCell(doc, row, "Estimated spending (Claude Code)", costText(project.cost));
         tableCell(doc, row, "Coverage", coverageText(project.coverage));
         tableCell(doc, row, "Change", describeUsageComparison(project.comparison));
         var action = doc.createElement("td"), button = doc.createElement("button");
@@ -290,7 +290,7 @@ function renderScheduledWork(context, scheduled) {
     (scheduled.schedules || []).forEach(function (item) {
         var row = doc.createElement("tr");
         row.setAttribute("role", "row");
-        tableCell(doc, row, "Schedule", item.id);
+        tableCell(doc, row, "Schedule", item.label || item.id);
         tableCell(doc, row, "Runs", formatUsageNumber(item.runs), "usage-value");
         tableCell(doc, row, "Active days", formatUsageNumber(item.activeDays), "usage-value");
         tableCell(doc, row, "Generated output", formatUsageNumber(item.output), "usage-value usage-value-primary");
@@ -312,6 +312,9 @@ function renderScheduledWork(context, scheduled) {
 function renderFeatures(context, features) {
     var doc = context.document, elements = context.elements, body = elements["usage-feature-body"];
     clear(body);
+    elements["usage-feature-summary"].textContent = features.automaticAttribution === false
+        ? "Automatic Feature attribution is not configured. Accepted manual or external assignments appear here."
+        : "A Feature appears only with one unambiguous accepted attribution head.";
     (features.groups || []).forEach(function (item) {
         var row = doc.createElement("tr");
         row.setAttribute("role", "row");

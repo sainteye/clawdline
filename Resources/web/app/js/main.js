@@ -152,6 +152,7 @@ bindUsagePortfolio({
     "usage-project-lineage": byId("usage-project-lineage"), "usage-project-recent": byId("usage-project-recent"),
     "usage-insights": byId("usage-insights"), "usage-schedule-body": byId("usage-schedule-body"),
     "usage-unknown-schedule": byId("usage-unknown-schedule"), "usage-feature-body": byId("usage-feature-body"),
+    "usage-feature-summary": byId("usage-feature-summary"),
     "usage-unknown-feature": byId("usage-unknown-feature"),
     "usage-coverage-panel": byId("usage-coverage-panel"), "usage-coverage-list": byId("usage-coverage-list"),
     "usage-export-csv": byId("usage-export-csv"), "usage-export-json": byId("usage-export-json"),

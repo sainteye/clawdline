@@ -202,11 +202,35 @@
     .usage-heading { align-items: center; }
     .usage-heading > div > p:last-child { display: none; }
     .usage-controls { grid-template-columns: 1fr; }
-    .usage-controls fieldset { grid-template-columns: 1fr 1fr; }
+    /* Mobile Safari's date control keeps an intrinsic width wider than half this card. Stack the
+       controls at the phone breakpoint so neither field can escape its containing panel. */
+    .usage-controls fieldset { grid-template-columns: 1fr; }
     .usage-refresh { width: 100%; }
     .usage-secondary-grid,
     .usage-agent-list { grid-template-columns: 1fr; }
     .usage-secondary-grid > :last-child { grid-column: auto; }
+
+    /* One Project card at a time keeps the selected detail directly below the carousel instead
+       of below every Project in the range. Touch scrolling remains native and keyboard users
+       still reach the Open button in ordinary DOM order. */
+    .usage-projects .usage-table-wrap { overflow-x: visible; }
+    .usage-project-table tbody {
+        display: flex;
+        grid-template-columns: none;
+        gap: 10px;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scroll-snap-type: x mandatory;
+        scrollbar-width: none;
+        padding: 2px 2px 8px;
+    }
+    .usage-project-table tbody::-webkit-scrollbar { display: none; }
+    .usage-project-table tr {
+        flex: 0 0 calc(100% - 16px);
+        width: auto;
+        scroll-snap-align: start;
+        scroll-snap-stop: always;
+    }
 }
 
 @media (max-width: 390px) {

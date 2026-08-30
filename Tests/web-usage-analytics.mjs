@@ -130,11 +130,14 @@ function portfolioPayload() {
       projects: [project("alpha", "Alpha", 700, 1), project("beta", "Beta", 500, 2)],
       scheduledWork: {
         status: "available", runs: 2, output: 200, unknownOutputRuns: 1,
-        schedules: [{ id: "nightly", runs: 2, activeDays: 1, output: 200,
+        schedules: [{ id: "nightly", label: "Nightly health", runs: 2, activeDays: 1, output: 200,
                       coverage: { status: "partial", unknownOutputRuns: 1 } }],
         unknownSchedule: { runs: 0 },
       },
-      features: { groups: [], unknown: { runs: 2 } },
+      features: {
+        status: "no_accepted_attribution", automaticAttribution: false,
+        groups: [], unknown: { runs: 2 },
+      },
       insights: [],
     },
     rows: [], pagination: { hasMore: false, nextCursor: null },
@@ -181,6 +184,10 @@ async function exerciseRealModule(usage, mainSource) {
   verify.equal(elements["usage-run-count"].textContent, "2");
   verify.match(elements["usage-scheduled-output"].textContent, /200 measured/);
   verify.match(elements["usage-scheduled-runs"].textContent, /1 Unknown output/);
+  verify.equal(elements["usage-schedule-body"].firstChild.firstChild.textContent,
+               "Nightly health");
+  verify.match(elements["usage-feature-summary"].textContent,
+               /Automatic Feature attribution is not configured/);
   const buttons = elements["usage-project-list"].querySelectorAll(".usage-open-project");
   verify.equal(buttons.length, 2);
   verify.equal(buttons[0].parentNode.parentNode.getAttribute("role"), "row");
@@ -280,7 +287,13 @@ async function main() {
                "Project selection and accessible labels must survive 391–1280px");
   verify.match(css, /@media \(max-width: 390px\)/);
   verify.match(css, /@media \(max-width: 320px\)/);
+  verify.match(css, /@media \(max-width: 680px\)[\s\S]*\.usage-controls fieldset \{ grid-template-columns: 1fr;/,
+               "phone date controls must stack before Safari's intrinsic date width can overflow");
+  verify.match(css, /@media \(max-width: 680px\)[\s\S]*\.usage-project-table tbody \{[\s\S]*overflow-x: auto;[\s\S]*scroll-snap-type: x mandatory;/,
+               "phone Projects must be a horizontal snap carousel");
   verify.match(css, /:focus-visible/);
+  verify.match(page, /Estimated spending \(Claude Code\)/,
+               "the Claude-only spending scope must be visible in the column name");
   verify.match(page, /Generated output is an operational signal, not a productivity score\./);
   verify.doesNotMatch(diagnostics, /installDebugButton/);
   verify.match(detailActions, /els\.conn\.addEventListener\("click"[\s\S]*api\.refresh/);

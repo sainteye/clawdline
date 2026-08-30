@@ -17,8 +17,8 @@ main_lines=$(line_count Tests/main.swift)
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
-[ "$orchestrator_lines" -le 13482 ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved Root Assignment correction receipt (13482)"
+[ "$orchestrator_lines" -le 13502 ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved Usage schedule-title receipt (13502)"
 
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ "$remote_server_lines" -le 6384 ] \

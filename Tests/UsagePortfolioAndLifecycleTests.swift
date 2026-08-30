@@ -111,7 +111,8 @@ group("usage portfolio ranks canonical projects and keeps every unavailable dime
     let payload = UsageQueryService(rows: {
         [alphaRoot, alphaRootSegment, alphaChild, alphaSchedule, beta, unknown,
          alphaPrevious, betaPrevious]
-    }).query(.init(from: "2026-08-20", to: "2026-08-21", timezoneID: "UTC"),
+    }, scheduleLabels: { ["nightly-health": "Nightly health"] }).query(
+        .init(from: "2026-08-20", to: "2026-08-21", timezoneID: "UTC"),
              now: current.addingTimeInterval(300)).payload
     let portfolio = payload["portfolio"] as? [String: Any]
     check("the complete Portfolio projection is JSON serializable",
@@ -141,7 +142,8 @@ group("usage portfolio ranks canonical projects and keeps every unavailable dime
           alphaCost?["status"] as? String == "available"
             && abs((alphaCost?["value"] as? Double ?? 0) - 1.8) < 0.000_001
             && alphaCost?["unit"] as? String == "USD"
-            && alphaCost?["basis"] as? String == "provider_actual")
+            && alphaCost?["basis"] as? String == "provider_actual"
+            && alphaCost?["assistant"] as? String == "claude")
     let alphaChange = alpha?["comparison"] as? [String: Any]
     check("equal adjacent local-day ranges produce a real output delta",
           alphaChange?["status"] as? String == "comparable"
@@ -151,6 +153,7 @@ group("usage portfolio ranks canonical projects and keeps every unavailable dime
         as? [[String: Any]]) ?? []
     check("Scheduled Work is aggregated by explicit schedule identity",
           schedules.count == 1 && schedules.first?["id"] as? String == "nightly-health"
+            && schedules.first?["label"] as? String == "Nightly health"
             && schedules.first?["runs"] as? Int == 1
             && schedules.first?["output"] as? Int == 20)
     let scheduledWork = portfolio?["scheduledWork"] as? [String: Any]
@@ -158,6 +161,10 @@ group("usage portfolio ranks canonical projects and keeps every unavailable dime
           scheduledWork?["output"] as? Int == 20
             && scheduledWork?["runs"] as? Int == 1
             && scheduledWork?["unknownOutputRuns"] as? Int == 0)
+    let unattributedFeatures = portfolio?["features"] as? [String: Any]
+    check("an empty Feature table says automatic attribution is not configured",
+          unattributedFeatures?["status"] as? String == "no_accepted_attribution"
+            && unattributedFeatures?["automaticAttribution"] as? Bool == false)
     let unknownProject = projects.first { $0["id"] as? String == "unknown-project" }
     check("Unknown Project and unknown output stay visibly partial",
           unknownProject?["output"] is NSNull
@@ -170,6 +177,23 @@ group("usage portfolio ranks canonical projects and keeps every unavailable dime
            ((unbounded["portfolio"] as? [String: Any])?["comparison"]
                 as? [String: Any])?["reason"] as? String,
            "closed_range_required")
+
+    var pricedClaude = analyticsRow("claude-spend", at: current,
+                                    cost: 1.25, unit: "USD",
+                                    basis: "provider_actual", missing: nil)
+    pricedClaude.depth = Orchestrator.depthFloor
+    var unpricedCodex = analyticsRow("codex-plan", at: current, assistant: "codex",
+                                    model: "gpt-5.6-sol")
+    unpricedCodex.depth = Orchestrator.depthFloor
+    unpricedCodex.missingReason = "plan_billed"
+    let mixedProject = ((UsageQueryService(rows: { [pricedClaude, unpricedCodex] })
+        .query(.init(timezoneID: "UTC")).payload["portfolio"] as? [String: Any])?["projects"]
+        as? [[String: Any]])?.first
+    let mixedSpend = mixedProject?["cost"] as? [String: Any]
+    check("unpriced Codex usage does not hide Claude Code's estimated spending",
+          mixedSpend?["status"] as? String == "available"
+            && mixedSpend?["assistant"] as? String == "claude"
+            && abs((mixedSpend?["value"] as? Double ?? 0) - 1.25) < 0.000_001)
 }
 
 group("legacy managed-worktree Projects migrate through auditable append-only evidence") {
@@ -645,6 +669,10 @@ group("the shipped page contains the accessible Usage Project Portfolio") {
     check("refresh errors mark the retained range stale rather than relabelling old data",
           script.contains("Showing stale data for ")
             && script.contains("setAttribute(\"data-stale\", \"true\")"))
+    let ledgerSource = try! String(contentsOfFile: "Sources/UsageLedger.swift", encoding: .utf8)
+    check("root Session collection resolves the actual working directory before attribution",
+          ledgerSource.contains("cwd: Targets.workingDirectory(of: session)")
+            && !ledgerSource.contains("terminalID: session.id, cwd: session.cwd"))
 
     let mutationGuard = Process()
     mutationGuard.executableURL = URL(fileURLWithPath: "/usr/bin/env")

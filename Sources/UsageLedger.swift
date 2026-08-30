@@ -2902,7 +2902,8 @@ extension UsageLedger {
                      record: record.url, bytes: bytes, at: now)
             if unchanged { continue }
             shared.observe(sample(assistant: record.assistant, sessionID: sessionID,
-                                  record: record.url, terminalID: session.id, cwd: session.cwd,
+                                  record: record.url, terminalID: session.id,
+                                  cwd: Targets.workingDirectory(of: session),
                                   bytes: bytes, now: now))
         }
     }
@@ -3100,10 +3101,12 @@ final class UsageQueryService {
     static var jsonEncoderForTesting: (([String: Any]) -> Data?)?
 
     private let readRows: (UsageLedger.AnalyticsFilter) -> UsageLedger.AnalyticsRead
+    private let readScheduleLabels: () -> [String: String]
     private let encodeJSON: ([String: Any]) -> Data?
 
     init() {
         readRows = { UsageLedger.shared.analyticsRead($0) }
+        readScheduleLabels = { Orchestrator.usageScheduleLabels() }
         encodeJSON = Self.jsonEncoderForTesting ?? {
             try? JSONSerialization.data(withJSONObject: $0,
                                         options: [.sortedKeys, .withoutEscapingSlashes])
@@ -3115,6 +3118,7 @@ final class UsageQueryService {
     init(rows: @escaping () -> [UsageLedger.Row], corrections: @escaping () -> Int = { 0 },
          acceptedFeatures: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          acceptedProjects: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
+         scheduleLabels: @escaping () -> [String: String] = { [:] },
          jsonEncoder: @escaping ([String: Any]) -> Data? = {
              try? JSONSerialization.data(withJSONObject: $0,
                                          options: [.sortedKeys, .withoutEscapingSlashes])
@@ -3126,6 +3130,7 @@ final class UsageQueryService {
                 latestLedgerObservation: rows.map(\.updatedAt).max(),
                 acceptedFeatures: acceptedFeatures(), acceptedProjects: acceptedProjects())
         }
+        readScheduleLabels = scheduleLabels
         encodeJSON = jsonEncoder
     }
 
@@ -3283,6 +3288,8 @@ final class UsageQueryService {
                     "sources": UsageLedger.AttributionSource.allCases.map(\.rawValue),
                     "decisions": UsageLedger.AttributionDecision.allCases.map(\.rawValue),
                     "featureAggregation": "one_unambiguous_accepted_head",
+                    "automaticFeatureAttribution": false,
+                    "featureProducer": "manual_or_external_only",
                     "llmEvidence": "classifier_version_confidence_and_sha256_only",
                 ],
             ],
@@ -3315,6 +3322,7 @@ final class UsageQueryService {
             acceptedFeatures: reading.acceptedFeatures,
             acceptedProjects: reading.acceptedProjects,
             previousAcceptedProjects: previousAcceptedProjects, calendar: calendar,
+            scheduleLabels: readScheduleLabels(),
             query: query, priorRange: priorRange,
             comparisonTruncated: truncated || previousTruncated)
         if truncated {
@@ -3620,21 +3628,30 @@ final class UsageQueryService {
         ]
     }
 
-    private static func comparableCost(_ totals: [String: Any]) -> [String: Any] {
+    /// Estimated spending is intentionally Claude Code-only. Codex login usage has no dollar
+    /// value, and that absence must neither become zero nor make Claude's recorded estimate
+    /// disappear from a mixed Project.
+    private static func comparableCost(_ rows: [UsageLedger.Row]) -> [String: Any] {
+        let scoped = rows.filter { $0.assistant == Assistant.claude.rawValue }
+        guard !scoped.isEmpty else {
+            return ["status": "unavailable", "reason": "no_claude_code_usage",
+                    "assistant": Assistant.claude.rawValue]
+        }
+        let totals = summary(scoped)
         let costs = totals["costs"] as? [[String: Any]] ?? []
         let unavailable = totals["unavailableCost"] as? [String: Any] ?? [:]
         let missing = unavailable["rows"] as? Int ?? 0
         guard missing == 0 else {
             return ["status": "unavailable", "reason": "partial_cost_coverage",
-                    "unavailableRows": missing]
+                    "unavailableRows": missing, "assistant": Assistant.claude.rawValue]
         }
         guard costs.count == 1, let cost = costs.first else {
-            return ["status": "unavailable",
+            return ["status": "unavailable", "assistant": Assistant.claude.rawValue,
                     "reason": costs.isEmpty ? "no_cost_series" : "mixed_cost_series"]
         }
         return ["status": "available", "value": cost["value"] ?? NSNull(),
                 "unit": cost["unit"] ?? NSNull(), "basis": cost["basis"] ?? NSNull(),
-                "rows": cost["rows"] ?? NSNull()]
+                "rows": cost["rows"] ?? NSNull(), "assistant": Assistant.claude.rawValue]
     }
 
     private static func lineagePayload(_ rows: [UsageLedger.Row]) -> [String: Any] {
@@ -3738,7 +3755,7 @@ final class UsageQueryService {
             "runs": Set(rows.map(runID)).count,
             "scheduledRuns": Set(scheduledRows.map(runID)).count,
             "scheduledOutput": output(scheduledTotals) as Any? ?? NSNull(),
-            "cost": comparableCost(totals),
+            "cost": comparableCost(rows),
             "coverage": coveragePayload(rows, totals: totals),
             "lineage": lineagePayload(rows),
             "comparison": outputComparison(current: rows, previous: previous,
@@ -3752,7 +3769,8 @@ final class UsageQueryService {
         ]
     }
 
-    private static func scheduledWork(_ rows: [UsageLedger.Row], calendar: Calendar)
+    private static func scheduledWork(_ rows: [UsageLedger.Row], calendar: Calendar,
+                                      labels: [String: String])
         -> [String: Any] {
         var groups: [String: [UsageLedger.Row]] = [:]
         let scheduledRows = rows.filter { $0.origin == UsageLedger.Origin.schedule.rawValue }
@@ -3766,7 +3784,8 @@ final class UsageQueryService {
             let totals = summary(rows)
             let days = Set(rows.map { UsageLedger.localDay(of: $0.startedAt, calendar: calendar) })
             return [
-                "id": id, "runs": Set(rows.map(runID)).count,
+                "id": id, "label": labels[id] ?? id,
+                "runs": Set(rows.map(runID)).count,
                 "output": output(totals) as Any? ?? NSNull(),
                 "unknownOutputRuns": unknownOutputRuns(rows),
                 "activeDays": days.count,
@@ -3824,7 +3843,9 @@ final class UsageQueryService {
         }
         let unknownTotals = summary(unknown)
         return [
-            "status": "available",
+            "status": payload.isEmpty && !rows.isEmpty
+                ? "no_accepted_attribution" : "available",
+            "automaticAttribution": false,
             "policy": "one_unambiguous_accepted_head",
             "groups": payload,
             "unknown": [
@@ -3871,7 +3892,6 @@ final class UsageQueryService {
                 "detail": String(format: "%@ read %.1fx as much new-plus-cached context as it generated. This can be normal for review or retrieval-heavy work; inspect recent runs.", context.project["label"] as? String ?? "Project", context.ratio),
             ])
         }
-        let total = summary(rows)
         if !rows.isEmpty, !previousRows.isEmpty {
             let currentComplete = Double(rows.filter { !$0.measurement.incomplete }.count)
                 / Double(rows.count)
@@ -3884,10 +3904,9 @@ final class UsageQueryService {
                 ])
             }
         }
-        let costs = total["costs"] as? [[String: Any]] ?? []
-        let unavailable = (total["unavailableCost"] as? [String: Any])?["rows"] as? Int ?? 0
-        if costs.count == 1, unavailable == 0, let cost = costs.first,
-           let totalValue = cost["value"] as? Double, totalValue > 0 {
+        let spending = comparableCost(rows)
+        if spending["status"] as? String == "available",
+           let totalValue = spending["value"] as? Double, totalValue > 0 {
             let priced = projects.compactMap { project -> (project: [String: Any], value: Double)? in
                 guard let value = (project["cost"] as? [String: Any])?["value"] as? Double
                 else { return nil }
@@ -3898,7 +3917,7 @@ final class UsageQueryService {
                 insights.append([
                     "kind": "cost_concentration", "projectId": leader.project["id"] ?? NSNull(),
                     "title": "Comparable cost is concentrated",
-                    "detail": String(format: "%@ accounts for %.0f%% of the one comparable %@ / %@ cost series in this range.", leader.project["label"] as? String ?? "Project", leader.value / totalValue * 100, cost["unit"] as? String ?? "unit", cost["basis"] as? String ?? "basis"),
+                    "detail": String(format: "%@ accounts for %.0f%% of Claude Code's comparable %@ / %@ estimated spending in this range.", leader.project["label"] as? String ?? "Project", leader.value / totalValue * 100, spending["unit"] as? String ?? "unit", spending["basis"] as? String ?? "basis"),
                 ])
             }
         }
@@ -3909,7 +3928,8 @@ final class UsageQueryService {
                                   acceptedFeatures: [String: UsageLedger.AcceptedAttribution],
                                   acceptedProjects: [String: UsageLedger.AcceptedAttribution],
                                   previousAcceptedProjects: [String: UsageLedger.AcceptedAttribution],
-                                  calendar: Calendar, query: Query, priorRange: PreviousRange?,
+                                  calendar: Calendar, scheduleLabels: [String: String],
+                                  query: Query, priorRange: PreviousRange?,
                                   comparisonTruncated: Bool) -> [String: Any] {
         let currentGroups = groupedProjects(rows, acceptedProjects: acceptedProjects)
         let previousGroups = groupedProjects(previousRows,
@@ -3944,7 +3964,8 @@ final class UsageQueryService {
             "runs": Set(rows.map(runID)).count,
             "comparison": comparison,
             "projects": projects,
-            "scheduledWork": scheduledWork(rows, calendar: calendar),
+            "scheduledWork": scheduledWork(rows, calendar: calendar,
+                                           labels: scheduleLabels),
             "features": featureWork(rows, accepted: acceptedFeatures),
             "insights": portfolioInsights(projects: projects, rows: rows,
                                            previousRows: previousRows),

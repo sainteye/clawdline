@@ -894,6 +894,26 @@ enum Orchestrator {
         scheduleInventory().valid
     }
 
+    /// Human names for Usage's durable schedule ids. The live file is authoritative when it
+    /// still exists; the newest retained run keeps the title for a schedule that has since been
+    /// removed. UUID-only identity remains the fallback when neither source has a label.
+    static func usageScheduleLabels() -> [String: String] {
+        let live = schedules()
+        load()
+        lock.lock()
+        let snapshots = tasks.values.sorted { $0.created < $1.created }
+        lock.unlock()
+        var labels: [String: String] = [:]
+        for task in snapshots {
+            guard let id = task.scheduleID,
+                  let label = task.rootLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !label.isEmpty else { continue }
+            labels[id] = label
+        }
+        for schedule in live { labels[schedule.id] = schedule.title }
+        return labels
+    }
+
     static func scheduleRecords(now: Date = Date()) -> [[String: Any]] {
         let inventory = scheduleInventory()
         lock.lock()
