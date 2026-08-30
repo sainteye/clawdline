@@ -70,7 +70,11 @@ actor CloudLoopbackRelay {
         let listener = try NWListener(using: parameters)
         self.listener = listener
         listener.newConnectionHandler = { [weak self] connection in
-            Task { await self?.accept(connection) }
+            guard let relay = self else {
+                connection.cancel()
+                return
+            }
+            Task { await relay.accept(connection) }
         }
         return try await withCheckedThrowingContinuation { continuation in
             let gate = CloudLoopbackContinuationGate()
