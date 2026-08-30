@@ -53,6 +53,7 @@ els.agents.addEventListener("click", function (ev) {
 els["agent-back"].addEventListener("click", function () { closeAgent(); });
 els.keys.addEventListener("click", function () { els.keys.hidden = true; });
 els.keys.querySelector(".sheet").addEventListener("click", function (ev) { ev.stopPropagation(); });
+els.conn.addEventListener("click", function () { if (api.refresh) api.refresh(); });
 els["tx-focus"].addEventListener("click", function () {
     if (!S.openId) return;
     api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })

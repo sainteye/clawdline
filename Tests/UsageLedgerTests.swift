@@ -1167,7 +1167,7 @@ group("the shipped page contains the accessible Usage Analytics MVP") {
         mutationGuard.waitQuietly()
         check("the permanent web guard sees both named mutations go RED",
               mutationGuard.terminationStatus == 0
-                && output.contains("web usage analytics guards: 11 checks passed"), output)
+                && output.contains("web usage analytics guards: 15 checks passed"), output)
     } catch {
         check("the permanent web mutation guard starts", false, "\(error)")
     }

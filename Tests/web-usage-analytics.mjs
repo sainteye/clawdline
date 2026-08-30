@@ -6,6 +6,8 @@ import { spawnSync } from "node:child_process";
 import vm from "node:vm";
 
 const page = readFileSync("Resources/web/index.html", "utf8");
+const diagnostics = readFileSync("Resources/web/app/js/core/layout-diagnostics.js", "utf8");
+const detailActions = readFileSync("Resources/web/app/js/input/detail-actions.js", "utf8");
 const work = mkdtempSync(join(tmpdir(), "clawdline-web-usage-"));
 const fixture = join(work, "index.html");
 
@@ -19,6 +21,17 @@ function guard(tool, source) {
 }
 
 try {
+  const header = page.slice(page.indexOf('<header class="top">'), page.indexOf("</header>"));
+  const settings = page.slice(page.indexOf('id="settings"'), page.indexOf('id="start"'));
+  assert.doesNotMatch(header, /id="usage-open"/,
+                      "Usage must not remain a standalone header action");
+  assert.match(settings, /id="usage-open"/,
+               "the Logo settings menu must contain the Usage action");
+  assert.doesNotMatch(diagnostics, /installDebugButton/,
+                      "the connection button must not install the retired layout Debug action");
+  assert.match(detailActions, /els\.conn\.addEventListener\("click"[\s\S]*api\.refresh/,
+               "the retained connection button must refresh or reconnect when pressed");
+
   for (const tool of ["tools/check-web-ids.py", "tools/check-web-strings.py"]) {
     const result = guard(tool, page);
     assert.equal(result.status, 0, `${tool} baseline failed: ${result.stdout}${result.stderr}`);
@@ -101,7 +114,7 @@ try {
   assert.notEqual(new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 }).format(0.004),
                   "0", "sub-cent values must retain significant digits");
 
-  console.log("web usage analytics guards: 11 checks passed");
+  console.log("web usage analytics guards: 15 checks passed");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

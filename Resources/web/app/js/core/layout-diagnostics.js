@@ -385,15 +385,6 @@ function debugUI(force, reveal) {
     drawDebug();
 }
 
-function installDebugButton() {
-    var target = context && context.elements && context.elements.conn;
-    if (!target) return;
-    target.addEventListener("click", function (event) {
-        event.preventDefault(); event.stopImmediatePropagation();
-        debugUI(true, true);
-    }, true);
-}
-
 function observe() {
     ["resize", "orientationchange", "pageshow", "popstate", "hashchange"].forEach(function (name) {
         window.addEventListener(name, function () { Diagnostics.note("window." + name); });
@@ -438,7 +429,7 @@ export var Diagnostics = {
         window.addEventListener("unhandledrejection", function (event) {
             captureError("unhandled_rejection", event.reason);
         });
-        observe(); installDebugButton(); debugUI();
+        observe(); debugUI();
     },
     ready: function () { ready = true; append("boot.ready"); schedule("boot.ready"); },
     note: function (event, data) { append(event, data); schedule(event); },
