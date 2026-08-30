@@ -54,7 +54,10 @@
 .detail-head .detail-more {
     display: grid; place-items: center;
     min-width: 44px; min-height: 44px; padding: 4px 7px;
+    color: var(--dim);
 }
+.detail-head .detail-more:hover:not(:disabled) { color: var(--ink); }
+.detail-head .detail-more:disabled { opacity: 0.4; cursor: default; }
 .detail-head .detail-more svg {
     display: block; width: 18px; height: 14px; fill: currentColor;
 }

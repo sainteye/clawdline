@@ -212,8 +212,10 @@ assert.match(pageSource,
     /<button class="detail-session" id="detail-info"[^>]*aria-haspopup="dialog"[\s\S]*?<canvas id="detail-mark"[\s\S]*?<span class="who detail-who">[\s\S]*?id="detail-name"[\s\S]*?id="detail-sub"[\s\S]*?<\/button>/,
     "the whole Session identity block is an explicit, accessible entrance to Session info");
 assert.match(pageSource,
-    /<button class="chip detail-more" id="detail-actions-trigger"[^>]*aria-haspopup="menu"[\s\S]*?<circle[^>]*>[\s\S]*?<circle[^>]*>[\s\S]*?<circle/,
-    "the transcript header exposes the Session menu through a recognizable three-dot button");
+    /<button class="detail-more" id="detail-actions-trigger"[^>]*aria-haspopup="menu"[\s\S]*?<circle[^>]*>[\s\S]*?<circle[^>]*>[\s\S]*?<circle/,
+    "the transcript header exposes the Session menu through a recognizable bare three-dot button");
+assert.doesNotMatch(pageSource, /class="chip detail-more"/,
+    "the three-dot button has neither the chip border nor its filled background");
 assert.doesNotMatch(pageSource, /id="tx-refresh"/,
     "the rarely used transcript refresh button no longer occupies the phone header");
 assert.doesNotMatch(pageSource, /id="detail-actions-title"/,
