@@ -44,7 +44,7 @@ act of guarding the baseline does not mint a new check and then call the new num
 `Sources/**/*.swift`; full test mode separately compares that partition and the test partition with
 `Sources/**/*.swift` and `Tests/**/*.swift`. A nested addition/removal or a Sources↔Tests partition
 swap therefore fails before compilation, while Tests-only drift cannot block an application build.
-The manifest currently contains 90 production and 42 test sources. Historically, Phase 0 began
+The launch integration candidate contains 91 production and 42 test sources. Historically, Phase 0 began
 with `RemoteServer.swift` at 5,903 lines and the later Closeability receipt recorded
 `Orchestrator.swift` at 12,398, `RemoteServer.swift` at 6,316, and 447 manifest entries. Those are
 chronology, not executable limits. The single current receipt is the combined launch receipt below;
@@ -52,11 +52,13 @@ later approved features must move it explicitly rather than silently weakening i
 keeps `Tests/main.swift` below 500 lines and free of domain `group()` calls, requires 25 ordered
 runners, and enforces the 2,000-line suite stop-growth boundary.
 
-The combined Root Assignment and Usage Portfolio landing is the single current receipt:
+The combined Root Assignment and Usage Portfolio landing is the last observed full-suite receipt:
 `Orchestrator.swift` is sealed at 13,482 lines, `RemoteServer.swift` at 6,384, the ordered manifest
 at 456 groups, 25 ordered runners, 36 suite files, and the Swift completion receipt at 6,903 checks.
 This is an approved feature addition and a test-suite extraction, not authorization for Phase 2
-production relocation; later growth still has to move the executable receipt by name.
+production relocation. Milestone adds 15 Swift checks without growing either sealed file and moves
+the executable candidate guard to 6,918; that number remains an expectation until the final exact
+candidate-tree suite observes it, and must be corrected rather than asserted if the receipt differs.
 
 ### Ordered suite and dependency manifest
 

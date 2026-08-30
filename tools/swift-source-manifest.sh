@@ -60,6 +60,7 @@ clawdline_production_sources=(
   Sources/Paths.swift
   Sources/Planner.swift
   Sources/Project.swift
+  Sources/ProjectArtifact.swift
   Sources/ProjectIcon.swift
   Sources/ProjectStatus.swift
   Sources/RemoteAuth.swift

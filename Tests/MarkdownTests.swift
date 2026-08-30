@@ -1397,6 +1397,21 @@ group("the documented example files") {
     expect("and names the lane that is asking", backlog?.now, 2)
     check("and has something to open", backlog?.artifact != nil)
 
+    let milestone = ProjectStatus.milestone(load("milestone--Users-you-code-atrium.json"))
+    expect("the milestone example totals", milestone?.total, 8)
+    expect("and counts completed outcomes", milestone?.complete, 3)
+    expect("and keeps user-owned blockers separate", milestone?.waitingOnUser, 2)
+    check("and has a private artifact to open", milestone?.artifact != nil)
+    let milestoneLink = milestone?.linkRow(sessionID: "SESSION-1")
+    expect("an incomplete milestone is visibly in progress", milestoneLink?["state"] as? String,
+           "running")
+    expect("its progress stays legible in the Links sheet", milestoneLink?["status"] as? String,
+           "3/8")
+    expect("its address is a same-origin authenticated route", milestoneLink?["url"] as? String,
+           "/v1/sessions/SESSION-1/artifacts/milestone")
+    check("its private filesystem path is not published",
+          !(milestoneLink?["url"] as? String ?? "").contains("/Users/you/"))
+
     expect("the health example is ok", ProjectStatus.health(load("health--Users-you-code-atrium.json"))?.state, "ok")
 
     // `/links` receives the whole project registry row. The reader itself selects `health` once;
@@ -1416,6 +1431,9 @@ group("the documented example files") {
     let linkedHealth = linkedCache.appendingPathComponent(
         "health-\(ProjectStatus.key(forPath: linkedProject)).json")
     try! #"{"state":"not_deployed","label":"Clawdline Cloud · 1/4 online","url":"https://clawdline.com/","components":[{"label":"Homepage","state":"online","kind":"site","url":"https://clawdline.com/","reason":"content_marker_present"},{"label":"Web console","state":"not_deployed","kind":"app","url":"https://clawdline.com/app","reason":"route_not_deployed"},{"label":"API","state":"not_deployed","kind":"service","url":"https://api.clawdline.com/healthz","reason":"dns_not_configured"},{"label":"Relay","state":"not_deployed","kind":"service","url":"https://relay.clawdline.com/v1/health","reason":"dns_not_configured"}]}"#.data(using: .utf8)!.write(to: linkedHealth)
+    let linkedMilestone = linkedCache.appendingPathComponent(
+        "milestone-\(ProjectStatus.key(forPath: linkedProject)).json")
+    try! #"{"total":8,"complete":3,"waiting_on_user":2,"artifact":"/tmp/private-milestone.html"}"#.data(using: .utf8)!.write(to: linkedMilestone)
     let linked = ProjectStatus.read(
         cwd: linkedProject, remote: nil,
         registry: ["label": "clawdline.com", "url": "https://clawdline.com/"])
@@ -1436,6 +1454,34 @@ group("the documented example files") {
     expect("and spells out what the red dot means",
            linked.healthComponents.dropFirst().first?.linkRow()?["status"] as? String,
            "not deployed")
+    expect("the same project read includes its milestone", linked.milestone?.complete, 3)
+
+    let artifactRoot = linkedCache.appendingPathComponent("project", isDirectory: true)
+    try! FileManager.default.createDirectory(at: artifactRoot,
+                                             withIntermediateDirectories: true)
+    let artifactFile = artifactRoot.appendingPathComponent("milestone.html")
+    try! Data("<!doctype html><title>Private milestone</title>".utf8).write(to: artifactFile)
+    let served = RemoteServer.projectArtifactResponse(cwd: artifactRoot.path,
+                                                      artifact: artifactFile.path)
+    expect("a registered in-project artifact is served", served.status, 200)
+    expect("it is served as HTML", served.headers["Content-Type"],
+           "text/html; charset=utf-8")
+    check("its response blocks script execution",
+          served.headers["Content-Security-Policy"]?.contains("script-src 'none'") == true)
+    check("and the bytes are the registered file", String(data: served.body, encoding: .utf8)?
+            .contains("Private milestone") == true)
+
+    let outsideArtifact = linkedCache.appendingPathComponent("outside.html")
+    try! Data("outside".utf8).write(to: outsideArtifact)
+    expect("an artifact outside the project is refused",
+           RemoteServer.projectArtifactResponse(cwd: artifactRoot.path,
+                                                artifact: outsideArtifact.path).status, 404)
+    let escapedArtifact = artifactRoot.appendingPathComponent("escaped.html")
+    try! FileManager.default.createSymbolicLink(at: escapedArtifact,
+                                                withDestinationURL: outsideArtifact)
+    expect("a symlink cannot escape the project artifact jail",
+           RemoteServer.projectArtifactResponse(cwd: artifactRoot.path,
+                                                artifact: escapedArtifact.path).status, 404)
 
     // The file names in the page have to be the names the app looks for.
     expect("a path becomes a file name the documented way",

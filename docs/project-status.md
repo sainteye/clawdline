@@ -138,6 +138,28 @@ of the truth is better than one copy in the wrong place.
 `≡44` with `now 2` after it in the accent colour, linking to `artifact` — a local file is fine.
 Only `now` is highlighted: a backlog's enemy is not being long, it is being unread.
 
+### A finite milestone — `milestone-<path>.json`
+
+```jsonc
+{
+  "total": 8,
+  "complete": 3,
+  "waiting_on_user": 2,
+  "updated_at": 1788105600,
+  "artifact": "/Users/you/code/atrium/backend/artifacts/launch-milestone.html"
+}
+```
+
+Milestones and backlogs answer different questions. A backlog is an unbounded inventory; a
+milestone is a finite definition of done. `waiting_on_user` stays separate from unfinished agent
+work so a credential, spend approval or product decision is visible instead of looking like slow
+implementation.
+
+The artifact must be a regular HTML file inside the project's directory. Clawdline serves it back
+through an authenticated, same-origin route with scripts disabled, so the Links sheet works from a
+paired phone without exposing the Mac's filesystem path. The status file is a pointer, not an
+authorization mechanism: paths outside the project and symlink escapes are refused.
+
 ### A health check — `health-<path>.json`
 
 **Read this first: you probably do not have to write this file.**

@@ -10,7 +10,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites
 # Root Assignment adds 82 executed checks and Usage Portfolio adds 43 to this branch's 6778-check
 # receipt. The exact candidate-tree run remains authoritative and must update this guard in the
 # same landing if its observed final count differs.
-expected_swift_receipt='6903 checks passed'
+expected_swift_receipt='6918 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -91,6 +91,7 @@ node Tests/web-session-closeability.mjs
 node Tests/web-title-transport.mjs
 node Tests/web-code-copy.mjs
 node Tests/web-message-images.mjs
+node Tests/web-project-artifacts.mjs
 node Tests/dispatch-role-contract.mjs
 node Tests/restart-rollout-contract.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs

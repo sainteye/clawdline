@@ -433,7 +433,8 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/links
   {"label":"ci","url":"https://github.com/you/repo/actions/runs/123","kind":"deploy","state":"running","local":false,
    "startedAt":1787396170,"typicalSeconds":800},
   {"label":"web","url":"http://127.0.0.1:3000","kind":"server","state":"ok","local":true},
-  {"label":"backlog","url":"file:///Users/you/code/repo/artifacts/backlog.html","kind":"artifact","state":"","local":true}
+  {"label":"backlog","url":"/v1/sessions/27439AEE-…/artifacts/backlog","kind":"artifact","state":"","local":false},
+  {"label":"milestone","url":"/v1/sessions/27439AEE-…/artifacts/milestone","kind":"artifact","state":"running","status":"3/8","local":false,"why":"2 waiting on you"}
 ]}
 ```
 
@@ -449,9 +450,18 @@ whenever anything moves, and gathering these costs a `git` invocation plus a han
 reads per project — free when a menu is opened, a subprocess per session per second on the stream.
 
 Nothing here is invented: the health endpoint comes from the icon registry, the run from the
-deploy status, the servers from the project's own `status` command, the backlog page from
-whatever produced it. An untrusted dev stack stays silent rather than being probed, and a
-`file://` entry is handed over as a path so a client can decline it honestly.
+deploy status, the servers from the project's own `status` command, and the backlog or milestone
+page from whatever produced it. An untrusted dev stack stays silent rather than being probed.
+Project artifacts use the authenticated routes below, so a paired phone can open them without the
+server disclosing an absolute filesystem path.
+
+### `GET /v1/sessions/:id/artifacts/:kind`
+
+`kind` is exactly `backlog` or `milestone`. The server resolves the corresponding path from that
+project's status file, then serves it only when it is a regular `.html` file inside the session's
+working directory. Symlink escapes, caller-supplied paths, non-HTML files and files over 2 MiB are
+refused. Responses are `private, no-store`, `noindex`, and carry a CSP that disables scripts,
+forms, embedding and external resources.
 
 ### `GET /v1/sessions/:id/info`
 

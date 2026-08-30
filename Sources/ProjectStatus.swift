@@ -32,6 +32,38 @@ enum ProjectStatus {
         var artifact: String?    // a local file to open
     }
 
+    /// A finite outcome list, distinct from the backlog's unbounded inventory.
+    ///
+    /// `waitingOnUser` is deliberately its own count. Folding it into incomplete work makes a
+    /// release look slow when it is actually waiting for a credential, spend approval or product
+    /// decision that no agent is allowed to invent.
+    struct Milestone {
+        var total: Int
+        var complete: Int
+        var waitingOnUser: Int
+        var artifact: String?
+
+        func linkRow(sessionID: String) -> [String: Any]? {
+            guard let artifact, !artifact.isEmpty else { return nil }
+            let segmentCharacters = CharacterSet.alphanumerics
+                .union(CharacterSet(charactersIn: "-._~"))
+            guard let session = sessionID.addingPercentEncoding(
+                withAllowedCharacters: segmentCharacters) else { return nil }
+            var row: [String: Any] = [
+                "label": "milestone",
+                "url": "/v1/sessions/\(session)/artifacts/milestone",
+                "kind": "artifact",
+                "state": total > 0 && complete >= total ? "ok" : "running",
+                "status": "\(complete)/\(total)",
+                // Same-origin authenticated bytes work through localhost, a tunnel, or the Cloud
+                // bridge. This is no longer a `file://` address that only the Mac can open.
+                "local": false,
+            ]
+            if waitingOnUser > 0 { row["why"] = "\(waitingOnUser) waiting on you" }
+            return row
+        }
+    }
+
     struct Health {
         var label: String
         var state: String        // ok | fail | …
@@ -70,12 +102,14 @@ enum ProjectStatus {
     struct Snapshot {
         var deploy: Deploy?
         var backlog: Backlog?
+        var milestone: Milestone?
         var health: Health?
         /// The lossless component rows from a multi-surface producer. Older receipts have none,
         /// so `health` remains the compatible overall chip used by the Mac footer.
         var healthComponents: [Health] = []
         var isEmpty: Bool {
-            deploy == nil && backlog == nil && health == nil && healthComponents.isEmpty
+            deploy == nil && backlog == nil && milestone == nil
+                && health == nil && healthComponents.isEmpty
         }
     }
 
@@ -106,6 +140,7 @@ enum ProjectStatus {
         }
         let stem = key(forPath: cwd)
         out.backlog = backlog(json(dir.appendingPathComponent("backlog-\(stem).json")))
+        out.milestone = milestone(json(dir.appendingPathComponent("milestone-\(stem).json")))
         let healthRegistry = registry?["health"] as? [String: Any] ?? registry
         let healthRow = json(dir.appendingPathComponent("health-\(stem).json"))
         out.health = health(healthRow, registry: healthRegistry)
@@ -139,6 +174,17 @@ enum ProjectStatus {
         return Backlog(total: total,
                        now: lanes?["now"] as? Int ?? 0,
                        artifact: row["artifact"] as? String)
+    }
+
+    static func milestone(_ row: [String: Any]?) -> Milestone? {
+        guard let row,
+              let total = row["total"] as? Int,
+              let complete = row["complete"] as? Int,
+              total >= 0, complete >= 0, complete <= total else { return nil }
+        return Milestone(total: total,
+                         complete: complete,
+                         waitingOnUser: max(0, row["waiting_on_user"] as? Int ?? 0),
+                         artifact: row["artifact"] as? String)
     }
 
     static func health(_ row: [String: Any]?, registry: [String: Any]? = nil) -> Health? {

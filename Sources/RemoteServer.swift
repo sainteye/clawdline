@@ -943,6 +943,35 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(404, "artifact_not_found", "No image artifact named that.")
             }
 
+        // A project status file may name one of two private HTML artifacts. The request contains
+        // only a live session id and a typed slot; it never accepts a path from the caller. The
+        // registered path is resolved again under that session's cwd before any bytes are read.
+        case ("GET", let path) where path.hasPrefix("/v1/sessions/")
+                && path.contains("/artifacts/"):
+            let prefix = "/v1/sessions/"
+            let rest = String(path.dropFirst(prefix.count))
+            guard let marker = rest.range(of: "/artifacts/"),
+                  !rest[..<marker.lowerBound].isEmpty else {
+                return .error(404, "artifact_not_found", "No project artifact named that.")
+            }
+            let id = String(rest[..<marker.lowerBound])
+            let kind = String(rest[marker.upperBound...])
+            guard !kind.isEmpty, !kind.contains("/"),
+                  let session = self.session(withID: id.removingPercentEncoding ?? id),
+                  let cwd = Targets.workingDirectory(of: session) else {
+                return .error(404, "artifact_not_found", "No project artifact named that.")
+            }
+            let status = ProjectStatus.read(cwd: cwd, remote: Project.info(cwd: cwd)?.remote,
+                                            registry: ProjectIcon.row(forCwd: cwd)?["health"]
+                                                as? [String: Any])
+            let artifact: String?
+            switch kind {
+            case "backlog": artifact = status.backlog?.artifact
+            case "milestone": artifact = status.milestone?.artifact
+            default: artifact = nil
+            }
+            return Self.projectArtifactResponse(cwd: cwd, artifact: artifact)
+
         // Everything about this project that has an address.
         //
         // **A route rather than a field on the session.** The session list goes out on the event
@@ -955,7 +984,7 @@ final class RemoteServer: @unchecked Sendable {
                   let cwd = Targets.workingDirectory(of: session) else {
                 return .error(404, "not_found", "No session named that")
             }
-            return .json(["links": linksPayload(cwd: cwd)])
+            return .json(["links": linksPayload(cwd: cwd, sessionID: id)])
 
         // The facts behind this session's compact status line and expanded card: what it has
         // spent, what is left of the plan's window, how much has changed on disk, whether the
@@ -4035,67 +4064,6 @@ final class RemoteServer: @unchecked Sendable {
         ]
     }
 
-    /// The addresses a project has, in the order somebody would want them.
-    ///
-    /// Nothing here is invented: every one of these is a URL some other tool already put in a
-    /// file this app reads — the health endpoint from the icon registry, the run from the deploy
-    /// status, the servers from the project's own `status` command, the backlog page from
-    /// whatever produced it. **Clawdline's contribution is that they are in one list on a phone**,
-    /// rather than four places on a Mac that is in another room.
-    ///
-    /// `kind` is for the client to pick an icon with. `local` says the address only resolves on
-    /// the Mac's own network, which is worth knowing before tapping it from a train.
-    private func linksPayload(cwd: String) -> [[String: Any]] {
-        var out: [[String: Any]] = []
-        let registry = ProjectIcon.row(forCwd: cwd)
-        let status = ProjectStatus.read(cwd: cwd, remote: Project.info(cwd: cwd)?.remote,
-                                        registry: registry?["health"] as? [String: Any])
-
-        let healthRows = status.healthComponents.isEmpty
-            ? status.health.map { [$0] } ?? []
-            : status.healthComponents
-        out.append(contentsOf: healthRows.compactMap { $0.linkRow() })
-        if let deploy = status.deploy, let url = deploy.url, !url.isEmpty {
-            var row: [String: Any] = ["label": deploy.label, "url": url, "kind": "deploy",
-                                      "state": deploy.state, "local": false]
-            // The compact web status line replaces context and Git with the deploy while it is
-            // moving. Give it the same clock the Mac bar uses so the browser can keep the bar
-            // moving between the deliberately infrequent `/info` reads.
-            if deploy.state == "running" {
-                row["startedAt"] = deploy.startedAt
-                row["typicalSeconds"] = deploy.typicalSeconds
-            }
-            out.append(row)
-        }
-        // Only a project that declared a stack and was trusted to run its own status command.
-        // Neither is guessed: an untrusted one is silent rather than probed.
-        let stack = DevStack.find(fromCwd: cwd).flatMap { spec in
-            DevStack.isTrusted(spec) ? DevStack.read(spec) : nil
-        }
-        for process in stack?.processes ?? [] {
-            let url = process.url ?? process.port.map { "http://127.0.0.1:\($0)" }
-            guard let url, !url.isEmpty else { continue }
-            // **Why, not just that.** Only processes with an address appear in a list of
-            // addresses, and the one that actually broke usually has neither — a front-end build
-            // listens on nothing. So a phone saw `web · down` and had no way to reach the reason,
-            // which was sitting two entries away in a process it was never shown. `why` carries
-            // the process's own last words, or the stack's root cause named, so the row that is
-            // visible can answer for the one that is not.
-            let why = process.isUp ? nil : stack?.why(process)
-            out.append(["label": process.name, "url": url, "kind": "server",
-                        "state": process.isUp ? "ok" : "down", "local": true,
-                        "why": why ?? ""])
-        }
-        if let backlog = status.backlog, let file = backlog.artifact, !file.isEmpty {
-            // A path, not a URL. The page cannot open it and says so rather than offering a link
-            // that does nothing — see the client. It is here because on the Mac it is the one
-            // thing in this list somebody actually wants to open.
-            out.append(["label": "backlog", "url": "file://" + file, "kind": "artifact",
-                        "state": "", "local": true])
-        }
-        return out
-    }
-
     /// The card behind `GET /v1/sessions/:id/info`. Everything in it is gathered here and shaped
     /// in ``SessionInfo/payload(id:assistant:sessionId:model:cwd:startedAt:now:usage:limits:files:deploy:)``,
     /// which is the half a test can reach.
@@ -4152,7 +4120,7 @@ final class RemoteServer: @unchecked Sendable {
         // Session info is now the one home for every project address. Keep the smaller `deploy`
         // field in the payload for older web clients, while current clients receive the exact
         // same full list the compatibility `/links` route exposes.
-        let links = cwd.map { linksPayload(cwd: $0) } ?? []
+        let links = cwd.map { linksPayload(cwd: $0, sessionID: session.id) } ?? []
         let deploy = links.filter { row in
             let kind = row["kind"] as? String
             return kind == "deploy" || kind == "ci"

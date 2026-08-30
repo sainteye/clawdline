@@ -11,6 +11,7 @@ import { byId, closeabilityLines, owedBadgeHTML, projectSessionCloseability, pro
          sessionWorkStateHTML } from "../view/derive.js";
 import { GitPanel } from "./git-panel.js";
 import { SessionFacts, StatusLine } from "./status-line.js";
+import { isOpenableProjectLink, isServedProjectArtifact } from "./project-links.js";
 
 /**
  * The Session info card — the status line at the bottom of a Claude Code terminal, for somebody
@@ -103,7 +104,6 @@ export var Info = (function () {
         return String(n);
     }
     function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
-    function openable(url) { return /^https?:\/\//i.test(url || ""); }
     function isFile(url) { return /^file:\/\//i.test(url || ""); }
     function pathOf(url) {
         var raw = String(url).replace(/^file:\/\/(localhost)?/i, "");
@@ -360,13 +360,15 @@ export var Info = (function () {
             var far = link.local && !atMac();
             var detail = link.why ? String(link.why)
                 : (file ? T.webLinksFile : (far ? T.webLinksLocal : ""));
-            var where = file ? shortPath(pathOf(url)) : url.replace(/^https?:\/\//i, "");
+            var served = isServedProjectArtifact(url);
+            var where = file ? shortPath(pathOf(url))
+                : (served ? "Clawdline" : url.replace(/^https?:\/\//i, ""));
             var inner = '<span class="dot"></span><span class="lbl">' + esc(link.label || link.kind) + "</span>" +
                 (word ? '<span class="st">' + esc(word) + "</span>" : "") +
                 '<span class="host" title="' + esc(file ? pathOf(url) : url) + '">' + esc(where) + "</span>";
             // A `javascript:` in an `href` is script running on this page with this page's
             // cookie, so anything not plainly http(s) is drawn as text.
-            var row = openable(url)
+            var row = isOpenableProjectLink(url)
                 ? '<a class="dep" data-state="' + esc(link.state || "") + '" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + inner + "</a>"
                 : '<div class="dep" data-state="' + esc(link.state || "") + '">' + inner + "</div>";
             return '<div class="dep-row">' + row +
