@@ -128,25 +128,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/coordinator.css">
 <link rel="stylesheet" href="/app/css/door.css">
 <link rel="stylesheet" href="/app/css/responsive.css">
-<style>
-/* Usage Analytics is deliberately self-contained in this MVP. The data contract can settle
-   before it becomes another module family, while the selectors remain scoped away from the
-   session UI. Every visual series has a real table directly beside it. */
-#usage-open:focus-visible,.usage-analytics button:focus-visible,.usage-analytics input:focus-visible,.usage-analytics select:focus-visible,.usage-analytics a:focus-visible{outline:3px solid #d97757;outline-offset:2px}
-.usage-analytics{position:fixed;inset:var(--top-h,52px) 0 0;background:var(--bg,#141416);color:var(--ink,#f2f0ec);overflow:auto;z-index:35;padding:clamp(1rem,3vw,2rem)}
-.usage-shell{width:min(1180px,100%);margin:0 auto}.usage-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem}.usage-heading h1{font-size:clamp(1.45rem,4vw,2.25rem);margin:0}.usage-heading p{color:var(--muted,#aaa);margin:.35rem 0 0}.usage-close{border:1px solid var(--line,#343438);background:transparent;color:inherit;border-radius:.65rem;padding:.55rem .75rem;cursor:pointer}
-.usage-tabs{display:flex;gap:.5rem;margin:.8rem 0 1rem}.usage-tabs button{border:0;border-radius:999px;padding:.55rem .9rem;background:var(--surface,#202024);color:inherit;cursor:pointer}.usage-tabs button[aria-selected="true"]{background:#d97757;color:#17110f}
-.usage-controls{display:grid;grid-template-columns:minmax(16rem,2fr) repeat(3,minmax(9rem,1fr));gap:.75rem;padding:1rem;border:1px solid var(--line,#343438);border-radius:1rem;background:var(--surface,#1b1b1f)}
-.usage-controls fieldset{display:flex;gap:.55rem;border:0;padding:0;margin:0;min-width:0}.usage-controls label{display:grid;gap:.3rem;color:var(--muted,#aaa);font-size:.78rem;min-width:0}.usage-controls input,.usage-controls select{min-height:2.35rem;min-width:0;border:1px solid var(--line,#444);border-radius:.55rem;background:var(--bg,#141416);color:inherit;padding:.4rem .5rem;font:inherit}.usage-controls .usage-refresh{align-self:end;min-height:2.35rem;border:0;border-radius:.55rem;background:#d97757;color:#17110f;font-weight:700;cursor:pointer}
-.usage-meta{display:flex;flex-wrap:wrap;gap:.5rem 1rem;color:var(--muted,#aaa);font-size:.83rem;margin:.75rem 0}.usage-meta [data-state="stale"]{color:#f0b35b}.usage-status{min-height:1.3rem;margin:.4rem 0;color:var(--muted,#aaa)}.usage-warning-banner{border:1px solid #d97757;border-radius:.75rem;background:#d977571a;color:#ffd7c8;padding:.75rem;margin:.75rem 0}
-.usage-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:1rem 0}.usage-card,.usage-panel{border:1px solid var(--line,#343438);border-radius:1rem;background:var(--surface,#1b1b1f);padding:1rem}.usage-card span{display:block;color:var(--muted,#aaa);font-size:.78rem}.usage-card strong{display:block;font-size:clamp(1.1rem,3vw,1.65rem);margin-top:.4rem;overflow-wrap:anywhere}.usage-card small{display:block;color:var(--muted,#aaa);margin-top:.35rem}.usage-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(18rem,1fr);gap:1rem}.usage-panel{min-width:0;margin-bottom:1rem}.usage-panel h2{font-size:1rem;margin:0 0 .25rem}.usage-summary{color:var(--muted,#aaa);font-size:.84rem;margin:.25rem 0 .8rem}.usage-table-wrap{overflow:auto;max-width:100%}.usage-analytics table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}.usage-analytics th,.usage-analytics td{text-align:right;padding:.55rem .6rem;border-bottom:1px solid var(--line,#343438);white-space:nowrap}.usage-analytics th:first-child,.usage-analytics td:first-child{text-align:left}.usage-analytics th{color:var(--muted,#aaa);font-size:.75rem}.usage-analytics tbody tr:last-child td{border-bottom:0}
-.usage-bars{display:grid;gap:.45rem;margin:.7rem 0 1rem}.usage-bar{display:grid;grid-template-columns:5.8rem 1fr;gap:.6rem;align-items:center;font-size:.75rem;color:var(--muted,#aaa)}.usage-bar-track{display:flex;min-height:.75rem;border-radius:999px;overflow:hidden;background:#29292e}.usage-bar-track i{display:block;min-width:1px}.usage-bar-track i:nth-child(1){background:#d97757}.usage-bar-track i:nth-child(2){background:#efb366}.usage-bar-track i:nth-child(3){background:#689d9b}.usage-bar-track i:nth-child(4){background:#7a73ad}
-.usage-coverage-list{display:grid;gap:.55rem;margin:.7rem 0 0;padding:0;list-style:none}.usage-coverage-list li{display:flex;justify-content:space-between;gap:1rem}.usage-warning{border-left:3px solid #f0b35b;padding-left:.65rem}.usage-export{display:flex;gap:.55rem;flex-wrap:wrap}.usage-export button,.usage-more{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line,#444);border-radius:.55rem;color:inherit;text-decoration:none;background:transparent;padding:.5rem .7rem;cursor:pointer;font:inherit}.usage-row-open{border:0;background:transparent;color:#d98c70;text-decoration:underline;text-underline-offset:3px;cursor:pointer;font:inherit}.usage-detail{width:min(34rem,calc(100% - 2rem));border:1px solid var(--line,#444);border-radius:1rem;background:var(--surface,#1b1b1f);color:inherit;padding:1.1rem}.usage-detail::backdrop{background:#0009}.usage-detail dl{display:grid;grid-template-columns:9rem 1fr;gap:.55rem;margin:1rem 0}.usage-detail dt{color:var(--muted,#aaa)}.usage-detail dd{margin:0;overflow-wrap:anywhere}.usage-detail button{float:right}
-@media (max-width: 760px){.usage-controls{grid-template-columns:1fr 1fr}.usage-controls fieldset{grid-column:1/-1}.usage-cards{grid-template-columns:1fr 1fr}.usage-grid{grid-template-columns:1fr}}
-@media (max-width: 390px){.usage-analytics{padding:.75rem}.usage-heading p{font-size:.82rem}.usage-controls{grid-template-columns:1fr;padding:.75rem}.usage-controls fieldset{display:grid;grid-template-columns:1fr 1fr}.usage-cards{gap:.5rem}.usage-card,.usage-panel{padding:.75rem}.usage-analytics th,.usage-analytics td{padding:.48rem}.usage-grid{display:block}.usage-detail dl{grid-template-columns:1fr;gap:.15rem}.usage-detail dd{margin-bottom:.55rem}}
-@media (max-width: 320px){.usage-heading{align-items:center}.usage-heading p{display:none}.usage-cards{grid-template-columns:1fr}.usage-controls fieldset{grid-template-columns:1fr}.usage-tabs button{flex:1;padding:.5rem}.usage-bar{grid-template-columns:4.8rem 1fr}}
-@media (prefers-reduced-motion: reduce){.usage-analytics *{scroll-behavior:auto!important;transition:none!important}}
-</style>
+<link rel="stylesheet" href="/app/css/usage.css">
 
 <!-- Every module, named here so that all forty are asked for at once.
      `main.js` is the only script this document mentions, and a browser cannot know what it
@@ -460,15 +442,15 @@ document.documentElement.className = "booting";
 <section class="usage-analytics" id="usage-analytics" aria-labelledby="usage-title" hidden>
     <div class="usage-shell">
         <div class="usage-heading">
-            <div><h1 id="usage-title">Usage Analytics</h1>
-                <p>Local agent work, with unknowns and estimates left visible.</p></div>
+            <div><p class="usage-eyebrow">Local usage ledger</p><h1 id="usage-title">Project Portfolio</h1>
+                <p>See where agent work is happening without turning token volume into a score.</p></div>
             <button class="usage-close" id="usage-close" type="button">Back to sessions</button>
         </div>
         <div class="usage-tabs" role="tablist" aria-label="Usage views">
             <button id="usage-overview" type="button" role="tab" aria-selected="true"
-                    aria-controls="usage-overview-panel" tabindex="0">Overview</button>
+                    aria-controls="usage-overview-panel" tabindex="0">Portfolio</button>
             <button id="usage-agent-work" type="button" role="tab" aria-selected="false"
-                    aria-controls="usage-agent-work-panel" tabindex="-1">Agent Work</button>
+                    aria-controls="usage-agent-work-panel" tabindex="-1">Recent agent work</button>
         </div>
         <form class="usage-controls" id="usage-controls">
             <fieldset id="usage-range"><legend class="sr-only">Inclusive local date range</legend>
@@ -476,66 +458,74 @@ document.documentElement.className = "booting";
                 <label>To <input id="usage-to" type="date"></label>
             </fieldset>
             <label>Timezone <select id="usage-timezone"></select></label>
-            <label>Break down by <select id="usage-group">
-                <option value="model">Model</option><option value="assistant">Assistant</option>
-                <option value="origin">Origin</option><option value="project">Project</option>
-                <option value="coverage">Coverage</option><option value="task">Task</option>
-            </select></label>
-            <button class="usage-refresh" id="usage-refresh" type="submit">Refresh</button>
+            <button class="usage-refresh" id="usage-refresh" type="submit">Refresh portfolio</button>
         </form>
         <div class="usage-meta" id="usage-meta"></div>
         <p class="usage-warning-banner" id="usage-availability" role="alert" hidden></p>
         <p class="usage-status" id="usage-status" role="status" aria-live="polite"></p>
 
+        <!-- Usage Portfolio: begin -->
         <section id="usage-overview-panel" role="tabpanel" aria-labelledby="usage-overview" tabindex="0">
-            <div class="usage-cards">
-                <div class="usage-card"><span>Generated output</span><strong id="usage-measured">—</strong><small>What agents produced</small></div>
-                <div class="usage-card"><span>New input</span><strong id="usage-strict">—</strong><small>Context sent without cache</small></div>
-                <div class="usage-card"><span>Cache read</span><strong id="usage-row-count">—</strong><small id="usage-unknown-count">—</small></div>
-                <div class="usage-card"><span>Scheduled runs</span><strong id="usage-corrections">—</strong><small>Unique scheduled tasks in this range</small></div>
+            <p class="usage-score-note">Generated output is an operational signal, not a productivity score.</p>
+            <div class="usage-kpis" aria-label="Portfolio range summary">
+                <article class="usage-kpi usage-kpi-primary"><span>Generated output</span><strong id="usage-measured">—</strong><small id="usage-output-change">Change unavailable</small></article>
+                <article class="usage-kpi"><span>Agent work</span><strong id="usage-run-count">—</strong><small>Distinct tasks or measured sessions</small></article>
+                <article class="usage-kpi"><span>Scheduled work</span><strong id="usage-scheduled-output">—</strong><small id="usage-scheduled-runs">—</small></article>
+                <article class="usage-kpi"><span>Output coverage</span><strong id="usage-coverage-kpi">—</strong><small id="usage-unknown-count">Unknown stays unknown</small></article>
             </div>
-            <div class="usage-grid">
-                <div>
-                    <section class="usage-panel" aria-labelledby="usage-token-title">
-                        <h2 id="usage-token-title">Generated output over time</h2>
-                        <p class="usage-summary" id="usage-token-summary">Output is primary; new input, cache read and cache write remain separate, mutually exclusive parts.</p>
-                        <div class="usage-bars" id="usage-token-bars" aria-hidden="true"></div>
-                        <div class="usage-table-wrap"><table id="usage-token-table" aria-describedby="usage-token-summary">
-                            <thead><tr><th>Bucket</th><th>Generated output</th><th>New input</th><th>Cache read</th><th>Cache write</th></tr></thead>
-                            <tbody id="usage-token-body"></tbody></table></div>
-                    </section>
-                    <section class="usage-panel" aria-labelledby="usage-breakdown-title">
-                        <h2 id="usage-breakdown-title">Breakdown</h2>
-                        <p class="usage-summary" id="usage-breakdown-summary">Groups are ranked by generated output; each token part keeps its own availability.</p>
-                        <div class="usage-table-wrap"><table aria-describedby="usage-breakdown-summary"><thead><tr><th>Group</th><th>Rows</th><th>Generated output</th><th>New input</th><th>Cache read</th><th>Unknown output rows</th></tr></thead><tbody id="usage-breakdown-body"></tbody></table></div>
-                    </section>
-                </div>
-                <aside>
-                    <section class="usage-panel" aria-labelledby="usage-cost-title">
-                        <h2 id="usage-cost-title">Cost by unit and basis</h2>
-                        <p class="usage-summary" id="usage-cost-summary">Actuals and estimates never share a sum. Plan-billed is unavailable, not free.</p>
-                        <div class="usage-table-wrap"><table id="usage-cost-table" aria-describedby="usage-cost-summary"><thead><tr><th>Basis</th><th>Unit</th><th>Value</th><th>Rows</th></tr></thead><tbody id="usage-cost-body"></tbody></table></div>
-                    </section>
-                    <section class="usage-panel" id="usage-coverage-panel" aria-labelledby="usage-coverage-title">
-                        <h2 id="usage-coverage-title">Coverage, unknowns & corrections</h2>
-                        <p class="usage-summary">Every gap stays beside the number it limits.</p>
-                        <ul class="usage-coverage-list" id="usage-coverage-list"></ul>
-                    </section>
-                    <section class="usage-panel" aria-labelledby="usage-export-title">
-                        <h2 id="usage-export-title">Export this range</h2>
-                        <p class="usage-summary">CSV is spreadsheet-safe; JSON preserves null, zero, unit, basis and reasons.</p>
-                        <div class="usage-export"><button id="usage-export-csv" type="button">CSV</button><button id="usage-export-json" type="button">Lossless JSON</button></div>
-                    </section>
+
+            <div class="usage-portfolio-layout">
+                <section class="usage-panel usage-projects" aria-labelledby="usage-projects-title">
+                    <div class="usage-section-head"><div><p class="usage-eyebrow">Ranked by generated output</p><h2 id="usage-projects-title">Projects</h2></div><span class="usage-section-stat" id="usage-project-count">—</span></div>
+                    <div class="usage-table-wrap"><table class="usage-project-table" id="usage-project-table" role="table">
+                        <caption>Project portfolio</caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Project</th><th scope="col" role="columnheader">Generated output</th><th scope="col" role="columnheader">Agent work</th><th scope="col" role="columnheader">Scheduled</th><th scope="col" role="columnheader">Root / child</th><th scope="col" role="columnheader">Comparable cost</th><th scope="col" role="columnheader">Coverage</th><th scope="col" role="columnheader">Change</th><th scope="col" role="columnheader"><span class="sr-only">Open</span></th></tr></thead>
+                        <tbody id="usage-project-list" role="rowgroup"></tbody></table></div>
+                </section>
+
+                <aside class="usage-panel usage-project-detail" id="usage-project-detail" aria-live="polite" aria-labelledby="usage-project-detail-title">
+                    <div class="usage-detail-heading"><div><p class="usage-eyebrow">Selected Project</p><h2 id="usage-project-detail-title">Choose a Project</h2></div><span id="usage-project-rank"></span></div>
+                    <p class="usage-summary" id="usage-project-summary">Select a ranked Project to inspect its measured work.</p>
+                    <section class="usage-detail-block" aria-labelledby="usage-project-trend-title"><h3 id="usage-project-trend-title">Output trend</h3><div class="usage-mini-chart" id="usage-project-trend"></div></section>
+                    <section class="usage-detail-block" aria-labelledby="usage-project-mix-title"><h3 id="usage-project-mix-title">Assistant &amp; work mix</h3><div id="usage-project-mix"></div></section>
+                    <section class="usage-detail-block" aria-labelledby="usage-project-lineage-title"><h3 id="usage-project-lineage-title">Root / child work</h3><div id="usage-project-lineage"></div></section>
+                    <section class="usage-detail-block" aria-labelledby="usage-project-recent-title"><h3 id="usage-project-recent-title">Recent agent work</h3><ol class="usage-recent-list" id="usage-project-recent"></ol></section>
                 </aside>
             </div>
+
+            <section class="usage-panel usage-insight-panel" aria-labelledby="usage-insights-title">
+                <div class="usage-section-head"><div><p class="usage-eyebrow">Operational clues</p><h2 id="usage-insights-title">Worth a closer look</h2></div></div>
+                <div class="usage-insights" id="usage-insights"></div>
+            </section>
+
+            <div class="usage-secondary-grid">
+                <section class="usage-panel" aria-labelledby="usage-schedule-title">
+                    <div class="usage-section-head"><div><p class="usage-eyebrow">Explicit schedule identity only</p><h2 id="usage-schedule-title">Scheduled Work</h2></div></div>
+                    <p class="usage-summary" id="usage-schedule-summary">Which schedules consume usage, how many days they ran, and whether their output was measurable.</p>
+                    <div class="usage-table-wrap"><table aria-describedby="usage-schedule-summary" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Schedule</th><th scope="col" role="columnheader">Runs</th><th scope="col" role="columnheader">Active days</th><th scope="col" role="columnheader">Generated output</th><th scope="col" role="columnheader">Coverage</th></tr></thead><tbody id="usage-schedule-body" role="rowgroup"></tbody></table></div>
+                    <p class="usage-unknown-note" id="usage-unknown-schedule"></p>
+                </section>
+                <section class="usage-panel" aria-labelledby="usage-feature-title">
+                    <div class="usage-section-head"><div><p class="usage-eyebrow">Accepted attribution only</p><h2 id="usage-feature-title">Features</h2></div></div>
+                    <p class="usage-summary" id="usage-feature-summary">A Feature appears only with one unambiguous accepted attribution head.</p>
+                    <div class="usage-table-wrap"><table aria-describedby="usage-feature-summary" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Feature</th><th scope="col" role="columnheader">Agent work</th><th scope="col" role="columnheader">Generated output</th><th scope="col" role="columnheader">Coverage</th></tr></thead><tbody id="usage-feature-body" role="rowgroup"></tbody></table></div>
+                    <p class="usage-unknown-note" id="usage-unknown-feature"></p>
+                </section>
+                <section class="usage-panel" id="usage-coverage-panel" aria-labelledby="usage-coverage-title">
+                    <div class="usage-section-head"><div><p class="usage-eyebrow">Limits beside totals</p><h2 id="usage-coverage-title">Coverage &amp; export</h2></div></div>
+                    <ul class="usage-coverage-list" id="usage-coverage-list"></ul>
+                    <div class="usage-export"><button id="usage-export-csv" type="button">CSV</button><button id="usage-export-json" type="button">Lossless JSON</button></div>
+                </section>
+            </div>
         </section>
+        <!-- Usage Portfolio: end -->
 
         <section id="usage-agent-work-panel" role="tabpanel" aria-labelledby="usage-agent-work" tabindex="0" hidden>
-            <div class="usage-panel">
-                <h2>Agent Work</h2><p class="usage-summary" id="usage-agent-summary">Newest work first. Open a row for its accounting details; prompts, session ids and paths are never returned.</p>
-                <div class="usage-table-wrap"><table aria-describedby="usage-agent-summary"><thead><tr><th>Started</th><th>Agent / model</th><th>Project</th><th>Generated output</th><th>New input</th><th>Cache read</th><th>Cache write</th><th>Cost</th><th>Coverage</th><th>Details</th></tr></thead><tbody id="usage-agent-body"></tbody></table></div>
+            <section class="usage-panel">
+                <div class="usage-section-head"><div><p class="usage-eyebrow">Newest first</p><h2>Recent agent work</h2></div></div>
+                <p class="usage-summary" id="usage-agent-summary">Open one item for its accounting facts. Prompts, session ids, and paths are never returned.</p>
+                <ol class="usage-agent-list" id="usage-agent-list"></ol>
                 <button class="usage-more" id="usage-more" type="button" hidden>Load more</button>
-            </div>
+            </section>
         </section>
     </div>
 </section>
@@ -999,269 +989,3 @@ document.documentElement.className = "booting";
      reason the small script in the head is *not* a module: that one has to run while the document
      is still being parsed, or the page is briefly visible in English. -->
 <script type="module" src="/app/js/main.js"></script>
-<script>
-// Usage Analytics IIFE: begin
-(function () {
-    "use strict";
-    var byId = function (id) { return document.getElementById(id); };
-    var root = byId("usage-analytics"), app = byId("app"), opener = byId("usage-open");
-    var state = { data: null, rows: [], cursor: null, loading: false, pending: null,
-                  view: "overview", exporting: false };
-
-    function text(node, value) { node.textContent = value; }
-    function number(value) {
-        if (value === null || value === undefined) return "Unknown";
-        return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
-    }
-    function significant(value) {
-        if (value === null || value === undefined) return "Unknown";
-        return new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 }).format(value);
-    }
-    function localDay(date, timezone) {
-        var parts = new Intl.DateTimeFormat("en-CA", {
-            timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit"
-        }).formatToParts(date).reduce(function (out, part) {
-            out[part.type] = part.value; return out;
-        }, {});
-        return parts.year + "-" + parts.month + "-" + parts.day;
-    }
-    function option(value, label) {
-        var node = document.createElement("option"); node.value = value;
-        node.textContent = label; return node;
-    }
-    function initializeControls() {
-        var zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-        var zones = [zone, "UTC", "America/New_York", "Europe/London", "Asia/Taipei"]
-            .filter(function (value, index, all) { return all.indexOf(value) === index; });
-        zones.forEach(function (value) { byId("usage-timezone").appendChild(option(value, value)); });
-        var now = new Date(), before = new Date(now.getTime() - 29 * 86400000);
-        byId("usage-to").value = localDay(now, zone);
-        byId("usage-from").value = localDay(before, zone);
-        byId("usage-export-csv").disabled = false;
-        byId("usage-export-json").disabled = false;
-    }
-    function params(cursor) {
-        var query = new URLSearchParams();
-        query.set("from", byId("usage-from").value);
-        query.set("to", byId("usage-to").value);
-        query.set("timezone", byId("usage-timezone").value);
-        query.set("group", byId("usage-group").value);
-        query.set("bucket", "day"); query.set("view", state.view);
-        query.set("limit", "50"); if (cursor) query.set("cursor", cursor);
-        return query;
-    }
-    function errorFrom(response) {
-        return response.json().catch(function () { return {}; }).then(function (body) {
-            var error = body.error || {}, code = error.code || "usage_error";
-            if (code === "usage_analytics_busy") throw new Error("Usage Analytics is busy; the session reader remains available. Try again shortly.");
-            if (code === "export_too_large") throw new Error("This range exceeds the matched-row export limit. Narrow the dates or filters and try again.");
-            throw new Error(error.message || "Usage could not be read (" + response.status + ").");
-        });
-    }
-    function downloadExport(format) {
-        if (state.exporting) { text(byId("usage-status"), "An export is already being prepared."); return; }
-        state.exporting = true; text(byId("usage-status"), "Preparing " + format.toUpperCase() + " export…");
-        var endpoint = (format === "csv" ? "/v1/orchestrator/usage/analytics.csv?"
-                                          : "/v1/orchestrator/usage/analytics.json?")
-            + params(null).toString();
-        fetch(endpoint, { credentials: "same-origin", cache: "no-store" }).then(function (response) {
-            if (!response.ok) return errorFrom(response);
-            return response.blob();
-        }).then(function (blob) {
-            if (!blob) return;
-            var url = URL.createObjectURL(blob), anchor = document.createElement("a");
-            anchor.href = url; anchor.download = "clawdline-usage." + format;
-            document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
-            text(byId("usage-status"), "Export downloaded.");
-        }).catch(function (error) { text(byId("usage-status"), error.message); })
-          .finally(function () { state.exporting = false; });
-    }
-    function cell(row, value) {
-        var td = document.createElement("td"); td.textContent = value; row.appendChild(td); return td;
-    }
-    function clear(id) { var node = byId(id); while (node.firstChild) node.removeChild(node.firstChild); }
-    function renderTrend(data) {
-        clear("usage-token-body"); clear("usage-token-bars");
-        var trend = data.trend || [], maximum = Math.max.apply(null, trend.map(function (item) {
-            var t = item.tokens || {}; return [t.output, t.inputNew, t.cacheRead, t.cacheWrite]
-                .reduce(function (sum, value) { return sum + (typeof value === "number" ? value : 0); }, 0);
-        }).concat([1]));
-        trend.forEach(function (item) {
-            var t = item.tokens || {}, tr = document.createElement("tr");
-            cell(tr, item.bucket); ["output", "inputNew", "cacheRead", "cacheWrite"].forEach(function (part) { cell(tr, number(t[part])); });
-            byId("usage-token-body").appendChild(tr);
-            var bar = document.createElement("div"), label = document.createElement("span"), track = document.createElement("span");
-            bar.className = "usage-bar"; track.className = "usage-bar-track"; label.textContent = item.bucket;
-            ["output", "inputNew", "cacheRead", "cacheWrite"].forEach(function (part) {
-                var segment = document.createElement("i"), value = typeof t[part] === "number" ? t[part] : 0;
-                segment.style.width = ((value / maximum) * 100) + "%"; track.appendChild(segment);
-            });
-            bar.appendChild(label); bar.appendChild(track); byId("usage-token-bars").appendChild(bar);
-        });
-        text(byId("usage-token-summary"), trend.length
-            ? trend.length + " local-day buckets, led by generated output. Unknown is shown in the table, never drawn as zero."
-            : "No measured token buckets in this range.");
-    }
-    function renderBreakdown(data) {
-        clear("usage-breakdown-body");
-        (data.breakdown || []).forEach(function (item) {
-            var tr = document.createElement("tr");
-            cell(tr, item.key === null ? "Unknown" : String(item.key)); cell(tr, number(item.rows));
-            var tokens = item.tokens || {}, unknown = item.tokenPartsUnknown || {};
-            cell(tr, number(tokens.output)); cell(tr, number(tokens.inputNew));
-            cell(tr, number(tokens.cacheRead)); cell(tr, number(unknown.output));
-            byId("usage-breakdown-body").appendChild(tr);
-        });
-    }
-    function renderCosts(data) {
-        clear("usage-cost-body"); var totals = data.totals || {}, costs = totals.costs || [];
-        costs.forEach(function (cost) {
-            var tr = document.createElement("tr"); cell(tr, cost.basis); cell(tr, cost.unit);
-            cell(tr, significant(cost.value)); cell(tr, number(cost.rows)); byId("usage-cost-body").appendChild(tr);
-        });
-        if (!costs.length) { var tr = document.createElement("tr"); var td = cell(tr, "No priced rows"); td.colSpan = 4; byId("usage-cost-body").appendChild(tr); }
-    }
-    function coverageLine(label, value, warning) {
-        var li = document.createElement("li"), name = document.createElement("span"), count = document.createElement("strong");
-        if (warning) li.className = "usage-warning"; name.textContent = label; count.textContent = number(value);
-        li.appendChild(name); li.appendChild(count); byId("usage-coverage-list").appendChild(li);
-    }
-    function renderCoverage(data) {
-        clear("usage-coverage-list"); var totals = data.totals || {}, coverage = totals.coverage || {};
-        var states = coverage.states || {}, reasons = coverage.reasons || {}, unavailable = totals.unavailableCost || {};
-        Object.keys(states).sort().forEach(function (key) { coverageLine("Coverage: " + key, states[key], key !== "complete"); });
-        Object.keys(reasons).sort().forEach(function (key) { coverageLine(key, reasons[key], true); });
-        Object.keys(unavailable.reasons || {}).sort().forEach(function (key) { coverageLine("Cost unavailable: " + key, unavailable.reasons[key], true); });
-        coverageLine("Rows with unknown token parts", coverage.tokenRowsUnknown,
-                     typeof coverage.tokenRowsUnknown === "number" && coverage.tokenRowsUnknown > 0);
-        coverageLine("Corrections", data.corrections,
-                     typeof data.corrections === "number" && data.corrections > 0);
-    }
-    function openDetail(row) {
-        clear("usage-detail-list"); var list = byId("usage-detail-list");
-        var tokens = row.tokens || {}, cost = row.cost;
-        var facts = {
-            "Started": row.startedAt, "Assistant": row.assistant, "Model": row.model,
-            "Project": row.project, "Generated output": number(tokens.output),
-            "New input": number(tokens.inputNew), "Cache read": number(tokens.cacheRead),
-            "Cache write": number(tokens.cacheWrite), "Measured floor": number(row.measuredFloor),
-            "Strict total": number(row.strictTotal), "Coverage": row.coverage,
-            "Coverage reasons": (row.coverageReasons || []).join(", ") || "None",
-            "Unknown token parts": (row.unknownTokenParts || []).join(", ") || "None",
-            "Cost value": cost ? significant(cost.value) : "Unknown",
-            "Cost unit": cost ? cost.unit : "Unknown", "Cost basis": cost ? cost.basis : "Unknown",
-            "Price snapshot": cost ? (cost.priceSnapshotId || "Unknown") : "Unknown",
-            "Missing cost": row.missingCostReason || "None",
-            "Ended": row.endedAt || "Unknown", "Source total": number(row.sourceTotal),
-            "Reconciliation": row.reconciliation || "None", "Input basis": row.inputBasis || "Unknown"
-        };
-        Object.keys(facts).forEach(function (key) {
-            var dt = document.createElement("dt"), dd = document.createElement("dd");
-            dt.textContent = key; dd.textContent = facts[key] === null ? "Unknown" : facts[key];
-            list.appendChild(dt); list.appendChild(dd);
-        });
-        var dialog = byId("usage-detail"); if (dialog.showModal) dialog.showModal(); else dialog.setAttribute("open", "");
-    }
-    function renderRows(data, append) {
-        if (!append) { state.rows = []; clear("usage-agent-body"); }
-        state.rows = state.rows.concat(data.rows || []); state.cursor = data.pagination && data.pagination.nextCursor;
-        (data.rows || []).forEach(function (item) {
-            var tokens = item.tokens || {}, cost = item.cost;
-            var tr = document.createElement("tr"); cell(tr, new Date(item.startedAt).toLocaleString());
-            cell(tr, item.assistant + " / " + (item.model || "Unknown")); cell(tr, item.project || "Unknown");
-            cell(tr, number(tokens.output)); cell(tr, number(tokens.inputNew));
-            cell(tr, number(tokens.cacheRead)); cell(tr, number(tokens.cacheWrite));
-            cell(tr, cost ? significant(cost.value) + " " + cost.unit + " / " + cost.basis
-                          + " / " + (cost.priceSnapshotId || "Unknown") : "Unknown");
-            cell(tr, item.coverage);
-            var td = document.createElement("td"), button = document.createElement("button");
-            button.type = "button"; button.className = "usage-row-open"; button.textContent = "Open";
-            button.addEventListener("click", function () { openDetail(item); }); td.appendChild(button); tr.appendChild(td);
-            byId("usage-agent-body").appendChild(tr);
-        });
-        byId("usage-more").hidden = !(data.pagination && data.pagination.hasMore);
-    }
-    function render(data, append) {
-        state.data = data; var totals = data.totals || {}, coverage = totals.coverage || {};
-        var tokens = totals.tokens || {}, unknown = totals.tokenPartsUnknown || {};
-        text(byId("usage-measured"), number(tokens.output)); text(byId("usage-strict"), number(tokens.inputNew));
-        text(byId("usage-row-count"), number(tokens.cacheRead)); text(byId("usage-unknown-count"), number(unknown.output) + " rows have unknown output");
-        text(byId("usage-corrections"), number(totals.scheduledRuns));
-        var availability = data.availability || {}, partial = availability.status === "partial";
-        byId("usage-availability").hidden = !partial;
-        if (partial) text(byId("usage-availability"), availability.reason === "scan_limit_reached"
-            ? "Partial result: more matching rows exist than this bounded query can read. Narrow the dates or filters before relying on totals or exporting."
-            : "Partial result: " + (availability.reason || "unknown reason") + ".");
-        clear("usage-meta");
-        [{ value: (data.range || {}).timezone, state: "" },
-         { value: "Schema " + data.schemaVersion, state: "" },
-         { value: "Ledger freshness: " + ((data.freshness || {}).status || "unknown"), state: (data.freshness || {}).status },
-         { value: "Range data through: " + ((data.rangeFreshness || {}).dataThrough || "none"), state: "" },
-         { value: "Observed price snapshots: " + (((data.priceSnapshot || {}).observedIds || []).join(", ") || "none"), state: "" },
-         { value: "Active price snapshot: " + ((data.priceSnapshot || {}).activeId || "unknown"), state: "" }].forEach(function (item) {
-            var span = document.createElement("span"); span.textContent = item.value; if (item.state) span.dataset.state = item.state; byId("usage-meta").appendChild(span);
-        });
-        if (!append) { renderTrend(data); renderBreakdown(data); renderCosts(data); renderCoverage(data); }
-        renderRows(data, append);
-    }
-    function load(cursor, append) {
-        if (state.loading) {
-            state.pending = { cursor: cursor, append: append };
-            text(byId("usage-status"), append ? "Load more queued…" : "Refresh queued…");
-            return;
-        }
-        state.loading = true; text(byId("usage-status"), "Reading the local ledger…");
-        fetch("/v1/orchestrator/usage/analytics?" + params(cursor).toString(), { credentials: "same-origin", cache: "no-store" })
-            .then(function (response) {
-                if (!response.ok) return errorFrom(response);
-                return response.json();
-            }).then(function (body) { render(body.usage, append); text(byId("usage-status"), ""); })
-            .catch(function (error) { text(byId("usage-status"), error.message); })
-            .finally(function () {
-                state.loading = false;
-                if (state.pending) {
-                    var pending = state.pending; state.pending = null;
-                    load(pending.cursor, pending.append);
-                }
-            });
-    }
-    function selectView(view) {
-        state.view = view; var overview = view === "overview";
-        byId("usage-overview").setAttribute("aria-selected", String(overview));
-        byId("usage-agent-work").setAttribute("aria-selected", String(!overview));
-        byId("usage-overview").tabIndex = overview ? 0 : -1;
-        byId("usage-agent-work").tabIndex = overview ? -1 : 0;
-        byId("usage-overview-panel").hidden = !overview; byId("usage-agent-work-panel").hidden = overview;
-        load(null, false);
-    }
-    function open() {
-        byId("settings").hidden = true; root.hidden = false; app.hidden = true;
-        opener.setAttribute("aria-expanded", "true");
-        document.body.style.overflow = "hidden"; byId("usage-close").focus(); load(null, false);
-    }
-    function close() {
-        root.hidden = true; app.hidden = false; opener.setAttribute("aria-expanded", "false");
-        document.body.style.overflow = ""; byId("brand").focus();
-    }
-    initializeControls(); opener.addEventListener("click", open); byId("usage-close").addEventListener("click", close);
-    byId("usage-overview").addEventListener("click", function () { selectView("overview"); });
-    byId("usage-agent-work").addEventListener("click", function () { selectView("agent_work"); });
-    [byId("usage-overview"), byId("usage-agent-work")].forEach(function (tab) {
-        tab.addEventListener("keydown", function (event) {
-            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-            event.preventDefault();
-            var next = tab === byId("usage-overview") ? byId("usage-agent-work") : byId("usage-overview");
-            next.focus(); selectView(next === byId("usage-overview") ? "overview" : "agent_work");
-        });
-    });
-    byId("usage-controls").addEventListener("submit", function (event) { event.preventDefault(); load(null, false); });
-    byId("usage-more").addEventListener("click", function () { if (state.cursor) load(state.cursor, true); });
-    byId("usage-export-csv").addEventListener("click", function () { downloadExport("csv"); });
-    byId("usage-export-json").addEventListener("click", function () { downloadExport("json"); });
-    byId("usage-detail-close").addEventListener("click", function () { byId("usage-detail").close(); });
-    document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && !root.hidden && !byId("usage-detail").open) close();
-    });
-}());
-// Usage Analytics IIFE: end
-</script>

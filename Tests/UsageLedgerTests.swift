@@ -891,6 +891,326 @@ group("usage analytics uses one requested timezone for day grouping and trend") 
            "2026-08-29")
 }
 
+group("usage portfolio ranks canonical projects and keeps every unavailable dimension honest") {
+    let current = ISO8601DateFormatter().date(from: "2026-08-20T12:00:00Z")!
+    let previous = ISO8601DateFormatter().date(from: "2026-08-18T12:00:00Z")!
+    var alphaRoot = analyticsRow("alpha-root", at: current,
+                                 project: "/private/team-a/widget",
+                                 counts: .init(inputNew: 20, output: 100,
+                                               cacheRead: 80, cacheWrite: 0),
+                                 cost: 1, unit: "USD", basis: "provider_actual", missing: nil)
+    alphaRoot.boundaryKind = "session"
+    alphaRoot.boundaryID = alphaRoot.sessionID
+    alphaRoot.taskID = nil
+    alphaRoot.origin = "manual"
+    alphaRoot.depth = nil
+    var alphaRootSegment = analyticsRow("alpha-root-segment",
+                                        at: current.addingTimeInterval(30),
+                                        project: "/private/team-a/widget",
+                                        counts: .init(inputNew: 2, output: 10,
+                                                      cacheRead: 8, cacheWrite: 0),
+                                        cost: 0.1, unit: "USD", basis: "provider_actual",
+                                        missing: nil)
+    alphaRootSegment.boundaryKind = "session"
+    alphaRootSegment.sessionID = alphaRoot.sessionID
+    alphaRootSegment.boundaryID = alphaRoot.boundaryID
+    alphaRootSegment.taskID = nil
+    alphaRootSegment.origin = "manual"
+    alphaRootSegment.depth = nil
+    var alphaChild = analyticsRow("alpha-child", at: current.addingTimeInterval(60),
+                                  project: "/private/team-a/widget",
+                                  counts: .init(inputNew: 10, output: 40,
+                                                cacheRead: 90, cacheWrite: 0),
+                                  cost: 0.5, unit: "USD", basis: "provider_actual", missing: nil)
+    alphaChild.depth = Orchestrator.depthFloor
+    alphaChild.parentTaskID = "task-alpha-root"
+    var alphaSchedule = analyticsRow("alpha-schedule", at: current.addingTimeInterval(90),
+                                     project: "/private/team-a/widget",
+                                     counts: .init(inputNew: 4, output: 20,
+                                                   cacheRead: 6, cacheWrite: 0),
+                                     cost: 0.2, unit: "USD", basis: "provider_actual",
+                                     missing: nil)
+    alphaSchedule.depth = Orchestrator.depthFloor
+    alphaSchedule.origin = "schedule"
+    alphaSchedule.scheduleID = "nightly-health"
+    var beta = analyticsRow("beta", at: current.addingTimeInterval(120),
+                            project: "/private/team-b/widget",
+                            counts: .init(inputNew: 30, output: 220,
+                                          cacheRead: 70, cacheWrite: 0))
+    beta.depth = nil
+    var unknown = analyticsRow("unknown-project", at: current.addingTimeInterval(180),
+                               project: nil,
+                               counts: .init(inputNew: 5, output: nil,
+                                             cacheRead: 15, cacheWrite: 0),
+                               coverage: "partial", reasons: ["source_regressed"])
+    unknown.depth = nil
+    var alphaPrevious = analyticsRow("alpha-previous", at: previous,
+                                     project: "/private/team-a/widget",
+                                     counts: .init(inputNew: 10, output: 70,
+                                                   cacheRead: 20, cacheWrite: 0),
+                                     cost: 0.8, unit: "USD", basis: "provider_actual",
+                                     missing: nil)
+    alphaPrevious.depth = 1
+    var betaPrevious = analyticsRow("beta-previous", at: previous,
+                                    project: "/private/team-b/widget",
+                                    counts: .init(inputNew: 20, output: 250,
+                                                  cacheRead: 60, cacheWrite: 0))
+    betaPrevious.depth = 1
+
+    let payload = UsageQueryService(rows: {
+        [alphaRoot, alphaRootSegment, alphaChild, alphaSchedule, beta, unknown,
+         alphaPrevious, betaPrevious]
+    }).query(.init(from: "2026-08-20", to: "2026-08-21", timezoneID: "UTC"),
+             now: current.addingTimeInterval(300)).payload
+    let portfolio = payload["portfolio"] as? [String: Any]
+    check("the complete Portfolio projection is JSON serializable",
+          JSONSerialization.isValidJSONObject(payload))
+    let projects = portfolio?["projects"] as? [[String: Any]] ?? []
+    expect("three canonical Projects plus Unknown are present", projects.count, 3)
+    expect("Projects are ranked by generated output, not input or arrival",
+           projects.compactMap { $0["output"] as? Int }, [220, 170])
+    let widgets = projects.filter { $0["label"] as? String == "widget" }
+    check("same-basename repositories remain separate canonical Projects",
+          widgets.count == 2 && Set(widgets.compactMap { $0["id"] as? String }).count == 2)
+    let alpha = widgets.first { $0["output"] as? Int == 170 }
+    expect("session segments deduplicate on stable boundary identity", alpha?["runs"] as? Int, 3)
+    expect("scheduled contribution is named on the Project", alpha?["scheduledRuns"] as? Int, 1)
+    let alphaLineage = alpha?["lineage"] as? [String: Any]
+    check("production-reachable root, child and scheduled roles stay distinct",
+          alphaLineage?["status"] as? String == "available"
+            && alphaLineage?["rootRuns"] as? Int == 1
+            && alphaLineage?["childRuns"] as? Int == 1
+            && alphaLineage?["scheduledRuns"] as? Int == 1)
+    let betaProject = widgets.first { $0["output"] as? Int == 220 }
+    expect("missing depth is unavailable rather than called root",
+           (betaProject?["lineage"] as? [String: Any])?["status"] as? String,
+           "unavailable")
+    let alphaCost = alpha?["cost"] as? [String: Any]
+    check("one fully covered cost series is comparable",
+          alphaCost?["status"] as? String == "available"
+            && abs((alphaCost?["value"] as? Double ?? 0) - 1.8) < 0.000_001
+            && alphaCost?["unit"] as? String == "USD"
+            && alphaCost?["basis"] as? String == "provider_actual")
+    let alphaChange = alpha?["comparison"] as? [String: Any]
+    check("equal adjacent local-day ranges produce a real output delta",
+          alphaChange?["status"] as? String == "comparable"
+            && alphaChange?["absolute"] as? Int == 100
+            && alphaChange?["previous"] as? Int == 70)
+    let schedules = ((portfolio?["scheduledWork"] as? [String: Any])?["schedules"]
+        as? [[String: Any]]) ?? []
+    check("Scheduled Work is aggregated by explicit schedule identity",
+          schedules.count == 1 && schedules.first?["id"] as? String == "nightly-health"
+            && schedules.first?["runs"] as? Int == 1
+            && schedules.first?["output"] as? Int == 20)
+    let scheduledWork = portfolio?["scheduledWork"] as? [String: Any]
+    check("Scheduled KPI metadata keeps measured output beside Unknown contribution",
+          scheduledWork?["output"] as? Int == 20
+            && scheduledWork?["runs"] as? Int == 1
+            && scheduledWork?["unknownOutputRuns"] as? Int == 0)
+    let unknownProject = projects.first { $0["id"] as? String == "unknown-project" }
+    check("Unknown Project and unknown output stay visibly partial",
+          unknownProject?["output"] is NSNull
+            && (unknownProject?["coverage"] as? [String: Any])?["status"] as? String
+                == "partial")
+
+    let unbounded = UsageQueryService(rows: { [alphaRoot] })
+        .query(.init(timezoneID: "UTC"), now: current).payload
+    expect("comparison without a closed current range says why it is unavailable",
+           ((unbounded["portfolio"] as? [String: Any])?["comparison"]
+                as? [String: Any])?["reason"] as? String,
+           "closed_range_required")
+}
+
+group("legacy managed-worktree Projects migrate through auditable append-only evidence") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let fixture = FileManager.default.temporaryDirectory
+        .appendingPathComponent("usage-project-migration-\(UUID().uuidString)")
+    let repository = fixture.appendingPathComponent("repository")
+    let taskID = UUID().uuidString.lowercased()
+    let worktree = fixture.appendingPathComponent("Clawdline/worktrees/repository-fixture")
+        .appendingPathComponent(taskID)
+    try! FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: worktree.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: fixture) }
+    func git(_ arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        process.waitQuietly()
+        return process.terminationStatus == 0
+    }
+    check("migration fixture repository initializes", git(["init", "-q", repository.path]))
+    check("migration fixture receives an accepted head",
+          git(["-C", repository.path, "-c", "user.name=Usage Test",
+               "-c", "user.email=usage@example.invalid", "commit", "-q", "--allow-empty",
+               "-m", "fixture"]))
+    check("migration fixture creates a real managed worktree",
+          git(["-C", repository.path, "worktree", "add", "-q", "-b", "migration-fixture",
+               worktree.path]))
+
+    var sample = ledgerSample(.codex, session: "migration-session", boundary: .task,
+                              id: "migration-task", origin: .dispatch,
+                              usage: ["input_tokens": 1, "output_tokens": 12,
+                                      "cached_input_tokens": 0],
+                              model: "gpt-5.6-sol", at: Date())
+    sample.taskID = "migration-task"
+    sample.projectKey = worktree.path
+    sample.depth = Orchestrator.depthFloor
+    sample.seal = true
+    let interval = UsageLedger.shared.observeNow(sample)
+    let row = UsageLedger.shared.rows(taskID: "migration-task").first
+    check("legacy Project fixture is a stored interval", interval != nil && row != nil)
+
+    let liveProof = UsageLedger.liveWorktreeProjectMigrationEvidence(projectKey: worktree.path)
+    check("a live worktree is resolved only through Git common-dir proof",
+          liveProof?.repositoryRoot == repository.path
+            && liveProof?.source == .gitCommonDirectory
+            && liveProof?.evidenceDigest.count == 64)
+    check("the fixture worktree can be removed before durable-receipt proof",
+          git(["-C", repository.path, "worktree", "remove", "--force", worktree.path]))
+    let receipt: [[String: Any]] = [[
+        "id": taskID, "project_dir": repository.path,
+        "worktree": ["path": worktree.path, "cwd": worktree.path,
+                     "repository": repository.path, "base": "fixture-head"],
+    ]]
+    let receiptProof = UsageLedger.taskReceiptProjectMigrationEvidence(
+        projectKey: worktree.path, taskRecords: receipt)
+    check("a deleted worktree resolves only through an exact durable task receipt",
+          receiptProof?.repositoryRoot == repository.path
+            && receiptProof?.source == .taskWorktreeReceipt)
+    let mismatched = UsageLedger.taskReceiptProjectMigrationEvidence(
+        projectKey: worktree.path,
+        taskRecords: [["id": taskID, "project_dir": repository.path,
+                       "worktree": ["path": worktree.path + "-other",
+                                    "cwd": worktree.path, "repository": repository.path]]])
+    check("a basename, UUID, or mismatched receipt never guesses a repository", mismatched == nil)
+
+    let plan = UsageLedger.planLegacyProjectMigration(
+        rows: [row!], evidence: [receiptProof!], assignedAt: Date())
+    check("the dry-run manifest resolves one row through a deterministic accepted Project chain",
+          plan.events.count == 2 && plan.audit.count == 1
+            && plan.audit.first?.status == "resolved"
+            && plan.events.first?.decision == .proposed
+            && plan.events.last?.decision == .accepted
+            && plan.events.last?.supersedesEventID == plan.events.first?.eventID
+            && JSONSerialization.isValidJSONObject(plan.payload))
+    let before = UsageQueryService().query(.init(timezoneID: "UTC")).payload
+    let beforeProjects = (before["portfolio"] as? [String: Any])?["projects"]
+        as? [[String: Any]] ?? []
+    check("before apply the disposable UUID is suppressed into Unknown Project",
+          beforeProjects.first?["label"] as? String == "Unknown Project"
+            && !String(describing: beforeProjects).contains(taskID))
+
+    let backup = String(repeating: "a", count: 64)
+    let first = UsageLedger.shared.applyLegacyProjectMigration(plan, backupDigest: backup)
+    let second = UsageLedger.shared.applyLegacyProjectMigration(plan, backupDigest: backup)
+    check("apply requires a backup receipt and reruns without side effects",
+          first == .init(applied: 2, alreadyPresent: 0, failed: 0, backupDigest: backup)
+            && second == .init(applied: 0, alreadyPresent: 2, failed: 0,
+                              backupDigest: backup))
+    let after = UsageQueryService().query(.init(timezoneID: "UTC")).payload
+    let afterProjects = (after["portfolio"] as? [String: Any])?["projects"]
+        as? [[String: Any]] ?? []
+    check("accepted migration attribution changes Project identity without rewriting tokens",
+          afterProjects.first?["label"] as? String == repository.lastPathComponent
+            && afterProjects.first?["output"] as? Int == 12
+            && UsageLedger.shared.rows(taskID: "migration-task").first?.projectKey
+                == worktree.path)
+    let filteredAfter = UsageQueryService().query(.init(
+        timezoneID: "UTC", project: repository.lastPathComponent)).payload
+    check("the bounded Project filter sees accepted migration identity instead of the legacy key",
+          (filteredAfter["rowCount"] as? Int) == 1
+            && ((filteredAfter["portfolio"] as? [String: Any])?["projects"]
+                as? [[String: Any]])?.first?["label"] as? String
+                == repository.lastPathComponent)
+
+    let rollback = UsageLedger.shared.rollbackLegacyProjectMigration(
+        plan, backupDigest: backup, assignedAt: Date())
+    let rolledBack = UsageQueryService().query(.init(timezoneID: "UTC")).payload
+    let rolledProjects = (rolledBack["portfolio"] as? [String: Any])?["projects"]
+        as? [[String: Any]] ?? []
+    check("append-only rollback returns the legacy row to Unknown",
+          rollback.applied == 1
+            && rolledProjects.first?["label"] as? String == "Unknown Project")
+
+    var unresolved = row!
+    unresolved.intervalKey = "unresolved-legacy-row"
+    unresolved.projectKey = worktree.deletingLastPathComponent()
+        .appendingPathComponent(UUID().uuidString.lowercased()).path
+    let unresolvedPlan = UsageLedger.planLegacyProjectMigration(
+        rows: [unresolved], evidence: [], assignedAt: Date())
+    check("evidence-free deleted rows remain explicit unresolved audit entries",
+          unresolvedPlan.events.isEmpty
+            && unresolvedPlan.audit.first?.status == "unresolved"
+            && unresolvedPlan.audit.first?.reason == "migration_evidence_missing")
+}
+
+group("usage portfolio accepts exactly one Feature head and leaves proposals or conflicts unknown") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let at = ISO8601DateFormatter().date(from: "2026-08-20T12:00:00Z")!
+    func interval(_ name: String) -> String {
+        var sample = ledgerSample(.claude, session: "feature-\(name)", boundary: .task,
+                                  id: "task-\(name)", origin: .dispatch,
+                                  usage: ["input": 1, "output": 10, "cache_read": 0,
+                                          "cache_write": 0, "total": 11],
+                                  model: "claude-opus-5", at: at)
+        sample.taskID = "task-\(name)"
+        sample.projectKey = "/private/acme/portfolio"
+        sample.depth = 1
+        sample.seal = true
+        return UsageLedger.shared.observeNow(sample)!
+    }
+    func event(_ id: String, _ interval: String, value: String,
+               decision: UsageLedger.AttributionDecision,
+               supersedes: String? = nil) -> UsageLedger.AttributionEvent {
+        UsageLedger.AttributionEvent(
+            eventID: id, intervalKey: interval, dimension: .feature,
+            valueID: value, valueLabel: value == "portfolio" ? "Usage Portfolio" : "Other",
+            source: .manual, confidence: nil, classifierID: nil, classifierVersion: nil,
+            evidenceDigest: nil, decision: decision, decisionSource: "focused-test",
+            assignedAt: at, supersedesEventID: supersedes)
+    }
+    let accepted = interval("accepted")
+    let acceptedOther = interval("accepted-other")
+    let proposed = interval("proposed")
+    let conflicted = interval("conflicted")
+    check("accepted fixture records", UsageLedger.shared.record(
+        event("accepted-head", accepted, value: "portfolio", decision: .accepted)))
+    check("equal-output accepted fixture records", UsageLedger.shared.record(
+        event("accepted-other-head", acceptedOther, value: "other", decision: .accepted)))
+    check("proposal fixture records", UsageLedger.shared.record(
+        event("proposal-head", proposed, value: "portfolio", decision: .proposed)))
+    check("first conflict head records", UsageLedger.shared.record(
+        event("conflict-a", conflicted, value: "portfolio", decision: .accepted)))
+    check("second conflict head records", UsageLedger.shared.record(
+        event("conflict-b", conflicted, value: "other", decision: .accepted)))
+
+    let payload = UsageQueryService().query(
+        .init(from: "2026-08-20", to: "2026-08-20", timezoneID: "UTC"), now: at).payload
+    let features = ((payload["portfolio"] as? [String: Any])?["features"]
+        as? [String: Any])
+    let groups = features?["groups"] as? [[String: Any]] ?? []
+    check("accepted Features use a stable id tie-break when output is equal",
+          groups.compactMap { $0["id"] as? String } == ["other", "portfolio"]
+            && groups.allSatisfy { $0["runs"] as? Int == 1 })
+    let unknown = features?["unknown"] as? [String: Any]
+    check("proposal-only and conflicting accepted heads remain Unknown Feature",
+          unknown?["runs"] as? Int == 2
+            && unknown?["reason"] as? String == "no_unambiguous_accepted_head")
+    let acceptedEvents = [event("accepted-head", accepted, value: "portfolio",
+                                decision: .accepted)]
+    check("the store and analytics share the one accepted-head implementation",
+          UsageLedger.acceptedHead(from: acceptedEvents)?.valueID
+            == UsageLedger.shared.resolvedAttribution(intervalKey: accepted,
+                                                       dimension: .feature)?.valueID)
+}
+
 group("a 60k-row SQLite-to-DTO usage query stays bounded and measured") {
     let store = freshUsageLedger()
     defer { forgetUsageLedger(store) }
@@ -926,13 +1246,18 @@ group("a 60k-row SQLite-to-DTO usage query stays bounded and measured") {
         """)
     check("the performance fixture inserted all rows in one transaction", inserted)
     let started = Date()
-    let result = UsageQueryService().query(.init(timezoneID: "UTC", groupBy: .model,
+    let result = UsageQueryService().query(.init(from: "2027-01-15", to: "2027-01-16",
+                                                  timezoneID: "UTC", groupBy: .model,
                                                   bucket: .day, limit: 50),
                                            now: Date(timeIntervalSince1970: 1_800_100_000))
     let seconds = Date().timeIntervalSince(started)
     expect("the measured query read all 60k rows", result.payload["rowCount"] as? Int, 60_000)
     expect("while returning only the bounded page", result.rows.count, 50)
     check("without reaching the explicit scan ceiling", !result.scanTruncated)
+    expect("the shipped closed-range path performs the previous read",
+           ((result.payload["portfolio"] as? [String: Any])?["comparison"]
+                as? [String: Any])?["reason"] as? String,
+           "no_previous_data")
     check("and completes inside a generous interactive ceiling", seconds < 10,
           String(format: "%.3f seconds", seconds))
     print(String(format: "USAGE_ANALYTICS_PERF rows=60000 seconds=%.3f subject=sqlite_to_dto",
@@ -1104,6 +1429,13 @@ group("usage analytics routes keep authentication, validation and privacy aligne
     check("the legacy forensic JSON keeps its aggregate schema on its old URL",
           legacyJSON.status == 200 && legacyObject?["groups"] is [[String: Any]]
             && legacyObject?["freshness"] == nil)
+    let legacyUnavailable = (legacyObject?["unavailable"] as? [String: Any])?["columns"]
+        as? [String]
+    let analyticsUnavailable = usage?["unavailableDimensions"] as? [String: Any]
+    check("legacy and Portfolio capability surfaces share the Feature availability answer",
+          legacyUnavailable == ["graph_id", "disposition"]
+            && analyticsUnavailable?["dimensions"] as? [String] == legacyUnavailable
+            && analyticsUnavailable?["featureView"] as? Bool == true)
     let legacyCSV = RemoteServer.shared.route(remoteRequest(
         "GET", "/v1/orchestrator/usage.csv", headers: auth))
     check("the legacy forensic CSV route is byte-compatible with the ledger exporter",
@@ -1120,40 +1452,48 @@ group("usage analytics routes keep authentication, validation and privacy aligne
           failedJSON.status == 500 && remoteErrorCode(failedJSON) == "json_serialization_failed")
 }
 
-group("the shipped page contains the accessible Usage Analytics MVP") {
+group("the shipped page contains the accessible Usage Project Portfolio") {
     let page = try! String(contentsOfFile: "Resources/web/index.html", encoding: .utf8)
-    for evidence in ["usage-analytics", "usage-overview", "usage-agent-work",
-                     "usage-range", "usage-timezone", "usage-token-table",
-                     "usage-cost-table", "usage-coverage-panel", "usage-detail",
-                     "usage-export-csv", "usage-export-json"] {
+    let css = try! String(contentsOfFile: "Resources/web/app/css/usage.css", encoding: .utf8)
+    let script = try! String(contentsOfFile: "Resources/web/app/js/view/usage.js",
+                             encoding: .utf8)
+    for evidence in ["usage-analytics", "usage-overview", "usage-agent-work", "usage-range",
+                     "usage-timezone", "usage-project-list", "usage-project-detail",
+                     "usage-schedule-body", "usage-feature-body", "usage-insights",
+                     "usage-coverage-panel", "usage-detail", "usage-export-csv",
+                     "usage-export-json"] {
         check("the analytics DOM contains #\(evidence)", page.contains("id=\"\(evidence)\""))
     }
-    check("charts have an accessible table or textual summary",
-          page.contains("aria-describedby=\"usage-token-summary\"")
-            && page.contains("id=\"usage-token-summary\"")
-            && page.contains("<table id=\"usage-token-table\""))
-    check("the page carries explicit 390px and 320px proofs",
-          page.contains("@media (max-width: 390px)")
-            && page.contains("@media (max-width: 320px)"))
+    check("the ranked Project surface is a semantic table with a named primary signal",
+          page.contains("<caption>Project portfolio</caption>")
+            && page.contains("role=\"table\"")
+            && page.contains("role=\"columnheader\">Generated output</th>"))
+    check("the page carries explicit 1280px, 390px and 320px proofs",
+          css.contains("@media (max-width: 1280px)")
+            && css.contains("@media (max-width: 390px)")
+            && css.contains("@media (max-width: 320px)"))
     check("partial state and ledger-versus-range freshness are visible",
           page.contains("id=\"usage-availability\"")
-            && page.contains("Partial result:")
-            && page.contains("Ledger freshness:")
-            && page.contains("Range data through:"))
+            && script.contains("Partial result:")
+            && script.contains("Ledger freshness:")
+            && script.contains("Range data through:"))
     check("exports fetch first and build a Blob only after a 2xx response",
-          page.contains("if (!response.ok) return errorFrom(response);")
-            && page.contains("return response.blob();")
-            && page.contains("URL.createObjectURL(blob)"))
+          script.contains("if (!response.ok) return errorFrom(response);")
+            && script.contains("return response.blob();")
+            && script.contains("URL.createObjectURL(blob)"))
     check("tabs use roving tabindex and arrow keys while view changes the request",
-          page.contains("event.key !== \"ArrowLeft\"")
-            && page.contains("tabIndex = overview ? 0 : -1")
-            && page.contains("query.set(\"view\", state.view)"))
+          script.contains("event.key !== \"ArrowLeft\"")
+            && script.contains("tabIndex = overview ? 0 : -1")
+            && script.contains("query.set(\"view\", state.view)"))
     check("sub-cent costs use significant digits instead of two-decimal zero",
-          page.contains("maximumSignificantDigits: 6")
-            && page.contains("significant(cost.value)"))
+          script.contains("maximumSignificantDigits: 6")
+            && script.contains("significant(cost.value)"))
     check("loading lifecycle queues refreshes instead of dropping them",
-          page.contains("state.pending = { cursor: cursor, append: append }")
-            && page.contains("Refresh queued…"))
+          script.contains("state.pending = { cursor: cursor, append: append }")
+            && script.contains("Refresh queued…"))
+    check("refresh errors mark the retained range stale rather than relabelling old data",
+          script.contains("Showing stale data for ")
+            && script.contains("setAttribute(\"data-stale\", \"true\")"))
 
     let mutationGuard = Process()
     mutationGuard.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -1166,9 +1506,11 @@ group("the shipped page contains the accessible Usage Analytics MVP") {
         let output = String(decoding: mutationOutput.fileHandleForReading.readDataToEndOfFile(),
                             as: UTF8.self)
         mutationGuard.waitQuietly()
-        check("the permanent web guard sees both named mutations go RED",
+        check("the permanent web guard executes real behavior and named mutations",
               mutationGuard.terminationStatus == 0
-                && output.contains("web usage analytics guards: 18 checks passed"), output)
+                && output.range(
+                    of: #"web usage portfolio guards: [1-9][0-9]* assertions executed"#,
+                    options: .regularExpression) != nil, output)
     } catch {
         check("the permanent web mutation guard starts", false, "\(error)")
     }

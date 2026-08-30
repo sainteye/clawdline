@@ -7,7 +7,10 @@
 set -euo pipefail
 
 expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166'
-expected_swift_receipt='6778 checks passed'
+# The Usage Portfolio landing adds 43 executed checks to this branch's 6778-check receipt. The
+# landing root's exact candidate-tree run remains authoritative and must update this guard in the
+# same commit if its observed final count differs.
+expected_swift_receipt='6821 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

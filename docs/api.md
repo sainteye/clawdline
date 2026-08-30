@@ -2908,6 +2908,11 @@ Existing accounting and incident tools therefore do not receive a replacement co
 an old URL. They remain authenticated reads; the CSV is forensic rather than privacy-safe and must
 not be exposed as a public download.
 
+The legacy payload and analytics payload use the same unavailable-column answer:
+`graph_id` and `disposition`. Feature is no longer called an unavailable column; it is an
+append-only accepted-attribution projection available in analytics Portfolio responses, not a new
+grouping mode retrofitted onto the legacy aggregate URL.
+
 ### `GET /v1/orchestrator/usage/analytics`, `/analytics.csv`, `/analytics.json`
 
 **What every assistant session on this machine has spent, out of a store nothing sweeps.**
@@ -2981,10 +2986,30 @@ All three take the same closed query and none starts anything. Unknown keys and 
   "rowCount":99,
   "corrections":0,
   "schemaVersion":1,
-  "unavailableDimensions":{"dimensions":["graph_id","disposition","feature"],
+  "unavailableDimensions":{"dimensions":["graph_id","disposition"],
                            "reason":"A whole graph, accepted outcome, or Feature requires explicit lineage or accepted attribution. …",
                            "graphView":false,"retryView":false,"landingView":false,
-                           "featureView":false}}}
+                           "featureView":true,
+                           "featureAvailability":"one_unambiguous_accepted_head_or_unknown"},
+  "portfolio":{"schemaVersion":1,"primarySignal":"generated_output","runs":72,
+    "scoreWarning":"Generated output is an operational signal, not a productivity score.",
+    "comparison":{"status":"comparable","current":1580530,"previous":1400000,
+                  "absolute":180530,"percent":12.895},
+    "projects":[{"id":"project-opaque-digest","label":"clawdline","rank":1,
+      "identity":{"status":"available","reasons":[]},"output":820000,
+      "unknownOutputRuns":0,"runs":31,"scheduledRuns":4,"scheduledOutput":12000,
+      "lineage":{"status":"partial","rootRuns":5,"childRuns":21,
+                 "scheduledRuns":4,"unknownRuns":1,"reason":"lineage_evidence_missing"},
+      "cost":{"status":"unavailable","reason":"partial_cost_coverage"},
+      "coverage":{"status":"partial","unknownOutputRuns":1},
+      "comparison":{"status":"comparable","absolute":70000,"percent":9.33},
+      "trend":[],"assistantMix":[],"workMix":[],"recentWork":[]}],
+    "scheduledWork":{"status":"available","runs":10,"output":12000,
+      "unknownOutputRuns":2,"schedules":[],
+      "unknownSchedule":{"runs":1,"reason":"schedule_identity_missing"}},
+    "features":{"status":"available","policy":"one_unambiguous_accepted_head",
+      "groups":[],"unknown":{"label":"Unknown Feature","runs":12,
+      "reason":"no_unambiguous_accepted_head"}},"insights":[]}}}
 ```
 
 Every response carries range/timezone, schema, capabilities, observed and active price snapshots,
@@ -2992,8 +3017,25 @@ ledger freshness, range data-through/freshness, coverage, corrections and unavai
 Top-level `freshness` is always the newest ledger observation independent of the selected range;
 `rangeFreshness` describes only that range, so a historical month is not presented as a stale
 store. Parent/retry/attempt/landing lineage is best-effort from durable task records. Graph,
-accepted disposition, and Feature remain unavailable until an explicit producer or accepted
-attribution exists; none is inferred from root Session or task success.
+accepted disposition remain unavailable until an explicit producer exists. Feature is available
+only through one active accepted attribution head; proposal-only, rejected, conflicting and absent
+evidence stays `Unknown Feature`. None is inferred from root Session or task success.
+
+`portfolio` is a versioned projection over the exact bounded row subject behind `totals`. `runs`
+deduplicates task rows by task id and session segments by stored boundary/session identity.
+`projects` ranks generated output with a deterministic id tie-break and keeps measured values beside
+unknown-run counts. Lineage classifies stored session boundaries as root/main work, broker-producible
+depth-1 task boundaries as child work, and scheduled origin as scheduled; missing evidence stays
+Unknown. `scheduledWork.output` is the measured contribution and
+`scheduledWork.unknownOutputRuns` is displayed beside it rather than silently omitted. Cost is
+comparable only for one fully covered unit+basis series. Cross-range comparison requires both dates,
+equal local-calendar-day ranges, non-truncated reads and complete output.
+
+Canonical Project identity comes from the stored canonical key or one accepted append-only Project
+attribution event. A legacy key under Clawdline's managed-worktree root is never displayed as its
+task UUID and is never resolved from that UUID or basename. Without an evidence-backed migration
+event it remains `Unknown Project` with `legacy_managed_worktree_project_key`; migration and restore
+requirements are specified in [`docs/usage-attribution.md`](usage-attribution.md).
 
 **Value, unit, basis, availability and reason remain separate.** `null` is unknown and never zero.
 `measuredFloor` sums known token parts; `strictTotal` is `null` when any part is unknown. The four

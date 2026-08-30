@@ -218,7 +218,11 @@ final class UsageLedger {
     /// a root Session or a successful terminal state.
     static let lineageColumns = ["graph_id", "parent_task_id", "retry_of", "attempt",
                                  "landing_state", "disposition"]
-    static let unavailableDimensions = ["graph_id", "disposition", "feature"]
+    /// Columns for which no durable producer exists. Feature is intentionally absent: accepted
+    /// append-only attribution events now provide that dimension without pretending it is a task
+    /// registry column. Both the legacy aggregate and Portfolio capability surfaces use this one
+    /// answer.
+    static let unavailableDimensions = ["graph_id", "disposition"]
 
     static let reservedColumnsReason =
         "A whole graph, accepted outcome, or Feature is unavailable unless explicit lineage or "
@@ -247,6 +251,76 @@ final class UsageLedger {
         var decisionSource: String
         var assignedAt: Date
         var supersedesEventID: String?
+    }
+
+    /// The only attribution shape analytics is allowed to aggregate. The event history stays
+    /// private; a value appears here only after the store has proved that one active accepted
+    /// head exists for the interval and dimension.
+    struct AcceptedAttribution: Equatable {
+        var id: String
+        var label: String
+    }
+
+    /// Evidence permitted to move a legacy managed-worktree Project key. Neither case derives a
+    /// repository from the UUID/basename: one asks Git for the still-live common directory; the
+    /// other requires an exact durable task/worktree/project-dir receipt.
+    enum ProjectMigrationEvidenceSource: String {
+        case gitCommonDirectory = "git_common_directory"
+        case taskWorktreeReceipt = "task_worktree_receipt"
+    }
+
+    struct LegacyProjectMigrationEvidence: Equatable {
+        var legacyProjectKey: String
+        var repositoryRoot: String
+        var source: ProjectMigrationEvidenceSource
+        var reference: String
+        var evidenceDigest: String
+    }
+
+    struct LegacyProjectMigrationAuditEntry: Equatable {
+        var intervalKey: String
+        var legacyProjectKey: String
+        var repositoryRoot: String?
+        var source: ProjectMigrationEvidenceSource?
+        var evidenceDigest: String?
+        var eventID: String?
+        var status: String
+        var reason: String?
+    }
+
+    struct LegacyProjectMigrationPlan {
+        static let version = 1
+        var events: [AttributionEvent]
+        var audit: [LegacyProjectMigrationAuditEntry]
+
+        var payload: [String: Any] {
+            [
+                "schemaVersion": Self.version,
+                "mode": "dry_run",
+                "events": events.map { event in
+                    ["eventId": event.eventID, "intervalKey": event.intervalKey,
+                     "repositoryRoot": event.valueID, "projectLabel": event.valueLabel,
+                     "evidenceDigest": event.evidenceDigest as Any? ?? NSNull()]
+                },
+                "audit": audit.map { entry in
+                    ["intervalKey": entry.intervalKey,
+                     "legacyProjectKey": entry.legacyProjectKey,
+                     "repositoryRoot": entry.repositoryRoot as Any? ?? NSNull(),
+                     "source": entry.source?.rawValue as Any? ?? NSNull(),
+                     "evidenceDigest": entry.evidenceDigest as Any? ?? NSNull(),
+                     "eventId": entry.eventID as Any? ?? NSNull(),
+                     "status": entry.status,
+                     "reason": entry.reason as Any? ?? NSNull()]
+                },
+            ]
+        }
+    }
+
+    struct LegacyProjectMigrationApplyResult: Equatable {
+        var applied: Int
+        var alreadyPresent: Int
+        var failed: Int
+        var backupDigest: String
     }
 
     // MARK: - Token counts, every part optional
@@ -1019,16 +1093,232 @@ final class UsageLedger {
 
     /// Only a single active accepted head is usable. A proposal, rejection, or two conflicting
     /// accepted heads returns nil, so a classifier disagreement cannot silently split totals.
+    static func acceptedHead(from events: [AttributionEvent]) -> AttributionEvent? {
+        let superseded = Set(events.compactMap(\.supersedesEventID))
+        let accepted = events.filter {
+            $0.decision == .accepted && !superseded.contains($0.eventID)
+        }
+        return accepted.count == 1 ? accepted[0] : nil
+    }
+
+    private static func migrationDigest(_ fields: [String]) -> String {
+        SHA256.hash(data: Data(fields.joined(separator: "\u{1f}").utf8))
+            .map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func migrationPath(_ raw: String) -> String {
+        URL(fileURLWithPath: raw).standardizedFileURL.path
+    }
+
+    static func legacyManagedWorktreeTaskID(_ raw: String) -> String? {
+        let path = migrationPath(raw)
+        guard path.contains("/Clawdline/worktrees/"),
+              let leaf = path.split(separator: "/").last,
+              UUID(uuidString: String(leaf)) != nil else { return nil }
+        return String(leaf)
+    }
+
+    private static func gitCommonDirectory(_ directory: String) -> String? {
+        let process = Process(), pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory, "rev-parse", "--path-format=absolute",
+                             "--git-common-dir"]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !output.isEmpty else { return nil }
+        return migrationPath(output)
+    }
+
+    private static func repositoryRoot(commonDirectory: String) -> String? {
+        let url = URL(fileURLWithPath: commonDirectory)
+        guard url.lastPathComponent == ".git" else { return nil }
+        let root = migrationPath(url.deletingLastPathComponent().path)
+        guard gitCommonDirectory(root) == migrationPath(commonDirectory) else { return nil }
+        return root
+    }
+
+    /// Build proof directly from a still-existing managed worktree. This is read-only: Git names
+    /// its common directory and the canonical repository is independently checked against it.
+    static func liveWorktreeProjectMigrationEvidence(
+        projectKey: String
+    ) -> LegacyProjectMigrationEvidence? {
+        guard legacyManagedWorktreeTaskID(projectKey) != nil,
+              let common = gitCommonDirectory(projectKey),
+              let root = repositoryRoot(commonDirectory: common) else { return nil }
+        let legacy = migrationPath(projectKey)
+        let reference = "git-common-dir:" + common
+        return LegacyProjectMigrationEvidence(
+            legacyProjectKey: legacy, repositoryRoot: root,
+            source: .gitCommonDirectory, reference: reference,
+            evidenceDigest: migrationDigest(["project-migration-evidence-v1", legacy, root,
+                                             ProjectMigrationEvidenceSource.gitCommonDirectory.rawValue,
+                                             reference]))
+    }
+
+    /// Build proof for a deleted worktree from an exact durable registry receipt. The task id must
+    /// equal the worktree UUID, both stored worktree paths must equal the legacy key, and the stored
+    /// repository and original project_dir must agree on a live Git common directory. A basename or
+    /// broker slug is never accepted as evidence.
+    static func taskReceiptProjectMigrationEvidence(
+        projectKey: String, taskRecords: [[String: Any]]
+    ) -> LegacyProjectMigrationEvidence? {
+        guard let taskID = legacyManagedWorktreeTaskID(projectKey) else { return nil }
+        let legacy = migrationPath(projectKey)
+        let matches = taskRecords.compactMap { record -> LegacyProjectMigrationEvidence? in
+            guard record["id"] as? String == taskID,
+                  let projectDir = record["project_dir"] as? String,
+                  let worktree = record["worktree"] as? [String: Any],
+                  let path = worktree["path"] as? String,
+                  let cwd = worktree["cwd"] as? String,
+                  let repository = worktree["repository"] as? String,
+                  migrationPath(path) == legacy, migrationPath(cwd) == legacy,
+                  migrationPath(repository) == migrationPath(projectDir),
+                  let common = gitCommonDirectory(repository),
+                  let root = repositoryRoot(commonDirectory: common),
+                  root == migrationPath(projectDir) else { return nil }
+            let reference = "task-worktree-receipt:" + taskID
+            let base = worktree["base"] as? String ?? ""
+            return LegacyProjectMigrationEvidence(
+                legacyProjectKey: legacy, repositoryRoot: root,
+                source: .taskWorktreeReceipt, reference: reference,
+                evidenceDigest: migrationDigest(["project-migration-evidence-v1", taskID, legacy,
+                                                 root, common, base, reference]))
+        }
+        guard Set(matches.map(\.repositoryRoot)).count == 1 else { return nil }
+        return matches.first
+    }
+
+    /// Pure dry-run planner. It emits a deterministic proposal plus an accepted Project event per
+    /// legacy interval only when exactly one validated evidence receipt names the repository.
+    /// Unresolved rows stay explicit in the audit manifest and receive no event.
+    static func planLegacyProjectMigration(
+        rows: [Row], evidence: [LegacyProjectMigrationEvidence], assignedAt: Date
+    ) -> LegacyProjectMigrationPlan {
+        let grouped = Dictionary(grouping: evidence) { migrationPath($0.legacyProjectKey) }
+        var events: [AttributionEvent] = []
+        var audit: [LegacyProjectMigrationAuditEntry] = []
+        for row in rows.sorted(by: { $0.intervalKey < $1.intervalKey }) {
+            guard let raw = row.projectKey,
+                  legacyManagedWorktreeTaskID(raw) != nil else { continue }
+            let legacy = migrationPath(raw)
+            let candidates = grouped[legacy] ?? []
+            let roots = Set(candidates.map { migrationPath($0.repositoryRoot) })
+            guard candidates.count == 1, roots.count == 1, let proof = candidates.first,
+                  proof.evidenceDigest.count == 64,
+                  proof.evidenceDigest.allSatisfy({ $0.isNumber || ("a"..."f").contains($0) }),
+                  legacyManagedWorktreeTaskID(proof.repositoryRoot) == nil,
+                  proof.reference.nonEmpty != nil else {
+                audit.append(LegacyProjectMigrationAuditEntry(
+                    intervalKey: row.intervalKey, legacyProjectKey: legacy,
+                    repositoryRoot: nil, source: nil, evidenceDigest: nil, eventID: nil,
+                    status: "unresolved",
+                    reason: candidates.isEmpty ? "migration_evidence_missing"
+                        : "migration_evidence_conflict"))
+                continue
+            }
+            let root = migrationPath(proof.repositoryRoot)
+            let proposalID = "project-migration-proposal-v1-" + String(migrationDigest(
+                [row.intervalKey, legacy, root, proof.evidenceDigest]).prefix(55))
+            let eventID = "project-migration-v1-" + String(migrationDigest(
+                [row.intervalKey, legacy, root, proof.evidenceDigest]).prefix(64))
+            let proposal = AttributionEvent(
+                eventID: proposalID, intervalKey: row.intervalKey, dimension: .project,
+                valueID: root,
+                valueLabel: URL(fileURLWithPath: root).lastPathComponent,
+                source: .manual, confidence: nil,
+                classifierID: nil, classifierVersion: nil,
+                evidenceDigest: proof.evidenceDigest,
+                decision: .proposed,
+                decisionSource: "legacy-project-migration-proposal-v1:" + proof.source.rawValue,
+                assignedAt: assignedAt, supersedesEventID: nil)
+            let event = AttributionEvent(
+                eventID: eventID, intervalKey: row.intervalKey, dimension: .project,
+                valueID: root,
+                valueLabel: URL(fileURLWithPath: root).lastPathComponent,
+                source: .policy, confidence: 1,
+                classifierID: "clawdline-project-migration",
+                classifierVersion: "1", evidenceDigest: proof.evidenceDigest,
+                decision: .accepted,
+                decisionSource: "legacy-project-migration-v1:" + proof.source.rawValue,
+                assignedAt: assignedAt, supersedesEventID: proposalID)
+            events.append(contentsOf: [proposal, event])
+            audit.append(LegacyProjectMigrationAuditEntry(
+                intervalKey: row.intervalKey, legacyProjectKey: legacy,
+                repositoryRoot: root, source: proof.source,
+                evidenceDigest: proof.evidenceDigest, eventID: eventID,
+                status: "resolved", reason: nil))
+        }
+        return LegacyProjectMigrationPlan(events: events, audit: audit)
+    }
+
+    private func containsAttributionEvent(_ eventID: String) -> Bool {
+        queue.sync {
+            guard let db = database() else { return false }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(db,
+                "SELECT 1 FROM usage_attribution_events WHERE event_id = ? LIMIT 1;",
+                -1, &statement, nil) == SQLITE_OK else { return false }
+            bind(statement, 1, eventID)
+            return sqlite3_step(statement) == SQLITE_ROW
+        }
+    }
+
+    /// Applying is refused without the caller's SHA-256 backup receipt. Reapplying the same plan
+    /// is idempotent because every event id is deterministic and the event store is append-only.
+    func applyLegacyProjectMigration(
+        _ plan: LegacyProjectMigrationPlan, backupDigest: String
+    ) -> LegacyProjectMigrationApplyResult {
+        guard backupDigest.count == 64,
+              backupDigest.allSatisfy({ $0.isNumber || ("a"..."f").contains($0) }) else {
+            return LegacyProjectMigrationApplyResult(applied: 0, alreadyPresent: 0,
+                                                     failed: plan.events.count,
+                                                     backupDigest: backupDigest)
+        }
+        var applied = 0, already = 0, failed = 0
+        for event in plan.events {
+            if record(event) { applied += 1 }
+            else if containsAttributionEvent(event.eventID) { already += 1 }
+            else { failed += 1 }
+        }
+        return LegacyProjectMigrationApplyResult(applied: applied, alreadyPresent: already,
+                                                 failed: failed, backupDigest: backupDigest)
+    }
+
+    /// Logical rollback is append-only too: one deterministic rejection supersedes each migration
+    /// event, returning those rows to Unknown Project. Restoring the pre-migration SQLite backup is
+    /// the byte-for-byte recovery path and is documented beside the dry-run contract.
+    func rollbackLegacyProjectMigration(
+        _ plan: LegacyProjectMigrationPlan, backupDigest: String, assignedAt: Date
+    ) -> LegacyProjectMigrationApplyResult {
+        let rollbackEvents = plan.events.filter { $0.decision == .accepted }.map { original in
+            AttributionEvent(
+                eventID: "project-migration-rollback-v1-"
+                    + String(Self.migrationDigest([original.eventID]).prefix(55)),
+                intervalKey: original.intervalKey, dimension: .project,
+                valueID: original.valueID, valueLabel: original.valueLabel,
+                source: .policy, confidence: 1,
+                classifierID: "clawdline-project-migration",
+                classifierVersion: "1", evidenceDigest: original.evidenceDigest,
+                decision: .rejected, decisionSource: "legacy-project-migration-rollback-v1",
+                assignedAt: assignedAt, supersedesEventID: original.eventID)
+        }
+        return applyLegacyProjectMigration(
+            LegacyProjectMigrationPlan(events: rollbackEvents, audit: plan.audit),
+            backupDigest: backupDigest)
+    }
+
     func resolvedAttribution(intervalKey: String, dimension: AttributionDimension)
         -> AttributionEvent? {
         queue.sync {
             guard let db = database() else { return nil }
             let events = attributionEvents(db, intervalKey: intervalKey, dimension: dimension)
-            let superseded = Set(events.compactMap(\.supersedesEventID))
-            let accepted = events.filter {
-                $0.decision == .accepted && !superseded.contains($0.eventID)
-            }
-            return accepted.count == 1 ? accepted[0] : nil
+            return Self.acceptedHead(from: events)
         }
     }
 
@@ -1902,18 +2192,25 @@ final class UsageLedger {
         var origin: String?
         var project: String?
         var limit: Int
+        /// The equal previous-range read needs token rows, not Feature attribution. Keeping this
+        /// choice at the SQLite seam avoids repeating the attribution join whose result would be
+        /// discarded by every comparison.
+        var includeFeatureAttribution = true
     }
 
     struct AnalyticsRead {
         var rows: [Row]
         var corrections: Int
         var latestLedgerObservation: Date?
+        var acceptedFeatures: [String: AcceptedAttribution]
+        var acceptedProjects: [String: AcceptedAttribution]
     }
 
     func analyticsRead(_ filter: AnalyticsFilter) -> AnalyticsRead {
         queue.sync {
             guard let db = database() else {
-                return AnalyticsRead(rows: [], corrections: 0, latestLedgerObservation: nil)
+                return AnalyticsRead(rows: [], corrections: 0, latestLedgerObservation: nil,
+                                     acceptedFeatures: [:], acceptedProjects: [:])
             }
             let predicate = """
                 (? IS NULL OR started_at >= ?) AND (? IS NULL OR started_at < ?)
@@ -1921,7 +2218,17 @@ final class UsageLedger {
                 AND (? IS NULL OR model = ?)
                 AND (? IS NULL OR origin = ?)
                 AND (? IS NULL OR rtrim(COALESCE(project_key, working_dir), '/') = ?
-                     OR rtrim(COALESCE(project_key, working_dir), '/') LIKE ? ESCAPE '\\')
+                     OR rtrim(COALESCE(project_key, working_dir), '/') LIKE ? ESCAPE '\\'
+                     OR interval_key IN (
+                       SELECT e.interval_key FROM usage_attribution_events e
+                        WHERE e.dimension = 'project' AND e.decision = 'accepted'
+                          AND NOT EXISTS (
+                            SELECT 1 FROM usage_attribution_events successor
+                             WHERE successor.supersedes_event_id = e.event_id
+                          )
+                        GROUP BY e.interval_key
+                       HAVING COUNT(*) = 1 AND MAX(e.value_label) = ?
+                     ))
                 """
             func escapedLike(_ value: String) -> String {
                 value.replacingOccurrences(of: "\\", with: "\\\\")
@@ -1938,6 +2245,7 @@ final class UsageLedger {
                 bind(statement, 9, filter.origin); bind(statement, 10, filter.origin)
                 bind(statement, 11, filter.project); bind(statement, 12, filter.project)
                 bind(statement, 13, filter.project.map { "%/" + escapedLike($0) })
+                bind(statement, 14, filter.project)
             }
 
             var rowsStatement: OpaquePointer?
@@ -1947,7 +2255,7 @@ final class UsageLedger {
                 + " ORDER BY started_at DESC, interval_key DESC LIMIT ?;",
                 -1, &rowsStatement, nil) == SQLITE_OK {
                 bindFilter(rowsStatement)
-                bind(rowsStatement, 14, filter.limit)
+                bind(rowsStatement, 15, filter.limit)
                 while sqlite3_step(rowsStatement) == SQLITE_ROW {
                     rows.append(Self.row(from: rowsStatement))
                 }
@@ -1968,9 +2276,78 @@ final class UsageLedger {
             if sqlite3_prepare_v2(db, correctionsSQL, -1, &correctionsStatement, nil)
                 == SQLITE_OK {
                 bindFilter(correctionsStatement)
-                bind(correctionsStatement, 14, filter.limit)
+                bind(correctionsStatement, 15, filter.limit)
                 if sqlite3_step(correctionsStatement) == SQLITE_ROW {
                     corrections = Int(sqlite3_column_int64(correctionsStatement, 0))
+                }
+            }
+
+            var attributionEvents: [AttributionDimension: [String: [AttributionEvent]]] = [:]
+            do {
+                // Resolve Feature attribution for this exact bounded subject in one query. Doing
+                // one lookup per row turns a 100k-row dashboard into 100k SQLite statements;
+                // joining the same matched subquery keeps the read bounded and holds the observed
+                // intervals still.
+                var featureStatement: OpaquePointer?
+                defer { sqlite3_finalize(featureStatement) }
+                let featureSQL = """
+                    SELECT e.event_id, e.interval_key, e.dimension, e.value_id, e.value_label,
+                           e.source, e.confidence, e.classifier_id, e.classifier_version,
+                           e.evidence_digest, e.decision, e.decision_source, e.assigned_at,
+                           e.supersedes_event_id
+                      FROM usage_attribution_events e JOIN (
+                        SELECT interval_key FROM usage_intervals WHERE \(predicate)
+                         ORDER BY started_at DESC, interval_key DESC LIMIT ?
+                      ) matched ON matched.interval_key = e.interval_key
+                     WHERE e.dimension IN (?, ?)
+                     ORDER BY e.interval_key, e.assigned_at, e.event_id;
+                    """
+                if sqlite3_prepare_v2(db, featureSQL, -1, &featureStatement, nil) == SQLITE_OK {
+                    bindFilter(featureStatement)
+                    bind(featureStatement, 15, filter.limit)
+                    bind(featureStatement, 16, filter.includeFeatureAttribution
+                         ? AttributionDimension.feature.rawValue
+                         : AttributionDimension.project.rawValue)
+                    bind(featureStatement, 17, AttributionDimension.project.rawValue)
+                    while sqlite3_step(featureStatement) == SQLITE_ROW {
+                        guard let eventID = Self.text(featureStatement, 0),
+                              let intervalKey = Self.text(featureStatement, 1),
+                              let rawDimension = Self.text(featureStatement, 2),
+                              let dimension = AttributionDimension(rawValue: rawDimension),
+                              let valueID = Self.text(featureStatement, 3),
+                              let valueLabel = Self.text(featureStatement, 4),
+                              let rawSource = Self.text(featureStatement, 5),
+                              let source = AttributionSource(rawValue: rawSource),
+                              let rawDecision = Self.text(featureStatement, 10),
+                              let decision = AttributionDecision(rawValue: rawDecision),
+                              let decisionSource = Self.text(featureStatement, 11),
+                              let assigned = Self.double(featureStatement, 12) else { continue }
+                        attributionEvents[dimension, default: [:]][intervalKey, default: []]
+                            .append(AttributionEvent(
+                            eventID: eventID, intervalKey: intervalKey, dimension: dimension,
+                            valueID: valueID, valueLabel: valueLabel, source: source,
+                            confidence: Self.double(featureStatement, 6),
+                            classifierID: Self.text(featureStatement, 7),
+                            classifierVersion: Self.text(featureStatement, 8),
+                            evidenceDigest: Self.text(featureStatement, 9), decision: decision,
+                            decisionSource: decisionSource,
+                            assignedAt: Date(timeIntervalSince1970: assigned),
+                            supersedesEventID: Self.text(featureStatement, 13)))
+                    }
+                }
+            }
+            var acceptedFeatures: [String: AcceptedAttribution] = [:]
+            for (intervalKey, events) in attributionEvents[.feature] ?? [:] {
+                if let head = Self.acceptedHead(from: events) {
+                    acceptedFeatures[intervalKey] = AcceptedAttribution(
+                        id: head.valueID, label: head.valueLabel)
+                }
+            }
+            var acceptedProjects: [String: AcceptedAttribution] = [:]
+            for (intervalKey, events) in attributionEvents[.project] ?? [:] {
+                if let head = Self.acceptedHead(from: events) {
+                    acceptedProjects[intervalKey] = AcceptedAttribution(
+                        id: head.valueID, label: head.valueLabel)
                 }
             }
 
@@ -1984,7 +2361,9 @@ final class UsageLedger {
                 latest = Date(timeIntervalSince1970: seconds)
             }
             return AnalyticsRead(rows: rows, corrections: corrections,
-                                 latestLedgerObservation: latest)
+                                 latestLedgerObservation: latest,
+                                 acceptedFeatures: acceptedFeatures,
+                                 acceptedProjects: acceptedProjects)
         }
     }
 
@@ -2679,6 +3058,7 @@ final class UsageQueryService {
         var payload: [String: Any]
         var rows: [UsageLedger.Row]
         var allRows: [UsageLedger.Row]
+        var acceptedProjects: [String: UsageLedger.AcceptedAttribution]
         var nextCursor: String?
         var scanTruncated: Bool
     }
@@ -2709,6 +3089,13 @@ final class UsageQueryService {
         }
     }
 
+    private struct PreviousRange {
+        var start: Date
+        var end: Date
+        var from: String
+        var to: String
+    }
+
     enum ExportError: Error { case jsonSerialization }
     static var jsonEncoderForTesting: (([String: Any]) -> Data?)?
 
@@ -2726,6 +3113,8 @@ final class UsageQueryService {
     /// Test seam for presentation invariants. Production never enters through this initializer:
     /// its complete predicate and max+1 bound live in `UsageLedger.analyticsRead` above.
     init(rows: @escaping () -> [UsageLedger.Row], corrections: @escaping () -> Int = { 0 },
+         acceptedFeatures: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
+         acceptedProjects: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          jsonEncoder: @escaping ([String: Any]) -> Data? = {
              try? JSONSerialization.data(withJSONObject: $0,
                                          options: [.sortedKeys, .withoutEscapingSlashes])
@@ -2734,7 +3123,8 @@ final class UsageQueryService {
             let rows = rows()
             return UsageLedger.AnalyticsRead(
                 rows: rows, corrections: corrections(),
-                latestLedgerObservation: rows.map(\.updatedAt).max())
+                latestLedgerObservation: rows.map(\.updatedAt).max(),
+                acceptedFeatures: acceptedFeatures(), acceptedProjects: acceptedProjects())
         }
         encodeJSON = jsonEncoder
     }
@@ -2812,17 +3202,27 @@ final class UsageQueryService {
         let reading = readRows(filter)
         // Production has already applied this complete predicate in SQLite. Reapplying it here
         // keeps the injectable test seam honest without changing the bounded production cost.
-        let matched = reading.rows.sorted(by: newestFirst).filter { row in
-            if let start = bounds.start, row.startedAt < start { return false }
-            if let end = bounds.end, row.startedAt >= end { return false }
-            if let assistant = query.assistant, row.assistant != assistant { return false }
-            if let model = query.model, row.model != model { return false }
-            if let origin = query.origin, row.origin != origin { return false }
-            if let project = query.project, Self.projectName(row) != project { return false }
-            return true
-        }
+        let matched = matching(reading.rows, start: bounds.start, end: bounds.end, query: query,
+                               acceptedProjects: reading.acceptedProjects)
         let truncated = matched.count > Self.maxScannedRows
         let filtered = Array(matched.prefix(Self.maxScannedRows))
+
+        let priorRange = previousRange(for: query, bounds: bounds, calendar: calendar)
+        var previousRows: [UsageLedger.Row] = []
+        var previousAcceptedProjects: [String: UsageLedger.AcceptedAttribution] = [:]
+        var previousTruncated = false
+        if let priorRange {
+            let previousReading = readRows(UsageLedger.AnalyticsFilter(
+                start: priorRange.start, end: priorRange.end, assistant: query.assistant,
+                model: query.model, origin: query.origin, project: query.project,
+                limit: Self.maxScannedRows + 1, includeFeatureAttribution: false))
+            let previousMatched = matching(previousReading.rows, start: priorRange.start,
+                                           end: priorRange.end, query: query,
+                                           acceptedProjects: previousReading.acceptedProjects)
+            previousTruncated = previousMatched.count > Self.maxScannedRows
+            previousRows = Array(previousMatched.prefix(Self.maxScannedRows))
+            previousAcceptedProjects = previousReading.acceptedProjects
+        }
 
         let continuation = query.cursor.flatMap(Cursor.decode)
         let afterCursor = filtered.filter { row in
@@ -2838,7 +3238,8 @@ final class UsageQueryService {
         let corrections = reading.corrections
 
         let totals = Self.summary(filtered)
-        let breakdown = Self.breakdown(filtered, groupBy: query.groupBy, calendar: calendar)
+        let breakdown = Self.breakdown(filtered, groupBy: query.groupBy, calendar: calendar,
+                                       acceptedProjects: reading.acceptedProjects)
         let trend = Self.trend(filtered, bucket: query.bucket, calendar: calendar)
         let latest = reading.latestLedgerObservation
         let rangeLatest = filtered.map(\.updatedAt).max()
@@ -2897,23 +3298,32 @@ final class UsageQueryService {
             "groupBy": query.groupBy.rawValue,
             "trend": trend,
             "bucket": query.bucket.rawValue,
-            "rows": page.map(Self.publicRow),
+            "rows": page.map { Self.publicRow($0, acceptedProjects: reading.acceptedProjects) },
             "rowCount": filtered.count,
             "pagination": ["limit": query.limit, "nextCursor": next as Any? ?? NSNull(),
                            "hasMore": hasMore],
             "unavailableDimensions": [
-                "dimensions": UsageLedger.unavailableDimensions,
+                "dimensions": ["graph_id", "disposition"],
                 "reason": UsageLedger.reservedColumnsReason,
                 "graphView": false, "retryView": false, "landingView": false,
-                "featureView": false,
+                "featureView": true,
+                "featureAvailability": "one_unambiguous_accepted_head_or_unknown",
             ],
         ]
+        payload["portfolio"] = Self.portfolio(
+            rows: filtered, previousRows: previousRows,
+            acceptedFeatures: reading.acceptedFeatures,
+            acceptedProjects: reading.acceptedProjects,
+            previousAcceptedProjects: previousAcceptedProjects, calendar: calendar,
+            query: query, priorRange: priorRange,
+            comparisonTruncated: truncated || previousTruncated)
         if truncated {
             payload["availability"] = ["status": "partial", "reason": "scan_limit_reached"]
         } else {
             payload["availability"] = ["status": "complete"]
         }
         return UsageAnalyticsDTO(payload: payload, rows: page, allRows: filtered,
+                                 acceptedProjects: reading.acceptedProjects,
                                  nextCursor: next, scanTruncated: truncated)
     }
 
@@ -2933,7 +3343,8 @@ final class UsageQueryService {
             let fields: [String] = [
                 row.intervalKey, row.taskID ?? "", formatter.string(from: row.startedAt),
                 row.endedAt.map(formatter.string(from:)) ?? "",
-                row.assistant, row.model ?? "", row.origin, Self.projectName(row) ?? "",
+                row.assistant, row.model ?? "", row.origin,
+                Self.projectName(row, acceptedProjects: result.acceptedProjects) ?? "",
                 measurement.counts.inputNew.map(String.init) ?? "",
                 measurement.counts.output.map(String.init) ?? "",
                 measurement.counts.cacheRead.map(String.init) ?? "",
@@ -2957,7 +3368,9 @@ final class UsageQueryService {
     /// that contract in the first place.
     func exportJSON(_ result: UsageAnalyticsDTO) throws -> Data {
         var object = result.payload
-        object["rows"] = result.allRows.map(Self.publicRow)
+        object["rows"] = result.allRows.map {
+            Self.publicRow($0, acceptedProjects: result.acceptedProjects)
+        }
         object["rowCount"] = result.allRows.count
         object["truncated"] = result.scanTruncated
         object.removeValue(forKey: "pagination")
@@ -2975,6 +3388,40 @@ final class UsageQueryService {
         let start = from.flatMap(formatter.date(from:))
         let finalDay = to.flatMap(formatter.date(from:))
         return (start, finalDay.flatMap { calendar.date(byAdding: .day, value: 1, to: $0) })
+    }
+
+    private func previousRange(for query: Query, bounds: (start: Date?, end: Date?),
+                               calendar: Calendar) -> PreviousRange? {
+        guard query.from != nil, query.to != nil, let start = bounds.start, let end = bounds.end,
+              let dayCount = calendar.dateComponents([.day], from: start, to: end).day,
+              dayCount > 0,
+              let previousStart = calendar.date(byAdding: .day, value: -dayCount, to: start),
+              let previousLast = calendar.date(byAdding: .day, value: -1, to: start)
+        else { return nil }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return PreviousRange(start: previousStart, end: start,
+                             from: formatter.string(from: previousStart),
+                             to: formatter.string(from: previousLast))
+    }
+
+    private func matching(
+        _ rows: [UsageLedger.Row], start: Date?, end: Date?, query: Query,
+        acceptedProjects: [String: UsageLedger.AcceptedAttribution]
+    ) -> [UsageLedger.Row] {
+        rows.sorted(by: newestFirst).filter { row in
+            if let start, row.startedAt < start { return false }
+            if let end, row.startedAt >= end { return false }
+            if let assistant = query.assistant, row.assistant != assistant { return false }
+            if let model = query.model, row.model != model { return false }
+            if let origin = query.origin, row.origin != origin { return false }
+            if let project = query.project,
+               Self.projectName(row, acceptedProjects: acceptedProjects) != project { return false }
+            return true
+        }
     }
 
     private func newestFirst(_ left: UsageLedger.Row, _ right: UsageLedger.Row) -> Bool {
@@ -3064,8 +3511,449 @@ final class UsageQueryService {
         ]
     }
 
+    // MARK: - Project Portfolio projection
+
+    private static let legacyManagedWorktreeProjectReason =
+        "legacy_managed_worktree_project_key"
+
+    private struct ProjectIdentityEvidence {
+        var identity: String?
+        var reason: String?
+    }
+
+    /// Portfolio identity asks only the canonical key the collector persisted. `workingDir` is
+    /// intentionally not a fallback here: a checkout directory can be a disposable worktree, and
+    /// turning its basename into a Project is precisely the inference this surface must refuse.
+    ///
+    /// Rows recorded before canonical Project keys landed may already contain a Clawdline-managed
+    /// worktree path ending in a task UUID. Until the user chooses an append-only migration policy,
+    /// this read seam suppresses that disposable label into Unknown without rewriting the ledger.
+    private static func projectIdentity(
+        _ row: UsageLedger.Row,
+        acceptedProjects: [String: UsageLedger.AcceptedAttribution]
+    ) -> ProjectIdentityEvidence {
+        if let accepted = acceptedProjects[row.intervalKey] {
+            return ProjectIdentityEvidence(
+                identity: accepted.id, reason: nil)
+        }
+        guard let raw = row.projectKey?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return ProjectIdentityEvidence(identity: nil, reason: "project_key_missing")
+        }
+        let path = URL(fileURLWithPath: raw).standardizedFileURL.path
+        if UsageLedger.legacyManagedWorktreeTaskID(path) != nil {
+            return ProjectIdentityEvidence(identity: nil,
+                                           reason: legacyManagedWorktreeProjectReason)
+        }
+        return ProjectIdentityEvidence(identity: path, reason: nil)
+    }
+
+    private static func projectID(_ identity: String?) -> String {
+        guard let identity else { return "unknown-project" }
+        let digest = SHA256.hash(data: Data(identity.utf8)).prefix(8)
+            .map { String(format: "%02x", $0) }.joined()
+        return "project-" + digest
+    }
+
+    private static func projectLabel(_ identity: String?, acceptedLabel: String? = nil) -> String {
+        guard let identity else { return "Unknown Project" }
+        if let acceptedLabel, !acceptedLabel.isEmpty { return acceptedLabel }
+        let label = URL(fileURLWithPath: identity).lastPathComponent
+        return label.isEmpty ? "Unnamed Project" : label
+    }
+
+    private static func groupedProjects(
+        _ rows: [UsageLedger.Row],
+        acceptedProjects: [String: UsageLedger.AcceptedAttribution]
+    ) -> [String: (identity: String?, label: String?, reasons: Set<String>,
+                  rows: [UsageLedger.Row])] {
+        var groups: [String: (identity: String?, label: String?, reasons: Set<String>,
+                              rows: [UsageLedger.Row])] = [:]
+        for row in rows {
+            let accepted = acceptedProjects[row.intervalKey]
+            let evidence = projectIdentity(row, acceptedProjects: acceptedProjects)
+            let key = evidence.identity ?? "\u{0}unknown-project"
+            if groups[key] == nil { groups[key] = (evidence.identity, accepted?.label, [], []) }
+            if let reason = evidence.reason { groups[key]?.reasons.insert(reason) }
+            groups[key]?.rows.append(row)
+        }
+        return groups
+    }
+
+    private static func runID(_ row: UsageLedger.Row) -> String {
+        if let task = row.taskID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !task.isEmpty { return "task:" + task }
+        let kind = row.boundaryKind.trimmingCharacters(in: .whitespacesAndNewlines)
+        let boundary = row.boundaryID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !kind.isEmpty, !boundary.isEmpty { return kind + ":" + boundary }
+        let session = row.sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !session.isEmpty { return "session:" + session }
+        return "interval:" + row.intervalKey
+    }
+
+    private static func unknownOutputRuns(_ rows: [UsageLedger.Row]) -> Int {
+        Set(rows.filter { $0.measurement.counts.output == nil }.map(runID)).count
+    }
+
+    private static func output(_ totals: [String: Any]) -> Int? {
+        (totals["tokens"] as? [String: Any])?[UsageLedger.Part.output.rawValue] as? Int
+    }
+
+    private static func unknownPart(_ totals: [String: Any], _ part: UsageLedger.Part) -> Int {
+        ((totals["tokenPartsUnknown"] as? [String: Int])?[part.rawValue]) ?? 0
+    }
+
+    private static func coveragePayload(_ rows: [UsageLedger.Row], totals: [String: Any])
+        -> [String: Any] {
+        let coverage = totals["coverage"] as? [String: Any] ?? [:]
+        let incomplete = rows.filter { $0.measurement.incomplete }.count
+        let status: String
+        if rows.isEmpty { status = "unavailable" }
+        else if incomplete == 0 { status = "complete" }
+        else { status = "partial" }
+        return [
+            "status": status, "rows": rows.count, "completeRows": rows.count - incomplete,
+            "partialRows": incomplete,
+            "unknownOutputRuns": unknownOutputRuns(rows),
+            "states": coverage["states"] as Any? ?? [:],
+            "reasons": coverage["reasons"] as Any? ?? [:],
+        ]
+    }
+
+    private static func comparableCost(_ totals: [String: Any]) -> [String: Any] {
+        let costs = totals["costs"] as? [[String: Any]] ?? []
+        let unavailable = totals["unavailableCost"] as? [String: Any] ?? [:]
+        let missing = unavailable["rows"] as? Int ?? 0
+        guard missing == 0 else {
+            return ["status": "unavailable", "reason": "partial_cost_coverage",
+                    "unavailableRows": missing]
+        }
+        guard costs.count == 1, let cost = costs.first else {
+            return ["status": "unavailable",
+                    "reason": costs.isEmpty ? "no_cost_series" : "mixed_cost_series"]
+        }
+        return ["status": "available", "value": cost["value"] ?? NSNull(),
+                "unit": cost["unit"] ?? NSNull(), "basis": cost["basis"] ?? NSNull(),
+                "rows": cost["rows"] ?? NSNull()]
+    }
+
+    private static func lineagePayload(_ rows: [UsageLedger.Row]) -> [String: Any] {
+        var roles: [String: String] = [:]
+        for row in rows {
+            let id = runID(row)
+            let role: String
+            if row.origin == UsageLedger.Origin.schedule.rawValue {
+                role = "scheduled"
+            } else if row.boundaryKind == UsageLedger.BoundaryKind.session.rawValue {
+                role = "root"
+            } else if row.boundaryKind == UsageLedger.BoundaryKind.task.rawValue,
+                      row.depth == Orchestrator.depthFloor {
+                // The broker stores depth 1 for the only dispatched level it permits: a root's
+                // child. Depth 2 cannot be produced, and therefore never means "child" here.
+                role = "child"
+            } else {
+                role = "unknown"
+            }
+            if roles[id] == nil || roles[id] == "unknown" { roles[id] = role }
+        }
+        let root = roles.values.filter { $0 == "root" }.count
+        let child = roles.values.filter { $0 == "child" }.count
+        let scheduled = roles.values.filter { $0 == "scheduled" }.count
+        let unknown = roles.values.filter { $0 == "unknown" }.count
+        let status: String = unknown == 0 ? "available"
+            : ((root + child) == 0 ? "unavailable" : "partial")
+        return ["status": status, "rootRuns": root, "childRuns": child,
+                "scheduledRuns": scheduled, "unknownRuns": unknown,
+                "reason": unknown == 0 ? NSNull() : "lineage_evidence_missing"]
+    }
+
+    private static func outputComparison(current: [UsageLedger.Row],
+                                         previous: [UsageLedger.Row],
+                                         unavailableReason: String? = nil) -> [String: Any] {
+        if let unavailableReason {
+            return ["status": "unavailable", "reason": unavailableReason]
+        }
+        guard !previous.isEmpty else {
+            return ["status": "unavailable", "reason": "no_previous_data"]
+        }
+        let currentTotals = summary(current), previousTotals = summary(previous)
+        guard unknownPart(currentTotals, .output) == 0,
+              unknownPart(previousTotals, .output) == 0,
+              let currentOutput = output(currentTotals),
+              let previousOutput = output(previousTotals) else {
+            return ["status": "unavailable", "reason": "incomplete_output"]
+        }
+        let delta = currentOutput - previousOutput
+        return [
+            "status": "comparable", "current": currentOutput, "previous": previousOutput,
+            "absolute": delta,
+            "percent": previousOutput == 0 ? NSNull()
+                : (Double(delta) / Double(previousOutput)) * 100,
+            "percentReason": previousOutput == 0 ? "previous_zero" : NSNull(),
+        ]
+    }
+
+    private static func mix(_ rows: [UsageLedger.Row], by value: (UsageLedger.Row) -> String?)
+        -> [[String: Any]] {
+        var groups: [String: [UsageLedger.Row]] = [:]
+        for row in rows { groups[value(row) ?? "Unknown", default: []].append(row) }
+        return groups.map { label, rows -> [String: Any] in
+            let totals = summary(rows)
+            return ["label": label, "runs": Set(rows.map(runID)).count,
+                    "output": output(totals) as Any? ?? NSNull(),
+                    "unknownOutputRuns": unknownOutputRuns(rows)]
+        }.sorted {
+            let left = $0["output"] as? Int ?? -1, right = $1["output"] as? Int ?? -1
+            if left != right { return left > right }
+            return ($0["label"] as? String ?? "") < ($1["label"] as? String ?? "")
+        }
+    }
+
+    private static func projectPayload(identity: String?, label: String?,
+                                       identityReasons: Set<String>,
+                                       rows: [UsageLedger.Row],
+                                       previous: [UsageLedger.Row], calendar: Calendar,
+                                       comparisonReason: String?) -> [String: Any] {
+        let totals = summary(rows)
+        let scheduledRows = rows.filter { $0.origin == UsageLedger.Origin.schedule.rawValue }
+        let scheduledTotals = summary(scheduledRows)
+        let recent = rows.sorted {
+            $0.startedAt == $1.startedAt ? $0.intervalKey > $1.intervalKey
+                : $0.startedAt > $1.startedAt
+        }.prefix(6).map { row -> [String: Any] in
+            var publicValue = publicRow(row, acceptedProjects: [:])
+            publicValue["project"] = projectLabel(identity, acceptedLabel: label)
+            return publicValue
+        }
+        return [
+            "id": projectID(identity), "label": projectLabel(identity, acceptedLabel: label),
+            "identity": [
+                "status": identity == nil ? "unavailable" : "available",
+                "reasons": identityReasons.sorted(),
+            ],
+            "output": output(totals) as Any? ?? NSNull(),
+            "unknownOutputRuns": unknownOutputRuns(rows),
+            "tokens": totals["tokens"] ?? NSNull(),
+            "tokenPartsUnknown": totals["tokenPartsUnknown"] ?? [:],
+            "runs": Set(rows.map(runID)).count,
+            "scheduledRuns": Set(scheduledRows.map(runID)).count,
+            "scheduledOutput": output(scheduledTotals) as Any? ?? NSNull(),
+            "cost": comparableCost(totals),
+            "coverage": coveragePayload(rows, totals: totals),
+            "lineage": lineagePayload(rows),
+            "comparison": outputComparison(current: rows, previous: previous,
+                                             unavailableReason: comparisonReason),
+            "trend": trend(rows, bucket: .day, calendar: calendar),
+            "assistantMix": mix(rows, by: { $0.assistant }),
+            "workMix": mix(rows, by: {
+                $0.origin == UsageLedger.Origin.schedule.rawValue ? "Scheduled" : "Interactive"
+            }),
+            "recentWork": Array(recent),
+        ]
+    }
+
+    private static func scheduledWork(_ rows: [UsageLedger.Row], calendar: Calendar)
+        -> [String: Any] {
+        var groups: [String: [UsageLedger.Row]] = [:]
+        let scheduledRows = rows.filter { $0.origin == UsageLedger.Origin.schedule.rawValue }
+        for row in scheduledRows {
+            if let id = row.scheduleID?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !id.isEmpty { groups[id, default: []].append(row) }
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let schedules = groups.map { id, rows -> [String: Any] in
+            let totals = summary(rows)
+            let days = Set(rows.map { UsageLedger.localDay(of: $0.startedAt, calendar: calendar) })
+            return [
+                "id": id, "runs": Set(rows.map(runID)).count,
+                "output": output(totals) as Any? ?? NSNull(),
+                "unknownOutputRuns": unknownOutputRuns(rows),
+                "activeDays": days.count,
+                "lastRunAt": rows.map(\.startedAt).max().map(formatter.string(from:))
+                    as Any? ?? NSNull(),
+                "coverage": coveragePayload(rows, totals: totals),
+            ]
+        }.sorted {
+            let left = $0["output"] as? Int ?? -1, right = $1["output"] as? Int ?? -1
+            if left != right { return left > right }
+            return ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "")
+        }
+        let unknownRows = scheduledRows.filter {
+            $0.scheduleID?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty == nil
+        }
+        let scheduledTotals = summary(scheduledRows)
+        return [
+            "status": schedules.isEmpty ? "unavailable" : "available",
+            "reason": schedules.isEmpty ? "no_schedule_identity_in_range" : NSNull(),
+            "runs": Set(scheduledRows.map(runID)).count,
+            "output": output(scheduledTotals) as Any? ?? NSNull(),
+            "unknownOutputRuns": unknownOutputRuns(scheduledRows),
+            "schedules": schedules,
+            "unknownSchedule": [
+                "runs": Set(unknownRows.map(runID)).count,
+                "reason": "schedule_identity_missing",
+            ],
+        ]
+    }
+
+    private static func featureWork(_ rows: [UsageLedger.Row],
+                                    accepted: [String: UsageLedger.AcceptedAttribution])
+        -> [String: Any] {
+        var groups: [String: (label: String, rows: [UsageLedger.Row])] = [:]
+        var unknown: [UsageLedger.Row] = []
+        for row in rows {
+            guard let feature = accepted[row.intervalKey] else {
+                unknown.append(row)
+                continue
+            }
+            if groups[feature.id] == nil { groups[feature.id] = (feature.label, []) }
+            groups[feature.id]?.rows.append(row)
+        }
+        let payload = groups.map { id, value -> [String: Any] in
+            let totals = summary(value.rows)
+            return ["id": id, "label": value.label,
+                    "runs": Set(value.rows.map(runID)).count,
+                    "output": output(totals) as Any? ?? NSNull(),
+                    "unknownOutputRuns": unknownOutputRuns(value.rows),
+                    "coverage": coveragePayload(value.rows, totals: totals)]
+        }.sorted {
+            let left = $0["output"] as? Int ?? -1, right = $1["output"] as? Int ?? -1
+            if left != right { return left > right }
+            return ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "")
+        }
+        let unknownTotals = summary(unknown)
+        return [
+            "status": "available",
+            "policy": "one_unambiguous_accepted_head",
+            "groups": payload,
+            "unknown": [
+                "label": "Unknown Feature", "runs": Set(unknown.map(runID)).count,
+                "output": output(unknownTotals) as Any? ?? NSNull(),
+                "unknownOutputRuns": unknownOutputRuns(unknown),
+                "reason": "no_unambiguous_accepted_head",
+            ],
+        ]
+    }
+
+    private static func portfolioInsights(projects: [[String: Any]], rows: [UsageLedger.Row],
+                                          previousRows: [UsageLedger.Row]) -> [[String: Any]] {
+        var insights: [[String: Any]] = []
+        let movers = projects.compactMap { project -> (project: [String: Any], delta: Int)? in
+            guard let comparison = project["comparison"] as? [String: Any],
+                  comparison["status"] as? String == "comparable",
+                  let delta = comparison["absolute"] as? Int, delta != 0 else { return nil }
+            return (project, delta)
+        }
+        if let mover = movers.max(by: { abs($0.delta) < abs($1.delta) }) {
+            insights.append([
+                "kind": "top_mover", "projectId": mover.project["id"] ?? NSNull(),
+                "title": "Largest output change",
+                "detail": "\(mover.project["label"] as? String ?? "Project") changed by \(mover.delta) generated tokens versus the equal previous range. Inspect the work mix before drawing a conclusion.",
+            ])
+        }
+        let ratios = projects.compactMap { project -> (project: [String: Any], ratio: Double)? in
+            guard let tokens = project["tokens"] as? [String: Any],
+                  let output = tokens["output"] as? Int, output > 0,
+                  let input = tokens["inputNew"] as? Int,
+                  let cache = tokens["cacheRead"] as? Int,
+                  let unknown = project["tokenPartsUnknown"] as? [String: Int],
+                  (unknown[UsageLedger.Part.output.rawValue] ?? 0) == 0,
+                  (unknown[UsageLedger.Part.inputNew.rawValue] ?? 0) == 0,
+                  (unknown[UsageLedger.Part.cacheRead.rawValue] ?? 0) == 0
+            else { return nil }
+            return (project, Double(input + cache) / Double(output))
+        }
+        if let context = ratios.max(by: { $0.ratio < $1.ratio }), context.ratio >= 10 {
+            insights.append([
+                "kind": "context_to_output", "projectId": context.project["id"] ?? NSNull(),
+                "title": "High context-to-output ratio",
+                "detail": String(format: "%@ read %.1fx as much new-plus-cached context as it generated. This can be normal for review or retrieval-heavy work; inspect recent runs.", context.project["label"] as? String ?? "Project", context.ratio),
+            ])
+        }
+        let total = summary(rows)
+        if !rows.isEmpty, !previousRows.isEmpty {
+            let currentComplete = Double(rows.filter { !$0.measurement.incomplete }.count)
+                / Double(rows.count)
+            let previousComplete = Double(previousRows.filter { !$0.measurement.incomplete }.count)
+                / Double(previousRows.count)
+            if previousComplete - currentComplete >= 0.1 {
+                insights.append([
+                    "kind": "coverage_degradation", "title": "Coverage declined",
+                    "detail": String(format: "Complete rows fell from %.0f%% to %.0f%% versus the equal previous range. Check the named coverage reasons before using totals.", previousComplete * 100, currentComplete * 100),
+                ])
+            }
+        }
+        let costs = total["costs"] as? [[String: Any]] ?? []
+        let unavailable = (total["unavailableCost"] as? [String: Any])?["rows"] as? Int ?? 0
+        if costs.count == 1, unavailable == 0, let cost = costs.first,
+           let totalValue = cost["value"] as? Double, totalValue > 0 {
+            let priced = projects.compactMap { project -> (project: [String: Any], value: Double)? in
+                guard let value = (project["cost"] as? [String: Any])?["value"] as? Double
+                else { return nil }
+                return (project, value)
+            }
+            if let leader = priced.max(by: { $0.value < $1.value }),
+               leader.value / totalValue >= 0.5 {
+                insights.append([
+                    "kind": "cost_concentration", "projectId": leader.project["id"] ?? NSNull(),
+                    "title": "Comparable cost is concentrated",
+                    "detail": String(format: "%@ accounts for %.0f%% of the one comparable %@ / %@ cost series in this range.", leader.project["label"] as? String ?? "Project", leader.value / totalValue * 100, cost["unit"] as? String ?? "unit", cost["basis"] as? String ?? "basis"),
+                ])
+            }
+        }
+        return Array(insights.prefix(4))
+    }
+
+    private static func portfolio(rows: [UsageLedger.Row], previousRows: [UsageLedger.Row],
+                                  acceptedFeatures: [String: UsageLedger.AcceptedAttribution],
+                                  acceptedProjects: [String: UsageLedger.AcceptedAttribution],
+                                  previousAcceptedProjects: [String: UsageLedger.AcceptedAttribution],
+                                  calendar: Calendar, query: Query, priorRange: PreviousRange?,
+                                  comparisonTruncated: Bool) -> [String: Any] {
+        let currentGroups = groupedProjects(rows, acceptedProjects: acceptedProjects)
+        let previousGroups = groupedProjects(previousRows,
+                                             acceptedProjects: previousAcceptedProjects)
+        let comparisonReason: String? = priorRange == nil ? "closed_range_required"
+            : (comparisonTruncated ? "range_truncated" : nil)
+        let projects = currentGroups.map { key, value in
+            projectPayload(identity: value.identity, label: value.label,
+                           identityReasons: value.reasons,
+                           rows: value.rows,
+                           previous: previousGroups[key]?.rows ?? [], calendar: calendar,
+                           comparisonReason: comparisonReason)
+        }.sorted {
+            let left = $0["output"] as? Int ?? -1, right = $1["output"] as? Int ?? -1
+            if left != right { return left > right }
+            return ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "")
+        }.enumerated().map { index, project -> [String: Any] in
+            var ranked = project
+            ranked["rank"] = index + 1
+            return ranked
+        }
+        var comparison = outputComparison(current: rows, previous: previousRows,
+                                          unavailableReason: comparisonReason)
+        comparison["currentRange"] = ["from": query.from as Any? ?? NSNull(),
+                                      "to": query.to as Any? ?? NSNull()]
+        comparison["previousRange"] = priorRange.map { ["from": $0.from, "to": $0.to] }
+            as Any? ?? NSNull()
+        return [
+            "schemaVersion": 1,
+            "primarySignal": "generated_output",
+            "scoreWarning": "Generated output is an operational signal, not a productivity score.",
+            "runs": Set(rows.map(runID)).count,
+            "comparison": comparison,
+            "projects": projects,
+            "scheduledWork": scheduledWork(rows, calendar: calendar),
+            "features": featureWork(rows, accepted: acceptedFeatures),
+            "insights": portfolioInsights(projects: projects, rows: rows,
+                                           previousRows: previousRows),
+        ]
+    }
+
     private static func breakdown(_ rows: [UsageLedger.Row], groupBy: UsageLedger.GroupBy,
-                                  calendar: Calendar)
+                                  calendar: Calendar,
+                                  acceptedProjects: [String: UsageLedger.AcceptedAttribution])
         -> [[String: Any]] {
         var grouped: [String?: [UsageLedger.Row]] = [:]
         for row in rows {
@@ -3074,7 +3962,7 @@ final class UsageQueryService {
             case .model: key = row.model
             case .assistant: key = row.assistant
             case .origin: key = row.origin
-            case .project: key = projectName(row)
+            case .project: key = projectName(row, acceptedProjects: acceptedProjects)
             case .day: key = UsageLedger.localDay(of: row.startedAt, calendar: calendar)
             case .coverage: key = row.coverage
             case .task: key = row.taskID
@@ -3125,7 +4013,10 @@ final class UsageQueryService {
         }
     }
 
-    private static func publicRow(_ row: UsageLedger.Row) -> [String: Any] {
+    private static func publicRow(
+        _ row: UsageLedger.Row,
+        acceptedProjects: [String: UsageLedger.AcceptedAttribution]
+    ) -> [String: Any] {
         let measurement = row.measurement
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -3147,7 +4038,7 @@ final class UsageQueryService {
             "assistant": row.assistant,
             "model": row.model as Any? ?? NSNull(),
             "origin": row.origin,
-            "project": projectName(row) as Any? ?? NSNull(),
+            "project": projectName(row, acceptedProjects: acceptedProjects) as Any? ?? NSNull(),
             "tokens": tokens,
             "strictTotal": measurement.total as Any? ?? NSNull(),
             "measuredFloor": measurement.unknown ? NSNull() : measurement.measured,
@@ -3170,8 +4061,16 @@ final class UsageQueryService {
         ]
     }
 
-    private static func projectName(_ row: UsageLedger.Row) -> String? {
-        guard let raw = row.projectKey ?? row.workingDir, !raw.isEmpty else { return nil }
+    private static func projectName(
+        _ row: UsageLedger.Row,
+        acceptedProjects: [String: UsageLedger.AcceptedAttribution] = [:]
+    ) -> String? {
+        // Public analytics names only the canonical Project key persisted by the collector.
+        // A working directory may be a disposable worktree; its basename is not attribution.
+        if let accepted = acceptedProjects[row.intervalKey] { return accepted.label }
+        guard let raw = row.projectKey, !raw.isEmpty else { return nil }
+        let standardized = URL(fileURLWithPath: raw).standardizedFileURL.path
+        if UsageLedger.legacyManagedWorktreeTaskID(standardized) != nil { return nil }
         let name = URL(fileURLWithPath: raw).lastPathComponent
         return name.isEmpty ? nil : name
     }

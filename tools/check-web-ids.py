@@ -8,9 +8,10 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB = ROOT / "Resources" / "web"
+WEB = Path(os.environ.get("CLAWDLINE_WEB_ROOT", ROOT / "Resources" / "web"))
 INDEX = Path(os.environ.get("CLAWDLINE_WEB_INDEX", WEB / "index.html"))
 JS_ROOT = WEB / "app" / "js"
+APP_ROOT = WEB / "app"
 
 # An `id="…"` written in markup, wherever that markup is authored. `index.html` is not the only
 # place the page defines an id: a module that builds its own sheet, writes it into `innerHTML` and
@@ -52,6 +53,13 @@ REGEX_AFTER_WORD = {"return", "typeof", "instanceof", "in", "of", "new", "delete
 def fail(message):
     print(f"check-web-ids: {message}")
     sys.exit(2)
+
+
+def source_label(path):
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return "Resources/web/" + str(path.relative_to(WEB))
 
 
 class Scripts(HTMLParser):
@@ -230,6 +238,41 @@ def usage_helper_ids(text):
     return set(re.findall(r"\bbyId\s*\(\s*['\"](usage-[^'\"]+)['\"]\s*\)", text))
 
 
+def checked_asset(target, source):
+    """Require one app-graph target to stay inside /app and contain actual bytes."""
+    try:
+        target.resolve().relative_to(APP_ROOT.resolve())
+    except ValueError:
+        fail(f"{source}: app asset escapes {APP_ROOT}")
+    try:
+        size = target.stat().st_size
+    except OSError:
+        fail(f"{source}: referenced app asset is missing: {target}")
+    if size == 0:
+        fail(f"{source}: referenced app asset is empty: {target}")
+    return target.resolve()
+
+
+def asset_graph(html, modules):
+    """Resolve shipped href/src and static JS imports, including extracted Usage assets."""
+    assets = set()
+    for match in re.finditer(r"\b(?:href|src)\s*=\s*['\"](/app/[^'\"?#]+)", html):
+        relative = match.group(1)[len("/app/"):]
+        assets.add(checked_asset(APP_ROOT / relative, "Resources/web/index.html"))
+    import_pattern = re.compile(r"(?:\bfrom\s+|\bimport\s*)['\"]([^'\"]+)['\"]")
+    for module in modules:
+        text = module.read_text()
+        for specifier in import_pattern.findall(text):
+            if specifier.startswith("/app/"):
+                target = APP_ROOT / specifier[len("/app/"):]
+            elif specifier.startswith("."):
+                target = module.parent / specifier
+            else:
+                continue
+            assets.add(checked_asset(target, source_label(module)))
+    return assets
+
+
 def main():
     try:
         html = INDEX.read_text()
@@ -255,12 +298,16 @@ def main():
     authored = {}
 
     modules = sorted(JS_ROOT.rglob("*.js")) if JS_ROOT.exists() else []
+    if not modules:
+        fail(f"no JavaScript modules found under {JS_ROOT}")
+    assets = asset_graph(html, modules)
+    usage_ids = set()
     for path in modules:
         try:
             text = path.read_text()
         except OSError as error:
             fail(str(error))
-        label = str(path.relative_to(ROOT))
+        label = source_label(path)
         depths = scan(label, text)
         first = {}
         for match in MARKUP_ID.finditer(text):
@@ -275,6 +322,9 @@ def main():
             registry.add(element_id)
         for element_id, line, start in top_level_ids(text, depths):
             required[element_id].append((f"{label}:{line}", label, start))
+        for element_id in usage_helper_ids(text):
+            required[element_id].append((f"{label} (Usage Portfolio binding)", None, None))
+            usage_ids.add(element_id)
 
     # index.html still contains small inline boot scripts.  More importantly, this makes the
     # same check runnable against the pre-module history where all JavaScript lived in the page;
@@ -283,13 +333,14 @@ def main():
     parser.feed(html)
     inline = "\n".join(parser.parts)
     inline_depths = scan("Resources/web/index.html (inline scripts)", inline)
-    usage_ids = usage_helper_ids(inline)
-    if len(usage_ids) < USAGE_LOOKUP_FLOOR:
-        fail(f"found {len(usage_ids)} literal usage-* lookups in the analytics IIFE, under the "
-             f"floor of {USAGE_LOOKUP_FLOOR}; the feature or its guard-visible lookups vanished")
-    for element_id in usage_ids:
-        required[element_id].append(("Resources/web/index.html (Usage Analytics IIFE)",
+    inline_usage_ids = usage_helper_ids(inline)
+    usage_ids.update(inline_usage_ids)
+    for element_id in inline_usage_ids:
+        required[element_id].append(("Resources/web/index.html (Usage Portfolio binding)",
                                      None, None))
+    if len(usage_ids) < USAGE_LOOKUP_FLOOR:
+        fail(f"found {len(usage_ids)} literal usage-* lookups in the shipped module graph, under "
+             f"the floor of {USAGE_LOOKUP_FLOOR}; the feature or its guard-visible binding vanished")
     for element_id in registry_ids(inline):
         required[element_id].append(("Resources/web/index.html (inline registry)", None, None))
         registry.add(element_id)
@@ -325,7 +376,7 @@ def main():
         return 1
 
     print(f"web ids agree: {len(required)} looked up at load time, "
-          f"{len(defined)} defined in index.html")
+          f"{len(defined)} defined in index.html; {len(assets)} app assets resolved and non-empty")
     return 0
 
 

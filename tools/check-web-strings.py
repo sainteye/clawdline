@@ -11,10 +11,12 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-JS_ROOT = ROOT / "Resources" / "web" / "app" / "js"
+WEB = Path(os.environ.get("CLAWDLINE_WEB_ROOT", ROOT / "Resources" / "web"))
+JS_ROOT = WEB / "app" / "js"
 I18N = JS_ROOT / "core" / "i18n.js"
+USAGE = JS_ROOT / "view" / "usage.js"
 SERVER = ROOT / "Sources" / "RemoteServer.swift"
-INDEX = Path(os.environ.get("CLAWDLINE_WEB_INDEX", ROOT / "Resources" / "web" / "index.html"))
+INDEX = Path(os.environ.get("CLAWDLINE_WEB_INDEX", WEB / "index.html"))
 NAME = r"[A-Za-z_$][A-Za-z0-9_$]*"
 
 
@@ -36,6 +38,7 @@ def main():
     try:
         modules = sorted(JS_ROOT.rglob("*.js"))
         i18n = I18N.read_text()
+        usage = USAGE.read_text()
         server = SERVER.read_text()
         index = INDEX.read_text()
     except OSError as error:
@@ -43,21 +46,20 @@ def main():
     if not modules:
         fail(f"no JavaScript modules found under {JS_ROOT.relative_to(ROOT)}")
 
-    usage = section(index, "// Usage Analytics IIFE: begin",
-                    "// Usage Analytics IIFE: end", "Usage Analytics IIFE")
     usage_strings = set(re.findall(r"['\"]([^'\"\n]{3,})['\"]", usage))
     required_usage_reads = {
         "/v1/orchestrator/usage/analytics?",
         "/v1/orchestrator/usage/analytics.csv?",
         "/v1/orchestrator/usage/analytics.json?",
-        "usage-token-body",
         "usage_analytics_busy",
         "scan_limit_reached",
     }
     missing_usage = required_usage_reads - usage_strings
     if missing_usage:
-        fail("Usage Analytics IIFE lost guarded string reads: "
+        fail("Usage Portfolio module lost guarded protocol reads: "
              + ", ".join(sorted(missing_usage)))
+    if not re.search(r"export\s+function\s+bindUsagePortfolio\s*\(", usage):
+        fail("Usage Portfolio module lost its executable bindUsagePortfolio export")
 
     reads = set()
     for module in modules:
@@ -94,7 +96,7 @@ def main():
 
     print(
         f"web strings agree: {len(reads)} read, {len(defined)} defined in T, "
-        f"{len(sent)} sent by /v1/strings; {len(usage_strings)} Usage Analytics IIFE literals guarded"
+        f"{len(sent)} sent by /v1/strings; {len(required_usage_reads)} Usage Portfolio protocol reads guarded"
     )
     return 0
 

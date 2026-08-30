@@ -26,6 +26,7 @@ import "./door/door.js";
 import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
 import { renderTranscript } from "./view/transcript.js";
+import { bindUsagePortfolio } from "./view/usage.js";
 import "./view/markdown.js";
 import "./view/composer.js";
 import { paintStatic } from "./view/static.js";
@@ -62,6 +63,40 @@ import "./input/edges.js";
 // two it is. `net/api.js` holds the name and knows about neither — see the note there.
 useApi(MOCK ? Mock : Live);
 Diagnostics.bind({ state: S, elements: els });
+
+// Usage lives in the same stamped module graph as the rest of the page. Keeping its import here
+// makes the preload URL and the runtime request one identity, while these literal lookups keep the
+// DOM contract visible to the permanent repository guard.
+var byId = function (id) { return document.getElementById(id); };
+bindUsagePortfolio({
+    app: byId("app"), brand: byId("brand"), settings: byId("settings"),
+    "usage-open": byId("usage-open"), "usage-analytics": byId("usage-analytics"),
+    "usage-close": byId("usage-close"), "usage-overview": byId("usage-overview"),
+    "usage-agent-work": byId("usage-agent-work"), "usage-controls": byId("usage-controls"),
+    "usage-range": byId("usage-range"), "usage-from": byId("usage-from"),
+    "usage-to": byId("usage-to"), "usage-timezone": byId("usage-timezone"),
+    "usage-refresh": byId("usage-refresh"), "usage-meta": byId("usage-meta"),
+    "usage-availability": byId("usage-availability"), "usage-status": byId("usage-status"),
+    "usage-overview-panel": byId("usage-overview-panel"),
+    "usage-agent-work-panel": byId("usage-agent-work-panel"),
+    "usage-measured": byId("usage-measured"), "usage-output-change": byId("usage-output-change"),
+    "usage-run-count": byId("usage-run-count"), "usage-scheduled-output": byId("usage-scheduled-output"),
+    "usage-scheduled-runs": byId("usage-scheduled-runs"), "usage-coverage-kpi": byId("usage-coverage-kpi"),
+    "usage-unknown-count": byId("usage-unknown-count"), "usage-project-count": byId("usage-project-count"),
+    "usage-project-list": byId("usage-project-list"), "usage-project-detail": byId("usage-project-detail"),
+    "usage-project-detail-title": byId("usage-project-detail-title"),
+    "usage-project-rank": byId("usage-project-rank"), "usage-project-summary": byId("usage-project-summary"),
+    "usage-project-trend": byId("usage-project-trend"), "usage-project-mix": byId("usage-project-mix"),
+    "usage-project-lineage": byId("usage-project-lineage"), "usage-project-recent": byId("usage-project-recent"),
+    "usage-insights": byId("usage-insights"), "usage-schedule-body": byId("usage-schedule-body"),
+    "usage-unknown-schedule": byId("usage-unknown-schedule"), "usage-feature-body": byId("usage-feature-body"),
+    "usage-unknown-feature": byId("usage-unknown-feature"),
+    "usage-coverage-panel": byId("usage-coverage-panel"), "usage-coverage-list": byId("usage-coverage-list"),
+    "usage-export-csv": byId("usage-export-csv"), "usage-export-json": byId("usage-export-json"),
+    "usage-agent-list": byId("usage-agent-list"), "usage-more": byId("usage-more"),
+    "usage-detail": byId("usage-detail"), "usage-detail-list": byId("usage-detail-list"),
+    "usage-detail-close": byId("usage-detail-close")
+});
 
 // The controls module keeps its pure command selection importable without a browser. DOM and
 // the one route back to ordinary Session actions are supplied here, at the page boundary.
