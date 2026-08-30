@@ -5070,7 +5070,6 @@ final class RemoteServer: @unchecked Sendable {
         func add(_ pairs: [String: String]) {
             for (key, value) in pairs { out[key] = value }
         }
-
         // The connection chip.
         add([
             "webConnLive": t.webConnLive,
@@ -5082,7 +5081,6 @@ final class RemoteServer: @unchecked Sendable {
             "webConnTipLocked": t.webConnTipLocked,
             "webConnTipDown": t.webConnTipDown,
         ])
-
         // The header's counts.
         add([
             "webCountWorking": t.webCountWorking,
@@ -5092,7 +5090,6 @@ final class RemoteServer: @unchecked Sendable {
             "webCountQuietMany": t.webCountQuietMany,
             "webCountNone": t.webCountNone,
         ])
-
         // The list, its filter, and the four ways it can be empty.
         add([
             "webFilterPlaceholder": t.webFilterPlaceholder,
@@ -5130,8 +5127,9 @@ final class RemoteServer: @unchecked Sendable {
             "closeabilityMoverSession": t.closeabilityMoverSession,
             "closeabilityMoverBroker": t.closeabilityMoverBroker,
             "closeabilityNotProven": t.closeabilityNotProven,
+            "closeabilityAttestationExplanation": t.closeabilityAttestationExplanation,
+            "closeabilityTechnicalDetails": t.closeabilityTechnicalDetails,
         ])
-
         // The transcript pane.
         add([
             "webBack": t.webBack,
@@ -5163,6 +5161,8 @@ final class RemoteServer: @unchecked Sendable {
             "webClosing": t.webClosing,
             "webCancel": t.webCancel,
             "webConfirm": t.webConfirm,
+            "webReviewBeforeClosing": t.webReviewBeforeClosing,
+            "webConfirmEndAnyway": t.webConfirmEndAnyway,
             "webPickSession": t.webPickSession,
             "webReading": t.webReading,
             "webLoading": t.webLoading,

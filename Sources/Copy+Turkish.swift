@@ -290,6 +290,8 @@ struct Turkish: Copy {
     let closeabilityMoverSession = "bunu başka bir oturum ilerletir"
     let closeabilityMoverBroker = "bunu taze bir okuma ilerletir"
     let closeabilityNotProven = "Aracı, bu oturumun güvenle kapatılabileceğini kanıtlayamadı."
+    let closeabilityAttestationExplanation = "Bu, tamamlanmamış bir iş bulunduğu anlamına gelmez. Clawdline’ın denetleyebildiği noktalar temizdir; ancak bu oturum yerel değişiklik, teslim edilmemiş iş veya Clawdline dışındaki bir iş bırakıp bırakmadığını henüz doğrulamadı. Kapatmadan önce oturumu gözden geçirin."
+    let closeabilityTechnicalDetails = "Teknik ayrıntılar"
 
     let webBack = "Oturumlar"
     let webBackLabel = "Oturum listesine dön"
@@ -405,6 +407,8 @@ struct Turkish: Copy {
     let webClosing = "Kapatılıyor…"
     let webCancel = "İptal"
     let webConfirm = "Onayla"
+    let webReviewBeforeClosing = "Oturumu gözden geçir"
+    let webConfirmEndAnyway = "Yine de kapat"
     let webPickSession = "Soldan bir oturum seç."
     let webReading = "Okunuyor…"
     let webLoading = "Yükleniyor…"

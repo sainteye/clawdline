@@ -290,6 +290,8 @@ struct Indonesian: Copy {
     let closeabilityMoverSession = "sesi lain yang menggerakkannya"
     let closeabilityMoverBroker = "pembacaan baru yang menggerakkannya"
     let closeabilityNotProven = "Broker tidak dapat membuktikan sesi ini aman untuk ditutup."
+    let closeabilityAttestationExplanation = "Ini bukan berarti ada pekerjaan belum selesai yang ditemukan. Pemeriksaan yang dapat dilakukan Clawdline sudah bersih, tetapi sesi ini belum mengonfirmasi apakah ada perubahan lokal, pekerjaan yang belum diserahkan, atau pekerjaan di luar Clawdline yang tertinggal. Periksa sesi sebelum menutupnya."
+    let closeabilityTechnicalDetails = "Detail teknis"
 
     let webBack = "Sesi"
     let webBackLabel = "Kembali ke daftar sesi"
@@ -405,6 +407,8 @@ struct Indonesian: Copy {
     let webClosing = "Menutup…"
     let webCancel = "Batal"
     let webConfirm = "Konfirmasi"
+    let webReviewBeforeClosing = "Periksa sesi"
+    let webConfirmEndAnyway = "Tetap tutup"
     let webPickSession = "Pilih sesi di sebelah kiri."
     let webReading = "Membaca…"
     let webLoading = "Memuat…"

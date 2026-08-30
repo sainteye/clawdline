@@ -290,6 +290,8 @@ struct German: Copy {
     let closeabilityMoverSession = "eine andere Sitzung bewegt es"
     let closeabilityMoverBroker = "eine frische Lesung bewegt es"
     let closeabilityNotProven = "Der Broker konnte nicht belegen, dass diese Sitzung sicher schließbar ist."
+    let closeabilityAttestationExplanation = "Das bedeutet nicht, dass unerledigte Arbeit gefunden wurde. Die von Clawdline prüfbaren Punkte sind geklärt, aber diese Sitzung hat noch nicht bestätigt, ob lokale Änderungen, nicht übergebene Arbeit oder Arbeit außerhalb von Clawdline zurückbleiben. Prüfen Sie die Sitzung vor dem Schließen."
+    let closeabilityTechnicalDetails = "Technische Details"
 
     let webBack = "Sitzungen"
     let webBackLabel = "Zurück zur Sitzungsliste"
@@ -405,6 +407,8 @@ struct German: Copy {
     let webClosing = "Wird geschlossen…"
     let webCancel = "Abbrechen"
     let webConfirm = "Bestätigen"
+    let webReviewBeforeClosing = "Sitzung prüfen"
+    let webConfirmEndAnyway = "Trotzdem schließen"
     let webPickSession = "Wähle links eine Sitzung."
     let webReading = "Wird gelesen…"
     let webLoading = "Wird geladen…"

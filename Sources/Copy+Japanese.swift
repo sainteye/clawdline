@@ -288,6 +288,8 @@ struct Japanese: Copy {
     let closeabilityMoverSession = "別のセッションが動かします"
     let closeabilityMoverBroker = "読み直しが必要です"
     let closeabilityNotProven = "このセッションを安全に閉じられるとブローカーは証明できませんでした。"
+    let closeabilityAttestationExplanation = "未完了の作業が見つかったという意味ではありません。Clawdline が確認できる項目には問題ありませんが、このセッションはローカルの変更、未提出の作業、または Clawdline 外の作業が残っていないかをまだ確認していません。閉じる前にセッションを確認してください。"
+    let closeabilityTechnicalDetails = "技術的な詳細"
 
     let webBack = "セッション"
     let webBackLabel = "セッション一覧に戻る"
@@ -403,6 +405,8 @@ struct Japanese: Copy {
     let webClosing = "閉じています…"
     let webCancel = "キャンセル"
     let webConfirm = "確認"
+    let webReviewBeforeClosing = "セッションを確認"
+    let webConfirmEndAnyway = "このまま閉じる"
     let webPickSession = "左からセッションを選んでください。"
     let webReading = "読み取り中…"
     let webLoading = "読み込み中…"

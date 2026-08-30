@@ -294,6 +294,8 @@ struct Hindi: Copy {
     let closeabilityMoverSession = "दूसरा सत्र इसे आगे बढ़ाएगा"
     let closeabilityMoverBroker = "नई रीडिंग इसे आगे बढ़ाएगी"
     let closeabilityNotProven = "ब्रोकर यह सिद्ध नहीं कर सका कि यह सत्र सुरक्षित रूप से बंद हो सकता है।"
+    let closeabilityAttestationExplanation = "इसका अर्थ यह नहीं है कि कोई अधूरा काम मिला है। Clawdline जिन चीज़ों की जाँच कर सकता है वे साफ़ हैं, लेकिन इस session ने अभी यह पुष्टि नहीं की है कि कोई स्थानीय बदलाव, न सौंपा गया काम या Clawdline के बाहर का काम बाकी है या नहीं। बंद करने से पहले session की जाँच करें।"
+    let closeabilityTechnicalDetails = "तकनीकी विवरण"
 
     let webBack = "सूची"
     let webBackLabel = "session की सूची पर लौटें"
@@ -409,6 +411,8 @@ struct Hindi: Copy {
     let webClosing = "बंद हो रहा है…"
     let webCancel = "रद्द करें"
     let webConfirm = "पक्का करें"
+    let webReviewBeforeClosing = "session की जाँच करें"
+    let webConfirmEndAnyway = "फिर भी बंद करें"
     let webPickSession = "बाईं ओर से कोई session चुनें।"
     let webReading = "पढ़ रहा है…"
     let webLoading = "लोड हो रहा है…"

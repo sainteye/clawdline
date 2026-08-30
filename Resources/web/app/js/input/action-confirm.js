@@ -6,6 +6,7 @@ import { els } from "../core/dom.js";
 import { confirmSpin, drawSpinner, setConfirmSpin, spinPhase } from "../core/pixels.js";
 import { Build } from "../net/build.js";
 import { byId, closeabilityLines, closeabilityVersion, lostIfClosed, projectSessionCloseability } from "../view/derive.js";
+import { closeabilityHelpModel } from "../view/closeability-help.js";
 import { Waits } from "../view/waits.js";
 import { closeDetail } from "../session/open.js";
 import { closeAgent } from "../session/agent.js";
@@ -43,11 +44,12 @@ export var ActionConfirm = {
         // The Deep Status half of the same press: not what the close would take, but why the
         // broker cannot yet say it is safe, and which one thing moves each of those.
         var why = kind === "end" ? closeabilityLines(byId(id)) : [];
-        var closeableState = kind === "end"
-            ? projectSessionCloseability(byId(id)).state : null;
+        var closeable = kind === "end" ? projectSessionCloseability(byId(id)) : null;
+        var closeableState = closeable && closeable.state;
+        var help = closeabilityHelpModel(closeable, T);
         this.pending = { id: id, kind: kind, action: action, opener: returnFocus,
                          ask: ask || null, lost: lost, why: why,
-                         closeability: closeableState,
+                         closeability: closeableState, help: help,
                          closeabilityVersion: kind === "end"
                              ? closeabilityVersion(byId(id)) : null };
         this.busy = false;
@@ -55,19 +57,27 @@ export var ActionConfirm = {
         els["action-confirm-title"].textContent = (ask && ask.title) ? ask.title
             : (kind === "end" ? T.webConfirmEndTitle
                               : fill(T.webConfirmActionTitle, { action: action }));
-        els["action-confirm-say"].textContent = (ask && ask.say) ? ask.say
-            : (kind === "end" ? this.endSay(lost, why, closeableState)
-                              : fill(T.webConfirmActionSay, { action: action }));
+        if (ask && ask.say) {
+            this.renderSay(ask.say, null, []);
+        } else if (kind === "end") {
+            this.renderSay(this.endSay(lost, why, closeableState, help), help, why);
+        } else {
+            this.renderSay(fill(T.webConfirmActionSay, { action: action }), null, []);
+        }
         els["action-confirm"].hidden = false;
         this.sync();
         els["action-confirm-go"].focus({ preventScroll: true });
     },
 
-    endSay: function (lost, why, closeability) {
+    endSay: function (lost, why, closeability, help) {
         var said = T.webConfirmEndSay;
         if (lost && lost.length) {
             said += "\n" + T.webConfirmEndLoses + "\n" +
                 lost.map(function (item) { return "· " + item; }).join("\n");
+        }
+        if (help) {
+            said += "\n" + help.explanation;
+            return said;
         }
         // Shown whenever the projection is not `safe`, including `unknown` — an absence of
         // proof is the thing the reader most needs to see before pressing a button that ends
@@ -80,6 +90,39 @@ export var ActionConfirm = {
             }
         }
         return said;
+    },
+
+    /** Plain meaning first; the broker vocabulary remains one deliberate disclosure away. */
+    renderSay: function (said, help, why) {
+        var old = document.getElementById("action-confirm-technical");
+        if (old) old.remove();
+        els["action-confirm-sheet"].setAttribute("aria-describedby", "action-confirm-say");
+        els["action-confirm-say"].textContent = said;
+        if (!help) return;
+
+        var technical = document.createElement("details");
+        technical.id = "action-confirm-technical";
+        technical.className = "closeability-technical";
+        var summary = document.createElement("summary");
+        var mark = document.createElement("span");
+        mark.className = "help-mark";
+        mark.setAttribute("aria-hidden", "true");
+        mark.textContent = "?";
+        summary.append(mark, document.createTextNode(help.detailsLabel));
+        technical.appendChild(summary);
+        var body = document.createElement("div");
+        body.className = "technical-copy";
+        var list = document.createElement("ul");
+        (why || []).forEach(function (line) {
+            var item = document.createElement("li");
+            item.textContent = line;
+            list.appendChild(item);
+        });
+        body.appendChild(list);
+        technical.appendChild(body);
+        els["action-confirm-say"].insertAdjacentElement("afterend", technical);
+        els["action-confirm-sheet"].setAttribute(
+            "aria-describedby", "action-confirm-say action-confirm-technical");
     },
 
     /**
@@ -96,15 +139,17 @@ export var ActionConfirm = {
         }).filter(Boolean);
         this.open("end", id);
         if (this.pending) this.pending.lost = lost.length ? lost : ["…"];
-        els["action-confirm-say"].textContent = this.endSay(
+        this.renderSay(this.endSay(
             this.pending && this.pending.lost, this.pending && this.pending.why,
-            this.pending && this.pending.closeability);
+            this.pending && this.pending.closeability, this.pending && this.pending.help),
+            this.pending && this.pending.help, this.pending && this.pending.why);
     },
 
     close: function (restore) {
         if (els["action-confirm"].hidden || this.busy) return;
         var opener = this.pending && this.pending.opener;
         this.pending = null;
+        this.renderSay("", null, []);
         this.sync();
         els["action-confirm"].hidden = true;
         if (restore && opener && document.contains(opener)) {
@@ -150,13 +195,15 @@ export var ActionConfirm = {
         els["action-confirm-sheet"].setAttribute("aria-busy", this.busy ? "true" : "false");
         els["action-confirm-cancel"].disabled = this.busy;
         els["action-confirm-go"].disabled = this.busy;
+        var help = this.pending && this.pending.help;
+        els["action-confirm-cancel"].textContent = help ? help.cancelLabel : T.webCancel;
         if (this.busy && Waits.end.visible) {
             els["action-confirm-go"].innerHTML = '<span class="busy"><canvas></canvas><span></span></span>';
             els["action-confirm-go"].querySelector(".busy span").textContent = T.webClosing;
             setConfirmSpin(els["action-confirm-go"].querySelector("canvas"));
             drawSpinner(confirmSpin, spinPhase);
         } else {
-            els["action-confirm-go"].textContent = T.webConfirm;
+            els["action-confirm-go"].textContent = help ? help.confirmLabel : T.webConfirm;
         }
     },
 
@@ -214,7 +261,9 @@ els["action-confirm-sheet"].addEventListener("click", function (ev) { ev.stopPro
 els["action-confirm"].addEventListener("keydown", function (ev) {
     if (ev.key !== "Tab") return;
     if (ActionConfirm.busy) { ev.preventDefault(); return; }
-    var items = [els["action-confirm-cancel"], els["action-confirm-go"]];
+    var technical = document.querySelector("#action-confirm-technical > summary");
+    var items = [technical, els["action-confirm-cancel"], els["action-confirm-go"]]
+        .filter(Boolean);
     var at = items.indexOf(document.activeElement);
     if ((!ev.shiftKey && at === items.length - 1) || (ev.shiftKey && at <= 0)) {
         ev.preventDefault(); items[ev.shiftKey ? items.length - 1 : 0].focus();

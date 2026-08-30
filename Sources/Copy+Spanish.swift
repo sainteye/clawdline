@@ -290,6 +290,8 @@ struct Spanish: Copy {
     let closeabilityMoverSession = "lo mueve otra sesión"
     let closeabilityMoverBroker = "lo mueve una lectura nueva"
     let closeabilityNotProven = "El broker no pudo probar que esta sesión se puede cerrar sin riesgo."
+    let closeabilityAttestationExplanation = "Esto no significa que se haya encontrado trabajo sin terminar. Las comprobaciones que Clawdline puede hacer están resueltas, pero esta sesión aún no confirmó si dejó cambios locales, trabajo sin entregar o trabajo fuera de Clawdline. Revisa la sesión antes de cerrarla."
+    let closeabilityTechnicalDetails = "Detalles técnicos"
 
     let webBack = "Sesiones"
     let webBackLabel = "Volver a la lista de sesiones"
@@ -405,6 +407,8 @@ struct Spanish: Copy {
     let webClosing = "Cerrando…"
     let webCancel = "Cancelar"
     let webConfirm = "Confirmar"
+    let webReviewBeforeClosing = "Revisar la sesión"
+    let webConfirmEndAnyway = "Cerrar de todos modos"
     let webPickSession = "Elige una sesión de la izquierda."
     let webReading = "Leyendo…"
     let webLoading = "Cargando…"

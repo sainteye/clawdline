@@ -290,6 +290,8 @@ struct Russian: Copy {
     let closeabilityMoverSession = "это двигает другая сессия"
     let closeabilityMoverBroker = "нужно свежее чтение"
     let closeabilityNotProven = "Брокер не смог доказать, что эту сессию можно безопасно закрыть."
+    let closeabilityAttestationExplanation = "Это не означает, что найдена незавершённая работа. Проверки, доступные Clawdline, пройдены, но сессия ещё не подтвердила, остались ли локальные изменения, несданная работа или работа вне Clawdline. Проверьте сессию перед закрытием."
+    let closeabilityTechnicalDetails = "Технические подробности"
 
     let webBack = "Сессии"
     let webBackLabel = "Назад к списку сессий"
@@ -405,6 +407,8 @@ struct Russian: Copy {
     let webClosing = "Закрытие…"
     let webCancel = "Отмена"
     let webConfirm = "Подтвердить"
+    let webReviewBeforeClosing = "Проверить сессию"
+    let webConfirmEndAnyway = "Всё равно закрыть"
     let webPickSession = "Выберите сессию слева."
     let webReading = "Читаем…"
     let webLoading = "Загрузка…"

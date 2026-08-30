@@ -498,6 +498,8 @@ protocol Copy {
     var closeabilityMoverSession: String { get }
     var closeabilityMoverBroker: String { get }
     var closeabilityNotProven: String { get }
+    var closeabilityAttestationExplanation: String { get }
+    var closeabilityTechnicalDetails: String { get }
 
     /// The way back to the list on a phone. A chevron is drawn in front of it, so this is the
     /// word alone.
@@ -671,6 +673,8 @@ protocol Copy {
     var webClosing: String { get }
     var webCancel: String { get }
     var webConfirm: String { get }
+    var webReviewBeforeClosing: String { get }
+    var webConfirmEndAnyway: String { get }
     var webPickSession: String { get }
     /// Read out where a skeleton is drawn, and never seen — the skeleton is the visible half.
     var webReading: String { get }

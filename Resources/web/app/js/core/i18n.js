@@ -165,6 +165,8 @@ export var T = {
     webClosing: "Closing…",
     webCancel: "Cancel",
     webConfirm: "Confirm",
+    webReviewBeforeClosing: "Review session",
+    webConfirmEndAnyway: "Close anyway",
     webPickSession: "Pick a session on the left.",
     webReading: "Reading…",
     webLoading: "Loading…",
@@ -561,6 +563,8 @@ export var T = {
     closeabilityMoverSession: "another session moves it",
     closeabilityMoverBroker: "a fresh reading moves it",
     closeabilityNotProven: "The broker could not prove this session is safe to close.",
+    closeabilityAttestationExplanation: "This does not mean unfinished work was found. The checks Clawdline can perform are clear, but this session has not yet confirmed whether it left local changes, undelivered work, or work outside Clawdline. Review the session before closing it.",
+    closeabilityTechnicalDetails: "Technical details",
     // Two of them, because English counts. See `sessionShellOne` in `Sources/Strings.swift`.
     sessionShellOne: "1 shell running",
     sessionShellMany: "{n} shells running",

@@ -288,6 +288,8 @@ struct Korean: Copy {
     let closeabilityMoverSession = "다른 세션이 움직입니다"
     let closeabilityMoverBroker = "다시 읽어야 알 수 있습니다"
     let closeabilityNotProven = "브로커가 이 세션을 안전하게 닫을 수 있다고 증명하지 못했습니다."
+    let closeabilityAttestationExplanation = "완료되지 않은 작업이 발견되었다는 뜻은 아닙니다. Clawdline이 확인할 수 있는 항목은 모두 정리되었지만, 이 세션은 로컬 변경 사항, 전달하지 않은 작업 또는 Clawdline 외부 작업이 남아 있는지 아직 확인하지 않았습니다. 닫기 전에 세션을 확인하세요."
+    let closeabilityTechnicalDetails = "기술 세부 정보"
 
     let webBack = "세션"
     let webBackLabel = "세션 목록으로 돌아가기"
@@ -403,6 +405,8 @@ struct Korean: Copy {
     let webClosing = "닫는 중…"
     let webCancel = "취소"
     let webConfirm = "확인"
+    let webReviewBeforeClosing = "세션 확인"
+    let webConfirmEndAnyway = "그래도 닫기"
     let webPickSession = "왼쪽에서 세션을 고르세요."
     let webReading = "읽는 중…"
     let webLoading = "불러오는 중…"
