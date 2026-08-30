@@ -921,4 +921,240 @@ group("verification reports are optional, bounded metadata rather than a success
     check("the result example carries the optional verification shape",
           brief.contains(#""verification": {"runs": 2, "seconds": 940, "last": "pass""#))
 }
+
+// Restart identity is deliberately tested as one task through every surface. Different task rows
+// are not evidence that persistence and inventory disagree, and a label/cwd is never an identity
+// input at all.
+do {
+    func expect<T: Equatable>(_ title: String, _ actual: T, _ expected: T) {
+        precondition(actual == expected, "\(title): got \(actual), want \(expected)")
+    }
+    let started = Date(timeIntervalSince1970: 1_788_300_000)
+    var task = Orchestrator.Task(
+        id: "194e042a-1111-4222-8333-444444444444", state: .briefed, kind: "code",
+        title: "restart fixture", assistant: .claude, projectDir: "/tmp/project",
+        timeoutMinutes: 30, created: started,
+        secretHash: String(repeating: "0", count: 64))
+    task.childTerminalId = "A852533E"
+    task.childBackend = .iterm
+    task.childTTY = "/dev/ttys052"
+    task.childPID = 19_442
+    task.childProcStart = started
+    task.childSessionId = "eab7654f-1111-4222-8333-444444444444"
+    task.transcriptPath = "/tmp/eab7654f-1111-4222-8333-444444444444.jsonl"
+    task.transcriptProven = true
+
+    let exact = Orchestrator.SessionWorkIdentity(
+        terminalID: "A852533E", assistant: .claude, tty: "/dev/ttys052", pid: 19_442,
+        processStart: started, conversationID: task.childSessionId)
+    let first = Orchestrator.ExecutorInventory(
+        complete: true, observedAt: started.addingTimeInterval(10), generation: 7,
+        epoch: "new-app")
+    let observed = Orchestrator.reconcileExecutor(task: task, identities: [exact], inventory: first,
+                                                  previous: nil,
+                                                  now: started.addingTimeInterval(10))
+    expect("restart reconciliation accepts only the exact persisted executor tuple",
+           observed.status, .observed)
+    expect("the exact receipt names the fresh inventory generation", observed.inventoryGeneration,
+           7)
+    expect("executor evidence survives the private durable schema with its exact tuple",
+           Orchestrator.executorReceipt(from: Orchestrator.stored(observed)), observed)
+
+    let incomplete = Orchestrator.ExecutorInventory(
+        complete: false, observedAt: nil, generation: 8, epoch: "new-app")
+    let preserved = Orchestrator.reconcileExecutor(
+        task: task, identities: [], inventory: incomplete, previous: observed,
+        now: started.addingTimeInterval(20))
+    expect("one incomplete inventory never unlinks a proved live child", preserved.status,
+           .observed)
+
+    let absentFirst = Orchestrator.reconcileExecutor(
+        task: task, identities: [], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(30), generation: 9,
+            epoch: "new-app"), previous: nil, now: started.addingTimeInterval(30))
+    expect("one complete-but-absent reading remains pending", absentFirst.status, .pending)
+    let repeatedSnapshot = Orchestrator.reconcileExecutor(
+        task: task, identities: [], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(30), generation: 9,
+            epoch: "new-app"), previous: absentFirst, now: started.addingTimeInterval(300))
+    expect("a timer rereading one generation is still one observation", repeatedSnapshot,
+           absentFirst)
+    let recovered = Orchestrator.reconcileExecutor(
+        task: task, identities: [exact], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(35), generation: 10,
+            epoch: "new-app"), previous: absentFirst, now: started.addingTimeInterval(35))
+    expect("a later exact reading recovers without changing logical identity", recovered.status,
+           .observed)
+
+    let absentPersistent = Orchestrator.reconcileExecutor(
+        task: task, identities: [], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(95), generation: 11,
+            epoch: "new-app"), previous: absentFirst, now: started.addingTimeInterval(95))
+    expect("persistent exact absence becomes the typed executor_missing result",
+           absentPersistent.status, .executorMissing)
+    expect("executor loss has one safe mover", absentPersistent.mover, "person")
+
+    var changedPID = exact
+    changedPID.pid = 88_777
+    changedPID.processStart = started.addingTimeInterval(1_000)
+    let changedFirst = Orchestrator.reconcileExecutor(
+        task: task, identities: [changedPID], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(40), generation: 12,
+            epoch: "new-app"), previous: nil, now: started.addingTimeInterval(40))
+    let changedPersistent = Orchestrator.reconcileExecutor(
+        task: task, identities: [changedPID], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(105), generation: 13,
+            epoch: "new-app"), previous: changedFirst, now: started.addingTimeInterval(105))
+    expect("terminal id reuse with a changed pid/start becomes identity_changed",
+           changedPersistent.status, .identityChanged)
+
+    var impostor = changedPID
+    impostor.terminalID = "SAME-LABEL-AND-CWD-BUT-DIFFERENT-TERMINAL"
+    let impostorFirst = Orchestrator.reconcileExecutor(
+        task: task, identities: [impostor], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(50), generation: 14,
+            epoch: "new-app"), previous: nil, now: started.addingTimeInterval(50))
+    expect("a same-label/cwd impostor is absence, never a guessed replacement",
+           impostorFirst.pendingKind, .executorMissing)
+
+    var launcher = task
+    launcher.state = .spawning
+    launcher.childSessionId = nil
+    launcher.transcriptPath = nil
+    launcher.transcriptProven = false
+    let returnedShell = TargetSession(
+        backend: .iterm, id: launcher.childTerminalId!, name: "same label",
+        tty: launcher.childTTY!, windowIndex: 0, tabIndex: 0, assistant: nil,
+        cwd: launcher.projectDir)
+    let launcherExit = Orchestrator.exitedLauncherReceipt(
+        task: launcher, snapshot: SessionWatch.IdentitySnapshot(
+            targets: [returnedShell], generation: 15, complete: true,
+            observedAt: started.addingTimeInterval(60), epoch: "new-app"), identities: [])
+    expect("a launcher exit before prompt is distinct when its terminal remains as a shell",
+           launcherExit?.status, .executorMissing)
+    expect("the broker is the one safe mover for a never-briefed exited launcher",
+           launcherExit?.mover, "broker")
+}
+
+do {
+    func expect<T: Equatable>(_ title: String, _ actual: T, _ expected: T) {
+        precondition(actual == expected, "\(title): got \(actual), want \(expected)")
+    }
+    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
+        precondition(condition(), title)
+    }
+    let secretHash = String(repeating: "0", count: 64)
+    var briefed = Orchestrator.Task(
+        id: UUID().uuidString.lowercased(), state: .briefed, kind: "code", title: "durable",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: secretHash)
+    briefed.childTerminalId = "LIVE"
+    let spawning = Orchestrator.Task(
+        id: UUID().uuidString.lowercased(), state: .spawning, kind: "code", title: "secret exposed",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: secretHash)
+    expect("a live briefed child is durable and does not block restart admission",
+           Orchestrator.restartBlockers(in: [briefed]), [])
+    expect("spawning work whose plaintext briefing secret is process-local blocks restart",
+           Orchestrator.restartBlockers(in: [spawning]).map(\.code), ["briefing_secret_exposed"])
+
+    let requestID = UUID().uuidString.lowercased()
+    let draining = Orchestrator.restartTransition(
+        current: nil, requestID: requestID, instanceID: "old-instance", outstanding: 2,
+        channels: ["LIVE": 1], blockers: [], now: Date(timeIntervalSince1970: 100))
+    expect("maintenance records drain occupancy before replacement is safe", draining.phase,
+           .draining)
+    check("nonzero broker occupancy is never replacement-safe", !draining.safeToReplace)
+    let ready = Orchestrator.restartTransition(
+        current: draining, requestID: requestID, instanceID: "old-instance", outstanding: 0,
+        channels: [:], blockers: [], now: Date(timeIntervalSince1970: 101))
+    expect("the same request becomes ready only after global and per-terminal drain", ready.phase,
+           .ready)
+    check("the drained durable receipt exposes replacement safety", ready.safeToReplace)
+    let duplicate = Orchestrator.restartTransition(
+        current: ready, requestID: requestID, instanceID: "old-instance", outstanding: 0,
+        channels: [:], blockers: [], now: Date(timeIntervalSince1970: 102))
+    expect("duplicate restart retries are idempotent", duplicate, ready)
+    expect("the safe receipt survives its durable schema round trip",
+           Orchestrator.restartReceipt(from: Orchestrator.stored(ready)), ready)
+    let resumed = Orchestrator.restartTransition(
+        current: ready, requestID: requestID, instanceID: "replacement-instance", outstanding: 0,
+        channels: [:], blockers: [], now: Date(timeIntervalSince1970: 103))
+    expect("a replacement process resumes the watcher lifecycle as reconciling", resumed.phase,
+           .reconciling)
+    check("the replacement keeps admission closed until its own complete inventory",
+          resumed.admissionClosed && resumed.resumedInstanceID == "replacement-instance")
+}
+
+do {
+    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
+        precondition(condition(), title)
+    }
+    let manager = FileManager.default
+    let taskStoreBefore = try? Data(contentsOf: Orchestrator.storeURL)
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-restart-coordinator-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    defer {
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+        if let taskStoreBefore { try? taskStoreBefore.write(to: Orchestrator.storeURL, options: .atomic) }
+        else { try? manager.removeItem(at: Orchestrator.storeURL) }
+        Orchestrator.forget()
+    }
+    try? manager.removeItem(at: Orchestrator.storeURL)
+    Orchestrator.forget()
+    let father = coordinatorFixture("restart-coordinator")
+    guard case .ok = Coordinator.register(father, among: [father], makeID: {
+        UUID(uuidString: "55555555-6666-4777-8888-999999999999")!
+    }) else { preconditionFailure("coordinator fixture did not register") }
+    let coordinatorBefore = try! Data(contentsOf: Coordinator.storeURL)
+    let reply = Orchestrator.beginRestartMaintenance(
+        requestID: UUID().uuidString.lowercased(), outstanding: 0, channels: [:])
+    guard case .ok = reply else { preconditionFailure("restart intent was not persisted") }
+    let coordinatorAfter = try! Data(contentsOf: Coordinator.storeURL)
+    check("restart intent persistence leaves coordinator id and generation bytes unchanged",
+          coordinatorAfter == coordinatorBefore)
+}
+
+do {
+    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
+        precondition(condition(), title)
+    }
+    let manager = FileManager.default
+    let storeBefore = try? Data(contentsOf: Orchestrator.storeURL)
+    let taskID = UUID().uuidString.lowercased()
+    let secret = String(repeating: "d", count: 64)
+    let directory = Orchestrator.root.appendingPathComponent(taskID, isDirectory: true)
+    defer {
+        RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
+        try? manager.removeItem(at: directory)
+        if let storeBefore { try? storeBefore.write(to: Orchestrator.storeURL, options: .atomic) }
+        else { try? manager.removeItem(at: Orchestrator.storeURL) }
+        Orchestrator.forget()
+    }
+    try? manager.removeItem(at: Orchestrator.storeURL)
+    Orchestrator.forget()
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    var task = Orchestrator.Task(
+        id: taskID, state: .briefed, kind: "code", title: "outage result",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: Orchestrator.hash(ofSecret: secret))
+    task.briefedAt = Date()
+    Orchestrator.holdScheduleTaskForTesting(task)
+    RemoteServer.shared.setRestartMaintenance(active: true, requestID: UUID().uuidString.lowercased())
+    let result: [String: Any] = [
+        "clawdline_protocol": 1, "task_id": taskID, "task_secret": secret,
+        "status": "success", "summary": "landed while listener was unavailable", "artifacts": [],
+    ]
+    try! JSONSerialization.data(withJSONObject: result).write(
+        to: directory.appendingPathComponent("result.json"), options: .atomic)
+    Orchestrator.beat(fromTimer: true)
+    check("a durable result written during listener maintenance settles on the resumed beat",
+          Orchestrator.record(id: taskID)?["state"] as? String == "success")
+}
 }

@@ -955,6 +955,313 @@ enum Coordinator {
     }
 }
 
+extension RemoteServer {
+    struct TerminalDrainSnapshot: Equatable {
+        let outstanding: Int
+        let channels: [String: Int]
+    }
+
+    func terminalDrainSnapshot() -> TerminalDrainSnapshot {
+        terminalAdmissionLock.lock(); defer { terminalAdmissionLock.unlock() }
+        return TerminalDrainSnapshot(outstanding: terminalOutstanding,
+                                     channels: terminalOutstandingByChannel)
+    }
+
+    /// Work already admitted may finish its nested cascade; its counters are the drain receipt.
+    func setRestartMaintenance(active: Bool, requestID: String?) {
+        terminalAdmissionLock.lock()
+        if active { terminalMaintenanceRequestID = requestID }
+        else if requestID == nil || terminalMaintenanceRequestID == requestID {
+            terminalMaintenanceRequestID = nil
+        }
+        terminalAdmissionLock.unlock()
+    }
+
+    func terminalMaintenanceRefusal() -> Response? {
+        terminalAdmissionLock.lock(); defer { terminalAdmissionLock.unlock() }
+        guard let requestID = terminalMaintenanceRequestID else { return nil }
+        return .error(503, "restart_maintenance",
+                      "Terminal mutations are paused while restart maintenance drains; retry "
+                        + "after the replacement process reconciles.",
+                      extra: ["retryable": true, "request_id": requestID, "retry_after": 1])
+    }
+
+    func beginRestartMaintenance(requestID: String) -> Response {
+        // Close first: an admitted command remains counted and no newcomer can race the snapshot.
+        setRestartMaintenance(active: true, requestID: requestID)
+        let drain = terminalDrainSnapshot()
+        let reply = Orchestrator.beginRestartMaintenance(
+            requestID: requestID, outstanding: drain.outstanding, channels: drain.channels)
+        if case .refused = reply {
+            if let active = Orchestrator.currentRestartRecord(),
+               active["admission_closed"] as? Bool == true,
+               let activeID = active["request_id"] as? String {
+                setRestartMaintenance(active: true, requestID: activeID)
+            } else {
+                setRestartMaintenance(active: false, requestID: requestID)
+            }
+        }
+        return answer(reply)
+    }
+
+    func pollRestartMaintenance() -> Response {
+        guard Orchestrator.currentRestartRecord() != nil else {
+            return .error(404, "restart_not_found", "No restart maintenance intent exists.")
+        }
+        let drain = terminalDrainSnapshot()
+        return answer(Orchestrator.advanceRestartMaintenance(
+            outstanding: drain.outstanding, channels: drain.channels))
+    }
+}
+
+// The restart lifecycle must preserve the durable Coordinator verbatim. Its maintenance edge is
+// kept beside that lifecycle boundary, while the task registry remains the single persisted store.
+extension Orchestrator {
+    static func beginRestartMaintenance(requestID: String, outstanding: Int,
+                                        channels: [String: Int], now: Date = Date()) -> Reply {
+        guard UUID(uuidString: requestID) != nil, requestID == requestID.lowercased() else {
+            return .refused(400, "bad_restart_request", "request_id must be one lowercase UUID.")
+        }
+        load()
+        lock.lock()
+        let candidates = Array(tasks.values)
+        let existing = restartReceipt
+        lock.unlock()
+        let blockers = restartBlockers(in: candidates)
+        if let existing, existing.requestID != requestID, existing.phase != .complete {
+            return .refused(status: 409, code: "restart_in_progress",
+                            message: "A different restart maintenance intent is already active.",
+                            extra: ["restart": restartRecord(existing)])
+        }
+        guard blockers.isEmpty else {
+            return .refused(status: 409, code: "restart_blocked_by_task_secret",
+                            message: "Queued or spawning work still depends on process-local "
+                                + "briefing-secret state; wait for it to become briefed or terminal.",
+                            extra: ["blockers": blockers.map(restartBlockerRecord)])
+        }
+        let next = restartTransition(
+            current: existing?.phase == .complete ? nil : existing,
+            requestID: requestID, instanceID: appInstanceID, outstanding: outstanding,
+            channels: channels, blockers: blockers, now: now)
+        lock.lock(); restartReceipt = next; lock.unlock()
+        guard save() else {
+            lock.lock(); restartReceipt = existing; lock.unlock()
+            return .refused(503, "restart_store_failed",
+                            "The durable restart intent could not be written; replacement is unsafe.")
+        }
+        return .ok(["restart": restartRecord(next)])
+    }
+
+    static func advanceRestartMaintenance(outstanding: Int, channels: [String: Int],
+                                          now: Date = Date()) -> Reply {
+        load()
+        lock.lock()
+        guard let current = restartReceipt else {
+            lock.unlock()
+            return .refused(404, "restart_not_found", "No restart maintenance intent exists.")
+        }
+        let next = restartTransition(
+            current: current, requestID: current.requestID, instanceID: appInstanceID,
+            outstanding: outstanding, channels: channels, blockers: [], now: now)
+        let changed = next != current
+        restartReceipt = next
+        lock.unlock()
+        if changed, !save() {
+            lock.lock(); restartReceipt = current; lock.unlock()
+            return .refused(503, "restart_store_failed",
+                            "The drained restart receipt could not be persisted; replacement is unsafe.")
+        }
+        return .ok(["restart": restartRecord(next)])
+    }
+
+    static func currentRestartRecord() -> [String: Any]? {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return restartReceipt.map(restartRecord)
+    }
+
+    static func restartAdmissionClosed() -> Bool {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return restartReceipt?.admissionClosed == true
+    }
+
+    static func resumeRestartIntent() {
+        lock.lock()
+        guard let current = restartReceipt, current.phase != .complete else {
+            lock.unlock(); return
+        }
+        let next = restartTransition(
+            current: current, requestID: current.requestID, instanceID: appInstanceID,
+            outstanding: 0, channels: [:], blockers: [], now: Date())
+        restartReceipt = next
+        lock.unlock()
+        if next != current { _ = save() }
+        RemoteServer.shared.setRestartMaintenance(active: true, requestID: next.requestID)
+    }
+
+    static func reconcileRestartInventory(_ snapshot: SessionWatch.IdentitySnapshot,
+                                          identities: [SessionWorkIdentity], now: Date = Date()) {
+        load()
+        lock.lock()
+        guard var restart = restartReceipt, restart.phase == .reconciling,
+              snapshot.complete, let observedAt = snapshot.observedAt,
+              observedAt >= processStartedAt else {
+            lock.unlock(); return
+        }
+        let inventory = ExecutorInventory(
+            complete: snapshot.complete, observedAt: observedAt,
+            generation: snapshot.generation, epoch: snapshot.epoch)
+        let priorRestart = restart
+        var allSettled = true
+        for (id, var task) in tasks where task.state == .briefed {
+            let receipt = reconcileExecutor(task: task, identities: identities,
+                                            inventory: inventory,
+                                            previous: task.executorReceipt, now: now)
+            task.executorReceipt = receipt
+            tasks[id] = task
+            if receipt.status == .pending { allSettled = false }
+        }
+        if allSettled {
+            restart.phase = .complete
+            restart.reconciledAt = now
+            restart.outstanding = 0
+            restart.channels = [:]
+            restartReceipt = restart
+        }
+        lock.unlock()
+        guard save() else {
+            if allSettled { lock.lock(); restartReceipt = priorRestart; lock.unlock() }
+            return
+        }
+        if allSettled {
+            RemoteServer.shared.setRestartMaintenance(active: false, requestID: restart.requestID)
+            RemoteServer.shared.broadcastOrchestrator()
+        }
+    }
+
+    static func restartBlockerRecord(_ blocker: RestartBlocker) -> [String: Any] {
+        ["task_id": blocker.taskID, "state": blocker.state.rawValue, "code": blocker.code]
+    }
+
+    static func restartRecord(_ receipt: RestartReceipt) -> [String: Any] {
+        var out: [String: Any] = [
+            "request_id": receipt.requestID, "phase": receipt.phase.rawValue,
+            "requested_instance_id": receipt.requestedInstanceID,
+            "requested_at": Int(receipt.requestedAt.timeIntervalSince1970),
+            "outstanding": receipt.outstanding, "channels": receipt.channels,
+            "safe_to_replace": receipt.safeToReplace,
+            "admission_closed": receipt.admissionClosed,
+            "replacement_before_safe": receipt.replacementBeforeSafe,
+        ]
+        if let value = receipt.resumedInstanceID { out["resumed_instance_id"] = value }
+        if let value = receipt.drainedAt { out["drained_at"] = Int(value.timeIntervalSince1970) }
+        if let value = receipt.resumedAt { out["resumed_at"] = Int(value.timeIntervalSince1970) }
+        if let value = receipt.reconciledAt { out["reconciled_at"] = Int(value.timeIntervalSince1970) }
+        return out
+    }
+
+    static func stored(_ receipt: RestartReceipt) -> [String: Any] {
+        var out = restartRecord(receipt)
+        out["requested_at"] = receipt.requestedAt.timeIntervalSince1970
+        if let value = receipt.drainedAt { out["drained_at"] = value.timeIntervalSince1970 }
+        if let value = receipt.resumedAt { out["resumed_at"] = value.timeIntervalSince1970 }
+        if let value = receipt.reconciledAt { out["reconciled_at"] = value.timeIntervalSince1970 }
+        return out
+    }
+
+    static func restartReceipt(from obj: [String: Any]) -> RestartReceipt? {
+        guard let requestID = obj["request_id"] as? String,
+              UUID(uuidString: requestID) != nil, requestID == requestID.lowercased(),
+              let phaseName = obj["phase"] as? String, let phase = RestartPhase(rawValue: phaseName),
+              let instance = obj["requested_instance_id"] as? String, !instance.isEmpty,
+              let requested = obj["requested_at"] as? Double,
+              let outstanding = obj["outstanding"] as? Int, outstanding >= 0 else { return nil }
+        let rawChannels = obj["channels"] as? [String: Any] ?? [:]
+        var channels: [String: Int] = [:]
+        for (channel, raw) in rawChannels {
+            guard !channel.isEmpty, channel.count <= 512,
+                  let count = raw as? Int, count >= 0 else { return nil }
+            channels[channel] = count
+        }
+        func date(_ key: String) -> Date? {
+            (obj[key] as? Double).map(Date.init(timeIntervalSince1970:))
+        }
+        var receipt = RestartReceipt(
+            requestID: requestID, requestedInstanceID: instance,
+            resumedInstanceID: obj["resumed_instance_id"] as? String,
+            phase: phase, requestedAt: Date(timeIntervalSince1970: requested),
+            drainedAt: date("drained_at"), resumedAt: date("resumed_at"),
+            reconciledAt: date("reconciled_at"), outstanding: outstanding, channels: channels)
+        receipt.replacementBeforeSafe = obj["replacement_before_safe"] as? Bool ?? false
+        guard (phase != .ready || receipt.safeToReplace),
+              (phase != .complete || receipt.reconciledAt != nil) else { return nil }
+        return receipt
+    }
+
+    static func identityRecord(_ identity: SessionWorkIdentity) -> [String: Any] {
+        var out: [String: Any] = ["terminal_id": identity.terminalID, "tty": identity.tty]
+        if let assistant = identity.assistant { out["assistant"] = assistant.rawValue }
+        if let pid = identity.pid { out["pid"] = Int(pid) }
+        if let start = identity.processStart { out["process_start"] = start.timeIntervalSince1970 }
+        if let conversation = identity.conversationID { out["conversation_id"] = conversation }
+        return out
+    }
+
+    static func identity(from obj: [String: Any]) -> SessionWorkIdentity? {
+        guard let terminal = obj["terminal_id"] as? String, !terminal.isEmpty,
+              let tty = obj["tty"] as? String, !tty.isEmpty else { return nil }
+        return SessionWorkIdentity(
+            terminalID: terminal,
+            assistant: (obj["assistant"] as? String).flatMap(Assistant.init(rawValue:)), tty: tty,
+            pid: (obj["pid"] as? Int).flatMap(Int32.init(exactly:)),
+            processStart: (obj["process_start"] as? Double).map(Date.init(timeIntervalSince1970:)),
+            conversationID: obj["conversation_id"] as? String)
+    }
+
+    static func executorRecord(_ receipt: ExecutorReceipt) -> [String: Any] {
+        var out: [String: Any] = [
+            "status": receipt.status.rawValue, "provenance": receipt.provenance,
+            "inventory_complete": receipt.inventoryComplete,
+            "inventory_generation": receipt.inventoryGeneration,
+            "inventory_epoch": receipt.inventoryEpoch,
+            "mismatch_observations": receipt.mismatchObservations, "mover": receipt.mover,
+        ]
+        if let kind = receipt.pendingKind { out["pending_kind"] = kind.rawValue }
+        if let at = receipt.observedAt { out["observed_at"] = Int(at.timeIntervalSince1970) }
+        if let at = receipt.firstMismatchAt { out["first_mismatch_at"] = Int(at.timeIntervalSince1970) }
+        return out
+    }
+
+    static func stored(_ receipt: ExecutorReceipt) -> [String: Any] {
+        var out = executorRecord(receipt)
+        if let at = receipt.observedAt { out["observed_at"] = at.timeIntervalSince1970 }
+        if let at = receipt.firstMismatchAt { out["first_mismatch_at"] = at.timeIntervalSince1970 }
+        if let identity = receipt.observedIdentity { out["observed_identity"] = identityRecord(identity) }
+        return out
+    }
+
+    static func executorReceipt(from obj: [String: Any]) -> ExecutorReceipt? {
+        guard let rawStatus = obj["status"] as? String,
+              let status = ExecutorReconciliationStatus(rawValue: rawStatus),
+              let provenance = obj["provenance"] as? String, !provenance.isEmpty,
+              let complete = obj["inventory_complete"] as? Bool,
+              let generation = obj["inventory_generation"] as? Int,
+              let epoch = obj["inventory_epoch"] as? String, !epoch.isEmpty,
+              let observations = obj["mismatch_observations"] as? Int, observations >= 0,
+              let mover = obj["mover"] as? String, ["broker", "person"].contains(mover)
+        else { return nil }
+        let kind = (obj["pending_kind"] as? String).flatMap(ExecutorIssueKind.init(rawValue:))
+        let observedIdentity = (obj["observed_identity"] as? [String: Any]).flatMap(identity(from:))
+        return ExecutorReceipt(
+            status: status, pendingKind: kind, provenance: provenance,
+            observedAt: (obj["observed_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
+            inventoryComplete: complete, inventoryGeneration: generation, inventoryEpoch: epoch,
+            firstMismatchAt: (obj["first_mismatch_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
+            mismatchObservations: observations, observedIdentity: observedIdentity, mover: mover)
+    }
+}
+
 private extension JSONEncoder {
     static var sorted: JSONEncoder {
         let encoder = JSONEncoder()

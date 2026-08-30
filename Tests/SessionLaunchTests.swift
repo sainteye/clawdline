@@ -908,4 +908,72 @@ group("the page is given the words it draws the start sheet with") {
     check("the model rows and the dispatch-off sentence are published", unsent.isEmpty,
           "not on /v1/strings: " + unsent.joined(separator: ", "))
 }
+
+// Restart maintenance owns admission rather than guessing from live-task count. An operation
+// already in the terminal lane is allowed to settle; every newcomer receives one typed retryable
+// response until the durable reconciliation edge reopens admission.
+do {
+    func expect<T: Equatable>(_ title: String, _ actual: T, _ expected: T) {
+        precondition(actual == expected, "\(title): got \(actual), want \(expected)")
+    }
+    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
+        precondition(condition(), title)
+    }
+    let requestID = UUID().uuidString.lowercased()
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    check("restart drain fixture occupies the real terminal broker",
+          RemoteServer.shared.enqueueTerminalCommand(channel: "DRAIN-ME") {
+              entered.signal(); _ = release.wait(timeout: .now() + 3)
+          })
+    check("the drain fixture entered", entered.wait(timeout: .now() + 1) == .success)
+    RemoteServer.shared.setRestartMaintenance(active: true, requestID: requestID)
+    defer { RemoteServer.shared.setRestartMaintenance(active: false, requestID: requestID) }
+    let occupied = RemoteServer.shared.terminalDrainSnapshot()
+    check("the receipt reports global and per-terminal occupancy",
+          occupied.outstanding == 1 && occupied.channels["DRAIN-ME"] == 1)
+    check("maintenance refuses a newly admitted terminal command",
+          !RemoteServer.shared.enqueueTerminalCommand(channel: "NEW") {})
+
+    let wasWriting = Config.shared.remoteWrite
+    Config.shared.remoteWrite = true
+    defer { Config.shared.remoteWrite = wasWriting }
+    let writer = RemoteAuth.addDevice(name: "restart maintenance writer", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: writer.id) }
+    let refused = DispatchSemaphore(value: 0)
+    var refusal: RemoteServer.Response?
+    RemoteServer.shared.sendTerminalForTesting(remoteRequest(
+        "POST", "/v1/sessions/ANY/send",
+        headers: ["Authorization": "Bearer \(writer.token)",
+                  "Idempotency-Key": UUID().uuidString], body: #"{"text":"must wait"}"#)) {
+        refusal = $0; refused.signal()
+    }
+    check("a mutation during maintenance settles without entering the blocked lane",
+          refused.wait(timeout: .now() + 1) == .success)
+    expect("maintenance refusal is typed", refusal.map(remoteErrorCode), "restart_maintenance")
+    let refusalObject = refusal.flatMap {
+        (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any]
+    }?["error"] as? [String: Any]
+    expect("and is retryable rather than filed as a permanent answer",
+           refusalObject?["retryable"] as? Bool, true)
+
+    release.signal()
+    check("the old operation drains to zero while admission stays closed", eventually {
+        let receipt = RemoteServer.shared.terminalDrainSnapshot()
+        return receipt.outstanding == 0 && receipt.channels.isEmpty
+    })
+
+    let health = RemoteServer.shared.route(remoteRequest("GET", "/v1/health"))
+    let healthBody = (try? JSONSerialization.jsonObject(with: health.body)) as? [String: Any]
+    expect("health names the exact process instance that restart receipts reconcile",
+           healthBody?["instance"] as? String, Orchestrator.appInstanceID)
+    let remoteSource = try! String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8)
+    check("health and a fresh SSE hello both publish the replacement instance",
+          remoteSource.components(separatedBy: "\"instance\": Orchestrator.appInstanceID").count == 3)
+    let lifecycleSource = try! String(contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8)
+    let resumeOffset = lifecycleSource.range(of: "resumeAfterRestart()")?.lowerBound
+    let observerOffset = lifecycleSource.range(of: "observers[\"orchestrator\"]")?.lowerBound
+    check("restart recovery is installed before watcher and timer events resume",
+          resumeOffset != nil && observerOffset != nil && resumeOffset! < observerOffset!)
+}
 }

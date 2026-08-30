@@ -206,7 +206,8 @@ final class RemoteServer: @unchecked Sendable {
             return true
         }
         terminalAdmissionLock.lock()
-        guard terminalOutstanding < Self.terminalDepth,
+        guard terminalMaintenanceRequestID == nil,
+              terminalOutstanding < Self.terminalDepth,
               channels.allSatisfy({ (terminalOutstandingByChannel[$0] ?? 0)
                                       < Self.terminalChannelDepth }) else {
             terminalAdmissionLock.unlock()
@@ -878,6 +879,7 @@ final class RemoteServer: @unchecked Sendable {
                 // be forgotten. A build number in `build.sh` is a number somebody has to remember
                 // to bump, and the failure mode of forgetting is silence.
                 "build": Self.buildStamp,
+                "instance": Orchestrator.appInstanceID,
                 "protocol": Self.protocolVersion,
                 // The client uses these to decide what to draw at all. Saying "you may not" once
                 // is kinder than a button that fails when pressed.
@@ -1463,7 +1465,8 @@ final class RemoteServer: @unchecked Sendable {
                 supplied.map {
                     SessionWatch.IdentitySnapshot(targets: $0, generation: -1,
                                                   complete: true,
-                                                  observedAt: Date(timeIntervalSince1970: 0))
+                                                  observedAt: Date(timeIntervalSince1970: 0),
+                                                  epoch: "testing")
                 } ?? SessionWatch.shared.identitySnapshot()
             }
             guard snapshot.complete else {
@@ -2013,6 +2016,20 @@ final class RemoteServer: @unchecked Sendable {
         case ("GET", "/v1/orchestrator/tasks"):
             return .json(["tasks": Orchestrator.records(),
                           "at": Int(Date().timeIntervalSince1970)])
+
+        case ("POST", "/v1/orchestrator/maintenance/restart"):
+            guard orchestratorAuthed else { return .error(403, "forbidden",
+                "Beginning restart maintenance needs the orchestrator token.") }
+            guard let body = (try? JSONSerialization.jsonObject(with: request.body))
+                    as? [String: Any], Set(body.keys) == ["request_id"],
+                  let requestID = body["request_id"] as? String else { return .error(
+                    400, "bad_restart_request", "The closed restart schema requires only request_id.") }
+            return beginRestartMaintenance(requestID: requestID)
+
+        case ("GET", "/v1/orchestrator/maintenance/restart"):
+            guard orchestratorAuthed else { return .error(403, "forbidden",
+                "Reading restart maintenance needs the orchestrator token.") }
+            return pollRestartMaintenance()
 
         case ("GET", "/v1/orchestrator/completions"):
             guard orchestratorAuthed else {
@@ -2760,9 +2777,10 @@ final class RemoteServer: @unchecked Sendable {
         queue.setSpecific(key: Self.terminalWorkerKey, value: true)
         return queue
     }()
-    private let terminalAdmissionLock = NSLock()
-    private var terminalOutstanding = 0
-    private var terminalOutstandingByChannel: [String: Int] = [:]
+    let terminalAdmissionLock = NSLock()
+    var terminalOutstanding = 0
+    var terminalOutstandingByChannel: [String: Int] = [:]
+    var terminalMaintenanceRequestID: String?
     /// Touched only on the serial terminal queue. It lets nested inline work inherit an outer
     /// reservation without double-counting that same terminal while still accounting a newly
     /// discovered child/coordination recipient.
@@ -2799,6 +2817,9 @@ final class RemoteServer: @unchecked Sendable {
         if terminalPending[key] != nil {
             terminalPending[key, default: []].append(deliver)
             return
+        }
+        if let refusal = terminalMaintenanceRefusal() {
+            deliver(refusal); return
         }
 
         let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
@@ -2936,6 +2957,9 @@ final class RemoteServer: @unchecked Sendable {
             terminalPending[key, default: []].append(deliver)
             return
         }
+        if let refusal = terminalMaintenanceRefusal() {
+            deliver(refusal); return
+        }
 
         // A session-bound iTerm command can be refused before admission. Start is deliberately
         // allowed through: when iTerm2 is stopped, newtab is the operation that launches it.
@@ -2972,6 +2996,9 @@ final class RemoteServer: @unchecked Sendable {
 
     private func unfiledTerminalMutation(_ request: Request,
                                          deliver: @escaping (Response) -> Void) {
+        if let refusal = terminalMaintenanceRefusal() {
+            deliver(refusal); return
+        }
         let admitted = enqueueTerminalCommand(channels: Self.terminalChannels(for: request)) { [weak self] in
             guard let self else { return }
             let response = self.route(request)
@@ -3596,7 +3623,7 @@ final class RemoteServer: @unchecked Sendable {
     }
 
     /// An orchestrator reply, in the envelope everything else already uses.
-    private func answer(_ reply: Orchestrator.Reply) -> Response {
+    func answer(_ reply: Orchestrator.Reply) -> Response {
         switch reply {
         case .ok(let obj):
             return .json(obj)
@@ -4113,6 +4140,7 @@ final class RemoteServer: @unchecked Sendable {
             },
             "at": Int(Date().timeIntervalSince1970),
             "scan": [
+                "epoch": watch.scanEpoch,
                 "generation": watch.scanGeneration,
                 "complete": watch.scanComplete,
                 "emptyAuthoritative": watch.emptyInventoryAuthoritative,
@@ -6035,6 +6063,7 @@ final class RemoteServer: @unchecked Sendable {
         write(event: "hello", data: [
             "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
             "build": Self.buildStamp,
+            "instance": Orchestrator.appInstanceID,
             "protocol": Self.protocolVersion,
             "write": Config.shared.remoteWrite,
         ], to: stream)

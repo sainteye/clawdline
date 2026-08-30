@@ -114,6 +114,8 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/notify` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/tasks` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/orchestrator/maintenance/restart` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/maintenance/restart` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/completions` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/completions/reconcile` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
@@ -180,13 +182,14 @@ is talking to, and whether it is allowed in, before it can act on either.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/health
-{"ok":true,"version":"0.5.0","build":1787096354,"protocol":1,"write":false,"auth":false,"password":false,"authed":false}
+{"ok":true,"version":"0.5.0","build":1787096354,"instance":"9af84fc1-…","protocol":1,"write":false,"auth":false,"password":false,"authed":false}
 ```
 
 | field | |
 |---|---|
 | `version` | the app's, for a person |
 | `build` | which build, as opposed to which release — the executable's modification time. `version` is the same string for every build of a release, so a long-lived page watching only that could never tell it had fallen behind. Compare it to what you saw first; if it moved, the app was rebuilt under you |
+| `instance` | one UUID for this listener process. Health and the SSE `hello` carry the same value; a replacement changes it even when release and build strings do not |
 | `protocol` | this document's; bumped when a client would have to change |
 | `write` | is the second switch on — **draw the UI from this**, because saying "you may not" once is kinder than a button that fails when pressed |
 | `auth` | has anybody paired a device or set a password. The local token does not count |
@@ -202,7 +205,7 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
     | jq '{at, scan, sessions: [.sessions[] | {id, label, state, work_state, cwd}]}'
 {
   "at": 1787049596,
-  "scan": {"generation":42,"complete":true,"emptyAuthoritative":false},
+  "scan": {"epoch":"65d8fbbc-…","generation":42,"complete":true,"emptyAuthoritative":false},
   "sessions": [
     {
       "id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
@@ -232,7 +235,9 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
 Five fields per session are picked out there so the reply fits on this page; the whole object is
 [below](#the-session-object). `at` is when the reply was built, not when the reading was taken.
 `scan.generation` orders published session content after terminal/process scans are reconciled;
-it is not a receipt for a caller's requested scan. `scan.completed.sequence` advances once when
+it is not a receipt for a caller's requested scan. `scan.epoch` is one UUID for the SessionWatch
+process lifetime, so generation 42 after replacement cannot be mistaken for generation 42 before
+it. `scan.completed.sequence` advances once when
 each inventory read actually finishes, including an unchanged or incomplete read, and
 `scan.completed.complete` reports whether every source in that exact read was usable.
 `scan.complete` describes the currently published inventory. `scan.emptyAuthoritative` is narrower:
@@ -2549,6 +2554,33 @@ off, and `409 schedule_active` while any task from the schedule is non-terminal 
 already queued. A successful manual run records the current occurrence as handled when it is at or
 after that occurrence; running before the next scheduled time does not consume that future fire.
 
+### `POST /v1/orchestrator/maintenance/restart`, `GET /v1/orchestrator/maintenance/restart`
+
+This is the durable drain receipt a replacement command must obtain before swapping the app. POST
+accepts the closed body `{"request_id":"<lowercase UUID>"}` and immediately closes terminal
+mutation admission. Operations already admitted keep running; the receipt counts them globally and
+by terminal. Poll GET until `phase:"ready"` and `safe_to_replace:true`:
+
+```jsonc
+{"restart":{"request_id":"b2f073d6-…","phase":"ready",
+  "requested_instance_id":"9af84fc1-…","requested_at":1787100200,
+  "outstanding":0,"channels":{},"safe_to_replace":true,
+  "admission_closed":true,"replacement_before_safe":false,"drained_at":1787100202}}
+```
+
+`queued` work with a recoverable sealed secret and every `briefed` task are durable and do not
+block. A `spawning` task, or queued work whose sealed secret is unavailable, returns
+`409 restart_blocked_by_task_secret` with typed `blockers`; replacing then would lose the only
+plaintext briefing secret. Repeating the same request id is idempotent. A different live request
+returns `409 restart_in_progress` without stealing its admission gate.
+
+After replacement, the persisted receipt moves to `reconciling`. Terminal mutations continue to
+return `503 restart_maintenance` with `retryable:true`, `request_id`, and `retry_after` inside the
+standard `error` object. Admission reopens only after one fresh complete Session inventory from
+the replacement process has reconciled every live briefed task. GET then reports
+`phase:"complete"`, `resumed_instance_id`, and `reconciled_at`. If replacement happened before the
+drain receipt was safe, `replacement_before_safe:true` remains durable rather than being hidden.
+
 ### `GET /v1/orchestrator/tasks`, `GET /v1/orchestrator/tasks/:id`
 
 Every task this Mac knows about, newest first, capped at the most recent 200 records — or one of
@@ -2601,6 +2633,13 @@ The record:
   "root":  {"sessionId": "841cbb8d-…", "assistant": "claude", "label": "clawdline main", "terminalId": "27439AEE-…",
             "taskId": "a70c5e11-…"},   // the parent task — depth 2 only, and only when it said so
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
+  "executor": {                    // durable reconciliation evidence; no raw pid/tty is public
+    "status": "observed",          // observed | pending | executor_missing | identity_changed
+    "provenance": "session_watch_exact_process_tuple",
+    "inventory_complete": true, "inventory_generation": 42,
+    "inventory_epoch": "65d8fbbc-…", "observed_at": 1787100210,
+    "mismatch_observations": 0, "mover": "broker"
+  },
   "terminal_intervention": {       // absent unless automatic cleanup is deliberately pending
     "code": "iterm_attention_required", "app": "iTerm2",
     "action": "answer_dialog", "message": "iTerm2 needs attention…"
@@ -2628,6 +2667,13 @@ The record:
             "total": 501620, "model": "claude-sonnet-4-5", "costUsd": 0.4243}
 }
 ```
+
+`executor` compares that one task's persisted terminal, assistant, tty, pid/start and conversation
+tuple with one fresh inventory; it never searches by label or cwd and never borrows another task's
+row. Incomplete or stale scans preserve the last proved receipt. One complete absence is `pending`;
+only two complete observations in the same process epoch spanning at least 60 seconds may become
+`executor_missing` or `identity_changed`, both with `mover:"person"`. The exact observed process
+tuple remains private in the durable store for diagnosis.
 
 **The secret is not in here and never will be.** The durable identity is its SHA-256. While a
 serialized task is still queued, the app also keeps a temporary encrypted copy in its private

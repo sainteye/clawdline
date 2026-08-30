@@ -1033,10 +1033,12 @@ through the same finalize. `finishedAt` records execution; `resultVerifiedAt` is
 set only after `result.json` passes the task-secret check. A `/complete` outcome therefore does not
 pretend that the result file was verified.
 
-**timeout** — `briefedAt + timeout_minutes`. There is a second way to get here that is not a clock:
-if the child's terminal disappears from the session list for more than a minute while the task is
-briefed, the task is `failure` with *child session ended without reporting*. A closed tab is a
-finished task in every sense except the one that would have been written down.
+**timeout** — `briefedAt + timeout_minutes`. Executor loss is a different, typed failure. One
+incomplete scan or one complete absence changes nothing; only two fresh complete observations in
+one SessionWatch process epoch, at least a minute apart, may settle `executor_missing` or
+`identity_changed`. The task record keeps the inventory generation, epoch, time, provenance and
+mismatch count. That lets a person distinguish a closed child from a scanner outage or a terminal
+id reused by a replacement process without guessing from a label or cwd.
 
 **cancelled** — somebody asked. The child's terminal is ended politely, the way
 [`POST /v1/sessions/:id/end`](api.md#post-v1sessionsidend) does it. There are two ways to ask. One
@@ -1113,14 +1115,35 @@ that failed — and the third is `409 respawn_exhausted`. Each new task records
 `respawn_of` and `respawn_generation`, so a chain reads as a chain in the registry instead of as
 three unrelated tasks with the same title.
 
-**A briefed task survives a restart.** Its secret is on disk as a hash, `result.json` is on disk as
-a file, and the timeout is arithmetic on a stored timestamp. So the app comes back up, reads the
-registry, and carries on watching. That is the one restart case that matters, because it is the one
-where a child is out there doing work.
+**A briefed task survives a restart as one logical task.** Its secret hash, root/task/session ids,
+timeout, completion outbox and result ingress are durable. Those logical ids are never replaced by
+whatever terminal happens to share its label. Startup compares the persisted child tuple —
+terminal id, assistant, tty, pid and process start, plus conversation id — with one fresh complete
+SessionWatch inventory. Exact match restores observation; incomplete evidence preserves the prior
+receipt; persistent absence becomes `executor_missing`; the same terminal with a different process
+becomes `identity_changed`. Neither typed mismatch automatically respawns or relinks anything: its
+`mover` is `person`.
 
-Replacing the app still has one unavoidable window: a task in `spawning` is failed closed on
-restart. A worktree preserves files and branch state, but task lifecycle belongs to the app process;
-isolation does not turn an interrupted spawn into a resumable dispatch.
+**Restart is a durable admission-and-drain protocol, not a live-task count.** Before replacement,
+POST [`/v1/orchestrator/maintenance/restart`](api.md#post-v1orchestratormaintenancerestart-get-v1orchestratormaintenancerestart)
+with one lowercase UUID. The terminal broker immediately refuses new mutations with typed,
+retryable `restart_maintenance`, lets already-admitted cascades finish, and persists global and
+per-terminal occupancy. Replacement is safe only when the same receipt says `phase:"ready"`,
+`safe_to_replace:true`, and both counts are zero. Duplicate calls with the same id are idempotent;
+a competing id cannot steal the gate.
+
+`briefed` is durable and is not a restart blocker. A serialized task still `queued` is also safe
+when its sealed secret is recoverable. `spawning` is unsafe because the only plaintext briefing
+secret is process-local; maintenance refuses with `restart_blocked_by_task_secret` instead of
+knowingly replacing the app. An uncoordinated replacement still fails that interrupted spawn
+closed on startup and records `replacement_before_safe` on any active restart receipt.
+
+The replacement listener resumes the persisted receipt as `reconciling` and keeps admission
+closed. One fresh complete inventory from its own scan epoch reconciles every live briefed task;
+only then does the receipt become `complete` and the broker reopen. Health and SSE `hello` expose
+the same per-process `instance`, and Session inventory exposes its own `epoch`, so a monitor can
+prove it observed the replacement rather than a stale snapshot. Completion/result files written
+during the listener outage remain durable inputs and are collected by the existing startup walk.
 
 ### A branch, not a diff
 

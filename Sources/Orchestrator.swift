@@ -1494,7 +1494,7 @@ enum Orchestrator {
         var transcriptPath: String?
         /// The task marker was observed in `transcriptPath`. Persisted because that fact does not
         /// expire when Claude rotates the file or the file is temporarily unavailable.
-        var transcriptProven = false
+        var transcriptProven = false; var executorReceipt: ExecutorReceipt?
         var secretHash: String
         /// Agent-authored pushes already accepted for this task. Unlike the process-wide hourly
         /// brake, this survives a restart: a task gets five messages for its whole lifetime, not
@@ -1968,7 +1968,7 @@ enum Orchestrator {
         RemoteAuth.directory.appendingPathComponent("orchestrator-archive-key")
     }
 
-    private static let lock = NSLock()
+    static let lock = NSLock()
     /// Opening a terminal is bounded, not cheap: iTerm automation alone may wait 15 seconds.
     /// Pumps arrive from main-thread finalization and startup as well as the remote server, so
     /// they get the same off-main serial shape as ordinary dispatch without competing pumps.
@@ -1992,7 +1992,7 @@ enum Orchestrator {
     static let legacyCompletionLookback: TimeInterval = 7 * 24 * 3600
     static let legacyCompletionBatchLimit = 25
     private static var loaded = false
-    private static var tasks: [String: Task] = [:]
+    static var tasks: [String: Task] = [:]; static var restartReceipt: RestartReceipt?
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
@@ -3620,8 +3620,8 @@ enum Orchestrator {
     /// The monotonic check is the second belt: callers without a narrow expectation still cannot
     /// turn `.briefed` back into `.spawning`, or a terminal result back into a live task.
     @discardableResult
-    private static func replaceTask(_ candidate: Task, expecting expected: State? = nil,
-                                    discardSecret: Bool = false) -> Bool {
+    static func replaceTask(_ candidate: Task, expecting expected: State? = nil,
+                            discardSecret: Bool = false) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard let current = tasks[candidate.id] else { return false }
         if let expected, current.state != expected { return false }
@@ -7564,6 +7564,7 @@ enum Orchestrator {
     /// app lifecycle in the unit suite.
     static func resumeAfterRestart() {
         load()
+        resumeRestartIntent()
         // Anything mid-way through briefing is unbriefable now: its plaintext secret died with
         // the process. A serialized task that never left queued is different — its temporary
         // sealed copy can be opened with this installation's at-rest key and pumped below.
@@ -7696,7 +7697,9 @@ enum Orchestrator {
         // It counts rather than blocks, and that is still deliberate. A dropped walker leaves
         // nothing to read, and the record cannot be damaged by a stale copy anyway: `replaceTask`
         // refuses to move a task backwards.
-        let visibleTerminals = Set(SessionWatch.shared.targets.map(\.id))
+        let watchSnapshot = SessionWatch.shared.identitySnapshot()
+        let visibleTerminals = Set(watchSnapshot.targets.map(\.id)); let executorIdentities = watchSnapshot.targets.filter(\.isAssistant).map(RemoteServer.sessionWorkIdentity)
+        reconcileRestartInventory(watchSnapshot, identities: executorIdentities)
         // Outside this type's lock, because it takes one of its own and nothing here needs the
         // two held together.
         SessionNaming.forget(closedFrom: visibleTerminals)
@@ -7754,10 +7757,11 @@ enum Orchestrator {
             case .spawning:
                 // The record-only deadlines first, on this thread. Everything after them needs a
                 // terminal, and a task must be able to expire while the terminal is stuck.
-                if expireSpawningIfDue(task) { continue }
+                if settleExitedLauncher(task, snapshot: watchSnapshot, identities: executorIdentities) || expireSpawningIfDue(task) { continue }
                 sawSpawning = true
                 scheduleBriefStep(task)
-            case .briefed:  changed = watch(task) || changed
+            case .briefed:
+                changed = watch(task, snapshot: watchSnapshot, identities: executorIdentities) || changed
             default:
                 changed = reclaimTaskWorkIfDue(task.id) || changed
                 changed = reclaimTaskBuildIfDue(task.id) || changed
@@ -8160,7 +8164,7 @@ enum Orchestrator {
 
     /// Watch a briefed child for its result, its death, or its deadline. True when the record
     /// changed in a way worth persisting.
-    private static func watch(_ task: Task) -> Bool {
+    private static func watch(_ task: Task, snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
         var task = task
 
         // The file half of the progress channel first, before anything below can finalize the
@@ -8185,24 +8189,23 @@ enum Orchestrator {
                      summary: "No result within \(task.timeoutMinutes) minutes.")
             return false
         }
-
-        var changed = false
-        if let childID = task.childTerminalId,
-           let child = SessionWatch.shared.targets.first(where: { $0.id == childID }) {
+        let inventory = ExecutorInventory(complete: snapshot.complete, observedAt: snapshot.observedAt,
+            generation: snapshot.generation, epoch: snapshot.epoch)
+        let receipt = reconcileExecutor(task: task, identities: identities, inventory: inventory,
+            previous: task.executorReceipt, now: Date())
+        var changed = receipt != task.executorReceipt; task.executorReceipt = receipt
+        if receipt.status == .executorMissing || receipt.status == .identityChanged {
+            guard replaceTask(task, expecting: .briefed) else { return false }
+            finalize(task.id, as: .failure, summary: "\(receipt.status.rawValue): persisted child executor did not "
+                + "match a persistent complete Session inventory; inspect provenance before respawning.")
+            return false
+        }
+        if receipt.status == .observed, let childID = task.childTerminalId,
+           let child = snapshot.targets.first(where: { $0.id == childID }) {
             task.lastSeenChild = Date()
-            // The child's own identity, once its assistant has written it down. Free for Claude
-            // (a dictionary the hooks fill), one cached lsof for Codex.
             changed = noteChildIdentity(child, in: &task) || changed
             if !replaceTask(task, expecting: .briefed) { return false }
-        } else if let seen = task.lastSeenChild {
-            if Date().timeIntervalSince(seen) > 60 {
-                guard replaceTask(task, expecting: .briefed) else { return false }
-                finalize(task.id, as: .failure,
-                         summary: "The child session ended without reporting a result.")
-                return false
-            }
-        } else {
-            task.lastSeenChild = Date()
+        } else if changed {
             if !replaceTask(task, expecting: .briefed) { return false }
         }
         return changed
@@ -10880,6 +10883,7 @@ enum Orchestrator {
             if let backend = task.childBackend { payload["backend"] = backend.rawValue }
             out["terminal_intervention"] = payload
         }
+        if let receipt = task.executorReceipt { out["executor"] = executorRecord(receipt) }
         if let summary = task.summary { out["summary"] = summary }
         if let delivery = task.completionDelivery {
             out["completion_delivery"] = completionRecord(delivery)
@@ -11338,6 +11342,7 @@ enum Orchestrator {
                 foundActivityClasses[terminalID] = observed
             }
         }
+        let foundRestart = (obj["restart"] as? [String: Any]).flatMap(restartReceipt(from:))
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
@@ -11346,7 +11351,7 @@ enum Orchestrator {
         sessionSelfStates = foundSelfStates
         closureAttestations = foundAttestations
         sessionActivityGenerations = foundActivity
-        sessionActivityClasses = foundActivityClasses
+        sessionActivityClasses = foundActivityClasses; restartReceipt = foundRestart
         // Both halves come back together, so a restart neither invents a tick nor loses one:
         // the first save recomputes the same fingerprint over the same records and finds it
         // unchanged, which is what lets an attestation written before the restart survive it.
@@ -11365,7 +11370,7 @@ enum Orchestrator {
     /// callers can remain best-effort; completion delivery is the exception and will not touch a
     /// terminal unless this returns true for the outcome-plus-outbox snapshot.
     @discardableResult
-    private static func save() -> Bool {
+    static func save() -> Bool {
         storeSaveLock.lock(); defer { storeSaveLock.unlock() }
         lock.lock()
         reindex()
@@ -11390,9 +11395,9 @@ enum Orchestrator {
              "class": sessionActivityClasses[terminalID] ?? "unknown"] as [String: Any]
         }
         let generation = obligationGeneration
-        let fingerprint = obligationFingerprint
+        let fingerprint = obligationFingerprint; let restart = restartReceipt.map(stored)
         lock.unlock()
-        let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
+        var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
                                   "coordination_waits": waitRows,
                                   "session_deliveries": sessionDeliveryRows,
                                   "session_self_states": sessionSelfStateRows,
@@ -11400,6 +11405,7 @@ enum Orchestrator {
                                   "session_activity": activityRows,
                                   "obligation_generation": generation,
                                   "obligation_fingerprint": fingerprint]
+        if let restart { obj["restart"] = restart }
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
@@ -11570,7 +11576,7 @@ enum Orchestrator {
         if let at = task.workCleanupAt { out["work_cleanup_at"] = at.timeIntervalSince1970 }
         if let at = task.buildCleanupAt { out["build_cleanup_at"] = at.timeIntervalSince1970 }
         if let v = task.transcriptPath { out["transcript"] = v }
-        if task.transcriptProven { out["transcript_proven"] = true }
+        if task.transcriptProven { out["transcript_proven"] = true }; if let receipt = task.executorReceipt { out["executor"] = stored(receipt) }
         if let v = task.summary { out["summary"] = v }
         if let delivery = task.completionDelivery {
             out["completion_delivery"] = stored(delivery)
@@ -12051,8 +12057,8 @@ enum Orchestrator {
         task.buildCleanupAt = (obj["build_cleanup_at"] as? Double)
             .map(Date.init(timeIntervalSince1970:))
         task.transcriptPath = obj["transcript"] as? String
-        task.transcriptProven = obj["transcript_proven"] as? Bool == true
-            && task.childSessionId != nil && task.transcriptPath != nil
+        task.transcriptProven = obj["transcript_proven"] as? Bool == true && task.childSessionId != nil && task.transcriptPath != nil
+        if let raw = obj["executor"] as? [String: Any] { task.executorReceipt = executorReceipt(from: raw) }
         task.notifyCount = min(max(obj["notify_count"] as? Int ?? 0, 0), notifyTaskLimit)
         if task.transcriptProven, task.assistant == .claude,
            let path = task.transcriptPath, let sessionID = task.childSessionId,
@@ -12189,7 +12195,7 @@ enum Orchestrator {
 
     // MARK: - Small lookups
 
-    private static func held(_ id: String) -> Task? {
+    static func held(_ id: String) -> Task? {
         load()
         lock.lock(); defer { lock.unlock() }
         return tasks[id]
@@ -12313,7 +12319,7 @@ enum Orchestrator {
     /// Test seam: forget everything in memory.
     static func forget() {
         lock.lock()
-        tasks = [:]
+        tasks = [:]; restartReceipt = nil
         handoffs = [:]
         handoffDeliveries = [:]
         coordinationWaits = [:]
