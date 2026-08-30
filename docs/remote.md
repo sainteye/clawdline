@@ -1,5 +1,9 @@
 # Reaching your sessions from somewhere else
 
+> **Looking for the user procedure?** Use the canonical
+> [browser and phone guide](https://clawdline.com/docs/browser). This page remains the deeper
+> open-source HTTP, pairing, tunnel, audit, and threat-model contract.
+
 Clawdline already works out what every session is doing — once, for the bar, the strip above the
 transcript, the menu bar and the island. This serves that same reading over HTTP, so a browser on
 the sofa, a phone in a hotel, or somebody's script can ask what the bar asks.
@@ -39,7 +43,7 @@ second on. Everything below follows from that one decision.
 Four steps, in this order. Each one is inert without the one before it, which is the design rather
 than an ordering accident.
 
-### 1. The server — Settings → Remote → **Answer over HTTP**
+### 1. The server — Settings → Remote → **Let a browser or your phone see your sessions**
 
 It binds `127.0.0.1` and nothing else. Not "binds everything and filters": the listener is created
 with a required local endpoint of loopback, so there is no interface on your network for it to be
@@ -56,7 +60,7 @@ and from another terminal:
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/health
-{"ok":true,"version":"0.5.0","protocol":1,"write":false,"auth":false,"authed":false}
+{"ok":true,"version":"0.6.0","protocol":1,"write":false,"auth":false,"authed":false}
 ```
 
 `auth: false` is this Mac saying nobody has paired anything yet. `write: false` is the second
@@ -85,11 +89,11 @@ Two ways in:
   `#t=` for the case where something already loaded hands it one.
 - **From the other device** — the six-digit flow below.
 
-### 3. A tunnel, if the device is not on this Mac — Settings → Remote → **Reachable from outside**
+### 3. A tunnel, if the device is not on this Mac — Settings → Remote → **Reach this Mac from anywhere**
 
 Optional, and refused until step 2 is done. See [the tunnel](#the-tunnel).
 
-### 4. Writing, if you want it — Settings → Remote → **Let paired devices type**
+### 4. Writing, if you want it — Settings → Remote → **Let a paired device write into a session**
 
 Also optional, also refused until step 2 is done, and separate from everything above. Until this is
 on, every `POST` answers `write_disabled` and says why:
@@ -650,23 +654,23 @@ Two things it does that are worth knowing before you press it.
 
 **A tunnel that is already running stays running.** The address goes on resolving and everything
 behind it answers `401`, because there is no longer a device that may ask. To close the tunnel as
-well, set **Reachable from outside** back to Off.
+well, set **Reach this Mac from anywhere** back to Off.
 
 **It also revokes the token this Mac made for itself**, so `remote-token` on disk stops working and
 local scripts start getting `401`. A fresh one is minted the next time the server starts — switch
-**Answer over HTTP** off and on again, and anything that had cached the old string will need to read
-the file again.
+**Let a browser or your phone see your sessions** off and on again, and anything that had cached
+the old string will need to read the file again.
 
 The rest, from smallest to largest:
 
-- **Let paired devices type** off — reading continues, every `POST` goes back to `write_disabled`,
+- **Let a paired device write into a session** off — reading continues, every `POST` goes back to `write_disabled`,
   and `send` is taken back from every device at once.
-- **Reachable from outside** off — `cloudflared` gets a SIGTERM, and a `SIGKILL` three seconds later
+- **Reach this Mac from anywhere** off — `cloudflared` gets a SIGTERM, and a `SIGKILL` three seconds later
   if it ignored that. A tunnel is not a thing to leave running because a process was rude about
   closing. The app also kills it on the way out, so quitting Clawdline closes the tunnel; being
   force-killed with SIGKILL is the one case it cannot cover, because Darwin has no way to ask the
   kernel to do it for us.
-- **Answer over HTTP** off — the listener goes away, open event streams are closed, and the tunnel
+- **Let a browser or your phone see your sessions** off — the listener goes away, open event streams are closed, and the tunnel
   comes down with it: with no server there is nothing to tunnel to, and the interlock refuses
   rather than leaving an address that works pointing at a port that does not.
 

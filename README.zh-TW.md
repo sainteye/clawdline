@@ -10,6 +10,9 @@
 
 [English](README.md) · 繁體中文
 
+[網站](https://clawdline.com/) · [公開使用手冊](https://clawdline.com/docs) ·
+[開源技術文件](#文件)
+
 <img src="docs/assets/fleet-wide.png" width="760" alt="Clawdline 在瀏覽器裡：這台 Mac 上的每一個 Claude Code 與 Codex session 收在同一份清單，被別的 session 派出去的那些縮排在它底下，選中的那個的逐字稿就在清單旁邊">
 
 只開一個 coding agent 的日子撐不了多久。到了下午就變成五個，其中兩個還不是你開的——某個 session
@@ -241,6 +244,9 @@ session 不自己 commit，改完交回去；不要跑 build，因為它會把�
 
 ## 安裝
 
+從零開始到第一個 Session、Shell 與終端機設定、瀏覽器／手機、Clawdline Cloud、E2EE 與疑難排解，
+請看完整的**[繁體中文公開使用手冊](https://clawdline.com/docs)**。下面保留最短安裝路徑。
+
 **Homebrew**
 
 ```sh
@@ -252,7 +258,7 @@ xattr -dr com.apple.quarantine /Applications/Clawdline.app
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh -o install.sh
-less install.sh          # 四十行，值得花十秒看一遍
+less install.sh          # 先看過 Shell 即將執行的完整腳本
 bash install.sh          # 或 bash install.sh ~/Applications
 ```
 
@@ -577,6 +583,9 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 - **送出失敗** —— 面板會自己跳回來，你打的字還在，下緣寫著原因。它不會吃掉你的字。
 
 ## 文件
+
+**[繁體中文公開使用手冊](https://clawdline.com/docs)** 是安裝與使用 Clawdline 的正式操作入口。
+下列頁面是開源技術契約與深入實作參考；原始碼、測試、skill 與整合仍會連到它們，因此繼續公開保留。
 
 | | |
 | --- | --- |
