@@ -18,7 +18,18 @@ STAGED_APP="$STAGE_ROOT/$APP_NAME"
 BIN="$STAGED_APP/Contents/MacOS/Clawdline"
 RES="$STAGED_APP/Contents/Resources"
 BACKUP="$STAGE_ROOT.previous"
-trap 'rm -rf "$STAGE_ROOT"' EXIT
+cleanup_build() {
+  if [ "${MAINTENANCE_ACTIVE:-0}" = 1 ] && [ -n "${MAINTENANCE_REQUEST_ID:-}" ] \
+      && [ -r "${TOKEN_FILE:-}" ] && [ -n "${PORT:-}" ]; then
+    curl -sS --max-time 5 -X DELETE \
+      "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
+      -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
+      -H 'Content-Type: application/json' \
+      -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$STAGE_ROOT"
+}
+trap cleanup_build EXIT
 
 echo "→ building staged app for $APP"
 mkdir -p "$(dirname "$BIN")" "$RES"
@@ -151,6 +162,61 @@ print("".join("x" for x in t if x.get("state") in ("queued", "spawning")))' 2>/d
   fi
 fi
 
+# New runtimes own the replacement boundary: close admission, let already-admitted Apple Events
+# drain, persist `ready`, and keep admission closed until the replacement's own complete Session
+# inventory reconciles every briefed executor. The first build that installs this protocol is
+# necessarily talking to an older runtime; only an exact 404 takes the documented bootstrap path
+# above. Every other refusal is typed and stops before the running app is touched.
+MAINTENANCE_REQUEST_ID=
+MAINTENANCE_ACTIVE=0
+if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FILE:-}" ]; then
+  MAINTENANCE_REQUEST_ID=$(/usr/bin/uuidgen | tr '[:upper:]' '[:lower:]')
+  MAINTENANCE_REPLY=$(mktemp "$STAGE_ROOT/maintenance.XXXXXX")
+  MAINTENANCE_STATUS=$(curl -sS --max-time 5 -o "$MAINTENANCE_REPLY" -w '%{http_code}' \
+      -X POST "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
+      -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
+      -H 'Content-Type: application/json' \
+      -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}" || true)
+  if [ "$MAINTENANCE_STATUS" = 404 ]; then
+    echo "→ installed runtime has no restart-maintenance route; using one-time bootstrap preflight"
+    MAINTENANCE_REQUEST_ID=
+  elif [ "$MAINTENANCE_STATUS" != 200 ]; then
+    echo "!! restart maintenance was refused (HTTP ${MAINTENANCE_STATUS:-unreachable})"
+    /usr/bin/python3 -c 'import json,sys
+try:
+    e=json.load(open(sys.argv[1])).get("error",{})
+    print("   %s: %s" % (e.get("code","unknown"),e.get("message","no message")))
+except Exception: pass' "$MAINTENANCE_REPLY"
+    exit 1
+  else
+    MAINTENANCE_ACTIVE=1
+    echo "→ restart maintenance admitted; waiting for the terminal broker to drain"
+    for _ in $(seq 1 120); do
+      PHASE=$(/usr/bin/python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("restart",{}).get("phase",""))
+except Exception: pass' "$MAINTENANCE_REPLY")
+      [ "$PHASE" = ready ] && break
+      curl -sS --max-time 5 -o "$MAINTENANCE_REPLY" \
+        "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
+        -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" || true
+      PHASE=$(/usr/bin/python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("restart",{}).get("phase",""))
+except Exception: pass' "$MAINTENANCE_REPLY")
+      [ "$PHASE" = ready ] && break
+      sleep 1
+    done
+    if [ "${PHASE:-}" != ready ]; then
+      curl -sS --max-time 5 -X DELETE \
+        "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
+        -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
+        -H 'Content-Type: application/json' \
+        -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}" >/dev/null || true
+      echo "!! terminal broker did not drain in 120s; maintenance was aborted and nothing was replaced"
+      exit 1
+    fi
+  fi
+fi
+
 pkill -x Clawdline 2>/dev/null || true
 # **`pkill` asks; it does not wait.** Moving the bundle while a process on its way out is still
 # reading it can make AppKit teardown ask CoreFoundation for files that have just moved away.
@@ -196,6 +262,30 @@ if [ "$WAS_RUNNING" = "1" ]; then
     sleep 0.1
   done
   if pgrep -x Clawdline >/dev/null 2>&1; then
+    if [ "$MAINTENANCE_ACTIVE" = 1 ]; then
+      echo "→ replacement is listening; waiting for fresh executor reconciliation"
+      RECONCILED=0
+      for _ in $(seq 1 180); do
+        RESTART_REPLY=$(curl -sS --max-time 5 \
+          "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
+          -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" || true)
+        PHASE=$(printf '%s' "$RESTART_REPLY" | /usr/bin/python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("restart",{}).get("phase",""))
+except Exception: pass')
+        if [ "$PHASE" = complete ]; then RECONCILED=1; break; fi
+        sleep 1
+      done
+      if [ "$RECONCILED" != 1 ]; then
+        curl -sS --max-time 5 -X DELETE \
+          "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
+          -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
+          -H 'Content-Type: application/json' \
+          -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}" >/dev/null || true
+        echo "!! replacement did not reconcile in 180s; maintenance was explicitly aborted"
+        exit 1
+      fi
+      MAINTENANCE_ACTIVE=0
+    fi
     echo "✓ done (relaunched, since it was running before)"
   else
     echo "!! it was running before and did not come back — start it with:"

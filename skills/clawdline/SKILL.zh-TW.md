@@ -1,25 +1,14 @@
 ---
 name: clawdline
-version: 2.3.0
 description: |
-  把工作派給另一個 session 做：透過 Clawdline app 開一個 child session（Claude 或 Codex），
-  注入第一句話、等它寫回 result.json，完成時回報給你。適合「這件事我不想在這條對話裡做」
-  的雜活——生圖、跑測試、審一份 diff、長時間的整理。也負責把**整條線**交出去——Clawdline
-  handoff：把這條對話的狀態寫成一份文件，開一個 session 接著做（§7）。
-  觸發時機：使用者說「派任務」「派給 codex 做」「開一個 child／子 session」「背景幫我做 X」
-  「dispatch 一個任務」「另開一個 session 去跑」「用 codex 生一張圖」「叫另一個 agent 去審」，
-  或一次要平行做好幾件彼此不相干的事；handoff 那半邊則是「使用 Clawdline Handoff」
-  「handoff 給新 session」「交接給下一個 session」「明天用新 session 接著做」，
-  以及同樣意思的英文說法 "use Clawdline Handoff"、"hand this over to a fresh session"、
-  "pick this up in Codex"、"continue this tomorrow in a new session"。
-  也會在要把 message、report、status、finding 或 coordination note 傳送（send）給另一個 live session
-  時觸發。
-  不要觸發：這條對話自己動手就好的小事（開 child 的成本遠大於直接做）、Task/subagent 就能解決
-  的檢索與分析（那是 subagent，不是 Clawdline child）、單純想知道現在有哪些 session 在跑
-  （那是看 Clawdline 面板或 GET /v1/orchestrator/sessions）。
-  **這個 session 自己就是 child 時，依據是 CHILD.md 不是這裡**——見 §0。
-user-invocable: true
-last-updated: 2026-08-29
+  使用 Clawdline 派 bounded child（目前 Root 保留綜合、整合與 landing）、把既有工作線完整 handoff
+  給下一個 session，或傳送 message、finding、status 給另一個 live session。觸發語句包括「派任務」
+  「開 child」「叫 Codex review」「使用 Clawdline Handoff」「交接給下一個 session」及等義英文。
+  Handoff 會移轉 sender 的 REFERENCES、VERIFICATION、OPEN THREADS。poll-only detached task 只供
+  無人值守 automation，絕不是 Root 或 Major Feature owner。Root Assignment / Feature Launch 尚未
+  實作，不得用 child、detached automation 或假 handoff 冒充。這條對話能直接做、provider-native
+  subagent 的檢索、或只查 session inventory 時不要使用。若目前 session 是 Clawdline child，改依
+  CHILD.md。
 ---
 
 > 這是英文正本 [`SKILL.md`](SKILL.md) 的繁體中文對照版，內容同步。裝哪一份都可以，
@@ -84,6 +73,25 @@ curl -s "http://127.0.0.1:$PORT/v1/health"
 ---
 
 ## 2. 先把整張圖畫出來，再決定派給誰
+
+<!-- clawdline-dispatch-role-contract:v1 -->
+
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+  retains synthesis, integration, and landing.
+- **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
+  line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
+  from OPEN THREADS.
+- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
+  detached automation. It is never a Root and never a Major Feature owner.
+- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
+  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
+  it must have a public protocol, durable record, briefing, and UI classification distinct from a
+  child task and a handoff.
+
+<!-- /clawdline-dispatch-role-contract:v1 -->
+
+Root Assignment 尚未存在以前，不可用 detached automation 或假的 handoff 把能力缺口藏起來。
+應先確認：由本 root 保留 landing ownership、延續一條真的既有工作線，或等獨立 launch 能力完成。
 
 ### 2.0 先讀政策，然後先回答「這件事該不該派」
 

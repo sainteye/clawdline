@@ -270,12 +270,12 @@ Task state decides restart risk:
   coordinator.
 
 The other real risk is an in-flight terminal mutation: an Apple Event already admitted to the
-terminal broker is process-local. Until the app exposes a maintenance/drain receipt, choose a quiet
-moment, avoid a restart while somebody is actively sending/answering/closing/starting a terminal,
-and keep the outage to the bundle swap and relaunch. The durable design should eventually refuse
-new terminal mutations with a typed retry response, wait for the global and per-terminal queues to
-reach zero, and then acknowledge that the app is safe to replace. A guard that only counts live
-tasks cannot prove this and must not use `briefed > 0` as a proxy for it.
+terminal broker is process-local. `build.sh` obtains the durable restart-maintenance receipt, waits
+for global and per-terminal queues to reach zero, replaces only at `phase:"ready"`, and waits for
+the new process to reconcile and reopen admission. Only the first rollout to an older runtime may
+receive an exact 404; that documented bootstrap uses the legacy queued/spawning preflight and a
+genuinely quiet terminal-mutation window. A guard that only counts live tasks cannot prove this and
+must not use `briefed > 0` as a proxy for it.
 
 After restart, verify the new binary/build identity, `/v1/health`, a fresh Session inventory and the
 existing coordinator id/generation. A temporarily stale or unknown projection is a reason to wait
@@ -528,21 +528,32 @@ secret under the field name `secret` (the child's terminal `result.json` uses `t
 
 ### A major Feature has a visible independent owner
 
-When acting as Clawdfather, dispatch every substantial Feature through Clawdline into its own
-ordinary assistant Session and terminal tab. Work has Feature ownership when it produces a formal
-deliverable, owns a landing obligation, spans more than one focused change, or may outlive the
-current turn. Register that Feature detached (`root.session_id: null`, `root.poll_only: true`), so
-closing or replacing the current Clawdfather cannot cancel it as a descendant; Clawdfather polls
-and coordinates it explicitly. Such work must not be assigned either to a Clawdline child rooted
-under Clawdfather or to a provider-native subagent whose lifecycle is invisible to the Clawdline UI.
-Use worktree isolation by default when the Feature writes code.
+<!-- clawdline-dispatch-role-contract:v1 -->
+
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+  retains synthesis, integration, and landing.
+- **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
+  line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
+  from OPEN THREADS.
+- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
+  detached automation. It is never a Root and never a Major Feature owner.
+- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
+  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
+  it must have a public protocol, durable record, briefing, and UI classification distinct from a
+  child task and a handoff.
+
+<!-- /clawdline-dispatch-role-contract:v1 -->
+
+Until Root Assignment exists, do not disguise an independently owned Feature as a detached task or
+as a handoff. Keep the ownership gap visible and give the user the choice to keep Clawdfather as the
+landing owner, continue an existing line by handoff, or defer the independent launch.
 
 Provider-native subagents remain appropriate for short, disposable, normally read-only research,
 calculation or focused review that creates no independent delivery or landing ownership. Announce
 that use honestly; never present it as a Clawdline dispatch. If the broker refuses or Clawdline is
 unavailable, report the typed failure and wait, retry or ask—the Feature does not silently change
-into an invisible delegation. Clawdfather still owns decomposition, independent review, target-tree
-integration and landing closure after every visible Feature session delivers.
+into an invisible delegation. For every bounded child it does dispatch, Clawdfather still owns
+decomposition, independent review, target-tree integration and landing closure after delivery.
 
 ### Cross-session assistant communication uses the message route
 

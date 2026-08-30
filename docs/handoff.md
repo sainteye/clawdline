@@ -34,6 +34,26 @@ the differences all come from one fact: **the session a handoff opens is a new r
 | when the sender closes | its live tasks are cancelled and their tabs closed | nothing happens to it. It was never the sender's |
 | what the app reads | `task.json`, strictly validated | the *existence* of `handoff.md`, and nothing inside it |
 
+<!-- clawdline-dispatch-role-contract:v1 -->
+
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+  retains synthesis, integration, and landing.
+- **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
+  line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
+  from OPEN THREADS.
+- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
+  detached automation. It is never a Root and never a Major Feature owner.
+- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
+  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
+  it must have a public protocol, durable record, briefing, and UI classification distinct from a
+  child task and a handoff.
+
+<!-- /clawdline-dispatch-role-contract:v1 -->
+
+That fourth motion matters because a handoff carries continuation state by design. It must not be
+used as a shortcut for assigning a new independent Feature whose receiver should not inherit the
+sender's entire current-state and verification chain.
+
 The last two rows are the ones that catch people. **Closing the session that handed over does not
 touch the session that took over** — the cascade in
 [orchestrator.md](orchestrator.md#the-lifecycle) follows `parent_task` and `root.session_id` links, a

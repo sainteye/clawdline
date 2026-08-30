@@ -987,19 +987,22 @@ extension RemoteServer {
     }
 
     func beginRestartMaintenance(requestID: String) -> Response {
+        guard Orchestrator.validRestartRequestID(requestID) else {
+            return .error(400, "bad_restart_request", "request_id must be one lowercase UUID.")
+        }
         // Close first: an admitted command remains counted and no newcomer can race the snapshot.
         setRestartMaintenance(active: true, requestID: requestID)
         let drain = terminalDrainSnapshot()
         let reply = Orchestrator.beginRestartMaintenance(
             requestID: requestID, outstanding: drain.outstanding, channels: drain.channels)
-        if case .refused = reply {
-            if let active = Orchestrator.currentRestartRecord(),
-               active["admission_closed"] as? Bool == true,
-               let activeID = active["request_id"] as? String {
-                setRestartMaintenance(active: true, requestID: activeID)
-            } else {
-                setRestartMaintenance(active: false, requestID: requestID)
-            }
+        // Derive the in-memory gate from the receipt after every outcome. A retry of an already
+        // complete/aborted id is an HTTP success, but must not close admission again.
+        if let active = Orchestrator.currentRestartRecord(),
+           active["admission_closed"] as? Bool == true,
+           let activeID = active["request_id"] as? String {
+            setRestartMaintenance(active: true, requestID: activeID)
+        } else {
+            setRestartMaintenance(active: false, requestID: requestID)
         }
         return answer(reply)
     }
@@ -1012,14 +1015,26 @@ extension RemoteServer {
         return answer(Orchestrator.advanceRestartMaintenance(
             outstanding: drain.outstanding, channels: drain.channels))
     }
+
+    func abortRestartMaintenance(requestID: String) -> Response {
+        let reply = Orchestrator.abortRestartMaintenance(requestID: requestID)
+        if case .ok = reply {
+            setRestartMaintenance(active: false, requestID: requestID)
+        }
+        return answer(reply)
+    }
 }
 
 // The restart lifecycle must preserve the durable Coordinator verbatim. Its maintenance edge is
 // kept beside that lifecycle boundary, while the task registry remains the single persisted store.
 extension Orchestrator {
+    static func validRestartRequestID(_ requestID: String) -> Bool {
+        UUID(uuidString: requestID) != nil && requestID == requestID.lowercased()
+    }
+
     static func beginRestartMaintenance(requestID: String, outstanding: Int,
                                         channels: [String: Int], now: Date = Date()) -> Reply {
-        guard UUID(uuidString: requestID) != nil, requestID == requestID.lowercased() else {
+        guard validRestartRequestID(requestID) else {
             return .refused(400, "bad_restart_request", "request_id must be one lowercase UUID.")
         }
         load()
@@ -1028,7 +1043,18 @@ extension Orchestrator {
         let existing = restartReceipt
         lock.unlock()
         let blockers = restartBlockers(in: candidates)
-        if let existing, existing.requestID != requestID, existing.phase != .complete {
+        if let existing, existing.phase == .invalid {
+            return .refused(status: 503, code: "restart_store_failed",
+                            message: "The stored restart intent is invalid; abort it explicitly "
+                                + "before beginning another maintenance window.",
+                            extra: ["restart": restartRecord(existing)])
+        }
+        if let existing, existing.requestID == requestID,
+           existing.phase == .complete || existing.phase == .aborted {
+            return .ok(["restart": restartRecord(existing)])
+        }
+        if let existing, existing.requestID != requestID,
+           existing.phase != .complete && existing.phase != .aborted {
             return .refused(status: 409, code: "restart_in_progress",
                             message: "A different restart maintenance intent is already active.",
                             extra: ["restart": restartRecord(existing)])
@@ -1040,7 +1066,7 @@ extension Orchestrator {
                             extra: ["blockers": blockers.map(restartBlockerRecord)])
         }
         let next = restartTransition(
-            current: existing?.phase == .complete ? nil : existing,
+            current: (existing?.phase == .complete || existing?.phase == .aborted) ? nil : existing,
             requestID: requestID, instanceID: appInstanceID, outstanding: outstanding,
             channels: channels, blockers: blockers, now: now)
         lock.lock(); restartReceipt = next; lock.unlock()
@@ -1060,6 +1086,11 @@ extension Orchestrator {
             lock.unlock()
             return .refused(404, "restart_not_found", "No restart maintenance intent exists.")
         }
+        guard current.phase != .invalid else {
+            lock.unlock()
+            return .refused(503, "restart_store_failed",
+                            "The stored restart intent is invalid; abort it explicitly.")
+        }
         let next = restartTransition(
             current: current, requestID: current.requestID, instanceID: appInstanceID,
             outstanding: outstanding, channels: channels, blockers: [], now: now)
@@ -1072,6 +1103,43 @@ extension Orchestrator {
                             "The drained restart receipt could not be persisted; replacement is unsafe.")
         }
         return .ok(["restart": restartRecord(next)])
+    }
+
+    static func abortRestartMaintenance(requestID: String, now: Date = Date()) -> Reply {
+        guard validRestartRequestID(requestID) else {
+            return .refused(400, "bad_restart_request", "request_id must be one lowercase UUID.")
+        }
+        load()
+        lock.lock()
+        guard var current = restartReceipt else {
+            lock.unlock()
+            return .refused(404, "restart_not_found", "No restart maintenance intent exists.")
+        }
+        guard current.requestID == requestID else {
+            lock.unlock()
+            return .refused(status: 409, code: "restart_in_progress",
+                            message: "A different restart maintenance intent is active.",
+                            extra: ["restart": restartRecord(current)])
+        }
+        if current.phase == .aborted || current.phase == .complete {
+            lock.unlock()
+            return .ok(["restart": restartRecord(current)])
+        }
+        let prior = current
+        current.phase = .aborted
+        current.abortedAt = now
+        current.outstanding = 0
+        current.channels = [:]
+        restartReceipt = current
+        lock.unlock()
+        guard save() else {
+            lock.lock()
+            restartReceipt = prior
+            lock.unlock()
+            return .refused(503, "restart_store_failed",
+                            "The aborted restart receipt could not be persisted; admission stays closed.")
+        }
+        return .ok(["restart": restartRecord(current)])
     }
 
     static func currentRestartRecord() -> [String: Any]? {
@@ -1087,9 +1155,16 @@ extension Orchestrator {
     }
 
     static func resumeRestartIntent() {
+        load()
         lock.lock()
         guard let current = restartReceipt, current.phase != .complete else {
             lock.unlock(); return
+        }
+        if current.phase == .invalid {
+            lock.unlock()
+            RemoteServer.shared.setRestartMaintenance(active: true,
+                                                       requestID: current.requestID)
+            return
         }
         let next = restartTransition(
             current: current, requestID: current.requestID, instanceID: appInstanceID,
@@ -1106,32 +1181,42 @@ extension Orchestrator {
         lock.lock()
         guard var restart = restartReceipt, restart.phase == .reconciling,
               snapshot.complete, let observedAt = snapshot.observedAt,
-              observedAt >= processStartedAt else {
+              observedAt >= (restart.resumedAt ?? restart.requestedAt) else {
             lock.unlock(); return
         }
         let inventory = ExecutorInventory(
             complete: snapshot.complete, observedAt: observedAt,
             generation: snapshot.generation, epoch: snapshot.epoch)
         let priorRestart = restart
-        var allSettled = true
+        let priorTasks = tasks
+        var unresolved: [String] = []
         for (id, var task) in tasks where task.state == .briefed {
             let receipt = reconcileExecutor(task: task, identities: identities,
                                             inventory: inventory,
                                             previous: task.executorReceipt, now: now)
             task.executorReceipt = receipt
             tasks[id] = task
-            if receipt.status == .pending { allSettled = false }
+            if receipt.status == .pending { unresolved.append(id) }
         }
+        unresolved.sort()
+        let reconciliationExpired = now.timeIntervalSince(
+            restart.resumedAt ?? restart.requestedAt) >= restartReconciliationGrace
+        let allSettled = unresolved.isEmpty || reconciliationExpired
         if allSettled {
             restart.phase = .complete
             restart.reconciledAt = now
+            restart.reconciliationTimedOut = !unresolved.isEmpty
+            restart.unresolvedTaskIDs = unresolved
             restart.outstanding = 0
             restart.channels = [:]
             restartReceipt = restart
         }
         lock.unlock()
         guard save() else {
-            if allSettled { lock.lock(); restartReceipt = priorRestart; lock.unlock() }
+            lock.lock()
+            tasks = priorTasks
+            restartReceipt = priorRestart
+            lock.unlock()
             return
         }
         if allSettled {
@@ -1153,11 +1238,14 @@ extension Orchestrator {
             "safe_to_replace": receipt.safeToReplace,
             "admission_closed": receipt.admissionClosed,
             "replacement_before_safe": receipt.replacementBeforeSafe,
+            "reconciliation_timed_out": receipt.reconciliationTimedOut,
+            "unresolved_task_ids": receipt.unresolvedTaskIDs,
         ]
         if let value = receipt.resumedInstanceID { out["resumed_instance_id"] = value }
         if let value = receipt.drainedAt { out["drained_at"] = Int(value.timeIntervalSince1970) }
         if let value = receipt.resumedAt { out["resumed_at"] = Int(value.timeIntervalSince1970) }
         if let value = receipt.reconciledAt { out["reconciled_at"] = Int(value.timeIntervalSince1970) }
+        if let value = receipt.abortedAt { out["aborted_at"] = Int(value.timeIntervalSince1970) }
         return out
     }
 
@@ -1167,6 +1255,7 @@ extension Orchestrator {
         if let value = receipt.drainedAt { out["drained_at"] = value.timeIntervalSince1970 }
         if let value = receipt.resumedAt { out["resumed_at"] = value.timeIntervalSince1970 }
         if let value = receipt.reconciledAt { out["reconciled_at"] = value.timeIntervalSince1970 }
+        if let value = receipt.abortedAt { out["aborted_at"] = value.timeIntervalSince1970 }
         return out
     }
 
@@ -1192,11 +1281,31 @@ extension Orchestrator {
             resumedInstanceID: obj["resumed_instance_id"] as? String,
             phase: phase, requestedAt: Date(timeIntervalSince1970: requested),
             drainedAt: date("drained_at"), resumedAt: date("resumed_at"),
-            reconciledAt: date("reconciled_at"), outstanding: outstanding, channels: channels)
+            reconciledAt: date("reconciled_at"), abortedAt: date("aborted_at"),
+            outstanding: outstanding, channels: channels)
         receipt.replacementBeforeSafe = obj["replacement_before_safe"] as? Bool ?? false
+        receipt.reconciliationTimedOut = obj["reconciliation_timed_out"] as? Bool ?? false
+        receipt.unresolvedTaskIDs = obj["unresolved_task_ids"] as? [String] ?? []
         guard (phase != .ready || receipt.safeToReplace),
-              (phase != .complete || receipt.reconciledAt != nil) else { return nil }
+              (phase != .complete || receipt.reconciledAt != nil),
+              (phase != .aborted || receipt.abortedAt != nil),
+              receipt.unresolvedTaskIDs.allSatisfy({ UUID(uuidString: $0) != nil }) else { return nil }
         return receipt
+    }
+
+    static func quarantinedRestartReceipt(from obj: [String: Any], now: Date = Date())
+        -> RestartReceipt {
+        let rawID = obj["request_id"] as? String ?? ""
+        let requestID = validRestartRequestID(rawID)
+            ? rawID : "00000000-0000-0000-0000-000000000000"
+        let instance = (obj["requested_instance_id"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? "unreadable"
+        return RestartReceipt(
+            requestID: requestID, requestedInstanceID: instance,
+            resumedInstanceID: nil, phase: .invalid, requestedAt: now,
+            drainedAt: nil, resumedAt: nil, reconciledAt: nil, abortedAt: nil,
+            outstanding: 0, channels: [:])
     }
 
     static func identityRecord(_ identity: SessionWorkIdentity) -> [String: Any] {

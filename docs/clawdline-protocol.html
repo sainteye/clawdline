@@ -305,6 +305,16 @@
 
   <p>There is a second motion on the same machinery. A <strong>dispatch</strong> sends an errand out and waits for it to come back; a <strong>handoff</strong> sends the line of work itself on and expects nothing back. <a href="#handoff">Section 17</a> is that one.</p>
 
+  <!-- clawdline-dispatch-role-contract:v1 -->
+  <div class="note">
+    <span class="tag">Dispatch role contract · v1</span>
+    <p><strong>Owned child.</strong> <code>POST /v1/orchestrator/tasks</code> creates a bounded child only when Clawdfather retains synthesis, integration, and landing.</p>
+    <p><strong>Handoff.</strong> <code>POST /v1/orchestrator/handoffs</code> is continuation or transfer of an existing work line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue from OPEN THREADS.</p>
+    <p><strong>Detached automation.</strong> <code>root.session_id: null</code> with <code>root.poll_only: true</code> is only unattended detached automation. It is never a Root and never a Major Feature owner.</p>
+    <p><strong>Root Assignment / Feature Launch.</strong> This is not implemented. The future primitive opens an ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance; its public protocol, durable record, briefing, and UI classification must differ from a child task and a handoff.</p>
+  </div>
+  <!-- /clawdline-dispatch-role-contract:v1 -->
+
   <div class="note warn">
     <span class="tag">What it costs, before anything else</span>
     <p>Dispatching is remote code execution with a second step. It does not type a line into an existing session — it opens a <em>new</em> terminal tab, starts an assistant in it, and gives that assistant instructions written by somebody else. Anything that can dispatch can run programs on the machine, as you, in a directory it chose, for up to four hours. Everything in <a href="#credentials">section 18</a> follows from that one sentence.</p>
@@ -522,7 +532,7 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <dt>success · failure</dt>
     <dd>From <code>result.json</code>, or from the completion route, whichever arrives. Both go through the same finalize.</dd>
     <dt>timeout</dt>
-    <dd><code>briefedAt + timeout_minutes</code>. There is a second way to get here that is not a clock: if the child's terminal disappears from the session list for more than a minute while the task is briefed, the task is <code>failure</code> with <em>child session ended without reporting</em>. A closed tab is a finished task in every sense except the one that would have been written down.</dd>
+    <dd><code>briefedAt + timeout_minutes</code>. Executor loss is a separate typed failure: only two different complete inventory generations in one process epoch, at least 60 seconds apart, may settle <code>executor_missing</code> or <code>identity_changed</code>. Incomplete evidence preserves the last receipt, and label or cwd never relinks a task.</dd>
     <dt>cancelled</dt>
     <dd>Somebody asked — through the cancel route, or by closing the root session.</dd>
     <dt>spawn_failed</dt>
@@ -550,6 +560,8 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
   <div class="note ok">
     <span class="tag">Restarts</span>
     <p><strong>A briefed task survives a restart.</strong> Its secret is on disk as a hash, its result is on disk as a file, and its timeout is arithmetic on a stored timestamp — so the app comes back up, reads the registry, and carries on watching. That is the one restart case that matters, because it is the one where a child is out there doing work. A task caught in <code>spawning</code> is failed closed instead: once a task starts opening, the recoverable queued secret is gone, and failing closed beats risking a global operation running twice.</p>
+    <p><strong>Replacement uses a durable drain receipt.</strong> <code>POST /v1/orchestrator/maintenance/restart</code> closes terminal admission and reaches <code>ready</code> only when global and per-terminal occupancy are zero. The replacement keeps admission closed while it reconciles exact executor identities. Exact matches may settle immediately; absence or mismatch takes two complete generations and at least 60 seconds; the whole reconciliation is bounded at 120 seconds and records unresolved task ids before reopening. <code>DELETE</code> with the same request id persists an explicit abort and is always the exit when a replacement is cancelled. An unreadable stored intent fails closed rather than disappearing. The closed typed-error vocabulary is <code>"bad_restart_request"</code>, <code>"restart_blocked_by_task_secret"</code>, <code>"restart_in_progress"</code>, <code>"restart_maintenance"</code>, <code>"restart_not_found"</code> and <code>"restart_store_failed"</code>; the page and server are contract-tested bidirectionally so neither may invent an undocumented spelling.</p>
+    <p><code>build.sh</code> performs this journey. Only an exact 404 from an older installed runtime takes the one-time bootstrap preflight for the build that installs the route; later builds must obtain <code>ready</code> and observe <code>complete</code>.</p>
   </div>
 
   <!-- 06 -->

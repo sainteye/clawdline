@@ -879,6 +879,10 @@ final class RemoteServer: @unchecked Sendable {
                 // be forgotten. A build number in `build.sh` is a number somebody has to remember
                 // to bump, and the failure mode of forgetting is silence.
                 "build": Self.buildStamp,
+                // A random per-process correlation value, disclosed with health so the bootstrap
+                // replacement can prove that the listener answering now is not the one it stopped.
+                // It names no session, task, repository, path or credential; it reveals only the
+                // same restart boundary already observable from this route's availability/build.
                 "instance": Orchestrator.appInstanceID,
                 "protocol": Self.protocolVersion,
                 // The client uses these to decide what to draw at all. Saying "you may not" once
@@ -2031,6 +2035,15 @@ final class RemoteServer: @unchecked Sendable {
                 "Reading restart maintenance needs the orchestrator token.") }
             return pollRestartMaintenance()
 
+        case ("DELETE", "/v1/orchestrator/maintenance/restart"):
+            guard orchestratorAuthed else { return .error(403, "forbidden",
+                "Aborting restart maintenance needs the orchestrator token.") }
+            guard let body = (try? JSONSerialization.jsonObject(with: request.body))
+                    as? [String: Any], Set(body.keys) == ["request_id"],
+                  let requestID = body["request_id"] as? String else { return .error(
+                    400, "bad_restart_request", "The closed restart schema requires only request_id.") }
+            return abortRestartMaintenance(requestID: requestID)
+
         case ("GET", "/v1/orchestrator/completions"):
             guard orchestratorAuthed else {
                 return .error(403, "forbidden",
@@ -2913,9 +2926,10 @@ final class RemoteServer: @unchecked Sendable {
         if !admitted {
             Self.finishUploads(stored, sent: false)
             terminalPending.removeValue(forKey: key)
-            deliver(.error(429, "busy",
-                           "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
-                           + "Try again after they drain."))
+            deliver(terminalMaintenanceRefusal() ?? .error(
+                429, "busy",
+                "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
+                    + "Try again after they drain."))
         }
     }
 
@@ -2988,9 +3002,10 @@ final class RemoteServer: @unchecked Sendable {
         }
         if !admitted {
             terminalPending.removeValue(forKey: key)
-            deliver(.error(429, "busy",
-                           "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
-                           + "Try again after they drain."))
+            deliver(terminalMaintenanceRefusal() ?? .error(
+                429, "busy",
+                "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
+                    + "Try again after they drain."))
         }
     }
 
@@ -3005,9 +3020,10 @@ final class RemoteServer: @unchecked Sendable {
             self.queue.async { deliver(response) }
         }
         if !admitted {
-            deliver(.error(429, "busy",
-                           "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
-                           + "Try again after they drain."))
+            deliver(terminalMaintenanceRefusal() ?? .error(
+                429, "busy",
+                "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
+                    + "Try again after they drain."))
         }
     }
 
@@ -6030,6 +6046,16 @@ final class RemoteServer: @unchecked Sendable {
         init(_ connection: NWConnection) { self.connection = connection }
     }
 
+    static func restartHelloPayload() -> [String: Any] {
+        [
+            "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
+            "build": Self.buildStamp,
+            "instance": Orchestrator.appInstanceID,
+            "protocol": Self.protocolVersion,
+            "write": Config.shared.remoteWrite,
+        ]
+    }
+
     private func openStream(on conn: NWConnection) {
         let head = """
         HTTP/1.1 200 OK\r
@@ -6060,13 +6086,7 @@ final class RemoteServer: @unchecked Sendable {
         // stream connects. `build` was added to health alone, and the result was a "this page is
         // the older one" notice that reloading could not clear — because the fresh page computed
         // the same mismatch again.
-        write(event: "hello", data: [
-            "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
-            "build": Self.buildStamp,
-            "instance": Orchestrator.appInstanceID,
-            "protocol": Self.protocolVersion,
-            "write": Config.shared.remoteWrite,
-        ], to: stream)
+        write(event: "hello", data: Self.restartHelloPayload(), to: stream)
         DispatchQueue.main.async {
             let payload = self.sessionsPayload()
             // The task list rides the same stream: a page that reconnects is level on both

@@ -656,6 +656,7 @@ extension Orchestrator {
     }
 
     static let executorLossGrace: TimeInterval = 60
+    static let restartReconciliationGrace: TimeInterval = executorLossGrace * 2
 
     static func reconcileExecutor(task: Task, identities: [SessionWorkIdentity],
                                   inventory: ExecutorInventory,
@@ -683,6 +684,27 @@ extension Orchestrator {
         }
         guard task.childTerminalId != nil, task.childTTY != nil, task.childPID != nil,
               task.childProcStart != nil, task.childSessionId != nil, task.transcriptProven else {
+            // Identity proof may still be arriving, but an exact terminal disappearing from two
+            // complete inventories is evidence in its own right. This retains the old bounded
+            // child-loss coverage without ever relinking by label, cwd or another terminal.
+            if let terminalID = task.childTerminalId,
+               !identities.contains(where: { $0.terminalID == terminalID }) {
+                let kind = ExecutorIssueKind.executorMissing
+                let sameRun = previous?.inventoryEpoch == inventory.epoch
+                    && previous?.pendingKind == kind
+                let first = sameRun ? (previous?.firstMismatchAt ?? observedAt) : observedAt
+                let observations = sameRun ? (previous?.mismatchObservations ?? 0) + 1 : 1
+                let persistent = observations >= 2
+                    && observedAt.timeIntervalSince(first) >= executorLossGrace
+                return ExecutorReceipt(
+                    status: persistent ? .executorMissing : .pending,
+                    pendingKind: kind,
+                    provenance: "session_watch_exact_terminal_absent_identity_incomplete",
+                    observedAt: observedAt, inventoryComplete: true,
+                    inventoryGeneration: inventory.generation, inventoryEpoch: inventory.epoch,
+                    firstMismatchAt: first, mismatchObservations: observations,
+                    observedIdentity: nil, mover: "broker")
+            }
             return ExecutorReceipt(
                 status: .pending, pendingKind: nil,
                 provenance: "orchestrator_executor_identity_incomplete", observedAt: observedAt,
@@ -716,7 +738,8 @@ extension Orchestrator {
     /// A terminal that remains present as an ordinary shell is stronger evidence than an absent
     /// row: the pre-briefing assistant process has ended and can no longer consume its secret.
     static func exitedLauncherReceipt(task: Task, snapshot: SessionWatch.IdentitySnapshot,
-                                      identities: [SessionWorkIdentity]) -> ExecutorReceipt? {
+                                      identities: [SessionWorkIdentity],
+                                      previous: ExecutorReceipt? = nil) -> ExecutorReceipt? {
         guard task.state == .spawning, task.transcriptProven == false,
               let terminalID = task.childTerminalId, let tty = task.childTTY,
               let pid = task.childPID, let started = task.childProcStart,
@@ -729,35 +752,51 @@ extension Orchestrator {
                     } == true
               })
         else { return nil }
+        if let previous, previous.inventoryEpoch == snapshot.epoch,
+           previous.inventoryGeneration == snapshot.generation { return previous }
         let sameTerminal = identities.filter { $0.terminalID == terminalID }
         let kind: ExecutorIssueKind = sameTerminal.isEmpty ? .executorMissing : .identityChanged
+        let sameRun = previous?.inventoryEpoch == snapshot.epoch
+            && previous?.pendingKind == kind
+        let first = sameRun ? (previous?.firstMismatchAt ?? observedAt) : observedAt
+        let observations = sameRun ? (previous?.mismatchObservations ?? 0) + 1 : 1
+        let persistent = observations >= 2
+            && observedAt.timeIntervalSince(first) >= executorLossGrace
         return ExecutorReceipt(
-            status: kind == .executorMissing ? .executorMissing : .identityChanged,
+            status: persistent
+                ? (kind == .executorMissing ? .executorMissing : .identityChanged)
+                : .pending,
             pendingKind: kind,
             provenance: sameTerminal.isEmpty
                 ? "session_watch_terminal_present_assistant_exited"
                 : "session_watch_prebrief_terminal_identity_changed",
             observedAt: observedAt, inventoryComplete: true,
             inventoryGeneration: snapshot.generation, inventoryEpoch: snapshot.epoch,
-            firstMismatchAt: observedAt, mismatchObservations: 1,
+            firstMismatchAt: first, mismatchObservations: observations,
             observedIdentity: sameTerminal.count == 1 ? sameTerminal[0] : nil,
             mover: "broker")
     }
 
-    static func settleExitedLauncher(_ snapshot: Task, snapshot inventory: SessionWatch.IdentitySnapshot,
+    static func settleExitedLauncher(_ candidate: Task, snapshot inventory: SessionWatch.IdentitySnapshot,
                                      identities: [SessionWorkIdentity]) -> Bool {
-        guard var task = held(snapshot.id), task.state == .spawning,
+        guard var task = held(candidate.id), task.state == .spawning,
               let receipt = exitedLauncherReceipt(task: task, snapshot: inventory,
-                                                   identities: identities) else { return false }
+                                                   identities: identities,
+                                                   previous: task.executorReceipt) else { return false }
         task.executorReceipt = receipt
         guard replaceTask(task, expecting: .spawning) else { return false }
+        guard receipt.status == .executorMissing || receipt.status == .identityChanged else {
+            return true
+        }
         finalize(task.id, as: .spawnFailed,
                  summary: "\(receipt.status.rawValue): the launcher exited before a prompt while "
                     + "its terminal remained present; the briefing was not delivered.")
         return true
     }
 
-    enum RestartPhase: String, Equatable { case draining, ready, reconciling, complete }
+    enum RestartPhase: String, Equatable {
+        case draining, ready, reconciling, complete, aborted, invalid
+    }
 
     struct RestartBlocker: Equatable {
         let taskID: String
@@ -774,16 +813,20 @@ extension Orchestrator {
         var drainedAt: Date?
         var resumedAt: Date?
         var reconciledAt: Date?
+        var abortedAt: Date? = nil
         var outstanding: Int
         var channels: [String: Int]
+        var reconciliationTimedOut = false
+        var unresolvedTaskIDs: [String] = []
         var replacementBeforeSafe = false
         var safeToReplace: Bool {
             phase == .ready && outstanding == 0 && channels.values.allSatisfy { $0 == 0 }
         }
-        var admissionClosed: Bool { phase != .complete }
+        var admissionClosed: Bool {
+            phase == .draining || phase == .ready || phase == .reconciling || phase == .invalid
+        }
     }
 
-    static let processStartedAt = Date()
     static let appInstanceID = UUID().uuidString.lowercased()
 
     static func restartBlockers(in candidates: [Task]) -> [RestartBlocker] {
@@ -810,9 +853,11 @@ extension Orchestrator {
                                   now: Date) -> RestartReceipt {
         if var current {
             guard current.requestID == requestID else { return current }
-            if current.phase == .complete { return current }
+            if current.phase == .complete || current.phase == .aborted || current.phase == .invalid {
+                return current
+            }
             if current.requestedInstanceID != instanceID {
-                if current.resumedInstanceID == nil {
+                if current.resumedInstanceID != instanceID {
                     current.replacementBeforeSafe = current.phase != .ready
                     current.resumedInstanceID = instanceID
                     current.resumedAt = now
@@ -836,6 +881,7 @@ extension Orchestrator {
             requestID: requestID, requestedInstanceID: instanceID,
             resumedInstanceID: nil, phase: clear ? .ready : .draining,
             requestedAt: now, drainedAt: clear ? now : nil, resumedAt: nil,
-            reconciledAt: nil, outstanding: max(0, outstanding), channels: channels)
+            reconciledAt: nil, abortedAt: nil,
+            outstanding: max(0, outstanding), channels: channels)
     }
 }

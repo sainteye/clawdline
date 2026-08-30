@@ -1992,7 +1992,8 @@ enum Orchestrator {
     static let legacyCompletionLookback: TimeInterval = 7 * 24 * 3600
     static let legacyCompletionBatchLimit = 25
     private static var loaded = false
-    static var tasks: [String: Task] = [:]; static var restartReceipt: RestartReceipt?
+    static var tasks: [String: Task] = [:]
+    static var restartReceipt: RestartReceipt?
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
@@ -2032,6 +2033,7 @@ enum Orchestrator {
     /// result; production leaves it nil. The serialized snapshot is handed over after the task
     /// lock is released so an injected concurrent mutation exercises the real save window.
     static var storeSaveInterceptorForTesting: ((Data) -> Bool?)?
+    static var childIdentityRefreshForTesting: ((TargetSession, inout Task) -> Bool)?
     /// Overrides only the positive ingress evidence. Nil uses current process-bound terminal and
     /// Coordinator facts; an empty array is a deliberate unknown/offline fixture.
     static var rootIdentityEvidenceForTesting: [RootIdentityEvidence]?
@@ -7534,29 +7536,37 @@ enum Orchestrator {
         // its first dispatch, and a file that appears only after a request nobody can make yet
         // is a door that opens from the inside.
         _ = dispatchToken()
-        resumeAfterRestart()
+        withRestartRecovered(resume: { resumeAfterRestart() }) {
         // Rescue what the registry still holds before the cap evicts it. Off the main thread and
         // idempotent: a record already attributed contributes nothing on a second pass, so this
         // runs on every launch rather than once, and picks up whatever finished while the app
         // was not running.
-        let backfill = ledgerBackfillRecords()
-        DispatchQueue.global(qos: .utility).async {
-            UsageLedger.shared.importTaskRecords(backfill)
-        }
-        cleanup()
-        scheduleQueue.async { scheduleBeat() }
-        SessionWatch.shared.observers["orchestrator"] = { beat(fromTimer: false) }
-        let t = Timer(timeInterval: 5, repeats: true) { _ in beat(fromTimer: true) }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
-        let c = Timer(timeInterval: 6 * 3600, repeats: true) { _ in cleanup() }
-        RunLoop.main.add(c, forMode: .common)
-        cleanupTimer = c
-        let s = Timer(timeInterval: 60, repeats: true) { _ in
+            let backfill = ledgerBackfillRecords()
+            DispatchQueue.global(qos: .utility).async {
+                UsageLedger.shared.importTaskRecords(backfill)
+            }
+            cleanup()
             scheduleQueue.async { scheduleBeat() }
+            SessionWatch.shared.observers["orchestrator"] = { beat(fromTimer: false) }
+            let t = Timer(timeInterval: 5, repeats: true) { _ in beat(fromTimer: true) }
+            RunLoop.main.add(t, forMode: .common)
+            timer = t
+            let c = Timer(timeInterval: 6 * 3600, repeats: true) { _ in cleanup() }
+            RunLoop.main.add(c, forMode: .common)
+            cleanupTimer = c
+            let s = Timer(timeInterval: 60, repeats: true) { _ in
+                scheduleQueue.async { scheduleBeat() }
+            }
+            RunLoop.main.add(s, forMode: .common)
+            scheduleTimer = s
         }
-        RunLoop.main.add(s, forMode: .common)
-        scheduleTimer = s
+    }
+
+    /// One sequencing boundary used by production and tests: persisted restart admission is
+    /// restored before any observer or timer can begin a fresh beat.
+    static func withRestartRecovered(resume: () -> Void, installObservers: () -> Void) {
+        resume()
+        installObservers()
     }
 
     /// Recover waiters and fail tasks whose pre-briefing secret died with the previous process.
@@ -7698,7 +7708,9 @@ enum Orchestrator {
         // nothing to read, and the record cannot be damaged by a stale copy anyway: `replaceTask`
         // refuses to move a task backwards.
         let watchSnapshot = SessionWatch.shared.identitySnapshot()
-        let visibleTerminals = Set(watchSnapshot.targets.map(\.id)); let executorIdentities = watchSnapshot.targets.filter(\.isAssistant).map(RemoteServer.sessionWorkIdentity)
+        let visibleTerminals = Set(watchSnapshot.targets.map(\.id))
+        let executorIdentities = watchSnapshot.targets.filter(\.isAssistant)
+            .map(RemoteServer.sessionWorkIdentity)
         reconcileRestartInventory(watchSnapshot, identities: executorIdentities)
         // Outside this type's lock, because it takes one of its own and nothing here needs the
         // two held together.
@@ -8164,7 +8176,8 @@ enum Orchestrator {
 
     /// Watch a briefed child for its result, its death, or its deadline. True when the record
     /// changed in a way worth persisting.
-    private static func watch(_ task: Task, snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
+    static func watch(_ task: Task, snapshot: SessionWatch.IdentitySnapshot,
+                      identities: [SessionWorkIdentity]) -> Bool {
         var task = task
 
         // The file half of the progress channel first, before anything below can finalize the
@@ -8189,23 +8202,29 @@ enum Orchestrator {
                      summary: "No result within \(task.timeoutMinutes) minutes.")
             return false
         }
-        let inventory = ExecutorInventory(complete: snapshot.complete, observedAt: snapshot.observedAt,
+        var changed = false
+        if let childID = task.childTerminalId,
+           let child = snapshot.targets.first(where: { $0.id == childID }) {
+            task.lastSeenChild = Date()
+            let refreshed = childIdentityRefreshForTesting?(child, &task)
+                ?? noteChildIdentity(child, in: &task)
+            changed = refreshed || changed
+        }
+        let inventory = ExecutorInventory(
+            complete: snapshot.complete, observedAt: snapshot.observedAt,
             generation: snapshot.generation, epoch: snapshot.epoch)
-        let receipt = reconcileExecutor(task: task, identities: identities, inventory: inventory,
+        let receipt = reconcileExecutor(
+            task: task, identities: identities, inventory: inventory,
             previous: task.executorReceipt, now: Date())
-        var changed = receipt != task.executorReceipt; task.executorReceipt = receipt
+        changed = receipt != task.executorReceipt || changed
+        task.executorReceipt = receipt
         if receipt.status == .executorMissing || receipt.status == .identityChanged {
             guard replaceTask(task, expecting: .briefed) else { return false }
             finalize(task.id, as: .failure, summary: "\(receipt.status.rawValue): persisted child executor did not "
                 + "match a persistent complete Session inventory; inspect provenance before respawning.")
             return false
         }
-        if receipt.status == .observed, let childID = task.childTerminalId,
-           let child = snapshot.targets.first(where: { $0.id == childID }) {
-            task.lastSeenChild = Date()
-            changed = noteChildIdentity(child, in: &task) || changed
-            if !replaceTask(task, expecting: .briefed) { return false }
-        } else if changed {
+        if changed {
             if !replaceTask(task, expecting: .briefed) { return false }
         }
         return changed
@@ -11342,7 +11361,16 @@ enum Orchestrator {
                 foundActivityClasses[terminalID] = observed
             }
         }
-        let foundRestart = (obj["restart"] as? [String: Any]).flatMap(restartReceipt(from:))
+        let rawRestart = obj["restart"] as? [String: Any]
+        let parsedRestart = rawRestart.flatMap(restartReceipt(from:))
+        let foundRestart = parsedRestart ?? rawRestart.map {
+            quarantinedRestartReceipt(from: $0)
+        }
+        if rawRestart != nil, parsedRestart == nil {
+            RemoteAuth.audit("orchestrator.restart.invalid_store", [
+                "action": "admission_closed_until_explicit_abort",
+            ])
+        }
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
@@ -11351,7 +11379,8 @@ enum Orchestrator {
         sessionSelfStates = foundSelfStates
         closureAttestations = foundAttestations
         sessionActivityGenerations = foundActivity
-        sessionActivityClasses = foundActivityClasses; restartReceipt = foundRestart
+        sessionActivityClasses = foundActivityClasses
+        restartReceipt = foundRestart
         // Both halves come back together, so a restart neither invents a tick nor loses one:
         // the first save recomputes the same fingerprint over the same records and finds it
         // unchanged, which is what lets an attestation written before the restart survive it.
@@ -11395,7 +11424,8 @@ enum Orchestrator {
              "class": sessionActivityClasses[terminalID] ?? "unknown"] as [String: Any]
         }
         let generation = obligationGeneration
-        let fingerprint = obligationFingerprint; let restart = restartReceipt.map(stored)
+        let fingerprint = obligationFingerprint
+        let restart = restartReceipt.map(stored)
         lock.unlock()
         var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
                                   "coordination_waits": waitRows,
@@ -12319,7 +12349,8 @@ enum Orchestrator {
     /// Test seam: forget everything in memory.
     static func forget() {
         lock.lock()
-        tasks = [:]; restartReceipt = nil
+        tasks = [:]
+        restartReceipt = nil
         handoffs = [:]
         handoffDeliveries = [:]
         coordinationWaits = [:]
@@ -12346,6 +12377,7 @@ enum Orchestrator {
         scheduleDispatchEnqueuerForTesting = nil
         completionPumpEnqueuerForTesting = nil
         storeSaveInterceptorForTesting = nil
+        childIdentityRefreshForTesting = nil
         rootIdentityEvidenceForTesting = nil
         completionPumpScheduled = false
         completionPumpGeneration += 1
@@ -12359,6 +12391,7 @@ enum Orchestrator {
         rolesByTerminal = [:]
         loaded = false
         lock.unlock()
+        RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
         ownershipLock.lock()
         ownershipCache = [:]
         ownershipLock.unlock()

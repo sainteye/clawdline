@@ -32,14 +32,26 @@ choose follow-up work, integrate safely, and never equate delegation with comple
 
 ### A major Feature has a visible independent owner
 
-If work produces a formal deliverable, owns a landing obligation, spans more than one focused
-change, or may outlive the current turn, Clawdfather sends it through Clawdline into its own
-ordinary assistant Session and terminal tab. Code-writing Features use worktree isolation by
-default. Register it detached with `root.session_id: null` and `root.poll_only: true`; Clawdfather
-polls it rather than becoming its lifecycle parent, so closing or replacing the coordinator cannot
-cancel the Feature as a descendant. This is an ownership rule, not a request for maximum
-parallelism: dependent phases may remain sequential, but their Feature owner stays visible in the
-Session and task inventories.
+<!-- clawdline-dispatch-role-contract:v1 -->
+
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+  retains synthesis, integration, and landing.
+- **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
+  line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
+  from OPEN THREADS.
+- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
+  detached automation. It is never a Root and never a Major Feature owner.
+- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
+  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
+  it must have a public protocol, durable record, briefing, and UI classification distinct from a
+  child task and a handoff.
+
+<!-- /clawdline-dispatch-role-contract:v1 -->
+
+Work has independent Feature ownership when it produces a formal deliverable, owns a landing
+obligation, spans more than one focused change, or may outlive the current turn. Until Root
+Assignment exists, that is an explicit capability gap: do not route it through detached automation,
+and do not manufacture a continuation handoff for work that has no prior line to continue.
 
 A Clawdline child rooted under Clawdfather and a provider-native subagent cannot own that Feature.
 The latter may perform short, disposable, normally read-only research, calculation or focused
@@ -47,7 +59,7 @@ review that creates no independent delivery or landing obligation. Its use is an
 delegation and is never described as a Clawdline task.
 If the broker refuses or Clawdline is unavailable, report the typed failure and wait, retry or ask;
 do not silently substitute an invisible child. Clawdfather retains decomposition, independent
-review, target-tree integration and landing closure after the Feature session delivers.
+review, target-tree integration and landing closure for every bounded child it dispatches.
 
 ## Dispatch feature-sized work, not fragments
 

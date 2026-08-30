@@ -116,6 +116,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/maintenance/restart` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/maintenance/restart` | orchestrator token | — |
+| `DELETE` | `/v1/orchestrator/maintenance/restart` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/completions` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/completions/reconcile` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
@@ -2554,7 +2555,7 @@ off, and `409 schedule_active` while any task from the schedule is non-terminal 
 already queued. A successful manual run records the current occurrence as handled when it is at or
 after that occurrence; running before the next scheduled time does not consume that future fire.
 
-### `POST /v1/orchestrator/maintenance/restart`, `GET /v1/orchestrator/maintenance/restart`
+### `POST`, `GET`, `DELETE /v1/orchestrator/maintenance/restart`
 
 This is the durable drain receipt a replacement command must obtain before swapping the app. POST
 accepts the closed body `{"request_id":"<lowercase UUID>"}` and immediately closes terminal
@@ -2571,15 +2572,32 @@ by terminal. Poll GET until `phase:"ready"` and `safe_to_replace:true`:
 `queued` work with a recoverable sealed secret and every `briefed` task are durable and do not
 block. A `spawning` task, or queued work whose sealed secret is unavailable, returns
 `409 restart_blocked_by_task_secret` with typed `blockers`; replacing then would lose the only
-plaintext briefing secret. Repeating the same request id is idempotent. A different live request
-returns `409 restart_in_progress` without stealing its admission gate.
+plaintext briefing secret. Repeating the same request id is idempotent, including after completion.
+A different live request returns `409 restart_in_progress` without stealing its admission gate.
+
+DELETE accepts the same closed body and explicitly aborts the matching maintenance window. The
+aborted fact is persisted as `phase:"aborted"` with `aborted_at`, then admission reopens. A different
+id is refused with `409 restart_in_progress`; a missing receipt is `404 restart_not_found`. This is
+the exit when an operator changes course or a drain cannot converge—restarting is never the only
+way to reopen the broker.
 
 After replacement, the persisted receipt moves to `reconciling`. Terminal mutations continue to
 return `503 restart_maintenance` with `retryable:true`, `request_id`, and `retry_after` inside the
-standard `error` object. Admission reopens only after one fresh complete Session inventory from
-the replacement process has reconciled every live briefed task. GET then reports
-`phase:"complete"`, `resumed_instance_id`, and `reconciled_at`. If replacement happened before the
-drain receipt was safe, `replacement_before_safe:true` remains durable rather than being hidden.
+standard `error` object. Exact matches may settle on the first fresh complete inventory. Absence or
+identity mismatch requires two different complete generations in one process epoch spanning at
+least 60 seconds. Reconciliation is bounded at 120 seconds: admission then reopens with
+`reconciliation_timed_out:true` and the exact `unresolved_task_ids`, while ordinary task watching
+continues to seek typed evidence. GET reports `phase:"complete"`, the current replacement's
+`resumed_instance_id`, and `reconciled_at`. A second replacement updates that instance and time
+again. If replacement happened before the drain receipt was safe,
+`replacement_before_safe:true` remains durable rather than being hidden.
+
+The closed route has these maintenance-specific codes: `400 bad_restart_request` for malformed or
+extra fields and for a non-lowercase UUID; `404 restart_not_found`; `409 restart_in_progress`;
+`409 restart_blocked_by_task_secret`; `503 restart_store_failed`; and retryable
+`503 restart_maintenance` on terminal mutations while admission is closed. A persisted restart
+object that cannot be parsed is audited and loaded as fail-closed `phase:"invalid"`; it stays closed
+until the matching DELETE records an explicit abort.
 
 ### `GET /v1/orchestrator/tasks`, `GET /v1/orchestrator/tasks/:id`
 
@@ -2635,7 +2653,7 @@ The record:
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
   "executor": {                    // durable reconciliation evidence; no raw pid/tty is public
     "status": "observed",          // observed | pending | executor_missing | identity_changed
-    "provenance": "session_watch_exact_process_tuple",
+    "provenance": "session_watch_exact_executor",
     "inventory_complete": true, "inventory_generation": 42,
     "inventory_epoch": "65d8fbbc-…", "observed_at": 1787100210,
     "mismatch_observations": 0, "mover": "broker"

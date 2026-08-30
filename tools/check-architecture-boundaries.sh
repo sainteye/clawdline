@@ -17,12 +17,12 @@ main_lines=$(line_count Tests/main.swift)
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
-[ "$orchestrator_lines" -le 12398 ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved Closeability receipt (12398)"
+[ "$orchestrator_lines" -le 12431 ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved restart-reconciliation correction receipt (12431)"
 
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
-[ "$remote_server_lines" -le 6316 ] \
-  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved Closeability receipt (6316)"
+[ "$remote_server_lines" -le 6336 ] \
+  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved restart-reconciliation correction receipt (6336)"
 
 if grep -q 'group(' Tests/main.swift; then
   architecture_guard_fail "new domain group found in Tests/main.swift"
@@ -38,8 +38,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 447 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 447"
+[ "$manifest_group_count" -eq 454 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 454"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do

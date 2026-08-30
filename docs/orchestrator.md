@@ -1139,11 +1139,26 @@ knowingly replacing the app. An uncoordinated replacement still fails that inter
 closed on startup and records `replacement_before_safe` on any active restart receipt.
 
 The replacement listener resumes the persisted receipt as `reconciling` and keeps admission
-closed. One fresh complete inventory from its own scan epoch reconciles every live briefed task;
-only then does the receipt become `complete` and the broker reopen. Health and SSE `hello` expose
-the same per-process `instance`, and Session inventory exposes its own `epoch`, so a monitor can
-prove it observed the replacement rather than a stale snapshot. Completion/result files written
-during the listener outage remain durable inputs and are collected by the existing startup walk.
+closed. Exact matches can settle on the first fresh complete inventory. Absence or identity change
+needs two different complete generations in the same process epoch at least 60 seconds apart.
+Reconciliation is bounded at 120 seconds: after that the receipt becomes `complete`, records
+`reconciliation_timed_out:true` plus the exact `unresolved_task_ids`, and reopens admission while
+ordinary task watching continues to seek typed evidence. Health and SSE `hello` expose the same
+per-process `instance`, and Session inventory exposes its own `epoch`, so a monitor can prove it
+observed the replacement rather than a stale snapshot; every further replacement updates
+`resumed_instance_id` again. Completion/result files written during the listener outage remain
+durable inputs and are collected by the existing startup walk.
+
+`DELETE /v1/orchestrator/maintenance/restart` with the same closed request-id body persists
+`phase:"aborted"` and reopens admission. It is the explicit exit when the replacement is cancelled
+or the drain cannot converge. A malformed durable receipt instead loads as fail-closed
+`phase:"invalid"`, writes an audit row, and requires this explicit abort; corrupt state never turns
+into silently open admission.
+
+`build.sh` is the adopter. A current runtime must grant `ready` before it is stopped, and the new
+listener must report `complete` before the script succeeds. Only an exact 404 from the installed old
+runtime takes the one-time bootstrap path: the script uses its legacy queued/spawning preflight for
+the replacement that installs this route, then every later build uses the durable receipt.
 
 ### A branch, not a diff
 

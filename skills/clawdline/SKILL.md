@@ -1,29 +1,16 @@
 ---
 name: clawdline
-version: 2.3.0
 description: |
-  Hand a piece of work to another session: open a child session (Claude Code or Codex) through the
-  Clawdline app, type the first message into it, wait for it to write result.json, and report back
-  when it lands. For work that does not need the conversation it was asked in — draw this, run the
-  suite, review a diff, a long tidying job. Also hands over a whole line of work — a Clawdline
-  handoff: write this conversation's state to a document and open a session that continues it (§7).
-  Triggers on: "dispatch a task", "get codex to do it", "open a child session", "do X in the
-  background", "run this in another session", "have codex draw an image", "get another agent to
-  review this", or several unrelated things wanted at once; and for the handoff half, "use Clawdline
-  Handoff", "hand this over to a fresh session", "pick this up in Codex", "continue this tomorrow in
-  a new session".
-  Also triggers on the same asks in Chinese: 「派任務」「派給 codex 做」「開一個 child／子 session」
-  「背景幫我做 X」「dispatch 一個任務」「另開一個 session 去跑」「用 codex 生一張圖」「叫另一個 agent 去審」
-  「使用 Clawdline Handoff」「handoff 給新 session」「交接給下一個 session」「明天用新 session 接著做」.
-  Also triggers when asked to send a message, report, status, finding, or coordination note to
-  another live session.
-  Does not trigger on: anything this conversation can simply do (a child costs far more than doing
-  it), search and analysis a Task/subagent already covers (that is a subagent, not a Clawdline
-  child), or wanting to know which sessions are running (that is the Clawdline panel, or
-  GET /v1/orchestrator/sessions). **When this session is itself a child, CHILD.md governs and this
-  file does not** — see §0.
-user-invocable: true
-last-updated: 2026-08-29
+  Use Clawdline to dispatch a bounded child task when the current Root keeps synthesis,
+  integration, and landing; to hand off an existing work line for full continuation; or to send a
+  message, finding, or status to another live session. Triggers include "dispatch a task", "open a
+  child session", "get Codex to review this", "use Clawdline Handoff", and the equivalent Chinese
+  requests 「派任務」「開 child」「使用 Clawdline Handoff」「交接給下一個 session」. A handoff transfers
+  the sender's REFERENCES, VERIFICATION, and OPEN THREADS. Detached poll-only tasks are unattended
+  automation, never Root or Major Feature owners. Root Assignment / Feature Launch is not yet
+  implemented and must not be faked with a child, detached automation, or handoff. Do not use for
+  work this conversation can simply do, provider-native subagent research, or session inventory.
+  When this session is a Clawdline child, CHILD.md governs instead.
 ---
 
 # Handing work to a child session
@@ -92,6 +79,26 @@ reply.
 ---
 
 ## 2. Draw the whole graph before deciding who gets what
+
+<!-- clawdline-dispatch-role-contract:v1 -->
+
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+  retains synthesis, integration, and landing.
+- **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
+  line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
+  from OPEN THREADS.
+- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
+  detached automation. It is never a Root and never a Major Feature owner.
+- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
+  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
+  it must have a public protocol, durable record, briefing, and UI classification distinct from a
+  child task and a handoff.
+
+<!-- /clawdline-dispatch-role-contract:v1 -->
+
+Until Root Assignment exists, do not hide the capability gap with detached automation or a fake
+handoff. Ask whether this root keeps landing ownership, whether an existing line is really being
+continued, or whether the independent launch waits.
 
 ### 2.0 Read the policy, then answer whether this should be dispatched at all
 

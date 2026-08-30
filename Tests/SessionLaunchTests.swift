@@ -912,13 +912,7 @@ group("the page is given the words it draws the start sheet with") {
 // Restart maintenance owns admission rather than guessing from live-task count. An operation
 // already in the terminal lane is allowed to settle; every newcomer receives one typed retryable
 // response until the durable reconciliation edge reopens admission.
-do {
-    func expect<T: Equatable>(_ title: String, _ actual: T, _ expected: T) {
-        precondition(actual == expected, "\(title): got \(actual), want \(expected)")
-    }
-    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
-        precondition(condition(), title)
-    }
+group("restart maintenance drains the real terminal broker") {
     let requestID = UUID().uuidString.lowercased()
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
@@ -967,13 +961,14 @@ do {
     let healthBody = (try? JSONSerialization.jsonObject(with: health.body)) as? [String: Any]
     expect("health names the exact process instance that restart receipts reconcile",
            healthBody?["instance"] as? String, Orchestrator.appInstanceID)
-    let remoteSource = try! String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8)
-    check("health and a fresh SSE hello both publish the replacement instance",
-          remoteSource.components(separatedBy: "\"instance\": Orchestrator.appInstanceID").count == 3)
-    let lifecycleSource = try! String(contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8)
-    let resumeOffset = lifecycleSource.range(of: "resumeAfterRestart()")?.lowerBound
-    let observerOffset = lifecycleSource.range(of: "observers[\"orchestrator\"]")?.lowerBound
-    check("restart recovery is installed before watcher and timer events resume",
-          resumeOffset != nil && observerOffset != nil && resumeOffset! < observerOffset!)
+    expect("health and a fresh SSE hello publish the same replacement instance",
+           RemoteServer.restartHelloPayload()["instance"] as? String,
+           healthBody?["instance"] as? String)
+    var startupOrder: [String] = []
+    Orchestrator.withRestartRecovered(
+        resume: { startupOrder.append("restart") },
+        installObservers: { startupOrder.append("observers") })
+    expect("restart recovery executes before watcher and timer installation",
+           startupOrder, ["restart", "observers"])
 }
 }

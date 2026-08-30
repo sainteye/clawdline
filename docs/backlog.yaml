@@ -57,6 +57,33 @@ version: 1
 artifact: artifacts/backlog.html
 
 items:
+  - id: B-ROOT-ASSIGNMENT-PRIMITIVE
+    title: An independently owned Feature has no launch primitive distinct from child and handoff
+    problem: >-
+      Clawdfather can open a bounded child whose result comes back for synthesis and landing, or
+      continue an existing line by handing its complete state to a new Root. It cannot yet launch
+      a new ordinary Root with an independent objective and ownership boundary. Detached poll-only
+      automation still has a child timeout and result contract, while handoff deliberately carries
+      the sender's REFERENCES, VERIFICATION and OPEN THREADS. Treating either one as Feature launch
+      gives the receiver the wrong lifecycle and the UI the wrong classification.
+    evidence: >-
+      The restart-reconciliation handoff review on 2026-08-30 found the shipped
+      `docs/dispatching.md` and `Resources/dispatch-policy.md` prescribing
+      `root.session_id:null` plus `root.poll_only:true` as a Major Feature owner, while
+      `docs/handoff.md` correctly defines every `/tasks` session as a child and every handoff as a
+      continuation Root. The v1 dispatch-role contract now makes the missing fourth primitive
+      explicit instead of overloading either route.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      Owner: the registered Clawdfather architecture program. Design Root Assignment / Feature
+      Launch as its own public protocol, briefing text, durable record and UI classification. It
+      may reuse tab opening, composer wait, trust handling, idempotency and transcript receipt, but
+      acceptance requires a new Root to receive only objective, scope, constraints, relevant
+      references and acceptance—not the sender's complete continuation state.
+    opened: 2026-08-30
+
   - id: B-SCHEDULE-WITHOUT-A-SESSION
     title: A scheduled chore with no judgement in it still opens a whole assistant session
     problem: >-

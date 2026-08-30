@@ -39,19 +39,34 @@ which does not vanish, it accumulates. See below.
 sends substantial diagnosis, implementation, research and review out as separate tasks whenever
 capacity allows. It also owns the small-work pool below.
 
-**A major Feature always has a visible independent owner.** If work produces a formal deliverable,
-owns a landing obligation, spans more than one focused change, or may outlive the current turn,
-Clawdfather dispatches it through Clawdline into its own ordinary assistant Session and terminal
-tab. Its task is detached (`root.session_id: null`, `root.poll_only: true`), so closing or replacing
-the current Clawdfather cannot cancel it as a descendant; Clawdfather polls it explicitly.
-Code-writing Features use worktree isolation by default. Neither a Clawdline child rooted under
-Clawdfather nor a provider-native subagent is a substitute.
+**A major Feature needs a visible independent owner.** The dispatch roles are a closed contract:
+
+<!-- clawdline-dispatch-role-contract:v1 -->
+
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+  retains synthesis, integration, and landing.
+- **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
+  line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
+  from OPEN THREADS.
+- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
+  detached automation. It is never a Root and never a Major Feature owner.
+- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
+  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
+  it must have a public protocol, durable record, briefing, and UI classification distinct from a
+  child task and a handoff.
+
+<!-- /clawdline-dispatch-role-contract:v1 -->
+
+Until Root Assignment exists, do not hide the gap by using detached automation or by creating a
+handoff for work that has no existing line. Ask whether Clawdfather should retain landing ownership,
+whether an existing line is genuinely being continued, or whether the independent launch waits.
 
 Provider-native subagents remain useful for short, disposable, normally read-only research,
 calculation or focused review with no independent delivery. Announce them honestly and never call
 them a Clawdline dispatch. If Clawdline refuses the task or is unavailable, report the typed failure
-and wait, retry or ask; do not silently turn the Feature into invisible delegation. Clawdfather
-continues to own decomposition, independent review, exact-tree integration and landing closure.
+and wait, retry or ask; do not silently turn the Feature into invisible delegation. For every
+bounded child it dispatches, Clawdfather continues to own decomposition, independent review,
+exact-tree integration and landing closure.
 
 ## How big one task is
 

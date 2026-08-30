@@ -925,10 +925,7 @@ group("verification reports are optional, bounded metadata rather than a success
 // Restart identity is deliberately tested as one task through every surface. Different task rows
 // are not evidence that persistence and inventory disagree, and a label/cwd is never an identity
 // input at all.
-do {
-    func expect<T: Equatable>(_ title: String, _ actual: T, _ expected: T) {
-        precondition(actual == expected, "\(title): got \(actual), want \(expected)")
-    }
+group("restart executor reconciliation uses exact durable identity evidence") {
     let started = Date(timeIntervalSince1970: 1_788_300_000)
     var task = Orchestrator.Task(
         id: "194e042a-1111-4222-8333-444444444444", state: .briefed, kind: "code",
@@ -1017,6 +1014,22 @@ do {
     expect("a same-label/cwd impostor is absence, never a guessed replacement",
            impostorFirst.pendingKind, .executorMissing)
 
+    var identityIncomplete = task
+    identityIncomplete.childSessionId = nil
+    identityIncomplete.transcriptPath = nil
+    identityIncomplete.transcriptProven = false
+    let incompleteAbsentFirst = Orchestrator.reconcileExecutor(
+        task: identityIncomplete, identities: [], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(55), generation: 15,
+            epoch: "new-app"), previous: nil, now: started.addingTimeInterval(55))
+    let incompleteAbsentPersistent = Orchestrator.reconcileExecutor(
+        task: identityIncomplete, identities: [], inventory: Orchestrator.ExecutorInventory(
+            complete: true, observedAt: started.addingTimeInterval(120), generation: 16,
+            epoch: "new-app"), previous: incompleteAbsentFirst,
+        now: started.addingTimeInterval(120))
+    expect("an identity-incomplete task retains bounded exact-terminal loss detection",
+           incompleteAbsentPersistent.status, .executorMissing)
+
     var launcher = task
     launcher.state = .spawning
     launcher.childSessionId = nil
@@ -1028,21 +1041,78 @@ do {
         cwd: launcher.projectDir)
     let launcherExit = Orchestrator.exitedLauncherReceipt(
         task: launcher, snapshot: SessionWatch.IdentitySnapshot(
-            targets: [returnedShell], generation: 15, complete: true,
+            targets: [returnedShell], generation: 17, complete: true,
             observedAt: started.addingTimeInterval(60), epoch: "new-app"), identities: [])
-    expect("a launcher exit before prompt is distinct when its terminal remains as a shell",
-           launcherExit?.status, .executorMissing)
+    expect("one pre-brief launcher miss remains pending", launcherExit?.status, .pending)
+    let launcherExitPersistent = Orchestrator.exitedLauncherReceipt(
+        task: launcher, snapshot: SessionWatch.IdentitySnapshot(
+            targets: [returnedShell], generation: 18, complete: true,
+            observedAt: started.addingTimeInterval(121), epoch: "new-app"), identities: [],
+        previous: launcherExit)
+    expect("two pre-brief launcher misses spanning the grace become executor_missing",
+           launcherExitPersistent?.status, .executorMissing)
     expect("the broker is the one safe mover for a never-briefed exited launcher",
-           launcherExit?.mover, "broker")
+           launcherExitPersistent?.mover, "broker")
+
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    Orchestrator.holdScheduleTaskForTesting(launcher)
+    check("the production settle path persists the first launcher miss",
+          Orchestrator.settleExitedLauncher(
+            launcher, snapshot: SessionWatch.IdentitySnapshot(
+                targets: [returnedShell], generation: 19, complete: true,
+                observedAt: started.addingTimeInterval(130), epoch: "settle-path"), identities: []))
+    expect("one production settle observation leaves the launcher spawning",
+           Orchestrator.tasks[launcher.id]?.state, .spawning)
+    check("the production settle path accepts the second persistent miss",
+          Orchestrator.settleExitedLauncher(
+            launcher, snapshot: SessionWatch.IdentitySnapshot(
+                targets: [returnedShell], generation: 20, complete: true,
+                observedAt: started.addingTimeInterval(195), epoch: "settle-path"), identities: []))
+    expect("the production settle path alone moves the launcher to spawn_failed",
+           Orchestrator.tasks[launcher.id]?.state, .spawnFailed)
 }
 
-do {
-    func expect<T: Equatable>(_ title: String, _ actual: T, _ expected: T) {
-        precondition(actual == expected, "\(title): got \(actual), want \(expected)")
+group("a briefed task refreshes identity before its inventory receipt is judged") {
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let started = Date(timeIntervalSince1970: 1_788_400_000)
+    let id = "294e042a-1111-4222-8333-444444444444"
+    var task = Orchestrator.Task(
+        id: id, state: .briefed, kind: "code", title: "late proof",
+        assistant: .claude, projectDir: "/tmp/project", timeoutMinutes: 30,
+        created: started, secretHash: String(repeating: "0", count: 64))
+    task.childTerminalId = "LATE-PROOF"
+    task.childBackend = .iterm
+    task.briefedAt = Date()
+    Orchestrator.holdScheduleTaskForTesting(task)
+    let child = TargetSession(
+        backend: .iterm, id: "LATE-PROOF", name: "late proof", tty: "/dev/ttys099",
+        windowIndex: 0, tabIndex: 0, assistant: .claude, cwd: "/tmp/project")
+    Orchestrator.childIdentityRefreshForTesting = { _, candidate in
+        candidate.childTTY = "/dev/ttys099"
+        candidate.childPID = 42_099
+        candidate.childProcStart = started
+        candidate.childSessionId = "294e042a-aaaa-4bbb-8ccc-444444444444"
+        candidate.transcriptPath = "/tmp/294e042a-aaaa-4bbb-8ccc-444444444444.jsonl"
+        candidate.transcriptProven = true
+        return true
     }
-    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
-        precondition(condition(), title)
-    }
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: child.id, assistant: .claude, tty: "/dev/ttys099", pid: 42_099,
+        processStart: started, conversationID: "294e042a-aaaa-4bbb-8ccc-444444444444")
+    let changed = Orchestrator.watch(
+        task, snapshot: SessionWatch.IdentitySnapshot(
+            targets: [child], generation: 1, complete: true,
+            observedAt: started.addingTimeInterval(1), epoch: "replacement"),
+        identities: [identity])
+    let executor = Orchestrator.record(id: id)?["executor"] as? [String: Any]
+    check("the same watch beat records the refreshed exact identity", changed)
+    expect("and judges that refreshed identity as observed",
+           executor?["status"] as? String, "observed")
+}
+
+group("restart maintenance transition is durable and idempotent") {
     let secretHash = String(repeating: "0", count: 64)
     var briefed = Orchestrator.Task(
         id: UUID().uuidString.lowercased(), state: .briefed, kind: "code", title: "durable",
@@ -1084,47 +1154,285 @@ do {
            .reconciling)
     check("the replacement keeps admission closed until its own complete inventory",
           resumed.admissionClosed && resumed.resumedInstanceID == "replacement-instance")
+    let replacedAgain = Orchestrator.restartTransition(
+        current: resumed, requestID: requestID, instanceID: "second-replacement", outstanding: 0,
+        channels: [:], blockers: [], now: Date(timeIntervalSince1970: 104))
+    expect("a second replacement updates the current resumed instance",
+           replacedAgain.resumedInstanceID, "second-replacement")
 }
 
-do {
-    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
-        precondition(condition(), title)
-    }
+group("restart maintenance HTTP is machine-only, closed, idempotent and abortable") {
     let manager = FileManager.default
-    let taskStoreBefore = try? Data(contentsOf: Orchestrator.storeURL)
     let directory = manager.temporaryDirectory
-        .appendingPathComponent("clawdline-restart-coordinator-\(UUID().uuidString)",
+        .appendingPathComponent("clawdline-restart-route-\(UUID().uuidString)", isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Orchestrator.storeURLOverrideForTesting = directory.appendingPathComponent("orchestrator.json")
+    Orchestrator.forget()
+    defer {
+        RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
+        Orchestrator.storeSaveInterceptorForTesting = nil
+        Orchestrator.storeURLOverrideForTesting = nil
+        Orchestrator.forget()
+        try? manager.removeItem(at: directory)
+    }
+    let path = "/v1/orchestrator/maintenance/restart"
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let body = #"{"request_id":"394e042a-1111-4222-8333-444444444444"}"#
+    expect("anonymous restart maintenance begin is forbidden",
+           RemoteServer.shared.route(remoteRequest("POST", path, body: body)).status, 401)
+    expect("anonymous restart maintenance polling is forbidden",
+           RemoteServer.shared.route(remoteRequest("GET", path)).status, 401)
+    expect("anonymous restart maintenance abort is forbidden",
+           RemoteServer.shared.route(remoteRequest("DELETE", path, body: body)).status, 401)
+    expect("the restart body rejects extra fields",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", path, headers: auth, body: #"{"request_id":"394e042a-1111-4222-8333-444444444444","extra":true}"#)).status,
+           400)
+    let malformed = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: #"{"request_id":"NOT-A-UUID"}"#))
+    expect("a malformed request id is rejected before admission closes", malformed.status, 400)
+    check("invalid input leaves terminal admission open",
+          RemoteServer.shared.terminalMaintenanceRefusal() == nil)
+
+    let began = RemoteServer.shared.route(remoteRequest("POST", path, headers: auth, body: body))
+    expect("a drained broker grants restart maintenance", began.status, 200)
+    let beganObject = (try? JSONSerialization.jsonObject(with: began.body)) as? [String: Any]
+    let beganReceipt = beganObject?["restart"] as? [String: Any]
+    let polled = RemoteServer.shared.route(remoteRequest("GET", path, headers: auth))
+    let polledObject = (try? JSONSerialization.jsonObject(with: polled.body)) as? [String: Any]
+    let polledReceipt = polledObject?["restart"] as? [String: Any]
+    expect("authenticated polling advances and returns the durable ready receipt",
+           polledReceipt?["phase"] as? String, "ready")
+    let retry = RemoteServer.shared.route(remoteRequest("POST", path, headers: auth, body: body))
+    let retryObject = (try? JSONSerialization.jsonObject(with: retry.body)) as? [String: Any]
+    let retryReceipt = retryObject?["restart"] as? [String: Any]
+    expect("the matching retry keeps its original request time",
+           retryReceipt?["requested_at"] as? Int, beganReceipt?["requested_at"] as? Int)
+    expect("the matching retry keeps its phase",
+           retryReceipt?["phase"] as? String, beganReceipt?["phase"] as? String)
+    let competing = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth,
+        body: #"{"request_id":"494e042a-1111-4222-8333-444444444444"}"#))
+    expect("a competing maintenance intent gets the typed 409",
+           remoteErrorCode(competing), "restart_in_progress")
+    expect("another id cannot abort the live window", RemoteServer.shared.route(remoteRequest(
+        "DELETE", path, headers: auth,
+        body: #"{"request_id":"494e042a-1111-4222-8333-444444444444"}"#)).status, 409)
+    let aborted = RemoteServer.shared.route(remoteRequest("DELETE", path, headers: auth, body: body))
+    expect("the matching abort is persisted", aborted.status, 200)
+    let abortedObject = (try? JSONSerialization.jsonObject(with: aborted.body)) as? [String: Any]
+    let abortedReceipt = abortedObject?["restart"] as? [String: Any]
+    expect("the abort has its own terminal phase", abortedReceipt?["phase"] as? String, "aborted")
+    check("the persisted abort reopens terminal admission",
+          RemoteServer.shared.terminalMaintenanceRefusal() == nil)
+    let terminalRetry = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: body))
+    let terminalRetryObject = (try? JSONSerialization.jsonObject(
+        with: terminalRetry.body)) as? [String: Any]
+    let terminalRetryReceipt = terminalRetryObject?["restart"] as? [String: Any]
+    expect("the same completed request remains idempotently aborted",
+           terminalRetryReceipt?["phase"] as? String, "aborted")
+    check("retrying a terminal receipt does not close admission again",
+          RemoteServer.shared.terminalMaintenanceRefusal() == nil)
+    let freshBody = #"{"request_id":"594e042a-1111-4222-8333-444444444444"}"#
+    expect("a fresh request id may begin after the prior terminal receipt",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", path, headers: auth, body: freshBody)).status, 200)
+    expect("the fresh maintenance window can be explicitly aborted",
+           RemoteServer.shared.route(remoteRequest(
+            "DELETE", path, headers: auth, body: freshBody)).status, 200)
+
+    Orchestrator.forget()
+    let blocker = Orchestrator.Task(
+        id: "494e042a-aaaa-4bbb-8ccc-444444444444", state: .spawning, kind: "code",
+        title: "secret exposed", assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+        created: Date(), secretHash: String(repeating: "0", count: 64))
+    Orchestrator.holdScheduleTaskForTesting(blocker)
+    let blocked = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth,
+        body: #"{"request_id":"594e042a-1111-4222-8333-444444444444"}"#))
+    expect("a pre-brief secret gets the distinct typed 409",
+           remoteErrorCode(blocked), "restart_blocked_by_task_secret")
+    check("a blocker refusal leaves terminal admission open",
+          RemoteServer.shared.terminalMaintenanceRefusal() == nil)
+
+    Orchestrator.forget()
+    Orchestrator.storeSaveInterceptorForTesting = { _ in false }
+    let storeFailed = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth,
+        body: #"{"request_id":"694e042a-1111-4222-8333-444444444444"}"#))
+    expect("a failed durable write has one typed refusal", remoteErrorCode(storeFailed),
+           "restart_store_failed")
+    check("a failed durable write rolls terminal admission back open",
+          RemoteServer.shared.terminalMaintenanceRefusal() == nil)
+
+    let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let sources = ["Sources/Coordinator.swift", "Sources/RemoteServer.swift"].compactMap {
+        try? String(contentsOf: repository.appendingPathComponent($0), encoding: .utf8)
+    }.joined(separator: "\n")
+    let protocolPage = (try? String(
+        contentsOf: repository.appendingPathComponent("docs/clawdline-protocol.html"),
+        encoding: .utf8)) ?? ""
+    let expression = try! NSRegularExpression(
+        pattern: #"\"(bad_restart_request|restart_[a-z_]+)\""#)
+    func restartCodes(in text: String) -> Set<String> {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return Set(expression.matches(in: text, range: range).compactMap { match in
+            Range(match.range(at: 1), in: text).map { String(text[$0]) }
+        })
+    }
+    let sourceCodes = restartCodes(in: sources)
+    let documentedCodes = restartCodes(in: protocolPage)
+    let expectedCodes: Set<String> = [
+        "bad_restart_request", "restart_blocked_by_task_secret", "restart_in_progress",
+        "restart_maintenance", "restart_not_found", "restart_store_failed",
+    ]
+    expect("restart source exposes exactly the reviewed typed error vocabulary",
+           sourceCodes, expectedCodes)
+    expect("the protocol page and source expose the same restart errors",
+           documentedCodes, sourceCodes)
+}
+
+group("restart reconciliation is bounded, fail-closed on corruption, and rolls back atomically") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-restart-lifecycle-\(UUID().uuidString)",
                                 isDirectory: true)
     try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
-    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
-    Coordinator.forgetForTesting()
-    defer {
-        Coordinator.storeURLOverrideForTesting = nil
-        Coordinator.forgetForTesting()
-        try? manager.removeItem(at: directory)
-        if let taskStoreBefore { try? taskStoreBefore.write(to: Orchestrator.storeURL, options: .atomic) }
-        else { try? manager.removeItem(at: Orchestrator.storeURL) }
-        Orchestrator.forget()
-    }
-    try? manager.removeItem(at: Orchestrator.storeURL)
+    let store = directory.appendingPathComponent("orchestrator.json")
+    Orchestrator.storeURLOverrideForTesting = store
     Orchestrator.forget()
-    let father = coordinatorFixture("restart-coordinator")
-    guard case .ok = Coordinator.register(father, among: [father], makeID: {
-        UUID(uuidString: "55555555-6666-4777-8888-999999999999")!
-    }) else { preconditionFailure("coordinator fixture did not register") }
-    let coordinatorBefore = try! Data(contentsOf: Coordinator.storeURL)
-    let reply = Orchestrator.beginRestartMaintenance(
-        requestID: UUID().uuidString.lowercased(), outstanding: 0, channels: [:])
-    guard case .ok = reply else { preconditionFailure("restart intent was not persisted") }
-    let coordinatorAfter = try! Data(contentsOf: Coordinator.storeURL)
-    check("restart intent persistence leaves coordinator id and generation bytes unchanged",
-          coordinatorAfter == coordinatorBefore)
+    defer {
+        RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
+        Orchestrator.storeSaveInterceptorForTesting = nil
+        Orchestrator.storeURLOverrideForTesting = nil
+        Orchestrator.forget()
+        try? manager.removeItem(at: directory)
+    }
+    let started = Date().addingTimeInterval(-130)
+    let requestID = "694e042a-1111-4222-8333-444444444444"
+
+    let ready = Orchestrator.RestartReceipt(
+        requestID: requestID, requestedInstanceID: "old", resumedInstanceID: nil,
+        phase: .ready, requestedAt: started, drainedAt: started,
+        resumedAt: nil, reconciledAt: nil, outstanding: 0, channels: [:])
+    Orchestrator.restartReceipt = ready
+    check("the ready lifecycle fixture is durably persisted", Orchestrator.save())
+    Orchestrator.forget()
+    Orchestrator.resumeRestartIntent()
+    expect("startup resumes a ready receipt as reconciling",
+           Orchestrator.restartReceipt?.phase, .reconciling)
+    check("startup keeps admission closed until its inventory is reconciled",
+          RemoteServer.shared.terminalMaintenanceRefusal() != nil)
+    Orchestrator.reconcileRestartInventory(
+        SessionWatch.IdentitySnapshot(targets: [], generation: 1, complete: true,
+                                      observedAt: Date(), epoch: "replacement"),
+        identities: [], now: Date())
+    expect("the production lifecycle reaches complete after its fresh inventory",
+           Orchestrator.restartReceipt?.phase, .complete)
+    check("the complete production lifecycle reopens admission",
+          RemoteServer.shared.terminalMaintenanceRefusal() == nil)
+
+    Orchestrator.forget()
+    var restart = Orchestrator.RestartReceipt(
+        requestID: requestID, requestedInstanceID: "old", resumedInstanceID: "replacement",
+        phase: .reconciling, requestedAt: started, drainedAt: started,
+        resumedAt: started, reconciledAt: nil, outstanding: 0, channels: [:])
+    Orchestrator.restartReceipt = restart
+    let unresolvedID = "794e042a-1111-4222-8333-444444444444"
+    var unresolved = Orchestrator.Task(
+        id: unresolvedID, state: .briefed, kind: "code", title: "unresolved",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: started,
+        secretHash: String(repeating: "0", count: 64))
+    unresolved.childTerminalId = "ABSENT"
+    unresolved.briefedAt = Date()
+    Orchestrator.holdScheduleTaskForTesting(unresolved)
+    RemoteServer.shared.setRestartMaintenance(active: true, requestID: requestID)
+    Orchestrator.reconcileRestartInventory(
+        SessionWatch.IdentitySnapshot(targets: [], generation: 1, complete: true,
+                                      observedAt: Date(), epoch: "replacement"),
+        identities: [], now: Date())
+    let bounded = Orchestrator.currentRestartRecord()
+    expect("bounded reconciliation reaches complete", bounded?["phase"] as? String, "complete")
+    expect("and records why it released with unresolved evidence",
+           bounded?["reconciliation_timed_out"] as? Bool, true)
+    expect("the exact unresolved ids remain inspectable",
+           bounded?["unresolved_task_ids"] as? [String], [unresolvedID])
+    check("bounded reconciliation reopens admission",
+          RemoteServer.shared.terminalMaintenanceRefusal() == nil)
+
+    Orchestrator.forget()
+    restart.reconciliationTimedOut = false
+    restart.unresolvedTaskIDs = []
+    Orchestrator.restartReceipt = restart
+    var exactTask = Orchestrator.Task(
+        id: "894e042a-1111-4222-8333-444444444444", state: .briefed, kind: "code",
+        title: "exact", assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+        created: started, secretHash: String(repeating: "0", count: 64))
+    exactTask.briefedAt = Date()
+    exactTask.childTerminalId = "EXACT"
+    exactTask.childTTY = "/dev/ttys088"
+    exactTask.childPID = 8_888
+    exactTask.childProcStart = started
+    exactTask.childSessionId = "894e042a-aaaa-4bbb-8ccc-444444444444"
+    exactTask.transcriptProven = true
+    Orchestrator.holdScheduleTaskForTesting(exactTask)
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: "EXACT", assistant: .codex, tty: "/dev/ttys088", pid: 8_888,
+        processStart: started, conversationID: exactTask.childSessionId)
+    Orchestrator.storeSaveInterceptorForTesting = { _ in false }
+    RemoteServer.shared.setRestartMaintenance(active: true, requestID: requestID)
+    Orchestrator.reconcileRestartInventory(
+        SessionWatch.IdentitySnapshot(targets: [], generation: 2, complete: true,
+                                      observedAt: Date(), epoch: "replacement"),
+        identities: [identity], now: Date())
+    expect("a failed lifecycle save restores the restart phase",
+           Orchestrator.restartReceipt?.phase, .reconciling)
+    check("and restores the task receipt written in the same transaction",
+          Orchestrator.tasks[exactTask.id]?.executorReceipt == nil)
+    check("failed persistence keeps admission closed",
+          RemoteServer.shared.terminalMaintenanceRefusal() != nil)
+
+    Orchestrator.storeSaveInterceptorForTesting = nil
+    Orchestrator.forget()
+    restart.phase = .draining
+    restart.resumedInstanceID = nil
+    restart.resumedAt = nil
+    restart.outstanding = 1
+    restart.channels = ["EXACT": 1]
+    Orchestrator.restartReceipt = restart
+    check("the draining rollback fixture is durably persisted", Orchestrator.save())
+    Orchestrator.storeSaveInterceptorForTesting = { _ in false }
+    let advanceFailed = Orchestrator.advanceRestartMaintenance(outstanding: 0, channels: [:])
+    let advanceFailedCode: String
+    if case let .refused(_, code, _, _) = advanceFailed { advanceFailedCode = code }
+    else { advanceFailedCode = "" }
+    expect("a failed ready transition has the typed store refusal",
+           advanceFailedCode, "restart_store_failed")
+    expect("a failed ready transition restores its prior durable phase",
+           Orchestrator.restartReceipt?.phase, .draining)
+    check("a failed ready transition remains admission-closed",
+          Orchestrator.restartAdmissionClosed())
+
+    Orchestrator.storeSaveInterceptorForTesting = nil
+    Orchestrator.forget()
+    let corrupt: [String: Any] = [
+        "version": 1, "tasks": [], "handoffs": [], "coordination_waits": [],
+        "session_deliveries": [], "session_self_states": [], "closure_attestations": [],
+        "session_activity": [], "restart": [
+            "request_id": requestID, "phase": "ready", "requested_instance_id": "old",
+            "requested_at": started.timeIntervalSince1970, "outstanding": 1, "channels": [:],
+        ],
+    ]
+    try! JSONSerialization.data(withJSONObject: corrupt).write(to: store, options: .atomic)
+    let quarantined = Orchestrator.currentRestartRecord()
+    expect("an unreadable durable restart receipt is quarantined", quarantined?["phase"] as? String,
+           "invalid")
+    check("quarantined restart state fails closed", Orchestrator.restartAdmissionClosed())
 }
 
-do {
-    func check(_ title: String, _ condition: @autoclosure () -> Bool) {
-        precondition(condition(), title)
-    }
+group("durable task results settle while terminal admission is paused") {
     let manager = FileManager.default
     let storeBefore = try? Data(contentsOf: Orchestrator.storeURL)
     let taskID = UUID().uuidString.lowercased()
