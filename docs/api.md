@@ -157,7 +157,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/favicon.ico`, `/icon-<size>.png` | — | — |
 
 Every approved device has `read`. `send` is granted to all of them together by
-Settings → Remote → **Let paired devices type**, and taken back from all of them together — there is
+Settings → Remote → **Let a paired device write into a session**, and taken back from all of them together — there is
 no per-device grant. `admin` is defined, and the local `This Mac` device holds it, and **no route
 requires it today**; it is there so that adding one later does not mean handing out a capability
 nobody asked for.
