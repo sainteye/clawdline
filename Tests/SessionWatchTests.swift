@@ -177,7 +177,7 @@ group("every main-queue crossing is a named production call site, in the source 
 group("every direct SessionWatch nudge call site is inventoried across production source") {
     let expected = [
         "Sources/RemoteServer.swift": 11,
-        "Sources/Orchestrator.swift": 7,
+        "Sources/Orchestrator.swift": 8,
         "Sources/main.swift": 1,
     ]
     let sourceFiles = (try? FileManager.default.contentsOfDirectory(atPath: "Sources"))?
@@ -203,8 +203,8 @@ group("every direct SessionWatch nudge call site is inventoried across productio
         check("RemoteServer source is readable for the direct nudge guard", false)
     }
     if let orchestrator = try? String(contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8) {
-        expect("the three cross-queue Orchestrator nudges explicitly re-enter main",
-               occurrences(of: wrapped, in: compactCode(orchestrator)), 3)
+        expect("the four cross-queue Orchestrator nudges explicitly re-enter main",
+               occurrences(of: wrapped, in: compactCode(orchestrator)), 4)
     } else {
         check("Orchestrator source is readable for the direct nudge guard", false)
     }

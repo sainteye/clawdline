@@ -653,7 +653,7 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
           totals?["tokens"] is NSNull && totals?["total"] is NSNull)
     expect("and names the columns it cannot answer for",
            (payload["unavailable"] as? [String: Any])?["columns"] as? [String],
-           ["graph_id", "disposition", "feature"])
+           ["graph_id", "disposition"])
 }
 
 group("a cost is copied where it exists and never invented where it does not") {

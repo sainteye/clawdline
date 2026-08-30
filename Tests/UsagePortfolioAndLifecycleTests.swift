@@ -812,7 +812,7 @@ group("each kind of work is counted exactly once, and the routes answer for the 
            ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
     expect("and it names the columns it has no answer for",
            (body?["unavailable"] as? [String: Any])?["columns"] as? [String],
-           ["graph_id", "disposition", "feature"])
+           ["graph_id", "disposition"])
     expect("the export answers as CSV",
            RemoteServer.shared.route(
             remoteRequest("GET", "/v1/orchestrator/usage.csv", headers: auth))
