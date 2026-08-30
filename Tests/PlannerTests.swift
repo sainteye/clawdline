@@ -853,18 +853,7 @@ group("health and hello carry the same fields their shared handler reads") {
     let health = Set((((try? JSONSerialization.jsonObject(with: response.body))
         as? [String: Any]) ?? [:]).keys)
 
-    let swift = (try? String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8)) ?? ""
-    let helloMarker = "write(event: \"hello\", data: ["
-    let helloEnd = "], to: stream)"
-    var hello: Set<String> = []
-    if let start = swift.range(of: helloMarker),
-       let end = swift.range(of: helloEnd, range: start.upperBound..<swift.endIndex) {
-        for line in swift[start.upperBound..<end.lowerBound].split(separator: "\n") {
-            let part = line.trimmingCharacters(in: .whitespaces)
-            guard part.first == "\"", let close = part.dropFirst().firstIndex(of: "\"") else { continue }
-            hello.insert(String(part[part.index(after: part.startIndex)..<close]))
-        }
-    }
+    let hello = Set(RemoteServer.restartHelloPayload().keys)
 
     let healthFields = health.intersection(consumed)
     let helloFields = hello.intersection(consumed)

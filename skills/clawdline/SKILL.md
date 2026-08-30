@@ -3,8 +3,9 @@ name: clawdline
 description: |
   Use Clawdline to dispatch a bounded child task when the current Root keeps synthesis,
   integration, and landing; to hand off an existing work line for full continuation; or to send a
-  message, finding, or status to another live session. Triggers include "dispatch a task", "open a
-  child session", "get Codex to review this", "use Clawdline Handoff", and the equivalent Chinese
+  message, report, status, finding, or coordination note to another live session. Triggers include
+  "dispatch a task", "open a child session", "get Codex to review this", "use Clawdline Handoff",
+  and the equivalent Chinese
   requests 「派任務」「開 child」「使用 Clawdline Handoff」「交接給下一個 session」. A handoff transfers
   the sender's REFERENCES, VERIFICATION, and OPEN THREADS. Detached poll-only tasks are unattended
   automation, never Root or Major Feature owners. Root Assignment / Feature Launch is not yet
