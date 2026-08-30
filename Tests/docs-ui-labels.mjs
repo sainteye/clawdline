@@ -4,6 +4,8 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
 const english = read("Sources/Copy+English.swift");
 const chinese = read("Sources/Copy+Chinese.swift");
+const readme = read("README.md");
+const readmeZh = read("README.zh-TW.md");
 const expected = [
   [english, "Let a browser or your phone see your sessions"],
   [english, "Reach this Mac from anywhere"],
@@ -36,6 +38,9 @@ function check(condition, message) {
 for (const [source, label] of expected) {
   check(source.includes(`"${label}"`), `shipping copy is missing ${JSON.stringify(label)}`);
 }
+check(readme.includes("https://clawdline.com/docs"), "English README does not link to the canonical public manual");
+check(readmeZh.includes("https://clawdline.com/docs"), "Traditional Chinese README does not link to the canonical public manual");
+check(!readmeZh.includes("clawdline.com/zh-TW/docs"), "Traditional Chinese README still links to the legacy language-prefixed manual");
 for (const file of files) {
   const text = readFileSync(file, "utf8");
   for (const label of stale) {
