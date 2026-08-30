@@ -441,15 +441,15 @@ export function tasksOfRoot(id) {
     });
 }
 
-/** The executable Feature Root chip decision. The durable label and the live child count are
- * independent facts, so one can never hide the other; terminal assignment states are refused
- * here as a second closed boundary even though the broker normally omits those projections. */
+/** The executable Feature Root chip decision. The chip has the same compact count grammar as an
+ * ordinary task root; the durable assignment label remains in the row title and this tooltip
+ * instead of being repeated inside a narrow badge. Terminal assignment states are refused here
+ * as a second closed boundary even though the broker normally omits those projections. */
 export function featureRootChip(session) {
     var root = rootAssignmentOf(session);
     if (!root || root.state === "failed" || root.state === "inactive") return null;
     var live = tasksOfRoot(session.id).filter(taskLive);
-    var text = T.webTaskRoot + " · " + root.label;
-    if (live.length) text += " · " + live.length;
+    var text = T.webTaskRoot + " · " + live.length;
     var title = root.label + " · " + root.state;
     if (live.length) {
         title += "\n" + T.webTaskTasks + ": " + live.map(function (task) {

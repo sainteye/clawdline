@@ -195,10 +195,13 @@ assert.equal(derive.rootAssignmentOf({ root_assignment: {
     id: "fake", label: "Fake", state: "active", ownership: "child" } }), null,
     "an object without independent-root ownership cannot acquire Feature Root classification");
 const featureChip = derive.featureRootChip(featureRoot);
-assert.equal(featureChip.text, "Root · Root Assignment API · 1",
-    "the Feature Root chip keeps its durable label and live child count together");
+assert.equal(featureChip.text, "Root · 1",
+    "the Feature Root chip uses the same compact child count as an ordinary root");
 assert.match(featureChip.title, /Lifecycle tests/,
-    "the behavior model exposes the live child title without replacing the root label");
+    "the behavior model keeps the durable root label and live child title in its tooltip");
+state.tasks = [];
+assert.equal(derive.featureRootChip(featureRoot).text, "Root · 0",
+    "a childless Feature Root stays identified without putting its long assignment label in the chip");
 assert.equal(derive.featureRootChip({ ...featureRoot, root_assignment: {
     ...featureRoot.root_assignment, state: "failed" } }), null,
     "terminal assignment projections cannot reach a dead Feature Root chip branch");
