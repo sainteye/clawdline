@@ -271,7 +271,6 @@ struct German: Copy {
     let webEmptyWaitHint = "Auf dem Stream ist noch nichts angekommen"
     let webStateUnreadable = "Bildschirm nicht lesbar"
     let webStateWorking = "läuft"
-    let webTerminalLive = "Terminal-Livevorschau"
     let sessionWorkReady = "kann neue Arbeit übernehmen"
     let sessionWorkUnknown = "Status unbekannt"
     let sessionWorkHolding = "läuft von selbst weiter"

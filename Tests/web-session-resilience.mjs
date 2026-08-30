@@ -5,53 +5,6 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { createTranscriptEventRouter, createTranscriptRevisionObserver } from
     "../Resources/web/app/js/session/transcript-requests.js";
-import { createLivePreviewFollower } from
-    "../Resources/web/app/js/session/live-preview.js";
-
-const liveRequests = [];
-const liveAccepts = [];
-const liveTimers = [];
-const liveFollower = createLivePreviewFollower(function (id) {
-    return new Promise(function (resolve, reject) {
-        liveRequests.push({ id, resolve, reject });
-    });
-}, function (id, outcome) {
-    liveAccepts.push({ id, outcome });
-}, {
-    delay: 700,
-    schedule: function (fn, delay) {
-        const timer = { fn, delay, cancelled: false };
-        liveTimers.push(timer);
-        return timer;
-    },
-    cancel: function (timer) { timer.cancelled = true; }
-});
-liveFollower.start("A");
-liveFollower.start("A");
-await Promise.resolve();
-assert.equal(liveRequests.length, 1, "one session keeps exactly one live capture in flight");
-liveRequests[0].resolve({ text: "partial answer", signature: "p1" });
-await new Promise(function (resolve) { setImmediate(resolve); });
-assert.deepEqual(liveAccepts.map(function (item) { return item.id; }), ["A"],
-    "the active session receives its completed live capture");
-assert.equal(liveTimers.length, 1, "the next capture is scheduled only after the first settles");
-assert.equal(liveTimers[0].delay, 700, "the live lane uses its bounded polling cadence");
-liveTimers[0].fn();
-await Promise.resolve();
-assert.equal(liveRequests.length, 2, "the settled capture permits one following request");
-liveFollower.start("B");
-assert.equal(liveRequests.length, 2,
-    "switching sessions does not overlap a new terminal capture with the old one");
-liveRequests[1].resolve({ text: "late A", signature: "p2" });
-await new Promise(function (resolve) { setImmediate(resolve); });
-assert.equal(liveAccepts.length, 1, "a late capture from the previous session is ignored");
-assert.equal(liveRequests.length, 3, "the newly active session starts after the old request settles");
-assert.equal(liveRequests[2].id, "B", "the trailing request belongs to the newly active session");
-liveFollower.stop();
-liveRequests[2].resolve({ text: "late B", signature: "p3" });
-await new Promise(function (resolve) { setImmediate(resolve); });
-assert.equal(liveAccepts.length, 1, "closing the pane makes a late live capture harmless");
-
 const routedTranscriptEvents = [];
 const reconnectedTranscripts = [];
 let routedOpenID = "open-session";

@@ -383,10 +383,6 @@ export var LocalClient = {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/transcript?limit=200");
     },
 
-    livePreview: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/live");
-    },
-
     /// Every task the app knows about — what a session dispatched, and which session got it.
     /// Read-only from here whatever this device is: dispatching needs a credential that never
     /// leaves the Mac, so there is nothing this page could ask for that would start one.

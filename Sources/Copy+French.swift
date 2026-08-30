@@ -271,7 +271,6 @@ struct French: Copy {
     let webEmptyWaitHint = "Rien n'est encore arrivé sur le flux"
     let webStateUnreadable = "écran illisible"
     let webStateWorking = "en cours"
-    let webTerminalLive = "Aperçu du terminal en direct"
     let sessionWorkReady = "peut prendre du travail"
     let sessionWorkUnknown = "état inconnu"
     let sessionWorkHolding = "avance tout seul"

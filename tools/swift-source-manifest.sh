@@ -86,7 +86,6 @@ clawdline_production_sources=(
   Sources/Subagents.swift
   Sources/Subprocess.swift
   Sources/Targets.swift
-  Sources/TerminalLivePreview.swift
   Sources/Tmux.swift
   Sources/Transcript.swift
   Sources/TranscriptRevisionWatch.swift

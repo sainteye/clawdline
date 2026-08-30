@@ -270,7 +270,6 @@ struct English: Copy {
     let webEmptyWaitHint = "Nothing has arrived on the stream yet"
     let webStateUnreadable = "screen could not be read"
     let webStateWorking = "working"
-    let webTerminalLive = "Terminal live preview"
     let sessionWorkReady = "can take new work"
     let sessionWorkUnknown = "status unknown"
     let sessionWorkHolding = "moving on its own"

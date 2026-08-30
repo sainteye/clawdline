@@ -275,7 +275,6 @@ struct Hindi: Copy {
     let webEmptyWaitHint = "stream पर अभी कुछ नहीं आया"
     let webStateUnreadable = "स्क्रीन पढ़ी नहीं जा सकी"
     let webStateWorking = "चल रहा है"
-    let webTerminalLive = "टर्मिनल लाइव पूर्वावलोकन"
     let sessionWorkReady = "नया काम ले सकता है"
     let sessionWorkUnknown = "स्थिति अज्ञात"
     let sessionWorkHolding = "अपने आप आगे बढ़ रहा है"

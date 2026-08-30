@@ -44,7 +44,6 @@ export var T = {
     webEmptyWaitHint: "Nothing has arrived on the stream yet",
     webStateUnreadable: "screen could not be read",
     webStateWorking: "working",
-    webTerminalLive: "Terminal live preview",
     webBack: "Sessions",
     webBackLabel: "Back to the session list",
     webNoSessionOpen: "No session open",

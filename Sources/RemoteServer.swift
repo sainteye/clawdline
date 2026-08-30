@@ -112,8 +112,6 @@ final class RemoteServer: @unchecked Sendable {
             }
         }
     }
-    private lazy var terminalLiveBroker = TerminalLiveBroker(serverQueue: queue, workerQueue: readingQueue) {
-        [weak self] request in self?.route(request) ?? .error(503, "unavailable", "Server stopped") }
     /// Set only through `attachCloudBridge`. It lives on `queue`, beside the SSE streams whose
     /// already-serialized readings it shares.
     private var cloudBridge: CloudAppBridge?
@@ -630,13 +628,6 @@ final class RemoteServer: @unchecked Sendable {
         // request is not slow, it is *exclusive*: five `/info` in flight answered `/v1/health`, a
         // one-millisecond route, in 3.143 seconds, and held the event stream and its heartbeat for
         // the same three. See `readSlowly`.
-        if request.method == "GET", TerminalLivePreview.isPath(request.path) {
-            if let refusal = slowReadingRefusal(request) { send(withCachePolicy(refusal), on: conn); return }
-            terminalLiveBroker.read(request) { [weak self] response in
-                self?.send(response, on: conn)
-            }
-            return
-        }
         if request.method == "GET", Self.isSlowReading(request.path) {
             readSlowly(request, on: conn)
             return
@@ -1078,9 +1069,6 @@ final class RemoteServer: @unchecked Sendable {
             if parts.count == 2, parts[1] == "transcript" {
                 let limit = min(max(Int(request.query["limit"] ?? "") ?? 200, 1), 1000)
                 return transcriptPayload(for: session, limit: limit)
-            }
-            if parts.count == 2, parts[1] == "live" {
-                return TerminalLivePreview.response(for: session)
             }
             // One background agent's own conversation. The session list already says an agent
             // exists and what it last reached for; this is the rest of it, and it is read the
@@ -5113,7 +5101,6 @@ final class RemoteServer: @unchecked Sendable {
             "webEmptyWaitHint": t.webEmptyWaitHint,
             "webStateUnreadable": t.webStateUnreadable,
             "webStateWorking": t.webStateWorking,
-            "webTerminalLive": t.webTerminalLive,
             "sessionWorkReady": t.sessionWorkReady,
             "sessionWorkUnknown": t.sessionWorkUnknown,
             "sessionWorkHolding": t.sessionWorkHolding,

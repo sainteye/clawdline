@@ -269,7 +269,6 @@ struct Korean: Copy {
     let webEmptyWaitHint = "아직 아무것도 들어오지 않았습니다"
     let webStateUnreadable = "화면을 읽지 못함"
     let webStateWorking = "실행 중"
-    let webTerminalLive = "터미널 실시간 미리보기"
     let sessionWorkReady = "새 작업을 맡길 수 있음"
     let sessionWorkUnknown = "상태 알 수 없음"
     let sessionWorkHolding = "스스로 진행 중"

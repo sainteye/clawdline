@@ -777,22 +777,6 @@ export var Mock = (function () {
                 }, 220);
             });
         },
-        // The screen-shaped, deliberately non-durable companion to the transcript fixture.
-        // Prompt chrome is included so the preview cannot be mistaken for a conversation entry.
-        livePreview: function (id) {
-            return new Promise(function (done) {
-                setTimeout(function () {
-                    var session = find(id);
-                    var text = session && session.state === "working"
-                        ? "❯ Continue with the webhook retry fix\n\n" +
-                          "I’m tracing the idempotency key through the delivery worker…\n" +
-                          "  Read  Sources/WebhookDelivery.swift\n" +
-                          "  Search retry_after in Tests/"
-                        : "";
-                    done({ text: text, signature: id + ":" + text, at: Math.floor(Date.now() / 1000) });
-                }, 180);
-            });
-        },
         // Stopping one, which the fixtures answer and do not act on: there is no process behind
         // any of this, and a mock that pretended otherwise would be the one place this feature
         // looked like it worked when it did not.

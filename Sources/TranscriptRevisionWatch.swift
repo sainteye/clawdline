@@ -154,3 +154,27 @@ final class TranscriptRevisionStream: @unchecked Sendable {
         }
     }
 }
+
+extension RemoteServer {
+    /// Read one stable transcript snapshot: if the file moves while its tail is being read,
+    /// repeat once so the entries and the signature still describe the same bytes.
+    func transcriptPayload(for session: TargetSession, limit: Int) -> Response {
+        guard let record = Transcript.record(of: session) else {
+            return .json(["entries": [], "signature": ""])
+        }
+        let file = record.url
+        var signature = Transcript.signature(of: file)
+        guard var text = Transcript.tail(of: file, bytes: 8 << 20) else {
+            return .json(["entries": [], "signature": ""])
+        }
+        let after = Transcript.signature(of: file)
+        if after != signature, let fresh = Transcript.tail(of: file, bytes: 8 << 20) {
+            signature = after
+            text = fresh
+        }
+        let entries = Self.transcriptRows(
+            Transcript.parse(text, assistant: record.assistant, limit: limit)
+        )
+        return .json(["entries": entries, "signature": signature])
+    }
+}

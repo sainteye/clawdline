@@ -10,7 +10,7 @@ import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
 import {
-    closeDetail, observeTranscriptRevision, openSession, rearmTranscriptRevision, syncLivePreview
+    closeDetail, observeTranscriptRevision, openSession, rearmTranscriptRevision
 } from "../session/open.js";
 import { agentRow, agentsRev, loadAgent, renderAgentHead } from "../session/agent.js";
 import { SwipeRows } from "../input/swipe.js";
@@ -47,8 +47,6 @@ var firstList = true;
 
 export function onSessions() {
     var open = S.openId ? byId(S.openId) : null;
-    syncLivePreview();
-
     // Anything that has just stopped gets a pulse, and whatever is open gets refetched.
     S.sessions.forEach(function (s) {
         var was = S.seen[s.id];

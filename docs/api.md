@@ -80,7 +80,6 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/sessions/refresh` | token | `read` |
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
-| `GET` | `/v1/sessions/:id/live` | token | `read` |
 | `GET` | `/v1/artifacts/images/:artifactId` | token | `read` |
 | `GET` | `/v1/sessions/:id/agents/:agentId` | token | `read` |
 | `GET` | `/v1/sessions/:id/shells/:shellId` | token | `read` |
@@ -334,25 +333,6 @@ For a strictly decoded version-2 session message, its `role: "message"` entry al
 `artifacts` array. Each row contains only `id`, `media_type` (`image/png`), `byte_count`, `width`,
 `height`, and absolute Unix-seconds `expires_at`. There is no source path, filename, URL or raw
 image data in the transcript response.
-
-### `GET /v1/sessions/:id/live`
-
-A separate, lossy preview of the terminal's currently visible screen while a session is working:
-
-```json
-{"text":"…partial answer currently visible…","signature":"36-68873f57b46f0f28","at":1787049580}
-```
-
-ANSI control sequences are removed and at most the last 160 visible lines are returned. This is
-not parsed into transcript entries and must not be stored as conversation history: it can contain
-the prompt, progress animation and any other terminal chrome. `signature` is a fixed content hash
-for repaint suppression, not the transcript file signature.
-
-Captures execute on the serial terminal-reading worker. Concurrent readers of the same session
-share one capture, a successful result is reused for 450 ms, and at most four distinct sessions
-may have a capture pending. Excess demand returns `429 live_preview_busy`; an unreadable terminal
-returns `503 terminal_unavailable`. Clients should keep one request in flight and schedule the next
-only after it settles.
 
 ### `GET /v1/artifacts/images/:artifactId`
 

@@ -269,7 +269,6 @@ struct Japanese: Copy {
     let webEmptyWaitHint = "まだ何も届いていません"
     let webStateUnreadable = "画面を読めませんでした"
     let webStateWorking = "実行中"
-    let webTerminalLive = "ターミナルのライブプレビュー"
     let sessionWorkReady = "新しい作業を渡せます"
     let sessionWorkUnknown = "状態不明"
     let sessionWorkHolding = "自動で進行中"

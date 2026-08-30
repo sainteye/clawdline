@@ -147,7 +147,6 @@
         font-weight: 620; letter-spacing: -0.03em;
     }
     .entry { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 9px 0; }
-    .terminal-live { margin-left: 0; }
     .entry .who { text-align: left; display: flex; gap: 8px; align-items: baseline; }
     .entry .who time { margin: 0; }
 }

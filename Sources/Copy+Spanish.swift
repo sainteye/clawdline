@@ -271,7 +271,6 @@ struct Spanish: Copy {
     let webEmptyWaitHint = "Todavía no ha llegado nada por la conexión"
     let webStateUnreadable = "no se pudo leer la pantalla"
     let webStateWorking = "en marcha"
-    let webTerminalLive = "Vista en vivo del terminal"
     let sessionWorkReady = "puede recibir trabajo"
     let sessionWorkUnknown = "estado desconocido"
     let sessionWorkHolding = "avanza por sí solo"
