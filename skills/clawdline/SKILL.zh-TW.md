@@ -461,6 +461,12 @@ body），app 再放進注入給 child 的第一句話。app 只留 SHA-256。
 用 `jq -n` 組，不要手拼字串——`instructions` 裡有引號或換行時手拼一定會壞。
 
 ```bash
+graph_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+GRAPH=$(jq -nc --arg id "$graph_id" --arg current "portrait" \
+  '{id:$id,destination:"審查過的專案肖像已落地",current_node:$current,
+    nodes:[{id:"portrait",title:"繪製",kind:"delivery",depends_on:[],acceptance:["符合 brief"]},
+           {id:"review",title:"審查",kind:"review",depends_on:["portrait"],acceptance:["三軸 verdict"]}],
+    unknowns:[],out_of_scope:[]}')
 jq -n \
   --arg id "$task_id" \
   --arg kind "image" \
@@ -475,9 +481,11 @@ jq -n \
   --argjson poll_only "${POLL_ONLY:-false}" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
+  --argjson graph "$GRAPH" \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
     permission_mode:"full",
-    isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
+    isolation:"none", project_dir:$dir, title:$title, instructions:$instructions,
+    plan:$plan, graph:$graph,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
           assistant:$root_assistant, project_dir:$dir, label:$root_label,
@@ -485,7 +493,9 @@ jq -n \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
-`$PLAN` 就是 §2.1 那張圖，**每一件都放同一份**——那是整張圖，不是這一件的說明。
+`$GRAPH` 是 §2.1 整張圖的 JSON 物件。每件 task 使用相同的 graph id、destination、nodes、
+unknowns 與 scope，只改 `current_node`；frontier 由 broker 根據 task、review 與 landing receipts
+推導，不接受 caller 自己宣告 ready。`$PLAN` 只保留作選填的 legacy 自由文字註記。
 
 欄位規則（違反就是 `422 bad_task`，app 不會幫你補）：
 
@@ -505,7 +515,8 @@ jq -n \
 | `permission_mode` | 選填。`ask`／`edits`／`full`。不寫 ＝ 這台 Mac 的上限值（預設 `full`）。寫別的字（包括 `auto`）＝ `bad_task` |
 | `isolation` | 選填。`none`／`worktree`；不寫 ＝ `none`。只有通過 §2.0a 判斷才用 `worktree` |
 | `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |
-| `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
+| `graph` | 選填但建議用：typed DAG，含小寫 UUID `id`、`destination`、`current_node`、1…32 個 `nodes`、`unknowns`、`out_of_scope`。registry 保留期間相同 id 的定義不可漂移；依賴未完成或失敗會 fail closed |
+| `plan` | 選填的 legacy 自由文字註記，≤ 4 KiB；新的協調流程以 `graph` 為準 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
 | `root.session_id` | 目前這個助理 process-bound conversation id；terminal-neutral id 只屬於 terminal-addressed route，一般派工一定要能解析到 live owner |
 | `root.assistant` | **所有 owner 非 null 的一般派工都必填**：派出這件 task 的助理，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child。省略／null 會回 `root_assistant_required`；legacy 缺 assistant 在 ownership 一律是 unknown，舊 Claude fallback 只留在非 ownership 相容讀路徑 |
@@ -741,6 +752,11 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 `result.json` 裡的 `summary` 是 child 自己寫的一句話，`artifacts` 是它宣稱的產出——
 **宣稱歸宣稱，檔案在不在自己 `ls` 一次**。任務目錄在完成 24 小時後會被清掉，
 使用者要留的東西要複製出來。
+
+審查 task 另外回報 typed `review` receipt：`verdict` 只能是 `safe_to_land` 或
+`changes_required`，`axes` 必須恰好覆蓋 `specification`、`repository_invariants`、
+`runtime_failure_behavior`。每個 finding 都要有 id、severity、summary 與 evidence；少一軸、
+藏 finding，或只有結論沒有證據，broker 都把它視為無效，不能推進 graph frontier。
 
 `symbols` 是事後補不回來的那一欄：child 這次修改引入的每一個名字——新的 function、type、欄位、
 字串 key、它加的測試群組名稱。要的是名字，不是描述。這棵樹是共用的，等你要 commit 的時候，

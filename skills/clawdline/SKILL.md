@@ -537,6 +537,12 @@ Build it with `jq -n` rather than by hand — string-pasting breaks the moment `
 contains a quote or a newline.
 
 ```bash
+graph_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+GRAPH=$(jq -nc --arg id "$graph_id" --arg current "portrait" \
+  '{id:$id,destination:"Reviewed portrait landed",current_node:$current,
+    nodes:[{id:"portrait",title:"Draw",kind:"delivery",depends_on:[],acceptance:["Matches the brief"]},
+           {id:"review",title:"Review",kind:"review",depends_on:["portrait"],acceptance:["Three-axis verdict"]}],
+    unknowns:[],out_of_scope:[]}')
 jq -n \
   --arg id "$task_id" \
   --arg kind "image" \
@@ -551,9 +557,11 @@ jq -n \
   --argjson poll_only "${POLL_ONLY:-false}" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
+  --argjson graph "$GRAPH" \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
     permission_mode:"full",
-    isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
+    isolation:"none", project_dir:$dir, title:$title, instructions:$instructions,
+    plan:$plan, graph:$graph,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
           assistant:$root_assistant, project_dir:$dir, label:$root_label,
@@ -561,8 +569,10 @@ jq -n \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
-`$PLAN` is the graph from §2.1, and **every task in the batch carries the same one** — it is the
-whole picture, not this node's description of itself.
+`$GRAPH` is a JSON object for the complete graph from §2.1. Every task carries the same graph id,
+destination, nodes, unknowns and scope; only `current_node` changes. `$PLAN` is the optional legacy
+free-text note. The broker, not the caller, derives the live frontier from task, review and landing
+receipts.
 
 Field rules (breaking one is `422 bad_task`; the app will not fill anything in for you):
 
@@ -582,7 +592,8 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `permission_mode` | optional. `ask` / `edits` / `full`. Absent = this Mac's ceiling (default `full`). Anything else, `auto` included, is `bad_task` |
 | `isolation` | optional. `none` / `worktree`; absent = `none`. Use `worktree` only after the §2.0a decision |
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |
-| `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
+| `graph` | optional typed graph; use it for every multi-node feature. Lowercase UUID id, destination, `current_node`, 1…32 unique acyclic nodes, dependencies, 1…8 acceptance strings per node, and bounded `unknowns` / `out_of_scope`. Node kinds: `decision` · `delivery` · `review` · `correction` · `verification` · `landing`. One retained graph id accepts one definition |
+| `plan` | optional legacy free-text note, ≤ 4 KiB; new coordination flows use `graph` |
 | `timeout_minutes` | 1…240, 30 if absent |
 | `root.session_id` | this assistant's current process-bound conversation id. A terminal-neutral id belongs only on terminal-addressed routes; an ordinary dispatch must resolve to a live owner |
 | `root.assistant` | **required for every ordinary dispatch with a non-null owner**: the assistant dispatching this task, `claude` or `codex`; it is not the child named by top-level `assistant`. Omission/null is `root_assistant_required`; a legacy missing assistant is unknown for ownership (the old Claude fallback survives only in non-ownership compatibility readers) |
@@ -844,6 +855,12 @@ edited may hold two or three sessions' unfinished work, and that vocabulary is h
 session's hunks from another's. Guessing it has produced staged trees that would not compile. A
 child that reports nothing there has not told you it changed nothing; ask, or read the diff for the
 names yourself before staging.
+
+For a typed review node, read the `review` object too. It must keep `specification`,
+`repository_invariants`, and `runtime_failure_behavior` as three separate axes. `safe_to_land`
+requires all three to pass with no findings; `changes_required` requires at least one finding with
+an id, severity, summary, and concrete evidence. Task `success` without that valid receipt does not
+advance the graph frontier.
 
 **When you pass what came back to the user, split it in two.** What the results imply for *you* to
 do next is one list; what only *he* can decide is a separate list, labelled as such — never mixed

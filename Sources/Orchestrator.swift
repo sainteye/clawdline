@@ -165,7 +165,7 @@ enum Orchestrator {
         }
         let taskAllowed = Set(["assistant", "model", "reasoning_effort", "project_dir", "title", "instructions",
                                "claims", "serialize", "isolation", "isolation_base",
-                               "permission_mode", "timeout_minutes", "deliverables", "kind", "plan"])
+                               "permission_mode", "timeout_minutes", "deliverables", "kind", "plan", "graph"])
         let taskUnknown = Set(task.keys).subtracting(taskAllowed).sorted()
         guard taskUnknown.isEmpty else {
             return .bad("unknown task field: \(taskUnknown.joined(separator: ", "))")
@@ -331,7 +331,7 @@ enum Orchestrator {
         // A create passes nothing here and so is unaffected; only a save over an existing file
         // has anything to carry.
         for key in ["claims", "permission_mode", "serialize", "isolation", "isolation_base",
-                    "deliverables", "kind", "plan"] where task[key] == nil {
+                    "deliverables", "kind", "plan", "graph"] where task[key] == nil {
             if let kept = previous[key] { task[key] = kept }
         }
         // Reasoning is the one hidden field whose validity depends on a visible field. Keep it
@@ -1433,6 +1433,7 @@ enum Orchestrator {
         /// the briefing so a leaf knows what its output feeds — which is the difference between
         /// a usable answer and an essay.
         var plan: String?
+        var graph: PlanningGraph?
         /// Present only for work created from a schedule file. The public registry exposes the
         /// id; the two policy values stay internal so an edit to the source file cannot rewrite
         /// what should happen to a task already in flight.
@@ -1507,6 +1508,7 @@ enum Orchestrator {
         var artifacts: [String] = []
         var usage: Usage?
         var verification: Verification?
+        var review: ReviewReceipt?
         var injectAttempts = 0
         /// The most recent time the first message was handed to the terminal. In memory only:
         /// a process restart loses the plaintext secret and fails every spawning task anyway.
@@ -2216,6 +2218,7 @@ enum Orchestrator {
     static let legacyCompletionBatchLimit = 25
     private static var loaded = false
     static var tasks: [String: Task] = [:]
+    static var graphAdmissions: [String: (taskID: String, graph: PlanningGraph)] = [:]
     static var restartReceipt: RestartReceipt?
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
@@ -3994,6 +3997,7 @@ enum Orchestrator {
         /// completion notice or own the child row.
         var pollOnly = false
         var plan: String?
+        var graph: PlanningGraph?
         var serialize: [String] = []
         var claims: [String] = []
         var claimsDeclared = false
@@ -4231,6 +4235,12 @@ enum Orchestrator {
         if let plan = obj["plan"] as? String, plan.utf8.count > planLimit {
             return .bad("plan must be at most \(planLimit / 1024) KiB")
         }
+        var graph: PlanningGraph?
+        if let rawGraph = obj["graph"] {
+            let parsed = planningGraph(from: rawGraph)
+            if let error = parsed.error { return .bad(error) }
+            graph = parsed.graph
+        }
         var isolation = Isolation.none
         if let raw = obj["isolation"] {
             guard let name = raw as? String, let value = Isolation(rawValue: name) else {
@@ -4344,6 +4354,7 @@ enum Orchestrator {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
         }
+        made.graph = graph
         made.projectDir = dir
         made.instructions = instructions
         made.kind = (obj["kind"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(40)) } ?? "custom"
@@ -5793,6 +5804,15 @@ enum Orchestrator {
         made.rootSessionId = rootBinding.sessionID
         let rootWarnings = rootBinding.warning.map { [$0] } ?? []
 
+        var graphReservation: String?
+        defer { if let key = graphReservation { releaseGraphAdmission(key) } }
+        if let graph = made.graph,
+           let refusal = graphAdmissionRefusal(graph, taskID: taskID, reserve: true) {
+            refundDispatchRate(rateTicket)
+            return refusal
+        }
+        graphReservation = made.graph.map(graphAdmissionKey)
+
         var attachedSession: TargetSession?
         var attachedDepth: Int?
         if let sessionID = made.attachSessionId {
@@ -5894,6 +5914,7 @@ enum Orchestrator {
                         rootAssistant: made.rootAssistant,
                         rootLabel: schedule?.title ?? made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
+                        graph: made.graph,
                         serialize: made.serialize, claims: made.claims,
                         claimsDeclared: made.claimsDeclared,
                         secretHash: hash(ofSecret: secret))
@@ -9570,18 +9591,7 @@ enum Orchestrator {
         var summary: String?
         var artifacts: [String]
         var verification: Verification?
-    }
-
-    static func verification(from raw: Any?) -> Verification? {
-        guard let obj = raw as? [String: Any],
-              let runs = obj["runs"] as? Int, runs >= 0,
-              let seconds = obj["seconds"] as? Int, seconds >= 0,
-              let lastRaw = obj["last"] as? String,
-              let last = Verification.Last(rawValue: lastRaw),
-              let scope = obj["scope"] as? String,
-              !scope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              scope.count <= 300 else { return nil }
-        return Verification(runs: runs, seconds: seconds, last: last, scope: scope)
+        var review: ReviewReceipt?
     }
 
     /// The child's `result.json`, if it exists and can prove it came from the child.
@@ -9606,7 +9616,8 @@ enum Orchestrator {
         return ChildResult(status: obj["status"] as? String ?? "failure",
                            summary: (obj["summary"] as? String).map { String($0.prefix(2000)) },
                            artifacts: (obj["artifacts"] as? [String] ?? []).map { String($0.prefix(300)) },
-                           verification: verification(from: obj["verification"]))
+                           verification: verification(from: obj["verification"]),
+                           review: review(from: obj["review"]))
     }
 
     private static var badResults: Set<String> = []
@@ -9683,15 +9694,17 @@ enum Orchestrator {
 
         // The result file can carry words the finalizer was not handed — the HTTP route sends
         // only a sentence, the file has the artifact list and the verification record too. Asked
-        // only when one of the three is still missing: `readResult` is a disk read and a secret
-        // comparison that files a `badResults` entry, and running it for a `cancelled` task that
+        // only when a core field or required review receipt is missing. `readResult` is a disk
+        // read and secret comparison that files `badResults`; running it for a cancelled task that
         // never wrote a result is a cost with no answer at the end of it.
-        if task.summary == nil || task.artifacts.isEmpty || task.verification == nil,
+        if task.summary == nil || task.artifacts.isEmpty || task.verification == nil
+            || (requiresTypedReview(task) && task.review == nil),
            let result = readResult(of: task) {
             lock.lock()
             if task.summary == nil { task.summary = result.summary }
             if task.artifacts.isEmpty { task.artifacts = result.artifacts }
             if task.verification == nil { task.verification = result.verification }
+            if task.review == nil, requiresTypedReview(task) { task.review = result.review }
             task.resultVerifiedAt = task.resultVerifiedAt ?? Date()
             tasks[taskID] = task
             lock.unlock()
@@ -11141,12 +11154,13 @@ enum Orchestrator {
                  -d '{"status":"success","summary":"..."}'`
               This is never required; the file alone is enough.
               """
+        let reviewReporting = typedReviewReporting(for: task)
         return """
         # Clawdline child briefing — task \(task.id)
 
         You are a CHILD session working for a Clawdline root session. Your one job is the task
         described in \(dir)/task.json — read that file now.
-        \(planSection(for: task))\(attachedSection)
+        \(planningSection(for: task))\(attachedSection)
         ## Language, and the first thing you say
 
         The person watching this terminal reads \(languageName). Everything you say in this
@@ -11235,6 +11249,7 @@ enum Orchestrator {
 
         Use "status": "failure" when you could not do it. Write it LAST — the moment it exists
         your work is considered finished.
+        \(reviewReporting)
 
         **`symbols` is how your work is told apart from everybody else's.** This tree is shared:
         by the time root commits, the files you edited may hold two or three sessions' unfinished
@@ -11416,27 +11431,6 @@ enum Orchestrator {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The graph this task is one node of, when the dispatcher wrote one down.
-    ///
-    /// Near the top, above even the language rule, because it is the context every other line is
-    /// read in: a child that knows its answer is one of four being joined together writes
-    /// something joinable, and one that does not writes a report.
-    private static func planSection(for task: Task) -> String {
-        guard let plan = task.plan, !plan.isEmpty else { return "" }
-        return """
-
-
-        ## The plan this is part of
-
-        Written by the session that dispatched you. You are one node of it — find yourself in it
-        before you start, and hand back what the node after you needs rather than everything you
-        found.
-
-        \(plan)
-
-        """
-    }
-
     /// What this Mac has said about itself, for every child briefing.
     ///
     /// **This travelled with the dispatch recipe once, and that was the wrong home for it.**
@@ -11603,9 +11597,9 @@ enum Orchestrator {
     static func records() -> [[String: Any]] {
         onMain(from: "Orchestrator.records") {
             lock.lock()
-            let all = tasks.values.sorted { $0.created > $1.created }
+            let indexed = tasks; let all = indexed.values.sorted { $0.created > $1.created }
             lock.unlock()
-            return all.map { record(of: $0) }
+            let graphIndex = graphTaskIndex(indexed); return all.map { record(of: $0, graphIndex: graphIndex) }
         }
     }
 
@@ -11761,15 +11755,15 @@ enum Orchestrator {
                       resolution: .task, among: targets, sessionID: sessionID)?.id
     }
 
-    private static func record(of task: Task) -> [String: Any] {
+    private static func record(of task: Task, graphIndex: GraphTaskIndex? = nil) -> [String: Any] {
         let parentTerminal = task.parentTaskId.flatMap { held($0)?.childTerminalId }
         let rootTerminal = rootTerminalID(for: task, parentTerminalID: parentTerminal,
                                           among: SessionWatch.shared.targets,
                                           sessionID: Transcript.sessionID(of:))
-        return shape(task, rootTerminal: rootTerminal)
+        return shape(task, rootTerminal: rootTerminal, graphIndex: graphIndex)
     }
 
-    private static func shape(_ task: Task, rootTerminal: String?) -> [String: Any] {
+    private static func shape(_ task: Task, rootTerminal: String?, graphIndex: GraphTaskIndex? = nil) -> [String: Any] {
         var out: [String: Any] = [
             "id": task.id,
             "state": task.state.rawValue,
@@ -11807,6 +11801,9 @@ enum Orchestrator {
         if let from = task.respawnOf {
             out["respawn_of"] = from
             out["respawn_generation"] = task.respawnGeneration
+        }
+        if let graph = task.graph {
+            out["graph"] = planningGraphRecord(graph, taskIndex: graphIndex ?? graphTaskIndex())
         }
         var child: [String: Any] = [:]
         if let id = task.childTerminalId { child["terminalId"] = id }
@@ -11872,6 +11869,7 @@ enum Orchestrator {
         if let verification = task.verification {
             out["verification"] = verificationRecord(verification)
         }
+        if let review = task.review { out["review"] = reviewRecord(review) }
         return out
     }
 
@@ -12435,11 +12433,6 @@ enum Orchestrator {
         ["note": note.note, "at": note.at.timeIntervalSince1970]
     }
 
-    private static func verificationRecord(_ verification: Verification) -> [String: Any] {
-        ["runs": verification.runs, "seconds": verification.seconds,
-         "last": verification.last.rawValue, "scope": verification.scope]
-    }
-
     /// Notes back off disk. A row that lost its text or its clock is dropped rather than
     /// resurrected with a guess, and the kept-count is applied again on the way in so an older
     /// store written before the cap cannot reintroduce an unbounded list.
@@ -12491,6 +12484,7 @@ enum Orchestrator {
         if let v = task.reasoningEffort { out["reasoning_effort"] = v.rawValue }
         out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
+        if let v = task.graph { out["graph"] = storedPlanningGraph(v) }
         if let v = task.scheduleID {
             out["schedule_id"] = v
             out["schedule_close_tab"] = task.scheduleCloseTab.rawValue
@@ -12545,6 +12539,7 @@ enum Orchestrator {
         if let verification = task.verification {
             out["verification"] = verificationRecord(verification)
         }
+        if let review = task.review { out["review"] = reviewRecord(review) }
         if let usage = task.usage {
             var counts: [String: Any] = ["input": usage.input, "output": usage.output,
                                          "cache_read": usage.cacheRead,
@@ -13026,6 +13021,9 @@ enum Orchestrator {
             : nil
         task.permission = (obj["permission"] as? String).flatMap(Permission.init(rawValue:)) ?? .ask
         task.plan = obj["plan"] as? String
+        if let rawGraph = obj["graph"] {
+            task.graph = planningGraph(from: rawGraph).graph
+        }
         task.scheduleID = (obj["schedule_id"] as? String).flatMap { isTaskID($0) ? $0 : nil }
         task.scheduleCloseTab = (obj["schedule_close_tab"] as? String)
             .flatMap(ScheduleCloseTab.init(rawValue:)) ?? .onSuccess
@@ -13150,6 +13148,7 @@ enum Orchestrator {
         }
         task.artifacts = obj["artifacts"] as? [String] ?? []
         task.verification = verification(from: obj["verification"])
+        task.review = review(from: obj["review"])
         if let counts = obj["usage"] as? [String: Any] {
             var usage = Usage()
             usage.input = counts["input"] as? Int ?? 0
@@ -13398,6 +13397,7 @@ enum Orchestrator {
     static func forget() {
         lock.lock()
         tasks = [:]
+        graphAdmissions = [:]
         restartReceipt = nil
         handoffs = [:]
         handoffDeliveries = [:]

@@ -140,6 +140,49 @@ group("a task.json is read before a terminal is opened for it") {
           made(file(["plan": "   \n  "]))?.plan == nil)
     check("and one past four KiB is refused rather than cut",
           refused(file(["plan": String(repeating: "p", count: 4097)])))
+
+    func graph(_ overrides: [String: Any] = [:]) -> [String: Any] {
+        var value: [String: Any] = [
+            "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "destination": "A reviewed change is landed on main.",
+            "current_node": "build",
+            "nodes": [
+                ["id": "build", "title": "Build the slice", "kind": "delivery",
+                 "depends_on": [],
+                 "acceptance": ["The focused contract passes."]],
+                ["id": "review", "title": "Review the slice", "kind": "review",
+                 "depends_on": ["build"],
+                 "acceptance": ["All three review axes have a verdict."]],
+            ],
+            "unknowns": ["Whether a migration is necessary."],
+            "out_of_scope": ["Changing the terminal transport."],
+        ]
+        for (key, valueOverride) in overrides { value[key] = valueOverride }
+        return value
+    }
+    let typed = made(file(["graph": graph()]))?.graph
+    check("a typed graph carries destination, fog and scope without replacing the legacy plan",
+          typed?.destination == "A reviewed change is landed on main."
+              && typed?.currentNode == "build"
+              && typed?.unknowns == ["Whether a migration is necessary."]
+              && typed?.outOfScope == ["Changing the terminal transport."])
+    expect("a typed graph keeps decision and delivery order as explicit dependencies",
+           typed?.nodes.last?.dependsOn ?? [], ["build"])
+    check("the current graph node must name a declared node",
+          refused(file(["graph": graph(["current_node": "missing"])])))
+    let cyclicNodes: [[String: Any]] = [
+        ["id": "build", "title": "Build", "kind": "delivery",
+         "depends_on": ["review"], "acceptance": ["Built"]],
+        ["id": "review", "title": "Review", "kind": "review",
+         "depends_on": ["build"], "acceptance": ["Reviewed"]],
+    ]
+    check("a graph cycle is refused before a terminal opens",
+          refused(file(["graph": graph(["nodes": cyclicNodes])])))
+    check("a graph node kind is a closed vocabulary",
+          refused(file(["graph": graph(["nodes": [[
+              "id": "build", "title": "Build", "kind": "guess",
+              "depends_on": [], "acceptance": ["Built"],
+          ]]])])))
     expect("with its own timeout", made(file())?.timeoutMinutes, 45)
     expect("its kind", made(file())?.kind, "image")
     expect("its title", made(file())?.title, "draw the project")
@@ -248,6 +291,174 @@ group("a task.json is read before a terminal is opened for it") {
           made(file(["ignore_quota": false]))?.ignoreQuota == false)
     check("a non-bool ignore_quota is not an error — it is simply not true",
           made(file(["ignore_quota": "yes"]))?.ignoreQuota == false)
+    // Review receipts keep independent axes independent.
+    let reviewPassRows: [[String: Any]] = [
+        ["axis": "specification", "status": "pass", "findings": []],
+        ["axis": "repository_invariants", "status": "pass", "findings": []],
+        ["axis": "runtime_failure_behavior", "status": "pass", "findings": []],
+    ]
+    let safe = Orchestrator.review(from: ["verdict": "safe_to_land", "axes": reviewPassRows])
+    check("SAFE TO LAND requires all three named axes",
+          safe?.verdict == .safeToLand && safe?.axes.count == 3)
+
+    var findingsAxes = reviewPassRows
+    findingsAxes[1] = [
+        "axis": "repository_invariants", "status": "findings",
+        "findings": [
+            ["id": "R1", "severity": "blocking",
+             "summary": "The shared index can be swept into the commit.",
+             "evidence": ["AGENTS.md: use named staging paths"]]
+        ],
+    ]
+    let changes = Orchestrator.review(
+        from: ["verdict": "changes_required", "axes": findingsAxes])
+    check("a finding stays attached to its axis with typed severity and evidence",
+          changes?.verdict == .changesRequired
+              && changes?.axes[1].findings.first?.severity == .blocking
+              && changes?.axes[1].findings.first?.evidence.count == 1)
+    var hiddenFindingAxes = reviewPassRows
+    hiddenFindingAxes[0] = [
+        "axis": "specification", "status": "pass",
+        "findings": [
+            ["id": "S1", "severity": "minor", "summary": "Hidden",
+             "evidence": ["x"]]
+        ],
+    ]
+    check("a pass axis cannot hide findings",
+          Orchestrator.review(from: ["verdict": "safe_to_land",
+                                     "axes": hiddenFindingAxes]) == nil)
+    check("a safe verdict cannot omit an axis",
+          Orchestrator.review(from: ["verdict": "safe_to_land",
+                                     "axes": Array(reviewPassRows.dropLast())]) == nil)
+    check("changes_required must carry at least one concrete finding",
+          Orchestrator.review(from: ["verdict": "changes_required", "axes": reviewPassRows]) == nil)
+
+    // The graph frontier is derived from durable task and review receipts.
+    Orchestrator.forget()
+    let graphID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    let reviewTaskID = "11111111-2222-3333-4444-555555555555"
+    let verificationTaskID = "12121212-3434-5656-7878-909090909090"
+    let landingTaskID = "22222222-3333-4444-5555-666666666666"
+    let nodes = [
+        Orchestrator.GraphNode(id: "build", title: "Build", kind: .delivery,
+                               dependsOn: [], acceptance: ["Built"]),
+        Orchestrator.GraphNode(id: "review", title: "Review", kind: .review,
+                               dependsOn: ["build"], acceptance: ["Reviewed"]),
+        Orchestrator.GraphNode(id: "verify", title: "Verify", kind: .verification,
+                               dependsOn: ["review"], acceptance: ["Focused proof passes"]),
+        Orchestrator.GraphNode(id: "land", title: "Land", kind: .landing,
+                               dependsOn: ["verify"], acceptance: ["Landed"]),
+    ]
+    func graph(_ current: String) -> Orchestrator.PlanningGraph {
+        Orchestrator.PlanningGraph(id: graphID, destination: "Landed on main",
+                                   currentNode: current, nodes: nodes,
+                                   unknowns: [], outOfScope: [])
+    }
+    let build = Orchestrator.Task(id: taskID, state: .success, kind: "implementation",
+                                 title: "Build", assistant: .codex, projectDir: "/repo",
+                                 timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
+                                 graph: graph("build"),
+                                 secretHash: String(repeating: "0", count: 64))
+    Orchestrator.holdScheduleTaskForTesting(build)
+    let conflictingGraph = Orchestrator.PlanningGraph(
+        id: graphID, destination: "A different destination", currentNode: "review",
+        nodes: nodes, unknowns: [], outOfScope: [])
+    let conflictingAdmission = Orchestrator.graphAdmissionRefusal(
+        conflictingGraph, taskID: reviewTaskID)
+    var conflictingCode = ""
+    if case .refused(_, let code, _, _) = conflictingAdmission { conflictingCode = code }
+    var completedCode = ""
+    if case .refused(_, let code, _, _) = Orchestrator.graphAdmissionRefusal(
+        graph("build"), taskID: "33333333-4444-5555-6666-777777777777") {
+        completedCode = code
+    }
+    let reserved = Orchestrator.graphAdmissionRefusal(
+        graph("review"), taskID: reviewTaskID, reserve: true) == nil
+    var reservedCode = ""
+    if case .refused(_, let code, _, _) = Orchestrator.graphAdmissionRefusal(
+        graph("review"), taskID: "44444444-5555-6666-7777-888888888888", reserve: true) {
+        reservedCode = code
+    }
+    Orchestrator.releaseGraphAdmission(Orchestrator.graphAdmissionKey(graph("review")))
+    var plannedState = ""
+    if case .refused(_, _, _, let extra) = Orchestrator.graphAdmissionRefusal(
+        graph("land"), taskID: landingTaskID) {
+        plannedState = (extra["blocking_nodes"] as? [[String: Any]])?.first?["state"]
+            as? String ?? ""
+    }
+    check("a completed dependency makes only its direct successor dispatchable",
+          Orchestrator.graphAdmissionRefusal(graph("review"), taskID: reviewTaskID) == nil
+              && conflictingCode == "graph_definition_conflict"
+              && completedCode == "graph_node_complete"
+              && reserved && reservedCode == "graph_node_active"
+              && plannedState == "blocked")
+    let controlSheet = Orchestrator.graphRecords().first
+    let projected = controlSheet?["nodes"] as? [[String: Any]]
+    let graphResponse = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/graphs",
+        headers: ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]))
+    let graphBody = (try? JSONSerialization.jsonObject(with: graphResponse.body)) as? [String: Any]
+    let publicGraphs = graphBody?["graphs"] as? [[String: Any]]
+    check("the control sheet exposes a computed frontier, not a caller-supplied ready flag",
+          controlSheet?["frontier"] as? [String] == ["review"]
+              && projected?.first(where: { $0["id"] as? String == "build" })?["state"] as? String
+                    == "done"
+              && projected?.first(where: { $0["id"] as? String == "review" })?["state"] as? String
+                    == "ready"
+              && graphResponse.status == 200
+              && publicGraphs?.first?["frontier"] as? [String] == ["review"])
+
+    var reviewTask = build
+    reviewTask = Orchestrator.Task(id: reviewTaskID, state: .success, kind: "review",
+                                   title: "Review", assistant: .claude, projectDir: "/repo",
+                                   timeoutMinutes: 30, created: Date(timeIntervalSince1970: 2),
+                                   graph: graph("review"),
+                                   secretHash: String(repeating: "1", count: 64))
+    Orchestrator.holdScheduleTaskForTesting(reviewTask)
+    if case .refused(let status, let code, _, let extra) = Orchestrator.graphAdmissionRefusal(
+        graph("verify"), taskID: verificationTaskID) {
+        check("a successful review task without a typed review receipt fails closed",
+              status == 409 && code == "graph_dependency_failed"
+                  && (extra["blocking_nodes"] as? [[String: Any]])?.first?["state"] as? String
+                        == "failed")
+    } else {
+        check("a successful review task without a typed review receipt fails closed", false)
+    }
+    let passAxes = Orchestrator.ReviewAxisName.allCases.map {
+        Orchestrator.ReviewAxis(axis: $0, status: .pass, findings: [])
+    }
+    reviewTask.review = Orchestrator.ReviewReceipt(verdict: .safeToLand, axes: passAxes)
+    Orchestrator.holdScheduleTaskForTesting(reviewTask)
+    var verificationTask = Orchestrator.Task(
+        id: verificationTaskID, state: .success, kind: "verification", title: "Verify",
+        assistant: .codex, projectDir: "/repo", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 3), graph: graph("verify"),
+        secretHash: String(repeating: "2", count: 64))
+    let reviewAdvances = Orchestrator.graphAdmissionRefusal(
+        graph("verify"), taskID: verificationTaskID) == nil
+    Orchestrator.holdScheduleTaskForTesting(verificationTask)
+    var missingProofCode = ""
+    if case .refused(_, let code, _, _) = Orchestrator.graphAdmissionRefusal(
+        graph("land"), taskID: landingTaskID) { missingProofCode = code }
+    verificationTask.verification = Orchestrator.Verification(
+        runs: 1, seconds: 2, last: .pass, scope: "focused planning graph proof")
+    Orchestrator.holdScheduleTaskForTesting(verificationTask)
+    let restoredReview = Orchestrator.task(from: Orchestrator.stored(reviewTask))
+    var damagedReview = Orchestrator.stored(reviewTask)
+    var damagedGraph = damagedReview["graph"] as? [String: Any] ?? [:]
+    damagedGraph["future_field"] = true
+    damagedReview["graph"] = damagedGraph
+    let restoredWithoutGraph = Orchestrator.task(from: damagedReview)
+    check("review and verification receipts advance their exact successor onto the frontier",
+          Orchestrator.graphAdmissionRefusal(graph("land"), taskID: landingTaskID) == nil
+              && reviewAdvances && missingProofCode == "graph_dependency_failed"
+              && restoredReview?.graph == graph("review")
+              && restoredReview?.review?.verdict == .safeToLand
+              && restoredReview?.review?.axes.count == 3
+              && restoredWithoutGraph?.id == reviewTaskID
+              && restoredWithoutGraph?.graph == nil
+              && restoredWithoutGraph?.review?.verdict == .safeToLand)
+    Orchestrator.forget()
 }
 
 group("the assistant-quota dispatch gate names the override and the age the same way "

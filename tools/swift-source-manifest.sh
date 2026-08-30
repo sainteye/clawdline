@@ -55,6 +55,7 @@ clawdline_production_sources=(
   Sources/Mascot.swift
   Sources/NotchIsland.swift
   Sources/Orchestrator.swift
+  Sources/OrchestratorPlanning.swift
   Sources/OwnedStorage.swift
   Sources/Panel.swift
   Sources/Paths.swift

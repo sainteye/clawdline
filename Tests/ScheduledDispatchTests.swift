@@ -23,6 +23,11 @@ group("schedule files are strict and carry an ordinary task template") {
             "assistant": "codex", "model": "gpt-5.6-sol", "project_dir": "/tmp",
             "title": "publish", "instructions": "publish the next post",
             "claims": ["posts"], "timeout_minutes": 45,
+            "graph": ["id": "11111111-2222-3333-4444-555555555555",
+                      "destination": "The post is published.", "current_node": "publish",
+                      "nodes": [["id": "publish", "title": "Publish", "kind": "delivery",
+                                 "depends_on": [], "acceptance": ["The post is live."]]],
+                      "unknowns": [], "out_of_scope": []],
         ],
         "enabled": true,
     ]

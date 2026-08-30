@@ -51,8 +51,9 @@ Session、Claude 與 Codex 同時在同一個 Project 裡修改檔案、結果�
   Wait、Release、Completion ACK 都是有型別的紀錄，而不是期待另一個 Session 剛好看見的一行文字。
 
 目前這條流程由一個明確登記的 Clawdfather Session，搭配 Clawdline 已有的 Resume、Dispatch、Review、
-Landing、Closeability 與 Verification 能力完成。原生的流程圖與控制介面仍是下一步，現在可用的協調路徑
-不會假裝那些按鈕已經上線。產品意圖、不可逆操作、費用、Credential、隱私與安全性等決策，仍然由人負責。
+Landing、Closeability 與 Verification 能力完成。型別化的決策與交付圖現在會跟著每個 task；broker
+會驗證依賴、從耐久 receipt 推導當前 frontier，並透過 API 發布 control sheet。視覺化編輯器仍是下一步。
+產品意圖、不可逆操作、費用、Credential、隱私與安全性等決策，仍然由人負責。
 
 ## Clawdline 不同在哪裡
 
@@ -264,8 +265,9 @@ flag，為什麼在最便宜的模型上意思正好相反。
 派工的那道門有 app 站著。你自己開的那個終端機分頁，門口沒有人站——而一份工作區裡大部分的 session
 都是這一種。能傳到它們手上的，只有它們開始讀的時候樹裡本來就有的東西。所以規矩就寫在樹裡。
 
-這個 repo 自己的那份在 [`AGENTS.md`](AGENTS.md)，而且是一份共用的工作區真正需要的那幾條，不是
-coding style：你進來的時候就已經沒 commit 的東西，全都是別人還沒做完的活；stage 要逐檔指名，永遠
+這個 repo 的操作規則在 [`AGENTS.md`](AGENTS.md)，不含實作細節的專案詞彙與文件指標則在
+[`CONTEXT.md`](CONTEXT.md)。前者是一份共用工作區真正需要的規則，不是 coding style：你進來的時候
+就已經沒 commit 的東西，全都是別人還沒做完的活；stage 要逐檔指名，永遠
 不要 `git add -A`；commit 之前要讀 staged diff 本身，不能看 `--stat` 很乾淨就算了；被派去做事的
 session 不自己 commit，改完交回去；不要跑 build，因為它會把使用者正在用的那個 app 換掉；還有，
 任務會動到的每一條路徑都要寫進 `claims`。[`CLAUDE.md`](CLAUDE.md) 只有一行，指向那份檔案——兩種
@@ -691,6 +693,11 @@ swift build   # 只是為了讓編輯器讀得懂程式碼
 但那個點子是借來的，在此致謝。瀏海本身的形狀出自
 [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit)，經由
 [boring.notch](https://github.com/TheBoredTeam/boring.notch)。
+
+Glossary 與文件指標架構、明確的決策圖，以及由 receipt 推導 frontier 的做法，參考並感謝
+[mattpocock/skills](https://github.com/mattpocock/skills)，特別是其中 writing-for-agents、
+domain-modeling、wayfinder、to-tickets 與 code-review 的指引。Clawdline 的 protocol 與實作皆為
+本專案自行完成；本專案與該 repository 無隸屬或背書關係。
 
 [![在 Ko-fi 上支持 Clawdline](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/sainteye)
 

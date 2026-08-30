@@ -356,6 +356,16 @@
   "instructions": "You are in /Users/you/code/your-project … write the SVG to artifacts/portrait.svg",
   "deliverables": ["artifacts/portrait.svg"],
   "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
+  "graph": {
+    "id": "7f7b3c1a-8e1b-4f31-9b75-61f6ef881234",
+    "destination": "The reviewed portrait is landed on main.",
+    "current_node": "portrait",
+    "nodes": [
+      {"id":"portrait","title":"Draw","kind":"delivery","depends_on":[],"acceptance":["Matches the brief"]},
+      {"id":"review","title":"Review","kind":"review","depends_on":["portrait"],"acceptance":["Three-axis verdict"]}
+    ],
+    "unknowns": [], "out_of_scope": []
+  },
   "claims": ["Sources/Orchestrator.swift", "docs"],
   "serialize": ["build"],
   "timeout_minutes": 30,
@@ -382,7 +392,8 @@
       <tr><td><code>model</code></td><td>Optional. <code>[a-z0-9._-]</code>, at most 64 characters, not starting with <code>-</code>. Absent means that assistant's own default.</td></tr>
       <tr><td><code>reasoning_effort</code></td><td>Optional and Codex-only: exactly <code>high</code> (coding) or <code>xhigh</code> (planning or review). Absent adds no override and preserves the model and user defaults. <code>max</code> and <code>ultra</code> are not protocol values; on a Claude task the field is refused outright.</td></tr>
       <tr><td><code>permission_mode</code></td><td>Optional. <code>ask</code> · <code>edits</code> · <code>full</code>. Absent takes the machine's setting, which is also the ceiling — ask for more than the ceiling and you are quietly given the ceiling.</td></tr>
-      <tr><td><code>plan</code></td><td>Optional, ≤ 4 KiB. The whole graph this task is one node of.</td></tr>
+      <tr><td><code>plan</code></td><td>Optional legacy free-text note, ≤ 4 KiB. New multi-node work uses <code>graph</code>.</td></tr>
+      <tr><td><code>graph</code></td><td>Optional typed decision-and-delivery graph: one lowercase UUID, a destination, 1…32 unique acyclic nodes, this task's <code>current_node</code>, explicit dependencies and acceptance conditions, plus bounded <code>unknowns</code> and <code>out_of_scope</code>. Node kinds are <code>decision</code> · <code>delivery</code> · <code>review</code> · <code>correction</code> · <code>verification</code> · <code>landing</code>. Unknown keys, missing dependencies and cycles are refused.</td></tr>
       <tr><td><code>claims</code></td><td>Optional array of 0…32 unique POSIX paths relative to <code>project_dir</code>; each 1…1024 characters, no leading <code>/</code>, no <code>..</code> component. A directory claim covers its whole subtree. <code>[]</code> positively declares read-only work.</td></tr>
       <tr><td><code>serialize</code></td><td>Optional array of 0…4 unique operation names, each 1…64 characters of <code>[a-z0-9._-]</code>, not starting with <code>-</code>.</td></tr>
       <tr><td><code>isolation</code></td><td>Optional <code>none</code> or <code>worktree</code>; absent is <code>none</code>. An unknown value is refused, never quietly downgraded to sharing the tree.</td></tr>
@@ -408,7 +419,9 @@
 
   <p>The broker does not trust the declared id on its own. At dispatch <code>root.session_id</code> accepts the current process-bound conversation id, resolves it among the live sessions of the declared assistant, and refuses a value proved to be a physical terminal id. <strong>When exactly one conversation matches</strong>, it becomes the single key used by completion notification, grouping, capacity and the root-close cascade. No match fails closed with <code>root_unresolved</code>; two same-assistant processes proving the same conversation fail with <code>conversation_ambiguous</code>. A stale rollout, a leftover hook on a reused tty, or a tab now occupied by the other assistant never mounts a child under the wrong row.</p>
 
-  <p><strong><code>plan</code> is the graph, not this task's job.</strong> The same text goes in every task of one dispatch, and it sits near the top of the briefing, above even the language rule, because it is the context every other line is read in. A child that knows its answer is one of four being joined together writes something joinable. Leaves get it too, and that is the half that matters: a leaf that knows what its output feeds is the difference between an answer and an essay.</p>
+  <h3>The graph is a control sheet, not a ready flag</h3>
+  <p><strong><code>graph</code> is the machine-readable map; <code>plan</code> remains the backwards-compatible note.</strong> The complete graph goes near the top of every node's briefing. While any task for a graph remains in the bounded registry, reusing its id with a different definition is refused. The broker joins the newest retained task attempt for each node and derives <code>ready</code>, <code>blocked</code>, <code>active</code>, <code>done</code>, <code>failed</code> and <code>awaiting_landing</code> from durable task, review, verification and landing receipts. The currently dispatchable node ids are the <code>frontier</code> published on task records and by <code>GET /v1/orchestrator/graphs</code>; a caller never supplies readiness.</p>
+  <p>A dependency reaches <code>done</code> only through the receipt appropriate to its kind: ordinary execution needs task <code>success</code>, review needs a valid <code>safe_to_land</code> receipt, verification needs <code>verification.last == pass</code>, and landing needs a broker-verified <code>landed</code> receipt. Dispatching past missing evidence is <code>graph_frontier_blocked</code>; failed execution, review, or verification is <code>graph_dependency_failed</code>.</p>
 
   <div class="note">
     <span class="tag">Writing the file</span>
@@ -434,6 +447,7 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
   <ol>
     <li><strong>The credential, and the switch.</strong> A missing or wrong <code>X-Clawdline-Orchestrator</code> header is <code>403 forbidden</code>, and so is a machine where the orchestrator is switched off. It is <code>403</code> rather than <code>401</code> deliberately: <code>401</code> is this server's answer to <em>no paired device</em>, and pairing a device would not help here.</li>
     <li><strong>The file.</strong> Missing, unparseable, or a field out of range is <code>422 bad_task</code>, with the offending field named in <code>message</code>. Fix the file and re-send the same id.</li>
+    <li><strong>The graph frontier.</strong> A repeated retained graph definition must match, and every dependency of <code>current_node</code> must have the receipt its node kind requires. A definition drift is <code>409 graph_definition_conflict</code>; unfinished evidence is <code>graph_frontier_blocked</code>; failed execution, review or verification is <code>graph_dependency_failed</code>; a duplicate in-flight or completed node is <code>graph_node_active</code> or <code>graph_node_complete</code>. Nothing is registered or opened.</li>
     <li><strong>Capacity.</strong> A dispatcher's own slots being full is <code>429 over_capacity</code> with <code>retry_after</code> in seconds. Registered-but-queued tasks count toward this from the moment they are registered, so an unbounded queue cannot bypass the limit.</li>
     <li><strong>Depth.</strong> A child dispatching anything at all is <code>409 depth_exceeded</code>, and that is not a retry — <a href="#depth">the work is yours to do</a>.</li>
     <li><strong>The assistant's own quota.</strong> An account reading <em>exhausted</em> is <code>409 assistant_exhausted</code>, carrying <code>alternatives</code>: every other assistant's availability and detail, so the refusal itself says who to send the work to instead.</li>
@@ -623,9 +637,11 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <dd>Paths, relative to the task directory, of what was produced.</dd>
     <dt><code>verification</code></dt>
     <dd>Optional. What proving the work actually cost — <a href="#verification">section 8</a>.</dd>
+    <dt><code>review</code></dt>
+    <dd>Required for a typed review node: one verdict and exactly three independent axes. A review task can report <code>success</code> without it, but the graph fails closed and does not advance.</dd>
   </dl>
 
-  <p><strong>Why <code>symbols</code> exists.</strong> A shared working tree makes authorship unreadable from the diff alone: by the time a root comes to commit, the files a child edited may hold two or three sessions' unfinished work, and vocabulary is the only reliable way to tell one session's hunks from another's. Guessing that vocabulary has produced staged trees that would not compile, because a hunk that <em>read</em> like one session's work actually called another session's new function. The child's briefing asks for the list; <strong>the broker does not read it</strong> — the record keeps <code>status</code>, <code>summary</code>, <code>artifacts</code> and the optional verification object, and ignores every other key. <code>symbols</code> is written for whichever root opens the file, and a root has to open the file to get it.</p>
+  <p><strong>Why <code>symbols</code> exists.</strong> A shared working tree makes authorship unreadable from the diff alone: by the time a root comes to commit, the files a child edited may hold two or three sessions' unfinished work, and vocabulary is the only reliable way to tell one session's hunks from another's. Guessing that vocabulary has produced staged trees that would not compile, because a hunk that <em>read</em> like one session's work actually called another session's new function. The child's briefing asks for the list; <strong>the broker does not read it</strong> — the record keeps <code>status</code>, <code>summary</code>, <code>artifacts</code>, optional verification, and a valid typed review receipt, and ignores the remaining keys. <code>symbols</code> is written for whichever root opens the file, and a root has to open the file to get it.</p>
 
   <p>There is an HTTP way to say the same thing — <code>POST /v1/orchestrator/tasks/:id/complete</code> — and it is optional on purpose. <strong>The file is the protocol and the route is a convenience.</strong> A child in a sandbox with no outbound network finishes correctly. A repeat is <code>409 already_done</code> rather than a silent overwrite: the first report wins, and the second is told so rather than quietly replacing a summary somebody has already read.</p>
 
@@ -680,6 +696,17 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
 <pre><code>"verification": {"runs": 2, "seconds": 940, "last": "pass", "scope": "unit suite + web checks"}</code></pre>
 
   <p><code>runs</code> and <code>seconds</code> are non-negative integers, <code>last</code> is <code>pass</code>, <code>fail</code> or <code>skipped</code>, and <code>scope</code> is a short free-text description. A well-formed object is stored on the task record and can be read back over the API. <strong>Older results without it work unchanged, and a malformed object is ignored rather than turning an otherwise authenticated success into a failure</strong> — verification metadata never changes the authenticated outcome. Without a number, “it kept re-verifying” is an impression rather than a finding.</p>
+
+  <h3>Review keeps three questions separate</h3>
+  <p>A review node reports <code>specification</code>, <code>repository_invariants</code>, and <code>runtime_failure_behavior</code> as three independent axes. One axis cannot hide inside another's adjective. A passing axis has no findings; an axis with findings keeps every finding's id, severity, summary, and concrete evidence. <code>safe_to_land</code> is valid only when all three pass, while <code>changes_required</code> must carry at least one finding.</p>
+
+<pre><code>"review": {"verdict":"changes_required","axes":[
+  {"axis":"specification","status":"pass","findings":[]},
+  {"axis":"repository_invariants","status":"findings","findings":[
+    {"id":"R1","severity":"blocking","summary":"…","evidence":["named source"]}
+  ]},
+  {"axis":"runtime_failure_behavior","status":"pass","findings":[]}
+]}</code></pre>
 
   <div class="note warn">
     <span class="tag">A green tree is not evidence about HEAD</span>
@@ -1240,6 +1267,10 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
   <p>In the same spirit, <code>isolation: "worktree"</code> is a <em>workspace-shape contract</em> — a clean independent checkout whose delivery is a branch — not a demand that a broker invoke one particular command. An implementation may use a clone, a container or a snapshot. The task says what is requested; the record says what the broker actually did.</p>
 
   <p>Nothing here depends on that happening. It is written down so that the local version does not accidentally make it impossible.</p>
+
+  <h3>Vocabulary and provenance</h3>
+  <p>The short, implementation-free definitions behind this page live in <a href="../CONTEXT.md"><code>CONTEXT.md</code></a>; operational rules remain in <a href="../AGENTS.md"><code>AGENTS.md</code></a>, and exact wire shapes remain in <a href="api.md">the API reference</a>. That split keeps a new session's context small without making the details disappear.</p>
+  <p>The glossary-and-pointer architecture, explicit decision maps, and derived frontier were adapted with thanks from <a href="https://github.com/mattpocock/skills">mattpocock/skills</a>, especially its writing-for-agents, domain-modeling, wayfinder, to-tickets, and code-review guidance. Clawdline's protocol and implementation are its own; this project is not affiliated with or endorsed by that repository.</p>
 
   <hr>
   <footer>

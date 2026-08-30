@@ -1488,7 +1488,12 @@ Dispatch refusals are closed and typed; a client should branch on every applicab
 | `attach_session_occupied` | 409 | the Session already has one live Clawdline task; attached sessions are single-flight |
 | `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
 | `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, `serialize`, or contradictory `root.poll_only`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, typed `graph`, `claims`, `serialize`, or contradictory `root.poll_only`. Graph validation rejects unknown keys, duplicate ids, missing dependencies, self-edges and cycles. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `graph_definition_conflict` | 409 | another task already carries the same graph id with a different destination, node list, unknowns, or out-of-scope boundary. Nothing is registered or opened |
+| `graph_frontier_blocked` | 409 | the task's `current_node` depends on a node without a durable completion receipt. `blocking_nodes` names each node, its derived state, and its task id when one exists |
+| `graph_dependency_failed` | 409 | a dependency task failed, a review node lacks `safe_to_land`, a verification node lacks a passing verification receipt, or another dependency produced a terminal failed state. Correct or replace that node before dispatching its successor |
+| `graph_node_active` | 409 | the current node already has an active task or landing obligation, or another dispatch is atomically admitting it. Its completed evidence cannot be replaced by a concurrent attempt |
+| `graph_node_complete` | 409 | the current node already has durable completion evidence. Model a correction as its own node rather than making the control sheet silently regress |
 | `root_session_required` | 422 | `root.session_id` is null or empty and `root.poll_only` is not `true`. Nothing is registered or opened; send the current assistant conversation id, or explicitly opt into detached polling |
 | `root_assistant_required` | 422 | a non-null `root.session_id` was supplied without an explicit `root.assistant` of `claude` or `codex`. Nothing is registered or opened and the provisional rate ticket is refunded. New ordinary HTTP dispatch never applies the historical Claude default |
 | `root_unresolved` | 422 | the supplied non-null root id resolves to no live process-bound session for `root.assistant`. Nothing is registered or opened; correct the id, or use null plus `root.poll_only:true` and poll |
@@ -2763,6 +2768,25 @@ The record:
   "artifacts": ["artifacts/project-portrait.svg"],
   "verification": {"runs": 2, "seconds": 940, "last": "pass",
                    "scope": "swift suite + web-schedules"},
+  "graph": {
+    "id": "7f7b3c1a-8e1b-4f31-9b75-61f6ef881234",
+    "destination": "The reviewed portrait is landed on main.",
+    "current_node": "portrait",
+    "frontier": [],
+    "nodes": [
+      {"id":"portrait","kind":"delivery","title":"Draw","depends_on":[],"acceptance":["Matches the brief"],"state":"active","task_id":"3f9a21bc-…"},
+      {"id":"review","kind":"review","title":"Review","depends_on":["portrait"],"acceptance":["Three-axis verdict"],"state":"blocked"}
+    ],
+    "unknowns": [], "out_of_scope": []
+  },
+  "review": {                       // review nodes only; absent until a valid receipt is collected
+    "verdict": "safe_to_land",
+    "axes": [
+      {"axis":"specification","status":"pass","findings":[]},
+      {"axis":"repository_invariants","status":"pass","findings":[]},
+      {"axis":"runtime_failure_behavior","status":"pass","findings":[]}
+    ]
+  },
   "claims": ["Sources/Orchestrator.swift"],   // present (maybe []) only when task.json declared it
   "released_claims": [                        // absent unless something was given back early
     {"path": "/Users/you/code/clawdline/Sources/Orchestrator.swift", "released_at": 1787100090}
@@ -2836,6 +2860,16 @@ Its `runs` and `seconds` are non-negative integers, `last` is `pass`, `fail`, or
 `scope` is a short free-text description. Missing or malformed verification metadata never changes
 the authenticated task outcome.
 
+`graph` is absent for legacy/free-form tasks. Its node `state` and top-level `frontier` are derived
+at read time from the newest task attempt for each node: `ready`, `blocked`, `active`, `done`,
+`failed`, or `awaiting_landing`. They are never persisted readiness claims. A review node reaches
+`done` only with a valid three-axis `review.verdict == safe_to_land`; verification nodes additionally
+require `verification.last == pass`. A successful review or verification task without its
+kind-specific receipt is `failed` for dependency purposes; other node kinds use ordinary task
+`success`. While a graph remains in the bounded task registry, its definition is immutable per
+graph id; after retention expires, reuse the old id only if the caller independently retained that
+definition. `current_node` and the projected task ids vary by task attempt.
+
 For Codex dispatches, `reasoning_effort` accepts only `high` and `xhigh`; use `high` for coding and
 `xhigh` for planning. Empty, non-string, unknown values (including `max` and `ultra`), and the field
 on a Claude task all return `422 bad_task` with `reasoning_effort` in the message. Omission adds no
@@ -2862,6 +2896,21 @@ head observed as `verified_target_commit`; legacy landed rows omit them and cann
 `work_complete`.
 Optional values are omitted when unknown. The field is informational only: it does not retain
 claims, refuse a dispatch, or otherwise turn the task record into a lock.
+
+### `GET /v1/orchestrator/graphs`
+
+Returns one control-sheet row per typed graph under `graphs`, newest graph first, plus the integer
+Unix second `at`. The shape is the same `graph` projection embedded in a task record, but nodes are
+joined across every retained attempt, so `task_id`, node state, and `frontier` describe the newest
+durable evidence. Graph definitions are stored with their tasks rather than in a second registry;
+admission prevents two definitions while any task for that graph remains retained. Reading has the
+same paired device or orchestrator-token policy as `GET /v1/orchestrator/tasks`.
+
+```console
+$ curl -s http://127.0.0.1:7717/v1/orchestrator/graphs \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
+    | jq '.graphs[] | {id, destination, frontier}'
+```
 
 ### `POST /v1/orchestrator/tasks/:id/landing`
 

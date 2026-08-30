@@ -55,10 +55,11 @@ This is deliberately more than a spawn button:
   records rather than lines somebody hopes another Session noticed.
 
 Today this workflow runs through one explicitly registered Clawdfather Session and Clawdline's
-existing resume, dispatch, review, landing, closeability and verification primitives. The native
-graph/control sheet is still the next product surface; the working orchestration path does not
-depend on pretending those buttons have shipped. Decisions about product intent, irreversible
-effects, spend, credentials, privacy and security still belong to a person.
+existing resume, dispatch, review, landing, closeability and verification primitives. A typed
+decision-and-delivery graph now travels with each task; the broker validates its dependencies,
+derives its live frontier from durable receipts, and publishes a control sheet through the API.
+The visual editor is still a future UI. Decisions about product intent, irreversible effects,
+spend, credentials, privacy and security still belong to a person.
 
 ## Why Clawdline is different
 
@@ -307,7 +308,8 @@ The app stands in the door of a dispatch. Nothing stands in the door of the term
 yourself, and most of the sessions in a working tree are those. What reaches them is whatever is in
 the tree when they start reading — so that is where the rules go.
 
-This repository keeps its own in [`AGENTS.md`](AGENTS.md), and they are the ones a shared tree
+This repository keeps its operating rules in [`AGENTS.md`](AGENTS.md) and its implementation-free
+project vocabulary in [`CONTEXT.md`](CONTEXT.md). The rules are the ones a shared tree
 needs rather than a style guide: everything already uncommitted when you arrive is somebody else's
 unfinished work; stage by naming each path and never `git add -A`; read the staged diff before
 committing rather than trusting a clean `--stat`; a worker session hands its changes back instead
@@ -798,6 +800,12 @@ there first; the implementation here is its own and works differently, but the i
 thanks. The shape of the notch itself comes from
 [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) by way of
 [boring.notch](https://github.com/TheBoredTeam/boring.notch).
+
+The glossary-and-pointer architecture, explicit decision maps and derived frontier were adapted
+with thanks from [mattpocock/skills](https://github.com/mattpocock/skills), especially its
+writing-for-agents, domain-modeling, wayfinder, to-tickets and code-review guidance. Clawdline's
+protocol and implementation are its own; this project is not affiliated with or endorsed by that
+repository.
 
 [![Support Clawdline on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/sainteye)
 

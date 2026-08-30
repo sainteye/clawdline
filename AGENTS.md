@@ -5,6 +5,10 @@ Treat every change already present in the opening `git status` as another sessio
 Do not stage, revert, rewrite, or commit those changes.
 Do not infer ownership from a filename, a recent timestamp, or a new commit; inspect the content and scope.
 
+Project vocabulary is defined without implementation detail in [`CONTEXT.md`](CONTEXT.md). Read it
+before changing task, graph, review, landing, handoff, or verification semantics; follow its links
+to the narrower operational document for the work in front of you.
+
 ## Shared-tree discipline
 
 - Record `git status --short` before editing so you know the pre-existing state.

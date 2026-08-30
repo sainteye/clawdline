@@ -108,6 +108,14 @@ Task planning and review reports should expose the fixed-cost side as well as us
 session/tab starts, briefing and repeated-context tokens, elapsed useful work, continuations, and
 micro-task warnings.
 
+For multi-node work, carry the typed `graph` object as well as any free-text `plan`. While retained,
+one graph id has one destination, node list, fog-of-war list, and out-of-scope boundary; each task
+changes only `current_node`. The broker derives the frontier from durable task, review,
+verification, and landing receipts and refuses a blocked successor. Do not add or infer a
+caller-owned `ready` flag. The
+implementation-free vocabulary is in [`CONTEXT.md`](../CONTEXT.md); the JSON contract and refusal
+codes are in [`docs/orchestrator.md`](orchestrator.md) and [`docs/api.md`](api.md).
+
 #### Small work accumulates before it is dispatched
 
 Never open a session for one small change. Small work goes into a pool and is dispatched as one

@@ -384,6 +384,17 @@ holds a secret: not the orchestrator token, and not the task secret.
   "instructions": "You are in /Users/you/code/clawdline … write the SVG to artifacts/project-portrait.svg",
   "deliverables": ["artifacts/project-portrait.svg"],
   "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
+  "graph": {
+    "id": "7f7b3c1a-8e1b-4f31-9b75-61f6ef881234",
+    "destination": "The reviewed portrait is landed on main.",
+    "current_node": "portrait",
+    "nodes": [
+      {"id":"portrait","title":"Draw the portrait","kind":"delivery","depends_on":[],"acceptance":["The SVG matches the brief."]},
+      {"id":"review","title":"Review the portrait","kind":"review","depends_on":["portrait"],"acceptance":["All review axes have a verdict."]}
+    ],
+    "unknowns": [],
+    "out_of_scope": ["Changing the mascot format."]
+  },
   "claims": ["Sources/Orchestrator.swift", "docs"],
   "serialize": ["build"],
   "attach_session": "B6ADA755-5815-4008-8287-85ED28EFE4F4",
@@ -416,7 +427,8 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
 | `reasoning_effort` | optional and Codex-only: exactly `high` or `xhigh`. Absent adds no CLI override, preserving Codex's model default and the user's configuration. Empty, non-string, any other value, and use with Claude are refused |
 | `permission_mode` | optional. `ask` · `edits` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
-| `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
+| `plan` | optional legacy free-text note, ≤ 4 KiB. New multi-node work uses `graph` |
+| `graph` | optional typed decision-and-delivery graph. `id` is a lowercase UUID; `destination` is 1…500 characters; `current_node` names one of 1…32 unique acyclic nodes. Every node has a lower-case id, title, kind (`decision` · `delivery` · `review` · `correction` · `verification` · `landing`), declared dependencies, and 1…8 acceptance strings. `unknowns` and `out_of_scope` each hold 0…8 strings. Unknown keys, duplicate ids, missing dependencies, self-edges and cycles are refused |
 | `claims` | optional array of 0…32 unique POSIX paths relative to `project_dir`; each is 1…1024 characters, may not start with `/`, and may not contain a `..` component. A directory claim covers its whole subtree; `[]` explicitly declares read-only work |
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `isolation` | optional `none` or `worktree`; absent is `none`. Unknown values are refused, never downgraded |
@@ -508,12 +520,23 @@ ordinary Codex-only validation, and an edit carries it forward because the sched
 reasoning control. If the edit explicitly switches the assistant to Claude, the Mac removes that
 now-incompatible hidden override; putting it directly on a Claude template remains invalid.
 
-`plan` is the graph, not this task's job — the same text in every task of one dispatch. It goes
-near the top of `CHILD.md`, above even the language rule, because it is the context every other
-line is read in: a child that knows its answer is one of four being joined together writes
-something joinable, and one that does not writes a report. Leaves get it too, and that is the
-half that matters — a leaf that knows what its output feeds is the difference between an answer
-and an essay.
+`graph` is the machine-readable decision and delivery map; `plan` remains its backwards-compatible
+free-text note. The complete graph travels with every node, while `current_node` identifies the
+assignment in front of this child. At admission, a repeated graph id must carry the same
+destination, nodes, unknowns and scope while that graph remains in the bounded registry. A node
+with dependencies is dispatchable only when each
+dependency has durable completion evidence: ordinary nodes need task `success`, review nodes need
+a `safe_to_land` review receipt, verification nodes need `verification.last == pass`, and landing
+nodes need a verified `landed` receipt. The caller
+cannot send a `ready` flag. The broker derives `ready`, `blocked`, `active`, `done`, `failed`, and
+`awaiting_landing`, publishes the current `frontier`, and fails closed with
+`graph_frontier_blocked`, `graph_dependency_failed`, `graph_definition_conflict`,
+`graph_node_active`, or `graph_node_complete`. A completed node cannot be replayed into `active`;
+model a correction as a separate node.
+
+Both forms go near the top of `CHILD.md`, above even the language rule, because they are context
+for every other line. A child that knows what its output feeds writes something joinable; a child
+that knows only its own title tends to write a report.
 
 `root.parent_task` is the same field one level down, and it exists because a child knows its own
 task id from the first line it was ever sent, long before this app has worked out what the session
@@ -977,6 +1000,29 @@ requiring one relevant compile-and-test pass and red-before-green for every new 
 focused Swift runner ships, an implementer that cannot exercise its behavior more narrowly may use
 one full-suite run labelled `focused_runner_unavailable`; reviewers do not repeat it, and root
 still owns the exact integrated-tree acceptance.
+
+A review node's result also carries a closed `review` receipt. It has exactly three independent
+axes — `specification`, `repository_invariants`, and `runtime_failure_behavior` — and a verdict of
+`safe_to_land` or `changes_required`. A passing axis has no findings. An axis with findings keeps
+each finding's id, severity (`blocking`, `important`, or `minor`), summary, and concrete evidence.
+`safe_to_land` is valid only when all three axes pass; `changes_required` must contain at least one
+finding. A graph review node whose task says `success` but has no valid review receipt fails closed
+and does not advance the frontier.
+
+```json
+{
+  "review": {
+    "verdict": "changes_required",
+    "axes": [
+      {"axis":"specification","status":"pass","findings":[]},
+      {"axis":"repository_invariants","status":"findings","findings":[
+        {"id":"R1","severity":"blocking","summary":"A shared-tree invariant is violated.","evidence":["named reproduction or source"]}
+      ]},
+      {"axis":"runtime_failure_behavior","status":"pass","findings":[]}
+    ]
+  }
+}
+```
 
 `symbols` names every identifier the child's change introduced: new functions and types, new
 fields, new string keys, the names of test groups it added. Names, not descriptions — the portrait

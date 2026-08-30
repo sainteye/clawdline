@@ -1,22 +1,23 @@
 # Verification and review workflow
 
-Status: process contract now; broker/runner automation described below is planned.
+Status: typed graph frontier and review receipts are implemented; the durable cross-task
+verification ledger described below remains planned.
 
 ## Phase 0â€“1 repository guards
 
-The refactor foundation implements three local guards. Phase 0 preserved the historical
-6,434-check baseline; approved Local Usage and Closeability integration moved the current receipt to 6,661:
+The refactor foundation implements three local guards. The typed planning-graph candidate carries
+a 6,976-check receipt target:
 
 - `tools/swift-source-manifest.sh` is sourced by both `build.sh` and `test.sh`; production mode
-  compares the 89-entry production partition only with recursive `Sources/` inventory, while full
-  mode separately compares both the 89-production and 41-test partitions. Partition swaps fail
+  compares the 93-entry production partition only with recursive `Sources/` inventory, while full
+  mode separately compares both the 93-production and 42-test partitions. Partition swaps fail
   closed, and Tests-only drift does not block the application build.
 - `tools/check-architecture-boundaries.sh` verifies the entry point remains at most 500 lines,
-  24 ordered runners,
-  447 current sealed group identities, production net-growth receipts and the 2,000-line suite ceiling.
+  25 ordered runners,
+  459 current sealed group identities, production stop-growth receipts and the 2,000-line suite ceiling.
 - `Tests/TestGroupManifest.swift` records group titles at runtime and adds a failure on any identity
   or order difference without incrementing `checks`. `test.sh` separately requires the exact
-  `6661 checks passed` line and the existing Cloud receipt exactly once.
+  `6976 checks passed` line and the existing Cloud receipt exactly once.
 
 The missing-nested-source mutation returned 1 before the fixture was restored; the entry-point
 growth mutation returned 1 at 534 lines before the 34-line entry was restored. These are guard
@@ -25,11 +26,11 @@ fails closed for missing groups or a zero-check selection; compile caching in â€
 remains planned.
 
 The four sealed structural/count receipts have different owners. A legitimate check change updates
-the `6661 checks passed` expectation in `test.sh` and the recorded baseline. A group identity change
-updates `expectedOrderedTestGroupTitles`, the `447` architecture expectation and the baseline. A
-runner-boundary change updates `Tests/main.swift`, its documented order and the `24` expectation. A
-suite-file change updates the manifest and the `35` `*Tests.swift` expectation. The entry point's
-current 34-line size is an observation, not another exact guard; its enforced limit is 500. Change
+the `6976 checks passed` expectation in `test.sh` and the recorded baseline. A group identity change
+updates `expectedOrderedTestGroupTitles`, the `459` architecture expectation and the baseline. A
+runner-boundary change updates `Tests/main.swift`, its documented order and the `25` expectation. A
+suite-file change updates the manifest and the `36` `*Tests.swift` expectation. The entry point's
+current 35-line size is an observation, not another exact guard; its enforced limit is 500. Change
 only the receipts affected by the approved behavior change, record the old guard going red, then
 record the updated guard green.
 
@@ -47,10 +48,9 @@ implementation
 ```
 
 Implementation proves new tests red before green and verifies only the claimed feature. Review
-answers a named charter across input/output, read/write, success/failure, time/thread/path,
-persistence/restart, projections and foreign hunks. The complete finding set is sealed before
-correction. Confirmation reopens only those findings and adjacent regressions. Root alone owns the
-normal graph's full suite.
+answers three named, independent axes: `specification`, `repository_invariants`, and
+`runtime_failure_behavior`. The complete finding set is sealed before correction. Confirmation
+reopens only those findings and adjacent regressions. Root alone owns the normal graph's full suite.
 
 A third review requires `scope_changed`, `new_external_evidence`, or `systemic_pattern`. A repeated
 defect class beyond that correction seam moves to `architecture_hold` instead of a fourth patch.
@@ -58,27 +58,19 @@ defect class beyond that correction seam moves to `architecture_hold` instead of
 ## Machine-readable verdict
 
 ```json
-{
-  "subject_tree": "<tree sha>",
-  "verdict": "safe | correction_required",
-  "questions": [
-    {"id":"coordinator.stale-fail-closed","result":"pass","evidence":["receipt-id"]}
-  ],
-  "findings": [
-    {
-      "id":"F1",
-      "severity":"high",
-      "class":"fail_open",
-      "path":"Sources/Coordinator.swift",
-      "status":"open",
-      "question_ids":["coordinator.stale-fail-closed"]
-    }
-  ]
-}
+{"verdict":"changes_required","axes":[
+  {"axis":"specification","status":"pass","findings":[]},
+  {"axis":"repository_invariants","status":"findings","findings":[
+    {"id":"F1","severity":"blocking","summary":"The candidate violates a shared-tree invariant.","evidence":["named reproduction or source"]}
+  ]},
+  {"axis":"runtime_failure_behavior","status":"pass","findings":[]}
+]}
 ```
 
-SAFE is invalid when the subject differs from the delivery tree or any question/finding lacks a
-disposition. Correction closes each finding as `fixed`, `disproved`, or `deferred` with an owner.
+`safe_to_land` is invalid unless all three axes pass with no findings. `changes_required` is
+invalid without at least one finding. The graph frontier treats a successful review task without a
+valid receipt as failed evidence; correction closes each finding as `fixed`, `disproved`, or
+`deferred` with an owner.
 
 ## Durable verification receipt
 

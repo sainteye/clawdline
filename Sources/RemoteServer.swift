@@ -2095,6 +2095,10 @@ final class RemoteServer: @unchecked Sendable {
             return .json(["tasks": Orchestrator.records(),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        case ("GET", "/v1/orchestrator/graphs"):
+            return .json(["graphs": Orchestrator.graphRecords(),
+                          "at": Int(Date().timeIntervalSince1970)])
+
         case ("POST", "/v1/orchestrator/maintenance/restart"):
             guard orchestratorAuthed else { return .error(403, "forbidden",
                 "Beginning restart maintenance needs the orchestrator token.") }
