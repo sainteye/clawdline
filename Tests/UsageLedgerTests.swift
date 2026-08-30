@@ -617,7 +617,7 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
             ? field("missing_reason") : "no_cost_recorded")
     let reserved = ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state",
                     "disposition"]
-    expect("the six reserved columns are exactly those", UsageLedger.reservedColumns, reserved)
+    expect("the six lineage columns are exactly those", UsageLedger.lineageColumns, reserved)
     check("every one of them is present in the export and empty",
           reserved.allSatisfy { columns.contains($0) && field($0) == "" })
 
@@ -652,7 +652,8 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
     check("the route renders that as null rather than zero",
           totals?["tokens"] is NSNull && totals?["total"] is NSNull)
     expect("and names the columns it cannot answer for",
-           (payload["unavailable"] as? [String: Any])?["columns"] as? [String], reserved)
+           (payload["unavailable"] as? [String: Any])?["columns"] as? [String],
+           ["graph_id", "disposition", "feature"])
 }
 
 group("a cost is copied where it exists and never invented where it does not") {
@@ -1167,7 +1168,7 @@ group("the shipped page contains the accessible Usage Analytics MVP") {
         mutationGuard.waitQuietly()
         check("the permanent web guard sees both named mutations go RED",
               mutationGuard.terminationStatus == 0
-                && output.contains("web usage analytics guards: 15 checks passed"), output)
+                && output.contains("web usage analytics guards: 18 checks passed"), output)
     } catch {
         check("the permanent web mutation guard starts", false, "\(error)")
     }
@@ -1318,7 +1319,7 @@ group("each kind of work is counted exactly once, and the routes answer for the 
            ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
     expect("and it names the columns it has no answer for",
            (body?["unavailable"] as? [String: Any])?["columns"] as? [String],
-           ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state", "disposition"])
+           ["graph_id", "disposition", "feature"])
     expect("the export answers as CSV",
            RemoteServer.shared.route(
             remoteRequest("GET", "/v1/orchestrator/usage.csv", headers: auth))
@@ -1883,6 +1884,24 @@ group("which reading of input won is a stored fact, not one to be re-derived") {
     check("and in the export, where a month of rows can be audited against it",
           columns.firstIndex(of: "input_basis").map { values[$0] } == "includes_cache",
           values.joined(separator: ","))
+    do {
+    let store = freshUsageLedger(); defer { forgetUsageLedger(store) }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("clawdline-project-identity-\(UUID().uuidString)", isDirectory: true), repository = root.appendingPathComponent("clawdline", isDirectory: true), common = repository.appendingPathComponent(".git", isDirectory: true), worktree = root.appendingPathComponent("worktrees/task-uuid", isDirectory: true)
+    try! FileManager.default.createDirectory(at: common, withIntermediateDirectories: true); try! FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
+    let taskID = "11111111-2222-4333-8444-555555555555", parentID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", retryID = "99999999-8888-4777-8666-555555555555"
+    check("the lineage-rich task imports", UsageLedger.shared.importTaskRecord([
+        "id": taskID, "assistant": "codex", "state": "success", "kind": "code", "project_dir": worktree.path, "repository_common_dir": common.path, "timeout_minutes": 30, "depth": 2, "parent_task": parentID, "respawn_of": retryID, "respawn_generation": 1, "landing": ["state": "landed"], "child_session": "feature-session", "usage": ["input": 120, "output": 20, "cache_read": 100, "cache_write": 0, "total": 140]
+    ]))
+    let row = UsageLedger.shared.rows(taskID: taskID).first; check("canonical project and lineage survive registry eviction", row?.projectKey == repository.path && row?.parentTaskID == parentID && row?.retryOf == retryID && row?.attempt == 1 && row?.landingState == "landed")
+    let before = row?.measurement
+    let proposal = UsageLedger.AttributionEvent(eventID: "feature-proposal-1", intervalKey: row!.intervalKey, dimension: .feature, valueID: "usage-insights", valueLabel: "Usage insights", source: .llm, confidence: 0.91, classifierID: "small-feature-merger", classifierVersion: "2026-08-30", evidenceDigest: String(repeating: "a", count: 64), decision: .proposed, decisionSource: "classifier", assignedAt: Date(timeIntervalSince1970: 1_788_060_000), supersedesEventID: nil)
+    check("an auditable LLM proposal is appended", UsageLedger.shared.record(proposal))
+    check("the same event id is idempotent", !UsageLedger.shared.record(proposal))
+    check("a proposal alone never enters accepted Feature totals", UsageLedger.shared.resolvedAttribution(intervalKey: row!.intervalKey, dimension: .feature) == nil)
+    let acceptance = UsageLedger.AttributionEvent(eventID: "feature-acceptance-1", intervalKey: row!.intervalKey, dimension: .feature, valueID: "usage-insights", valueLabel: "Usage insights", source: .policy, confidence: 0.91, classifierID: "small-feature-merger", classifierVersion: "2026-08-30", evidenceDigest: String(repeating: "a", count: 64), decision: .accepted, decisionSource: "confidence-threshold-v1", assignedAt: Date(timeIntervalSince1970: 1_788_060_001), supersedesEventID: proposal.eventID)
+    check("acceptance resolves Feature without rewriting usage", UsageLedger.shared.record(acceptance) && UsageLedger.shared.resolvedAttribution(intervalKey: row!.intervalKey, dimension: .feature)?.valueID == "usage-insights" && UsageLedger.shared.rows(taskID: taskID).first?.measurement == before)
+    var invalid = proposal; invalid.eventID = "feature-proposal-invalid"; invalid.confidence = 1.2; check("invalid confidence is refused", !UsageLedger.shared.record(invalid))
+    }
 }
 
 group("the watcher decides when to read, and what a session leaves behind when it goes") {

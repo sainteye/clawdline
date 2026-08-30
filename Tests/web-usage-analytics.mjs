@@ -27,6 +27,12 @@ try {
                       "Usage must not remain a standalone header action");
   assert.match(settings, /id="usage-open"/,
                "the Logo settings menu must contain the Usage action");
+  assert.match(page, /<span>Generated output<\/span><strong id="usage-measured">/,
+               "the first Usage KPI must be generated output");
+  assert.match(page, /\["output", "inputNew", "cacheRead", "cacheWrite"\]/,
+               "trend and work tables must present output before context and cache");
+  assert.match(page, /number\(totals\.scheduledRuns\)/,
+               "scheduled work must have a visible range KPI");
   assert.doesNotMatch(diagnostics, /installDebugButton/,
                       "the connection button must not install the retired layout Debug action");
   assert.match(detailActions, /els\.conn\.addEventListener\("click"[\s\S]*api\.refresh/,
@@ -114,7 +120,7 @@ try {
   assert.notEqual(new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 }).format(0.004),
                   "0", "sub-cent values must retain significant digits");
 
-  console.log("web usage analytics guards: 15 checks passed");
+  console.log("web usage analytics guards: 18 checks passed");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

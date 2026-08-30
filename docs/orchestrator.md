@@ -2203,13 +2203,18 @@ What that means for a number the route hands back:
   this store is for. `measured` is empty rather than `0` for a row that measured nothing at all,
   the same rule the aggregate follows.
 
-### Reserved, and honest about it
+### Lineage and attribution, without guessing
 
-`graph_id`, `parent_task_id`, `retry_of`, `attempt`, `landing_state` and `disposition` exist as
-columns and are NULL in every row of schema 1. Whole-tree and retry identity need plumbing that
-does not exist yet; a NULL the API names as unavailable is honest where a value inferred from the
-root session is a guess wearing a column name. The aggregate refuses to draw a whole-tree view on
-these rows rather than infer one.
+`parent_task_id`, `retry_of`, `attempt`, and `landing_state` are copied from durable task records
+when present. `project_key` is canonicalized to the repository root, so worktree UUID directories
+do not fragment one Project. `graph_id` and accepted `disposition` remain NULL until their own
+producer exists; neither is inferred from a root Session or a successful terminal state.
+
+Feature is mutable knowledge rather than mutable accounting. Project/Feature decisions therefore
+live in an append-only attribution event table with source, decision, confidence,
+classifier/version, evidence digest, time and supersession. A small LLM may append a proposal; only
+one unambiguous active accepted head enters analytics. The token interval never changes. See
+[`usage-attribution.md`](usage-attribution.md) for the recording and privacy contract.
 
 Four known gaps, written down rather than left to be discovered:
 

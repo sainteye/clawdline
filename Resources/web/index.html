@@ -483,25 +483,25 @@ document.documentElement.className = "booting";
 
         <section id="usage-overview-panel" role="tabpanel" aria-labelledby="usage-overview" tabindex="0">
             <div class="usage-cards">
-                <div class="usage-card"><span>Measured token floor</span><strong id="usage-measured">—</strong><small>Known parts only</small></div>
-                <div class="usage-card"><span>Strict token total</span><strong id="usage-strict">—</strong><small>Only when every part is known</small></div>
-                <div class="usage-card"><span>Rows</span><strong id="usage-row-count">—</strong><small id="usage-unknown-count">—</small></div>
-                <div class="usage-card"><span>Corrections</span><strong id="usage-corrections">—</strong><small>Sealed values are never rewritten</small></div>
+                <div class="usage-card"><span>Generated output</span><strong id="usage-measured">—</strong><small>What agents produced</small></div>
+                <div class="usage-card"><span>New input</span><strong id="usage-strict">—</strong><small>Context sent without cache</small></div>
+                <div class="usage-card"><span>Cache read</span><strong id="usage-row-count">—</strong><small id="usage-unknown-count">—</small></div>
+                <div class="usage-card"><span>Scheduled runs</span><strong id="usage-corrections">—</strong><small>Unique scheduled tasks in this range</small></div>
             </div>
             <div class="usage-grid">
                 <div>
                     <section class="usage-panel" aria-labelledby="usage-token-title">
-                        <h2 id="usage-token-title">Mutually exclusive token trend</h2>
-                        <p class="usage-summary" id="usage-token-summary">Input new, output, cache read and cache write are separate parts; unknown is not zero.</p>
+                        <h2 id="usage-token-title">Generated output over time</h2>
+                        <p class="usage-summary" id="usage-token-summary">Output is primary; new input, cache read and cache write remain separate, mutually exclusive parts.</p>
                         <div class="usage-bars" id="usage-token-bars" aria-hidden="true"></div>
                         <div class="usage-table-wrap"><table id="usage-token-table" aria-describedby="usage-token-summary">
-                            <thead><tr><th>Bucket</th><th>Input new</th><th>Output</th><th>Cache read</th><th>Cache write</th></tr></thead>
+                            <thead><tr><th>Bucket</th><th>Generated output</th><th>New input</th><th>Cache read</th><th>Cache write</th></tr></thead>
                             <tbody id="usage-token-body"></tbody></table></div>
                     </section>
                     <section class="usage-panel" aria-labelledby="usage-breakdown-title">
                         <h2 id="usage-breakdown-title">Breakdown</h2>
-                        <p class="usage-summary" id="usage-breakdown-summary">Measured floor and availability by the selected dimension.</p>
-                        <div class="usage-table-wrap"><table aria-describedby="usage-breakdown-summary"><thead><tr><th>Group</th><th>Rows</th><th>Measured floor</th><th>Unknown rows</th></tr></thead><tbody id="usage-breakdown-body"></tbody></table></div>
+                        <p class="usage-summary" id="usage-breakdown-summary">Groups are ranked by generated output; each token part keeps its own availability.</p>
+                        <div class="usage-table-wrap"><table aria-describedby="usage-breakdown-summary"><thead><tr><th>Group</th><th>Rows</th><th>Generated output</th><th>New input</th><th>Cache read</th><th>Unknown output rows</th></tr></thead><tbody id="usage-breakdown-body"></tbody></table></div>
                     </section>
                 </div>
                 <aside>
@@ -527,7 +527,7 @@ document.documentElement.className = "booting";
         <section id="usage-agent-work-panel" role="tabpanel" aria-labelledby="usage-agent-work" tabindex="0" hidden>
             <div class="usage-panel">
                 <h2>Agent Work</h2><p class="usage-summary" id="usage-agent-summary">Newest work first. Open a row for its accounting details; prompts, session ids and paths are never returned.</p>
-                <div class="usage-table-wrap"><table aria-describedby="usage-agent-summary"><thead><tr><th>Started</th><th>Agent / model</th><th>Project</th><th>Input new</th><th>Output</th><th>Cache read</th><th>Cache write</th><th>Cost</th><th>Coverage</th><th>Details</th></tr></thead><tbody id="usage-agent-body"></tbody></table></div>
+                <div class="usage-table-wrap"><table aria-describedby="usage-agent-summary"><thead><tr><th>Started</th><th>Agent / model</th><th>Project</th><th>Generated output</th><th>New input</th><th>Cache read</th><th>Cache write</th><th>Cost</th><th>Coverage</th><th>Details</th></tr></thead><tbody id="usage-agent-body"></tbody></table></div>
                 <button class="usage-more" id="usage-more" type="button" hidden>Load more</button>
             </div>
         </section>
@@ -1077,23 +1077,23 @@ document.documentElement.className = "booting";
     function renderTrend(data) {
         clear("usage-token-body"); clear("usage-token-bars");
         var trend = data.trend || [], maximum = Math.max.apply(null, trend.map(function (item) {
-            var t = item.tokens || {}; return [t.inputNew, t.output, t.cacheRead, t.cacheWrite]
+            var t = item.tokens || {}; return [t.output, t.inputNew, t.cacheRead, t.cacheWrite]
                 .reduce(function (sum, value) { return sum + (typeof value === "number" ? value : 0); }, 0);
         }).concat([1]));
         trend.forEach(function (item) {
             var t = item.tokens || {}, tr = document.createElement("tr");
-            cell(tr, item.bucket); ["inputNew", "output", "cacheRead", "cacheWrite"].forEach(function (part) { cell(tr, number(t[part])); });
+            cell(tr, item.bucket); ["output", "inputNew", "cacheRead", "cacheWrite"].forEach(function (part) { cell(tr, number(t[part])); });
             byId("usage-token-body").appendChild(tr);
             var bar = document.createElement("div"), label = document.createElement("span"), track = document.createElement("span");
             bar.className = "usage-bar"; track.className = "usage-bar-track"; label.textContent = item.bucket;
-            ["inputNew", "output", "cacheRead", "cacheWrite"].forEach(function (part) {
+            ["output", "inputNew", "cacheRead", "cacheWrite"].forEach(function (part) {
                 var segment = document.createElement("i"), value = typeof t[part] === "number" ? t[part] : 0;
                 segment.style.width = ((value / maximum) * 100) + "%"; track.appendChild(segment);
             });
             bar.appendChild(label); bar.appendChild(track); byId("usage-token-bars").appendChild(bar);
         });
         text(byId("usage-token-summary"), trend.length
-            ? trend.length + " local-day buckets. Four exclusive parts; Unknown is shown in the table, never drawn as zero."
+            ? trend.length + " local-day buckets, led by generated output. Unknown is shown in the table, never drawn as zero."
             : "No measured token buckets in this range.");
     }
     function renderBreakdown(data) {
@@ -1101,7 +1101,9 @@ document.documentElement.className = "booting";
         (data.breakdown || []).forEach(function (item) {
             var tr = document.createElement("tr");
             cell(tr, item.key === null ? "Unknown" : String(item.key)); cell(tr, number(item.rows));
-            cell(tr, number(item.measuredFloor)); cell(tr, number(item.tokenRowsUnknown));
+            var tokens = item.tokens || {}, unknown = item.tokenPartsUnknown || {};
+            cell(tr, number(tokens.output)); cell(tr, number(tokens.inputNew));
+            cell(tr, number(tokens.cacheRead)); cell(tr, number(unknown.output));
             byId("usage-breakdown-body").appendChild(tr);
         });
     }
@@ -1134,8 +1136,8 @@ document.documentElement.className = "booting";
         var tokens = row.tokens || {}, cost = row.cost;
         var facts = {
             "Started": row.startedAt, "Assistant": row.assistant, "Model": row.model,
-            "Project": row.project, "Input new": number(tokens.inputNew),
-            "Output": number(tokens.output), "Cache read": number(tokens.cacheRead),
+            "Project": row.project, "Generated output": number(tokens.output),
+            "New input": number(tokens.inputNew), "Cache read": number(tokens.cacheRead),
             "Cache write": number(tokens.cacheWrite), "Measured floor": number(row.measuredFloor),
             "Strict total": number(row.strictTotal), "Coverage": row.coverage,
             "Coverage reasons": (row.coverageReasons || []).join(", ") || "None",
@@ -1161,7 +1163,7 @@ document.documentElement.className = "booting";
             var tokens = item.tokens || {}, cost = item.cost;
             var tr = document.createElement("tr"); cell(tr, new Date(item.startedAt).toLocaleString());
             cell(tr, item.assistant + " / " + (item.model || "Unknown")); cell(tr, item.project || "Unknown");
-            cell(tr, number(tokens.inputNew)); cell(tr, number(tokens.output));
+            cell(tr, number(tokens.output)); cell(tr, number(tokens.inputNew));
             cell(tr, number(tokens.cacheRead)); cell(tr, number(tokens.cacheWrite));
             cell(tr, cost ? significant(cost.value) + " " + cost.unit + " / " + cost.basis
                           + " / " + (cost.priceSnapshotId || "Unknown") : "Unknown");
@@ -1175,9 +1177,10 @@ document.documentElement.className = "booting";
     }
     function render(data, append) {
         state.data = data; var totals = data.totals || {}, coverage = totals.coverage || {};
-        text(byId("usage-measured"), number(totals.measuredFloor)); text(byId("usage-strict"), number(totals.strictTotal));
-        text(byId("usage-row-count"), number(data.rowCount)); text(byId("usage-unknown-count"), number(coverage.tokenRowsUnknown) + " rows have unknown token parts");
-        text(byId("usage-corrections"), number(data.corrections));
+        var tokens = totals.tokens || {}, unknown = totals.tokenPartsUnknown || {};
+        text(byId("usage-measured"), number(tokens.output)); text(byId("usage-strict"), number(tokens.inputNew));
+        text(byId("usage-row-count"), number(tokens.cacheRead)); text(byId("usage-unknown-count"), number(unknown.output) + " rows have unknown output");
+        text(byId("usage-corrections"), number(totals.scheduledRuns));
         var availability = data.availability || {}, partial = availability.status === "partial";
         byId("usage-availability").hidden = !partial;
         if (partial) text(byId("usage-availability"), availability.reason === "scan_limit_reached"

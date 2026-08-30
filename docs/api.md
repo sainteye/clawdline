@@ -2831,9 +2831,9 @@ project, and timestamp to the independent ledger.
 
 ### `GET /v1/orchestrator/usage`, `.csv` (legacy forensic contracts)
 
-These two URLs retain their pre-analytics contracts byte-for-byte: `/usage` is the original
-aggregate payload and `/usage.csv` is the original forensic CSV, including session/path and all
-reserved columns. Existing accounting and incident tools therefore do not receive a new schema on
+These two URLs retain their pre-analytics contracts: `/usage` is the original aggregate payload
+and `/usage.csv` is the original forensic CSV, including session/path and durable lineage columns.
+Existing accounting and incident tools therefore do not receive a replacement contract on
 an old URL. They remain authenticated reads; the CSV is forensic rather than privacy-safe and must
 not be exposed as a public download.
 
@@ -2871,7 +2871,11 @@ All three take the same closed query and none starts anything. Unknown keys and 
                     "status":"historical"},
   "capabilities":{"views":["overview","agent_work"],"groupBy":["model","assistant","…"],
                   "buckets":["day","week","month"],"exports":["csv","json"],
-                  "maxPageSize":200,"maxScannedRows":100000},
+                  "maxPageSize":200,"maxScannedRows":100000,
+                  "attribution":{"dimensions":["project","feature"],
+                    "sources":["explicit","inherited","manual","llm","policy"],
+                    "decisions":["proposed","accepted","rejected"],
+                    "featureAggregation":"one_unambiguous_accepted_head"}},
   "priceSnapshot":{"activeId":"clawdline-prices-2026-08-28",
                    "observedIds":["clawdline-prices-2026-08-14"],
                    "meaning":"Observed ids price rows; activeId is current, not an actual bill."},
@@ -2880,6 +2884,7 @@ All three take the same closed query and none starts anything. Unknown keys and 
     "tokens":{"inputNew":21587330,"output":1580530,"cacheRead":1548751080,"cacheWrite":2210400},
     "tokenPartsUnknown":{"inputNew":3,"output":3,"cacheRead":3,"cacheWrite":3},
     "tokenRowsUnknown":3,"measuredFloor":1574139340,"strictTotal":null,
+    "origins":{"manual":40,"dispatch":49,"schedule":10},"scheduledRuns":10,
     "costs":[
       {"unit":"USD","basis":"list_price_estimate","value":128.41,"rows":30,
        "priceSnapshotIds":["clawdline-prices-2026-08-28"]},
@@ -2893,32 +2898,37 @@ All three take the same closed query and none starts anything. Unknown keys and 
   "trend":[{"bucket":"2026-08-28",
              "tokens":{"inputNew":20,"output":30,"cacheRead":400,"cacheWrite":0},
              "measuredFloor":450,"strictTotal":450,"coverage":{"…":"…"}}],
-  "rows":[{"id":"opaque interval id","taskId":"…","startedAt":"…","endedAt":"…","assistant":"codex",
+  "rows":[{"id":"opaque interval id","taskId":"…","scheduleId":"…","startedAt":"…","endedAt":"…","assistant":"codex",
            "model":"gpt-5.6-sol","project":"clawdline",
            "tokens":{"inputNew":20,"output":30,"cacheRead":400,"cacheWrite":0},
            "strictTotal":450,"measuredFloor":450,"unknownTokenParts":[],"sourceTotal":450,
            "cost":null,"missingCostReason":"plan_billed","coverage":"complete",
-           "coverageReasons":[],"reconciliation":null,"inputBasis":"includes_cache"}],
+           "coverageReasons":[],"reconciliation":null,"inputBasis":"includes_cache",
+           "lineage":{"graphId":null,"parentTaskId":"…","retryOf":null,"attempt":0,
+                      "landingState":"landed","disposition":null}}],
   "pagination":{"limit":50,"nextCursor":"eyJhdCI6…","hasMore":true},
   "rowCount":99,
   "corrections":0,
   "schemaVersion":1,
-  "unavailableDimensions":{"dimensions":["graph_id","parent_task_id","retry_of","attempt",
-                                            "landing_state","disposition"],
-                           "reason":"Whole-tree and retry identity are not plumbed yet. …",
-                           "graphView":false,"retryView":false,"landingView":false}}}
+  "unavailableDimensions":{"dimensions":["graph_id","disposition","feature"],
+                           "reason":"A whole graph, accepted outcome, or Feature requires explicit lineage or accepted attribution. …",
+                           "graphView":false,"retryView":false,"landingView":false,
+                           "featureView":false}}}
 ```
 
 Every response carries range/timezone, schema, capabilities, observed and active price snapshots,
 ledger freshness, range data-through/freshness, coverage, corrections and unavailable dimensions.
 Top-level `freshness` is always the newest ledger observation independent of the selected range;
 `rangeFreshness` describes only that range, so a historical month is not presented as a stale
-store. Schema 1 cannot support graph/retry/landing views and
-says so; it does not infer them from task ancestry.
+store. Parent/retry/attempt/landing lineage is best-effort from durable task records. Graph,
+accepted disposition, and Feature remain unavailable until an explicit producer or accepted
+attribution exists; none is inferred from root Session or task success.
 
 **Value, unit, basis, availability and reason remain separate.** `null` is unknown and never zero.
 `measuredFloor` sums known token parts; `strictTotal` is `null` when any part is unknown. The four
-trend token fields are mutually exclusive normalized parts. Cost is an array of exact
+trend token fields are mutually exclusive normalized parts. The human dashboard leads with
+generated `output`, keeps new input and both cache parts separate, and shows unique scheduled runs
+for the selected range. This is an operational work signal rather than a productivity score. Cost is an array of exact
 `unit`+`basis` series: two USD rows are not added when one is `provider_actual` and the other is
 `list_price_estimate`. `plan_billed` is unavailable, not free; an estimate is not an actual bill.
 
@@ -2958,6 +2968,10 @@ Authentication is identical on all three routes: an orchestrator token or a pair
 `read`. Anonymous requests are `401`. The projection contains stable accounting ids, task id,
 assistant/model/origin, final project name and usage metadata; it contains no prompt text or raw
 filesystem path.
+
+The future Project/Feature recording contract and the append-only small-LLM merge boundary are in
+[`docs/usage-attribution.md`](usage-attribution.md). An LLM may propose a label; only one
+unambiguous accepted head enters Feature totals, and no attribution event can rewrite tokens.
 
 ### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
 

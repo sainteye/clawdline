@@ -62,7 +62,7 @@ final class UsageLedger {
     /// written from the key its own collector will compute next time. Adding a column, an index
     /// or a column *name* changes neither an identity nor the meaning of a stored value, and
     /// needs a number of its own.
-    static let storeVersion = 4
+    static let storeVersion = 5
 
     /// Which published price table produced a `list_price_estimate`. This is **not** protection
     /// against a historical month being re-priced — recorded costs are recorded and do not move.
@@ -213,16 +213,41 @@ final class UsageLedger {
     /// is turned back into something a reader can see.
     static let unresolvedSessionPrefix = "unresolved-session:"
 
-    /// The six columns slice 1 reserves and always leaves NULL. Whole-tree and retry identity
-    /// need plumbing that does not exist yet, and a NULL the API names as unavailable is honest
-    /// where a value derived from the root session is a guess wearing a column name.
-    static let reservedColumns = ["graph_id", "parent_task_id", "retry_of", "attempt",
-                                  "landing_state", "disposition"]
+    /// Durable lineage columns. Store version 5 fills the facts the broker already records; `graph_id`
+    /// and `disposition` remain NULL until an explicit producer exists. Neither is inferred from
+    /// a root Session or a successful terminal state.
+    static let lineageColumns = ["graph_id", "parent_task_id", "retry_of", "attempt",
+                                 "landing_state", "disposition"]
+    static let unavailableDimensions = ["graph_id", "disposition", "feature"]
 
     static let reservedColumnsReason =
-        "Whole-tree and retry identity are not plumbed yet. These columns exist in schema "
-        + "\(schemaVersion) and are always NULL; the aggregate refuses to draw a whole-tree view "
-        + "rather than infer one."
+        "A whole graph, accepted outcome, or Feature is unavailable unless explicit lineage or "
+        + "an accepted attribution event exists. Clawdline never infers them from a root Session "
+        + "or task success."
+
+    enum AttributionDimension: String, CaseIterable { case project, feature }
+    enum AttributionSource: String, CaseIterable { case explicit, inherited, manual, llm, policy }
+    enum AttributionDecision: String, CaseIterable { case proposed, accepted, rejected }
+
+    /// One append-only classification decision. A small LLM may write `proposed`; analytics uses
+    /// only one unambiguous accepted head. The evidence itself stays outside the ledger — only a
+    /// digest is retained — so Feature grouping never becomes a second prompt archive.
+    struct AttributionEvent: Equatable {
+        var eventID: String
+        var intervalKey: String
+        var dimension: AttributionDimension
+        var valueID: String
+        var valueLabel: String
+        var source: AttributionSource
+        var confidence: Double?
+        var classifierID: String?
+        var classifierVersion: String?
+        var evidenceDigest: String?
+        var decision: AttributionDecision
+        var decisionSource: String
+        var assignedAt: Date
+        var supersedesEventID: String?
+    }
 
     // MARK: - Token counts, every part optional
 
@@ -446,6 +471,58 @@ final class UsageLedger {
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
+    /// Project identity is the repository root, never the disposable worktree cwd. Task records
+    /// already persist Git's common directory; manual Sessions use the nearest `.git` marker.
+    /// This does no Git subprocess work on SessionWatch's five-minute checkpoint path.
+    static func canonicalProjectKey(projectDir: String?, repositoryCommonDir: String? = nil)
+        -> String? {
+        if let common = repositoryCommonDir?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !common.isEmpty {
+            let url = URL(fileURLWithPath: common).standardizedFileURL
+            if url.lastPathComponent == ".git" {
+                return url.deletingLastPathComponent().path
+            }
+            let parts = url.pathComponents
+            if let git = parts.firstIndex(of: ".git"), git > 0 {
+                return NSString.path(withComponents: Array(parts.prefix(git)))
+            }
+        }
+        guard let raw = projectDir?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw.hasPrefix("/") else { return nil }
+        var cursor = URL(fileURLWithPath: raw).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: cursor.path, isDirectory: &isDirectory),
+           !isDirectory.boolValue { cursor.deleteLastPathComponent() }
+        while cursor.path != "/" {
+            let marker = cursor.appendingPathComponent(".git")
+            var markerDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: marker.path,
+                                              isDirectory: &markerDirectory) {
+                if markerDirectory.boolValue { return cursor.path }
+                if let text = try? String(contentsOf: marker, encoding: .utf8),
+                   let line = text.split(whereSeparator: \.isNewline).first,
+                   line.hasPrefix("gitdir:") {
+                    let rawGit = line.dropFirst("gitdir:".count)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let gitDir = rawGit.hasPrefix("/")
+                        ? URL(fileURLWithPath: rawGit).standardizedFileURL
+                        : cursor.appendingPathComponent(rawGit).standardizedFileURL
+                    let commonFile = gitDir.appendingPathComponent("commondir")
+                    if let relative = try? String(contentsOf: commonFile, encoding: .utf8)
+                        .trimmingCharacters(in: .whitespacesAndNewlines), !relative.isEmpty {
+                        let common = gitDir.appendingPathComponent(relative).standardizedFileURL
+                        if common.lastPathComponent == ".git" {
+                            return common.deletingLastPathComponent().path
+                        }
+                    }
+                }
+                return cursor.path
+            }
+            cursor.deleteLastPathComponent()
+        }
+        return URL(fileURLWithPath: raw).standardizedFileURL.path
+    }
+
     // MARK: - One reading, handed in
 
     /// One observation of one session: who it is, which boundary it is inside right now, and the
@@ -470,6 +547,12 @@ final class UsageLedger {
         var taskState: String?
         var model: String?
         var reasoningEffort: String?
+        var graphID: String?
+        var parentTaskID: String?
+        var retryOf: String?
+        var attempt: Int?
+        var landingState: String?
+        var disposition: String?
 
         /// The source's usage object, copied as it came. **Nil means the source could not be
         /// read**, which is a state — never a zero.
@@ -530,6 +613,12 @@ final class UsageLedger {
         var taskState: String?
         var model: String?
         var reasoningEffort: String?
+        var graphID: String?
+        var parentTaskID: String?
+        var retryOf: String?
+        var attempt: Int?
+        var landingState: String?
+        var disposition: String?
         var billingMode = ""
         var rawUsage: String?
         var counts = Counts()
@@ -819,6 +908,33 @@ final class UsageLedger {
                   ON usage_intervals (started_at DESC, interval_key DESC);
                 """)
         }
+        if version < 5 {
+            // Classification is mutable knowledge, not mutable accounting. Keep it in an
+            // append-only event log beside the immutable interval instead of adding last-writer-
+            // wins Feature columns to `usage_intervals`.
+            exec(db, """
+                CREATE TABLE IF NOT EXISTS usage_attribution_events (
+                  event_id TEXT PRIMARY KEY,
+                  interval_key TEXT NOT NULL,
+                  dimension TEXT NOT NULL,
+                  value_id TEXT NOT NULL,
+                  value_label TEXT NOT NULL,
+                  source TEXT NOT NULL,
+                  confidence REAL,
+                  classifier_id TEXT,
+                  classifier_version TEXT,
+                  evidence_digest TEXT,
+                  decision TEXT NOT NULL,
+                  decision_source TEXT NOT NULL,
+                  assigned_at REAL NOT NULL,
+                  supersedes_event_id TEXT,
+                  FOREIGN KEY(interval_key) REFERENCES usage_intervals(interval_key),
+                  FOREIGN KEY(supersedes_event_id) REFERENCES usage_attribution_events(event_id)
+                );
+                CREATE INDEX IF NOT EXISTS usage_attribution_interval
+                  ON usage_attribution_events (interval_key, dimension, assigned_at, event_id);
+                """)
+        }
         // Each statement above is independent of the ones before it, which is what makes a
         // half-applied migration self-heal: a crash between the ALTER and this line leaves the
         // next launch re-running an ALTER that fails harmlessly (logged) and then finishing.
@@ -866,6 +982,129 @@ final class UsageLedger {
     private func bind(_ statement: OpaquePointer?, _ index: Int32, _ value: Double?) {
         if let value { sqlite3_bind_double(statement, index, value) }
         else { sqlite3_bind_null(statement, index) }
+    }
+
+    /// Append one Project/Feature assignment decision. Event ids make retries idempotent; a
+    /// duplicate returns false and never replaces the first event. LLM evidence is represented
+    /// only by a SHA-256 digest and classifier snapshot, never raw prompt or transcript text.
+    @discardableResult
+    func record(_ event: AttributionEvent) -> Bool {
+        queue.sync {
+            guard valid(event), let db = database() else { return false }
+            if let predecessor = event.supersedesEventID,
+               !sameAttributionScope(db, eventID: predecessor, event: event,
+                                     requireSameValue: event.source == .policy
+                                        && event.decision == .accepted) { return false }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(db, """
+                INSERT INTO usage_attribution_events
+                  (event_id, interval_key, dimension, value_id, value_label, source, confidence,
+                   classifier_id, classifier_version, evidence_digest, decision,
+                   decision_source, assigned_at, supersedes_event_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO NOTHING;
+                """, -1, &statement, nil) == SQLITE_OK else { return false }
+            bind(statement, 1, event.eventID); bind(statement, 2, event.intervalKey)
+            bind(statement, 3, event.dimension.rawValue); bind(statement, 4, event.valueID)
+            bind(statement, 5, event.valueLabel); bind(statement, 6, event.source.rawValue)
+            bind(statement, 7, event.confidence); bind(statement, 8, event.classifierID)
+            bind(statement, 9, event.classifierVersion); bind(statement, 10, event.evidenceDigest)
+            bind(statement, 11, event.decision.rawValue); bind(statement, 12, event.decisionSource)
+            sqlite3_bind_double(statement, 13, event.assignedAt.timeIntervalSince1970)
+            bind(statement, 14, event.supersedesEventID)
+            guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+            return sqlite3_changes(db) == 1
+        }
+    }
+
+    /// Only a single active accepted head is usable. A proposal, rejection, or two conflicting
+    /// accepted heads returns nil, so a classifier disagreement cannot silently split totals.
+    func resolvedAttribution(intervalKey: String, dimension: AttributionDimension)
+        -> AttributionEvent? {
+        queue.sync {
+            guard let db = database() else { return nil }
+            let events = attributionEvents(db, intervalKey: intervalKey, dimension: dimension)
+            let superseded = Set(events.compactMap(\.supersedesEventID))
+            let accepted = events.filter {
+                $0.decision == .accepted && !superseded.contains($0.eventID)
+            }
+            return accepted.count == 1 ? accepted[0] : nil
+        }
+    }
+
+    private func valid(_ event: AttributionEvent) -> Bool {
+        func short(_ text: String, _ limit: Int) -> Bool {
+            !text.isEmpty && text.count <= limit
+                && !text.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+        }
+        guard short(event.eventID, 128), short(event.intervalKey, 128),
+              short(event.valueID, 128), short(event.valueLabel, 120),
+              short(event.decisionSource, 120), event.assignedAt.timeIntervalSince1970.isFinite,
+              event.confidence.map({ $0.isFinite && (0...1).contains($0) }) ?? true
+        else { return false }
+        if event.source == .llm || event.source == .policy {
+            guard let classifier = event.classifierID, short(classifier, 120),
+                  let version = event.classifierVersion, short(version, 120),
+                  let digest = event.evidenceDigest, digest.count == 64,
+                  digest.allSatisfy({ $0.isNumber || ("a"..."f").contains($0) }),
+                  event.confidence != nil else { return false }
+        }
+        if event.source == .policy && event.decision == .accepted {
+            guard event.supersedesEventID != nil else { return false }
+        }
+        return true
+    }
+
+    private func sameAttributionScope(_ db: OpaquePointer, eventID: String,
+                                      event: AttributionEvent, requireSameValue: Bool) -> Bool {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            SELECT interval_key, dimension, value_id FROM usage_attribution_events
+             WHERE event_id = ?;
+            """, -1, &statement, nil) == SQLITE_OK else { return false }
+        bind(statement, 1, eventID)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return false }
+        guard Self.text(statement, 0) == event.intervalKey,
+              Self.text(statement, 1) == event.dimension.rawValue else { return false }
+        return !requireSameValue || Self.text(statement, 2) == event.valueID
+    }
+
+    private func attributionEvents(_ db: OpaquePointer, intervalKey: String,
+                                   dimension: AttributionDimension) -> [AttributionEvent] {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            SELECT event_id, interval_key, dimension, value_id, value_label, source, confidence,
+                   classifier_id, classifier_version, evidence_digest, decision,
+                   decision_source, assigned_at, supersedes_event_id
+              FROM usage_attribution_events WHERE interval_key = ? AND dimension = ?
+             ORDER BY assigned_at, event_id;
+            """, -1, &statement, nil) == SQLITE_OK else { return [] }
+        bind(statement, 1, intervalKey); bind(statement, 2, dimension.rawValue)
+        var out: [AttributionEvent] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let eventID = Self.text(statement, 0),
+                  let storedInterval = Self.text(statement, 1),
+                  let rawDimension = Self.text(statement, 2),
+                  let storedDimension = AttributionDimension(rawValue: rawDimension),
+                  let valueID = Self.text(statement, 3), let label = Self.text(statement, 4),
+                  let rawSource = Self.text(statement, 5),
+                  let source = AttributionSource(rawValue: rawSource),
+                  let rawDecision = Self.text(statement, 10),
+                  let decision = AttributionDecision(rawValue: rawDecision),
+                  let decisionSource = Self.text(statement, 11),
+                  let assigned = Self.double(statement, 12) else { continue }
+            out.append(AttributionEvent(
+                eventID: eventID, intervalKey: storedInterval, dimension: storedDimension,
+                valueID: valueID, valueLabel: label, source: source,
+                confidence: Self.double(statement, 6), classifierID: Self.text(statement, 7),
+                classifierVersion: Self.text(statement, 8), evidenceDigest: Self.text(statement, 9),
+                decision: decision, decisionSource: decisionSource,
+                assignedAt: Date(timeIntervalSince1970: assigned),
+                supersedesEventID: Self.text(statement, 13)))
+        }
+        return out
     }
 
     private static func text(_ statement: OpaquePointer?, _ index: Int32) -> String? {
@@ -1059,6 +1298,7 @@ final class UsageLedger {
         current.model = sample.model ?? current.model
         current.localDay = day
         if let bytes = sample.sourceBytes { current.sourceBytes = bytes }
+        updateLineage(db, key: key, sample: sample)
         updateFacts(db, key: key, sample: sample, reading: reading)
         // Added to whatever this call has already put on the row — the regression above included.
         // Both are true of it, and both are what the row is for.
@@ -1157,8 +1397,9 @@ final class UsageLedger {
               segment_no, segment_reason, origin, task_id, schedule_id, project_key, working_dir,
               kind_raw, isolation, depth, claim_count, timeout_seconds, task_state, model,
               reasoning_effort, billing_mode, cost_basis, coverage, sealed, started_at,
-              local_day, observed_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)
+              local_day, observed_at, updated_at, graph_id, parent_task_id, retry_of, attempt,
+              landing_state, disposition)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(interval_key) DO NOTHING;
             """, -1, &statement, nil) == SQLITE_OK else { return }
         bind(statement, 1, key)
@@ -1189,6 +1430,12 @@ final class UsageLedger {
         bind(statement, 26, day)
         sqlite3_bind_double(statement, 27, sample.observedAt.timeIntervalSince1970)
         sqlite3_bind_double(statement, 28, sample.observedAt.timeIntervalSince1970)
+        bind(statement, 29, sample.graphID)
+        bind(statement, 30, sample.parentTaskID)
+        bind(statement, 31, sample.retryOf)
+        bind(statement, 32, sample.attempt)
+        bind(statement, 33, sample.landingState)
+        bind(statement, 34, sample.disposition)
         sqlite3_step(statement)
     }
 
@@ -1309,6 +1556,30 @@ final class UsageLedger {
             assistant: sample.assistant, model: sample.model).rawValue)
         sqlite3_bind_double(statement, 8, sample.observedAt.timeIntervalSince1970)
         bind(statement, 9, key)
+        sqlite3_step(statement)
+    }
+
+    /// Lineage is descriptive metadata and may arrive after the immutable usage is sealed — a
+    /// landing is normally recorded later by the root. Filling metadata never changes token or
+    /// cost columns; identity conflicts are ignored, while landing state may advance.
+    private func updateLineage(_ db: OpaquePointer, key: String, sample: Sample) {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            UPDATE usage_intervals SET
+              project_key = COALESCE(project_key, ?),
+              graph_id = COALESCE(graph_id, ?),
+              parent_task_id = COALESCE(parent_task_id, ?),
+              retry_of = COALESCE(retry_of, ?),
+              attempt = COALESCE(attempt, ?),
+              landing_state = COALESCE(?, landing_state),
+              disposition = COALESCE(disposition, ?)
+            WHERE interval_key = ?;
+            """, -1, &statement, nil) == SQLITE_OK else { return }
+        bind(statement, 1, sample.projectKey); bind(statement, 2, sample.graphID)
+        bind(statement, 3, sample.parentTaskID); bind(statement, 4, sample.retryOf)
+        bind(statement, 5, sample.attempt); bind(statement, 6, sample.landingState)
+        bind(statement, 7, sample.disposition); bind(statement, 8, key)
         sqlite3_step(statement)
     }
 
@@ -1504,7 +1775,8 @@ final class UsageLedger {
                reasoning_effort, billing_mode, usage_raw, input_new, output, cache_read,
                cache_write, total, source_total, reconciliation, cost_value, cost_unit,
                cost_basis, price_snapshot_id, missing_reason, coverage, coverage_reasons, sealed,
-               source_bytes, started_at, ended_at, local_day, updated_at, input_basis
+               source_bytes, started_at, ended_at, local_day, updated_at, input_basis,
+               graph_id, parent_task_id, retry_of, attempt, landing_state, disposition
           FROM usage_intervals
         """
 
@@ -1551,6 +1823,12 @@ final class UsageLedger {
         row.localDay = text(statement, 40) ?? ""
         row.updatedAt = Date(timeIntervalSince1970: double(statement, 41) ?? 0)
         row.inputBasis = text(statement, 42)
+        row.graphID = text(statement, 43)
+        row.parentTaskID = text(statement, 44)
+        row.retryOf = text(statement, 45)
+        row.attempt = integer(statement, 46)
+        row.landingState = text(statement, 47)
+        row.disposition = text(statement, 48)
         return row
     }
 
@@ -1887,9 +2165,7 @@ final class UsageLedger {
             "corrections": aggregate.corrections,
             "schemaVersion": schemaVersion,
             "priceSnapshotId": priceSnapshotID,
-            // Named rather than omitted. A consumer that cannot see which columns are reserved
-            // will assume the view it is given is the whole tree.
-            "unavailable": ["columns": reservedColumns, "why": reservedColumnsReason],
+            "unavailable": ["columns": unavailableDimensions, "why": reservedColumnsReason],
         ]
     }
 
@@ -1903,11 +2179,10 @@ final class UsageLedger {
         "cache_read", "cache_write", "total", "measured", "source_total", "reconciliation",
         "input_basis", "cost_value", "cost_unit", "cost_basis", "price_snapshot_id",
         "missing_reason", "coverage", "coverage_reasons", "sealed", "started_at", "ended_at",
-    ] + reservedColumns
+    ] + lineageColumns
 
-    /// The whole range as CSV. **An unknown is an empty field, never `0`** — including every
-    /// reserved column, which is empty in every row of schema 1 and is present so that a reader
-    /// can see it is reserved rather than wonder where it went.
+    /// The whole range as CSV. **An unknown is an empty field, never `0`**. Store version 5 carries the
+    /// lineage facts the broker actually knows and leaves only unavailable facts empty.
     ///
     /// **`total` and `measured` are two different quantities and the file carries both.** `total`
     /// is strict — empty the moment any one part is unknown — and `measured` is the sum of what
@@ -1976,7 +2251,12 @@ final class UsageLedger {
             fields.append(row.sealed ? "1" : "0")
             fields.append(formatter.string(from: row.startedAt))
             fields.append(row.endedAt.map { formatter.string(from: $0) } ?? "")
-            for _ in UsageLedger.reservedColumns { fields.append("") }
+            fields.append(row.graphID ?? "")
+            fields.append(row.parentTaskID ?? "")
+            fields.append(row.retryOf ?? "")
+            fields.append(number(row.attempt))
+            fields.append(row.landingState ?? "")
+            fields.append(row.disposition ?? "")
             lines.append(fields.map(escape).joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
@@ -2058,7 +2338,9 @@ final class UsageLedger {
         sample.taskID = id
         sample.scheduleID = record["schedule_id"] as? String
         let worktree = record["worktree"] as? [String: Any]
-        sample.projectKey = record["project_dir"] as? String
+        sample.projectKey = UsageLedger.canonicalProjectKey(
+            projectDir: record["project_dir"] as? String,
+            repositoryCommonDir: record["repository_common_dir"] as? String)
         sample.workingDir = (worktree?["cwd"] as? String) ?? (record["project_dir"] as? String)
         sample.kindRaw = record["kind"] as? String
         sample.isolation = (record["isolation"] as? String) ?? Orchestrator.Isolation.none.rawValue
@@ -2068,6 +2350,12 @@ final class UsageLedger {
         sample.timeoutSeconds = (record["timeout_minutes"] as? Int).map { $0 * 60 }
         sample.taskState = state
         sample.reasoningEffort = record["reasoning_effort"] as? String
+        sample.graphID = record["graph_id"] as? String
+        sample.parentTaskID = record["parent_task"] as? String
+        sample.retryOf = record["respawn_of"] as? String
+        sample.attempt = record["respawn_generation"] as? Int
+        sample.landingState = (record["landing"] as? [String: Any])?["state"] as? String
+        sample.disposition = record["disposition"] as? String
         sample.rawUsage = usage
         sample.model = (usage?["model"] as? String) ?? (record["model"] as? String)
         // `Orchestrator.cost(of:)` is arithmetic on published per-million prices. Copying it
@@ -2095,6 +2383,7 @@ final class UsageLedger {
         let key = UsageLedger.intervalKey(assistant: assistant, sessionID: sample.sessionID,
                                           boundaryKind: .task, boundaryID: id, segmentNo: 0)
         if let db = database(), let existing = row(db, key: key), existing.sealed {
+            updateLineage(db, key: key, sample: sample)
             guard let usage,
                   let data = try? JSONSerialization.data(withJSONObject: usage,
                                                          options: [.sortedKeys]),
@@ -2300,13 +2589,21 @@ extension UsageLedger {
             sample.timeoutSeconds = (task["timeout_minutes"] as? Int).map { $0 * 60 }
             sample.taskState = task["state"] as? String
             sample.reasoningEffort = task["reasoning_effort"] as? String
-            sample.projectKey = task["project_dir"] as? String
+            sample.projectKey = UsageLedger.canonicalProjectKey(
+                projectDir: task["project_dir"] as? String,
+                repositoryCommonDir: task["repository_common_dir"] as? String)
             sample.workingDir = ((task["worktree"] as? [String: Any])?["cwd"] as? String)
                 ?? (task["project_dir"] as? String) ?? cwd
+            sample.graphID = task["graph_id"] as? String
+            sample.parentTaskID = task["parent_task"] as? String
+            sample.retryOf = task["respawn_of"] as? String
+            sample.attempt = task["respawn_generation"] as? Int
+            sample.landingState = (task["landing"] as? [String: Any])?["state"] as? String
+            sample.disposition = task["disposition"] as? String
         } else {
             sample = Sample(assistant: assistant, sessionID: sessionID, boundaryKind: .session,
                             boundaryID: sessionID, origin: .manual)
-            sample.projectKey = cwd
+            sample.projectKey = UsageLedger.canonicalProjectKey(projectDir: cwd)
             sample.workingDir = cwd
         }
         sample.observedAt = now
@@ -2580,6 +2877,13 @@ final class UsageQueryService {
                 "filters": ["from", "to", "timezone", "assistant", "model", "origin", "project"],
                 "exports": ["csv", "json"], "maxPageSize": Self.maxPageSize,
                 "maxScannedRows": Self.maxScannedRows,
+                "attribution": [
+                    "dimensions": UsageLedger.AttributionDimension.allCases.map(\.rawValue),
+                    "sources": UsageLedger.AttributionSource.allCases.map(\.rawValue),
+                    "decisions": UsageLedger.AttributionDecision.allCases.map(\.rawValue),
+                    "featureAggregation": "one_unambiguous_accepted_head",
+                    "llmEvidence": "classifier_version_confidence_and_sha256_only",
+                ],
             ],
             "priceSnapshot": [
                 "activeId": UsageLedger.priceSnapshotID,
@@ -2598,9 +2902,10 @@ final class UsageQueryService {
             "pagination": ["limit": query.limit, "nextCursor": next as Any? ?? NSNull(),
                            "hasMore": hasMore],
             "unavailableDimensions": [
-                "dimensions": UsageLedger.reservedColumns,
+                "dimensions": UsageLedger.unavailableDimensions,
                 "reason": UsageLedger.reservedColumnsReason,
                 "graphView": false, "retryView": false, "landingView": false,
+                "featureView": false,
             ],
         ]
         if truncated {
@@ -2691,8 +2996,14 @@ final class UsageQueryService {
         var costs: [String: (unit: String, basis: String, value: Double, rows: Int,
                             snapshots: Set<String>)] = [:]
         var missingCosts: [String: Int] = [:]
+        var origins: [String: Int] = [:]
+        var scheduledTasks: Set<String> = []
 
         for row in rows {
+            origins[row.origin, default: 0] += 1
+            if row.origin == UsageLedger.Origin.schedule.rawValue {
+                scheduledTasks.insert(row.taskID ?? row.intervalKey)
+            }
             let measurement = row.measurement
             if measurement.incomplete { unknownRows += 1 }
             for part in UsageLedger.Part.allCases {
@@ -2746,6 +3057,8 @@ final class UsageQueryService {
             "costs": costPayload,
             "unavailableCost": ["rows": missingCosts.values.reduce(0, +),
                                 "reasons": missingCosts],
+            "origins": origins,
+            "scheduledRuns": scheduledTasks.count,
             "coverage": ["states": coverageStates, "reasons": coverageReasons,
                          "tokenRowsUnknown": unknownRows, "tokenPartsUnknown": partsUnknown],
         ]
@@ -2773,8 +3086,8 @@ final class UsageQueryService {
             out["key"] = key as Any? ?? NSNull()
             return out
         }.sorted {
-            let left = ($0["measuredFloor"] as? Int) ?? -1
-            let right = ($1["measuredFloor"] as? Int) ?? -1
+            let left = (($0["tokens"] as? [String: Any])?[UsageLedger.Part.output.rawValue] as? Int) ?? -1
+            let right = (($1["tokens"] as? [String: Any])?[UsageLedger.Part.output.rawValue] as? Int) ?? -1
             if left != right { return left > right }
             return String(describing: $0["key"]) < String(describing: $1["key"])
         }
@@ -2828,6 +3141,7 @@ final class UsageQueryService {
         return [
             "id": row.intervalKey,
             "taskId": row.taskID as Any? ?? NSNull(),
+            "scheduleId": row.scheduleID as Any? ?? NSNull(),
             "startedAt": formatter.string(from: row.startedAt),
             "endedAt": row.endedAt.map(formatter.string(from:)) as Any? ?? NSNull(),
             "assistant": row.assistant,
@@ -2845,6 +3159,14 @@ final class UsageQueryService {
             "coverageReasons": measurement.reasons,
             "reconciliation": row.reconciliation as Any? ?? NSNull(),
             "inputBasis": row.inputBasis as Any? ?? NSNull(),
+            "lineage": [
+                "graphId": row.graphID as Any? ?? NSNull(),
+                "parentTaskId": row.parentTaskID as Any? ?? NSNull(),
+                "retryOf": row.retryOf as Any? ?? NSNull(),
+                "attempt": row.attempt as Any? ?? NSNull(),
+                "landingState": row.landingState as Any? ?? NSNull(),
+                "disposition": row.disposition as Any? ?? NSNull(),
+            ],
         ]
     }
 
