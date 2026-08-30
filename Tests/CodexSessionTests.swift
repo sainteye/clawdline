@@ -315,6 +315,44 @@ group("a rollout reads as the same entries a transcript does") {
     expect("the timestamp is read", entries[0].time?.timeIntervalSince1970,
            1787499786.283)
 
+    let fileChangeEntries = Codex.entries(ofItem: [
+        "type": "FileChange",
+        "changes": [
+            "/Users/me/a/Added.swift": ["type": "add", "content": "let added = true\n"],
+            "/Users/me/a/Deleted.swift": ["type": "delete", "content": "let gone = true\n"],
+            "/Users/me/a/Thing.swift": [
+                "type": "update", "move_path": "/Users/me/a/Renamed.swift",
+                "unified_diff": "@@ -1,2 +1,2 @@\n-let old = true\n+let new = true\n keep\n",
+            ],
+        ],
+    ], at: nil)
+    expect("one Codex file-change item stays one transcript entry", fileChangeEntries.count, 1)
+    expect("the structured file-change entry remains an edit", fileChangeEntries.first?.tool,
+           "edit")
+    expect("every changed file survives the rollout parser",
+           fileChangeEntries.first?.fileChanges.count, 3)
+    expect("changed files have a stable path order",
+           fileChangeEntries.first?.fileChanges.map(\.path),
+           ["/Users/me/a/Added.swift", "/Users/me/a/Deleted.swift", "/Users/me/a/Thing.swift"])
+    expect("an added file keeps its complete content",
+           fileChangeEntries.first?.fileChanges[0].content, "let added = true\n")
+    expect("a deleted file keeps its complete content",
+           fileChangeEntries.first?.fileChanges[1].content, "let gone = true\n")
+    expect("an update keeps the unified diff",
+           fileChangeEntries.first?.fileChanges[2].unifiedDiff,
+           "@@ -1,2 +1,2 @@\n-let old = true\n+let new = true\n keep\n")
+    expect("a rename keeps its destination",
+           fileChangeEntries.first?.fileChanges[2].movePath, "/Users/me/a/Renamed.swift")
+    let fileChangeRow = RemoteServer.transcriptRows(fileChangeEntries).first
+    let fileChangeWire = fileChangeRow?["fileChanges"] as? [[String: Any]]
+    expect("structured file changes cross the transcript wire", fileChangeWire?.count, 3)
+    expect("the wire keeps the diff under an explicit key",
+           fileChangeWire?.last?["unifiedDiff"] as? String,
+           "@@ -1,2 +1,2 @@\n-let old = true\n+let new = true\n keep\n")
+    check("absent change fields stay absent rather than becoming null",
+          fileChangeWire?.first?["unifiedDiff"] == nil
+            && fileChangeWire?.last?["content"] == nil)
+
     expect("a truncated line is skipped rather than fatal", Codex.parse("{\"type\":").count, 0)
     expect("and so is an item nobody has taught this about",
            Codex.parse(line("{\"type\":\"SomethingNew\",\"content\":\"…\"}")).count, 0)

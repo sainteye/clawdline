@@ -295,6 +295,17 @@ enum Transcript {
         return nil
     }
 
+    /// One file inside a Codex `FileChange` item. The rollout already carries the exact patch;
+    /// keeping it structured here lets each surface decide how much to unfold without turning
+    /// code into Markdown or asking Git what the file looks like later.
+    struct FileChange: Equatable {
+        var path: String
+        var kind: String
+        var unifiedDiff: String? = nil
+        var content: String? = nil
+        var movePath: String? = nil
+    }
+
     struct Entry {
         enum Kind {
             case user
@@ -328,6 +339,9 @@ enum Transcript {
         /// said about a task. Both are defaulted, so the synthesised memberwise initialiser
         /// serves every call site and neither feature has to know about the other's fields.
         var notice: ClawdlineMessage.Notice? = nil
+        /// Exact Codex edits, absent on every other entry. `text` remains the short summary used
+        /// by the native pane and old Web clients; this is the lossless, optional detail.
+        var fileChanges: [FileChange] = []
     }
 
     /// Remove only paths created by Clawdline's own bounded drop cache. The fixed directory is

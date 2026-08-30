@@ -329,6 +329,11 @@ back with `200`, because a session that has not spoken yet and a session that co
 different things and only the second is a `404`. A shell that is not running an assistant answers
 the same way, and so does a session whose record could not be matched to it.
 
+Codex file-edit entries carry a `fileChanges` array in addition to their summary `text`. Each row
+always has `path` and `kind`; `unifiedDiff`, `content`, and `movePath` are present only when Codex
+recorded them. Clients that understand the field can render an inline patch, while older clients
+continue to show the summary text.
+
 For a strictly decoded version-2 session message, its `role: "message"` entry also carries an
 `artifacts` array. Each row contains only `id`, `media_type` (`image/png`), `byte_count`, `width`,
 `height`, and absolute Unix-seconds `expires_at`. There is no source path, filename, URL or raw

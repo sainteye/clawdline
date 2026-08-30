@@ -164,12 +164,16 @@ export function renderTranscript() {
     var i = 0;
     while (i < entries.length) {
         if (entries[i].role !== "tool") { blocks.push(entryHTML(entries[i])); i += 1; continue; }
+        // Codex has already given this item a lossless patch. It is authored output worth
+        // reading, not machinery to bury inside the surrounding shell/tool run.
+        if (fileChangesOf(entries[i])) { blocks.push(patchHTML(entries[i])); i += 1; continue; }
         // A question is its own block and breaks the run around it. Everything else a tool does
         // is machinery that folds away; this one is a sentence somebody was asked, and it is the
         // only thing in the pane that was ever addressed to the reader.
         if (askOf(entries[i])) { blocks.push(askHTML(entries[i])); i += 1; continue; }
         var run = [];
-        while (i < entries.length && entries[i].role === "tool" && !askOf(entries[i])) {
+        while (i < entries.length && entries[i].role === "tool" && !askOf(entries[i]) &&
+               !fileChangesOf(entries[i])) {
             run.push(entries[i]); i += 1;
         }
         liveRun = run; liveAt = blocks.length;
@@ -438,6 +442,9 @@ function foldKey(run) {
         // way. Written as an escape: a raw control character in a source file is something
         // an editor will quietly eat.
         var text = (e.tool || "") + "\u0001" + (e.text || "");
+        // Two edits of the same filenames are not the same fold merely because their short
+        // summaries match. The patch bytes are the stable identity the rollout supplied.
+        if (Array.isArray(e.fileChanges)) text += "\u0001" + JSON.stringify(e.fileChanges);
         for (var i = 0; i < text.length; i++) {
             hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
         }
@@ -445,9 +452,11 @@ function foldKey(run) {
     return (hash >>> 0).toString(36);
 }
 
-function toggleFold(key) {
-    if (S.expanded[key]) delete S.expanded[key];
-    else S.expanded[key] = true;
+function toggleFold(key, defaultOpen) {
+    var open = defaultOpen ? S.expanded[key] !== false : !!S.expanded[key];
+    var next = !open;
+    if (!defaultOpen && !next) delete S.expanded[key];
+    else S.expanded[key] = next;
     renderTranscript();
     // The row the reader pressed was just thrown away and written again, so the focus has to be
     // put back on its replacement — otherwise opening a run with the keyboard is also the moment
@@ -460,7 +469,8 @@ els.tx.addEventListener("click", function (ev) {
     var copy = ev.target.closest ? ev.target.closest("button.codecopy") : null;
     if (copy) { copyCodeBlock(copy.getAttribute("data-code-copy")); return; }
     var handle = ev.target.closest ? ev.target.closest("[data-fold]") : null;
-    if (handle) toggleFold(handle.getAttribute("data-fold"));
+    if (handle) toggleFold(handle.getAttribute("data-fold"),
+                           handle.getAttribute("data-default-open") === "1");
 });
 
 els.tx.addEventListener("keydown", function (ev) {
@@ -493,7 +503,107 @@ function whoHTML(role, at) {
         (at ? '<time data-at="' + at + '">' + esc(clockOf(at)) + "</time>" : "") + "</div>";
 }
 
+/* --------------------------------------------------------------------------
+   Codex file changes
+   ------------------------------------------------------------------------ */
+
+function fileChangesOf(e) {
+    if (!e || e.role !== "tool" || e.tool !== "edit" || !Array.isArray(e.fileChanges)) return null;
+    var changes = e.fileChanges.filter(function (change) {
+        return change && typeof change.path === "string" && change.path.length > 0;
+    });
+    return changes.length ? changes : null;
+}
+
+function patchPath(path) {
+    return String(path || "").replace(/^\/Users\/[^/]+/, "~");
+}
+
+/** Turn one unified diff into numbered semantic lines. File headers stay neutral; only real
+ * additions and deletions receive colour, so `+++ b/file` never looks like added source. */
+function unifiedDiffLines(text) {
+    var source = String(text || "").split("\n");
+    if (source.length && source[source.length - 1] === "") source.pop();
+    var out = [], oldLine = null, newLine = null;
+    source.forEach(function (line) {
+        var hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (hunk) {
+            oldLine = Number(hunk[1]); newLine = Number(hunk[2]);
+            out.push({ kind: "hunk", old: "", new: "", text: line });
+        } else if (line.indexOf("--- ") === 0 || line.indexOf("+++ ") === 0 ||
+                   line.indexOf("diff ") === 0 || line.indexOf("index ") === 0 ||
+                   line.indexOf("\\ No newline") === 0) {
+            out.push({ kind: "meta", old: "", new: "", text: line });
+        } else if (line.charAt(0) === "-" && oldLine !== null) {
+            out.push({ kind: "del", old: oldLine++, new: "", text: line.slice(1) });
+        } else if (line.charAt(0) === "+" && newLine !== null) {
+            out.push({ kind: "add", old: "", new: newLine++, text: line.slice(1) });
+        } else if (oldLine !== null && newLine !== null) {
+            out.push({ kind: "context", old: oldLine++, new: newLine++,
+                       text: line.charAt(0) === " " ? line.slice(1) : line });
+        } else {
+            out.push({ kind: "meta", old: "", new: "", text: line });
+        }
+    });
+    return out;
+}
+
+/** Add/delete records carry content rather than a synthetic diff. Colour every source line and
+ * number the side that exists; an empty file remains a real file header with no invented line. */
+function contentLines(text, kind) {
+    var source = String(text == null ? "" : text).split("\n");
+    if (source.length && source[source.length - 1] === "") source.pop();
+    var side = kind === "delete" ? "del" : "add";
+    return source.map(function (line, i) {
+        return { kind: side, old: side === "del" ? i + 1 : "",
+                 new: side === "add" ? i + 1 : "", text: line };
+    });
+}
+
+function linesOfChange(change) {
+    if (typeof change.unifiedDiff === "string") return unifiedDiffLines(change.unifiedDiff);
+    if (typeof change.content === "string") return contentLines(change.content, change.kind);
+    return [];
+}
+
+function diffLineHTML(line) {
+    return '<div class="diff-line ' + esc(line.kind) + '">' +
+        '<span class="old">' + esc(line.old) + '</span>' +
+        '<span class="new">' + esc(line.new) + '</span>' +
+        '<code>' + esc(line.text) + '</code></div>';
+}
+
+function fileChangeHTML(change) {
+    var lines = linesOfChange(change);
+    var additions = lines.filter(function (line) { return line.kind === "add"; }).length;
+    var deletions = lines.filter(function (line) { return line.kind === "del"; }).length;
+    var moved = change.movePath
+        ? '<span class="diff-move">→ ' + esc(patchPath(change.movePath)) + '</span>' : "";
+    var stats = (additions ? '<span class="add">+' + additions + '</span>' : "") +
+        (deletions ? '<span class="del">−' + deletions + '</span>' : "");
+    return '<section class="diff-file" data-kind="' + esc(change.kind || "change") + '">' +
+        '<header><span class="diff-path">' + esc(patchPath(change.path)) + '</span>' + moved +
+        '<span class="diff-kind">' + esc(change.kind || "change") + '</span>' +
+        '<span class="diff-stats">' + stats + '</span></header>' +
+        (lines.length ? '<div class="diff-scroll"><div class="diff-lines">' +
+            lines.map(diffLineHTML).join("") + '</div></div>' : "") + '</section>';
+}
+
+function patchHTML(e) {
+    var changes = fileChangesOf(e) || [];
+    var key = "p" + foldKey([e]);
+    var open = S.expanded[key] !== false;
+    return '<div class="entry patch" data-role="patch"><div class="who">' + esc(WHO.tool) +
+        '</div><div class="body"><button type="button" class="patch-title" data-fold="' + key +
+        '" data-default-open="1" aria-expanded="' + (open ? "true" : "false") + '">' +
+        '<span class="caret">' + (open ? "⏷" : "⏵") + '</span><span class="toolname">' +
+        esc(e.tool) + '</span><span class="subject">' + esc(e.text || "") + '</span></button>' +
+        (open ? '<div class="patch-body">' + changes.map(fileChangeHTML).join("") + '</div>' : "") +
+        '</div></div>';
+}
+
 export function entryHTML(e) {
+    if (fileChangesOf(e)) return patchHTML(e);
     if (e.role === "notice") return noticeHTML(e);
     var role = WHO[e.role] ? e.role : "assistant";
     if (role === "message") {

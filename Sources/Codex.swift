@@ -422,7 +422,11 @@ enum Codex {
             return out
 
         case "FileChange":
-            return [entry(.tool, changed(item["changes"]), tool: "edit")].compactMap { $0 }
+            guard var edit = entry(.tool, changed(item["changes"]), tool: "edit") else {
+                return []
+            }
+            edit.fileChanges = fileChanges(item["changes"])
+            return [edit]
 
         // Codex's plugins arrive under one name with the kind next to it — `web.search` today.
         // The kind is the tool as far as a reader is concerned.
@@ -510,6 +514,23 @@ enum Codex {
         let names = dict.keys.sorted().map { ($0 as NSString).lastPathComponent }
         if names.count <= 3 { return names.joined(separator: ", ") }
         return names.prefix(3).joined(separator: ", ") + " +\(names.count - 3)"
+    }
+
+    /// The lossless half of the same `FileChange`: updates carry a unified diff, while additions
+    /// and deletions carry the file content. Paths are sorted to keep the transcript wire stable
+    /// across dictionary implementations and re-reads of the same rollout.
+    private static func fileChanges(_ raw: Any?) -> [Transcript.FileChange] {
+        guard let changes = raw as? [String: Any] else { return [] }
+        return changes.keys.sorted().compactMap { path in
+            guard let change = changes[path] as? [String: Any] else { return nil }
+            let kind = (change["type"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "change"
+            return Transcript.FileChange(
+                path: path,
+                kind: kind,
+                unifiedDiff: change["unified_diff"] as? String,
+                content: change["content"] as? String,
+                movePath: change["move_path"] as? String)
+        }
     }
 
     private static func firstLine(of text: String) -> String {

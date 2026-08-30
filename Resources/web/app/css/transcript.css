@@ -231,6 +231,74 @@
     background: rgba(140, 186, 249, 0.09);
     border-radius: 4px; padding: 1px 4px;
 }
+
+/* A Codex `FileChange`, kept as the patch Codex wrote rather than flattened into Markdown.
+   It starts open because this is authored work, not terminal machinery; the title remembers a
+   collapse through ordinary transcript redraws using the same stable fold state as tool runs. */
+.entry[data-role="patch"] .body { min-width: 0; }
+.patch-title {
+    display: flex; align-items: center; gap: 7px;
+    max-width: 100%; min-height: 28px; padding: 2px 0;
+    color: var(--dim); font-family: var(--mono); font-size: 11.5px;
+    text-align: left;
+}
+.patch-title .caret { flex: 0 0 auto; color: var(--accent); }
+.patch-title .toolname { flex: 0 0 auto; margin-right: 0; }
+.patch-title .subject {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.patch-title:hover .subject, .patch-title:focus-visible .subject { color: var(--ink); }
+.patch-body { display: grid; gap: 9px; margin-top: 6px; }
+.diff-file {
+    min-width: 0; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: #0b0b0e;
+}
+.diff-file > header {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0; min-height: 30px; padding: 5px 9px;
+    border-bottom: 1px solid var(--line); background: #151519;
+    font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+}
+.diff-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+.diff-move { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-kind {
+    flex: 0 0 auto; padding: 1px 5px;
+    border: 1px solid #303038; border-radius: 999px;
+    text-transform: lowercase;
+}
+.diff-stats { display: flex; gap: 6px; margin-left: auto; flex: 0 0 auto; }
+.diff-stats .add { color: #7fc391; }
+.diff-stats .del { color: #d47a6d; }
+.diff-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diff-lines { min-width: max-content; width: 100%; padding: 4px 0; }
+.diff-line {
+    display: grid; grid-template-columns: 42px 42px minmax(max-content, 1fr);
+    min-height: 19px; font-family: var(--mono); font-size: 11.5px; line-height: 19px;
+}
+.diff-line .old, .diff-line .new {
+    padding: 0 7px 0 4px; border-right: 1px solid rgba(255,255,255,0.045);
+    color: #5e5b56; text-align: right; user-select: none;
+}
+.entry.patch .diff-line code {
+    display: block; min-width: 0; padding: 0 12px 0 9px;
+    border: 0; border-radius: 0; background: none;
+    color: #c9c6c0; font: inherit; white-space: pre; overflow-wrap: normal; word-break: normal;
+}
+.diff-line.add { background: rgba(77, 139, 91, 0.23); }
+.diff-line.del { background: rgba(164, 77, 65, 0.24); }
+.diff-line.add .new { color: #86c997; background: rgba(77, 139, 91, 0.12); }
+.diff-line.del .old { color: #db8578; background: rgba(164, 77, 65, 0.13); }
+.diff-line.hunk { background: rgba(101, 137, 188, 0.10); }
+.diff-line.hunk code { color: #8cbaf9; }
+.diff-line.meta code { color: var(--faint); }
+
+@media (max-width: 560px) {
+    .diff-line { grid-template-columns: 32px 32px minmax(max-content, 1fr); font-size: 11px; }
+    .diff-line .old, .diff-line .new { padding-right: 5px; }
+    .entry.patch .diff-line code { padding-left: 7px; }
+    .diff-kind { display: none; }
+}
 .entry .body pre.code {
     font-family: var(--mono); font-size: 12px; line-height: 1.5;
     background-color: #0b0b0e; border: 1px solid var(--line); border-radius: 8px;

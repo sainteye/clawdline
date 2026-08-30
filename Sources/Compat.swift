@@ -200,6 +200,13 @@ enum Compat {
             since: "not known to have a floor"),
         Dependency(
             program: "Codex",
+            what: "A rollout's completed `FileChange` item, whose `changes` rows carry "
+                + "`type`, `content`, `unified_diff` and `move_path`",
+            where_: "Codex.swift",
+            symptom: "File edits appear only as filenames instead of red and green inline diffs",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Codex",
             what: "A rollout's `token_count.rate_limits`: `limit_id`, `credits.has_credits` "
                 + "and `plan_type` — which quota bucket answered, whether credits remain, and "
                 + "the account's own plan name",

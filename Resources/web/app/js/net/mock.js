@@ -377,6 +377,15 @@ export var Mock = (function () {
     transcripts["8F3A-1C"] = script.map(function (e, i) {
         return { role: e[0], text: e[1], tool: e[2], source: e[3], at: now - (script.length - i) * 47 };
     });
+    // A real Codex FileChange wire shape in the transcript used for visual development. Keeping
+    // it here makes the red/green patch inspectable in mock mode without a live Codex session.
+    Object.assign(transcripts["8F3A-1C"][11], {
+        tool: "edit", text: "Sources/Webhook.swift",
+        fileChanges: [{
+            path: "/Users/x/code/clawdline/Sources/Webhook.swift", kind: "update",
+            unifiedDiff: "@@ -42,4 +42,5 @@ func receive(_ event: Event) async throws {\n-    try await mail.send(receipt(for: event))\n-    return .ok\n+    try ledger.upsert(event)\n+    queue.enqueue(receipt(for: event))\n+    return .accepted\n }\n"
+        }]
+    });
     // A question, in the shape the wire carries one: the marker, then the questions as data.
     // See `ASK_MARK`. The fixture is also where the block's layout is worked on, so it has both
     // kinds — one answer wanted, and any number of them.

@@ -1219,17 +1219,18 @@ group("the Web transcript has an inert Clawdline card") {
         }
         let script = """
         var WHO = { user: "you", assistant: "claude", peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: "tool" };
-        var S = { assistantIcons: false };
+        var S = { assistantIcons: false, expanded: {} };
         var T = new Proxy({}, { get: function (_, key) { return String(key); } });
         function byId() { return null; }
         function assistantLogo(value) { return "LOGO:" + esc(value); }
         function assistantName(value) { return String(value || "").toUpperCase(); }
         function clockOf(value) { return String(value || ""); }
         function fill(value) { return String(value || ""); }
+        function foldKey() { return "test-patch"; }
         function esc(value) {
             return String(value == null ? "" : value)
                 .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;");
+                .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
         }
         function richText(value) { return "BODY:" + esc(value); }
         eval(\(javascriptLiteral(renderer)));
@@ -1274,6 +1275,33 @@ group("the Web transcript has an inert Clawdline card") {
             && relayed.html.contains("LOGO:claude")
             && relayed.html.contains("BODY:## status &amp; detail")
             && !relayed.html.contains("<clawdline-fa>"))
+    let edited = renderEntry([
+        "role": "tool", "tool": "edit", "text": "Thing.swift, Added.swift",
+        "fileChanges": [
+            ["path": "/Users/me/a/Thing.swift", "kind": "update",
+             "unifiedDiff": "@@ -7,2 +7,2 @@ function demo()\n-const old = '<unsafe>';\n+const fresh = '& ready';\n keep();\n"],
+            ["path": "/Users/me/a/Added.swift", "kind": "add",
+             "content": "let first = true\nlet second = false\n"],
+        ],
+    ])
+    check("a Codex edit renders as an open, collapsible patch",
+          edited.status == 0
+            && edited.html.contains(#"data-role="patch""#)
+            && edited.html.contains(#"aria-expanded="true""#)
+            && edited.html.contains("Thing.swift"))
+    check("deleted and added lines receive distinct semantic rows",
+          edited.html.contains(#"class="diff-line del""#)
+            && edited.html.contains(#"class="diff-line add""#)
+            && edited.html.contains(#"class="diff-line context""#))
+    check("diff code is escaped and never becomes transcript markup",
+          edited.html.contains("const old = &#39;&lt;unsafe&gt;&#39;;")
+            && edited.html.contains("const fresh = &#39;&amp; ready&#39;;")
+            && !edited.html.contains("<unsafe>"))
+    check("hunk counters and new-file lines are visible",
+          edited.html.contains(#"<span class="old">7</span>"#)
+            && edited.html.contains(#"<span class="new">7</span>"#)
+            && edited.html.contains(#"data-kind="add""#)
+            && edited.html.contains("let second = false"))
     check("task state lookup rejects inherited object properties and keeps a generic title",
           noticeRenderer.contains("Object.prototype.hasOwnProperty.call(states, n.state)")
               && noticeRenderer.contains("var title = T.webNoticeFinished"))

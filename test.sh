@@ -8,9 +8,10 @@ set -euo pipefail
 
 expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites=CloudEnvelope:64,CloudAccount:77,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:166'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
-# executed checks, Usage Portfolio adds 43, and Milestone adds 15. The exact candidate-tree run
-# remains authoritative and must update this guard if its observed final count differs.
-expected_swift_receipt='6921 checks passed'
+# executed checks, Usage Portfolio adds 43, Milestone adds 15, and inline Codex patches add 15.
+# The exact candidate-tree run remains authoritative and must update this guard if its observed
+# final count differs.
+expected_swift_receipt='6936 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

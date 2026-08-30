@@ -5015,6 +5015,15 @@ final class RemoteServer: @unchecked Sendable {
             if let notice = entry.notice {
                 row["notice"] = ClawdlineMessage.webObject(for: notice)
             }
+            if !entry.fileChanges.isEmpty {
+                row["fileChanges"] = entry.fileChanges.map { change -> [String: Any] in
+                    var out: [String: Any] = ["path": change.path, "kind": change.kind]
+                    if let diff = change.unifiedDiff { out["unifiedDiff"] = diff }
+                    if let content = change.content { out["content"] = content }
+                    if let destination = change.movePath { out["movePath"] = destination }
+                    return out
+                }
+            }
             return row
         }
     }
