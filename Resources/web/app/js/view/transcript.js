@@ -166,14 +166,16 @@ export function renderTranscript() {
         if (entries[i].role !== "tool") { blocks.push(entryHTML(entries[i])); i += 1; continue; }
         // Codex has already given this item a lossless patch. It is authored output worth
         // reading, not machinery to bury inside the surrounding shell/tool run.
-        if (fileChangesOf(entries[i])) { blocks.push(patchHTML(entries[i])); i += 1; continue; }
+        if (fileChangesOf(entries[i]) || planOf(entries[i]) || activityOf(entries[i])) {
+            blocks.push(entryHTML(entries[i])); i += 1; continue;
+        }
         // A question is its own block and breaks the run around it. Everything else a tool does
         // is machinery that folds away; this one is a sentence somebody was asked, and it is the
         // only thing in the pane that was ever addressed to the reader.
         if (askOf(entries[i])) { blocks.push(askHTML(entries[i])); i += 1; continue; }
         var run = [];
         while (i < entries.length && entries[i].role === "tool" && !askOf(entries[i]) &&
-               !fileChangesOf(entries[i])) {
+               !fileChangesOf(entries[i]) && !planOf(entries[i]) && !activityOf(entries[i])) {
             run.push(entries[i]); i += 1;
         }
         liveRun = run; liveAt = blocks.length;
@@ -515,6 +517,71 @@ function fileChangesOf(e) {
     return changes.length ? changes : null;
 }
 
+function planOf(e) {
+    if (!e || e.role !== "tool" || !Array.isArray(e.plan)) return null;
+    var statuses = { pending: true, inProgress: true, completed: true };
+    var steps = e.plan.filter(function (step) {
+        return step && typeof step.step === "string" && step.step.length > 0 &&
+            Object.prototype.hasOwnProperty.call(statuses, step.status);
+    });
+    return steps.length ? steps : null;
+}
+
+function activityOf(e) {
+    if (!e || e.role !== "tool" || !e.activity || typeof e.activity !== "object") return null;
+    var kind = e.activity.kind;
+    if (kind !== "called" && kind !== "explored") return null;
+    if (kind === "explored" && !Array.isArray(e.activity.actions)) return null;
+    return e.activity;
+}
+
+function planHTML(e) {
+    var steps = planOf(e) || [];
+    return '<div class="entry plan" data-role="plan"><div class="who">' + esc(WHO.tool) +
+        '</div><div class="body"><section class="plan-card"><header>Updated Plan</header><ol>' +
+        steps.map(function (step) {
+            var mark = step.status === "completed" ? "✓" : step.status === "inProgress" ? "●" : "○";
+            return '<li data-status="' + esc(step.status) + '"><span class="plan-mark">' + mark +
+                '</span><span>' + esc(step.step) + '</span></li>';
+        }).join("") + '</ol></section></div></div>';
+}
+
+function durationText(milliseconds) {
+    if (typeof milliseconds !== "number" || milliseconds < 0 || !isFinite(milliseconds)) return "";
+    if (milliseconds < 1000) return milliseconds + "ms";
+    var seconds = milliseconds / 1000;
+    return (seconds < 10 ? String(Math.round(seconds * 100) / 100) : String(Math.round(seconds * 10) / 10)) + "s";
+}
+
+function activityActionHTML(action) {
+    if (!action || typeof action !== "object") return "";
+    var label = action.kind === "search" ? "Search" : action.kind === "read" ? "Read" : "";
+    if (!label) return "";
+    var subject = action.kind === "search"
+        ? String(action.query || action.command || "") : String(action.name || action.path || action.command || "");
+    var where = action.path && action.path !== subject
+        ? '<span class="activity-path">' + esc(action.path) + '</span>' : "";
+    return '<li><span class="activity-verb">' + label + '</span><span class="activity-subject">' +
+        esc(subject) + '</span>' + where + '</li>';
+}
+
+function activityHTML(e) {
+    var activity = activityOf(e) || {};
+    var kind = activity.kind === "explored" ? "explored" : "called";
+    var title = kind === "called" ? String(activity.title || e.text || e.tool || "") : "";
+    var duration = durationText(activity.durationMs);
+    var meta = [activity.status, duration].filter(function (value) { return !!value; });
+    var actions = kind === "explored" ? activity.actions.map(activityActionHTML).join("") : "";
+    var result = kind === "called" && typeof activity.result === "string" && activity.result.length
+        ? '<pre class="activity-result">' + esc(activity.result) + '</pre>' : "";
+    return '<div class="entry activity" data-role="' + kind + '"><div class="who">' + esc(WHO.tool) +
+        '</div><div class="body"><section class="activity-card"><header><span class="activity-kind">' +
+        (kind === "called" ? "Called" : "Explored") + '</span>' +
+        (title ? '<span class="activity-title">' + esc(title) + '</span>' : "") +
+        '<span class="activity-meta">' + esc(meta.join(" · ")) + '</span></header>' +
+        (actions ? '<ul>' + actions + '</ul>' : "") + result + '</section></div></div>';
+}
+
 function patchPath(path) {
     return String(path || "").replace(/^\/Users\/[^/]+/, "~");
 }
@@ -604,6 +671,8 @@ function patchHTML(e) {
 
 export function entryHTML(e) {
     if (fileChangesOf(e)) return patchHTML(e);
+    if (planOf(e)) return planHTML(e);
+    if (activityOf(e)) return activityHTML(e);
     if (e.role === "notice") return noticeHTML(e);
     var role = WHO[e.role] ? e.role : "assistant";
     if (role === "message") {

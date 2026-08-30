@@ -353,6 +353,80 @@ group("a rollout reads as the same entries a transcript does") {
           fileChangeWire?.first?["unifiedDiff"] == nil
             && fileChangeWire?.last?["content"] == nil)
 
+    let planInput = #"const p = [{step:"Inspect <unsafe>",status:"completed"},{step:"Implement cards",status:"in_progress"},{step:"Verify",status:"pending"}]; const r = await tools.update_plan({explanation:"Now",plan:p}); text(r)"#
+    let planRowObject: [String: Any] = [
+        "timestamp": "2026-08-30T15:31:02.125Z", "type": "response_item",
+        "payload": ["type": "custom_tool_call", "name": "exec", "input": planInput],
+    ]
+    let planRow = String(decoding: try! JSONSerialization.data(withJSONObject: planRowObject),
+                         as: UTF8.self)
+    let planEntries = Codex.parse(planRow)
+    expect("an exec-wrapped update_plan becomes one transcript entry", planEntries.count, 1)
+    expect("the plan keeps all literal steps", planEntries.first?.plan.count, 3)
+    expect("Codex's snake-case status joins the app-server wire spelling",
+           planEntries.first?.plan.map(\.status), ["completed", "inProgress", "pending"])
+    expect("the plan keeps authored step text inertly",
+           planEntries.first?.plan.first?.step, "Inspect <unsafe>")
+    let planWire = RemoteServer.transcriptRows(planEntries).first?["plan"] as? [[String: Any]]
+    expect("structured plans cross the transcript wire", planWire?.count, 3)
+    expect("the wire uses the documented inProgress spelling",
+           planWire?[1]["status"] as? String, "inProgress")
+    let computedPlan = planInput.replacingOccurrences(
+        of: #"plan:p"#, with: #"plan:makePlan()"#)
+    let computedRowObject: [String: Any] = [
+        "type": "response_item",
+        "payload": ["type": "custom_tool_call", "name": "exec", "input": computedPlan],
+    ]
+    let computedRow = String(decoding: try! JSONSerialization.data(withJSONObject: computedRowObject),
+                             as: UTF8.self)
+    expect("computed update_plan input is rejected instead of executed",
+           Codex.parse(computedRow).count, 0)
+
+    let calledEntries = Codex.entries(ofItem: [
+        "type": "McpToolCall", "server": "browser", "tool": "connect",
+        "arguments": ["title": "Connect <preview>"], "status": "completed",
+        "duration": ["secs": 1, "nanos": 250_000_000],
+        "result": ["isError": false,
+                   "content": [["type": "text", "text": "Connected\npage two"]]],
+    ], at: nil)
+    expect("a titled MCP call stays one rich activity", calledEntries.count, 1)
+    expect("the activity is classified as Called", calledEntries.first?.activity?.kind, "called")
+    expect("Called uses the title Codex supplied", calledEntries.first?.activity?.title,
+           "Connect <preview>")
+    expect("Called keeps status and duration",
+           calledEntries.first?.activity?.durationMilliseconds, 1_250)
+    expect("Called keeps bounded multiline result detail",
+           calledEntries.first?.activity?.result, "Connected\npage two")
+
+    let exploredEntries = Codex.entries(ofItem: [
+        "type": "CommandExecution", "command": ["/bin/zsh", "-lc", "rg title Sources"],
+        "parsed_cmd": [
+            ["type": "search", "cmd": "rg title Sources", "query": "title", "path": "Sources"],
+            ["type": "read", "cmd": "sed -n 1,20p Sources/Codex.swift",
+             "name": "Codex.swift", "path": "Sources/Codex.swift"],
+        ], "status": "completed", "duration": ["secs": 0, "nanos": 90_000_000],
+    ], at: nil)
+    expect("read and search command actions stay one Explored activity", exploredEntries.count, 1)
+    expect("the activity is classified as Explored", exploredEntries.first?.activity?.kind,
+           "explored")
+    expect("Explored retains both typed actions",
+           exploredEntries.first?.activity?.actions.map(\.kind), ["search", "read"])
+    expect("Explored retains the query and path",
+           exploredEntries.first?.activity?.actions.first?.query, "title")
+    let unknownCommand = Codex.entries(ofItem: [
+        "type": "CommandExecution", "command": ["/bin/zsh", "-lc", "make magic"],
+        "parsed_cmd": [["type": "unknown", "cmd": "make magic"]],
+        "aggregated_output": "done", "exit_code": 0,
+    ], at: nil)
+    expect("unknown command actions keep the ordinary shell fallback", unknownCommand.count, 2)
+    check("the shell fallback does not invent activity metadata",
+          unknownCommand.first?.tool == "shell" && unknownCommand.first?.activity == nil)
+    let calledWire = RemoteServer.transcriptRows(calledEntries).first?["activity"] as? [String: Any]
+    expect("rich activity crosses the transcript wire", calledWire?["kind"] as? String, "called")
+    check("ordinary entries omit both new optional wire fields",
+          RemoteServer.transcriptRows([entries[0]]).first?["plan"] == nil
+            && RemoteServer.transcriptRows([entries[0]]).first?["activity"] == nil)
+
     expect("a truncated line is skipped rather than fatal", Codex.parse("{\"type\":").count, 0)
     expect("and so is an item nobody has taught this about",
            Codex.parse(line("{\"type\":\"SomethingNew\",\"content\":\"…\"}")).count, 0)

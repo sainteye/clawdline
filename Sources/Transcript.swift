@@ -306,6 +306,35 @@ enum Transcript {
         var movePath: String? = nil
     }
 
+    /// One stable checklist row. The status spelling deliberately matches Codex app-server's
+    /// public wire (`inProgress`, not the rollout wrapper's `in_progress`) so the rollout reader
+    /// can later be replaced without changing Web clients.
+    struct PlanStep: Equatable {
+        var step: String
+        var status: String
+    }
+
+    /// A semantic action Codex has already extracted from a shell command. Unknown actions are
+    /// never guessed into this shape; the caller falls back to the ordinary shell transcript.
+    struct ToolAction: Equatable {
+        var kind: String
+        var command: String? = nil
+        var name: String? = nil
+        var path: String? = nil
+        var query: String? = nil
+    }
+
+    /// Rich, optional presentation for durable Codex tool items. `text` and `tool` remain the
+    /// short compatibility surface; this owns only detail the rollout explicitly recorded.
+    struct ToolActivity: Equatable {
+        var kind: String
+        var title: String? = nil
+        var status: String? = nil
+        var durationMilliseconds: Int? = nil
+        var result: String? = nil
+        var actions: [ToolAction] = []
+    }
+
     struct Entry {
         enum Kind {
             case user
@@ -342,6 +371,10 @@ enum Transcript {
         /// Exact Codex edits, absent on every other entry. `text` remains the short summary used
         /// by the native pane and old Web clients; this is the lossless, optional detail.
         var fileChanges: [FileChange] = []
+        /// A complete Codex checklist update, absent on every ordinary transcript entry.
+        var plan: [PlanStep] = []
+        /// A durable Called or Explored item, absent when the rollout has no semantic detail.
+        var activity: ToolActivity? = nil
     }
 
     /// Remove only paths created by Clawdline's own bounded drop cache. The fixed directory is

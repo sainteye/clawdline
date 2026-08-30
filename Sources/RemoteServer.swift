@@ -5024,6 +5024,25 @@ final class RemoteServer: @unchecked Sendable {
                     return out
                 }
             }
+            if !entry.plan.isEmpty {
+                row["plan"] = entry.plan.map { ["step": $0.step, "status": $0.status] }
+            }
+            if let activity = entry.activity {
+                var out: [String: Any] = ["kind": activity.kind]
+                if let title = activity.title { out["title"] = title }
+                if let status = activity.status { out["status"] = status }
+                if let duration = activity.durationMilliseconds { out["durationMs"] = duration }
+                if let result = activity.result { out["result"] = result }
+                out["actions"] = activity.actions.map { action -> [String: Any] in
+                    var value: [String: Any] = ["kind": action.kind]
+                    if let command = action.command { value["command"] = command }
+                    if let name = action.name { value["name"] = name }
+                    if let path = action.path { value["path"] = path }
+                    if let query = action.query { value["query"] = query }
+                    return value
+                }
+                row["activity"] = out
+            }
             return row
         }
     }

@@ -11,7 +11,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=11 suites
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, and inline Codex patches add 15.
 # The exact candidate-tree run remains authoritative and must update this guard if its observed
 # final count differs.
-expected_swift_receipt='6936 checks passed'
+expected_swift_receipt='6962 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

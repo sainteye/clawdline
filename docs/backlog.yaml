@@ -57,6 +57,37 @@ version: 1
 artifact: artifacts/backlog.html
 
 items:
+  - id: B-CODEX-LIVE-STRUCTURED-EVENTS
+    title: Direct Codex Sessions hide live structured events from Clawdline
+    problem: >-
+      Clawdline can replay completed Codex work from rollout files, but a direct Codex TUI does not
+      expose its live structured event stream to a separately started app-server. Checklist
+      updates therefore require a version-sensitive, inert parser over the generated exec wrapper,
+      and richer item types that are not persisted in the rollout cannot appear at all. A Codex
+      release that changes that wrapper can quietly reduce the Web transcript to ordinary prose
+      while the terminal still shows the richer event.
+    evidence: >-
+      Measured 2026-08-30 against Codex 0.151.0 and one fixed Session,
+      `01a0530c-75e7-77e2-a86c-758fd54aed75` (the “修復 document 頁面切換與邊框樣式” tab).
+      Its rollout persisted Updated Plan only as a `response_item.custom_tool_call` whose exec input
+      invokes `tools.update_plan`; `event_msg.item_completed` had no plan item. The same Session's
+      `thread/read(includeTurns:true)` returned one turn and 134 items—2 user messages, 73 reasoning,
+      9 agent messages, 31 command executions, 1 file change and 18 MCP calls—but zero plan items.
+      A separately launched app-server observed zero events while that TUI continued working.
+      Codex's generated app-server schema instead defines the live `turn/plan/updated` notification
+      with `pending`, `inProgress` and `completed` statuses, and the official app-server
+      documentation describes remote TUI clients connecting to the server-backed session.
+    severity: degrades
+    cost: weeks
+    who_hurts: user
+    trigger: >-
+      Reconsider when Clawdline owns a Codex launch path that can route the TUI through one durable
+      app-server endpoint, or when a Codex release breaks the bounded rollout parser. Acceptance
+      needs lifecycle ownership, authentication, reconnect and event-resume behavior, persisted
+      projection for live-only notifications, and proof that terminal, Web and thread/read all
+      refer to the same thread and turn before rollout parsing can be retired.
+    opened: 2026-08-30
+
   - id: B-ROOT-ASSIGNMENT-PRIMITIVE
     title: An independently owned Feature has no launch primitive distinct from child and handoff
     problem: >-

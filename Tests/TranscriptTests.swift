@@ -1302,6 +1302,47 @@ group("the Web transcript has an inert Clawdline card") {
             && edited.html.contains(#"<span class="new">7</span>"#)
             && edited.html.contains(#"data-kind="add""#)
             && edited.html.contains("let second = false"))
+    let planned = renderEntry([
+        "role": "tool", "tool": "plan", "text": "Updated Plan",
+        "plan": [
+            ["step": "Inspect <unsafe>", "status": "completed"],
+            ["step": "Implement cards", "status": "inProgress"],
+            ["step": "Verify", "status": "pending"],
+        ],
+    ])
+    check("an Updated Plan renders as a dedicated checklist card",
+          planned.status == 0 && planned.html.contains(#"data-role="plan""#)
+            && planned.html.contains("Updated Plan") && planned.html.contains("Implement cards"))
+    check("all three plan states have distinct semantic rows",
+          planned.html.contains(#"data-status="completed""#)
+            && planned.html.contains(#"data-status="inProgress""#)
+            && planned.html.contains(#"data-status="pending""#))
+    check("plan steps are escaped instead of becoming markup",
+          planned.html.contains("Inspect &lt;unsafe&gt;") && !planned.html.contains("<unsafe>"))
+    let called = renderEntry([
+        "role": "tool", "tool": "browser.connect", "text": "Connect preview",
+        "activity": ["kind": "called", "title": "Connect <preview>",
+                     "status": "completed", "durationMs": 1250,
+                     "result": "Connected & ready\npage two", "actions": []],
+    ])
+    check("a Called activity renders title, status, duration and result",
+          called.status == 0 && called.html.contains(#"data-role="called""#)
+            && called.html.contains("Connect &lt;preview&gt;")
+            && called.html.contains("completed") && called.html.contains("1.25s")
+            && called.html.contains("Connected &amp; ready") && called.html.contains("page two"))
+    let explored = renderEntry([
+        "role": "tool", "tool": "shell", "text": "Explore files",
+        "activity": ["kind": "explored", "status": "completed", "actions": [
+            ["kind": "search", "query": "title <tag>", "path": "Sources"],
+            ["kind": "read", "name": "Codex.swift", "path": "Sources/Codex.swift"],
+        ]],
+    ])
+    check("an Explored activity renders typed search and read actions",
+          explored.status == 0 && explored.html.contains(#"data-role="explored""#)
+            && explored.html.contains("Search") && explored.html.contains("Read")
+            && explored.html.contains("Codex.swift") && explored.html.contains("Sources"))
+    check("activity fields are escaped and never become transcript markup",
+          explored.html.contains("title &lt;tag&gt;") && !explored.html.contains("<tag>"))
     check("task state lookup rejects inherited object properties and keeps a generic title",
           noticeRenderer.contains("Object.prototype.hasOwnProperty.call(states, n.state)")
               && noticeRenderer.contains("var title = T.webNoticeFinished"))

@@ -328,11 +328,10 @@ enum Codex {
     /// entries are ever shown. See ``Transcript/forEachLineFromEnd(_:_:)``, which is the same
     /// walk over the same problem.
     ///
-    /// **Only `item_completed` is read.** A rollout carries the conversation three times over:
-    /// `response_item` records are what went to the model, including the whole system prompt and
-    /// every skill description, and `event_msg` carries both the running commentary and, once
-    /// per thing that happened, a finished `item`. That last one is the conversation as a person
-    /// would recount it, and the other two are the machinery underneath it.
+    /// Finished `item_completed` records are the ordinary conversation. One deliberately narrow
+    /// `response_item` is also admitted: current Codex wraps `update_plan` in an exec tool call and
+    /// does not repeat the checklist as a finished item. Its input is parsed as inert literals by
+    /// ``literalPlan(in:)``; no JavaScript is evaluated and every other response item stays out.
     static func parse(_ jsonl: String, limit: Int = 400) -> [Transcript.Entry] {
         var newestFirst: [Transcript.Entry] = []
         Transcript.forEachLineFromEnd(jsonl) { line in
@@ -367,14 +366,21 @@ enum Codex {
     private static func entries(inRow line: Substring) -> [Transcript.Entry] {
         guard let data = line.data(using: .utf8),
               let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              row["type"] as? String == "event_msg",
-              let payload = row["payload"] as? [String: Any],
-              payload["type"] as? String == "item_completed",
-              let item = payload["item"] as? [String: Any]
-        else { return [] }
+              let payload = row["payload"] as? [String: Any] else { return [] }
 
         let time = (row["timestamp"] as? String).flatMap { iso.date(from: $0) }
-        return entries(ofItem: item, at: time)
+        if row["type"] as? String == "event_msg",
+           payload["type"] as? String == "item_completed",
+           let item = payload["item"] as? [String: Any] {
+            return entries(ofItem: item, at: time)
+        }
+        guard row["type"] as? String == "response_item",
+              payload["type"] as? String == "custom_tool_call",
+              payload["name"] as? String == "exec",
+              let input = payload["input"] as? String,
+              let steps = literalPlan(in: input), !steps.isEmpty else { return [] }
+        return [Transcript.Entry(kind: .tool, text: "Updated Plan", tool: "plan", time: time,
+                                 plan: steps)]
     }
 
     /// One finished item as entries. Split out from the line so a test can describe an item
@@ -409,6 +415,14 @@ enum Codex {
             return [entry(.assistant, text(inContent: item["content"]))].compactMap { $0 }
 
         case "CommandExecution":
+            if let actions = parsedActions(item["parsed_cmd"]), !actions.isEmpty {
+                var explored = entry(.tool, exploredTitle(actions), tool: "shell")
+                explored?.activity = Transcript.ToolActivity(
+                    kind: "explored", status: normalizedStatus(item["status"] as? String),
+                    durationMilliseconds: durationMilliseconds(item["duration"]),
+                    actions: actions)
+                return [explored].compactMap { $0 }
+            }
             var out = [entry(.tool, command(item["command"]), tool: "shell")].compactMap { $0 }
             if let result = entry(.toolResult, outcome(of: item)) { out.append(result) }
             return out
@@ -416,6 +430,18 @@ enum Codex {
         case "McpToolCall":
             let name = [item["server"] as? String, item["tool"] as? String]
                 .compactMap { $0 }.joined(separator: ".")
+            let title = mcpTitle(item["arguments"])
+            if !title.isEmpty {
+                var called = entry(.tool, title, tool: name.isEmpty ? "mcp" : name)
+                let result = mcpResultDetail(item["result"])
+                let isError = (item["result"] as? [String: Any])?["isError"] as? Bool == true
+                called?.activity = Transcript.ToolActivity(
+                    kind: "called", title: title,
+                    status: isError ? "failed" : normalizedStatus(item["status"] as? String),
+                    durationMilliseconds: durationMilliseconds(item["duration"]),
+                    result: result.isEmpty ? nil : result)
+                return [called].compactMap { $0 }
+            }
             var out = [entry(.tool, arguments(item["arguments"]),
                              tool: name.isEmpty ? "mcp" : name)].compactMap { $0 }
             if let result = entry(.toolResult, mcpResult(item["result"])) { out.append(result) }
@@ -503,9 +529,214 @@ enum Codex {
         return ""
     }
 
+    private static func mcpTitle(_ raw: Any?) -> String {
+        guard let dict = raw as? [String: Any], let title = dict["title"] as? String else {
+            return ""
+        }
+        return firstLine(of: title)
+    }
+
     static func mcpResult(_ raw: Any?) -> String {
         guard let dict = raw as? [String: Any] else { return "" }
         return firstLine(of: text(inContent: dict["content"]))
+    }
+
+    /// More than the old one-line compatibility summary, but still bounded: MCP results can
+    /// contain entire pages or encoded media and the transcript endpoint must not mirror those.
+    private static func mcpResultDetail(_ raw: Any?, limit: Int = 4_000) -> String {
+        guard let dict = raw as? [String: Any] else { return "" }
+        let value = text(inContent: dict["content"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.count > limit else { return value }
+        return String(value.prefix(limit)) + "…"
+    }
+
+    private static func normalizedStatus(_ raw: String?) -> String? {
+        switch raw {
+        case "in_progress", "inProgress", "running": return "inProgress"
+        case "pending": return "pending"
+        case "completed", "success": return "completed"
+        case "failed", "error": return "failed"
+        default: return nil
+        }
+    }
+
+    private static func durationMilliseconds(_ raw: Any?) -> Int? {
+        guard let value = raw as? [String: Any] else { return nil }
+        let seconds = (value["secs"] as? NSNumber)?.int64Value ?? 0
+        let nanos = (value["nanos"] as? NSNumber)?.int64Value ?? 0
+        guard seconds >= 0, nanos >= 0, nanos < 1_000_000_000 else { return nil }
+        let total = seconds.multipliedReportingOverflow(by: 1_000)
+        guard !total.overflow else { return nil }
+        let milliseconds = total.partialValue.addingReportingOverflow(nanos / 1_000_000)
+        guard !milliseconds.overflow, milliseconds.partialValue <= Int64(Int.max) else { return nil }
+        return Int(milliseconds.partialValue)
+    }
+
+    /// Codex has already classified simple shell commands. Preserve only the two classes whose
+    /// meaning is stable enough to present: a mixed or unknown command falls back as a shell run.
+    private static func parsedActions(_ raw: Any?) -> [Transcript.ToolAction]? {
+        guard let values = raw as? [[String: Any]], !values.isEmpty else { return nil }
+        var actions: [Transcript.ToolAction] = []
+        for value in values {
+            guard let kind = value["type"] as? String, kind == "read" || kind == "search" else {
+                return nil
+            }
+            let action = Transcript.ToolAction(
+                kind: kind, command: value["cmd"] as? String,
+                name: value["name"] as? String, path: value["path"] as? String,
+                query: value["query"] as? String)
+            let visible = [action.name, action.path, action.query, action.command]
+                .compactMap { $0 }.contains { !$0.isEmpty }
+            guard visible else { return nil }
+            actions.append(action)
+        }
+        return actions
+    }
+
+    private static func exploredTitle(_ actions: [Transcript.ToolAction]) -> String {
+        let labels = actions.prefix(3).map { action -> String in
+            if action.kind == "search" { return "Search " + (action.query ?? action.path ?? "") }
+            return "Read " + (action.name ?? action.path ?? "")
+        }
+        return labels.joined(separator: ", ") + (actions.count > 3 ? " +\(actions.count - 3)" : "")
+    }
+
+    /// Extract only a literal plan array from the generated exec wrapper. Both the direct form
+    /// (`plan:[…]`) and Codex's current `const p=[…]; …plan:p` form are accepted. The small parser
+    /// beneath this function accepts punctuation, identifiers and JSON strings only.
+    private static func literalPlan(in source: String) -> [Transcript.PlanStep]? {
+        guard source.utf8.count <= 100_000,
+              let call = source.range(of: "tools.update_plan(") else { return nil }
+        let suffix = String(source[call.upperBound...])
+        let pattern = #"\bplan\s*:\s*(\[|[A-Za-z_$][A-Za-z0-9_$]*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: suffix,
+                                           range: NSRange(suffix.startIndex..., in: suffix)),
+              let valueRange = Range(match.range(at: 1), in: suffix) else { return nil }
+        let token = String(suffix[valueRange])
+        let array: String?
+        if token == "[" {
+            array = bracketedArray(in: suffix, from: valueRange.lowerBound)
+        } else {
+            let prefix = String(source[..<call.lowerBound])
+            let assignment = #"(?:const|let|var)\s+"#
+                + NSRegularExpression.escapedPattern(for: token) + #"\s*=\s*\["#
+            guard let assignmentRegex = try? NSRegularExpression(pattern: assignment),
+                  let found = assignmentRegex.matches(
+                    in: prefix, range: NSRange(prefix.startIndex..., in: prefix)).last,
+                  let foundRange = Range(found.range, in: prefix),
+                  let open = prefix[..<foundRange.upperBound].lastIndex(of: "[") else { return nil }
+            array = bracketedArray(in: prefix, from: open)
+        }
+        guard let array else { return nil }
+        var parser = LiteralPlanParser(array)
+        return parser.parse()
+    }
+
+    /// Find the matching bracket without treating brackets inside a JSON string as structure.
+    private static func bracketedArray(in text: String, from open: String.Index) -> String? {
+        var index = open, depth = 0, quoted = false, escaped = false
+        while index < text.endIndex {
+            let character = text[index]
+            if quoted {
+                if escaped { escaped = false }
+                else if character == "\\" { escaped = true }
+                else if character == "\"" { quoted = false }
+            } else if character == "\"" { quoted = true }
+            else if character == "[" { depth += 1 }
+            else if character == "]" {
+                depth -= 1
+                if depth == 0 { return String(text[open...index]) }
+                if depth < 0 { return nil }
+            }
+            index = text.index(after: index)
+        }
+        return nil
+    }
+
+    private struct LiteralPlanParser {
+        let bytes: [UInt8]
+        var index = 0
+
+        init(_ source: String) { bytes = Array(source.utf8) }
+
+        mutating func parse() -> [Transcript.PlanStep]? {
+            guard take(0x5B) else { return nil } // [
+            var out: [Transcript.PlanStep] = []
+            skipSpace()
+            if take(0x5D) { return out }
+            while out.count < 100 {
+                guard let step = object() else { return nil }
+                out.append(step)
+                skipSpace()
+                if take(0x5D) { return index == bytes.count ? out : nil }
+                guard take(0x2C) else { return nil } // ,
+            }
+            return nil
+        }
+
+        mutating func object() -> Transcript.PlanStep? {
+            guard take(0x7B) else { return nil } // {
+            var step: String?, status: String?
+            while true {
+                guard let key = identifier(), take(0x3A), let value = string() else { return nil }
+                if key == "step", step == nil { step = value }
+                else if key == "status", status == nil { status = value }
+                else { return nil }
+                skipSpace()
+                if take(0x7D) { break }
+                guard take(0x2C) else { return nil }
+            }
+            guard let step = step?.trimmingCharacters(in: .whitespacesAndNewlines), !step.isEmpty,
+                  let status = normalizedStatus(status),
+                  ["pending", "inProgress", "completed"].contains(status) else { return nil }
+            return Transcript.PlanStep(step: step, status: status)
+        }
+
+        mutating func identifier() -> String? {
+            skipSpace()
+            let start = index
+            while index < bytes.count {
+                let byte = bytes[index]
+                guard (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+                        || (index > start && byte >= 48 && byte <= 57) || byte == 95 else { break }
+                index += 1
+            }
+            guard index > start else { return nil }
+            return String(decoding: bytes[start..<index], as: UTF8.self)
+        }
+
+        mutating func string() -> String? {
+            skipSpace()
+            guard index < bytes.count, bytes[index] == 0x22 else { return nil }
+            let start = index
+            index += 1
+            var escaped = false
+            while index < bytes.count {
+                let byte = bytes[index]
+                index += 1
+                if escaped { escaped = false; continue }
+                if byte == 0x5C { escaped = true; continue }
+                if byte == 0x22 {
+                    let data = Data(bytes[start..<index])
+                    return try? JSONSerialization.jsonObject(with: data,
+                        options: [.fragmentsAllowed]) as? String
+                }
+            }
+            return nil
+        }
+
+        mutating func take(_ byte: UInt8) -> Bool {
+            skipSpace()
+            guard index < bytes.count, bytes[index] == byte else { return false }
+            index += 1
+            return true
+        }
+
+        mutating func skipSpace() {
+            while index < bytes.count, [9, 10, 13, 32].contains(bytes[index]) { index += 1 }
+        }
     }
 
     /// The files a change touched, with how many there were when it is more than a couple.

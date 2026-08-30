@@ -529,6 +529,39 @@
 .toolbody { margin-top: 5px; }
 .toolbody pre.code { margin-top: 0; }
 
+/* Codex's durable plan and semantic tool activity are authored summaries, not shell noise. */
+.plan-card, .activity-card {
+    border: 1px solid var(--line); border-radius: 10px;
+    background: rgba(255, 255, 255, 0.018); overflow: hidden;
+}
+.plan-card > header, .activity-card > header {
+    display: flex; align-items: baseline; gap: 9px;
+    padding: 8px 11px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+}
+.plan-card > header, .activity-kind { color: var(--accent); font-weight: 600; }
+.plan-card ol, .activity-card ul { list-style: none; margin: 0; padding: 5px 11px 7px; }
+.plan-card li, .activity-card li {
+    display: flex; align-items: baseline; gap: 9px; min-width: 0;
+    padding: 4px 0; color: var(--dim); line-height: 1.4;
+}
+.plan-mark { flex: 0 0 14px; font-family: var(--mono); color: var(--faint); text-align: center; }
+.plan-card li[data-status="completed"] { color: var(--faint); }
+.plan-card li[data-status="completed"] .plan-mark { color: #6fa47a; }
+.plan-card li[data-status="inProgress"] { color: var(--ink); }
+.plan-card li[data-status="inProgress"] .plan-mark { color: var(--accent); }
+.activity-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.activity-meta { margin-left: auto; white-space: nowrap; color: var(--faint); font-size: 10.5px; }
+.activity-verb { flex: 0 0 48px; color: var(--accent); font-family: var(--mono); font-size: 11px; }
+.activity-subject { min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+.activity-path { margin-left: auto; color: var(--faint); font-family: var(--mono); font-size: 10.5px; overflow-wrap: anywhere; }
+.activity-result {
+    margin: 0; padding: 9px 11px; border: 0; border-top: 1px solid var(--line);
+    border-radius: 0; background: rgba(0, 0, 0, 0.12); color: var(--dim);
+    font-family: var(--mono); font-size: 11px; line-height: 1.45;
+    white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto;
+}
+
 /* A question Claude stopped to ask.
 
    Everything else a tool does is drawn to be skipped — one grey line, folded, out of the way.
