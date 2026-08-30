@@ -38,13 +38,45 @@ enum ProjectStatus {
         /// Where the check points. It lives in the registry rather than the cache file: the
         /// endpoint is a fact about the project, the result is a fact about this minute.
         var url: String?
+        var kind: String?
+        var reason: String?
+
+        /// One row for the browser's Links sheet. The receipt's vocabulary stays in `status`;
+        /// the older visual state is only the colour of its dot.
+        func linkRow() -> [String: Any]? {
+            guard let url, !url.isEmpty else { return nil }
+            let visualState: String
+            switch state {
+            case "online": visualState = "ok"
+            case "not_deployed": visualState = "down"
+            case "unhealthy", "unreachable": visualState = "fail"
+            default: visualState = state
+            }
+            var row: [String: Any] = [
+                "label": label,
+                "url": url,
+                "kind": kind ?? "site",
+                "state": visualState,
+                "status": state.replacingOccurrences(of: "_", with: " "),
+                "local": false,
+            ]
+            if state != "online", let reason, !reason.isEmpty {
+                row["why"] = reason.replacingOccurrences(of: "_", with: " ")
+            }
+            return row
+        }
     }
 
     struct Snapshot {
         var deploy: Deploy?
         var backlog: Backlog?
         var health: Health?
-        var isEmpty: Bool { deploy == nil && backlog == nil && health == nil }
+        /// The lossless component rows from a multi-surface producer. Older receipts have none,
+        /// so `health` remains the compatible overall chip used by the Mac footer.
+        var healthComponents: [Health] = []
+        var isEmpty: Bool {
+            deploy == nil && backlog == nil && health == nil && healthComponents.isEmpty
+        }
     }
 
     /// Where the status files live. `status_dir` in the config overrides it.
@@ -75,8 +107,9 @@ enum ProjectStatus {
         let stem = key(forPath: cwd)
         out.backlog = backlog(json(dir.appendingPathComponent("backlog-\(stem).json")))
         let healthRegistry = registry?["health"] as? [String: Any] ?? registry
-        out.health = health(json(dir.appendingPathComponent("health-\(stem).json")),
-                            registry: healthRegistry)
+        let healthRow = json(dir.appendingPathComponent("health-\(stem).json"))
+        out.health = health(healthRow, registry: healthRegistry)
+        out.healthComponents = healthComponents(healthRow)
         return out
     }
 
@@ -113,7 +146,14 @@ enum ProjectStatus {
         return Health(label: row["label"] as? String
                         ?? registry?["label"] as? String ?? "health",
                       state: state,
-                      url: registry?["url"] as? String)
+                      url: row["url"] as? String ?? registry?["url"] as? String,
+                      kind: row["kind"] as? String,
+                      reason: row["reason"] as? String)
+    }
+
+    static func healthComponents(_ row: [String: Any]?) -> [Health] {
+        guard let components = row?["components"] as? [[String: Any]] else { return [] }
+        return components.compactMap { health($0, registry: $0) }
     }
 
     // MARK: - Display

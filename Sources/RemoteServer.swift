@@ -3968,10 +3968,10 @@ final class RemoteServer: @unchecked Sendable {
         let status = ProjectStatus.read(cwd: cwd, remote: Project.info(cwd: cwd)?.remote,
                                         registry: registry?["health"] as? [String: Any])
 
-        if let health = status.health, let url = health.url, !url.isEmpty {
-            out.append(["label": health.label, "url": url, "kind": "site",
-                        "state": health.state, "local": false])
-        }
+        let healthRows = status.healthComponents.isEmpty
+            ? status.health.map { [$0] } ?? []
+            : status.healthComponents
+        out.append(contentsOf: healthRows.compactMap { $0.linkRow() })
         if let deploy = status.deploy, let url = deploy.url, !url.isEmpty {
             var row: [String: Any] = ["label": deploy.label, "url": url, "kind": "deploy",
                                       "state": deploy.state, "local": false]

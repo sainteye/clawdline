@@ -1415,12 +1415,27 @@ group("the documented example files") {
     }
     let linkedHealth = linkedCache.appendingPathComponent(
         "health-\(ProjectStatus.key(forPath: linkedProject)).json")
-    try! #"{"state":"ok","label":"clawdline.com"}"#.data(using: .utf8)!.write(to: linkedHealth)
+    try! #"{"state":"not_deployed","label":"Clawdline Cloud · 1/4 online","url":"https://clawdline.com/","components":[{"label":"Homepage","state":"online","kind":"site","url":"https://clawdline.com/","reason":"content_marker_present"},{"label":"Web console","state":"not_deployed","kind":"app","url":"https://clawdline.com/app","reason":"route_not_deployed"},{"label":"API","state":"not_deployed","kind":"service","url":"https://api.clawdline.com/healthz","reason":"dns_not_configured"},{"label":"Relay","state":"not_deployed","kind":"service","url":"https://relay.clawdline.com/v1/health","reason":"dns_not_configured"}]}"#.data(using: .utf8)!.write(to: linkedHealth)
     let linked = ProjectStatus.read(
         cwd: linkedProject, remote: nil,
         registry: ["label": "clawdline.com", "url": "https://clawdline.com/"])
     expect("the Links reader keeps the registered site URL",
            linked.health?.url, "https://clawdline.com/")
+    expect("the multi-surface receipt keeps all four rows", linked.healthComponents.count, 4)
+    expect("the homepage keeps its online state", linked.healthComponents.first?.state, "online")
+    expect("the console remains distinct from an outage",
+           linked.healthComponents.dropFirst().first?.state, "not_deployed")
+    expect("and keeps the reason a Links sheet can explain",
+           linked.healthComponents.dropFirst().first?.reason, "route_not_deployed")
+    expect("an online component maps to the old green dot",
+           linked.healthComponents.first?.linkRow()?["state"] as? String, "ok")
+    expect("while its exact status remains visible",
+           linked.healthComponents.first?.linkRow()?["status"] as? String, "online")
+    expect("not deployed maps to a red dot without becoming an outage",
+           linked.healthComponents.dropFirst().first?.linkRow()?["state"] as? String, "down")
+    expect("and spells out what the red dot means",
+           linked.healthComponents.dropFirst().first?.linkRow()?["status"] as? String,
+           "not deployed")
 
     // The file names in the page have to be the names the app looks for.
     expect("a path becomes a file name the documented way",

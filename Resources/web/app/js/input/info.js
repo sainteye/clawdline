@@ -294,7 +294,10 @@ export var Info = (function () {
     function linksHTML(links) {
         if (!links.length) return note(T.webLinksEmpty);
         return links.map(function (link) {
-            var word = STATES[link.state] ? T[STATES[link.state]] : "";
+            // Multi-surface health receipts carry their lossless vocabulary separately from the
+            // old four visual states.  The server maps the dot to ok/down/fail and `status` keeps
+            // the useful distinction between not deployed, unhealthy and unreachable.
+            var word = link.status || (STATES[link.state] ? T[STATES[link.state]] : "");
             var url = String(link.url || "");
             var file = isFile(url);
             var far = link.local && !atMac();
