@@ -249,6 +249,38 @@ log produces no check count, which is exactly the difference a status of 0 canno
 Do not build from the live working tree, because it may contain another session's partial edits or
 untracked files.
 
+### A live task is not by itself a build/restart blocker
+
+Build from a clean exact candidate tree, but do not turn that source-tree rule into a second,
+unrelated rule that says the machine must have no live task. Clawdline compiles the replacement
+beside the installed app while the old app is still serving; the observable interruption begins
+only when the finished bundle replaces the old one and ends when the new listener is healthy.
+
+Task state decides restart risk:
+
+- `queued` or `spawning` is unsafe. Before briefing, the plaintext task secret exists only in the
+  running broker, so replacing that process can strand the opened child and make the task
+  `spawn_failed`. Wait for this state to clear; `build.sh` performs the same last-moment check.
+- `briefed` is durable and is **not a restart blocker**. Its terminal and assistant are independent
+  processes, the briefing has reached the child, and the broker record survives restart. Progress
+  or `result.json` written during the short listener outage is collected after the app returns.
+- a finished task, open coordination wait, pending landing, ordinary Claude/Codex Session, or
+  registered coordinator is durable broker/session state. Restarting Clawdline does not authorize
+  closing those terminals, cancelling their work, resolving their obligations, or rebinding the
+  coordinator.
+
+The other real risk is an in-flight terminal mutation: an Apple Event already admitted to the
+terminal broker is process-local. Until the app exposes a maintenance/drain receipt, choose a quiet
+moment, avoid a restart while somebody is actively sending/answering/closing/starting a terminal,
+and keep the outage to the bundle swap and relaunch. The durable design should eventually refuse
+new terminal mutations with a typed retry response, wait for the global and per-terminal queues to
+reach zero, and then acknowledge that the app is safe to replace. A guard that only counts live
+tasks cannot prove this and must not use `briefed > 0` as a proxy for it.
+
+After restart, verify the new binary/build identity, `/v1/health`, a fresh Session inventory and the
+existing coordinator id/generation. A temporarily stale or unknown projection is a reason to wait
+for the new scan, not to rebind or close anything.
+
 ### A confirmation is worth what it names
 
 "I checked, and you are right" is not a check. On 2026-08-28 one root read the route table at
