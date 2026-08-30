@@ -98,6 +98,9 @@ assert.match(single, /title="Delivered; awaiting approval · &quot;&gt;&lt;img/,
 assert.doesNotMatch(single, /<img src=/, "receipt metadata cannot inject row markup");
 assert.equal((single.match(/session-work-check/g) || []).length, 1,
     "a milestone draws one CSS check, not a platform emoji");
+assert.match(single,
+    /class="session-work-completion"[\s\S]*class="session-work-mark"[\s\S]*class="session-work-copy"[^>]*data-work-state="milestone_complete"/,
+    "the milestone check and its explanatory receipt are one uninterrupted status group");
 assert.equal((html({ state: "idle", work_state: "work_complete",
     disposition: { scope: "task", taskId: "one", evidence: "broker_verified_target_landing" } })
     .match(/session-work-check/g) || []).length, 2,
@@ -174,11 +177,11 @@ assert.match(listSource, /projectSessionWorkState\(s\)/,
 assert.match(listSource, /sessionWorkStateHTML\(s\)/,
     "the row uses the tested accessible marker renderer");
 assert.match(listSource,
-    /work\.state === "work_complete"\s*\? T\.sessionWorkComplete : T\.sessionWorkMilestone/,
-    "a completed Session follows its check with the matching explanatory receipt text");
-assert.match(listSource,
-    /session-work-copy[^\n]+data-work-state[^\n]+work\.state/,
-    "the visible completion explanation identifies which closed state it describes");
+    /var workSaid = sessionWorkStateHTML\(s\);[\s\S]*workSaid \+= sessionCloseabilityHTML\(s\)/,
+    "closeability follows the complete work-status group instead of splitting its check and copy");
+assert.doesNotMatch(listSource,
+    /workSaid \+= '<span class="session-work-copy"/,
+    "the row does not append a detached completion explanation after closeability");
 assert.match(listSource, /work\.state === "waiting_session"[^}]+webTaskTasks/s,
     "a root waiting for live children names that task wait on its state line");
 assert.match(listSource, /sessionStatusGlyphHTML\("🙋", T\.sessionWaiting\)/,
@@ -194,6 +197,14 @@ assert.match(infoSource, /s\.title\s*\|\|\s*model/,
     "Session info uses the full Session title as its headline and only falls back to the model");
 assert.match(infoSource, /class="session-title"/,
     "the Session title has its own non-truncating presentation hook");
+assert.match(infoSource,
+    /sessionWorkStateHTML\(s\)[\s\S]*sessionCloseabilityHTML\(s\)/,
+    "Session info repeats both the work and closeability statuses from the list");
+assert.match(infoSource,
+    /<details class="session-status-detail"[^>]*data-status-kind=/,
+    "each full status in Session info is a clickable explanation disclosure");
+assert.match(infoSource, /closeabilityLines\(s\)/,
+    "the closeability explanation names the current reasons instead of only defining the key");
 
 const sessionInfoSource = await readFile(
     new URL("../Sources/SessionInfo.swift", import.meta.url), "utf8");
@@ -211,6 +222,8 @@ assert.match(css, /\.row \.state \{[^}]*min-width:\s*0[^}]*overflow:\s*hidden/s,
     "the state rail owns clipping at phone widths");
 assert.match(css, /\.session-work-mark\s*\{[^}]*flex:\s*0 0 auto/s,
     "check glyphs keep fixed geometry instead of widening the row");
+assert.match(css, /\.session-work-completion\s*\{[^}]*display:\s*inline-flex/s,
+    "the receipt check and copy share one visual group");
 assert.match(css, /\.session-work-mark\s*\{[^}]*color:\s*var\(--ok\)/s,
     "completed Session checks use the shared success green");
 assert.match(css, /\.session-work-copy\s*\{[^}]*min-width:\s*0[^}]*text-overflow:\s*ellipsis/s,
@@ -228,6 +241,9 @@ assert.match(sheetCSS, /\.info-sheet \.hero \.session-title\s*\{[^}]*overflow-wr
     "a long Session title wraps in full instead of being ellipsized or clipped");
 assert.doesNotMatch(sheetCSS, /\.info-sheet \.hero \.session-title\s*\{[^}]*line-clamp/s,
     "the Session info headline has no line clamp");
+assert.match(sheetCSS,
+    /\.info-sheet \.session-status-detail summary\s*\{[^}]*white-space:\s*normal/s,
+    "Session info statuses wrap in full instead of inheriting the list's ellipsis");
 
 const i18n = await readFile(
     new URL("../Resources/web/app/js/core/i18n.js", import.meta.url), "utf8");
@@ -240,6 +256,10 @@ assert.match(i18n, /sessionWorkMilestone:\s*"Delivered; awaiting approval"/,
     "the web fallback explains the single-check milestone state");
 assert.match(i18n, /sessionWorkComplete:\s*"Reviewed and approved"/,
     "the web fallback explains the double-check accepted state");
+assert.match(i18n, /webInfoWorkStatusMeaning:/,
+    "the clickable work status has a localized explanation");
+assert.match(i18n, /webInfoCloseabilityMeaning:/,
+    "the clickable key status has a localized explanation");
 
 const chineseCopy = await readFile(
     new URL("../Sources/Copy+Chinese.swift", import.meta.url), "utf8");
@@ -259,6 +279,8 @@ assert.match(chineseCopy, /sessionWorkOwed = "欠一個決定"/,
     "Traditional Chinese names the debt the reader owes");
 assert.match(chineseCopy, /sessionWorkReady = "可接新工作"/,
     "Traditional Chinese reads ready as the invitation it is");
+assert.match(chineseCopy, /webInfoCloseabilityMeaning = "鑰匙表示這個 session 現在能不能安全關閉/,
+    "Traditional Chinese explains the key separately from delivery");
 
 // lost_if_closed at the moment of the press: the page-side half of the close gate.
 state.sessions = [{ id: "root", label: "a root", state: "idle", work_state: "unknown",

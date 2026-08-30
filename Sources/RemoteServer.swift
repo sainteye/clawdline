@@ -5516,7 +5516,6 @@ final class RemoteServer: @unchecked Sendable {
             "webScheduleDeleteAsk": t.webScheduleDeleteAsk,
             "webScheduleDeleted": t.webScheduleDeleted,
         ])
-
         // The Links sheet.
         add([
             "webLinks": t.webLinks,
@@ -5536,7 +5535,6 @@ final class RemoteServer: @unchecked Sendable {
             "webSettingsOrder": t.webSettingsOrder,
             "webSettingsOrderSay": t.webSettingsOrderSay,
         ])
-
         // The Session info card.
         add([
             "webSessionInfo": t.webSessionInfo,
@@ -5554,6 +5552,9 @@ final class RemoteServer: @unchecked Sendable {
             "webInfoSessionId": t.webInfoSessionId,
             "webInfoDirectory": t.webInfoDirectory,
             "webInfoRunningFor": t.webInfoRunningFor,
+            "webInfoStatus": t.webInfoStatus,
+            "webInfoWorkStatusMeaning": t.webInfoWorkStatusMeaning,
+            "webInfoCloseabilityMeaning": t.webInfoCloseabilityMeaning,
             "webInfoUsage": t.webInfoUsage,
             "webInfoInput": t.webInfoInput,
             "webInfoOutput": t.webInfoOutput,
@@ -5597,7 +5598,6 @@ final class RemoteServer: @unchecked Sendable {
             "webInfoAsOf": t.webInfoAsOf,
             "webInfoWhyUnknown": t.webInfoWhyUnknown,
         ])
-
         // Asking a session to make itself Clawdfather. The browser composes the sentence and
         // types it through the ordinary send route; only the session can read the orchestrator
         // token, so only the session performs the registration.

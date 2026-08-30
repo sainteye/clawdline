@@ -282,8 +282,14 @@ export function sessionWorkStateHTML(s) {
         for (var i = 0; i < count; i++) {
             checks += '<span class="session-work-check" aria-hidden="true"></span>';
         }
-        said = '<span class="session-work-mark" role="img" aria-label="' + attr(label) +
-            '" title="' + attr(title) + '">' + checks + "</span>";
+        // The receipt mark and the words it denotes are one status. Keep them in one flex item
+        // so another independent axis (closeability, debt, or coordination) can only follow the
+        // complete receipt and can never be inserted between its check and explanation.
+        said = '<span class="session-work-completion" data-work-state="' + projected.state +
+            '"><span class="session-work-mark" role="img" aria-label="' + attr(label) +
+            '" title="' + attr(title) + '">' + checks + '</span><span class="session-work-copy"' +
+            ' data-work-state="' + projected.state + '" aria-hidden="true">' + attr(label) +
+            "</span></span>";
     } else if (projected.state === "ready" || projected.state === "holding") {
         // 📭 an empty, open box: you can hand this one work. 🔜 it moves by itself; nobody is
         // needed. Both are usually the session's own words, so the stated-not-proven marker

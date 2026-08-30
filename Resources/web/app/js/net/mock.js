@@ -249,6 +249,19 @@ export var Mock = (function () {
           cwd: "/Users/x/code/clawdline", state: "idle", work_state: "milestone_complete",
           disposition: { scope: "task", taskId: "mock-milestone", title: "review delivered",
                          evidence: "authenticated_task_delivery", receiptAt: now - 30 },
+          // Delivery and closeability are intentionally both present: this is the row that
+          // proves the receipt stays whole before the independent key, and the info card can
+          // explain why a delivered session still needs its own close attestation.
+          closeability: { state: "needs_attestation", observed_at: now, session_generation: 42,
+                          activity_generation: 5, obligation_generation: 88,
+                          version: "cl1_1d2e3f405162738495a6b7c8d9e0f102",
+                          provenance: ["broker"], attestation_id: null,
+                          reasons: [{ code: "attestation_missing", kind: "attestation",
+                                      subject_kind: "session", subject_id: "D311-01",
+                                      mover: { kind: "session", "self": true,
+                                               person_needed: false } }],
+                          mover: { kind: "session", "self": true, person_needed: false },
+                          source: { provenance: "session_watch", freshness: "current" } },
           isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
         { id: "D322-02", backend: "iterm", tty: "ttys024", label: "landed delivery",
           cwd: "/Users/x/code/clawdline", state: "idle", work_state: "work_complete",

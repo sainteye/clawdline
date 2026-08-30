@@ -6,7 +6,9 @@ import { els } from "../core/dom.js";
 import { shortPath, toast } from "../core/util.js";
 import { assistantLogo } from "../core/pixels.js";
 import { api } from "../net/api.js";
-import { byId } from "../view/derive.js";
+import { byId, closeabilityLines, owedBadgeHTML, projectSessionCloseability, projectSessionWorkState,
+         sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML,
+         sessionWorkStateHTML } from "../view/derive.js";
 import { GitPanel } from "./git-panel.js";
 import { SessionFacts, StatusLine } from "./status-line.js";
 
@@ -39,7 +41,7 @@ export var Info = (function () {
     var busy = false;    // a model command or permission key sequence on its way to the Mac
     var editingTitle = false;
     var titleDraft = "";
-    var stateSeen = "";  // the session's state at the last draw, so a change redraws the buttons
+    var stateSeen = "";  // terminal, work and closeability shape at the last draw
     var confirming = 0;  // the timer reading back, waiting for a sent `/model` to turn up
     var permissionConfirming = 0;
 
@@ -115,6 +117,15 @@ export var Info = (function () {
     function note(text) { return '<p class="note">' + esc(text) + "</p>"; }
 
     function session() { return forId ? byId(forId) : null; }
+    function statusShape(s) {
+        if (!s) return "";
+        var disposition = s.disposition || {};
+        return [s.state || "", s.line || "", s.work_state || "", s.work_note || "",
+            s.work_provenance || "", JSON.stringify(s.owed || {}),
+            JSON.stringify(s.coordination || {}),
+            disposition.scope || "", disposition.taskId || "", disposition.title || "",
+            sessionCloseabilityShape(s)].join("\u001f");
+    }
     /** Only an idle session takes a `/model`: typed into a working one it interrupts the turn
      *  with a question on the Mac, and typed into one that is asking, it is the answer. */
     function canSwitch() { var s = session(); return !!(s && S.write && s.state === "idle" && !busy); }
@@ -231,6 +242,52 @@ export var Info = (function () {
         return '<div class="models">' + chips + "</div>" + (can ? "" : note(T.webInfoPermissionBusy));
     }
 
+    /**
+     * The list is deliberately a one-line scan and may ellipsise. This is its unabridged home:
+     * each independent status remains separate, and the status itself is the disclosure control
+     * for the explanation behind it. Native `details` keeps the click, keyboard and expanded
+     * semantics without inventing another modal on top of the Session-info modal.
+     */
+    function statusHTML(s) {
+        if (!s) return note(T.webInfoUnknown);
+        var work = projectSessionWorkState(s);
+        var workSaid;
+        if (work.state === "working") {
+            workSaid = '<span class="session-work-copy" data-work-state="working">' +
+                esc(s.line || T.webStateWorking) + "</span>" + owedBadgeHTML(s);
+        } else if (work.state === "waiting_you") {
+            workSaid = '<span class="session-work-copy" data-work-state="waiting_you">' +
+                sessionStatusGlyphHTML("🙋", T.sessionWaiting) + "</span>" + owedBadgeHTML(s);
+        } else if (work.state === "waiting_session") {
+            var waits = ((s.coordination || {}).waitingOn || []).map(function (wait) {
+                return [wait.ownerLabel || wait.ownerSessionId, wait.releaseCondition]
+                    .filter(Boolean).join(" · ");
+            });
+            var waitingCopy = waits.join(" · ") || T.closeabilityMoverSession;
+            workSaid = '<span class="session-work-copy" data-work-state="waiting_session">' +
+                sessionStatusGlyphHTML("⏳", waitingCopy) + "</span>" + owedBadgeHTML(s);
+        } else {
+            workSaid = sessionWorkStateHTML(s);
+        }
+        var context = s.disposition && s.disposition.title
+            ? '<p class="status-context">' + esc(s.disposition.title) + "</p>" : "";
+        var out = '<details class="session-status-detail" data-status-kind="work"><summary>' +
+            workSaid + '</summary><div class="status-explanation"><p>' +
+            esc(T.webInfoWorkStatusMeaning) + "</p>" + context + "</div></details>";
+
+        var closeable = projectSessionCloseability(s);
+        if (closeable.block) {
+            var reasons = closeabilityLines(s);
+            var reasonHTML = reasons.length
+                ? '<ul>' + reasons.map(function (line) { return "<li>" + esc(line) + "</li>"; }).join("") + "</ul>"
+                : "";
+            out += '<details class="session-status-detail" data-status-kind="closeability"><summary>' +
+                sessionCloseabilityHTML(s) + '</summary><div class="status-explanation"><p>' +
+                esc(T.webInfoCloseabilityMeaning) + "</p>" + reasonHTML + "</div></details>";
+        }
+        return '<div class="session-statuses">' + out + "</div>";
+    }
+
     function usageHTML(u) {
         if (!u) return note(T.webInfoNoUsage);
         var cells = [[u.input, T.webInfoInput], [u.output, T.webInfoOutput],
@@ -329,6 +386,7 @@ export var Info = (function () {
         if (pending && models.some(function (m) { return m.command === pending && onModel(current, m); })) pending = null;
         if (permissionPending && permission && permission.current === permissionPending) permissionPending = null;
         var out = hero(s, u), i = 0;
+        out += sec(++i, T.webInfoStatus, "", statusHTML(session() || s));
         // Read-only pairings get no buttons rather than dead ones: there is nothing they could do.
         if (models.length && S.write) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current));
         if (permission && S.write) out += sec(++i, T.webInfoSwitchPermission, "", permissionHTML(permission));
@@ -345,7 +403,7 @@ export var Info = (function () {
     function draw() {
         if (els.info.hidden) return;
         var s = session();
-        stateSeen = s ? s.state : "";
+        stateSeen = statusShape(s);
         say(loading && !data ? T.webLoading : "");
         // A redraw under somebody's fingers keeps what they had typed and where the caret was.
         // Both boxes, and not only the model one: `follow()` redraws whenever the shared facts
@@ -528,7 +586,7 @@ export var Info = (function () {
             var shared = SessionFacts.peek(forId);
             if (shared && shared !== data) { data = shared; draw(); return; }
             var s = session();
-            if (data && s && s.state !== stateSeen) draw();
+            if (data && s && statusShape(s) !== stateSeen) draw();
         },
 
         /** `/model <word>`, typed into the session as one line. One word: the assistants take

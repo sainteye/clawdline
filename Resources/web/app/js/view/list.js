@@ -628,18 +628,11 @@ function fillRow(node, s) {
         }
     }
     var workSaid = sessionWorkStateHTML(s);
-    // The fourth projection rides beside the third, never inside it. A row can invite work and
-    // still be unsafe to end, and one badge standing for both is the collapse this undoes.
+    // The fourth projection follows the complete third-axis group, never inside it. A row can
+    // be delivered and still await its own close attestation, so the key remains visible without
+    // splitting the receipt's check from its explanatory words.
     var closeable = projectSessionCloseability(s);
     if (closeable.block) workSaid += sessionCloseabilityHTML(s);
-    // A receipt mark is fast to scan, but it cannot explain whether the child merely delivered
-    // its milestone or the root verified the target landing. Keep the mark's accessible label and
-    // follow it with the same localized receipt in visible text; aria-hidden avoids saying it twice.
-    if (work.state === "milestone_complete" || work.state === "work_complete") {
-        var workCopy = work.state === "work_complete" ? T.sessionWorkComplete : T.sessionWorkMilestone;
-        workSaid += '<span class="session-work-copy" data-work-state="' + work.state +
-            '" aria-hidden="true">' + esc(workCopy) + "</span>";
-    }
     var waitShape = waitingOn.map(function (wait) {
         return [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "",
             wait.releaseCondition || ""].join(":");

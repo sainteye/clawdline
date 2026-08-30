@@ -1153,6 +1153,9 @@ protocol Copy {
     var webInfoSessionId: String { get }
     var webInfoDirectory: String { get }
     var webInfoRunningFor: String { get }
+    var webInfoStatus: String { get }
+    var webInfoWorkStatusMeaning: String { get }
+    var webInfoCloseabilityMeaning: String { get }
     var webInfoUsage: String { get }
     var webInfoInput: String { get }
     var webInfoOutput: String { get }

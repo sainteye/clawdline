@@ -340,6 +340,42 @@
 .info-sheet .sec h3 .aside { font: 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--dim); min-width: 0; overflow-wrap: anywhere; text-align: right; }
 .info-sheet .sec h3 .aside .ab { color: var(--accent); }
 .info-sheet .sec .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
+
+/* The list may shorten status text; the dossier never does. Each status is also its own
+   explanation door, so the key and the delivery receipt remain two independently clickable
+   facts instead of collapsing back into one badge. */
+.info-sheet .session-statuses { display: grid; gap: 7px; }
+.info-sheet .session-status-detail {
+    min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
+}
+.info-sheet .session-status-detail summary {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+    min-height: 42px; box-sizing: border-box; padding: 9px 34px 9px 11px;
+    position: relative; cursor: pointer; list-style: none; white-space: normal;
+    font: 12px/1.45 var(--mono); color: var(--dim);
+}
+.info-sheet .session-status-detail summary::-webkit-details-marker { display: none; }
+.info-sheet .session-status-detail summary::after {
+    content: "⌄"; position: absolute; right: 12px; top: 50%; transform: translateY(-54%);
+    color: var(--faint); transition: transform 120ms ease, color 120ms ease;
+}
+.info-sheet .session-status-detail[open] summary::after {
+    transform: translateY(-46%) rotate(180deg); color: var(--accent);
+}
+.info-sheet .session-status-detail summary:hover { color: var(--ink); }
+.info-sheet .session-status-detail .session-work-completion,
+.info-sheet .session-status-detail .session-work-copy,
+.info-sheet .session-status-detail .session-closeability,
+.info-sheet .session-status-detail .session-status-label {
+    min-width: 0; max-width: 100%; overflow: visible; text-overflow: clip; white-space: normal;
+}
+.info-sheet .status-explanation {
+    padding: 0 11px 11px 11px; font-size: 12px; line-height: 1.55; color: var(--faint);
+}
+.info-sheet .status-explanation p { margin: 0; }
+.info-sheet .status-explanation .status-context { margin-top: 7px; color: var(--dim); }
+.info-sheet .status-explanation ul { margin: 7px 0 0 0; padding-left: 18px; }
+.info-sheet .status-explanation li { margin-top: 4px; overflow-wrap: anywhere; font-family: var(--mono); }
 /* A door beside a fact that cannot be read: a small ring with a question mark in it, to the
    page of the manual that says why and what to install. Drawn faint, since the sentence beside
    it already says what it says; lit in the accent under a finger. */

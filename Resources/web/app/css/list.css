@@ -142,6 +142,10 @@
 
 /* Session disposition is a fixed-width receipt mark or ellipsised quiet copy. The check is two
    CSS strokes so its weight is identical on every platform; no emoji font participates. */
+.session-work-completion {
+    flex: 0 1 auto; min-width: 0; overflow: hidden;
+    display: inline-flex; align-items: center; gap: 7px;
+}
 .session-work-mark {
     flex: 0 0 auto; display: inline-flex; align-items: center; gap: 1px;
     height: 12px; color: var(--ok);
