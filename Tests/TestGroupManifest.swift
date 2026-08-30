@@ -328,6 +328,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a child is the bottom of the tree, and no setting can put a level under it",
     "a codex child is briefed with channels it can actually reach",
     "the graph and this Mac's own rules reach every child's briefing",
+    "root assignments are a closed durable fourth primitive",
     "a handoff envelope is validated without reading its letter",
     "handoff envelopes survive restart and terminal ones are swept as one unit",
     "handoff registration opens once and shares the dispatch brake",

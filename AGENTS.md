@@ -537,16 +537,15 @@ secret under the field name `secret` (the child's terminal `result.json` uses `t
   from OPEN THREADS.
 - **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
   detached automation. It is never a Root and never a Major Feature owner.
-- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
-  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
-  it must have a public protocol, durable record, briefing, and UI classification distinct from a
-  child task and a handoff.
+- **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
+  ordinary independent Root and briefs only objective, scope, constraints, relevant references,
+  and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
+  detached, timeout, secret, result, parent, or landing lineage.
 
 <!-- /clawdline-dispatch-role-contract:v1 -->
 
-Until Root Assignment exists, do not disguise an independently owned Feature as a detached task or
-as a handoff. Keep the ownership gap visible and give the user the choice to keep Clawdfather as the
-landing owner, continue an existing line by handoff, or defer the independent launch.
+Use Root Assignment only for a genuinely new independently owned Feature. Keep bounded work under
+Clawdfather as a child, and use handoff only to continue an existing line with its full state.
 
 Provider-native subagents remain appropriate for short, disposable, normally read-only research,
 calculation or focused review that creates no independent delivery or landing ownership. Announce

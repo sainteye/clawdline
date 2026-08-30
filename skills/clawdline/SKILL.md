@@ -8,8 +8,8 @@ description: |
   and the equivalent Chinese
   requests 「派任務」「開 child」「使用 Clawdline Handoff」「交接給下一個 session」. A handoff transfers
   the sender's REFERENCES, VERIFICATION, and OPEN THREADS. Detached poll-only tasks are unattended
-  automation, never Root or Major Feature owners. Root Assignment / Feature Launch is not yet
-  implemented and must not be faked with a child, detached automation, or handoff. Do not use for
+  automation, never Root or Major Feature owners. Root Assignment / Feature Launch opens an
+  independent ordinary Root and must not be faked with a child, detached automation, or handoff. Do not use for
   work this conversation can simply do, provider-native subagent research, or session inventory.
   When this session is a Clawdline child, CHILD.md governs instead.
 ---
@@ -91,16 +91,15 @@ reply.
   from OPEN THREADS.
 - **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
   detached automation. It is never a Root and never a Major Feature owner.
-- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
-  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
-  it must have a public protocol, durable record, briefing, and UI classification distinct from a
-  child task and a handoff.
+- **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
+  ordinary independent Root and briefs only objective, scope, constraints, relevant references,
+  and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
+  detached, timeout, secret, result, parent, or landing lineage.
 
 <!-- /clawdline-dispatch-role-contract:v1 -->
 
-Until Root Assignment exists, do not hide the capability gap with detached automation or a fake
-handoff. Ask whether this root keeps landing ownership, whether an existing line is really being
-continued, or whether the independent launch waits.
+Use Root Assignment for a genuinely new independently owned Feature. Keep bounded work under
+Clawdfather as a child, and use handoff only to continue an existing line with its full state.
 
 ### 2.0 Read the policy, then answer whether this should be dispatched at all
 

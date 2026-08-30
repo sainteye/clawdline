@@ -30,6 +30,37 @@ The root never touches a terminal and never learns the child's id until the brok
 child never learns who asked. Neither of them can dispatch on the other's behalf, and a child
 cannot dispatch at all — [that is a rule with teeth](#the-tree-is-one-level-deep-and-that-is-structural).
 
+## Root Assignment is the fourth primitive
+
+`POST /v1/orchestrator/root-assignments` launches a new ordinary Feature Root rather than adding a
+child to this tree. Its closed request names assistant, model, canonical project, label, and only
+five briefing fields: objective, scope, constraints, relevant references, and acceptance. It has no
+task secret, timeout, result file, parent, handoff package, detached flag, or broker landing
+obligation. Closing the caller does not close it.
+
+The broker records `accepted` before opening a tab, then `terminal_opened`, `prompt_ready`,
+`briefed`, and `active`, with `blocked`, `failed`, and `inactive` as explicit alternatives. The
+request UUID plus canonical-body digest makes retries durable: identical content replays one stable
+non-failed assignment id, while changed content conflicts. A terminal failed id replays as
+`request_terminated` and requires a new request id rather than pretending a launch succeeded. A restart with only `accepted` fails
+`launch_receipt_lost` instead of risking a duplicate tab.
+
+After a terminal receipt exists, reconciliation uses one exact assistant, terminal/tty,
+PID/process-start, and conversation tuple. A stale inventory waits; two candidates fail ambiguity;
+confirmed process loss fails before briefing and becomes inactive afterwards. Workspace trust is
+also fail-closed: the current build has no automatic workspace-trust authority, so the picker is
+left for a person without consuming the ordinary 240-second terminal-open-to-briefing deadline;
+answering it starts a durable fresh 240-second pre-brief window and lets the record continue. Any future positive policy adapter must explicitly justify
+acceptance and must persist the one-answer picker receipt before typing. Every blocked, failed or
+inactive transition is audit-visible once with its exact available assignment/terminal identity,
+so a never-briefed orphan tab stays findable while a genuinely briefed Root is never cascade-closed.
+Session and web UI receive the bounded nested
+`root_assignment:{id,label,state,ownership,explanation}` projection separate from the child `Role`
+index; it does not invent a `role:"root_assignment"` field.
+
+Creation and authenticated list/read use only the mode-0600 orchestrator token. See
+[`docs/api.md`](api.md#post-v1orchestratorroot-assignments) for the closed body, bounds and errors.
+
 **The transcripts on this page are written to the protocol rather than pasted out of a run.** Every
 route, field and code below is the contract; where a reply is shown it is what a correct
 implementation answers, marked *example* where it matters. The routes themselves are in

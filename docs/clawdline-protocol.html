@@ -311,7 +311,7 @@
     <p><strong>Owned child.</strong> <code>POST /v1/orchestrator/tasks</code> creates a bounded child only when Clawdfather retains synthesis, integration, and landing.</p>
     <p><strong>Handoff.</strong> <code>POST /v1/orchestrator/handoffs</code> is continuation or transfer of an existing work line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue from OPEN THREADS.</p>
     <p><strong>Detached automation.</strong> <code>root.session_id: null</code> with <code>root.poll_only: true</code> is only unattended detached automation. It is never a Root and never a Major Feature owner.</p>
-    <p><strong>Root Assignment / Feature Launch.</strong> This is not implemented. The future primitive opens an ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance; its public protocol, durable record, briefing, and UI classification must differ from a child task and a handoff.</p>
+    <p><strong>Root Assignment / Feature Launch.</strong> <code>POST /v1/orchestrator/root-assignments</code> opens an ordinary independent Root and briefs only objective, scope, constraints, relevant references, and acceptance. Its durable machine-auth record and UI classification carry no child, handoff, detached, timeout, secret, result, parent, or landing lineage.</p>
   </div>
   <!-- /clawdline-dispatch-role-contract:v1 -->
 

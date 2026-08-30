@@ -44,13 +44,19 @@ act of guarding the baseline does not mint a new check and then call the new num
 `Sources/**/*.swift`; full test mode separately compares that partition and the test partition with
 `Sources/**/*.swift` and `Tests/**/*.swift`. A nested addition/removal or a Sources↔Tests partition
 swap therefore fails before compilation, while Tests-only drift cannot block an application build.
-The manifest currently contains 90 production and 41 test sources. `tools/check-architecture-boundaries.sh`
-also freezes `Orchestrator.swift` at the approved 12,398-line Closeability receipt. `RemoteServer.swift` began at the 5,903-line
-Phase 0 baseline and now carries the approved 6,316-line Closeability receipt in the executable
-guard; later approved features must move that receipt explicitly rather than silently weakening it. It keeps
-`Tests/main.swift` below 500 lines and free of domain `group()` calls, requires 24 ordered runners
-and 447 current manifest entries after approved Closeability integration, and enforces the
-2,000-line suite stop-growth boundary.
+The manifest currently contains 90 production and 42 test sources. Historically, Phase 0 began
+with `RemoteServer.swift` at 5,903 lines and the later Closeability receipt recorded
+`Orchestrator.swift` at 12,398, `RemoteServer.swift` at 6,316, and 447 manifest entries. Those are
+chronology, not executable limits. The single current receipt is the combined launch receipt below;
+later approved features must move it explicitly rather than silently weakening it. The guard also
+keeps `Tests/main.swift` below 500 lines and free of domain `group()` calls, requires 25 ordered
+runners, and enforces the 2,000-line suite stop-growth boundary.
+
+The combined Root Assignment and Usage Portfolio landing is the single current receipt:
+`Orchestrator.swift` is sealed at 13,482 lines, `RemoteServer.swift` at 6,384, the ordered manifest
+at 456 groups, 25 ordered runners, 36 suite files, and the Swift completion receipt at 6,903 checks.
+This is an approved feature addition and a test-suite extraction, not authorization for Phase 2
+production relocation; later growth still has to move the executable receipt by name.
 
 ### Ordered suite and dependency manifest
 
@@ -88,8 +94,9 @@ which should be re-evaluated against current dependencies before a later extract
 | 20 | `runOrchestratorRecoveryTests` / `OrchestratorRecoveryTests.swift` | spawn retry, progress and verification metadata | 1, 2, 4 |
 | 21 | `runCoordinatorTests` / `CoordinatorTests.swift` | coordinator identity, rebind and Bearings | 1, 2, 4 |
 | 22 | `runOrchestratorCompletionTests` / `OrchestratorCompletionTests.swift` | durable completion ingress, retry and ACK | 1, 2, 4 |
-| 23 | `runUsageLedgerTests` / `UsageLedgerTests.swift` | ledger normalization, migration and correction | 1, 2, 4 |
-| 24 | `runSessionWatchTests` / `SessionWatchTests.swift` | queue crossings, live reads and backpressure | 1, 2, 4 |
+| 23 | `runUsageLedgerTests` / `UsageLedgerTests.swift` | ledger normalization, parsing and range semantics | 1, 2, 4 |
+| 24 | `runUsagePortfolioAndLifecycleTests` / `UsagePortfolioAndLifecycleTests.swift` | Project portfolio, attribution, migration and lifecycle | 1, 2, 4 |
+| 25 | `runSessionWatchTests` / `SessionWatchTests.swift` | queue crossings, live reads and backpressure | 1, 2, 4 |
 
 Infrastructure has narrower direction: `TestProcessProbes` may enter subprocess-only modes;
 `TestIsolation` owns global setup; `TestHarness` owns checks, failures and shared fixtures;
@@ -280,9 +287,9 @@ Approve only Phases 0–1 initially. Phase 2 begins only when all of these are t
 candidate commit tree:
 
 1. independent review has sealed every finding as fixed, disproved or deferred with an owner;
-2. the 447-entry `expectedOrderedTestGroupTitles` equals the runtime order, the full result is
-   exactly 6,661 checks, and the existing Cloud receipt appears exactly once with the existing
-   eleven suite names and counts;
+2. `expectedOrderedTestGroupTitles` equals the runtime order, the exact current Swift completion
+   receipt named above passes, and the existing Cloud receipt appears exactly once with the
+   existing eleven suite names and counts;
 3. `tools/swift-source-manifest.sh` reports the exact on-disk recursive inventory, including a
    recorded red mutation for one missing nested source;
 4. the architecture guard reports `Tests/main.swift <= 500`, 24 ordered runners, no domain group in

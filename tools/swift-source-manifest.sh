@@ -135,6 +135,7 @@ clawdline_test_sources=(
   Tests/TestProcessProbes.swift
   Tests/TranscriptTests.swift
   Tests/UsageLedgerTests.swift
+  Tests/UsagePortfolioAndLifecycleTests.swift
   Tests/main.swift
 )
 

@@ -20,7 +20,9 @@ globalThis.__workStateStrings = {
     sessionWaitedOnByOne: "1 waiting on you",
     sessionWaitedOnByMany: "{n} waiting on you",
     sessionWorkMilestone: "Delivered; awaiting approval",
-    sessionWorkComplete: "Reviewed and approved"
+    sessionWorkComplete: "Reviewed and approved",
+    webTaskRoot: "Root",
+    webTaskTasks: "Tasks"
 };
 const derive = await import("data:text/javascript;base64," + Buffer.from(standalone).toString("base64"));
 
@@ -169,6 +171,37 @@ assert.equal(derive.ordered()[0].id, "clawdfather",
     "task grouping cannot pull Clawdfather down from the pinned position");
 assert.equal(derive.rowDepth("clawdfather"), 0,
     "the pinned Clawdfather row is never visually indented under another Session");
+
+const featureRoot = {
+    id: "feature-root", label: "Feature launch", state: "working", work_state: "working",
+    root_assignment: { id: "assignment-one", label: "Root Assignment API", state: "active",
+        ownership: "independent_root", explanation: "owns_feature_lifecycle" }
+};
+const visibleParent = {
+    id: "ordinary-parent", label: "Visible parent", state: "idle", work_state: "ready"
+};
+state.sessions = [visibleParent, featureRoot];
+state.tasks = [
+    { id: "hostile-task-shape", state: "briefed",
+      child: { terminalId: "feature-root" }, root: { terminalId: "ordinary-parent" } },
+    { id: "live-feature-child", state: "briefed", title: "Lifecycle tests",
+      child: { terminalId: "feature-child" }, root: { terminalId: "feature-root" } }
+];
+assert.equal(derive.rootAssignmentOf(featureRoot).id, "assignment-one",
+    "the closed independent-root projection is recognized");
+assert.equal(derive.rowDepth("feature-root"), 0,
+    "a Feature Root is never indented as task lineage even beside a hostile task-shaped frame");
+assert.equal(derive.rootAssignmentOf({ root_assignment: {
+    id: "fake", label: "Fake", state: "active", ownership: "child" } }), null,
+    "an object without independent-root ownership cannot acquire Feature Root classification");
+const featureChip = derive.featureRootChip(featureRoot);
+assert.equal(featureChip.text, "Root · Root Assignment API · 1",
+    "the Feature Root chip keeps its durable label and live child count together");
+assert.match(featureChip.title, /Lifecycle tests/,
+    "the behavior model exposes the live child title without replacing the root label");
+assert.equal(derive.featureRootChip({ ...featureRoot, root_assignment: {
+    ...featureRoot.root_assignment, state: "failed" } }), null,
+    "terminal assignment projections cannot reach a dead Feature Root chip branch");
 
 const listSource = await readFile(
     new URL("../Resources/web/app/js/view/list.js", import.meta.url), "utf8");

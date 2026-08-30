@@ -111,6 +111,9 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/auth/logout` | — | — |
 | `POST` | `/v1/orchestrator/handoffs` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/root-assignments` | orchestrator token + key | — |
+| `GET` | `/v1/orchestrator/root-assignments` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/root-assignments/:id` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/notify` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/tasks` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
@@ -1339,6 +1342,76 @@ order:
 | `terminal_closed` / `terminal_unsupported` | 409 | the selected terminal cannot be opened; `app` names it |
 | `internal` | 500 or 502 | terminal automation failed |
 | `not_found` | 404 | this build has no handoff route |
+
+### `POST /v1/orchestrator/root-assignments`
+
+This machine-only route launches a new ordinary Root that independently owns a Feature. It is not
+a task, handoff, or detached automation. The orchestrator token is required for creation and both
+full-record reads. A paired device cannot call these Root Assignment routes; its ordinary
+`GET /v1/sessions` read receives only the bounded nested `root_assignment` projection documented
+below, including the display label but never the project path or five-field assignment envelope.
+
+`Idempotency-Key` is required and must equal the lowercase UUID in `request_id`. The request is a
+closed object—unknown keys are `bad_root_assignment`:
+
+```json
+{
+  "request_id": "3bff2f2b-f7c1-4745-9563-da5c2a31e647",
+  "assistant": "codex",
+  "model": "default",
+  "project_dir": "/Users/me/code/project",
+  "label": "Durable import redesign",
+  "assignment": {
+    "objective": "Ship the importer redesign.",
+    "scope": "Importer, migrations, tests, and operator docs.",
+    "constraints": "Preserve rollback and do not restart the live app.",
+    "relevant_references": "docs/importer.md and ADR-17.",
+    "acceptance": "The exact candidate tree passes the importer acceptance suite."
+  }
+}
+```
+
+Each of the five assignment strings is non-empty and at most 8,192 UTF-8 bytes; together they are
+at most 32,768 bytes. `label` is 1–200 UTF-8 bytes. The project must be an existing absolute
+directory and its canonical path is stored. `assistant`, `model`, project and label are explicit;
+`model:"default"` delegates the concrete provider model without omitting the choice.
+
+Acceptance is persisted before terminal opening. The record advances through `accepted`,
+`terminal_opened`, `prompt_ready`, `briefed`, then `active`. `blocked` names
+`workspace_trust_required` and leaves the picker untouched with no broker timeout: the ordinary
+terminal-open-to-briefing deadline is 240 seconds, but time spent waiting for a person's trust decision does
+not consume it. When the picker leaves, durable `prompt_timeout_started_at` starts a fresh
+240-second pre-brief window and the same record may continue to `prompt_ready`.
+The current build has no automatic workspace-trust authority; a future positive policy adapter
+must explicitly justify acceptance, and the broker durably records `answered_trust_menu` before
+such an adapter may answer the picker so one picker is answered at most once.
+`failed` is a launch or delivery failure; `inactive`
+means the exact process disappeared after briefing. Timestamped receipts and the exact
+terminal/tty/pid/process-start/conversation tuple are stored. There is no timeout, task secret,
+`result.json`, parent, result, landing, handoff, or detached field.
+
+A retry with the same request id and identical canonical body returns the same non-failed
+assignment with `replayed:true` and never opens another tab. A failed assignment is a terminal
+idempotency result: replay returns `409 request_terminated` and requires a new request id rather
+than reporting `ok:true` or risking a duplicate tab. Different content is `409 request_conflict`. A restart
+with only `accepted` persisted is `launch_receipt_lost`: reopening could duplicate a tab whose side
+effect happened just before the crash. Reconciliation adopts only one exact process/conversation
+tuple. Ambiguity is `ambiguous_identity`; incomplete inventory waits as `stale_inventory`; a
+confirmed loss is `process_lost_before_briefing` or `process_lost_after_briefing`. Other typed
+failures include `assistant_unavailable`, `prompt_timeout`, `delivery_unconfirmed`,
+`workspace_trust_required`, `restart_identity_incomplete`, `idempotency_mismatch`, and
+`persistence_failed`. Each typed `blocked`, `failed`, or `inactive` transition writes one durable
+transition receipt and one audit event with assignment id, state, reason and the exact available
+terminal/process/conversation identity. The receipt prevents timer beats or restart recovery from
+spamming the same transition; the audit keeps a pre-brief orphan tab findable without ever
+cascade-closing a genuinely briefed independent Root.
+
+`GET /v1/orchestrator/root-assignments` returns `root_assignments`; the `/:id` form returns one
+`root_assignment`. Session rows carry the bounded nested projection
+`root_assignment:{id,label,state,ownership,explanation}` with
+`ownership:"independent_root"`; there is no `role:"root_assignment"` field, and these roots never
+acquire a task role or child indentation. Failed and inactive records remain in the machine-only
+inventory and audit, not in the live Session projection.
 
 ### `POST /v1/orchestrator/tasks`
 

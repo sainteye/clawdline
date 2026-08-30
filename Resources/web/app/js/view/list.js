@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
-import { byId, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
+import { byId, featureRootChip, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
@@ -509,6 +509,7 @@ function fillRow(node, s) {
     //
     // Only the tasks still shaping the list count. A child whose task ended an hour ago is
     // just a session again, and a chip that never goes away is furniture.
+    var featureRoot = featureRootChip(s);
     var task = S.tasks.length ? taskOfChild(s.id) : null;
     var kid = task && taskShaping(task) ? task : null;
     // The indent is a claim about the row above, so it is only drawn when that row is there —
@@ -536,7 +537,12 @@ function fillRow(node, s) {
     } else {
         delete node.dataset.depth;
         glyph.hidden = true;
-        if (roots.length) {
+        if (featureRoot) {
+            mine.hidden = false;
+            mine.dataset.live = featureRoot.live ? "1" : "0";
+            mine.textContent = featureRoot.text;
+            mine.title = featureRoot.title;
+        } else if (roots.length) {
             mine.hidden = false;
             mine.dataset.live = roots.some(taskLive) ? "1" : "0";
             mine.textContent = T.webTaskRoot + " · " + roots.length;

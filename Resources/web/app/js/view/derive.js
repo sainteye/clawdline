@@ -403,6 +403,16 @@ export function taskOfChild(id) {
     return best;
 }
 
+/** A broker-proved independent Feature Root. Closed on ownership so a random object cannot
+ * acquire root styling, and separate from taskOfChild so it can never gain child indentation. */
+export function rootAssignmentOf(session) {
+    var value = session && session.root_assignment;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    if (value.ownership !== "independent_root" || typeof value.id !== "string" || !value.id ||
+        typeof value.label !== "string" || !value.label) return null;
+    return value;
+}
+
 /**
  * How far a row is indented: one step for the session that asked for it, another if that session
  * is somebody's child too. Two is the floor, matching the app — and it stops early at a link
@@ -410,6 +420,7 @@ export function taskOfChild(id) {
  */
 export function rowDepth(id) {
     if (coordinatorSession(byId(id))) return 0;
+    if (rootAssignmentOf(byId(id))) return 0;
     var n = 0, at = id, seen = {};
     while (n < 2) {
         var t = taskOfChild(at);
@@ -428,6 +439,24 @@ export function tasksOfRoot(id) {
     return S.tasks.filter(function (t) {
         return taskShaping(t) && t.root && t.root.terminalId === id;
     });
+}
+
+/** The executable Feature Root chip decision. The durable label and the live child count are
+ * independent facts, so one can never hide the other; terminal assignment states are refused
+ * here as a second closed boundary even though the broker normally omits those projections. */
+export function featureRootChip(session) {
+    var root = rootAssignmentOf(session);
+    if (!root || root.state === "failed" || root.state === "inactive") return null;
+    var live = tasksOfRoot(session.id).filter(taskLive);
+    var text = T.webTaskRoot + " · " + root.label;
+    if (live.length) text += " · " + live.length;
+    var title = root.label + " · " + root.state;
+    if (live.length) {
+        title += "\n" + T.webTaskTasks + ": " + live.map(function (task) {
+            return task.title || task.id;
+        }).join(" · ");
+    }
+    return { text: text, title: title, live: true, childCount: live.length };
 }
 
 /**

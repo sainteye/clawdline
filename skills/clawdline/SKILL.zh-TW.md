@@ -6,8 +6,8 @@ description: |
   給另一個 live session。觸發語句包括「派任務」「開 child」「叫 Codex review」「使用 Clawdline Handoff」
   「交接給下一個 session」及等義英文。
   Handoff 會移轉 sender 的 REFERENCES、VERIFICATION、OPEN THREADS。poll-only detached task 只供
-  無人值守 automation，絕不是 Root 或 Major Feature owner。Root Assignment / Feature Launch 尚未
-  實作，不得用 child、detached automation 或假 handoff 冒充。這條對話能直接做、provider-native
+  無人值守 automation，絕不是 Root 或 Major Feature owner。Root Assignment / Feature Launch 會
+  啟動獨立 ordinary Root；不得用 child、detached automation 或假 handoff 冒充。這條對話能直接做、provider-native
   subagent 的檢索、或只查 session inventory 時不要使用。若目前 session 是 Clawdline child，改依
   CHILD.md。
 ---
@@ -85,15 +85,15 @@ curl -s "http://127.0.0.1:$PORT/v1/health"
   from OPEN THREADS.
 - **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
   detached automation. It is never a Root and never a Major Feature owner.
-- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
-  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
-  it must have a public protocol, durable record, briefing, and UI classification distinct from a
-  child task and a handoff.
+- **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
+  ordinary independent Root and briefs only objective, scope, constraints, relevant references,
+  and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
+  detached, timeout, secret, result, parent, or landing lineage.
 
 <!-- /clawdline-dispatch-role-contract:v1 -->
 
-Root Assignment 尚未存在以前，不可用 detached automation 或假的 handoff 把能力缺口藏起來。
-應先確認：由本 root 保留 landing ownership、延續一條真的既有工作線，或等獨立 launch 能力完成。
+新的獨立 Feature 使用 Root Assignment；bounded 工作仍交給 Clawdfather 的 child，handoff 只用來
+延續一條真的既有工作線及其完整狀態。
 
 ### 2.0 先讀政策，然後先回答「這件事該不該派」
 

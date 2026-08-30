@@ -20,7 +20,7 @@ const clauses = [
     ["owned child", /Owned child[\s\S]*?POST \/v1\/orchestrator\/tasks[\s\S]*?bounded[\s\S]*?retains synthesis, integration, and landing/i],
     ["handoff continuation", /Handoff[\s\S]*?POST \/v1\/orchestrator\/handoffs[\s\S]*?continuation[\s\S]*?REFERENCES[\s\S]*?VERIFICATION[\s\S]*?OPEN THREADS/i],
     ["detached automation", /Detached automation[\s\S]*?root\.session_id[\s\S]*?null[\s\S]*?root\.poll_only[\s\S]*?true[\s\S]*?never[\s\S]*?Root[\s\S]*?Major Feature/i],
-    ["root assignment", /Root Assignment \/ Feature Launch[\s\S]*?not implemented[\s\S]*?ordinary Root[\s\S]*?objective[\s\S]*?scope[\s\S]*?constraints[\s\S]*?relevant references[\s\S]*?acceptance/i],
+    ["root assignment", /Root Assignment \/ Feature Launch[\s\S]*?POST \/v1\/orchestrator\/root-assignments[\s\S]*?ordinary independent Root[\s\S]*?objective[\s\S]*?scope[\s\S]*?constraints[\s\S]*?relevant references[\s\S]*?acceptance[\s\S]*?durable machine-auth[\s\S]*?no child[\s\S]*?handoff[\s\S]*?detached[\s\S]*?timeout[\s\S]*?secret[\s\S]*?result[\s\S]*?parent[\s\S]*?landing lineage/i],
 ];
 
 function contract(text, file) {
@@ -56,6 +56,10 @@ for (const file of surfaces) {
     for (const phrase of mutations) {
         assert.throws(() => validate(block.replace(phrase, "removed"), `${file} mutation`),
             `${file}: removing ${phrase} must make the contract red`);
+    }
+    for (const phrase of ["timeout", "secret"]) {
+        assert.throws(() => validate(block.replace(phrase, "removed"), `${file} mutation`),
+            `${file}: removing Root Assignment ${phrase} exclusion must make the contract red`);
     }
 }
 

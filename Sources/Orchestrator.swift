@@ -1629,6 +1629,229 @@ enum Orchestrator {
         var answeredMenu = false
     }
 
+    // MARK: - Independent feature roots
+
+    enum RootAssignmentState: String {
+        case accepted
+        case terminalOpened = "terminal_opened"
+        case promptReady = "prompt_ready"
+        case blocked, briefed, active, failed, inactive
+    }
+
+    struct RootAssignmentDraft: Equatable {
+        let requestID: String
+        let assistant: Assistant
+        /// `default` is deliberately a value rather than an omitted option: model selection is
+        /// part of the caller's closed request even when it delegates the concrete model.
+        let model: String
+        let projectDir: String
+        let label: String
+        let objective: String
+        let scope: String
+        let constraints: String
+        let relevantReferences: String
+        let acceptance: String
+    }
+
+    enum RootAssignmentDraftOutcome: Equatable {
+        case ok(RootAssignmentDraft)
+        case bad(String)
+        var isBad: Bool { if case .bad = self { return true }; return false }
+    }
+
+    struct RootAssignmentIdentity: Equatable {
+        var terminalID: String
+        var assistant: Assistant
+        var tty: String?
+        var pid: Int32?
+        /// Seconds since the Unix epoch. Keeping the wire-sized scalar here makes equality exact.
+        var processStart: Double?
+        var conversationID: String?
+    }
+
+    enum RootAssignmentReconciliation: Equatable {
+        case wait(String)
+        case rebind(RootAssignmentIdentity)
+        case fail(String)
+        case inactive(String)
+    }
+
+    enum RootAssignmentTrustDecision: Equatable {
+        case none, block
+        case accept(row: Int)
+    }
+
+    static func rootAssignmentTrustDecision(projectApproved: Bool,
+                                            menu: SessionState.Menu?,
+                                            answeredTrustMenu: Bool = false)
+        -> RootAssignmentTrustDecision {
+        guard let menu,
+              let choices = SessionClosePolicy.startupTrustChoices(in: menu) else { return .none }
+        guard projectApproved else { return .block }
+        return answeredTrustMenu ? .none : .accept(row: choices.accept)
+    }
+
+    struct RootAssignmentDeliveryEvidence: Equatable {
+        let transcriptKnown: Bool
+        let recorded: Bool
+        let retryDelayElapsed: Bool
+    }
+
+    enum RootAssignmentStepDecision: Equatable {
+        case wait, activate, block, promptReady, inspectDelivery, briefed, inject
+        case answerTrust(row: Int)
+        case fail(String)
+    }
+
+    /// The lifecycle choice is pure; terminal capture, transcript reads, persistence and typing
+    /// happen only after this answer. Keeping the whole branch table here makes timeout, trust,
+    /// receipt and retry failure injection executable without opening somebody's terminal.
+    static func rootAssignmentStepDecision(
+        state: RootAssignmentState, promptTimedOut: Bool,
+        trust: RootAssignmentTrustDecision, answeredTrustMenu: Bool,
+        inputReady: Bool, delivery: RootAssignmentDeliveryEvidence?, injectAttempts: Int
+    ) -> RootAssignmentStepDecision {
+        guard ![.accepted, .failed, .inactive, .active].contains(state) else { return .wait }
+        if promptTimedOut { return .fail("prompt_timeout") }
+        if state == .briefed { return .activate }
+        switch trust {
+        case .block: return .block
+        case .accept(let row): return answeredTrustMenu ? .wait : .answerTrust(row: row)
+        case .none: break
+        }
+        guard inputReady else { return .wait }
+        if state == .terminalOpened || state == .blocked { return .promptReady }
+        guard let delivery else { return .inspectDelivery }
+        if delivery.recorded { return .briefed }
+        if injectAttempts > 0 && !delivery.transcriptKnown { return .wait }
+        guard delivery.retryDelayElapsed else { return .wait }
+        return injectAttempts >= briefingAttemptLimit
+            ? .fail("delivery_unconfirmed") : .inject
+    }
+
+    struct RootAssignment {
+        let id: String
+        let requestID: String
+        let requestDigest: String
+        let assistant: Assistant
+        let model: String
+        let projectDir: String
+        let label: String
+        let objective: String
+        let scope: String
+        let constraints: String
+        let relevantReferences: String
+        let acceptance: String
+        let projectApproved: Bool
+        let created: Date
+        var state: RootAssignmentState
+        var identity: RootAssignmentIdentity?
+        var terminalOpenedAt: Date?
+        var promptReadyAt: Date?
+        /// Reset only when a person clears workspace trust, so that human wait consumes none of
+        /// the ordinary terminal-open-to-briefing window without falsifying terminalOpenedAt.
+        var promptTimeoutStartedAt: Date?
+        var briefedAt: Date?
+        var activeAt: Date?
+        var endedAt: Date?
+        var injectAttempts = 0
+        var lastInjectAt: Date?
+        var answeredTrustMenu = false
+        var blocker: String?
+        var failure: String?
+        var reconciliation: String?
+        /// The durable at-most-once receipt for the last blocked/failed/inactive audit event.
+        var reportedTransition: String?
+        var missingObservedAt: Date?
+        var missingGeneration: Int?
+        var missingEpoch: String?
+    }
+
+    struct RootAssignmentTransitionNotice: Equatable {
+        let receipt: String
+        let event: String
+        let reason: String
+    }
+
+    struct RootAssignmentCleanupCandidate: Equatable {
+        let id: String
+        let state: RootAssignmentState
+        let created: Date
+    }
+
+    static func rootAssignmentCleanupIDs(
+        _ rows: [RootAssignmentCleanupCandidate], retaining limit: Int = 200
+    ) -> [String] {
+        rows.filter { [.failed, .inactive].contains($0.state) }
+            .sorted { $0.created > $1.created }
+            .dropFirst(limit).map(\.id)
+    }
+
+    static func rootAssignmentTransitionNotice(state: RootAssignmentState,
+                                               blocker: String?, failure: String?)
+        -> RootAssignmentTransitionNotice? {
+        let reason: String
+        let event: String
+        switch state {
+        case .blocked:
+            guard let blocker else { return nil }
+            reason = blocker; event = "root_assignment.blocked"
+        case .failed:
+            guard let failure else { return nil }
+            reason = failure; event = "root_assignment.failed"
+        case .inactive:
+            guard let failure else { return nil }
+            reason = failure; event = "root_assignment.inactive"
+        default:
+            return nil
+        }
+        return RootAssignmentTransitionNotice(
+            receipt: "\(state.rawValue)|\(reason)", event: event, reason: reason)
+    }
+
+    /// Persist the audit receipt before emitting the event. That deliberately chooses at-most-once
+    /// delivery over restart spam; every event carries the durable assignment and exact executor
+    /// identity so an operator can find a pre-brief tab that needs attention.
+    @discardableResult
+    static func reportRootAssignmentTransition(_ id: String) -> Bool {
+        lock.lock()
+        guard var assignment = rootAssignments[id],
+              let notice = rootAssignmentTransitionNotice(
+                state: assignment.state, blocker: assignment.blocker,
+                failure: assignment.failure),
+              assignment.reportedTransition != notice.receipt else {
+            lock.unlock(); return false
+        }
+        let previous = assignment.reportedTransition
+        assignment.reportedTransition = notice.receipt
+        rootAssignments[id] = assignment
+        lock.unlock()
+        guard save() else {
+            lock.lock()
+            if var current = rootAssignments[id],
+               current.reportedTransition == notice.receipt {
+                current.reportedTransition = previous
+                rootAssignments[id] = current
+            }
+            lock.unlock()
+            return false
+        }
+        var fields = ["assignment": id, "state": assignment.state.rawValue,
+                      "why": notice.reason, "transition": notice.receipt]
+        if let identity = assignment.identity {
+            fields["terminal"] = identity.terminalID
+            fields["assistant"] = identity.assistant.rawValue
+            if let pid = identity.pid { fields["pid"] = String(pid) }
+            if let start = identity.processStart { fields["process_start"] = String(start) }
+            if let conversation = identity.conversationID {
+                fields["conversation"] = conversation
+            }
+        }
+        if let observer = rootAssignmentAuditObserverForTesting { observer(notice.event, fields) }
+        else { RemoteAuth.audit(notice.event, fields) }
+        return true
+    }
+
     /// The directory whose assistant-owned records belong to this child. Kept separate from the
     /// dispatch project so task isolation can choose a different working tree at this seam.
     static func cwd(of task: Task) -> String {
@@ -1996,6 +2219,7 @@ enum Orchestrator {
     static var restartReceipt: RestartReceipt?
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
+    private static var rootAssignments: [String: RootAssignment] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
     /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
     /// this receipt is consumed when the same tab begins another observed turn.
@@ -2042,6 +2266,8 @@ enum Orchestrator {
     /// Test receipt for the semantic root-notification boundary. The terminal transport itself
     /// is exercised elsewhere; this proves a terminal path reached finalization and its notice.
     static var rootNotificationObserverForTesting: ((Task) -> Void)?
+    static var rootAssignmentAuditObserverForTesting:
+        ((String, [String: String]) -> Void)?
     static var attachedSenderForTesting: ((String, TargetSession) -> String?)?
     /// The session inventory an attachment resolves against, and the starter a tab-opening
     /// dispatch uses.
@@ -2061,6 +2287,9 @@ enum Orchestrator {
     private static var titlesByTerminal: [String: String] = [:]
     /// Handoff tabs are roots, not task roles, but still keep the protocol's requested label.
     private static var handoffTitlesByTerminal: [String: String] = [:]
+    /// A closed assignment tab may leave a durable live row while two-scan loss confirmation is
+    /// pending. Suppress only that assignment's label so a reused terminal id is never renamed.
+    private static var suppressedRootAssignmentLabels: Set<String> = []
 
     /// Terminal id → where that tab sits in the tree. Rebuilt beside ``titlesByTerminal``.
     private static var rolesByTerminal: [String: Role] = [:]
@@ -3577,6 +3806,14 @@ enum Orchestrator {
     private static func reindex() {
         var found = handoffTitlesByTerminal
         var roles: [String: Role] = [:]
+        // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
+        // putting an assignment in it would make a fourth primitive a disguised task.
+        for assignment in rootAssignments.values {
+            guard let terminal = assignment.identity?.terminalID,
+                  ![.failed, .inactive].contains(assignment.state),
+                  !suppressedRootAssignmentLabels.contains(assignment.id) else { continue }
+            found[terminal] = assignment.label
+        }
         for task in tasks.values {
             guard let terminal = task.childTerminalId else { continue }
             let role = Role(taskID: task.id, depth: task.depth, title: task.title,
@@ -3610,10 +3847,24 @@ enum Orchestrator {
     /// Handoff labels are transient UI state. Keep one while its tab is visible or its first line
     /// is still in flight; once a closed tab disappears from the reading, its reusable id must
     /// not carry the old root's label into a later session.
-    static func pruneClosedHandoffTitles(visible: Set<String>) {
+    static func pruneClosedHandoffTitles(visible: Set<String>,
+                                         identities: [SessionWorkIdentity]? = nil) {
         let delivering = Set(handoffDeliveries.values.map(\.terminalID))
         handoffTitlesByTerminal = handoffTitlesByTerminal.filter {
             visible.contains($0.key) || delivering.contains($0.key)
+        }
+        if let identities {
+            for assignment in rootAssignments.values
+                where ![.failed, .inactive].contains(assignment.state) {
+                guard let stored = assignment.identity else { continue }
+                if identities.contains(where: {
+                    rootAssignmentIdentityMatches(stored, observed: $0)
+                }) {
+                    suppressedRootAssignmentLabels.remove(assignment.id)
+                } else {
+                    suppressedRootAssignmentLabels.insert(assignment.id)
+                }
+            }
         }
         reindex()
     }
@@ -5171,6 +5422,278 @@ enum Orchestrator {
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return successfulHandoffReply(for: envelope, draft: draft,
                                           terminalID: terminalID, backend: backend)
+        }
+    }
+
+    // MARK: - Root Assignment / Feature Launch
+
+    static func rootAssignmentDraft(from obj: [String: Any],
+                                    isDirectory: (String) -> Bool = StartPoints.isDirectory,
+                                    canonicalize: (String) -> String = canonicalFilesystemPath)
+        -> RootAssignmentDraftOutcome {
+        let topKeys: Set<String> = ["request_id", "assistant", "model", "project_dir",
+                                    "label", "assignment"]
+        guard Set(obj.keys) == topKeys else {
+            return .bad("request must contain only request_id, assistant, model, project_dir, "
+                      + "label, and assignment")
+        }
+        guard let requestID = obj["request_id"] as? String, isTaskID(requestID) else {
+            return .bad("request_id must be a lowercase UUID")
+        }
+        guard let assistantName = obj["assistant"] as? String,
+              let assistant = Assistant(rawValue: assistantName) else {
+            return .bad("assistant must be claude or codex")
+        }
+        guard let model = obj["model"] as? String,
+              model == "default" || StartPoints.modelName(model) == model else {
+            return .bad("model must be default or a valid model name")
+        }
+        guard let rawProject = obj["project_dir"] as? String, StartPoints.usable(rawProject),
+              isDirectory(rawProject) else {
+            return .bad("project_dir must be an existing absolute directory")
+        }
+        let projectDir = canonicalize(rawProject)
+        guard StartPoints.usable(projectDir), isDirectory(projectDir) else {
+            return .bad("project_dir could not be resolved to a durable canonical directory")
+        }
+        guard let label = obj["label"] as? String,
+              !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              label.utf8.count <= 200 else {
+            return .bad("label must be 1–200 UTF-8 bytes")
+        }
+        guard let fields = obj["assignment"] as? [String: Any] else {
+            return .bad("assignment must be an object")
+        }
+        let fieldKeys: Set<String> = ["objective", "scope", "constraints",
+                                      "relevant_references", "acceptance"]
+        guard Set(fields.keys) == fieldKeys else {
+            return .bad("assignment must contain only objective, scope, constraints, "
+                      + "relevant_references, and acceptance")
+        }
+        func field(_ key: String) -> String? {
+            guard let value = fields[key] as? String,
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  value.utf8.count <= 8_192,
+                  !value.unicodeScalars.contains(where: { $0.value == 0 }) else { return nil }
+            return value
+        }
+        guard let objective = field("objective"), let scope = field("scope"),
+              let constraints = field("constraints"),
+              let references = field("relevant_references"),
+              let acceptance = field("acceptance"),
+              [objective, scope, constraints, references, acceptance]
+                .reduce(0, { $0 + $1.utf8.count }) <= 32_768 else {
+            return .bad("each assignment field must be 1–8192 UTF-8 bytes and together at most "
+                      + "32768 bytes")
+        }
+        return .ok(RootAssignmentDraft(
+            requestID: requestID, assistant: assistant, model: model,
+            projectDir: projectDir, label: label, objective: objective, scope: scope,
+            constraints: constraints, relevantReferences: references, acceptance: acceptance))
+    }
+
+    private static func rootAssignmentDigest(_ draft: RootAssignmentDraft) -> String {
+        let values = [draft.requestID, draft.assistant.rawValue, draft.model, draft.projectDir,
+                      draft.label, draft.objective, draft.scope, draft.constraints,
+                      draft.relevantReferences, draft.acceptance]
+        let canonical = values.map { "\($0.utf8.count):\($0)" }.joined(separator: "|")
+        return RemoteAuth.hex(SHA256.hash(data: Data(canonical.utf8)))
+    }
+
+    static func rootAssignmentLine(id: String, draft: RootAssignmentDraft) -> String {
+        "You are an independently owned Clawdline Feature Root for Root Assignment \(id). "
+          + "Own this feature through implementation, verification, integration, and landing.\n\n"
+          + "OBJECTIVE\n\(draft.objective)\n\nSCOPE\n\(draft.scope)\n\n"
+          + "CONSTRAINTS\n\(draft.constraints)\n\nRELEVANT REFERENCES\n"
+          + "\(draft.relevantReferences)\n\nACCEPTANCE\n\(draft.acceptance)"
+    }
+
+    static func transcriptContainsRootAssignment(_ transcript: String?, assistant: Assistant,
+                                                 assignmentID: String, line: String) -> Bool {
+        guard let transcript,
+              line.hasPrefix("You are an independently owned Clawdline Feature Root for Root "
+                           + "Assignment \(assignmentID).") else { return false }
+        return Transcript.parse(transcript, assistant: assistant, limit: 100).contains {
+            $0.kind == .user && $0.text.contains(line)
+        }
+    }
+
+    static func rootAssignmentReconciliation(
+        stored: RootAssignmentIdentity, candidates: [RootAssignmentIdentity],
+        inventoryComplete: Bool, absenceConfirmed: Bool, delivered: Bool)
+        -> RootAssignmentReconciliation {
+        guard inventoryComplete else { return .wait("stale_inventory") }
+        let exact = candidates.filter {
+            $0.assistant == stored.assistant && $0.pid == stored.pid
+                && $0.processStart == stored.processStart
+                && (stored.conversationID == nil || $0.conversationID == stored.conversationID)
+        }
+        if exact.count > 1 { return .fail("ambiguous_identity") }
+        if let only = exact.first { return .rebind(only) }
+        guard absenceConfirmed else { return .wait("process_missing_unconfirmed") }
+        return delivered ? .inactive("process_lost_after_briefing")
+                         : .fail("process_lost_before_briefing")
+    }
+
+    static func rootAssignmentInitialIdentityReconciliation(
+        candidates: [RootAssignmentIdentity], inventoryComplete: Bool,
+        absenceConfirmed: Bool) -> RootAssignmentReconciliation {
+        guard inventoryComplete else { return .wait("stale_inventory") }
+        if candidates.count > 1 { return .fail("ambiguous_identity") }
+        if let only = candidates.first, only.pid != nil, only.processStart != nil {
+            return .rebind(only)
+        }
+        return absenceConfirmed ? .fail("process_lost_before_briefing")
+                                : .wait("process_missing_unconfirmed")
+    }
+
+    static func rootAssignmentIdentityMatches(_ stored: RootAssignmentIdentity,
+                                              observed: SessionWorkIdentity) -> Bool {
+        guard stored.terminalID == observed.terminalID,
+              observed.assistant == stored.assistant else { return false }
+        if let pid = stored.pid, pid != observed.pid { return false }
+        if let start = stored.processStart,
+           start != observed.processStart?.timeIntervalSince1970 { return false }
+        if let conversation = stored.conversationID,
+           conversation != observed.conversationID { return false }
+        return true
+    }
+
+    static func rootAssignmentPromptTimedOut(state: RootAssignmentState, openedAt: Date,
+                                             now: Date = Date(), briefed: Bool) -> Bool {
+        // A person owns this wait. Unlike the ordinary composer-start deadline, workspace trust
+        // has no automatic answer and therefore no four-minute expiry.
+        state != .blocked && !briefed && now.timeIntervalSince(openedAt) > readyLimit
+    }
+
+    static func rootAssignmentPromptTimeoutAnchor(terminalOpenedAt: Date,
+                                                  trustResumedAt: Date?) -> Date {
+        trustResumedAt ?? terminalOpenedAt
+    }
+
+    private static func replayRootAssignment(_ existing: RootAssignment, digest: String) -> Reply {
+        guard existing.requestDigest == digest else {
+            return .refused(409, "request_conflict",
+                            "request_id was already accepted with different content.")
+        }
+        guard existing.state != .failed else {
+            return .refused(status: 409, code: "request_terminated",
+                message: "That request_id ended in a terminal failure; use a new request_id.",
+                extra: ["assignment_id": existing.id,
+                        "failure": existing.failure ?? "failed"])
+        }
+        return .ok(["ok": true, "replayed": true,
+                    "root_assignment": rootAssignmentPublicRecord(existing)])
+    }
+
+    typealias RootAssignmentStarter = (StartPoints.Place, Assistant, String?)
+        -> StartPoints.Outcome
+
+    static func rootAssignment(
+        _ obj: [String: Any], idempotencyKey: String?,
+        assistantAvailable: (Assistant) -> Bool = { $0.isInstalled },
+        // No shipped source is a workspace-trust authority. A future policy adapter may inject a
+        // positive answer; recent projects and live sessions are deliberately not treated as one.
+        projectApproved: (String) -> Bool = { _ in false },
+        start: RootAssignmentStarter = { place, assistant, model in
+            StartPoints.start(place, assistant: assistant, model: model)
+        }) -> Reply {
+        let draft: RootAssignmentDraft
+        switch rootAssignmentDraft(from: obj) {
+        case .bad(let why): return .refused(422, "bad_root_assignment", why)
+        case .ok(let valid): draft = valid
+        }
+        guard idempotencyKey == draft.requestID else {
+            return .refused(422, "idempotency_mismatch",
+                            "Idempotency-Key must exactly equal request_id.")
+        }
+        let digest = rootAssignmentDigest(draft)
+        load()
+        lock.lock()
+        if let existing = rootAssignments.values.first(where: { $0.requestID == draft.requestID }) {
+            lock.unlock()
+            return replayRootAssignment(existing, digest: digest)
+        }
+        lock.unlock()
+        guard Config.shared.orchestratorEnabled else {
+            return .refused(403, "orchestrator_disabled",
+                            "Root Assignment is switched off in Settings.")
+        }
+        guard assistantAvailable(draft.assistant) else {
+            return .refused(409, "assistant_unavailable",
+                            "The selected assistant is not available on this Mac.")
+        }
+        guard takeDispatchRate() != nil else {
+            return .refused(429, "rate_limited", "Too many launches; wait a few minutes.")
+        }
+        let id = UUID().uuidString.lowercased()
+        let now = Date()
+        let assignment = RootAssignment(
+            id: id, requestID: draft.requestID, requestDigest: digest,
+            assistant: draft.assistant, model: draft.model, projectDir: draft.projectDir,
+            label: draft.label, objective: draft.objective, scope: draft.scope,
+            constraints: draft.constraints, relevantReferences: draft.relevantReferences,
+            acceptance: draft.acceptance, projectApproved: projectApproved(draft.projectDir),
+            created: now, state: .accepted)
+        lock.lock()
+        if let existing = rootAssignments.values.first(where: { $0.requestID == draft.requestID }) {
+            lock.unlock()
+            return replayRootAssignment(existing, digest: digest)
+        }
+        rootAssignments[id] = assignment
+        lock.unlock()
+        guard save() else {
+            lock.lock(); rootAssignments.removeValue(forKey: id); lock.unlock()
+            return .refused(503, "persistence_failed",
+                            "The accepted assignment could not be durably recorded.")
+        }
+        let place = StartPoints.Place(id: StartPoints.id(for: draft.projectDir),
+                                      path: draft.projectDir, label: draft.label, at: now)
+        switch start(place, draft.assistant, draft.model == "default" ? nil : draft.model) {
+        case .refused(let status, let code, let message, let app):
+            lock.lock()
+            var failed = rootAssignments[id] ?? assignment
+            failed.state = .failed; failed.failure = code; failed.endedAt = Date()
+            rootAssignments[id] = failed
+            lock.unlock(); save()
+            reportRootAssignmentTransition(id)
+            var extra: [String: Any] = ["assignment_id": id]
+            if let app { extra["app"] = app }
+            return .refused(status: status, code: code, message: message, extra: extra)
+        case .started(let terminalID, let backend):
+            lock.lock()
+            var opened = rootAssignments[id] ?? assignment
+            opened.state = .terminalOpened
+            opened.terminalOpenedAt = Date()
+            opened.identity = RootAssignmentIdentity(terminalID: terminalID,
+                assistant: draft.assistant, tty: nil, pid: nil, processStart: nil,
+                conversationID: nil)
+            rootAssignments[id] = opened
+            reindex()
+            lock.unlock()
+            guard save() else {
+                lock.lock()
+                var lost = rootAssignments[id] ?? opened
+                lost.state = .failed; lost.failure = "launch_receipt_lost"
+                lost.endedAt = Date(); rootAssignments[id] = lost; reindex()
+                lock.unlock()
+                if !reportRootAssignmentTransition(id) {
+                    RemoteAuth.audit("root_assignment.failed", [
+                        "assignment": id, "state": RootAssignmentState.failed.rawValue,
+                        "why": "launch_receipt_lost", "terminal": terminalID,
+                        "transition": "failed|launch_receipt_lost",
+                    ])
+                }
+                return .refused(status: 503, code: "launch_receipt_lost",
+                    message: "The tab opened but its durable terminal receipt was lost.",
+                    extra: ["assignment_id": id])
+            }
+            RemoteAuth.audit("root_assignment.open", ["assignment": id,
+                "request": draft.requestID, "terminal": terminalID,
+                "backend": backend.rawValue, "assistant": draft.assistant.rawValue])
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return .ok(["ok": true, "replayed": false,
+                        "root_assignment": rootAssignmentPublicRecord(opened)])
         }
     }
 
@@ -7616,12 +8139,43 @@ enum Orchestrator {
             handoffs[id] = failed
             interruptedHandoffs.append(id)
         }
+        var lostAssignmentReceipts: [String] = []
+        // `accepted` was persisted before StartPoints was invoked. Reopening it could duplicate a
+        // tab whose side effect happened just before the crash, so this boundary fails closed.
+        for (id, assignment) in rootAssignments where assignment.state == .accepted {
+            var failed = assignment
+            failed.state = .failed
+            failed.failure = "launch_receipt_lost"
+            failed.endedAt = Date()
+            rootAssignments[id] = failed
+            lostAssignmentReceipts.append(id)
+        }
+        var incompleteAssignmentIdentities: [String] = []
+        for (id, assignment) in rootAssignments
+            where ![.accepted, .failed, .inactive].contains(assignment.state)
+                && (assignment.identity?.pid == nil
+                    || assignment.identity?.processStart == nil) {
+            var failed = assignment
+            failed.state = .failed
+            failed.failure = "restart_identity_incomplete"
+            failed.endedAt = Date()
+            rootAssignments[id] = failed
+            incompleteAssignmentIdentities.append(id)
+        }
         lock.unlock()
         for id in interruptedHandoffs {
             RemoteAuth.audit("handoff.undelivered", ["handoff": id, "why": "app_restarted"])
         }
+        for id in lostAssignmentReceipts {
+            reportRootAssignmentTransition(id)
+        }
+        for id in incompleteAssignmentIdentities {
+            reportRootAssignmentTransition(id)
+        }
         let rearmed = rearmLingers()
-        if !orphaned.isEmpty || !interruptedHandoffs.isEmpty || rearmed { save() }
+        if !orphaned.isEmpty || !interruptedHandoffs.isEmpty
+            || !lostAssignmentReceipts.isEmpty || !incompleteAssignmentIdentities.isEmpty
+            || rearmed { save() }
         lock.lock()
         let beforeCompletionRecovery = tasks
         lock.unlock()
@@ -7716,7 +8270,7 @@ enum Orchestrator {
         // two held together.
         SessionNaming.forget(closedFrom: visibleTerminals)
         lock.lock()
-        pruneClosedHandoffTitles(visible: visibleTerminals)
+        pruneClosedHandoffTitles(visible: visibleTerminals, identities: executorIdentities)
         beatSequence += 1
         let sequence = beatSequence
         let overlapping = beatsInFlight > 0
@@ -7728,6 +8282,9 @@ enum Orchestrator {
             }
             .map(\.id)
         let liveHandoffs = Array(handoffDeliveries.keys)
+        let liveRootAssignments = rootAssignments.values.filter {
+            ![.failed, .inactive].contains($0.state)
+        }.map(\.id)
         lock.unlock()
         defer {
             lock.lock(); beatsInFlight -= 1; lock.unlock()
@@ -7746,7 +8303,13 @@ enum Orchestrator {
         scheduleCompletionPump()
 
         for id in liveHandoffs { scheduleHandoffStep(id) }
-        if fromTimer, !liveHandoffs.isEmpty { SessionWatch.shared.nudge() }
+        for id in liveRootAssignments {
+            scheduleRootAssignmentStep(id, snapshot: watchSnapshot,
+                                       identities: executorIdentities)
+        }
+        if fromTimer, !liveHandoffs.isEmpty || !liveRootAssignments.isEmpty {
+            SessionWatch.shared.nudge()
+        }
 
         guard !liveIDs.isEmpty else { return }
 
@@ -7798,6 +8361,7 @@ enum Orchestrator {
     /// Apple Event is blocked.
     private static var briefingStepsInFlight: Set<String> = []
     private static var handoffStepsInFlight: Set<String> = []
+    private static var rootAssignmentStepsInFlight: Set<String> = []
 
     private static func scheduleBriefStep(_ task: Task) {
         guard !briefingStepsInFlight.contains(task.id) else { return }
@@ -7823,6 +8387,27 @@ enum Orchestrator {
             DispatchQueue.main.async { handoffStepsInFlight.remove(id) }
         }
         if !admitted { handoffStepsInFlight.remove(id) }
+    }
+
+    private static func scheduleRootAssignmentStep(
+        _ id: String, snapshot: SessionWatch.IdentitySnapshot,
+        identities: [SessionWorkIdentity]) {
+        guard !rootAssignmentStepsInFlight.contains(id) else { return }
+        rootAssignmentStepsInFlight.insert(id)
+        lock.lock(); let channel = rootAssignments[id]?.identity?.terminalID; lock.unlock()
+        let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: channel) {
+            let reconciled = reconcileRootAssignment(id, snapshot: snapshot,
+                                                     identities: identities)
+            let changed = rootAssignmentStep(id) || reconciled
+            DispatchQueue.main.async {
+                rootAssignmentStepsInFlight.remove(id)
+                if changed {
+                    save(); RemoteServer.shared.broadcastOrchestrator()
+                    SessionWatch.shared.labelsDidChange()
+                }
+            }
+        }
+        if !admitted { rootAssignmentStepsInFlight.remove(id) }
     }
 
     /// How long a tab has to reach a prompt before the task gives up on it.
@@ -8054,6 +8639,265 @@ enum Orchestrator {
                                                         "child": task.childTerminalId ?? "?",
                                                         "attempt": String(task.injectAttempts)])
         return true
+    }
+
+    private static func reconcileRootAssignment(
+        _ id: String, snapshot: SessionWatch.IdentitySnapshot,
+        identities: [SessionWorkIdentity]) -> Bool {
+        lock.lock()
+        guard var assignment = rootAssignments[id], let stored = assignment.identity,
+              ![.failed, .inactive].contains(assignment.state) else {
+            lock.unlock(); return false
+        }
+        lock.unlock()
+        let candidates = identities.compactMap { identity -> RootAssignmentIdentity? in
+            guard identity.assistant == stored.assistant else { return nil }
+            return RootAssignmentIdentity(
+                terminalID: identity.terminalID, assistant: stored.assistant, tty: identity.tty,
+                pid: identity.pid, processStart: identity.processStart?.timeIntervalSince1970,
+                conversationID: identity.conversationID)
+        }
+        // Before a process tuple has appeared, only the exact terminal opened by StartPoints may
+        // seed it. A different tab can never fill a partially accepted assignment.
+        if stored.pid == nil || stored.processStart == nil {
+            let exactTerminal = candidates.filter { $0.terminalID == stored.terminalID }
+            let distinct = assignment.missingGeneration != nil
+                && (assignment.missingGeneration != snapshot.generation
+                    || assignment.missingEpoch != snapshot.epoch)
+            let absenceConfirmed = distinct && (assignment.missingObservedAt.map {
+                Date().timeIntervalSince($0) >= 60
+            } ?? false)
+            switch rootAssignmentInitialIdentityReconciliation(
+                candidates: exactTerminal, inventoryComplete: snapshot.complete,
+                absenceConfirmed: absenceConfirmed) {
+            case .rebind(let adopted):
+                assignment.identity = adopted
+                assignment.missingObservedAt = nil
+                assignment.missingGeneration = nil
+                assignment.missingEpoch = nil
+                assignment.reconciliation = nil
+                lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock(); save()
+                return true
+            case .wait(let code):
+                guard assignment.reconciliation != code
+                    || (code == "process_missing_unconfirmed"
+                        && assignment.missingObservedAt == nil) else { return false }
+                assignment.reconciliation = code
+                if code == "process_missing_unconfirmed", assignment.missingObservedAt == nil {
+                    assignment.missingObservedAt = Date()
+                    assignment.missingGeneration = snapshot.generation
+                    assignment.missingEpoch = snapshot.epoch
+                }
+                lock.lock(); rootAssignments[id] = assignment; lock.unlock(); save()
+                return true
+            case .fail(let code):
+                assignment.state = .failed
+                assignment.failure = code
+                assignment.reconciliation = nil
+                assignment.endedAt = Date()
+                lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock(); save()
+                reportRootAssignmentTransition(id)
+                return true
+            case .inactive:
+                return false
+            }
+        }
+        let distinctCompleteScan = assignment.missingGeneration != nil
+            && (assignment.missingGeneration != snapshot.generation
+                || assignment.missingEpoch != snapshot.epoch)
+        let absentLongEnough = distinctCompleteScan && (assignment.missingObservedAt.map {
+            Date().timeIntervalSince($0) >= 60
+        } ?? false)
+        let beforeIdentity = assignment.identity
+        let beforeState = assignment.state
+        let beforeFailure = assignment.failure
+        let beforeReconciliation = assignment.reconciliation
+        let beforeMissingAt = assignment.missingObservedAt
+        let beforeMissingGeneration = assignment.missingGeneration
+        let beforeMissingEpoch = assignment.missingEpoch
+        switch rootAssignmentReconciliation(
+            stored: stored, candidates: candidates, inventoryComplete: snapshot.complete,
+            absenceConfirmed: absentLongEnough,
+            delivered: assignment.briefedAt != nil) {
+        case .rebind(let identity):
+            assignment.identity = identity
+            assignment.missingObservedAt = nil
+            assignment.missingGeneration = nil
+            assignment.missingEpoch = nil
+            assignment.reconciliation = nil
+        case .wait(let code):
+            assignment.reconciliation = code
+            if code == "process_missing_unconfirmed", assignment.missingObservedAt == nil {
+                assignment.missingObservedAt = Date()
+                assignment.missingGeneration = snapshot.generation
+                assignment.missingEpoch = snapshot.epoch
+            }
+        case .fail(let code):
+            assignment.state = .failed; assignment.failure = code; assignment.endedAt = Date()
+            assignment.reconciliation = nil
+        case .inactive(let code):
+            assignment.state = .inactive; assignment.failure = code; assignment.endedAt = Date()
+            assignment.reconciliation = nil
+        }
+        guard assignment.identity != beforeIdentity || assignment.state != beforeState
+            || assignment.failure != beforeFailure
+            || assignment.reconciliation != beforeReconciliation
+            || assignment.missingObservedAt != beforeMissingAt
+            || assignment.missingGeneration != beforeMissingGeneration
+            || assignment.missingEpoch != beforeMissingEpoch else { return false }
+        lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock(); save()
+        reportRootAssignmentTransition(id)
+        return true
+    }
+
+    @discardableResult
+    private static func rootAssignmentStep(_ id: String) -> Bool {
+        lock.lock()
+        guard var assignment = rootAssignments[id], let identity = assignment.identity,
+              identity.pid != nil, identity.processStart != nil,
+              ![.accepted, .failed, .inactive, .active].contains(assignment.state) else {
+            lock.unlock(); return false
+        }
+        lock.unlock()
+        let now = Date()
+        let timedOut = rootAssignmentPromptTimedOut(
+            state: assignment.state,
+            openedAt: rootAssignmentPromptTimeoutAnchor(
+                terminalOpenedAt: assignment.terminalOpenedAt ?? assignment.created,
+                trustResumedAt: assignment.promptTimeoutStartedAt),
+            now: now, briefed: assignment.briefedAt != nil)
+        if case .fail(let code) = rootAssignmentStepDecision(
+            state: assignment.state, promptTimedOut: timedOut, trust: .none,
+            answeredTrustMenu: assignment.answeredTrustMenu, inputReady: false,
+            delivery: nil, injectAttempts: assignment.injectAttempts) {
+            assignment.state = .failed; assignment.failure = code; assignment.endedAt = now
+            lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock()
+            reportRootAssignmentTransition(id)
+            return true
+        }
+        guard let target = target(withID: identity.terminalID),
+              target.assistant == assignment.assistant else { return false }
+        let screen = Targets.capture(target)
+        let trustMenu = screen.flatMap {
+            SessionState.menu($0, assistant: assignment.assistant, hookWaiting: true)
+        }
+        let trust = rootAssignmentTrustDecision(
+            projectApproved: assignment.projectApproved, menu: trustMenu,
+            answeredTrustMenu: assignment.answeredTrustMenu)
+        let inputReady = briefingInputReady(screen, assistant: assignment.assistant)
+        let firstDecision = rootAssignmentStepDecision(
+            state: assignment.state, promptTimedOut: timedOut, trust: trust,
+            answeredTrustMenu: assignment.answeredTrustMenu, inputReady: inputReady,
+            delivery: nil, injectAttempts: assignment.injectAttempts)
+        switch firstDecision {
+        case .activate:
+            assignment.state = .active; assignment.activeAt = now
+            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            RemoteAuth.audit("root_assignment.active", ["assignment": id])
+            return true
+        case .block:
+            guard assignment.state != .blocked
+                || assignment.blocker != "workspace_trust_required" else { return false }
+            assignment.state = .blocked
+            assignment.blocker = "workspace_trust_required"
+            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            reportRootAssignmentTransition(id)
+            return true
+        case .answerTrust(let row):
+            // The receipt must survive a restart before any digit can reach the terminal. A
+            // persistence refusal leaves the picker untouched and restores the in-memory bit.
+            assignment.answeredTrustMenu = true
+            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            guard save() else {
+                lock.lock()
+                if var current = rootAssignments[id], current.answeredTrustMenu {
+                    current.answeredTrustMenu = false; rootAssignments[id] = current
+                }
+                lock.unlock()
+                return false
+            }
+            _ = Targets.answer(UInt8(0x30 + row), to: target)
+            RemoteAuth.audit("root_assignment.trust", ["assignment": id,
+                                                        "policy": "approved_workspace"])
+            return true
+        case .promptReady:
+            let resumedFromTrust = assignment.state == .blocked
+            assignment.state = .promptReady; assignment.promptReadyAt = now
+            if resumedFromTrust { assignment.promptTimeoutStartedAt = now }
+            assignment.blocker = nil
+            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            return true
+        case .wait:
+            return false
+        case .fail(let code):
+            assignment.state = .failed; assignment.failure = code; assignment.endedAt = now
+            lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock()
+            reportRootAssignmentTransition(id)
+            return true
+        case .inspectDelivery:
+            break
+        case .briefed, .inject:
+            return false
+        }
+        let draft = RootAssignmentDraft(
+            requestID: assignment.requestID, assistant: assignment.assistant,
+            model: assignment.model, projectDir: assignment.projectDir, label: assignment.label,
+            objective: assignment.objective, scope: assignment.scope,
+            constraints: assignment.constraints,
+            relevantReferences: assignment.relevantReferences, acceptance: assignment.acceptance)
+        let line = rootAssignmentLine(id: id, draft: draft)
+        var transcriptKnown = false
+        var recorded = false
+        switch assignment.assistant {
+        case .claude:
+            _ = Transcript.locate(cwd: assignment.projectDir, tabTitle: target.name,
+                startedAt: assignment.terminalOpenedAt ?? assignment.created,
+                sessionID: identity.conversationID, accepting: { url in
+                    transcriptKnown = true
+                    let text = try? String(contentsOf: url, encoding: .utf8)
+                    recorded = transcriptContainsRootAssignment(
+                        text, assistant: .claude, assignmentID: id, line: line)
+                    return recorded
+                })
+        case .codex:
+            if let url = Codex.locate(cwd: assignment.projectDir,
+                                      startedAt: assignment.terminalOpenedAt ?? assignment.created,
+                                      pid: identity.pid),
+               let text = try? String(contentsOf: url, encoding: .utf8) {
+                transcriptKnown = true
+                recorded = transcriptContainsRootAssignment(
+                    text, assistant: .codex, assignmentID: id, line: line)
+            }
+        }
+        let retryDelayElapsed = assignment.lastInjectAt.map {
+            now.timeIntervalSince($0) >= briefingReceiptDelay
+        } ?? true
+        let deliveryDecision = rootAssignmentStepDecision(
+            state: assignment.state, promptTimedOut: timedOut, trust: .none,
+            answeredTrustMenu: assignment.answeredTrustMenu, inputReady: true,
+            delivery: RootAssignmentDeliveryEvidence(
+                transcriptKnown: transcriptKnown, recorded: recorded,
+                retryDelayElapsed: retryDelayElapsed),
+            injectAttempts: assignment.injectAttempts)
+        switch deliveryDecision {
+        case .briefed:
+            assignment.state = .briefed; assignment.briefedAt = Date()
+            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            RemoteAuth.audit("root_assignment.briefed", ["assignment": id])
+            return true
+        case .fail(let code):
+            assignment.state = .failed; assignment.failure = code; assignment.endedAt = now
+            lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock()
+            reportRootAssignmentTransition(id)
+            return true
+        case .inject:
+            assignment.injectAttempts += 1; assignment.lastInjectAt = now
+            if Targets.send(line, to: target) != nil { assignment.lastInjectAt = nil }
+            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            return true
+        default:
+            return false
+        }
     }
 
     /// Advance one handoff while it is waiting for a composer or a transcript receipt. This is
@@ -10779,7 +11623,85 @@ enum Orchestrator {
         return stored(envelope)
     }
 
+    static func rootAssignmentRecords() -> [[String: Any]] {
+        load()
+        lock.lock(); let rows = rootAssignments.values.sorted { $0.created > $1.created }
+        lock.unlock()
+        return rows.map(rootAssignmentPublicRecord)
+    }
+
+    static func rootAssignmentRecord(id: String) -> [String: Any]? {
+        load()
+        lock.lock(); let row = rootAssignments[id]; lock.unlock()
+        return row.map(rootAssignmentPublicRecord)
+    }
+
+    static func rootAssignmentSessionRecord(identity observed: SessionWorkIdentity)
+        -> [String: Any]? {
+        load()
+        lock.lock()
+        let assignments = Array(rootAssignments.values)
+        lock.unlock()
+        return rootAssignmentSessionProjection(assignments: assignments, identity: observed)
+    }
+
+    static func rootAssignmentSessionProjection(assignments: [RootAssignment],
+                                                identity observed: SessionWorkIdentity)
+        -> [String: Any]? {
+        let matches = assignments.filter { assignment in
+            guard let stored = assignment.identity,
+                  ![.failed, .inactive].contains(assignment.state) else { return false }
+            return rootAssignmentIdentityMatches(stored, observed: observed)
+        }
+        guard matches.count == 1, let assignment = matches.first else { return nil }
+        return ["id": assignment.id, "label": assignment.label,
+                "state": assignment.state.rawValue, "ownership": "independent_root",
+                "explanation": "owns_feature_lifecycle"]
+    }
+
+    private static func rootAssignmentPublicRecord(_ assignment: RootAssignment)
+        -> [String: Any] {
+        var row: [String: Any] = [
+            "id": assignment.id, "request_id": assignment.requestID,
+            "assistant": assignment.assistant.rawValue, "model": assignment.model,
+            "project_dir": assignment.projectDir, "label": assignment.label,
+            "state": assignment.state.rawValue,
+            "assignment": ["objective": assignment.objective, "scope": assignment.scope,
+                "constraints": assignment.constraints,
+                "relevant_references": assignment.relevantReferences,
+                "acceptance": assignment.acceptance],
+            "created_at": Int(assignment.created.timeIntervalSince1970),
+            "ownership": "independent_root"
+        ]
+        if let identity = assignment.identity {
+            var opened: [String: Any] = ["terminal_id": identity.terminalID]
+            if let tty = identity.tty { opened["tty"] = tty }
+            if let pid = identity.pid { opened["pid"] = Int(pid) }
+            if let start = identity.processStart { opened["process_started_at"] = start }
+            if let conversation = identity.conversationID {
+                opened["conversation_id"] = conversation
+            }
+            row["executor"] = opened
+        }
+        if let value = assignment.terminalOpenedAt { row["terminal_opened_at"] = Int(value.timeIntervalSince1970) }
+        if let value = assignment.promptReadyAt { row["prompt_ready_at"] = Int(value.timeIntervalSince1970) }
+        if let value = assignment.promptTimeoutStartedAt { row["prompt_timeout_started_at"] = Int(value.timeIntervalSince1970) }
+        if let value = assignment.briefedAt { row["briefed_at"] = Int(value.timeIntervalSince1970) }
+        if let value = assignment.activeAt { row["active_at"] = Int(value.timeIntervalSince1970) }
+        if let value = assignment.endedAt { row["ended_at"] = Int(value.timeIntervalSince1970) }
+        if let value = assignment.blocker { row["blocker"] = ["code": value] }
+        if let value = assignment.failure { row["failure"] = ["code": value] }
+        if let value = assignment.reconciliation {
+            row["reconciliation"] = ["state": value]
+        }
+        return row
+    }
+
     static func saveForTesting() { _ = save() }
+
+    static func holdRootAssignmentForTesting(_ assignment: RootAssignment) {
+        lock.lock(); rootAssignments[assignment.id] = assignment; reindex(); lock.unlock()
+    }
 
     /// The stored fields only — safe off the main thread, used where a route already holds the
     /// answer and only needs its shape.
@@ -11329,6 +12251,11 @@ enum Orchestrator {
             guard let envelope = handoff(from: row) else { continue }
             foundHandoffs[envelope.id] = envelope
         }
+        var foundRootAssignments: [String: RootAssignment] = [:]
+        for row in obj["root_assignments"] as? [[String: Any]] ?? [] {
+            guard let assignment = rootAssignment(from: row) else { continue }
+            foundRootAssignments[assignment.id] = assignment
+        }
         var foundWaits: [String: CoordinationWait] = [:]
         for row in obj["coordination_waits"] as? [[String: Any]] ?? [] {
             guard let wait = coordinationWait(from: row) else { continue }
@@ -11374,6 +12301,7 @@ enum Orchestrator {
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
+        rootAssignments = foundRootAssignments
         coordinationWaits = foundWaits
         sessionDeliveries = foundSessionDeliveries
         sessionSelfStates = foundSelfStates
@@ -11410,6 +12338,8 @@ enum Orchestrator {
         let rows = tasks.values.sorted { $0.created < $1.created }.map { stored($0) }
         let handoffRows = handoffs.values.sorted { $0.created < $1.created }
             .map { stored($0) }
+        let rootAssignmentRows = rootAssignments.values.sorted { $0.created < $1.created }
+            .map { stored($0) }
         let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
             .map { stored($0) }
         let sessionDeliveryRows = sessionDeliveries.values
@@ -11428,6 +12358,7 @@ enum Orchestrator {
         let restart = restartReceipt.map(stored)
         lock.unlock()
         var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
+                                  "root_assignments": rootAssignmentRows,
                                   "coordination_waits": waitRows,
                                   "session_deliveries": sessionDeliveryRows,
                                   "session_self_states": sessionSelfStateRows,
@@ -11710,6 +12641,57 @@ enum Orchestrator {
         return out
     }
 
+    static func stored(_ assignment: RootAssignment) -> [String: Any] {
+        var out: [String: Any] = [
+            "id": assignment.id, "request_id": assignment.requestID,
+            "request_digest": assignment.requestDigest,
+            "assistant": assignment.assistant.rawValue, "model": assignment.model,
+            "project_dir": assignment.projectDir, "label": assignment.label,
+            "objective": assignment.objective, "scope": assignment.scope,
+            "constraints": assignment.constraints,
+            "relevant_references": assignment.relevantReferences,
+            "acceptance": assignment.acceptance,
+            "project_approved": assignment.projectApproved,
+            "created": assignment.created.timeIntervalSince1970,
+            "state": assignment.state.rawValue,
+            "inject_attempts": assignment.injectAttempts,
+            "answered_trust_menu": assignment.answeredTrustMenu,
+        ]
+        if let identity = assignment.identity {
+            var row: [String: Any] = ["terminal_id": identity.terminalID,
+                                      "assistant": identity.assistant.rawValue]
+            if let tty = identity.tty { row["tty"] = tty }
+            if let pid = identity.pid { row["pid"] = Int(pid) }
+            if let start = identity.processStart { row["process_start"] = start }
+            if let conversation = identity.conversationID { row["conversation_id"] = conversation }
+            out["identity"] = row
+        }
+        func put(_ key: String, _ value: Date?) {
+            if let value { out[key] = value.timeIntervalSince1970 }
+        }
+        put("terminal_opened_at", assignment.terminalOpenedAt)
+        put("prompt_ready_at", assignment.promptReadyAt)
+        put("prompt_timeout_started_at", assignment.promptTimeoutStartedAt)
+        put("briefed_at", assignment.briefedAt)
+        put("active_at", assignment.activeAt)
+        put("ended_at", assignment.endedAt)
+        put("last_inject_at", assignment.lastInjectAt)
+        put("missing_observed_at", assignment.missingObservedAt)
+        if let blocker = assignment.blocker { out["blocker"] = blocker }
+        if let failure = assignment.failure { out["failure"] = failure }
+        if let reconciliation = assignment.reconciliation {
+            out["reconciliation"] = reconciliation
+        }
+        if let transition = assignment.reportedTransition {
+            out["reported_transition"] = transition
+        }
+        if let generation = assignment.missingGeneration {
+            out["missing_generation"] = generation
+        }
+        if let epoch = assignment.missingEpoch { out["missing_epoch"] = epoch }
+        return out
+    }
+
     static func stored(_ wait: CoordinationWait) -> [String: Any] {
         [
             "id": wait.id, "repository": wait.repository, "paths": wait.paths,
@@ -11941,6 +12923,67 @@ enum Orchestrator {
         return HandoffEnvelope(id: id, projectDir: projectDir, title: title,
                                fromSession: from, created: Date(timeIntervalSince1970: created),
                                state: state)
+    }
+
+    static func rootAssignment(from obj: [String: Any]) -> RootAssignment? {
+        func text(_ key: String, _ limit: Int = 8_192) -> String? {
+            guard let value = obj[key] as? String, !value.isEmpty,
+                  value.utf8.count <= limit else { return nil }
+            return value
+        }
+        guard let id = text("id", 64), isTaskID(id),
+              let requestID = text("request_id", 64), isTaskID(requestID),
+              let digest = text("request_digest", 128), digest.count == 64,
+              let assistant = text("assistant", 16).flatMap(Assistant.init(rawValue:)),
+              let model = text("model", 64),
+              model == "default" || StartPoints.modelName(model) == model,
+              let projectDir = text("project_dir", 4_096), StartPoints.usable(projectDir),
+              let label = text("label", 200),
+              let objective = text("objective"), let scope = text("scope"),
+              let constraints = text("constraints"),
+              let references = text("relevant_references"),
+              let acceptance = text("acceptance"),
+              let created = obj["created"] as? Double,
+              let state = text("state", 32).flatMap(RootAssignmentState.init(rawValue:)) else {
+            return nil
+        }
+        var assignment = RootAssignment(
+            id: id, requestID: requestID, requestDigest: digest, assistant: assistant,
+            model: model, projectDir: projectDir, label: label, objective: objective,
+            scope: scope, constraints: constraints, relevantReferences: references,
+            acceptance: acceptance, projectApproved: obj["project_approved"] as? Bool ?? false,
+            created: Date(timeIntervalSince1970: created), state: state)
+        if let row = obj["identity"] as? [String: Any],
+           let terminal = row["terminal_id"] as? String,
+           let identityAssistant = (row["assistant"] as? String).flatMap(Assistant.init(rawValue:)),
+           identityAssistant == assistant {
+            assignment.identity = RootAssignmentIdentity(
+                terminalID: terminal, assistant: identityAssistant, tty: row["tty"] as? String,
+                pid: (row["pid"] as? Int).map(Int32.init),
+                processStart: row["process_start"] as? Double,
+                conversationID: row["conversation_id"] as? String)
+        }
+        func date(_ key: String) -> Date? {
+            (obj[key] as? Double).map(Date.init(timeIntervalSince1970:))
+        }
+        assignment.terminalOpenedAt = date("terminal_opened_at")
+        assignment.promptReadyAt = date("prompt_ready_at")
+        assignment.promptTimeoutStartedAt = date("prompt_timeout_started_at")
+        assignment.briefedAt = date("briefed_at")
+        assignment.activeAt = date("active_at")
+        assignment.endedAt = date("ended_at")
+        assignment.lastInjectAt = date("last_inject_at")
+        assignment.missingObservedAt = date("missing_observed_at")
+        assignment.missingGeneration = obj["missing_generation"] as? Int
+        assignment.missingEpoch = obj["missing_epoch"] as? String
+        assignment.injectAttempts = min(max(obj["inject_attempts"] as? Int ?? 0, 0),
+                                        briefingAttemptLimit)
+        assignment.answeredTrustMenu = obj["answered_trust_menu"] as? Bool ?? false
+        assignment.blocker = obj["blocker"] as? String
+        assignment.failure = obj["failure"] as? String
+        assignment.reconciliation = obj["reconciliation"] as? String
+        assignment.reportedTransition = obj["reported_transition"] as? String
+        return assignment
     }
 
     static func task(from obj: [String: Any]) -> Task? {
@@ -12210,12 +13253,17 @@ enum Orchestrator {
         let oldSessionDeliveryIDs = sessionDeliveries.values
             .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
             .map { $0.identity.terminalID }
+        let oldRootAssignmentIDs = rootAssignmentCleanupIDs(rootAssignments.values.map {
+            RootAssignmentCleanupCandidate(id: $0.id, state: $0.state, created: $0.created)
+        })
         if !removable.isEmpty {
             for task in removable { tasks.removeValue(forKey: task.id) }
         }
         for id in oldSessionDeliveryIDs { sessionDeliveries.removeValue(forKey: id) }
+        for id in oldRootAssignmentIDs { rootAssignments.removeValue(forKey: id) }
         lock.unlock()
-        if !removable.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty {
+        if !removable.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty
+            || !oldRootAssignmentIDs.isEmpty {
             save()
         }
         let retained = Set(all.filter { !removedIDs.contains($0.id) }.map(\.id))
@@ -12353,6 +13401,7 @@ enum Orchestrator {
         restartReceipt = nil
         handoffs = [:]
         handoffDeliveries = [:]
+        rootAssignments = [:]
         coordinationWaits = [:]
         sessionDeliveries = [:]
         sessionSelfStates = [:]
@@ -12383,11 +13432,13 @@ enum Orchestrator {
         completionPumpGeneration += 1
         workspaceOverlapObserverForTesting = nil
         rootNotificationObserverForTesting = nil
+        rootAssignmentAuditObserverForTesting = nil
         attachedSenderForTesting = nil
         attachmentInventoryForTesting = nil
         taskStarterForTesting = nil
         agentPushForTesting = nil
         titlesByTerminal = [:]
+        suppressedRootAssignmentLabels = []
         rolesByTerminal = [:]
         loaded = false
         lock.unlock()

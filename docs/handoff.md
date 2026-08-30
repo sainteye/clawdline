@@ -34,6 +34,12 @@ the differences all come from one fact: **the session a handoff opens is a new r
 | when the sender closes | its live tasks are cancelled and their tabs closed | nothing happens to it. It was never the sender's |
 | what the app reads | `task.json`, strictly validated | the *existence* of `handoff.md`, and nothing inside it |
 
+Root Assignment is the distinct fourth motion: it opens a root in nobody's tree for a *new*
+Feature, stores its five-field assignment directly, and owns no return/result contract. A handoff
+continues the sender's existing REFERENCES/VERIFICATION/OPEN THREADS; a Root Assignment receives
+only objective, scope, constraints, relevant references, and acceptance. Neither may impersonate
+the other.
+
 <!-- clawdline-dispatch-role-contract:v1 -->
 
 - **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
@@ -43,10 +49,10 @@ the differences all come from one fact: **the session a handoff opens is a new r
   from OPEN THREADS.
 - **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
   detached automation. It is never a Root and never a Major Feature owner.
-- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
-  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
-  it must have a public protocol, durable record, briefing, and UI classification distinct from a
-  child task and a handoff.
+- **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
+  ordinary independent Root and briefs only objective, scope, constraints, relevant references,
+  and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
+  detached, timeout, secret, result, parent, or landing lineage.
 
 <!-- /clawdline-dispatch-role-contract:v1 -->
 

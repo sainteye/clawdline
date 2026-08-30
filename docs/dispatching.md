@@ -41,17 +41,17 @@ choose follow-up work, integrate safely, and never equate delegation with comple
   from OPEN THREADS.
 - **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
   detached automation. It is never a Root and never a Major Feature owner.
-- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
-  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
-  it must have a public protocol, durable record, briefing, and UI classification distinct from a
-  child task and a handoff.
+- **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
+  ordinary independent Root and briefs only objective, scope, constraints, relevant references,
+  and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
+  detached, timeout, secret, result, parent, or landing lineage.
 
 <!-- /clawdline-dispatch-role-contract:v1 -->
 
 Work has independent Feature ownership when it produces a formal deliverable, owns a landing
-obligation, spans more than one focused change, or may outlive the current turn. Until Root
-Assignment exists, that is an explicit capability gap: do not route it through detached automation,
-and do not manufacture a continuation handoff for work that has no prior line to continue.
+obligation, spans more than one focused change, or may outlive the current turn. Launch that work
+through Root Assignment; do not route it through detached automation or manufacture a continuation
+handoff for work that has no prior line to continue.
 
 A Clawdline child rooted under Clawdfather and a provider-native subagent cannot own that Feature.
 The latter may perform short, disposable, normally read-only research, calculation or focused

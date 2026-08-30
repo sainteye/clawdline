@@ -673,6 +673,7 @@ final class RemoteServer: @unchecked Sendable {
     /// the paired-device idempotency table used by session routes.
     static func isOrchestratorTerminalWorkerRoute(_ path: String) -> Bool {
         if path == "/v1/orchestrator/tasks" || path == "/v1/orchestrator/handoffs"
+            || path == "/v1/orchestrator/root-assignments"
             || path == "/v1/orchestrator/waits" { return true }
         if path.hasPrefix("/v1/orchestrator/schedules/") && path.hasSuffix("/run") {
             return true
@@ -1249,6 +1250,18 @@ final class RemoteServer: @unchecked Sendable {
         // Root sessions dispatching child sessions. See Sources/Orchestrator.swift and
         // docs/orchestrator.md; who may call what is decided above, where `orchestratorAuthed`
         // is computed.
+
+        case ("POST", "/v1/orchestrator/root-assignments"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Launching an independent Feature Root needs the orchestrator token.")
+            }
+            guard let body = try? JSONSerialization.jsonObject(with: request.body),
+                  let obj = body as? [String: Any] else {
+                return .error(400, "bad_request", "A JSON Root Assignment request is required.")
+            }
+            return answer(Orchestrator.rootAssignment(
+                obj, idempotencyKey: request.headers["idempotency-key"]))
 
         case ("POST", "/v1/orchestrator/handoffs"):
             guard orchestratorAuthed else {
@@ -2016,6 +2029,27 @@ final class RemoteServer: @unchecked Sendable {
                 }
             }
             return .json(["usage": result.payload])
+
+        case ("GET", "/v1/orchestrator/root-assignments"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reading Root Assignments needs the orchestrator token.")
+            }
+            return .json(["root_assignments": Orchestrator.rootAssignmentRecords(),
+                          "at": Int(Date().timeIntervalSince1970)])
+
+        case ("GET", let path) where path.hasPrefix("/v1/orchestrator/root-assignments/"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reading a Root Assignment needs the orchestrator token.")
+            }
+            let raw = String(path.dropFirst("/v1/orchestrator/root-assignments/".count))
+            guard !raw.isEmpty, !raw.contains("/"),
+                  let record = Orchestrator.rootAssignmentRecord(
+                    id: raw.removingPercentEncoding ?? raw) else {
+                return .error(404, "not_found", "No Root Assignment named that")
+            }
+            return .json(["root_assignment": record])
 
         case ("GET", "/v1/orchestrator/tasks"):
             return .json(["tasks": Orchestrator.records(),
@@ -3041,6 +3075,12 @@ final class RemoteServer: @unchecked Sendable {
         if request.path == "/v1/orchestrator/waits" {
             let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
             return (body?["owner_session_id"] as? String).map { [$0] } ?? []
+        }
+        if request.path == "/v1/orchestrator/root-assignments" {
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+            let requestID = body?["request_id"] as? String
+                ?? request.headers["idempotency-key"] ?? "unknown"
+            return ["root-assignment:" + requestID]
         }
         if request.path.hasPrefix("/v1/orchestrator/waits/")
             && request.path.hasSuffix("/release") {
@@ -4554,6 +4594,9 @@ final class RemoteServer: @unchecked Sendable {
             // already reads the whole record at `GET /v1/orchestrator/tasks`, so this discloses
             // nothing new — and it is the one address that needs no label matching at all.
             if let role = Orchestrator.role(forTerminal: session.id) { row["taskId"] = role.taskID }
+            if let assignment = Orchestrator.rootAssignmentSessionRecord(identity: identity) {
+                row["root_assignment"] = assignment
+            }
             let live = coordinatorProjectionSession(
                 identity: identity, label: session.displayLabel,
                 cwd: Targets.workingDirectory(of: session), workState: work.state,
@@ -4740,6 +4783,9 @@ final class RemoteServer: @unchecked Sendable {
             identityMatches: identityMatches ?? sessionIdentityMatchCount(for: identity),
             registrySnapshot: closeabilityRegistry).wire
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
+        if let assignment = Orchestrator.rootAssignmentSessionRecord(identity: identity) {
+            out["root_assignment"] = assignment
+        }
         let coordination = Orchestrator.coordination(forTerminal: session.id)
         if !coordination.waitingOn.isEmpty || !coordination.waitedOnBy.isEmpty {
             let waitingOn = coordination.waitingOn.map { raw -> [String: Any] in

@@ -50,16 +50,15 @@ capacity allows. It also owns the small-work pool below.
   from OPEN THREADS.
 - **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
   detached automation. It is never a Root and never a Major Feature owner.
-- **Root Assignment / Feature Launch.** This is not implemented. The future primitive opens an
-  ordinary Root and briefs only objective, scope, constraints, relevant references, and acceptance;
-  it must have a public protocol, durable record, briefing, and UI classification distinct from a
-  child task and a handoff.
+- **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
+  ordinary independent Root and briefs only objective, scope, constraints, relevant references,
+  and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
+  detached, timeout, secret, result, parent, or landing lineage.
 
 <!-- /clawdline-dispatch-role-contract:v1 -->
 
-Until Root Assignment exists, do not hide the gap by using detached automation or by creating a
-handoff for work that has no existing line. Ask whether Clawdfather should retain landing ownership,
-whether an existing line is genuinely being continued, or whether the independent launch waits.
+Use Root Assignment only for a genuinely new independently owned Feature. Keep bounded work under
+Clawdfather as a child, and use handoff only to continue an existing line with its full state.
 
 Provider-native subagents remain useful for short, disposable, normally read-only research,
 calculation or focused review with no independent delivery. Announce them honestly and never call

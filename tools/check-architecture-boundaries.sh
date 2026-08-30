@@ -17,20 +17,20 @@ main_lines=$(line_count Tests/main.swift)
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
-[ "$orchestrator_lines" -le 12431 ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved restart-reconciliation correction receipt (12431)"
+[ "$orchestrator_lines" -le 13482 ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved Root Assignment correction receipt (13482)"
 
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
-[ "$remote_server_lines" -le 6336 ] \
-  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved restart-reconciliation correction receipt (6336)"
+[ "$remote_server_lines" -le 6384 ] \
+  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved Root Assignment receipt (6384)"
 
 if grep -q 'group(' Tests/main.swift; then
   architecture_guard_fail "new domain group found in Tests/main.swift"
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 24 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 24"
+[ "$runner_count" -eq 25 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 25"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -38,8 +38,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 455 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 455"
+[ "$manifest_group_count" -eq 456 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 456"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do
@@ -49,7 +49,7 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 35 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 35"
+[ "$suite_count" -eq 36 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 36"
 
 echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count"
