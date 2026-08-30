@@ -44,7 +44,7 @@ act of guarding the baseline does not mint a new check and then call the new num
 `Sources/**/*.swift`; full test mode separately compares that partition and the test partition with
 `Sources/**/*.swift` and `Tests/**/*.swift`. A nested addition/removal or a Sources↔Tests partition
 swap therefore fails before compilation, while Tests-only drift cannot block an application build.
-The manifest currently contains 89 production and 41 test sources. `tools/check-architecture-boundaries.sh`
+The manifest currently contains 90 production and 41 test sources. `tools/check-architecture-boundaries.sh`
 also freezes `Orchestrator.swift` at the approved 12,398-line Closeability receipt. `RemoteServer.swift` began at the 5,903-line
 Phase 0 baseline and now carries the approved 6,316-line Closeability receipt in the executable
 guard; later approved features must move that receipt explicitly rather than silently weakening it. It keeps

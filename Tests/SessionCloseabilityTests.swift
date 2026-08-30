@@ -141,6 +141,12 @@ group("closeability is four states, and doubt about the evidence outranks the li
     let matchCounts = RemoteServer.identityMatchCounts([identity, unreadableTwin])
     expect("an unreadable competing assistant makes a bound identity ambiguous",
            matchCounts[identity.terminalID], 0)
+    let codex = Orchestrator.SessionWorkIdentity(
+        terminalID: "CLOSE-CODEX", assistant: .codex, tty: "/dev/ttys42", pid: 4002,
+        processStart: started, conversationID: "conversation-codex")
+    let providerCounts = RemoteServer.identityMatchCounts([identity, unreadableTwin, codex])
+    expect("an unreadable Claude identity cannot make a bound Codex identity ambiguous",
+           providerCounts[codex.terminalID], 1)
 
     // The CAS token: opaque, stable for one situation, and different for every input it covers.
     let version = Orchestrator.closeabilityVersion(

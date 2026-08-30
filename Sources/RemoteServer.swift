@@ -4164,36 +4164,7 @@ final class RemoteServer: @unchecked Sendable {
     /// same fact for closeability — the broker cannot say which process it is talking about.
     static func identityMatchCounts(_ identities: [Orchestrator.SessionWorkIdentity])
         -> [String: Int] {
-        let inventoryHasUnreadableAssistant = identities.contains {
-            $0.assistant == nil || $0.conversationID == nil
-        }
-        var byConversation: [String: Int] = [:]
-        for identity in identities {
-            guard let assistant = identity.assistant,
-                  let conversation = identity.conversationID else { continue }
-            let key = assistant.rawValue + "\u{1}" + conversation
-            byConversation[key] = (byConversation[key] ?? 0) + 1
-        }
-        var out: [String: Int] = [:]
-        for identity in identities {
-            guard let assistant = identity.assistant,
-                  let conversation = identity.conversationID else {
-                // An unbound identity is reported as unbound, once. Counting it as ambiguous
-                // too would put two reasons on the row for one missing fact.
-                out[identity.terminalID] = 1
-                continue
-            }
-            if inventoryHasUnreadableAssistant {
-                // One unreadable assistant may be the competing twin of any bound row. The
-                // inventory cannot prove uniqueness for the readable half, so every bound row
-                // fails closed rather than silently counting only what was readable.
-                out[identity.terminalID] = 0
-                continue
-            }
-            out[identity.terminalID] =
-                byConversation[assistant.rawValue + "\u{1}" + conversation] ?? 1
-        }
-        return out
+        SessionClosePolicy.identityMatchCounts(identities)
     }
 
     private func sessionInventoryEvidence() -> SessionInventoryEvidence {

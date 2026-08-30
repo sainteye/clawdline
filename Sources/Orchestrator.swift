@@ -7822,31 +7822,11 @@ enum Orchestrator {
     /// defeat. The cost of being tight is work that silently did not happen, which is worse.
     static let readyLimit: TimeInterval = 240
 
-    /// What to do about a menu on a briefing task's screen.
-    enum MenuStep: Equatable {
-        /// No menu, or nothing left to decide.
-        case none
-        /// Press the first row. Only ever on a tab this app opened for this task.
-        case answerFirstRow
-        /// A menu on a session this task did not open. Leave it standing.
-        case leaveToOwner
-    }
+    typealias MenuStep = SessionClosePolicy.MenuStep
 
-    /// Whether Clawdline may take the default on the menu in front of a spawning task.
-    ///
-    /// Answering was always justified by *whose screen it is*. A tab this app opened for a task
-    /// in a directory the root named has exactly one menu to show — the trusted-folder dialog —
-    /// and the root already answered it by asking for work there.
-    ///
-    /// An attached task is running in a standing child session this task did not open, and the
-    /// menu on that screen can be anything: a permission prompt, a plan approval, an overwrite
-    /// confirmation. The first row is usually "yes". Nothing about this follow-up dispatch is
-    /// consent to that, so the menu is left for the session's owner. See `docs/orchestrator.md`,
-    /// "Attached follow-up tasks".
-    static func menuStep(task: Task, choosing: Bool) -> MenuStep {
-        guard choosing else { return .none }
-        guard !task.answeredMenu else { return .none }
-        return task.attachSessionId == nil ? .answerFirstRow : .leaveToOwner
+    static func menuStep(task: Task, menu: SessionState.Menu?) -> MenuStep {
+        SessionClosePolicy.menuStep(answered: task.answeredMenu,
+                                    attached: task.attachSessionId != nil, menu: menu)
     }
 
     /// The two deadlines that end a `spawning` task, decided on the record alone.
@@ -7961,16 +7941,21 @@ enum Orchestrator {
         }
         let changed = noteChildIdentity(child, in: &task)
         let screen = Targets.capture(child)
-        let choosing = screen.map { SessionState.isChoosing($0, assistant: task.assistant) }
-            ?? false
-        switch menuStep(task: task, choosing: choosing) {
+        // A brand-new tab has no hook or registry receipt yet; the fact that this task opened it
+        // supplies the independent gate an unnumbered startup picker needs. An attached session
+        // gets no such gate because its menu belongs to its owner.
+        let menu = screen.flatMap {
+            SessionState.menu($0, assistant: task.assistant,
+                              hookWaiting: task.attachSessionId == nil)
+        }
+        switch menuStep(task: task, menu: menu) {
         case .none:
             break
-        case .answerFirstRow:
+        case .answer(let row):
             task.answeredMenu = true
             guard replaceTask(task, expecting: .spawning) else { return false }
-            _ = Targets.answer(0x31, to: child)
-            RemoteAuth.audit("orchestrator.menu", ["task": task.id, "answer": "1"])
+            _ = Targets.answer(UInt8(0x30 + row), to: child)
+            RemoteAuth.audit("orchestrator.menu", ["task": task.id, "answer": String(row)])
             return true
         case .leaveToOwner:
             task.answeredMenu = true
@@ -8438,70 +8423,35 @@ enum Orchestrator {
         return note.session
     }
 
-    /// What to do about a finished child's tab, at one instant.
-    ///
-    /// Split out from the beat that runs it for the same reason ``Targets/Farewell/step(elapsed:pid:termed:killed:)``
-    /// is: the decisions are here, the terminal is there, and a decision that can only be
-    /// exercised by closing somebody's real tab is a decision with no tests. Every branch below
-    /// is one, and one of them is irreversible — see `.forget`.
-    enum CloseStep: Equatable {
-        /// Not yet. The deadline stands and the next beat asks again.
-        case wait
-        /// That tab has gone, or belongs to somebody else now. Drop the deadline: nothing here
-        /// is ours to close, and nothing will be.
-        case forget
-        /// Take it. `justTheTab` when there is nobody in there to say the quit word to.
-        case close(justTheTab: Bool)
-    }
-
-    /// `busy` is a closure because answering it costs a screen capture, and it is only worth
-    /// paying for once everything cheaper has already said the tab is ours and due.
+    typealias CloseStep = SessionClosePolicy.CloseStep
     static func closeStep(now: Date, closeAt: Date, inventoryComplete: Bool,
                           inventoryEmpty: Bool = false,
                           emptyInventoryAuthoritative: Bool = false,
                           automationReady: Bool,
                           intervention: TerminalIntervention? = nil,
                           child: TargetSession?, assistant: Assistant, tty: String?,
+                          startupMenuExitRow: Int? = nil,
                           activity: () -> Targets.SafeCloseActivity) -> CloseStep {
-        guard now >= closeAt else { return .wait }
-        // An omitted row has meaning only in a complete inventory, and no terminal command is
-        // safe while the previous Apple event is waiting on a modal answer. Both conditions are
-        // re-evaluated on every beat, so one later complete scan is the recovery signal.
-        guard inventoryComplete,
-              terminalCloseRetryAllowed(intervention: intervention,
-                                        automationReady: automationReady) else { return .wait }
-        guard let child else {
-            // **`forget` is permanent**, and a reading with no terminals in it at all is not a
-            // reading that found this one gone: it is the first seconds after launch, or iTerm2
-            // not answering. Deciding on one closed nothing and left the tab standing for good.
-            return !inventoryEmpty || emptyInventoryAuthoritative ? .forget : .wait
-        }
-        guard child.assistant == nil || child.assistant == assistant,
-              tty == nil || child.tty == tty else { return .forget }
-        // A child still mid-turn is left alone. Elapsed time is never evidence that a process is
-        // gone, so there is no force-after-ten-minutes escape hatch.
-        // Unknown is not idle. Capture failure, an unreadable screen, or a classifier that
-        // cannot prove what it saw therefore has exactly the same irreversible authority as a
-        // positively busy child: none.
-        guard activity() == .idle else { return .wait }
-        return .close(justTheTab: child.assistant == nil)
+        SessionClosePolicy.closeStep(
+            now: now, closeAt: closeAt, inventoryComplete: inventoryComplete,
+            inventoryEmpty: inventoryEmpty,
+            emptyInventoryAuthoritative: emptyInventoryAuthoritative,
+            automationReady: automationReady,
+            retryAllowed: terminalCloseRetryAllowed(intervention: intervention,
+                                                     automationReady: automationReady),
+            child: child, assistant: assistant, tty: tty,
+            startupMenuExitRow: startupMenuExitRow, activity: activity)
     }
 
-    /// Compatibility seam for older pure decision callers. Production uses the tri-state form
-    /// above so an unreadable screen cannot collapse into `false == idle`.
-    static func closeStep(now: Date, closeAt: Date, inventoryComplete: Bool,
-                          inventoryEmpty: Bool = false,
-                          emptyInventoryAuthoritative: Bool = false,
-                          automationReady: Bool,
-                          intervention: TerminalIntervention? = nil,
-                          child: TargetSession?, assistant: Assistant, tty: String?,
-                          busy: () -> Bool) -> CloseStep {
-        closeStep(now: now, closeAt: closeAt, inventoryComplete: inventoryComplete,
-                  inventoryEmpty: inventoryEmpty,
-                  emptyInventoryAuthoritative: emptyInventoryAuthoritative,
-                  automationReady: automationReady, intervention: intervention,
-                  child: child, assistant: assistant, tty: tty,
-                  activity: { busy() ? .busy : .idle })
+    static func failedSpawnStartupExitRow(
+        task: Task, child: TargetSession, currentPID: Int32?, currentStart: Date?, screen: String?
+    ) -> Int? {
+        SessionClosePolicy.failedSpawnStartupExitRow(
+            failed: task.state == .spawnFailed, wasSpokenTo: childWasSpokenTo(task),
+            expectedTerminalID: task.childTerminalId, expectedTTY: task.childTTY,
+            expectedAssistant: task.assistant, expectedPID: task.childPID,
+            expectedStart: task.childProcStart, child: child, currentPID: currentPID,
+            currentStart: currentStart, screen: screen)
     }
 
     /// A modal failure has exactly one automatic recovery edge: a later well-formed iTerm list
@@ -8513,13 +8463,6 @@ enum Orchestrator {
         return intervention == nil || intervention?.kind == .iTermModal
     }
 
-    /// Nominate a finished child's tab for closing once its linger has run out.
-    ///
-    /// **Nothing is decided here.** The cached inventory a beat reads may be stale, partial, or
-    /// the empty list the app carries for its first few seconds, so this thread is allowed to say
-    /// "look at that one" and nothing else. ``closeStep`` decides, inside the terminal broker,
-    /// against an inventory taken there. Returns true only when this thread changed the record,
-    /// which it never does — the answer arrives from the broker, on a later beat.
     @discardableResult
     static func closeChild(_ task: Task) -> Bool {
         closeDueChildren([task])
@@ -8560,7 +8503,8 @@ enum Orchestrator {
                     continue
                 }
                 decideChildClose(task, childID: childID, closeAt: closeAt,
-                                 inventory: inventory, end: endChildTab)
+                                 inventory: inventory, end: endChildTab,
+                                 dismissStartup: dismissStartupMenu)
             }
         }
         if !ok { for task in admitted { finishClosing(task.id) } }
@@ -8581,7 +8525,8 @@ enum Orchestrator {
         guard beginClosing(task.id) else { return false }
         let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: childID) {
             decideChildClose(task, childID: childID, closeAt: closeAt,
-                             inventory: Targets.safeCloseInventory(), end: end)
+                             inventory: Targets.safeCloseInventory(), end: end,
+                             dismissStartup: dismissStartupMenu)
         }
         if !admitted { finishClosing(task.id) }
         return false
@@ -8591,8 +8536,15 @@ enum Orchestrator {
     /// took there. Releases that task's closing membership on main whichever way it goes.
     private static func decideChildClose(_ task: Task, childID: String, closeAt: Date,
                                          inventory: Targets.Snapshot,
-                                         end: (TargetSession, Bool) -> String?) {
+                                         end: (TargetSession, Bool) -> String?,
+                                         dismissStartup: (Int, TargetSession) -> String?) {
         let observed = inventory.sessions.first { $0.id == childID }
+        let screen = observed.flatMap(Targets.safeCloseScreen)
+        let startupExitRow = observed.flatMap { child in
+            failedSpawnStartupExitRow(
+                task: task, child: child, currentPID: Targets.pid(of: child),
+                currentStart: Targets.processStart(of: child), screen: screen)
+        }
         let step = closeStep(now: Date(), closeAt: closeAt,
                              inventoryComplete: inventory.isComplete,
                              inventoryEmpty: inventory.sessions.isEmpty,
@@ -8600,7 +8552,11 @@ enum Orchestrator {
                              automationReady: ITerm.automationReady,
                              intervention: task.terminalIntervention,
                              child: observed, assistant: task.assistant, tty: task.childTTY,
-                             activity: { observed.map(Targets.safeCloseActivity) ?? .unknown })
+                             startupMenuExitRow: startupExitRow,
+                             activity: {
+                                 guard let observed else { return .unknown }
+                                 return Targets.safeCloseActivity(of: observed, screen: screen)
+                             })
         switch step {
         case .wait:
             DispatchQueue.main.async { finishClosing(task.id) }
@@ -8608,6 +8564,27 @@ enum Orchestrator {
             DispatchQueue.main.async {
                 finishClosing(task.id)
                 settleNothingLeftToClose(task, childID: childID)
+            }
+        case .dismissStartupMenu(let row):
+            guard let observed else {
+                DispatchQueue.main.async { finishClosing(task.id) }
+                return
+            }
+            RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": childID,
+                                                    "how": "decline_startup"])
+            let failure = dismissStartup(row, observed)
+            let intervention = failure.map {
+                terminalIntervention(for: $0, backend: observed.backend)
+            }
+            DispatchQueue.main.async {
+                finishClosing(task.id)
+                if let intervention {
+                    settleStartupDismissalFailure(task, intervention: intervention)
+                } else {
+                    // The assistant exits first; keep the deadline standing so a later fresh
+                    // inventory closes the ordinary shell tab it leaves behind.
+                    SessionWatch.shared.nudge()
+                }
             }
         case .close(let justTheTab):
             guard let observed else {
@@ -8628,6 +8605,23 @@ enum Orchestrator {
                 settleClosedChild(task, childID: childID, intervention: intervention)
             }
         }
+    }
+
+    private static func dismissStartupMenu(_ row: Int, on child: TargetSession) -> String? {
+        guard (1...9).contains(row) else { return "The startup menu row is out of range." }
+        return Targets.answer(UInt8(0x30 + row), to: child)
+    }
+
+    private static func settleStartupDismissalFailure(
+        _ task: Task, intervention: TerminalIntervention
+    ) {
+        guard var current = held(task.id), current.closeAt != nil else { return }
+        current.terminalIntervention = intervention
+        guard replaceTask(current, expecting: current.state) else { return }
+        Log.write("orchestrator: could not dismiss failed child's startup menu — "
+                  + intervention.message)
+        save()
+        RemoteServer.shared.broadcastOrchestrator()
     }
 
     /// A fresh complete inventory proved the tab gone, or somebody else's. The deadline is

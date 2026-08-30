@@ -192,7 +192,8 @@ group("what a linger running out decides, one instant at a time") {
                                emptyInventoryAuthoritative: emptyInventoryAuthoritative,
                                automationReady: automationReady, intervention: intervention,
                                child: child,
-                               assistant: .codex, tty: tty, busy: { busy })
+                               assistant: .codex, tty: tty,
+                               activity: { busy ? .busy : .idle })
     }
 
     expect("before the deadline, nothing happens",
@@ -243,6 +244,12 @@ group("what a linger running out decides, one instant at a time") {
     expect("a later complete inventory re-enables the safe close decision",
            step(now: due, inventoryComplete: true, automationReady: true,
                 child: child(.codex)), .close(justTheTab: false))
+    expect("an exact failed startup menu is declined before its non-idle screen is closed",
+           Orchestrator.closeStep(
+            now: due, closeAt: due, inventoryComplete: true,
+            automationReady: true, child: child(.codex), assistant: .codex,
+            tty: "/dev/ttys7", startupMenuExitRow: 2,
+            activity: { .busy }), .dismissStartupMenu(row: 2))
     expect("unknown capture state never becomes permission to force-close",
            Orchestrator.closeStep(
             now: due, closeAt: due, inventoryComplete: true,
@@ -564,7 +571,8 @@ group("a linger survives the restart that lands in the middle of it") {
     expect("the restored deadline still waits on a reading",
            Orchestrator.closeStep(now: Date(), closeAt: Date().addingTimeInterval(-1),
                                   inventoryComplete: false, automationReady: true, child: nil,
-                                  assistant: task.assistant, tty: task.childTTY, busy: { false }),
+                                  assistant: task.assistant, tty: task.childTTY,
+                                  activity: { .idle }),
            .wait)
 }
 

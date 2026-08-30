@@ -177,7 +177,7 @@ group("every main-queue crossing is a named production call site, in the source 
 group("every direct SessionWatch nudge call site is inventoried across production source") {
     let expected = [
         "Sources/RemoteServer.swift": 11,
-        "Sources/Orchestrator.swift": 6,
+        "Sources/Orchestrator.swift": 7,
         "Sources/main.swift": 1,
     ]
     let sourceFiles = (try? FileManager.default.contentsOfDirectory(atPath: "Sources"))?

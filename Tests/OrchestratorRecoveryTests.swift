@@ -87,19 +87,58 @@ group("Clawdline answers a menu only on a tab it opened itself") {
         made.answeredMenu = answered
         return made
     }
-    expect("a fresh tab's trusted-folder dialog takes the default",
-           Orchestrator.menuStep(task: task(attachedTo: nil, answered: false), choosing: true),
-           Orchestrator.MenuStep.answerFirstRow)
+    // Captured from Claude Code 2.1.228. The trust dialog no longer prints numbers, and its
+    // default moved to the rejecting row. Pressing the old hard-coded `1` therefore neither
+    // trusted the directory nor reached a prompt; the task became spawn_failed four minutes
+    // later and its identity-less tab made every Session's closeability unknown.
+    let trustScreen = """
+    ────────────────────────────────────────────────────────────────
+    Accessing workspace:
+    /private/tmp/clawdline-cloud-docs.DrKoVj/repo
+
+    Quick safety check: Is this a project you created or one you trust?
+
+     ❯ No, exit
+       Yes, I trust this folder
+
+    Enter to confirm · Esc to cancel
+    """
+    let trustMenu = SessionState.menu(trustScreen, assistant: .claude, hookWaiting: true)
+    expect("the current unnumbered trust dialog exposes both choices",
+           trustMenu?.options.map(\.label), ["No, exit", "Yes, I trust this folder"])
+    check("and preserves its rejecting default without pretending digits are printed",
+          trustMenu?.selected == 1 && trustMenu?.numbered == false)
+    expect("a fresh tab chooses the affirmative trust row, not the rejecting default",
+           Orchestrator.menuStep(task: task(attachedTo: nil, answered: false), menu: trustMenu),
+           Orchestrator.MenuStep.answer(row: 2))
     expect("a menu on a session this task did not open is left standing",
            Orchestrator.menuStep(task: task(attachedTo: "STANDING", answered: false),
-                                 choosing: true),
+                                 menu: trustMenu),
            Orchestrator.MenuStep.leaveToOwner)
     expect("no menu, nothing to decide",
-           Orchestrator.menuStep(task: task(attachedTo: nil, answered: false), choosing: false),
+           Orchestrator.menuStep(task: task(attachedTo: nil, answered: false), menu: nil),
            Orchestrator.MenuStep.none)
     expect("and a settled menu does not claim the record changed again",
-           Orchestrator.menuStep(task: task(attachedTo: nil, answered: true), choosing: true),
+           Orchestrator.menuStep(task: task(attachedTo: nil, answered: true), menu: trustMenu),
            Orchestrator.MenuStep.none)
+    var failed = task(attachedTo: nil, answered: false)
+    let started = Date(timeIntervalSince1970: 1_788_059_227)
+    let child = TargetSession(backend: .iterm, id: "FAILED-TRUST-TAB", name: "child",
+                              tty: "/dev/ttys008", windowIndex: 0, tabIndex: 0,
+                              assistant: .claude, cwd: "/tmp/task")
+    failed.state = .spawnFailed
+    failed.childTerminalId = child.id
+    failed.childTTY = child.tty
+    failed.childPID = 84_995
+    failed.childProcStart = started
+    expect("an exact never-briefed failed spawn declines the same trust dialog for cleanup",
+           Orchestrator.failedSpawnStartupExitRow(
+            task: failed, child: child, currentPID: 84_995, currentStart: started,
+            screen: trustScreen), 1)
+    expect("a reused process cannot inherit that destructive cleanup decision",
+           Orchestrator.failedSpawnStartupExitRow(
+            task: failed, child: child, currentPID: 84_996, currentStart: started,
+            screen: trustScreen), nil)
     let brief = Orchestrator.childBrief(for: task(attachedTo: "STANDING", answered: false))
     check("the attached briefing says the host grant was recorded and who owns menu decisions",
           brief.contains("launched with access to the whole")

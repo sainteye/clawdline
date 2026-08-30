@@ -186,8 +186,18 @@ enum Targets {
     /// Fresh screen classification performed in the broker immediately before an automatic
     /// linger decision. Capture failure is `unknown`, never idle and never permission to close.
     static func safeCloseActivity(of session: TargetSession) -> SafeCloseActivity {
+        safeCloseActivity(of: session, screen: safeCloseScreen(of: session))
+    }
+
+    /// One capture shared by every decision made at a safe-close instant. Keeping the test seam
+    /// here prevents a recovery check from silently bypassing the classifier's observed screen.
+    static func safeCloseScreen(of session: TargetSession) -> String? {
+        safeCloseCaptureForTesting?(session) ?? capture(session)
+    }
+
+    static func safeCloseActivity(of session: TargetSession,
+                                  screen: String?) -> SafeCloseActivity {
         guard session.assistant != nil else { return .idle }
-        let screen = safeCloseCaptureForTesting?(session) ?? capture(session)
         switch SessionState.read(screen, assistant: session.assistant ?? .claude,
                                  hookWaiting: true) {
         case .working, .waiting: return .busy
