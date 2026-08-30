@@ -12,7 +12,8 @@ English · [繁體中文](README.zh-TW.md)
 
 [Website](https://clawdline.com/) · [Install](#install) ·
 [The Clawdfather loop](#the-clawdfather-delivery-loop) ·
-[Protocol](docs/clawdline-protocol.html) · [Documentation](#documentation)
+[Protocol](docs/clawdline-protocol.html) · [Public manual](https://clawdline.com/docs) ·
+[Technical documentation](#documentation)
 
 ## The Clawdfather delivery loop
 
@@ -368,6 +369,10 @@ canonical conversation-and-assistant tuple, including Codex-to-Claude and Claude
 
 ## Install
 
+For the complete zero-to-first-Session path, Shell and terminal setup, browser/phone access,
+Clawdline Cloud, E2EE, and troubleshooting, use the
+**[public manual](https://clawdline.com/docs)**. The commands below remain the short install path.
+
 **Homebrew**
 
 ```sh
@@ -379,7 +384,7 @@ xattr -dr com.apple.quarantine /Applications/Clawdline.app
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh -o install.sh
-less install.sh          # 40 lines; worth the ten seconds
+less install.sh          # inspect the exact script before your Shell runs it
 bash install.sh          # or: bash install.sh ~/Applications
 ```
 
@@ -737,6 +742,11 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
   It never eats what you typed.
 
 ## Documentation
+
+The **[public manual](https://clawdline.com/docs)** is the canonical task-oriented guide for a
+person installing and using Clawdline. The pages below are the open-source technical contracts and
+deep implementation references; they remain public because source, tests, skills, and integrations
+link to them.
 
 | | |
 | --- | --- |

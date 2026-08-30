@@ -24,7 +24,8 @@
 # tools/shoot-web.js, in a throwaway profile, with the frames coming from the renderer rather than
 # from the screen. Same property: nothing on your display gets into them. Those three additionally
 # need node (brew install node) and Google Chrome, and `web-push` needs the app running with
-# Settings → Remote → Answer over HTTP on, because the notification in it is a real one.
+# Settings → Remote → Let a browser or your phone see your sessions on, because the notification
+# in it is a real one.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -341,13 +342,13 @@ run_if tabs        webstrip tabs "file://$PWD/tools/tabs/index.html" tabs 760 12
 # So the words on the glass are the app's, in the app's language, and if the push path is broken
 # the shoot fails rather than producing a picture of a feature that no longer works.
 #
-# It needs the app running with **Answer over HTTP** on, because there is a real server on the
-# other end of it. tools/web-serve.py is what puts the drawn phone and the app's `/v1/` on one
-# origin, which is the only arrangement a browser will subscribe under.
+# It needs the app running with **Let a browser or your phone see your sessions** on, because there
+# is a real server on the other end of it. tools/web-serve.py is what puts the drawn phone and the
+# app's `/v1/` on one origin, which is the only arrangement a browser will subscribe under.
 if want web-push; then
   PORT=$(python3 -c "import json,io,os;print(json.load(io.open(os.path.expanduser('~/.config/clawdline/config.json'))).get('remote_port',7717))")
   if ! curl -s -m 3 "http://127.0.0.1:$PORT/v1/health" >/dev/null; then
-    echo "!! the app is not answering on 127.0.0.1:$PORT — Settings → Remote → Answer over HTTP"
+    echo "!! the app is not answering on 127.0.0.1:$PORT — Settings → Remote → Let a browser or your phone see your sessions"
     exit 1
   fi
   python3 tools/web-serve.py --root tools/phone --port 7788 &

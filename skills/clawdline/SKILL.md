@@ -67,8 +67,9 @@ curl -s "http://127.0.0.1:$PORT/v1/health"
 ```
 
 - `NO TOKEN` / no such file → **stop** and tell the user: Clawdline is not running, or it is too
-  old to have the orchestrator. Ask them to open Clawdline and turn on **Answer over HTTP** in
-  Settings → Remote; the token writes itself when the server comes up.
+  old to have the orchestrator. Ask them to open Clawdline and turn on
+  **Let a browser or your phone see your sessions** in Settings → Remote; the token writes itself
+  when the server comes up.
 - `curl` cannot connect → same thing, the server is not running.
 - health answers but there is no token file → this copy of Clawdline does not have the feature.
   Ask them to update.

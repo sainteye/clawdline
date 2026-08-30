@@ -64,7 +64,8 @@ curl -s "http://127.0.0.1:$PORT/v1/health"
 ```
 
 - `NO TOKEN`／檔案不存在 → **停下來**，告訴使用者：Clawdline 沒開，或版本太舊沒有 orchestrator。
-  請他開 Clawdline、到 Settings → Remote 打開 **Answer over HTTP**，token 會在 server 起來時自己生出來。
+  請他開 Clawdline、到「Clawdline 設定 → 遠端」打開
+  **讓瀏覽器或你的手機看得到你的 session**，token 會在 server 起來時自己生出來。
 - `curl` 連不上 → 同上，server 沒在跑。
 - health 回得出來但 token 檔沒有 → 這台的 Clawdline 還沒有這個功能，請使用者更新。
 
