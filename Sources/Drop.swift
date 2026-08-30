@@ -33,7 +33,7 @@ enum Drop {
         }
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return base.appendingPathComponent("dev.sainteye.clawdline/drops", isDirectory: true)
+        return base.appendingPathComponent("com.tsunamiworks.clawdline/drops", isDirectory: true)
     }
 
     /// Paths for whatever is on a pasteboard, writing a file for image data that has none.

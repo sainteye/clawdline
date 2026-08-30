@@ -3,8 +3,80 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { createTranscriptRevisionObserver } from
+import { createTranscriptEventRouter, createTranscriptRevisionObserver } from
     "../Resources/web/app/js/session/transcript-requests.js";
+import { createLivePreviewFollower } from
+    "../Resources/web/app/js/session/live-preview.js";
+
+const liveRequests = [];
+const liveAccepts = [];
+const liveTimers = [];
+const liveFollower = createLivePreviewFollower(function (id) {
+    return new Promise(function (resolve, reject) {
+        liveRequests.push({ id, resolve, reject });
+    });
+}, function (id, outcome) {
+    liveAccepts.push({ id, outcome });
+}, {
+    delay: 700,
+    schedule: function (fn, delay) {
+        const timer = { fn, delay, cancelled: false };
+        liveTimers.push(timer);
+        return timer;
+    },
+    cancel: function (timer) { timer.cancelled = true; }
+});
+liveFollower.start("A");
+liveFollower.start("A");
+await Promise.resolve();
+assert.equal(liveRequests.length, 1, "one session keeps exactly one live capture in flight");
+liveRequests[0].resolve({ text: "partial answer", signature: "p1" });
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.deepEqual(liveAccepts.map(function (item) { return item.id; }), ["A"],
+    "the active session receives its completed live capture");
+assert.equal(liveTimers.length, 1, "the next capture is scheduled only after the first settles");
+assert.equal(liveTimers[0].delay, 700, "the live lane uses its bounded polling cadence");
+liveTimers[0].fn();
+await Promise.resolve();
+assert.equal(liveRequests.length, 2, "the settled capture permits one following request");
+liveFollower.start("B");
+assert.equal(liveRequests.length, 2,
+    "switching sessions does not overlap a new terminal capture with the old one");
+liveRequests[1].resolve({ text: "late A", signature: "p2" });
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.equal(liveAccepts.length, 1, "a late capture from the previous session is ignored");
+assert.equal(liveRequests.length, 3, "the newly active session starts after the old request settles");
+assert.equal(liveRequests[2].id, "B", "the trailing request belongs to the newly active session");
+liveFollower.stop();
+liveRequests[2].resolve({ text: "late B", signature: "p3" });
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.equal(liveAccepts.length, 1, "closing the pane makes a late live capture harmless");
+
+const routedTranscriptEvents = [];
+const reconnectedTranscripts = [];
+let routedOpenID = "open-session";
+const routeTranscriptEvent = createTranscriptEventRouter(
+    function () { return routedOpenID; },
+    function (id, signature) { routedTranscriptEvents.push({ id, signature }); },
+    function (id) { reconnectedTranscripts.push(id); }
+);
+assert.equal(routeTranscriptEvent({ type: "hello", data: {} }), true,
+    "a stream reconnect quietly catches transcript bytes missed while offline");
+assert.deepEqual(reconnectedTranscripts, ["open-session"],
+    "the reconnect catch-up is scoped to the transcript currently being read");
+assert.equal(routeTranscriptEvent({
+    type: "transcript-revision", data: { id: "other-session", signature: "11-20" }
+}), false, "a file event for another session does not wake the open transcript");
+assert.equal(routeTranscriptEvent({
+    type: "transcript-revision", data: { id: "open-session", signature: "12-21" }
+}), true, "a file event for the open session wakes its transcript immediately");
+assert.deepEqual(routedTranscriptEvents,
+    [{ id: "open-session", signature: "12-21" }],
+    "the file signature is kept as a revision independent from session snapshots");
+routedOpenID = null;
+assert.equal(routeTranscriptEvent({
+    type: "transcript-revision", data: { id: "open-session", signature: "13-22" }
+}), false, "closing the transcript makes late file events harmless");
 
 function revisionHarness(maxAttempts = 3) {
     const loads = [];
@@ -408,6 +480,14 @@ globalThis.EventSource = class {
 };
 Live.connect();
 assert.equal(S.conn, "connecting", "opening the socket is not yet a live session feed");
+const transportEvents = [];
+const stopTransportEvents = Live.events(function (event) { transportEvents.push(event); });
+source.listeners.transcript({ data: JSON.stringify({ id: "B", signature: "24-30" }) });
+assert.deepEqual(transportEvents.map(function (event) {
+    return { type: event.type, id: event.data.id, signature: event.data.signature };
+}), [{ type: "transcript-revision", id: "B", signature: "24-30" }],
+"the SSE transcript frame crosses the transport-neutral event lane without conversation bytes");
+stopTransportEvents();
 if (source.onopen) source.onopen();
 assert.equal(S.conn, "connecting", "EventSource onopen alone does not claim the feed is live");
 source.listeners.sessions({ data: JSON.stringify({

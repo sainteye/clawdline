@@ -87,7 +87,7 @@ func attr(_ a: NSAttributedString, _ key: NSAttributedString.Key, near needle: S
 /// the next thing somebody trips over. A UUID needs no such argument and costs nothing.
 let pasteboardRun = UUID().uuidString
 func exclusivePasteboard(_ role: String) -> NSPasteboard {
-    NSPasteboard(name: NSPasteboard.Name("dev.sainteye.clawdline.tests.\(role).\(pasteboardRun)"))
+    NSPasteboard(name: NSPasteboard.Name("com.tsunamiworks.clawdline.tests.\(role).\(pasteboardRun)"))
 }
 
 func runMarkdownTests() {
@@ -223,6 +223,14 @@ group("markdown: lists") {
     let numbers = md("1. first\n2. second")
     check("numbers are kept as markers", numbers.string.contains("1."))
     check("both items survive", numbers.string.contains("first") && numbers.string.contains("second"))
+
+    expect("repeated one markers are rendered as an ordered sequence",
+           mdPlain("1. first\n1. second"), "1.\tfirst\n2.\tsecond\n")
+    expect("ordered numbering continues across loose-list blank lines",
+           mdPlain("1. first\n\n1. second\n\n1. third"),
+           "1.\tfirst\n2.\tsecond\n3.\tthird\n")
+    expect("non-ASCII numeric-looking markers do not crash the renderer",
+           mdPlain("１. first\n１. second"), "１.\tfirst\n１.\tsecond\n")
 
     // Hanging indent is what makes a wrapped list item readable.
     let style = attr(bullets, .paragraphStyle, near: "one") as? NSParagraphStyle

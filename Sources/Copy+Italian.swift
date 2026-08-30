@@ -271,6 +271,7 @@ struct Italian: Copy {
     let webEmptyWaitHint = "Sullo stream non è ancora arrivato nulla"
     let webStateUnreadable = "schermo illeggibile"
     let webStateWorking = "in corso"
+    let webTerminalLive = "Terminale in tempo reale"
     let sessionWorkReady = "può ricevere lavoro"
     let sessionWorkUnknown = "stato sconosciuto"
     let sessionWorkHolding = "avanza da solo"

@@ -127,7 +127,7 @@ enum Planner {
     /// two in a row, and this one also spends the person's quota — so the queue *is* the
     /// concurrency limit, and how long a line is worth standing in is the caller's to decide.
     /// ``RemoteServer`` counts what is on it and answers `busy` past two.
-    static let queue = DispatchQueue(label: "dev.sainteye.clawdline.planner")
+    static let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.planner")
 
     /// Thirty seconds, the same deadline ``CodexNaming`` gives its turn. Measured on this Mac the
     /// claude path answers in 3.2–5.1 seconds and costs $0.003–$0.009; the ceiling is for the run

@@ -737,7 +737,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 - **Nothing happens on <kbd>⌥</kbd><kbd>Space</kbd>** — check the log for `hotkey registered`. If it
   is missing, another app owns that combination; pick a different one in the config.
 - **"No Claude Code session found"** — the automation permission was probably declined. Run
-  `tccutil reset AppleEvents dev.sainteye.clawdline`, then reopen the bar to be asked again.
+  `tccutil reset AppleEvents com.tsunamiworks.clawdline`, then reopen the bar to be asked again.
 - **A send fails** — the bar comes back with your text still in it and the reason along the bottom.
   It never eats what you typed.
 

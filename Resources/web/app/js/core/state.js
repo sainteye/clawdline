@@ -44,6 +44,9 @@ export var S = {
     assistantIcons: storedBool("clawdline.assistant-icons", true),
 
     tx: { id: null, entries: [], signature: null, loading: false, error: null },
+    // A deliberately separate, lossy view of the terminal while the durable transcript catches
+    // up. It is local-only and never merged into `tx`, so screen chrome cannot become history.
+    live: { id: null, text: "", signature: null },
     // Which of the open session's agents is being read, if any. **The session stays open
     // underneath**: `openId` is untouched while this is set, so the stream keeps updating the
     // row, the list keeps its place, and leaving is putting this back to null rather than

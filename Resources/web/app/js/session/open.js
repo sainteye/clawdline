@@ -20,6 +20,7 @@ import {
     createTranscriptRequests,
     createTranscriptRevisionObserver
 } from "./transcript-requests.js";
+import { createLivePreviewFollower } from "./live-preview.js";
 import { reconcileOptimisticBeforeSignature } from "../view/optimistic-data.js";
 
 /* ==========================================================================
@@ -39,8 +40,48 @@ var transcriptRevisions = createTranscriptRevisionObserver(function (id, revisio
     loadTranscript(id, quiet, revision);
 });
 
+var livePreview = createLivePreviewFollower(function (id) {
+    return api.livePreview(id);
+}, function (id, outcome) {
+    var session = byId(id);
+    if (outcome.error || S.openId !== id || S.agent || !session || session.state !== "working") {
+        syncLivePreview();
+        return;
+    }
+    var value = outcome.value || {};
+    var signature = typeof value.signature === "string" ? value.signature : null;
+    if (signature && signature === S.live.signature) return;
+    var stick = atBottom();
+    S.live = { id: id, text: String(value.text || ""), signature: signature };
+    renderTranscript();
+    if (stick) toBottom();
+});
+
+export function syncLivePreview() {
+    var session = S.openId ? byId(S.openId) : null;
+    if (api && typeof api.livePreview === "function" && session && !S.agent &&
+        session.state === "working") {
+        livePreview.start(session.id);
+        return;
+    }
+    livePreview.stop();
+    if (S.live.id || S.live.text || S.live.signature) {
+        S.live = { id: null, text: "", signature: null };
+    }
+}
+
 export function observeTranscriptRevision(id, revision, quiet) {
     transcriptRevisions.observe(id, revision, quiet);
+}
+
+var transcriptFileSignatures = {};
+
+export function observeTranscriptFileRevision(id, signature) {
+    if (!id || !signature || S.openId !== id || transcriptFileSignatures[id] === signature) {
+        return;
+    }
+    transcriptFileSignatures[id] = signature;
+    loadTranscript(id, true);
 }
 
 export function rearmTranscriptRevision(id, revision, quiet) {
@@ -167,7 +208,10 @@ export function openSession(id, keepFocus, forceRefresh) {
     });
     S.selectedId = id;
     if (S.openId !== id) {
-        if (S.openId) transcriptRevisions.stop(S.openId);
+        if (S.openId) {
+            transcriptRevisions.stop(S.openId);
+            delete transcriptFileSignatures[S.openId];
+        }
         SessionActions.close();
         ActionConfirm.close();
         // An agent belongs to the session that sent it away. Carrying one over into the next
@@ -175,6 +219,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         // session's name, which is the one thing this pane must never do.
         closeAgent(true);
         S.openId = id;
+        S.live = { id: null, text: "", signature: null };
         // Which runs were open is where a reader had got to in that transcript, not a setting.
         // Fold keys come from content and so would not collide across sessions, but carrying
         // them over means arriving in a new transcript with something already open.
@@ -200,6 +245,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         els.app.dataset.pane = "on";
     }
     render();
+    syncLivePreview();
     Diagnostics.note("session.open.rendered", {
         view: els.app.dataset.view, loading: !!S.tx.loading,
         entries: (S.tx.entries || []).length
@@ -217,13 +263,18 @@ export function closeDetail(silent) {
     // still closing underneath it; the successful end clears `closingID` before coming here.
     if (closingID && S.openId === closingID) return;
     ActionConfirm.close();
-    if (S.openId) transcriptRevisions.stop(S.openId);
+    if (S.openId) {
+        transcriptRevisions.stop(S.openId);
+        delete transcriptFileSignatures[S.openId];
+    }
+    livePreview.stop();
     S.openId = null;
     S.agent = null;
     S.tx = {
         id: null, entries: [], signature: null, revision: null,
         loading: false, error: null
     };
+    S.live = { id: null, text: "", signature: null };
     S.expanded = {};
     Shots.clear();
     Info.follow();

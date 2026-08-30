@@ -27,7 +27,7 @@ let isolatedTestSessionImagesDirectory = isolatedTestStoreDirectory
 /// code under test where the live directory is would make the assertion agree with any answer.
 let liveDropDirectory = (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
     ?? FileManager.default.temporaryDirectory)
-    .appendingPathComponent("dev.sainteye.clawdline/drops", isDirectory: true)
+    .appendingPathComponent("com.tsunamiworks.clawdline/drops", isDirectory: true)
 
 // ``SessionNaming`` reads this Mac's live sessions to name them — a `ps`, whatever is in
 // `~/.claude/sessions/`, and somebody's real transcripts. A suite must not: a `TargetSession`

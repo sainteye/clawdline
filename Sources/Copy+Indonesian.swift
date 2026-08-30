@@ -271,6 +271,7 @@ struct Indonesian: Copy {
     let webEmptyWaitHint = "Belum ada apa pun yang datang lewat sambungan"
     let webStateUnreadable = "layarnya tidak terbaca"
     let webStateWorking = "berjalan"
+    let webTerminalLive = "Pratinjau terminal langsung"
     let sessionWorkReady = "bisa menerima pekerjaan baru"
     let sessionWorkUnknown = "status tidak diketahui"
     let sessionWorkHolding = "berjalan sendiri"

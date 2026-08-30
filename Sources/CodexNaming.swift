@@ -49,7 +49,7 @@ final class CodexNaming {
     }
 
     private init() {
-        work.name = "dev.sainteye.clawdline.codex-naming"
+        work.name = "com.tsunamiworks.clawdline.codex-naming"
         // A new tab can appear while another title is in flight. Serial is intentional: a burst
         // of tabs should not turn a convenience feature into a burst of model calls.
         work.maxConcurrentOperationCount = 1

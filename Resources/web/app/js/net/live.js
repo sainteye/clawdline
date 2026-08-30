@@ -131,6 +131,15 @@ export var LocalClient = {
                 handlers.conn("live");
             } catch (e) { }
         });
+        // A transcript append has its own clock. Carry only the file revision here; the browser
+        // fetches the paired transcript through the ordinary authenticated route, so prose never
+        // bloats the session inventory and a reconnect still starts from a complete snapshot.
+        es.addEventListener("transcript", function (ev) {
+            try {
+                var d = JSON.parse(ev.data);
+                self.emit({ type: "transcript-revision", data: d, machine: LOCAL_MACHINE });
+            } catch (e) { }
+        });
         // Dispatched work. Its own event because it moves on its own clock — a task is briefed
         // and finishes without the session list changing at all — and an app that has never
         // heard of it simply never sends one.
@@ -372,6 +381,10 @@ export var LocalClient = {
 
     transcript: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/transcript?limit=200");
+    },
+
+    livePreview: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/live");
     },
 
     /// Every task the app knows about — what a session dispatched, and which session got it.

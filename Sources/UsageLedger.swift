@@ -815,7 +815,7 @@ final class UsageLedger {
             .appendingPathComponent("usage.sqlite3")
     }
 
-    private let queue = DispatchQueue(label: "dev.sainteye.clawdline.usageledger")
+    private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.usageledger")
     private var handle: OpaquePointer?
     private var openedFor: String?
 

@@ -1399,7 +1399,7 @@ extension Notification.Name {
     /// Posted when the settings window changes something. The delegate re-applies everything that
     /// has to be re-applied — the hotkey, the language, the mascot, the island — in one place,
     /// which is the same place "Reload config" has always used.
-    static let clawdlineConfigChanged = Notification.Name("dev.sainteye.clawdline.configChanged")
+    static let clawdlineConfigChanged = Notification.Name("com.tsunamiworks.clawdline.configChanged")
 }
 
 /// The small, typed seam between the orchestrator's JSON-shaped inventory and the hand-built

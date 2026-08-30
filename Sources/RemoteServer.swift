@@ -98,10 +98,22 @@ final class RemoteServer: @unchecked Sendable {
         return Int(at.timeIntervalSince1970)
     }()
 
-    private let queue = DispatchQueue(label: "dev.sainteye.clawdline.remote")
+    private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote")
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
     private var nextEventID = 0
+    private lazy var transcriptRevisionStream = TranscriptRevisionStream { [weak self] id, signature in
+        self?.queue.async { [weak self] in
+            guard let self else { return }
+            let payload: [String: Any] = ["id": id, "signature": signature,
+                                          "at": Int(Date().timeIntervalSince1970)]
+            for stream in self.streams.values {
+                self.write(event: "transcript", data: payload, to: stream)
+            }
+        }
+    }
+    private lazy var terminalLiveBroker = TerminalLiveBroker(serverQueue: queue, workerQueue: readingQueue) {
+        [weak self] request in self?.route(request) ?? .error(503, "unavailable", "Server stopped") }
     /// Set only through `attachCloudBridge`. It lives on `queue`, beside the SSE streams whose
     /// already-serialized readings it shares.
     private var cloudBridge: CloudAppBridge?
@@ -478,6 +490,7 @@ final class RemoteServer: @unchecked Sendable {
             guard let self else { return }
             for stream in self.streams.values { stream.connection.cancel() }
             self.streams.removeAll()
+            self.transcriptRevisionStream.stop()
         }
     }
 
@@ -617,6 +630,13 @@ final class RemoteServer: @unchecked Sendable {
         // request is not slow, it is *exclusive*: five `/info` in flight answered `/v1/health`, a
         // one-millisecond route, in 3.143 seconds, and held the event stream and its heartbeat for
         // the same three. See `readSlowly`.
+        if request.method == "GET", TerminalLivePreview.isPath(request.path) {
+            if let refusal = slowReadingRefusal(request) { send(withCachePolicy(refusal), on: conn); return }
+            terminalLiveBroker.read(request) { [weak self] response in
+                self?.send(response, on: conn)
+            }
+            return
+        }
         if request.method == "GET", Self.isSlowReading(request.path) {
             readSlowly(request, on: conn)
             return
@@ -1058,6 +1078,9 @@ final class RemoteServer: @unchecked Sendable {
             if parts.count == 2, parts[1] == "transcript" {
                 let limit = min(max(Int(request.query["limit"] ?? "") ?? 200, 1), 1000)
                 return transcriptPayload(for: session, limit: limit)
+            }
+            if parts.count == 2, parts[1] == "live" {
+                return TerminalLivePreview.response(for: session)
             }
             // One background agent's own conversation. The session list already says an agent
             // exists and what it last reached for; this is the rest of it, and it is read the
@@ -2849,7 +2872,7 @@ final class RemoteServer: @unchecked Sendable {
     private var terminalPending: [String: [(Response) -> Void]] = [:]
     private static let terminalWorkerKey = DispatchSpecificKey<Bool>()
     private lazy var terminalQueue: DispatchQueue = {
-        let queue = DispatchQueue(label: "dev.sainteye.clawdline.remote.terminal")
+        let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.terminal")
         queue.setSpecific(key: Self.terminalWorkerKey, value: true)
         return queue
     }()
@@ -3376,7 +3399,7 @@ final class RemoteServer: @unchecked Sendable {
 
     /// The queue the second and a half happens on. Serial, so this Mac only ever runs one whisper
     /// at a time no matter how many phones are pointed at it.
-    private let voiceQueue = DispatchQueue(label: "dev.sainteye.clawdline.remote.voice")
+    private let voiceQueue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.voice")
 
     /// How many recordings are on it. Touched only from the server's queue, like everything else
     /// that is not behind a lock here.
@@ -3799,7 +3822,7 @@ final class RemoteServer: @unchecked Sendable {
         let rest = path.dropFirst("/v1/sessions/".count)
         let parts = rest.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2, !parts[0].isEmpty else { return false }
-        return parts[1] == "info" || parts[1] == "transcript"
+        return parts[1] == "info" || parts[1] == "transcript" || parts[1] == "live"
     }
 
     static func isUsageAnalyticsReading(_ path: String) -> Bool {
@@ -3935,10 +3958,10 @@ final class RemoteServer: @unchecked Sendable {
     /// stream that stops beating are, and one queue away from `route` ends both of those
     /// completely. Four `/info` at once still answer in the same 2.18 seconds they answer in
     /// today — that cost is unchanged, and it is now paid only by whoever opened four cards.
-    private let readingQueue = DispatchQueue(label: "dev.sainteye.clawdline.remote.reading")
+    private let readingQueue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.reading")
 
     private let usageAnalyticsQueue = DispatchQueue(
-        label: "dev.sainteye.clawdline.remote.usage-analytics")
+        label: "com.tsunamiworks.clawdline.remote.usage-analytics")
 
     /// How many of the bounded reads are on it. Touched only from the server's queue, like
     /// everything else here that is not behind a lock. Transcript uses the queue but not this
@@ -3998,7 +4021,6 @@ final class RemoteServer: @unchecked Sendable {
     /// bounded read is load shedding, not evidence that trying again immediately will work.
     static let readingDepth = 8
     static let usageAnalyticsDepth = 2
-
     // MARK: - What the routes answer with
 
     /// The directories a session may be started in — see ``StartPoints``.
@@ -4917,36 +4939,6 @@ final class RemoteServer: @unchecked Sendable {
         ]
     }
 
-    private func transcriptPayload(for session: TargetSession, limit: Int) -> Response {
-        guard let record = Transcript.record(of: session) else {
-            // Not an error. A session that has not spoken yet has an empty transcript, and that
-            // is a different thing from a session that could not be found.
-            return .json(["entries": [], "signature": ""])
-        }
-        let file = record.url
-        // The signature must never describe bytes newer than the text beside it. A transcript
-        // can be appended between the read and a later `stat`; returning that later signature
-        // with the earlier tail makes the browser believe the missing final entry is already on
-        // screen, so every subsequent fetch with the same signature is correctly ignored.
-        //
-        // Take the signature first. If the file moves during the read, repeat once from the
-        // newer boundary. A second append can only make the signature lag the text, which costs
-        // one harmless refetch; it cannot make an absent entry look current forever.
-        var signature = Transcript.signature(of: file)
-        guard var text = Transcript.tail(of: file, bytes: 8 << 20) else {
-            return .json(["entries": [], "signature": ""])
-        }
-        let after = Transcript.signature(of: file)
-        if after != signature, let fresh = Transcript.tail(of: file, bytes: 8 << 20) {
-            signature = after
-            text = fresh
-        }
-        let entries = Self.transcriptRows(
-            Transcript.parse(text, assistant: record.assistant, limit: limit)
-        )
-        return .json(["entries": entries, "signature": signature])
-    }
-
     /// One agent's conversation, plus the agent itself so the page has something to put in the
     /// header while it is reading it.
     ///
@@ -5121,6 +5113,7 @@ final class RemoteServer: @unchecked Sendable {
             "webEmptyWaitHint": t.webEmptyWaitHint,
             "webStateUnreadable": t.webStateUnreadable,
             "webStateWorking": t.webStateWorking,
+            "webTerminalLive": t.webTerminalLive,
             "sessionWorkReady": t.sessionWorkReady,
             "sessionWorkUnknown": t.sessionWorkUnknown,
             "sessionWorkHolding": t.sessionWorkHolding,
@@ -6086,6 +6079,7 @@ final class RemoteServer: @unchecked Sendable {
             case .cancelled, .failed:
                 guard let stream else { return }
                 self?.streams.removeValue(forKey: ObjectIdentifier(stream))
+                if self?.streams.isEmpty == true { self?.transcriptRevisionStream.stop() }
             default: break
             }
         }
@@ -6103,6 +6097,7 @@ final class RemoteServer: @unchecked Sendable {
         write(event: "hello", data: Self.restartHelloPayload(), to: stream)
         DispatchQueue.main.async {
             let payload = self.sessionsPayload()
+            let targets = SessionWatch.shared.targets
             // The task list rides the same stream: a page that reconnects is level on both
             // without asking, for the same reason the whole session list goes out above.
             let tasks: [String: Any] = ["tasks": Orchestrator.records(),
@@ -6110,6 +6105,7 @@ final class RemoteServer: @unchecked Sendable {
             self.queue.async {
                 self.write(event: "sessions", data: payload, to: stream)
                 self.write(event: "orchestrator", data: tasks, to: stream)
+                self.transcriptRevisionStream.sync(targets: targets, active: !self.streams.isEmpty)
             }
         }
         startHeartbeat()
@@ -6138,11 +6134,13 @@ final class RemoteServer: @unchecked Sendable {
     /// and only the writing crosses over.
     private func broadcast() {
         let payload = sessionsPayload()
+        let targets = SessionWatch.shared.targets
         let cloudPayload = try? JSONSerialization.data(withJSONObject: payload,
                                                         options: [.withoutEscapingSlashes])
         queue.async { [weak self] in
             guard let self else { return }
             for stream in self.streams.values { self.write(event: "sessions", data: payload, to: stream) }
+            self.transcriptRevisionStream.sync(targets: targets, active: !self.streams.isEmpty)
             if let bridge = self.cloudBridge, let cloudPayload {
                 self.enqueueCloudPublication {
                     try await bridge.publishSessions(cloudPayload)
