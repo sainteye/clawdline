@@ -97,14 +97,17 @@ func runScheduleResumeTests() throws -> Int {
                finishedRun?["summary"] as? String == "published post 42")
 
     try expect("the exact scheduled conversation may resume",
-               Orchestrator.scheduledResumeAllowed(
-                sessionID: sessionID, assistant: .codex, projectDir: project.path))
+               Orchestrator.scheduledResumeTitle(
+                sessionID: sessionID, assistant: .codex, projectDir: project.path) != nil)
+    try expect("that resume carries the retained task title into its new terminal",
+               Orchestrator.scheduledResumeTitle(
+                sessionID: sessionID, assistant: .codex, projectDir: project.path) == "publish")
     try expect("another assistant cannot borrow the conversation",
-               !Orchestrator.scheduledResumeAllowed(
-                sessionID: sessionID, assistant: .claude, projectDir: project.path))
+               Orchestrator.scheduledResumeTitle(
+                sessionID: sessionID, assistant: .claude, projectDir: project.path) == nil)
     try expect("another project cannot borrow the conversation",
-               !Orchestrator.scheduledResumeAllowed(
-                sessionID: sessionID, assistant: .codex, projectDir: root.path))
+               Orchestrator.scheduledResumeTitle(
+                sessionID: sessionID, assistant: .codex, projectDir: root.path) == nil)
 
     finished.childSessionId = "not-a-session-id"
     Orchestrator.holdScheduleTaskForTesting(finished)
@@ -119,8 +122,8 @@ func runScheduleResumeTests() throws -> Int {
 
     try FileManager.default.removeItem(at: rollout)
     try expect("a removed rollout revokes the resume exception",
-               !Orchestrator.scheduledResumeAllowed(
-                sessionID: sessionID, assistant: .codex, projectDir: project.path))
+               Orchestrator.scheduledResumeTitle(
+                sessionID: sessionID, assistant: .codex, projectDir: project.path) == nil)
     let afterRemoval = Orchestrator.scheduleRecord(
         id: scheduleID, now: Date(timeIntervalSince1970: 100))
     let removedRuns = afterRemoval?["runs"] as? [[String: Any]] ?? []

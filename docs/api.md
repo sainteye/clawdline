@@ -855,6 +855,13 @@ The shape check is exact rather than merely shell-safe. This is especially impor
 term and opens its own picker in a tab nobody is sitting at. The same closed UUID rule is applied
 to Codex before its `resume` subcommand is assembled.
 
+The title shown in the selected history row is carried onto the new terminal immediately, before
+the next inventory pass can rediscover its transcript or rollout. It is a display hint, not proof
+of conversation identity: metadata writes such as renaming still resolve the process-bound record
+the terminal actually opened. The hint is normalized and capped at 80 characters, is checked
+against the observed conversation as soon as that record exists, and is discarded if the terminal
+is reused for another assistant process. The schedule-only exception uses its retained task title.
+
 The refusals are `…/start`'s, plus `not_found` for a conversation that is not on the listing — a
 transcript deleted since you last looked, an id from another project, or one that was never real.
 **Resuming a `live` conversation is not refused**, because the Mac cannot always tell which tab has

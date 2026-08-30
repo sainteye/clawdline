@@ -1189,6 +1189,59 @@ group("clearing a title takes the Codex name off Clawdline's surfaces too") {
     check("and not to what the terminal calls itself", label() != target.label)
 }
 
+group("resuming a known conversation carries its title onto the new terminal") {
+    let conversationID = "11111111-1111-4111-8111-111111111111"
+    let title = "Restore session titles"
+    let target = TargetSession(backend: .iterm, id: "terminal-resumed-title",
+                               name: "Default", tty: "/dev/ttys078",
+                               windowIndex: 0, tabIndex: 11, assistant: .codex)
+    _ = StartPoints.resumed(.started(id: target.id, backend: target.backend),
+                            conversationID: conversationID, title: title, assistant: .codex)
+    expect("the new row has the selected title before another inventory read",
+           CodexNaming.shared.title(for: target), title)
+    check("a display-only resume hint cannot become the id used by /rename",
+          CodexNaming.shared.threadID(for: target) == nil)
+    CodexNaming.shared.forget(target: target)
+
+    let refused = TargetSession(backend: .iterm, id: "terminal-refused-resume",
+                                name: "Default", tty: "/dev/ttys080",
+                                windowIndex: 0, tabIndex: 13, assistant: .codex)
+    _ = StartPoints.resumed(
+        .refused(status: 502, code: "terminal_io_failed", message: "no tab", app: nil),
+        conversationID: conversationID, title: title, assistant: .codex)
+    check("a resume that opened no terminal seeds no title",
+          CodexNaming.shared.title(for: refused) == nil)
+
+    let absent = TargetSession(backend: .iterm, id: "terminal-titleless-resume",
+                               name: "Default", tty: "/dev/ttys081",
+                               windowIndex: 0, tabIndex: 14, assistant: .codex)
+    _ = StartPoints.resumed(.started(id: absent.id, backend: absent.backend),
+                            conversationID: conversationID, title: nil, assistant: .codex)
+    check("an authorized resume with no title does not invent one",
+          CodexNaming.shared.title(for: absent) == nil)
+
+    let long = TargetSession(backend: .iterm, id: "terminal-long-resume",
+                             name: "Default", tty: "/dev/ttys082",
+                             windowIndex: 0, tabIndex: 15, assistant: .codex)
+    _ = StartPoints.resumed(.started(id: long.id, backend: long.backend),
+                            conversationID: conversationID,
+                            title: String(repeating: "x", count: 200), assistant: .codex)
+    expect("a history preview is bounded before becoming a session label",
+           CodexNaming.shared.title(for: long)?.count, 80)
+    CodexNaming.shared.forget(target: long)
+
+    let claude = TargetSession(backend: .iterm, id: "terminal-resumed-claude-title",
+                               name: "Default", tty: "/dev/ttys079",
+                               windowIndex: 0, tabIndex: 12, assistant: .claude)
+    _ = StartPoints.resumed(.started(id: claude.id, backend: claude.backend),
+                            conversationID: conversationID, title: title, assistant: .claude)
+    expect("Claude receives the same display-only resume hint",
+           CodexNaming.shared.title(for: claude), title)
+    CodexNaming.shared.forget(target: claude)
+    check("clearing a Claude title removes its resume hint from the shared cache",
+          CodexNaming.shared.title(for: claude) == nil)
+}
+
 group("a rename is not typed into a session that is showing a menu") {
     var looks = 0
     let idle = SessionTitleSync.action(assistant: .claude, state: .idle,

@@ -26,6 +26,17 @@ final class CodexNaming {
     /// a reused tab from showing its previous occupant's task.
     private var displayedTitles: [String: (assistant: Assistant, conversationID: String,
                                            title: String)] = [:]
+    /// A history row carried across the instant between opening a terminal and observing the
+    /// assistant process inside it. Display-only: unlike `displayedTitles`, this asserted id is
+    /// never allowed to answer ``threadID(for:)`` and therefore can never direct a metadata write.
+    private struct ResumedTitle {
+        let assistant: Assistant
+        let conversationID: String
+        let title: String
+        var startedAt: Date?
+        var retryIdentityAfter: Date
+    }
+    private var resumedTitles: [String: ResumedTitle] = [:]
 
     /// One interactive Codex thread as `thread/list` describes it, pared down to what the
     /// start sheet needs. App-server remains the owner of both the persisted name and the
@@ -297,6 +308,24 @@ final class CodexNaming {
         remember(title, assistant: .claude, conversationID: sessionID, targetID: targetID)
     }
 
+    /// Put the title selected in the resume sheet onto the terminal that was just opened.
+    ///
+    /// The id here is a request, not an observation. It lives in a separate display-only cache so
+    /// `/rename` cannot mistake it for the Codex thread actually occupying the terminal. The first
+    /// display that can resolve process-bound identity checks it, and the process start keeps a
+    /// reused tab from inheriting it later. History previews pass through the same bounded cleanup
+    /// as model titles before reaching a surface.
+    func rememberResumedTitle(_ title: String, assistant: Assistant, conversationID: String,
+                              targetID: String) {
+        guard let title = Self.cleanTitle(title) else { return }
+        lock.lock()
+        resumedTitles[targetID] = ResumedTitle(
+            assistant: assistant, conversationID: conversationID, title: title,
+            startedAt: nil, retryIdentityAfter: .distantPast)
+        lock.unlock()
+        publishTitleChange()
+    }
+
     /// Stop drawing a remembered name for this tab, so the label falls back to whatever the
     /// automatic sources say now.
     ///
@@ -310,14 +339,20 @@ final class CodexNaming {
     /// this app inventing a title and persisting it in another program's store. `docs/api.md`
     /// says so where a caller will read it.
     func forget(target: TargetSession) {
+        lock.lock()
+        let resumed = resumedTitles.removeValue(forKey: target.id) != nil
+        lock.unlock()
         // Claude's entry is the automatic fallback underneath a person's title, not the person's
         // title itself. Clearing the latter must reveal this cache immediately; only Codex stores
         // a person-chosen name in this bridge and therefore needs it removed here.
-        guard target.assistant == .codex else { return }
+        guard target.assistant == .codex else {
+            if resumed { publishTitleChange() }
+            return
+        }
         lock.lock()
         let had = displayedTitles.removeValue(forKey: target.id) != nil
         lock.unlock()
-        if had { publishTitleChange() }
+        if resumed || had { publishTitleChange() }
     }
 
     /// The low-precedence title to put on Clawdline surfaces. The terminal's own title remains
@@ -326,11 +361,62 @@ final class CodexNaming {
     func title(for target: TargetSession) -> String? {
         guard let assistant = target.assistant else { return nil }
         lock.lock()
-        defer { lock.unlock() }
-        guard let displayed = displayedTitles[target.id], displayed.assistant == assistant else {
+        if let displayed = displayedTitles[target.id], displayed.assistant == assistant {
+            lock.unlock()
+            return displayed.title
+        }
+        guard var resumed = resumedTitles[target.id] else {
+            lock.unlock()
             return nil
         }
-        return displayed.title
+        guard resumed.assistant == assistant else {
+            if resumedTitles[target.id]?.conversationID == resumed.conversationID {
+                resumedTitles.removeValue(forKey: target.id)
+            }
+            lock.unlock()
+            return nil
+        }
+        lock.unlock()
+
+        let startedAt = Targets.processStart(of: target)
+        if let known = resumed.startedAt {
+            guard Config.sameConversation(known, startedAt) else {
+                lock.lock()
+                if resumedTitles[target.id]?.conversationID == resumed.conversationID {
+                    resumedTitles.removeValue(forKey: target.id)
+                }
+                lock.unlock()
+                return nil
+            }
+            return resumed.title
+        }
+
+        // Startup can precede the rollout/transcript head by a beat. Keep the selected title on
+        // screen, but retry the identity proof at most once every two seconds until it exists.
+        let now = Date()
+        guard startedAt != nil, resumed.retryIdentityAfter <= now else { return resumed.title }
+        lock.lock()
+        if var current = resumedTitles[target.id] {
+            current.retryIdentityAfter = now.addingTimeInterval(2)
+            resumedTitles[target.id] = current
+        }
+        lock.unlock()
+        guard let observed = Transcript.sessionID(of: target) else { return resumed.title }
+        guard observed == resumed.conversationID else {
+            lock.lock()
+            if resumedTitles[target.id]?.conversationID == resumed.conversationID {
+                resumedTitles.removeValue(forKey: target.id)
+            }
+            lock.unlock()
+            return nil
+        }
+        resumed.startedAt = startedAt
+        lock.lock()
+        if resumedTitles[target.id]?.conversationID == resumed.conversationID {
+            resumedTitles[target.id] = resumed
+        }
+        lock.unlock()
+        return resumed.title
     }
 
     /// The cached association is cheapest. A manual title must also work when auto-naming is
@@ -367,6 +453,7 @@ final class CodexNaming {
         let changed = old?.assistant != assistant || old?.conversationID != conversationID
             || old?.title != title
         displayedTitles[targetID] = (assistant, conversationID, title)
+        resumedTitles.removeValue(forKey: targetID)
         lock.unlock()
         if changed { publishTitleChange() }
     }

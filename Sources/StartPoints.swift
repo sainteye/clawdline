@@ -324,13 +324,29 @@ enum StartPoints {
             return .refused(status: 404, code: "not_found",
                             message: "No conversation named that", app: nil)
         }
-        let listed = past(withID: id, in: place, assistant: assistant) != nil
-        guard listed || Orchestrator.scheduledResumeAllowed(
-            sessionID: id, assistant: assistant, projectDir: place.path) else {
+        let conversation = past(withID: id, in: place, assistant: assistant)
+        let scheduledTitle = conversation == nil ? Orchestrator.scheduledResumeTitle(
+            sessionID: id, assistant: assistant, projectDir: place.path) : nil
+        guard conversation != nil || scheduledTitle != nil else {
             return .refused(status: 404, code: "not_found",
                             message: "No conversation named that", app: nil)
         }
-        return start(place, assistant: assistant, resume: id)
+        let outcome = start(place, assistant: assistant, resume: id)
+        return resumed(outcome, conversationID: id,
+                       title: conversation?.title ?? scheduledTitle, assistant: assistant)
+    }
+
+    /// Finish the transition from a history row to the terminal that now owns it.
+    ///
+    /// Split from ``resume(_:sessionID:assistant:)`` so the handoff can be proved without opening
+    /// a real terminal in the suite. The production caller has already resolved this id and title
+    /// from assistant-specific history or the exact retained scheduled task that authorized it.
+    static func resumed(_ outcome: Outcome, conversationID: String, title: String?,
+                        assistant: Assistant) -> Outcome {
+        guard case .started(let terminalID, _) = outcome, let title else { return outcome }
+        CodexNaming.shared.rememberResumedTitle(
+            title, assistant: assistant, conversationID: conversationID, targetID: terminalID)
+        return outcome
     }
 
     // MARK: - Conversations already recorded here

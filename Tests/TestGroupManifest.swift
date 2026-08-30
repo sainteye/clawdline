@@ -246,6 +246,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the newest of a local name and a terminal /rename wins",
     "a config write that did not happen is not reported as saved",
     "clearing a title takes the Codex name off Clawdline's surfaces too",
+    "resuming a known conversation carries its title onto the new terminal",
     "a rename is not typed into a session that is showing a menu",
     "session-title downstream synchronization never interrupts Claude",
     "which assistant a process name stands for",

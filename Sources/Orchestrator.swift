@@ -728,23 +728,23 @@ enum Orchestrator {
         return out
     }
 
-    /// Whether the existing place-resume route may accept one conversation that the ordinary
-    /// project history deliberately hides because it began as Clawdline plumbing.
+    /// The title for one conversation the ordinary project history deliberately hides because it
+    /// began as Clawdline plumbing, or nil when the existing place-resume route must refuse it.
     ///
     /// The exception is schedule-only, terminal-only, project- and assistant-exact, and backed by
     /// the same task/transcript ownership proof used for usage accounting. This keeps dispatched
     /// children out of the general history picker while allowing the schedule detail that disclosed
     /// the run to pick that exact conversation back up.
-    static func scheduledResumeAllowed(sessionID: String, assistant: Assistant,
-                                       projectDir: String) -> Bool {
+    static func scheduledResumeTitle(sessionID: String, assistant: Assistant,
+                                     projectDir: String) -> String? {
         load()
         lock.lock()
-        let candidates = tasks.values.filter {
+        defer { lock.unlock() }
+        return tasks.values.first {
             $0.scheduleID != nil && $0.state.isTerminal && $0.assistant == assistant
                 && $0.projectDir == projectDir && $0.childSessionId == sessionID
-        }
-        lock.unlock()
-        return candidates.contains { availableScheduledSessionID(of: $0) == sessionID }
+                && availableScheduledSessionID(of: $0) == sessionID
+        }?.title
     }
 
     private static func availableScheduledSessionID(of task: Task) -> String? {
