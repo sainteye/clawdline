@@ -41,6 +41,23 @@ for (const [source, label] of expected) {
 check(readme.includes("https://clawdline.com/docs"), "English README does not link to the canonical public manual");
 check(readmeZh.includes("https://clawdline.com/docs"), "Traditional Chinese README does not link to the canonical public manual");
 check(!readmeZh.includes("clawdline.com/zh-TW/docs"), "Traditional Chinese README still links to the legacy language-prefixed manual");
+for (const [url, label] of [
+  ["https://clawdline.com/clawdfather", "Clawdfather"],
+  ["https://clawdline.com/pricing", "價格"],
+  ["https://clawdline.com/security", "安全性"],
+]) {
+  check(readmeZh.includes(url), `Traditional Chinese README does not link to the canonical ${label} page`);
+}
+for (const statement of [
+  "## Clawdfather 交付循環",
+  "已交付，不等於已審查",
+  "已審查，不等於已落地",
+  "精確的候選版本",
+  "安全關閉必須有證據",
+  "本機用量分析",
+]) {
+  check(readmeZh.includes(statement), `Traditional Chinese README is missing ${JSON.stringify(statement)}`);
+}
 for (const file of files) {
   const text = readFileSync(file, "utf8");
   for (const label of stale) {

@@ -1,7 +1,7 @@
 # Clawdline
 
-**這台 Mac 上的每一個 Claude Code 與 Codex session——連同你的 session 派出去的那些子 agent——
-收成一棵活的樹，在 Mac 上，也在手機上。**
+**Claude Code 與 Codex 的本機協調中心：看懂每個 Session 的狀態、跨助理分派工作、
+獨立審查結果，最後交付已驗證的精確版本。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安裝)
@@ -10,8 +10,61 @@
 
 [English](README.md) · 繁體中文
 
-[網站](https://clawdline.com/) · [公開使用手冊](https://clawdline.com/docs) ·
-[開源技術文件](#文件)
+[網站](https://clawdline.com/) · [安裝](#安裝) ·
+[Clawdfather](https://clawdline.com/clawdfather) ·
+[價格](https://clawdline.com/pricing) · [安全性](https://clawdline.com/security) ·
+[公開使用手冊](https://clawdline.com/docs) · [開源技術文件](#文件)
+
+## Clawdfather 交付循環
+
+多數 Agent 工具擅長處理一段對話，或是替你多開幾個 Worker。當工作變成多個真實的 Terminal
+Session、Claude 與 Codex 同時在同一個 Project 裡修改檔案、結果需要另一個人獨立審查，最後還得確認
+目標 Branch 確實包含審查過的內容時，只會「多開幾個 Agent」就不夠了。Clawdline 從這個位置開始。
+
+**Clawdfather 是整台 Machine 上持續存在的協調角色。** 它掌握 Session、Task、Wait 與尚未落地的
+結果，把一個目標拆成各自有人負責的工作，交給合適的助理，請沒有參與實作的 Session 進行審查，
+再把完整 Finding Set 交給一輪範圍明確的修正。最後由 Root 保留整合責任，直到精確的候選版本已經
+完成驗證並正式釋出。
+
+<img src="docs/assets/clawdfather-loop.gif" width="760" alt="Clawdfather 交付循環：Root 保留計畫與落地責任，Claude 與 Codex 在宣告過寫入範圍的工作線上平行執行，另一個 Session 獨立審查，一輪修正關閉完整 Finding Set，最後驗證目標 Commit 並留下長期收據。">
+
+```text
+產品意圖
+  → 計畫與落地負責人
+  → Claims 與 Claude／Codex 平行派工
+  → 獨立審查
+  → 一輪範圍明確的修正
+  → Root 負責落地
+  → 精確版本驗證
+  → 經授權的 Build、Restart 與線上收據
+```
+
+這套流程刻意不只是一顆 Spawn 按鈕：
+
+- **已交付，不等於已審查。** Child Session 回傳 `success`，只代表答案已經送達。沒有參與實作的
+  Reviewer 才能判斷它是否安全，並留下別人可以重現的證據。
+- **已審查，不等於已落地。** `SAFE TO LAND` 代表可以開始整合，不代表工作已經完成。Root 必須逐檔
+  Stage、讀完真正的 Staged Diff、記下目標 Commit，並持續負責到 Broker 能驗證結果確實落在目標版本。
+- **測試通過必須說清楚測的是什麼。** Child 在 Working Tree 上的測試，只能證明它看到的 Overlay；
+  Release 驗收會針對精確的候選版本執行，Build、Restart 與線上 Health 也各自留下收據。
+- **平行工作有明確邊界。** Shared Tree 任務開始前會檢查宣告的寫入路徑；不是檔案的操作可以序列化；
+  Wait、Release、Completion ACK 都是有型別的紀錄，而不是期待另一個 Session 剛好看見的一行文字。
+
+目前這條流程由一個明確登記的 Clawdfather Session，搭配 Clawdline 已有的 Resume、Dispatch、Review、
+Landing、Closeability 與 Verification 能力完成。原生的流程圖與控制介面仍是下一步，現在可用的協調路徑
+不會假裝那些按鈕已經上線。產品意圖、不可逆操作、費用、Credential、隱私與安全性等決策，仍然由人負責。
+
+## Clawdline 不同在哪裡
+
+| | |
+| --- | --- |
+| **協調你已經開啟的 Session** | 不需要 Wrapper、替代 Runtime 或特殊啟動方式。你手動開啟的 Claude Code、Codex，會和 Clawdline 派出的 Session 出現在同一份清單；關掉 App，原本的工作仍會繼續。 |
+| **Claude 與 Codex 是同一層級的成員** | 兩邊都能把工作派給對方。每個 Child 都是真實、看得見的 Terminal Session，保留 Transcript、Status、待回答問題、Task Record 與 Usage；Mac 與手機看到的是同一套資訊。 |
+| **交付關係不會隨對話消失** | Claim、Wait、Result、Review、Landing Record、Completion ACK 與 Closeability 都是長期證據。Tab 安靜下來，不會自動把未完成的責任變成完成。 |
+| **Project 才是整理工作的單位** | Session、Task、Schedule、開發伺服器、Branch、Backlog、Health 與 Deploy 狀態會回到同一個 Project，而不是散落在 Terminal、CI 頁面與 Status Page。 |
+| **本機優先，Cloud 只增加連線範圍** | 免費 Mac App 不需要帳號，也不會在任何助理內安裝東西。[Clawdline Cloud](https://clawdline.com/) 是選用的加密連線層；執行環境與 Content Key 仍留在你擁有的硬體上。 |
+
+## Session 不是一排 Terminal Tab
 
 <img src="docs/assets/fleet-wide.png" width="760" alt="Clawdline 在瀏覽器裡：這台 Mac 上的每一個 Claude Code 與 Codex session 收在同一份清單，被別的 session 派出去的那些縮排在它底下，選中的那個的逐字稿就在清單旁邊">
 
@@ -49,10 +102,11 @@ Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kb
 
 沒有東西要搬、也沒有東西要復原。關掉它，你的環境就跟原本一模一樣。
 
-## 功能
+## 交付循環周邊的功能
 
 | | |
 | --- | --- |
+| **Clawdfather：規劃、派工、審查、修正、落地**<br><br>一個已登記的整台 Machine 協調角色，持續掌握 Session、Task、Wait 與 Landing 證據。它可以跨 Project 拆解工作，在某一個助理額度不足時改走其他路徑，要求獨立審查，並由 Root 保留整合責任。<br><br>[大型任務如何派工 →](docs/dispatching.md) · [驗證與審查 →](docs/verification-workflow.md) | <img src="docs/assets/clawdfather-loop.gif" width="380" alt="Clawdfather 協調有 Claims 的平行工作、獨立審查、修正與精確版本交付。"> |
 | **整支艦隊，還有誰派了誰** `⌘K`<br><br>這台 Mac 上的每一個 Claude Code 與 Codex session 收在同一份清單——你自己開的那些，還有被某個 session 派出去的那些，縮排在叫它們出來的那個底下。一眼就看得到一排分頁講不出來的事：哪一個在等你，哪一個是別的 session 交代出去的差事。<br><br>[把工作派給另一個 session →](#把工作派給另一個-session) | <img src="docs/assets/fleet-phone.png" width="300" alt="手機上的 session 清單：每個母 session 底下都縮排著一個被派出去的子 session，一個跑 Claude Code、一個跑 Codex，在等你回答的那個用重點色挑出來"> |
 | **哪一個 session 在等你** `⌘K`<br><br>正在跑的那個帶著 Claude Code 自己畫的那行字；螢幕上有問題沒人回答的那個會大聲說出來，因為那是唯一一種每過一秒都在賠錢的狀態。每一行還帶著它自己專案的像素圖示。<br><br>[每個狀態是怎麼判的 →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="Session 清單，動起來：選取往下走，一個被回答了於是安靜下來、一個跑完、另一個開始發問"> |
 | **把 session 讀回來** `⌘J`<br><br>不是終端機的截圖。Clawdline 讀的是那個 session 的逐字稿檔案，所以你拿到的是真正的訊息邊界、完整歷史、標題、有框線的表格與程式碼——跑完的工具呼叫各收成一行。`⌘F` 撐滿整個螢幕。<br><br>[那塊面板在做什麼 →](docs/interface.md#reading-a-session-back) | <img src="docs/assets/transcript.png" width="380" alt="逐字稿面板：標題、有框線的表格、程式碼區塊，是排版過的而不是刮畫面"> |
@@ -67,6 +121,13 @@ Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kb
 
 也有：
 
+- **安全關閉必須有證據** —— Broker 會根據目前的 Process Identity、Task、Wait、Pending Landing、
+  Handoff、Completion Delivery 與已宣告責任，判斷 Session 是被阻擋、需要 Attestation、可以安全關閉，
+  或是證據不足。啟用自動關閉後仍使用 Compare-and-Swap Version；證據一旦改變，就會拒絕關閉。
+  [契約 →](docs/session-closeability.md)
+- **本機用量分析，不把未知假裝成零** —— 可以依 Model、Assistant、Origin、Project、日期、Coverage
+  或 Task 篩選與分組。未知 Model 或帳務方案不會被硬算出價格；缺少來源的 Coverage 也不會和真正的零混在一起。
+  [API →](docs/api.md#get-v1orchestratorusageanalytics-analyticscsv-analyticsjson)
 - **開發用的那些伺服器，就在你已經在打字的地方** —— `⌘S` 列出每個專案的長跑行程、跑了多久、
   每個 port 都是連結，還有啟動／停止／重啟。**Clawdline 從來不自己開行程**，它跑的是你的 repo
   在 `.devstack.json` 裡宣告的指令。[格式 →](docs/devstack.md) · [怎麼導入 →](docs/devstack-adopting.md)
