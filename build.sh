@@ -9,6 +9,8 @@ verify_swift_source_manifest production
 APP="${CLAWDLINE_APP:-$HOME/Applications/Clawdline.app}"
 APP_PARENT="$(dirname "$APP")"
 APP_NAME="$(basename "$APP")"
+BUNDLE_ID="com.tsunamiworks.clawdline"
+SIGN_IDENTITY="${CLAWDLINE_SIGN_IDENTITY:--}"
 
 mkdir -p "$APP_PARENT"
 # Build beside the installed app, on the same filesystem. The final rename is then quick and
@@ -59,13 +61,14 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
 <dict>
   <key>CFBundleName</key><string>Clawdline</string>
   <key>CFBundleDisplayName</key><string>Clawdline</string>
-  <key>CFBundleIdentifier</key><string>dev.sainteye.clawdline</string>
+  <key>CFBundleIdentifier</key><string>com.tsunamiworks.clawdline</string>
   <key>CFBundleExecutable</key><string>Clawdline</string>
   <key>CFBundleIconFile</key><string>Clawdline</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.6.0</string>
   <key>CFBundleVersion</key><string>0.6.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 TsunamiWorks Co., Ltd.</string>
   <!-- Menu bar resident, no Dock icon -->
   <key>LSUIElement</key><true/>
   <!-- Without this line macOS kills the app the first time it talks to iTerm2 -->
@@ -81,16 +84,43 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
   <!-- clawdline://open so any tool can summon it, not just the built-in hotkey -->
   <key>CFBundleURLTypes</key>
   <array><dict>
-    <key>CFBundleURLName</key><string>dev.sainteye.clawdline</string>
+    <key>CFBundleURLName</key><string>com.tsunamiworks.clawdline</string>
     <key>CFBundleURLSchemes</key><array><string>clawdline</string></array>
   </dict></array>
 </dict>
 </plist>
 PLIST
 
-# Ad-hoc signature. Unsigned, TCC forgets "may control iTerm2" on every rebuild.
-codesign --force --sign - --identifier dev.sainteye.clawdline "$STAGED_APP" >/dev/null 2>&1 \
-  || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
+# Local builds stay ad-hoc and cheap. A release supplies the company Developer ID identity and
+# receives Hardened Runtime, a trusted timestamp, and only the two resource entitlements the app
+# actually uses. The private key never enters this repository.
+if [ "$SIGN_IDENTITY" = - ]; then
+  codesign --force --sign - --identifier "$BUNDLE_ID" "$STAGED_APP" >/dev/null 2>&1 \
+    || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
+else
+  signed=0
+  for attempt in 1 2 3; do
+    if codesign --force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" \
+        --options runtime --timestamp --entitlements Resources/Clawdline.entitlements \
+        "$STAGED_APP"; then
+      signed=1
+      break
+    fi
+    [ "$attempt" = 3 ] && break
+    echo "  Apple timestamp service did not answer; retrying Developer ID signing ($attempt/3)"
+    sleep $((attempt * 5))
+  done
+  [ "$signed" = 1 ] || { echo "!! Developer ID signing failed after 3 attempts"; exit 1; }
+fi
+
+# Packaging and CI build beside the installed app but must never inspect, stop, replace, or reopen
+# the live Clawdline process. Their caller owns the fresh output path and receives only the bundle.
+if [ "${CLAWDLINE_BUILD_ONLY:-0}" = 1 ]; then
+  [ ! -e "$APP" ] || { echo "!! build-only destination already exists: $APP"; exit 1; }
+  mv "$STAGED_APP" "$APP"
+  echo "✓ built $APP"
+  exit 0
+fi
 
 # Nothing installed or running has been touched until here. Remember the state at the instant
 # of replacement — somebody who deliberately quit while a long build was running should not

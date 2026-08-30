@@ -2,11 +2,11 @@ import AppKit
 
 extension NSAttributedString.Key {
     fileprivate static let sessionImageArtifactID = NSAttributedString.Key(
-        "dev.sainteye.clawdline.session-image-artifact-id")
+        "com.tsunamiworks.clawdline.session-image-artifact-id")
     fileprivate static let sessionImageExpiry = NSAttributedString.Key(
-        "dev.sainteye.clawdline.session-image-expiry")
+        "com.tsunamiworks.clawdline.session-image-expiry")
     fileprivate static let sessionImageState = NSAttributedString.Key(
-        "dev.sainteye.clawdline.session-image-state")
+        "com.tsunamiworks.clawdline.session-image-state")
 }
 
 /// Turns byte-free transcript references into native presentation without crossing the owned

@@ -33,7 +33,7 @@ jobs:
       # exercises it — and a stale one gives a new contributor a broken editor and no clue why.
       - name: The package an editor indexes still resolves
         run: swift build
-      - run: CLAWDLINE_APP="$RUNNER_TEMP/Clawdline.app" ./build.sh
+      - run: CLAWDLINE_APP="$RUNNER_TEMP/Clawdline.app" CLAWDLINE_BUILD_ONLY=1 ./build.sh
       - name: The bundle carries what it needs
         run: |
           APP="$RUNNER_TEMP/Clawdline.app"

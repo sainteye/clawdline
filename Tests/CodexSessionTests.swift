@@ -355,7 +355,7 @@ group("a rollout reads as the same entries a transcript does") {
     ], at: Date(timeIntervalSince1970: 203))
     expect("adjacent Codex drop paths preserve preceding text", adjacent.first?.text, "two")
     expect("adjacent Codex drop paths are counted separately", adjacent.first?.imageCount, 2)
-    let spacedDirectory = "/Users/Test Person/Library/Caches/dev.sainteye.clawdline/drops"
+    let spacedDirectory = "/Users/Test Person/Library/Caches/com.tsunamiworks.clawdline/drops"
     let spacedDrop = spacedDirectory + "/clawdline-20260827-120000-000-"
         + "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE.png"
     let quoted = Transcript.canonicalDropPaths(

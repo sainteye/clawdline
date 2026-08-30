@@ -87,7 +87,7 @@ func attr(_ a: NSAttributedString, _ key: NSAttributedString.Key, near needle: S
 /// the next thing somebody trips over. A UUID needs no such argument and costs nothing.
 let pasteboardRun = UUID().uuidString
 func exclusivePasteboard(_ role: String) -> NSPasteboard {
-    NSPasteboard(name: NSPasteboard.Name("dev.sainteye.clawdline.tests.\(role).\(pasteboardRun)"))
+    NSPasteboard(name: NSPasteboard.Name("com.tsunamiworks.clawdline.tests.\(role).\(pasteboardRun)"))
 }
 
 func runMarkdownTests() {

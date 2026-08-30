@@ -43,7 +43,7 @@ enum SmartNotification {
     /// because the queue no longer costs one model turn per entry: everything waiting when the
     /// worker wakes becomes one coalesced turn and one push.
     static let maxQueued = 64
-    private static let queue = DispatchQueue(label: "dev.sainteye.clawdline.smart-notification",
+    private static let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.smart-notification",
                                              qos: .utility)
     private static let lock = NSLock()
 

@@ -1973,12 +1973,12 @@ enum Orchestrator {
     /// Pumps arrive from main-thread finalization and startup as well as the remote server, so
     /// they get the same off-main serial shape as ordinary dispatch without competing pumps.
     private static let serializePumpQueue = DispatchQueue(
-        label: "dev.sainteye.clawdline.orchestrator.serialize")
+        label: "com.tsunamiworks.clawdline.orchestrator.serialize")
     /// Worktree inspection and disposal can each wait on several bounded git subprocesses.
     /// Keeping them on one utility queue both keeps the panel responsive and prevents two close
     /// paths from racing to dispose the same checkout.
     private static let worktreeQueue = DispatchQueue(
-        label: "dev.sainteye.clawdline.orchestrator.worktree", qos: .utility)
+        label: "com.tsunamiworks.clawdline.orchestrator.worktree", qos: .utility)
     /// A background pump and a new remote dispatch may both persist. Serializing the whole
     /// snapshot-and-write prevents an older snapshot from winning the atomic rename last.
     private static let storeSaveLock = NSLock()
@@ -1986,7 +1986,7 @@ enum Orchestrator {
     /// mutations closes the otherwise possible gap where two retries both see a missing receipt.
     private static let coordinationDeliveryLock = NSLock()
     private static let completionDeliveryQueue = DispatchQueue(
-        label: "dev.sainteye.clawdline.orchestrator.completion", qos: .utility)
+        label: "com.tsunamiworks.clawdline.orchestrator.completion", qos: .utility)
     static let completionAttemptLimit = 8
     static let completionRetryMaximum: TimeInterval = 300
     static let legacyCompletionLookback: TimeInterval = 7 * 24 * 3600
@@ -2025,7 +2025,7 @@ enum Orchestrator {
     /// ``takeScheduleWriteRate()``.
     private static var scheduleWriteTimes: [Date] = []
     private static let scheduleQueue = DispatchQueue(
-        label: "dev.sainteye.clawdline.orchestrator.schedules", qos: .utility)
+        label: "com.tsunamiworks.clawdline.orchestrator.schedules", qos: .utility)
     static var scheduleRunnerForTesting: ((Schedule) -> Reply)?
     static var scheduleDispatchEnqueuerForTesting: ((@escaping () -> Void) -> Void)?
     static var completionPumpEnqueuerForTesting: ((@escaping () -> Void) -> Void)?

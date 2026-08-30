@@ -138,7 +138,7 @@ struct SessionImageArtifactStore {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent(
-            "dev.sainteye.clawdline/session-images", isDirectory: true)
+            "com.tsunamiworks.clawdline/session-images", isDirectory: true)
     }
 
     let directory: URL

@@ -90,6 +90,7 @@ node Tests/web-code-copy.mjs
 node Tests/web-message-images.mjs
 node Tests/dispatch-role-contract.mjs
 node Tests/restart-rollout-contract.mjs
+node Tests/release-signing-contract.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs

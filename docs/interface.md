@@ -237,7 +237,7 @@ What is on screen is for you; what goes down the wire is for Claude Code, and th
 the same string one of them is being made worse to suit the other.
 
 An image off the clipboard has no path yet, so one is written under
-`~/Library/Caches/dev.sainteye.clawdline/drops/` and that path is inserted. Those files are the only
+`~/Library/Caches/com.tsunamiworks.clawdline/drops/` and that path is inserted. Those files are the only
 thing this leaves behind, so the most recent few are kept and the rest are removed.
 
 ## The notch

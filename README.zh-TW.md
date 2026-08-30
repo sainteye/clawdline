@@ -640,7 +640,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 - **按 <kbd>⌥</kbd><kbd>Space</kbd> 沒反應** —— 看 log 有沒有 `hotkey registered`。沒有就是被別
   的 app 佔走了，在設定裡換一個。
 - **顯示「No Claude Code session found」** —— 多半是自動化權限被拒。跑
-  `tccutil reset AppleEvents dev.sainteye.clawdline` 之後重開，讓它重新問一次。
+  `tccutil reset AppleEvents com.tsunamiworks.clawdline` 之後重開，讓它重新問一次。
 - **送出失敗** —— 面板會自己跳回來，你打的字還在，下緣寫著原因。它不會吃掉你的字。
 
 ## 文件

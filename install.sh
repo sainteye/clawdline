@@ -4,16 +4,14 @@
 #   ./install.sh              → /Applications
 #   ./install.sh ~/Applications
 #
-# The last step clears the quarantine flag. That is not a trick to get around Gatekeeper —
-# the build is ad-hoc signed rather than notarized, so macOS refuses to open the downloaded
-# copy at all, and the alternative is a trip through System Settings. If you would rather not
-# take that on faith, `git clone` and run ./build.sh instead: an app you compiled yourself is
-# never quarantined, and there is nothing to trust.
+# TsunamiWorks releases are Developer ID signed and notarized. The legacy branch below exists only
+# while v0.6.0 and earlier remain downloadable; it can go after the first notarized release lands.
 set -euo pipefail
 
 REPO="sainteye/clawdline"
 DEST="${1:-/Applications}"
 APP="Clawdline.app"
+EXPECTED_TEAM_ID="83D62P566Q"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -66,8 +64,18 @@ echo "→ installing to $DEST"
 mkdir -p "$DEST"
 ditto "$TMP/out/$APP" "$DEST/$APP"
 
-echo "→ clearing quarantine (ad-hoc signed, not notarized)"
-xattr -dr com.apple.quarantine "$DEST/$APP" 2>/dev/null || true
+SIGN_INFO=$(codesign --display --verbose=4 "$DEST/$APP" 2>&1 || true)
+case "$SIGN_INFO" in
+  *"Authority=Developer ID Application: TsunamiWorks Co., Ltd. ($EXPECTED_TEAM_ID)"*"TeamIdentifier=$EXPECTED_TEAM_ID"*)
+    echo "→ verifying TsunamiWorks signature and Apple notarization"
+    codesign --verify --deep --strict --verbose=2 "$DEST/$APP"
+    spctl --assess --type execute --verbose=2 "$DEST/$APP"
+    ;;
+  *)
+    echo "→ legacy release: clearing quarantine (v0.6.0 and earlier were ad-hoc signed)"
+    xattr -dr com.apple.quarantine "$DEST/$APP" 2>/dev/null || true
+    ;;
+esac
 
 echo
 echo "✓ installed $VERSION to $DEST/$APP"

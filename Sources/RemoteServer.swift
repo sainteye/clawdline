@@ -98,7 +98,7 @@ final class RemoteServer: @unchecked Sendable {
         return Int(at.timeIntervalSince1970)
     }()
 
-    private let queue = DispatchQueue(label: "dev.sainteye.clawdline.remote")
+    private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote")
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
     private var nextEventID = 0
@@ -2809,7 +2809,7 @@ final class RemoteServer: @unchecked Sendable {
     private var terminalPending: [String: [(Response) -> Void]] = [:]
     private static let terminalWorkerKey = DispatchSpecificKey<Bool>()
     private lazy var terminalQueue: DispatchQueue = {
-        let queue = DispatchQueue(label: "dev.sainteye.clawdline.remote.terminal")
+        let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.terminal")
         queue.setSpecific(key: Self.terminalWorkerKey, value: true)
         return queue
     }()
@@ -3330,7 +3330,7 @@ final class RemoteServer: @unchecked Sendable {
 
     /// The queue the second and a half happens on. Serial, so this Mac only ever runs one whisper
     /// at a time no matter how many phones are pointed at it.
-    private let voiceQueue = DispatchQueue(label: "dev.sainteye.clawdline.remote.voice")
+    private let voiceQueue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.voice")
 
     /// How many recordings are on it. Touched only from the server's queue, like everything else
     /// that is not behind a lock here.
@@ -3889,10 +3889,10 @@ final class RemoteServer: @unchecked Sendable {
     /// stream that stops beating are, and one queue away from `route` ends both of those
     /// completely. Four `/info` at once still answer in the same 2.18 seconds they answer in
     /// today — that cost is unchanged, and it is now paid only by whoever opened four cards.
-    private let readingQueue = DispatchQueue(label: "dev.sainteye.clawdline.remote.reading")
+    private let readingQueue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.reading")
 
     private let usageAnalyticsQueue = DispatchQueue(
-        label: "dev.sainteye.clawdline.remote.usage-analytics")
+        label: "com.tsunamiworks.clawdline.remote.usage-analytics")
 
     /// How many of the bounded reads are on it. Touched only from the server's queue, like
     /// everything else here that is not behind a lock. Transcript uses the queue but not this
