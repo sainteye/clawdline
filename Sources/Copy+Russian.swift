@@ -271,6 +271,7 @@ struct Russian: Copy {
     let webEmptyWaitHint = "В потоке пока ничего не появилось"
     let webStateUnreadable = "экран не прочитать"
     let webStateWorking = "в работе"
+    let webTerminalLive = "Предпросмотр терминала"
     let sessionWorkReady = "может взять новую работу"
     let sessionWorkUnknown = "статус неизвестен"
     let sessionWorkHolding = "движется само"

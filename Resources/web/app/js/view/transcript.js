@@ -134,7 +134,11 @@ export function renderTranscript() {
     // tail: they are read-only conversations and have no composer to originate one.
     var viewEntries = view.entries.slice();
     if (!S.agent) viewEntries = viewEntries.concat(Optimistic.entries(S.openId));
-    if (view.error && !viewEntries.length) { box.innerHTML = '<div class="tx-note err">' + esc(view.error) + "</div>"; return; }
+    var livePreview = terminalLiveHTML();
+    if (view.error && !viewEntries.length && !livePreview) {
+        box.innerHTML = '<div class="tx-note err">' + esc(view.error) + "</div>";
+        return;
+    }
     var transcriptNotice = view.error
         ? '<div class="tx-note err">' + esc(view.error) + "</div>"
         : "";
@@ -144,7 +148,7 @@ export function renderTranscript() {
         box.innerHTML = Waits.tx.visible ? txSkeleton() : "";
         return;
     }
-    if (!viewEntries.length) {
+    if (!viewEntries.length && !livePreview) {
         // An agent with nothing in its file is not the same absence as a session with nothing in
         // its file, and it is common: the first second of every agent's life looks like this.
         box.innerHTML = '<div class="tx-note">' + esc(S.agent ? T.agentEmpty : T.noOutput) + "</div>";
@@ -180,6 +184,7 @@ export function renderTranscript() {
     if (liveRun && liveAt === blocks.length - 1 && transcriptWorking()) {
         blocks[liveAt] = runHTML(liveRun, true);
     }
+    if (livePreview) blocks.push(livePreview);
     if (S.newestFirst) blocks.reverse();
     replaceTranscriptContents(box, transcriptNotice + blocks.join(""));
     var pending = box.querySelectorAll(".entry.pending canvas.spin");
@@ -191,6 +196,14 @@ export function renderTranscript() {
     // order. A custom event rather than a direct call: this function is the transcript's, and
     // what somebody else needs to do afterwards is their business, not a line in here.
     document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+}
+
+function terminalLiveHTML() {
+    if (S.agent || !S.openId || S.live.id !== S.openId || !S.live.text ||
+        !transcriptWorking()) return "";
+    return '<section class="terminal-live" aria-label="' + esc(T.webTerminalLive) + '">' +
+        '<div class="terminal-live-label"><span class="terminal-live-dot" aria-hidden="true"></span>' +
+        esc(T.webTerminalLive) + '</div><pre>' + esc(S.live.text) + '</pre></section>';
 }
 
 /**

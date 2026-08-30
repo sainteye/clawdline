@@ -472,6 +472,7 @@ protocol Copy {
     /// is not a session doing nothing, and drawing it as one is a confident wrong answer.
     var webStateUnreadable: String { get }
     var webStateWorking: String { get }
+    var webTerminalLive: String { get }
     /// Quiet Session work-state labels and the accessible descriptions behind one/two checks.
     /// They are server copy, even though the fallback bundle repeats English for old/offline pages.
     /// The vocabulary contract — what a person should do on seeing each state — is

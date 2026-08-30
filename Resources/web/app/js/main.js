@@ -30,7 +30,8 @@ import "./view/markdown.js";
 import "./view/composer.js";
 import { paintStatic } from "./view/static.js";
 import { Waits } from "./view/waits.js";
-import { openSession } from "./session/open.js";
+import { loadTranscript, observeTranscriptFileRevision, openSession } from "./session/open.js";
+import { createTranscriptEventRouter } from "./session/transcript-requests.js";
 import "./session/agent.js";
 import "./input/keys.js";
 import "./input/swipe.js";
@@ -61,6 +62,13 @@ import "./input/edges.js";
 // The one thing that has to happen before anything on this page can call the API: which of the
 // two it is. `net/api.js` holds the name and knows about neither — see the note there.
 useApi(MOCK ? Mock : Live);
+if (typeof api.events === "function") {
+    api.events(createTranscriptEventRouter(
+        function () { return S.openId; },
+        observeTranscriptFileRevision,
+        function (id) { loadTranscript(id, true); }
+    ));
+}
 Diagnostics.bind({ state: S, elements: els });
 
 // The controls module keeps its pure command selection importable without a browser. DOM and

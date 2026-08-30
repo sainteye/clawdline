@@ -271,6 +271,7 @@ struct Turkish: Copy {
     let webEmptyWaitHint = "Akıştan henüz bir şey gelmedi"
     let webStateUnreadable = "ekran okunamadı"
     let webStateWorking = "çalışıyor"
+    let webTerminalLive = "Canlı terminal önizlemesi"
     let sessionWorkReady = "yeni iş alabilir"
     let sessionWorkUnknown = "durum bilinmiyor"
     let sessionWorkHolding = "kendi kendine ilerliyor"

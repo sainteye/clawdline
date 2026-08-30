@@ -47,6 +47,30 @@ export function createTranscriptRequests(fetchTranscript, accept) {
 }
 
 /**
+ * Translate the local file-revision lane into transcript demand without confusing it with the
+ * session snapshot revision. The two clocks can move independently: a JSONL append need not
+ * change state, line or label, and an inventory refresh need not append a byte.
+ */
+export function createTranscriptEventRouter(currentSessionID, observe, reconnect) {
+    return function route(event) {
+        if (!event) return false;
+        if (event.type === "hello") {
+            var reconnectID = currentSessionID();
+            if (!reconnectID || typeof reconnect !== "function") return false;
+            reconnect(reconnectID);
+            return true;
+        }
+        if (event.type !== "transcript-revision") return false;
+        var data = event.data || {};
+        var openID = currentSessionID();
+        if (!openID || data.id !== openID || typeof data.signature !== "string" ||
+            !data.signature) return false;
+        observe(data.id, data.signature);
+        return true;
+    };
+}
+
+/**
  * Keep the newest session snapshot revision separate from the revision whose transcript GET
  * actually succeeded. A transient final GET failure gets a small recovery budget; repeated SSE
  * snapshots for the same revision neither consume that budget nor create parallel reads.
