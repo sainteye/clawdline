@@ -7,6 +7,10 @@ docs/assets/frames/
 # serena's index and its notes about this checkout, written by whichever agent is working here
 .serena/
 
+# Private per-project state pages served through authenticated Project links. These stay local;
+# public documentation belongs in docs/, and the server still applies its project jail and CSP.
+.clawdline-private/
+
 # swift build, which is only ever run to give an editor something to index
 .build/
 .swiftpm/
