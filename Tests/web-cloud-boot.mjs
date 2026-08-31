@@ -401,5 +401,7 @@ function fakeClient() {
 const { assertClawdlineClient } = await import("../Resources/web/app/js/net/client.js");
 assert.doesNotThrow(function () { assertClawdlineClient(boot.idleClient()); },
     "the transport held while the cloud one boots satisfies the same seam");
+assert.doesNotThrow(function () { boot.idleClient().start(); },
+    "the placeholder also satisfies main.js's unconditional boot hook");
 
 console.log("web cloud boot tests passed");
