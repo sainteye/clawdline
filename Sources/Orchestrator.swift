@@ -11705,17 +11705,17 @@ enum Orchestrator {
     /// resolutions (which terminal is the root, right now) the way `session(withID:)` does.
     static func records() -> [[String: Any]] {
         onMain(from: "Orchestrator.records") {
-            lock.lock()
+            let publication = SessionWatch.shared.publishedInventory(); lock.lock()
             let indexed = tasks; let all = indexed.values.sorted { $0.created > $1.created }
             lock.unlock()
-            let graphIndex = graphTaskIndex(indexed); return all.map { record(of: $0, graphIndex: graphIndex) }
+            let graphIndex = graphTaskIndex(indexed); return all.map { record(of: $0, graphIndex: graphIndex, publication: publication) }
         }
     }
 
     static func record(id: String) -> [String: Any]? {
         onMain(from: "Orchestrator.record(id:)") {
             guard let task = held(id) else { return nil }
-            return record(of: task)
+            return record(of: task, publication: SessionWatch.shared.publishedInventory())
         }
     }
 
@@ -11864,11 +11864,11 @@ enum Orchestrator {
                       resolution: .task, among: targets, sessionID: sessionID)?.id
     }
 
-    private static func record(of task: Task, graphIndex: GraphTaskIndex? = nil) -> [String: Any] {
+    private static func record(of task: Task, graphIndex: GraphTaskIndex? = nil, publication: SessionWatch.InventoryPublication) -> [String: Any] {
         let parentTerminal = task.parentTaskId.flatMap { held($0)?.childTerminalId }
         let rootTerminal = rootTerminalID(for: task, parentTerminalID: parentTerminal,
-                                          among: SessionWatch.shared.targets,
-                                          sessionID: Transcript.sessionID(of:))
+                                          among: publication.targets,
+                                          sessionID: { publication.identities[$0.id]?.conversationID })
         return shape(task, rootTerminal: rootTerminal, graphIndex: graphIndex)
     }
 

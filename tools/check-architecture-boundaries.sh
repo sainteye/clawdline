@@ -20,6 +20,34 @@ orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le 13592 ] \
   || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved Root Assignment delivery receipt (13592)"
 
+# Task JSON is built on the main queue after a SessionWatch publication lands. Root-terminal
+# projection must therefore consume that publication, not re-enter Transcript/Targets and launch
+# lsof/ps while the UI is applying the same generation. Deleting the publication argument or
+# restoring the old lookup must fail before a compiler is started.
+orchestrator_record_projection=$(awk '
+  /static func records\(\) -> \[\[String: Any\]\]/ { capture = 1 }
+  capture && !/^[[:space:]]*\/\// { print }
+  capture && /private static func shape\(/ { exit }
+' Sources/Orchestrator.swift)
+[ -n "$orchestrator_record_projection" ] \
+  || architecture_guard_fail "Orchestrator task-record projection slice was not found"
+printf '%s\n' "$orchestrator_record_projection" | grep -q 'publishedInventory()' \
+  || architecture_guard_fail "Orchestrator task records do not consume one SessionWatch publication"
+record_publication_reads=$(printf '%s\n' "$orchestrator_record_projection" \
+  | grep -Fc 'publishedInventory()' || true)
+[ "$record_publication_reads" -eq 2 ] \
+  || architecture_guard_fail "Orchestrator records/read-one projection has $record_publication_reads publication reads; expected 2"
+printf '%s\n' "$orchestrator_record_projection" \
+  | grep -q 'let publication = SessionWatch.shared.publishedInventory();' \
+  || architecture_guard_fail "Orchestrator records do not capture one publication before mapping tasks"
+printf '%s\n' "$orchestrator_record_projection" | grep -q 'publication: publication' \
+  || architecture_guard_fail "Orchestrator records do not reuse their captured publication"
+printf '%s\n' "$orchestrator_record_projection" | grep -q 'publication.identities' \
+  || architecture_guard_fail "Orchestrator task records do not resolve roots from published identity"
+if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.sessionID'; then
+  architecture_guard_fail "Orchestrator task records re-scan Transcript/Targets on the main queue"
+fi
+
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ "$remote_server_lines" -le 6385 ] \
   || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved dispatch-door split receipt (6385)"
