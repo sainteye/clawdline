@@ -75,6 +75,7 @@ tools/build-compatibility.py --check
 tools/check-web-strings.py
 tools/check-web-ids.py
 node Tests/docs-ui-labels.mjs
+node Tests/agent-attention-principle.mjs
 
 # The checked-in protocol fixture is the cross-runtime byte authority. Generate the expected
 # bytes in memory and compare through the generator's read-only mode so hand edits fail closed.

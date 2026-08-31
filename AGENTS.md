@@ -96,6 +96,24 @@ question, or child task. A child still finishes only through its authenticated `
 Clawdline consumes a root receipt when that same terminal begins its next observed turn, so an old
 check cannot reappear after newer unreported work.
 
+### Notify before waiting for the user
+
+When an agent can already tell that the next blocking step requires the user to return to a Mac or
+phone, approve a permission, enter a credential, or make the final confirmation in a browser, it
+sends a Clawdline attention request **before** it settles into waiting. A root uses
+`POST /v1/orchestrator/notify`; a child uses `POST /v1/orchestrator/tasks/:id/notify` with its task
+secret. The notification names the project or task, the concrete action, and why it is needed.
+
+This is an interruption budget, not a progress feed. Do not notify for routine status, background
+work, or a request the user is already actively answering in the same surface. Never put a secret,
+token, password, or one-time code in notification content. Delivery does not authorize the action
+and does not replace the explicit prompt in the owning Session.
+
+If notification is disabled, no device is subscribed, delivery fails, or the limiter refuses the
+request, do not loop or route around the user's preference. Keep the actionable instruction in the
+Session and report the typed refusal. The exact routes and refusal codes are in
+[`docs/api.md`](docs/api.md#post-v1orchestratortasksidnotify-post-v1orchestratornotify).
+
 ## Decisions that are the user's go to the user, as options
 
 A decision only the user can make — which of two designs, whether to spend the quota, what happens

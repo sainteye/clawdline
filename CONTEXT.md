@@ -100,6 +100,18 @@ from transport delivery so a sent message cannot masquerade as an observed one. 
 Evidence that the intended receiver observed a delivery. Accepted, executed, delivered, observed,
 and acknowledged are separate states throughout the protocol.
 
+## Attention request
+
+A narrow, time-sensitive notification that asks the user to perform a concrete action which an
+agent can already predict will block progress: return to a device, approve an operating-system or
+browser permission, enter a credential, or make the final confirmation in an external service.
+It is part of the delivery path, not an afterthought after the agent has gone idle.
+
+An attention request says what action is needed and why. It never carries a secret, never grants
+consent on the user's behalf, and never proves that the user observed it. The explicit question or
+instruction remains in the owning Session; notification delivery and user acknowledgement are
+separate facts. See `docs/dispatching.md` and `docs/api.md`.
+
 ## Context sources
 
 - `AGENTS.md` — repository working agreements and safety rules.

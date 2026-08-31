@@ -261,7 +261,23 @@ Isolation changes the checkout; it does not create a second Mac.
 
 The complete task schema, claim and serialization semantics, lifecycle, credentials, and result
 protocol are in [`docs/orchestrator.md`](docs/orchestrator.md).
-Children may use their task secret to push rare, time-sensitive content with `POST /v1/orchestrator/tasks/:id/notify`.
-Routine output stays in `result.json`; notification-shaped work such as a daily forecast should say explicitly to notify.
-The user can turn agent notifications off; on `409 agent_notify_disabled`, do not retry, leave the content in `result.json`, and report the refusal honestly.
-HTTP request and response shapes are in [`docs/api.md`](docs/api.md#post-v1orchestratortasks).
+
+## Attention requests are part of the work
+
+When a root or child can predict that progress will require the user to return to a device, approve
+a permission, enter a credential, or complete an external confirmation, sending the attention
+request is part of reaching the node's waiting state. Send it before waiting, not after a timeout
+has made the absence visible. Roots use `POST /v1/orchestrator/notify`; children use their task
+secret with `POST /v1/orchestrator/tasks/:id/notify`.
+
+The title and body identify the task, the concrete action, and the reason it blocks progress. They
+contain no password, token, secret, pairing code, or other credential. The same instruction stays
+in the owning Session because a push receipt proves delivery attempt, not observation or consent.
+Routine progress stays in the Session or `result.json`; notification-shaped work such as a daily
+forecast should say explicitly to notify.
+
+The user can turn agent notifications off. On `409 agent_notify_disabled`, `409 not_subscribed`, a
+delivery failure, or a limiter refusal, do not retry in a loop or bypass the preference with another
+channel. Leave the actionable instruction in the Session or `result.json` and report the typed
+refusal honestly. HTTP request and response shapes are in
+[`docs/api.md`](docs/api.md#post-v1orchestratortasksidnotify-post-v1orchestratornotify).
