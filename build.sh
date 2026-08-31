@@ -69,8 +69,6 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleVersion</key><string>0.6.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHumanReadableCopyright</key><string>Copyright © 2026 TsunamiWorks Co., Ltd.</string>
-  <!-- Menu bar resident, no Dock icon -->
-  <key>LSUIElement</key><true/>
   <!-- Without this line macOS kills the app the first time it talks to iTerm2 -->
   <key>NSAppleEventsUsageDescription</key>
   <string>Clawdline needs to control iTerm2 so it can put what you type into Claude Code.</string>

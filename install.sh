@@ -15,6 +15,14 @@ EXPECTED_TEAM_ID="83D62P566Q"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# Kept as one bounded seam so the installer can prove the precise app it launches without
+# replaying download, replacement, or signature checks. Production always uses macOS `open`;
+# the optional argument is only a focused-test probe.
+launch_installed_app() {
+  local opener="${1:-/usr/bin/open}"
+  "$opener" "$DEST/$APP"
+}
+
 echo "→ looking up the latest release of $REPO"
 # The body is fetched rather than piped, so that a failure can be explained rather than just
 # ending the script. GitHub allows 60 unauthenticated API calls an hour per address, which a
@@ -79,5 +87,10 @@ esac
 
 echo
 echo "✓ installed $VERSION to $DEST/$APP"
-echo "  open \"$DEST/$APP\", then press ⌥Space in iTerm2"
+echo "→ opening $DEST/$APP"
+if ! launch_installed_app; then
+  echo "!! installed successfully, but macOS could not open $DEST/$APP"
+  exit 1
+fi
+echo "  press ⌥Space in iTerm2"
 echo "  macOS will ask once whether it may control iTerm2 — it cannot send anything without that"

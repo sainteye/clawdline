@@ -1332,6 +1332,42 @@ protocol Copy {
     var menuQuit: String { get }
     var menuNoTarget: String { get }
 
+    // Regular application shell and purpose-driven Setup Center.
+    var menuApplication: String { get }
+    var menuWindow: String { get }
+    var menuHelp: String { get }
+    var menuClose: String { get }
+    var menuHome: String { get }
+    var menuHelpDocumentation: String { get }
+    var homeTitle: String { get }
+    var homeWelcome: String { get }
+    var homePurpose: String { get }
+    var homeLocalTitle: String { get }
+    var homeLocalSummary: String { get }
+    var homeCloudPreviewTitle: String { get }
+    var homeCloudPreviewSummary: String { get }
+    var homeCloudflareTitle: String { get }
+    var homeCloudflareSummary: String { get }
+    var homeUnavailable: String { get }
+    var setupDetected: String { get }
+    var setupNextAction: String { get }
+    var setupExpected: String { get }
+    var setupRecovery: String { get }
+    var setupLocalServerOff: String { get }
+    var setupLocalChecking: String { get }
+    var setupLocalReady: String { get }
+    var setupLocalWaiting: String { get }
+    var setupLocalConnected: String { get }
+    var setupLocalEnable: String { get }
+    var setupLocalRetry: String { get }
+    var setupLocalOpen: String { get }
+    var setupLocalOpenAgain: String { get }
+    var setupFinish: String { get }
+    var setupLocalExpected: String { get }
+    var setupLocalRecovery: String { get }
+    var setupReadOnly: String { get }
+    var setupLocalDeviceName: String { get }
+
     // Alerts
     func hotkeyFailedTitle(_ combo: String) -> String
     func hotkeyFailedBody(_ configPath: String) -> String

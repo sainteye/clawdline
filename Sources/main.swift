@@ -6,8 +6,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // No Dock icon, no menu bar: this is a prompt you summon, not an application you visit.
-        NSApp.setActivationPolicy(.accessory)
+        // This remains useful from the status item and global hotkey, but it is also an ordinary
+        // application somebody can find in the Dock and reopen from Finder.
+        NSApp.setActivationPolicy(.regular)
 
         Log.write("launch: hotkey=\(Config.shared.hotKey) width=\(Config.shared.width) y=\(Config.shared.yFraction)")
         MascotPack.installBundledPacks()
@@ -88,6 +89,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             a.alertStyle = .warning
             a.runModal()
         }
+
+        // A first launch has a visible destination. Once the versioned introduction is complete,
+        // background launch-at-login stays quiet until Home, Dock/Finder reopen, or the status
+        // item asks for it.
+        if AppLaunchPolicy.shouldShowHome(
+            onboardingComplete: OnboardingCompletionStore.production.isCurrent
+        ) {
+            DispatchQueue.main.async { HomeWindow.shared.show() }
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        HomeWindow.shared.show()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     /// Bring the machine forward and say the code out loud.
@@ -152,20 +172,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A menu bar this app never shows, for the one thing a menu bar is still needed for.
-    ///
-    /// The activation policy is `.accessory`, so there is no menu across the top and there should
-    /// not be: this is a prompt you summon, not an application you visit. But key equivalents are
-    /// dispatched through the main menu whether or not it is drawn — and **⌘, is where everybody
-    /// on this platform looks for settings**, including people who have never opened the ✳. An app
-    /// that does not answer it is an app that feels slightly broken for a reason nobody can name.
-    ///
-    /// ⌘W and ⌘Q come along because a window with no way to close it from the keyboard is the
-    /// next thing somebody notices.
+    /// The normal App, Window, and Help menus are part of being a visible Mac application. Keep
+    /// their conventional key equivalents even though the status item remains available.
     private func installMainMenu() {
         let main = NSMenu()
-        let appItem = NSMenuItem()
+        let appItem = NSMenuItem(title: L.t.menuApplication, action: nil, keyEquivalent: "")
         let appMenu = NSMenu()
+
+        let home = NSMenuItem(title: L.t.menuHome, action: #selector(showHome), keyEquivalent: "h")
+        home.keyEquivalentModifierMask = [.command, .shift]
+        home.target = self
+        appMenu.addItem(home)
+        appMenu.addItem(.separator())
 
         let settings = NSMenuItem(title: L.t.menuEditConfig, action: #selector(editConfig),
                                   keyEquivalent: ",")
@@ -177,12 +195,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appItem.submenu = appMenu
         main.addItem(appItem)
 
-        let windowItem = NSMenuItem()
+        let windowItem = NSMenuItem(title: L.t.menuWindow, action: nil, keyEquivalent: "")
         let windowMenu = NSMenu()
-        windowMenu.addItem(NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)),
+        windowMenu.addItem(NSMenuItem(title: L.t.menuClose, action: #selector(NSWindow.performClose(_:)),
                                       keyEquivalent: "w"))
         windowItem.submenu = windowMenu
         main.addItem(windowItem)
+
+        let helpItem = NSMenuItem(title: L.t.menuHelp, action: nil, keyEquivalent: "")
+        let helpMenu = NSMenu()
+        let documentation = NSMenuItem(title: L.t.menuHelpDocumentation,
+                                       action: #selector(openDocumentation), keyEquivalent: "?")
+        documentation.target = self
+        helpMenu.addItem(documentation)
+        helpItem.submenu = helpMenu
+        main.addItem(helpItem)
 
         NSApp.mainMenu = main
     }
@@ -243,6 +270,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let reveal = NSMenuItem(title: L.t.menuReveal, action: #selector(revealTarget), keyEquivalent: "")
         reveal.target = self
         menu.addItem(reveal)
+
+        let home = NSMenuItem(title: L.t.menuHome, action: #selector(showHome), keyEquivalent: "")
+        home.target = self
+        menu.addItem(home)
 
         // Half-installed is the state worth naming, and it is invisible everywhere else: the
         // microphone works either way, so "it seems not to be on" is all you can tell from
@@ -314,6 +345,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("push: test sent to \(WebPush.subscriptions.count) subscription(s)")
         case "settings":
             SettingsWindow.shared.show()
+        case "home", "setup":
+            HomeWindow.shared.show()
         case "hooks":
             // `?install=1` and `?install=0`, so the wiring can be put in and taken out by a
             // script — a setup step somebody runs once on a new machine, or a line in an
@@ -402,6 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openPanel() { PromptController.shared.show() }
     @objc private func revealTarget() { PromptController.shared.revealCurrentTarget() }
+    @objc private func showHome() { HomeWindow.shared.show() }
 
     @objc private func toggleLogin() {
         let svc = SMAppService.mainApp
@@ -426,6 +460,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the two to disagree. Both routes end here, so a control and a hand edit cannot drift apart.
     @objc private func configChanged() {
         L.reload()
+        installMainMenu()
+        HomeWindow.shared.rebuildIfVisible()
         PromptController.shared.reloadMascot()
         PromptController.shared.applyCardOpacity()
         applyHotKey()
@@ -447,9 +483,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline/blob/main/docs/compatibility.md")!)
     }
 
+    @objc private func openDocumentation() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline#readme")!)
+    }
+
     @objc private func reloadConfig() {
         Config.shared.load()
         L.reload()
+        installMainMenu()
+        HomeWindow.shared.rebuildIfVisible()
         PromptController.shared.reloadMascot()
         PromptController.shared.applyCardOpacity()
         if !applyHotKey() {
