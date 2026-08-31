@@ -10,7 +10,25 @@ APP="${CLAWDLINE_APP:-$HOME/Applications/Clawdline.app}"
 APP_PARENT="$(dirname "$APP")"
 APP_NAME="$(basename "$APP")"
 BUNDLE_ID="com.tsunamiworks.clawdline"
-SIGN_IDENTITY="${CLAWDLINE_SIGN_IDENTITY:--}"
+LOCAL_SIGN_IDENTITY_NAME="Clawdline Local Development"
+LOCAL_SIGNING=0
+# BEGIN keychain-rebuild-focused: signing identity selection
+if [ "${CLAWDLINE_SIGN_IDENTITY+x}" = x ]; then
+  # An explicit value keeps its historical meaning, including an empty value becoming ad-hoc.
+  SIGN_IDENTITY="${CLAWDLINE_SIGN_IDENTITY:--}"
+else
+  SIGN_IDENTITY=$(security find-identity -p codesigning 2>/dev/null \
+    | awk -v name="$LOCAL_SIGN_IDENTITY_NAME" \
+        'index($0, "\"" name "\"") { print $2; exit }')
+  if [ -n "$SIGN_IDENTITY" ]; then
+    LOCAL_SIGNING=1
+  else
+    SIGN_IDENTITY=-
+    echo "→ no stable local signing identity; using ad-hoc signing"
+    echo "  Run tools/setup-local-signing-identity.sh to stop Keychain asking after every rebuild."
+  fi
+fi
+# END keychain-rebuild-focused: signing identity selection
 
 mkdir -p "$APP_PARENT"
 # Build beside the installed app, on the same filesystem. The final rename is then quick and
@@ -89,12 +107,17 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Local builds stay ad-hoc and cheap. A release supplies the company Developer ID identity and
-# receives Hardened Runtime, a trusted timestamp, and only the two resource entitlements the app
-# actually uses. The private key never enters this repository.
+# A stable local certificate keeps the Keychain ACL's designated requirement unchanged across
+# rebuilds. A release still supplies the company Developer ID identity and receives Hardened
+# Runtime, a trusted timestamp, and only the two resource entitlements the app actually uses.
+# The private key for either identity never enters this repository.
+# BEGIN keychain-rebuild-focused: signing branches
 if [ "$SIGN_IDENTITY" = - ]; then
   codesign --force --sign - --identifier "$BUNDLE_ID" "$STAGED_APP" >/dev/null 2>&1 \
     || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
+elif [ "$LOCAL_SIGNING" = 1 ]; then
+  codesign --force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$STAGED_APP"
+  echo "✓ signed with stable local identity $LOCAL_SIGN_IDENTITY_NAME"
 else
   signed=0
   for attempt in 1 2 3; do
@@ -110,6 +133,7 @@ else
   done
   [ "$signed" = 1 ] || { echo "!! Developer ID signing failed after 3 attempts"; exit 1; }
 fi
+# END keychain-rebuild-focused: signing branches
 
 # Packaging and CI build beside the installed app but must never inspect, stop, replace, or reopen
 # the live Clawdline process. Their caller owns the fresh output path and receives only the bundle.

@@ -98,6 +98,18 @@ private final class LifecycleTestResults: @unchecked Sendable {
     }
 }
 
+private final class LifecycleIdentityBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var identity: CloudMachineIdentity?
+    init(_ identity: CloudMachineIdentity?) { self.identity = identity }
+    func get() -> CloudMachineIdentity? {
+        lock.lock(); defer { lock.unlock() }; return identity
+    }
+    func set(_ identity: CloudMachineIdentity?) {
+        lock.lock(); self.identity = identity; lock.unlock()
+    }
+}
+
 private struct LifecycleTestTokenProvider: CloudDeviceTokenProviding, Sendable {
     let error: Error?
 
@@ -505,7 +517,7 @@ private struct CloudLifecycleTests {
 
     @MainActor
     private static func makeLifecycle(
-        identity: @escaping @MainActor () throws -> CloudMachineIdentity?,
+        identity: @escaping @Sendable () throws -> CloudMachineIdentity?,
         recorder: AttachRecorder,
         transports: LifecycleTestTransport,
         router: LifecycleTestRouter = LifecycleTestRouter(),
@@ -543,25 +555,31 @@ private struct CloudLifecycleTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let recorder = AttachRecorder()
         let transport = LifecycleTestTransport()
-        var identity = CloudMachineIdentity(accountID: "acct", machineID: "mac-1")
+        let identity = LifecycleIdentityBox(
+            CloudMachineIdentity(accountID: "acct", machineID: "mac-1"))
         let lifecycle = makeLifecycle(
-            identity: { identity }, recorder: recorder, transports: transport,
+            identity: { identity.get() }, recorder: recorder, transports: transport,
             sequenceDirectory: directory)
 
         lifecycle.apply()
+        let firstAttached = await eventually { recorder.attachedCount == 1 }
         check("a restored Mac attaches a bridge without being asked twice",
-              recorder.attachedCount == 1, "\(recorder.attaches.count)")
+              firstAttached, "\(recorder.attaches.count)")
         check("the attached state names the account and machine",
               lifecycle.state == .attached(accountID: "acct", machineID: "mac-1"))
         let generation = lifecycle.generation
 
         lifecycle.apply()
         lifecycle.apply()
+        _ = await eventually { lifecycle.identityKnowledge == .resolved }
         check("re-applying with the same identity leaves the live bridge alone",
               lifecycle.generation == generation && recorder.attaches.count == 1)
 
-        identity = CloudMachineIdentity(accountID: "acct", machineID: "mac-2")
+        identity.set(CloudMachineIdentity(accountID: "acct", machineID: "mac-2"))
         lifecycle.apply()
+        _ = await eventually {
+            lifecycle.state == .attached(accountID: "acct", machineID: "mac-2")
+        }
         check("a changed machine identity replaces the bridge",
               lifecycle.state == .attached(accountID: "acct", machineID: "mac-2"))
         check("replacing detaches the old bridge before attaching the new one",
@@ -584,6 +602,7 @@ private struct CloudLifecycleTests {
             sequenceDirectory: directory)
         lifecycle.apply()
         lifecycle.apply()
+        _ = await eventually { lifecycle.identityKnowledge == .resolved }
         check("a Mac that is not signed in attaches nothing and does not churn",
               quiet.attaches.isEmpty && lifecycle.state == .detached)
 
@@ -592,6 +611,7 @@ private struct CloudLifecycleTests {
             identity: { throw ForcedLifecycleFailure() }, recorder: throwing,
             transports: LifecycleTestTransport(), sequenceDirectory: directory)
         unreadable.apply()
+        _ = await eventually { unreadable.identityKnowledge == .resolved }
         check("an unreadable credential store reports failed rather than attaching",
               unreadable.attachedBridge == nil)
         if case .failed = unreadable.state {
@@ -606,6 +626,7 @@ private struct CloudLifecycleTests {
             recorder: broken, transports: LifecycleTestTransport(),
             appIdentityFails: true, sequenceDirectory: directory)
         noKeys.apply()
+        _ = await eventually { noKeys.identityKnowledge == .resolved }
         check("a Keychain failure leaves no half-built bridge attached",
               noKeys.attachedBridge == nil && broken.attachedCount == 0)
     }
@@ -642,7 +663,8 @@ private struct CloudLifecycleTests {
             log: { _ in }))
 
         lifecycle.apply()
-        check("the revocation case starts from an attached bridge", recorder.attachedCount == 1)
+        let initiallyAttached = await eventually { recorder.attachedCount == 1 }
+        check("the revocation case starts from an attached bridge", initiallyAttached)
         refusal?(.unauthorized)
         let detached = await eventually { lifecycle.attachedBridge == nil }
         check("a refused device token brings the bridge down", detached)
@@ -650,17 +672,20 @@ private struct CloudLifecycleTests {
               lifecycle.state == .unauthorized(accountID: "acct", machineID: "mac-1"))
 
         lifecycle.apply()
+        _ = await eventually { lifecycle.identityKnowledge == .resolved }
         check("applying again does not walk back into a refusal loop",
               recorder.attachedCount == 1, "\(recorder.attaches.count)")
 
         lifecycle.retry()
-        check("an explicit retry is allowed to try once more", recorder.attachedCount == 2)
+        let retried = await eventually { recorder.attachedCount == 2 }
+        check("an explicit retry is allowed to try once more", retried)
 
         // A refusal belonging to a bridge that has already been replaced must not take the
         // current one down; that is the shape the RemoteServer lifecycle guards against too.
         let stale = refusal
         lifecycle.signedOut()
         lifecycle.retry()
+        _ = await eventually { lifecycle.attachedBridge != nil }
         let before = lifecycle.generation
         stale?(.unauthorized)
         let unchanged = await eventually { lifecycle.generation == before }

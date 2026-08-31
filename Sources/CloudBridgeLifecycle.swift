@@ -163,6 +163,91 @@ struct CloudSupervisedDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
     }
 }
 
+/// The small state machine between a main-actor lifecycle request and a potentially blocking
+/// credential read. It is deliberately free of Dispatch and Keychain types so the ordering can
+/// be compiled and mutation-tested without substituting a second implementation for production.
+struct CloudIdentityReadPolicy {
+    enum Knowledge: Equatable {
+        /// No read has finished yet; callers must not interpret this as a proved sign-out.
+        case unknown
+        /// A read is running away from the main actor. The bridge keeps its last proved state.
+        case reading
+        /// The latest requested read has been applied, or sign-out supplied the answer directly.
+        case resolved
+    }
+
+    enum RequestAction: Equatable {
+        case start(generation: UInt64)
+        case coalesced
+    }
+
+    enum CompletionAction: Equatable {
+        case accept
+        case restart(generation: UInt64)
+        case discard
+    }
+
+    struct Tracker: Equatable {
+        fileprivate(set) var latestGeneration: UInt64 = 0
+        fileprivate(set) var inFlightGeneration: UInt64?
+        fileprivate(set) var refreshPending = false
+        fileprivate(set) var knowledge: Knowledge = .unknown
+    }
+
+    static func request(_ tracker: inout Tracker) -> RequestAction {
+        tracker.latestGeneration &+= 1
+        tracker.knowledge = .reading
+        guard tracker.inFlightGeneration == nil else {
+            tracker.refreshPending = true
+            return .coalesced
+        }
+        tracker.inFlightGeneration = tracker.latestGeneration
+        return .start(generation: tracker.latestGeneration)
+    }
+
+    static func complete(generation: UInt64,
+                         tracker: inout Tracker) -> CompletionAction {
+        guard tracker.inFlightGeneration == generation else { return .discard }
+        tracker.inFlightGeneration = nil
+        if tracker.refreshPending {
+            tracker.refreshPending = false
+            tracker.inFlightGeneration = tracker.latestGeneration
+            return .restart(generation: tracker.latestGeneration)
+        }
+        tracker.knowledge = .resolved
+        return generation == tracker.latestGeneration ? .accept : .discard
+    }
+
+    /// Sign-out is an authoritative foreground event. It invalidates an answer already on its
+    /// way back without pretending the blocking operation itself can be cancelled.
+    static func resolveWithoutRead(_ tracker: inout Tracker) {
+        tracker.latestGeneration &+= 1
+        tracker.refreshPending = false
+        tracker.knowledge = .resolved
+    }
+}
+
+/// The executable concurrency seam for credential I/O. Tests run this exact type with a blocking
+/// operation: `read` must return to the main thread immediately, operations must stay serial, and
+/// completion must cross back to the main queue before lifecycle state is touched.
+final class CloudIdentityReader<Value: Sendable>: @unchecked Sendable {
+    private let queue: DispatchQueue
+
+    init(label: String = "clawdline.cloud.identity") {
+        queue = DispatchQueue(label: label, qos: .utility)
+    }
+
+    func read(
+        _ operation: @escaping @Sendable () throws -> Value,
+        completion: @escaping @MainActor (Result<Value, Error>) -> Void
+    ) {
+        queue.async {
+            let result = Result { try operation() }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+}
+
 /// Owns exactly one `CloudAppBridge` for the running app.
 ///
 /// Everything under it already existed and none of it was ever built: `CloudAppBridge` had no
@@ -184,7 +269,7 @@ final class CloudBridgeLifecycle {
     }
 
     struct Services {
-        var restoredIdentity: @MainActor () throws -> CloudMachineIdentity?
+        var restoredIdentity: @Sendable () throws -> CloudMachineIdentity?
         var appIdentity: @MainActor (CloudMachineIdentity) throws -> CloudAppIdentity
         var makeTransport: @MainActor (
             CloudMachineIdentity, CloudAppIdentity,
@@ -216,30 +301,69 @@ final class CloudBridgeLifecycle {
     var onChange: (() -> Void)?
 
     private let services: Services
+    private let identityReader = CloudIdentityReader<CloudMachineIdentity?>()
+    private var identityRead = CloudIdentityReadPolicy.Tracker()
+
+    /// This is separate from `state`: while a refresh is blocked in Keychain, an attached bridge
+    /// remains honestly attached, while a launch-time `.detached` is not yet proof of sign-out.
+    var identityKnowledge: CloudIdentityReadPolicy.Knowledge { identityRead.knowledge }
 
     init(services: Services) {
         self.services = services
     }
 
     /// Bring the bridge into line with what the credential store says. Safe to call whenever
-    /// anything might have changed, and cheap when nothing has.
+    /// anything might have changed. The Keychain operation never runs on the main actor.
     func apply() {
-        let identity: CloudMachineIdentity?
-        do {
-            identity = try services.restoredIdentity()
-        } catch {
+        let wasReading = identityRead.knowledge == .reading
+        switch CloudIdentityReadPolicy.request(&identityRead) {
+        case .start(let generation):
+            if !wasReading { onChange?() }
+            startIdentityRead(generation: generation)
+        case .coalesced:
+            if !wasReading { onChange?() }
+        }
+    }
+
+    private func startIdentityRead(generation: UInt64) {
+        let restore = services.restoredIdentity
+        identityReader.read(restore) { [weak self] result in
+            self?.finishedIdentityRead(result, generation: generation)
+        }
+    }
+
+    private func finishedIdentityRead(
+        _ result: Result<CloudMachineIdentity?, Error>, generation: UInt64
+    ) {
+        let wasReading = identityRead.knowledge == .reading
+        switch CloudIdentityReadPolicy.complete(generation: generation, tracker: &identityRead) {
+        case .restart(let next):
+            startIdentityRead(generation: next)
+            return
+        case .discard:
+            if wasReading && identityRead.knowledge != .reading { onChange?() }
+            return
+        case .accept:
+            break
+        }
+
+        if wasReading { onChange?() }
+        switch result {
+        case .failure(let error):
             detach()
             set(.failed(reason: Self.message(for: error)))
             services.log("cloud: the machine credential could not be read — \(Self.message(for: error))")
             return
-        }
-
-        guard let identity else {
+        case .success(nil):
             detach()
             set(.detached)
             return
+        case .success(let identity?):
+            apply(identity: identity)
         }
+    }
 
+    private func apply(identity: CloudMachineIdentity) {
         switch state {
         case .attached(let account, let machine)
             where account == identity.accountID && machine == identity.machineID:
@@ -299,8 +423,11 @@ final class CloudBridgeLifecycle {
     /// Called when the Cloud credential has been removed. Detaching here rather than waiting
     /// for the next `apply()` keeps the socket's lifetime inside the account's.
     func signedOut() {
+        let wasReading = identityRead.knowledge == .reading
+        CloudIdentityReadPolicy.resolveWithoutRead(&identityRead)
         detach()
         set(.detached)
+        if wasReading { onChange?() }
     }
 
     private func authorizationRefused(

@@ -112,6 +112,7 @@ node Tests/release-signing-contract.mjs
 # because the shipped policy has no AppKit dependency and this keeps it a second rather than a
 # recompile of everything.
 node Tests/app-onboarding-focused.mjs
+node Tests/keychain-rebuild-focused.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
