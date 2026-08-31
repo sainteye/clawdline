@@ -106,6 +106,12 @@ node Tests/web-app-build.mjs
 node Tests/dispatch-role-contract.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/release-signing-contract.mjs
+# The onboarding policy, compiled out of Sources/Onboarding.swift without its AppKit half: that a
+# config switch is not readiness, that an allocated credential is not a connection, and that the
+# installer reopens the exact bundle it just wrote. It runs here rather than in the Swift suite
+# because the shipped policy has no AppKit dependency and this keeps it a second rather than a
+# recompile of everything.
+node Tests/app-onboarding-focused.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
