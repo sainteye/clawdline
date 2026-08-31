@@ -28,6 +28,55 @@ Data Protection Keychain is one future migration that must first give every rele
 build a compatible entitlement and signing identity; an inert accessibility label is not that
 guarantee.
 
+## The Keychain is a door that can stop answering
+
+Every `SecItem…` call is synchronous, and on a locked Keychain it does not return until somebody
+answers a system dialog. That is a length no screen may wait for, so the store refuses to be
+called anywhere it could freeze one, and the app never waits on it without a bound.
+
+**Both directions are refused on the main thread, and none may open authentication UI.** `CloudKeychainStore` throws
+`mainThreadReadForbidden` from `data(for:)` and `mainThreadWriteForbidden` from `set(_:for:)` and
+`remove(_:)`, *before* it reaches Security. Reads were guarded first; writes are the same door
+and had been left open. The refusal is a `Thread.isMainThread` test rather than a queue test on
+purpose: a blocked main thread is what freezes AppKit, and it is the thread, not the queue, that
+the Security call parks. Every production copy/update/add/delete dictionary also carries
+`kSecUseAuthenticationUIFail`; a locked item is therefore a typed failure, never a system dialog
+whose lifetime the app cannot bound.
+
+**Everything else goes through one of two adapters.** `CloudKeychainReader` answers a read on its
+own serial queue and returns the result to the main queue. `CloudKeychainWriter` does the same for
+a mutation. Both are bounded and cancellable adapters. Callback-based identity restoration treats
+timeout as observable **progress** and retains the eventual terminal result for reconciliation. A
+retrying mutation likewise does not silence the first operation: either terminal deletion success
+proves the shared credential is gone. One-shot pairing reads instead finish their await on timeout
+or cancellation and detach the late answer, so closing the QR sheet or a stalled load-or-create
+returns to Settings. In either spelling cancellation stops delivery only—never the synchronous
+Security call, which has no cancellation and may still land.
+
+**A cancelled sign-in cannot leave a credential behind.** Cancelling a `Task` is a request the
+transport may decline, so a login that is cancelled or signed out of can still return a real
+credential afterwards. Filtering that in the UI is too late: the write is already on its way.
+`CloudAccountClient` therefore carries a `CloudCredentialGeneration`, captured when
+`startDeviceLogin` opens the flow and compared **inside the persistence transaction**:
+
+- `signOut()` and `invalidatePendingLogins()` bump the generation *before* taking the store's
+  coordinator, so a poll blocked on that lock sees the new value whichever order the two arrive in;
+- the pre-write check refuses the credential outright, so an abandoned secret is never written
+  rather than written and deleted;
+- the post-write check runs again after `SecItemAdd` returns and tries to remove what it just
+  wrote, because sign-out can arrive inside that window and would otherwise find nothing to remove;
+- every credential embeds its nonsecret validity epoch, while the minimum valid epoch is stored
+  durably outside the Keychain. Cleanup failure can therefore leave stale bytes, but a new process
+  still rejects them. Invalidation failure and stale-byte cleanup have separate visible retry
+  owners; neither is suppressed by `Task` cancellation.
+
+Sign-out is consequently a sequence of phases rather than a synchronous call. Synchronous
+reservation first raises the process-local admission floor, so the bridge detaches immediately;
+a timeout is shown as unknown/reconciling without reattaching it. A late deletion success moves
+the model and store to signed out together. When durable invalidation succeeds but
+physical deletion fails, the bridge stays detached and Settings owns an explicit stale-item cleanup
+retry. Cancellation persistence is likewise observable, bounded and retryable.
+
 ## What is wired on the Mac
 
 `CloudAccount`, `CloudKeys`, `CloudTransport`, `CloudEnvelope` and `CloudAppBridge` were all
@@ -161,6 +210,14 @@ hash and opaque bytes to `POST /v1/pairing/invitations/accept`. The Mac polls
 `POST /v1/pairing/invitations/poll`, decrypts that offer locally, and the existing
 `complete`/`claim` X25519 handover moves the account master secret Mac → viewer.
 
+The acceptance seam after that poll is bounded too. `CloudPairingCompleter.production` loads the
+restored identity, device signing key and master secret through one-shot `CloudKeychainReader`
+awaits. A locked or non-answering load-or-create returns a visible pairing failure after ten
+seconds; closing the sheet cancels the await immediately. The underlying synchronous Security call
+may still finish, so the UI claims only that this pairing attempt stopped waiting—not that a read or
+key creation was rolled back. The ordinary Settings identity restore uses the callback spelling and
+still accepts a terminal identity that arrives after its timeout warning.
+
 There are deliberately two user-visible checks. GitHub proves the phone and Mac belong to the
 same Clawdline account; scanning the QR proves the phone is pairing with the Mac physically in
 front of the person. Both are required because the Cloud service is only a ciphertext relay: it
@@ -207,6 +264,58 @@ with these clients, these are exactly the claims that rest on reading rather tha
   being destroyed after one claim.
 - A published snapshot arriving at a viewer, and an allowed control arriving at the Mac.
 - The usage flush and the metering counters that follow from any of the above.
+
+## Signing a local build, and why it is a Keychain question
+
+The Cloud secrets are guarded by the login Keychain's code-signing ACL, so the identity a local
+build signs with decides whether macOS re-asks for those items after every rebuild. Three states
+are possible and all three are now said out loud:
+
+| what `security find-identity` finds | what `./build.sh` does |
+|---|---|
+| exactly one `Clawdline Local Development` in the explicit Keychain, Keychain unlocked | signs with it, scoped to that same Keychain |
+| exactly one, **Keychain locked or not answering** | **fails, naming both repairs** |
+| two or more with that name | fails; it will not choose by Keychain order |
+| none, or the query fails | **fails**; ad-hoc requires `CLAWDLINE_SIGN_ADHOC=1` or `CLAWDLINE_SIGN_IDENTITY=-` |
+
+Discovery runs as `security find-identity … "$CLAWDLINE_LOCAL_SIGN_KEYCHAIN"`; ambiguity is counted
+only in that result, lock usability is read for that path by the injectable
+`tools/keychain-status.swift` helper using `SecKeychainGetStatus` and `kSecUnlockStateStatus`, and
+local `codesign` receives `--keychain` with the same path. The build neither reads nor changes the
+user's Keychain search list. The locked row is the one that used to have no answer. `codesign` would find the key, stop on an
+unlock dialog, and wait — possibly behind another window, on another Space, with the build looking
+merely slow. `build.sh` now probes the Keychain first and refuses rather than waits.
+
+**Clawdline never unlocks a Keychain and never learns its password.** The two escapes are the
+person's: `security unlock-keychain`, or `CLAWDLINE_SIGN_ADHOC=1 ./build.sh`, which is the
+documented ad-hoc contract — chosen rather than fallen into, consulting no identity at all. Ad-hoc
+means a fresh code identity every rebuild, so macOS re-asks to authorise iTerm2 automation and the
+Cloud Keychain items are re-authorised on first use.
+
+**Nothing waits forever.** Every `security` and `codesign` call in `build.sh` and
+`tools/setup-local-signing-identity.sh` runs under a watchdog (`CLAWDLINE_SIGN_QUERY_TIMEOUT`,
+`CLAWDLINE_CODESIGN_TIMEOUT`), validated as positive integers before a child is launched. macOS
+ships no `timeout(1)` and `/bin/bash` here is 3.2, so `wait -n` is unavailable. A marker plus a
+typed side channel distinguishes watchdog timeout from a child's own exit 124. Every signing
+branch, including explicit ad-hoc, preserves stderr/status and stops on nonzero. A timed-out
+mutation reports state unknown and requires inspection/reconciliation; it never claims that
+nothing changed or was imported.
+
+**The partition list is the person's step, by design.** `security set-key-partition-list` is what
+stops `codesign` asking for key access on every rebuild, and `man security` is explicit that it
+requires the Keychain password (`-k`). Clawdline will not ask for that password, accept it in an
+environment variable, or put it on an argument list. Omitting `-k` is not a documented interactive
+prompt contract: `/usr/bin/security help set-key-partition-list` says the password is required.
+The setup script therefore never runs this mutation. Its former `--set-partition-list` spelling
+fails before discovery or mutation and points the person to Keychain Access or a manually reviewed
+SecurityTool invocation.
+
+> **What the tests prove, and what they do not.** `Tests/keychain-rebuild-focused.mjs` drives all
+> of the above through fake `security` and `codesign` executables and a temporary keychain file.
+> That is proof of the *script's* branching, messages and bounds. It is **not** proof against a
+> real login Keychain: no test here unlocks, searches, reorders or mutates one. The lock helper is
+> compiled/typechecked, while its branch tests inject a fake executable and temporary path; the
+> evidence is the documented `SecKeychainGetStatus` unlock bit, not `show-keychain-info` output.
 
 ## What is deliberately not here yet
 

@@ -316,6 +316,178 @@ private final class CloudAccountInterleavingStore: CloudKeyStoring, @unchecked S
     }
 }
 
+/// A store that can be held open *inside* `set`, so a test can decide what happens during the
+/// write rather than only before or after it.
+///
+/// The window this exists for is the one the guard alone cannot close: sign-out bumps the
+/// generation before it queues behind the persistence transaction, so an arrival between the
+/// pre-write check and `SecItemAdd` returning would find nothing to remove. Nothing else can
+/// stand in that window and look.
+private final class CloudAccountWriteRaceStore: CloudKeyStoring, @unchecked Sendable {
+    let coordinator = CloudKeyStoreCoordinator()
+    private let condition = NSCondition()
+    private var values: [String: Data] = [:]
+    private var blockNextSet = false
+    private var setBlocked = false
+    private var resumeSet = false
+    private var removeCount = 0
+    private var writeCount = 0
+    private var failRemoval = false
+
+    func data(for account: String) throws -> Data? {
+        condition.lock()
+        defer { condition.unlock() }
+        return values[account]
+    }
+
+    func set(_ data: Data, for account: String) throws {
+        condition.lock()
+        values[account] = data
+        writeCount += 1
+        if blockNextSet {
+            blockNextSet = false
+            setBlocked = true
+            condition.broadcast()
+            let deadline = Date().addingTimeInterval(2)
+            while !resumeSet && condition.wait(until: deadline) {}
+        }
+        condition.unlock()
+    }
+
+    func remove(_ account: String) throws {
+        condition.lock()
+        defer { condition.unlock() }
+        if failRemoval {
+            throw CloudAccountTestFailure(description: "fixture removal failed")
+        }
+        values.removeValue(forKey: account)
+        removeCount += 1
+        condition.broadcast()
+    }
+
+    func armSetBlock() {
+        condition.lock()
+        blockNextSet = true
+        setBlocked = false
+        resumeSet = false
+        condition.unlock()
+    }
+
+    func waitUntilSetBlocked() {
+        condition.lock()
+        let deadline = Date().addingTimeInterval(2)
+        while !setBlocked && condition.wait(until: deadline) {}
+        condition.unlock()
+    }
+
+    func resumeBlockedSet() {
+        condition.lock()
+        resumeSet = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func removals() -> Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return removeCount
+    }
+
+    func writes() -> Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return writeCount
+    }
+
+    func setRemovalFailure(_ value: Bool) {
+        condition.lock()
+        failRemoval = value
+        condition.unlock()
+    }
+}
+
+private final class CloudAccountInterleavingDefaults: UserDefaults, @unchecked Sendable {
+    private let condition = NSCondition()
+    private var lowSetEntered = false
+    private var releaseLowSet = false
+    private var highSetEntered = false
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        let epoch = (value as? NSNumber)?.uint64Value
+        condition.lock()
+        if epoch == 3 {
+            lowSetEntered = true
+            condition.broadcast()
+            let deadline = Date().addingTimeInterval(2)
+            while !releaseLowSet && condition.wait(until: deadline) {}
+        } else if epoch == 9 {
+            highSetEntered = true
+            condition.broadcast()
+        }
+        condition.unlock()
+        super.set(value, forKey: defaultName)
+    }
+
+    func waitForLowSet() -> Bool {
+        condition.lock()
+        let deadline = Date().addingTimeInterval(1)
+        while !lowSetEntered && condition.wait(until: deadline) {}
+        let result = lowSetEntered
+        condition.unlock()
+        return result
+    }
+
+    func highSetOvertookLow() -> Bool {
+        condition.lock()
+        let deadline = Date().addingTimeInterval(0.15)
+        while !highSetEntered && condition.wait(until: deadline) {}
+        let result = highSetEntered
+        condition.unlock()
+        return result
+    }
+
+    func releaseLow() {
+        condition.lock(); releaseLowSet = true; condition.broadcast(); condition.unlock()
+    }
+}
+
+private final class CloudAccountFailingInvalidationStore:
+    CloudCredentialInvalidationStoring, @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var processEpoch: UInt64 = 0
+    private var durableEpoch: UInt64 = 0
+    private var failPersistence = true
+
+    func reserve(atLeast wanted: UInt64) -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        processEpoch = max(processEpoch, wanted)
+        return processEpoch
+    }
+
+    func currentEpoch() throws -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        return max(processEpoch, durableEpoch)
+    }
+
+    func advance(to wanted: UInt64) throws {
+        lock.lock(); defer { lock.unlock() }
+        if failPersistence {
+            throw CloudAccountTestFailure(description: "fixture epoch persistence failed")
+        }
+        durableEpoch = max(durableEpoch, wanted)
+        processEpoch = max(processEpoch, wanted)
+    }
+
+    func allowPersistence() {
+        lock.lock(); failPersistence = false; lock.unlock()
+    }
+
+    func durable() -> UInt64 {
+        lock.lock(); defer { lock.unlock() }; return durableEpoch
+    }
+}
+
 private func cloudAccountBody(_ request: URLRequest) throws -> [String: Any] {
     guard let data = request.httpBody,
           let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -520,6 +692,106 @@ func runCloudAccountTests() async throws -> Int {
         checks += 1
         if !condition { throw CloudAccountTestFailure(description: message) }
     }
+
+    let defaultsSuite = "clawdline-cloud-invalidation-" + UUID().uuidString
+    guard let crossedDefaults = CloudAccountInterleavingDefaults(suiteName: defaultsSuite) else {
+        throw CloudAccountTestFailure(description: "could not create isolated UserDefaults")
+    }
+    defer { crossedDefaults.removePersistentDomain(forName: defaultsSuite) }
+    let lowerEpochStore = CloudCredentialInvalidationDefaultsStore(
+        defaults: crossedDefaults, key: "epoch",
+        persistenceNamespace: defaultsSuite + ".interleaving")
+    let higherEpochStore = CloudCredentialInvalidationDefaultsStore(
+        defaults: crossedDefaults, key: "epoch",
+        persistenceNamespace: defaultsSuite + ".interleaving")
+    let lowerEpochWrite = Task.detached { try lowerEpochStore.advance(to: 3) }
+    try require(crossedDefaults.waitForLowSet(),
+                "the lower epoch reaches the held read/compare/write seam")
+    let higherEpochWrite = Task.detached { try higherEpochStore.advance(to: 9) }
+    let higherOvertook = crossedDefaults.highSetOvertookLow()
+    crossedDefaults.releaseLow()
+    try await lowerEpochWrite.value
+    try await higherEpochWrite.value
+    try require(!higherOvertook,
+                "separate invalidation stores share one process-wide persistence coordinator")
+    try require(try higherEpochStore.currentEpoch() == 9,
+                "a cross-instance lower write cannot regress the durable minimum epoch")
+
+    let reservationKey = "reservation-epoch"
+    let reservationNamespace = defaultsSuite + ".reservation"
+    let lowReservationStore = CloudCredentialInvalidationDefaultsStore(
+        defaults: crossedDefaults, key: reservationKey,
+        persistenceNamespace: reservationNamespace)
+    let highReservationStore = CloudCredentialInvalidationDefaultsStore(
+        defaults: crossedDefaults, key: reservationKey,
+        persistenceNamespace: reservationNamespace)
+    _ = lowReservationStore.reserve(atLeast: 3)
+    _ = highReservationStore.reserve(atLeast: 9)
+    try lowReservationStore.advance(to: 3)
+    try require((crossedDefaults.object(forKey: reservationKey) as? NSNumber)?.uint64Value == 9,
+                "a low advance persists the higher cross-instance process reservation")
+    let betweenReserveCredentialStore = CloudInMemoryKeyStore(values: [
+        CloudAccountClient.machineCredentialAccount: try JSONEncoder().encode(
+            CloudMachineCredential(
+                accountID: "acct-between-reservations",
+                machineID: "machine-between-reservations",
+                secret: "fixture-secret",
+                validityEpoch: 5)),
+    ])
+    let freshReservationClient = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.test")!,
+        transport: CloudAccountFakeHTTP(),
+        credentialStore: betweenReserveCredentialStore,
+        invalidationStore: CloudCredentialInvalidationDefaultsStore(
+            defaults: crossedDefaults, key: reservationKey,
+            persistenceNamespace: reservationNamespace),
+        deviceKeyLoader: { CloudDeviceKeyPair() })
+    try require(try freshReservationClient.restoredMachineIdentity() == nil,
+                "a fresh client rejects an intermediate credential after the higher floor persists")
+
+    let failureCredentialStore = CloudInMemoryKeyStore(values: [
+        CloudAccountClient.machineCredentialAccount: try JSONEncoder().encode(
+            CloudMachineCredential(
+                accountID: "acct-invalidation-failure",
+                machineID: "machine-invalidation-failure",
+                secret: "fixture-secret")),
+    ])
+    let failingInvalidation = CloudAccountFailingInvalidationStore()
+    let failureClient = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.test")!,
+        transport: CloudAccountFakeHTTP(),
+        credentialStore: failureCredentialStore,
+        invalidationStore: failingInvalidation,
+        deviceKeyLoader: { CloudDeviceKeyPair() })
+    let failedReservation = failureClient.reservePendingLoginInvalidation()
+    do {
+        try failureClient.persistPendingLoginInvalidation(failedReservation)
+        try require(false, "invalidation persistence failure is surfaced")
+    } catch CloudAccountError.credentialInvalidationFailed {
+        try require(true, "invalidation persistence failure is surfaced")
+    }
+    try require(try failureClient.restoredMachineIdentity() == nil,
+                "a failed durable write still makes the credential unusable in this process")
+    let restartBeforeRetry = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.test")!,
+        transport: CloudAccountFakeHTTP(),
+        credentialStore: failureCredentialStore,
+        invalidationStore: CloudInMemoryCredentialInvalidationStore(
+            epoch: failingInvalidation.durable()),
+        deviceKeyLoader: { CloudDeviceKeyPair() })
+    try require(try restartBeforeRetry.restoredMachineIdentity() != nil,
+                "before retry, durable state truthfully remains restart-unsafe")
+    failingInvalidation.allowPersistence()
+    try failureClient.persistPendingLoginInvalidation(failedReservation)
+    let restartAfterRetry = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.test")!,
+        transport: CloudAccountFakeHTTP(),
+        credentialStore: failureCredentialStore,
+        invalidationStore: CloudInMemoryCredentialInvalidationStore(
+            epoch: failingInvalidation.durable()),
+        deviceKeyLoader: { CloudDeviceKeyPair() })
+    try require(try restartAfterRetry.restoredMachineIdentity() == nil,
+                "retrying the same reservation closes the restart resurrection window")
 
     try require(try cloudAccountCrossedLockSubprocessCompletes(),
                 "startDeviceLogin makes progress under a forced credential/key crossed-lock order")
@@ -1139,6 +1411,157 @@ func runCloudAccountTests() async throws -> Int {
         try require(status == 401 && code == "no_machine_credential",
                     "HTTP errors retain status and safe code")
     }
+
+    // MARK: - A credential minted by an abandoned sign-in never reaches the store
+    //
+    // Cancelling a Task is a request the transport may ignore, so every check below lets the
+    // login *succeed* at the network and asks whether the credential still lands.
+
+    let abandonFake = CloudAccountFakeHTTP()
+    let abandonStore = CloudAccountWriteRaceStore()
+    let abandonInvalidation = CloudInMemoryCredentialInvalidationStore()
+    let abandonClient = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.test/root")!,
+        transport: abandonFake,
+        credentialStore: abandonStore,
+        invalidationStore: abandonInvalidation,
+        deviceKeyLoader: { key }
+    )
+    let completeLoginJSON = """
+    {"status":"complete","account_id":"acct-abandon","machine_id":"machine-abandon",
+     "machine_credential":"abandoned-bearer-fixture"}
+    """
+
+    // 1. Sign-out lands while the poll is still on the wire. The answer is real and arrives
+    //    afterwards; the store must refuse it.
+    await abandonFake.enqueueBlocked(status: 200, json: completeLoginJSON)
+    let signedOutDuringPoll = Task {
+        try await abandonClient.pollDeviceLogin(deviceCode: "abandon-during-poll")
+    }
+    await abandonFake.waitUntilBlocked()
+    try abandonClient.signOut()
+    await abandonFake.resumeBlocked()
+    do {
+        _ = try await signedOutDuringPoll.value
+        try require(false, "a credential minted after sign-out is refused at the store")
+    } catch CloudAccountError.loginAbandoned {
+        try require(true, "a credential minted after sign-out is refused at the store")
+    }
+    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                "sign-out during a poll leaves no credential behind")
+    // A different claim from the line above, and the one the pre-write guard exists for.
+    // Writing the secret and then deleting it would also leave nothing behind, having first
+    // put it on disk.
+    try require(abandonStore.writes() == 0,
+                "the refused credential is never written, not written and then taken back")
+
+    // 2. The window the pre-write guard cannot see: sign-out arrives *between* the guard and
+    //    the write returning. The credential is written and must be taken back.
+    abandonStore.armSetBlock()
+    await abandonFake.enqueue(json: completeLoginJSON)
+    let racedGeneration = abandonClient.credentialGeneration()
+    let racedPoll = Task {
+        try await abandonClient.pollDeviceLogin(
+            deviceCode: "abandon-inside-write", startedAt: racedGeneration)
+    }
+    abandonStore.waitUntilSetBlocked()
+    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) != nil,
+                "the raced credential really is in the store while the write is held open")
+    // Bumping the generation is all sign-out can do from here: its own removal is queued behind
+    // the transaction the parked write is holding.
+    try abandonClient.invalidatePendingLogins()
+    let removalsBeforeResume = abandonStore.removals()
+    abandonStore.resumeBlockedSet()
+    do {
+        _ = try await racedPoll.value
+        try require(false, "a credential abandoned inside the write window is refused")
+    } catch CloudAccountError.loginAbandoned {
+        try require(true, "a credential abandoned inside the write window is refused")
+    }
+    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                "the write that had already landed is taken back rather than left behind")
+    try require(abandonStore.removals() == removalsBeforeResume + 1,
+                "taking it back is one removal by the writing transaction, not a later sweep")
+
+    // 3. The set has landed, generation changes, and cleanup fails. The stale bytes remain, but
+    //    a new client sharing only the durable nonsecret epoch must still refuse them.
+    abandonStore.armSetBlock()
+    abandonStore.setRemovalFailure(true)
+    await abandonFake.enqueue(json: completeLoginJSON)
+    let cleanupFailurePoll = Task {
+        try await abandonClient.pollDeviceLogin(
+            deviceCode: "abandon-cleanup-failure",
+            startedAt: abandonClient.credentialGeneration())
+    }
+    abandonStore.waitUntilSetBlocked()
+    try abandonClient.invalidatePendingLogins()
+    abandonStore.resumeBlockedSet()
+    do {
+        _ = try await cleanupFailurePoll.value
+        try require(false, "post-write cleanup failure is surfaced to a retry owner")
+    } catch CloudAccountError.credentialCleanupPending {
+        try require(true, "post-write cleanup failure is surfaced to a retry owner")
+    }
+    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) != nil,
+                "cleanup failure injection leaves stale credential bytes behind")
+    let restartedAfterCleanupFailure = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.test/root")!,
+        transport: abandonFake,
+        credentialStore: abandonStore,
+        invalidationStore: abandonInvalidation,
+        deviceKeyLoader: { key })
+    try require(try restartedAfterCleanupFailure.restoredMachineIdentity() == nil,
+                "durable invalidation prevents stale credential resurrection after restart")
+    abandonStore.setRemovalFailure(false)
+    try restartedAfterCleanupFailure.signOut()
+    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                "retry ownership can finish stale credential cleanup")
+
+    // 4. The guard is not a blanket refusal: a sign-in started *after* the sign-out persists.
+    //    Without this the two checks above would also pass if nothing could ever be stored.
+    await abandonFake.enqueue(json: completeLoginJSON)
+    let freshGeneration = abandonClient.credentialGeneration()
+    _ = try await abandonClient.pollDeviceLogin(
+        deviceCode: "abandon-after", startedAt: freshGeneration)
+    try require(try abandonClient.restoredMachineIdentity()?.machineID == "machine-abandon",
+                "a sign-in started after the abandonment stores its credential normally")
+
+    // 5. The production path carries the generation on its own. `waitForDeviceLogin` is what
+    //    Settings calls, and it must refuse a sign-out that lands mid-flow without being told.
+    let flowFake = CloudAccountFakeHTTP()
+    let flowStore = CloudInMemoryKeyStore()
+    let flowSleeps = CloudAccountTestSleeps()
+    let flowClient = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.test/root")!,
+        transport: flowFake,
+        credentialStore: flowStore,
+        deviceKeyLoader: { key },
+        sleeper: { seconds in await flowSleeps.append(seconds) }
+    )
+    await flowFake.enqueue(json: """
+    {"device_code":"flow-secret","user_code":"FLOW-0001",
+     "verification_uri":"https://clawdline.com/connect",
+     "verification_uri_complete":"https://clawdline.com/connect?user_code=FLOW-0001",
+     "expires_in":600,"interval":5}
+    """)
+    let flowStart = try await flowClient.startDeviceLogin(
+        metadata: CloudMachineMetadata(name: "Flow Mac", platform: "macOS"))
+    await flowFake.enqueueBlocked(status: 200, json: """
+    {"status":"complete","account_id":"acct-flow","machine_id":"machine-flow",
+     "machine_credential":"flow-bearer-fixture"}
+    """)
+    let flowWait = Task { try await flowClient.waitForDeviceLogin(flowStart) }
+    await flowFake.waitUntilBlocked()
+    try flowClient.signOut()
+    await flowFake.resumeBlocked()
+    do {
+        _ = try await flowWait.value
+        try require(false, "the whole device-login flow refuses a credential after sign-out")
+    } catch CloudAccountError.loginAbandoned {
+        try require(true, "the whole device-login flow refuses a credential after sign-out")
+    }
+    try require(try flowStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                "no credential survives a sign-out taken during the device-login flow")
 
     return checks
 }

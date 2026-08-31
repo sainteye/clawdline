@@ -92,6 +92,23 @@ unchanged, `OrchestratorCoordinationTests.swift` falls from 2,046 to 1,690 lines
 suite is 361 lines, and the sealed suite-file inventory moves from 37 to 38. No production behavior
 or check count is created by the relocation.
 
+Bounded Keychain writes add 22 executed checks and no new file, group, runner or suite: the work
+lands inside `CloudAccountTests` (82 → 92) and `CloudSettingsTests` (28 → 40), moving the Swift
+completion receipt from the released 7,245-check main baseline to 7,267 and the Cloud receipt's
+two named suite counts with it. The ordered group manifest, the 25 runners, the suite-file count
+and both source-manifest partitions are
+deliberately unchanged, so only the check-count receipts moved and only those were edited. The
+count is arithmetic over unconditional checks rather than an observation — this candidate was
+verified with focused runners and a full-target typecheck, and the exact staged-tree suite is
+still what settles it.
+
+The consolidated Keychain/signing correction adds 43 unconditional checks without adding a test
+group, runner or suite: `CloudAccountTests` moves 92 → 105, `CloudSettingsTests` 40 → 59 and
+`CloudLifecycleTests` 76 → 87. Their focused candidate-overlay run observed all 251 affected checks
+green, so the arithmetic completion receipt moves 7,267 → 7,310 while the ordered manifests remain
+unchanged. This is focused pre-integration evidence; the landing root still owns the one exact
+candidate-tree full-suite receipt that settles the count.
+
 ### Ordered suite and dependency manifest
 
 `Tests/main.swift` owns process order only. It enters subprocess probes, installs isolation, runs

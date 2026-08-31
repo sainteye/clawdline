@@ -131,6 +131,45 @@ private final class LifecycleReadGate: @unchecked Sendable {
     }
 }
 
+private final class LifecycleBlockingKeyStore: CloudKeyStoring, @unchecked Sendable {
+    let coordinator = CloudKeyStoreCoordinator()
+    private let condition = NSCondition()
+    private var entered = false
+    private var released = false
+
+    func data(for account: String) throws -> Data? {
+        condition.lock()
+        entered = true
+        condition.broadcast()
+        let deadline = Date().addingTimeInterval(3)
+        while !released && condition.wait(until: deadline) {}
+        condition.unlock()
+        return nil
+    }
+
+    func set(_ data: Data, for account: String) throws {}
+    func remove(_ account: String) throws {}
+
+    func awaitEntry() -> Bool {
+        condition.lock()
+        let deadline = Date().addingTimeInterval(2)
+        while !entered && condition.wait(until: deadline) {}
+        let result = entered
+        condition.unlock()
+        return result
+    }
+
+    func release() {
+        condition.lock(); released = true; condition.broadcast(); condition.unlock()
+    }
+}
+
+private struct LifecycleUnusedHTTPTransport: CloudAccountHTTPTransport {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        throw ForcedLifecycleFailure()
+    }
+}
+
 private struct LifecycleTestTokenProvider: CloudDeviceTokenProviding, Sendable {
     let error: Error?
 
@@ -699,6 +738,132 @@ private struct CloudLifecycleTests {
     }
 
     @MainActor
+    static func testIdentityReadTimeoutRetainsTerminalReconciliation() async {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = AttachRecorder()
+        let gate = LifecycleReadGate()
+        let machine = CloudMachineIdentity(accountID: "acct", machineID: "mac-timeout")
+        let signing = CloudDeviceKeyPair()
+        guard let master = try? CloudMasterSecret() else {
+            check("identity-timeout fixture builds", false)
+            return
+        }
+        let reader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?>(
+            timeoutSeconds: 1
+        ) {
+            gate.wait()
+            return CloudBridgeLifecycle.RestoredIdentity(
+                machine: machine,
+                app: CloudAppIdentity(
+                    machineID: machine.machineID, deviceID: machine.machineID,
+                    keyID: CloudBridgeLifecycle.masterKeyID,
+                    masterSecret: master, signingKey: signing))
+        }
+        let lifecycle = CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
+            identityReader: reader,
+            makeTransport: { _, _, _ in LifecycleTestTransport() },
+            sequencing: { _ in CloudSequenceFile(
+                url: directory.appendingPathComponent("cloud-sequence.json")) },
+            attach: { recorder.attach($0) },
+            allowCloudCommands: { false },
+            commandRouter: { LifecycleTestRouter() },
+            commandResult: { _ in },
+            log: { _ in }))
+
+        lifecycle.apply()
+        _ = gate.awaitEntry()
+        for _ in 0..<1_000 where lifecycle.identityReadTimeoutSeconds == nil {
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        check("bridge read timeout remains observable unknown progress",
+              lifecycle.identityReadTimeoutSeconds == 1
+                  && lifecycle.identityKnowledge == .reading && recorder.attachedCount == 0)
+        gate.release.signal()
+        let attached = await eventually { recorder.attachedCount == 1 }
+        check("bridge read retains late terminal identity and reconciles attachment",
+              attached && lifecycle.identityReadTimeoutSeconds == nil
+                  && lifecycle.state == .attached(accountID: "acct", machineID: "mac-timeout"))
+
+        let timeoutAfterSignOutRecorder = AttachRecorder()
+        let timeoutAfterSignOutGate = LifecycleReadGate()
+        let timeoutAfterSignOutReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?>(
+            timeoutSeconds: 1
+        ) {
+            timeoutAfterSignOutGate.wait()
+            return CloudBridgeLifecycle.RestoredIdentity(
+                machine: machine,
+                app: CloudAppIdentity(
+                    machineID: machine.machineID, deviceID: machine.machineID,
+                    keyID: CloudBridgeLifecycle.masterKeyID,
+                    masterSecret: master, signingKey: signing))
+        }
+        let timeoutAfterSignOut = CloudBridgeLifecycle(services: .init(
+            identityReader: timeoutAfterSignOutReader,
+            makeTransport: { _, _, _ in LifecycleTestTransport() },
+            sequencing: { _ in CloudSequenceFile(
+                url: directory.appendingPathComponent("cloud-timeout-after-signout.json")) },
+            attach: { timeoutAfterSignOutRecorder.attach($0) },
+            allowCloudCommands: { false },
+            commandRouter: { LifecycleTestRouter() },
+            commandResult: { _ in },
+            log: { _ in }))
+        timeoutAfterSignOut.apply()
+        _ = timeoutAfterSignOutGate.awaitEntry()
+        timeoutAfterSignOut.signedOut()
+        try? await Task.sleep(nanoseconds: 1_100_000_000)
+        check("an invalidated read cannot publish its timeout after signedOut",
+              timeoutAfterSignOut.identityReadTimeoutSeconds == nil
+                  && timeoutAfterSignOut.identityKnowledge == .resolved)
+        timeoutAfterSignOutGate.release.signal()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        check("the same invalidated read's late terminal remains detached",
+              timeoutAfterSignOutRecorder.attachedCount == 0
+                  && timeoutAfterSignOut.state == .detached)
+
+        let signOutAfterTimeoutRecorder = AttachRecorder()
+        let signOutAfterTimeoutGate = LifecycleReadGate()
+        let signOutAfterTimeoutReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?>(
+            timeoutSeconds: 1
+        ) {
+            signOutAfterTimeoutGate.wait()
+            return CloudBridgeLifecycle.RestoredIdentity(
+                machine: machine,
+                app: CloudAppIdentity(
+                    machineID: machine.machineID, deviceID: machine.machineID,
+                    keyID: CloudBridgeLifecycle.masterKeyID,
+                    masterSecret: master, signingKey: signing))
+        }
+        let signOutAfterTimeout = CloudBridgeLifecycle(services: .init(
+            identityReader: signOutAfterTimeoutReader,
+            makeTransport: { _, _, _ in LifecycleTestTransport() },
+            sequencing: { _ in CloudSequenceFile(
+                url: directory.appendingPathComponent("cloud-signout-after-timeout.json")) },
+            attach: { signOutAfterTimeoutRecorder.attach($0) },
+            allowCloudCommands: { false },
+            commandRouter: { LifecycleTestRouter() },
+            commandResult: { _ in },
+            log: { _ in }))
+        signOutAfterTimeout.apply()
+        _ = signOutAfterTimeoutGate.awaitEntry()
+        for _ in 0..<1_000 where signOutAfterTimeout.identityReadTimeoutSeconds == nil {
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        check("the current read publishes timeout progress before signedOut",
+              signOutAfterTimeout.identityReadTimeoutSeconds == 1
+                  && signOutAfterTimeout.identityKnowledge == .reading)
+        signOutAfterTimeout.signedOut()
+        check("signedOut clears an already-published timeout and resolves identity knowledge",
+              signOutAfterTimeout.identityReadTimeoutSeconds == nil
+                  && signOutAfterTimeout.identityKnowledge == .resolved)
+        signOutAfterTimeoutGate.release.signal()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        check("late terminal after a cleared timeout cannot reattach",
+              signOutAfterTimeoutRecorder.attachedCount == 0
+                  && signOutAfterTimeout.state == .detached)
+    }
+
+    @MainActor
     static func testRevocationStopsReconnecting() async {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -939,6 +1104,67 @@ private struct CloudLifecycleTests {
         check("a fingerprint the service does not echo back is refused", notEchoed)
         check("and nothing is pinned when the delivery is not trusted",
               ((try? store.devices(accountID: identity.accountID)) ?? []).isEmpty)
+
+        // Follow the actual Settings dependency factory into CloudKeys.loadOrCreate. A
+        // synchronous store that never answers must return control to the pairing task on both
+        // timeout and cancellation; running it off-main by itself would not prove either claim.
+        func productionCompleter(
+            keyStore: LifecycleBlockingKeyStore,
+            timeout: Int
+        ) throws -> CloudPairingCompleter {
+            let credentialStore = CloudInMemoryKeyStore()
+            try credentialStore.set(
+                JSONEncoder().encode(CloudMachineCredential(
+                    accountID: fixture.offer.accountID,
+                    machineID: "mac-test-01",
+                    secret: "fixture-machine-secret")),
+                for: CloudAccountClient.machineCredentialAccount)
+            let client = CloudAccountClient(
+                apiBaseURL: URL(string: "https://api.example.test")!,
+                transport: LifecycleUnusedHTTPTransport(),
+                credentialStore: credentialStore,
+                deviceKeyLoader: { signing })
+            return CloudPairingCompleter.production(
+                client: client,
+                keys: CloudKeys(store: keyStore),
+                pairedDevices: store,
+                keychainTimeoutSeconds: timeout,
+                nowMilliseconds: { fixture.now })
+        }
+
+        let timeoutStore = LifecycleBlockingKeyStore()
+        let timeoutCompleter = try? productionCompleter(keyStore: timeoutStore, timeout: 1)
+        let timeoutTask = Task {
+            try await timeoutCompleter?.complete(offerFragment: fragment)
+        }
+        check("production pairing reaches the hanging load-or-create Keychain seam",
+              timeoutStore.awaitEntry())
+        var pairingTimedOut = false
+        do { _ = try await timeoutTask.value }
+        catch {
+            pairingTimedOut = (error as? CloudPairingCompleter.Failure)
+                == .keychainTimedOut(seconds: 1)
+        }
+        timeoutStore.release()
+        check("a hanging production key load returns a bounded error to the pairing UI",
+              pairingTimedOut)
+
+        let cancellationStore = LifecycleBlockingKeyStore()
+        let cancellationCompleter = try? productionCompleter(
+            keyStore: cancellationStore, timeout: 60)
+        let cancellationTask = Task {
+            try await cancellationCompleter?.complete(offerFragment: fragment)
+        }
+        check("the cancellable production pairing reaches the same load-or-create seam",
+              cancellationStore.awaitEntry())
+        cancellationTask.cancel()
+        var pairingCancelled = false
+        do { _ = try await cancellationTask.value }
+        catch is CancellationError { pairingCancelled = true }
+        catch {}
+        cancellationStore.release()
+        check("closing pairing cancels the production await and returns to the UI",
+              pairingCancelled)
     }
 
     @MainActor
@@ -952,6 +1178,7 @@ private struct CloudLifecycleTests {
         await testAttachmentIsSingular()
         await testNoCredentialAndFailures()
         await testSignOutInvalidatesInFlightIdentity()
+        await testIdentityReadTimeoutRetainsTerminalReconciliation()
         await testRevocationStopsReconnecting()
         await testWriteGateAndCommandSeam()
         await testPairingCompleter()

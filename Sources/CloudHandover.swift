@@ -568,6 +568,7 @@ struct CloudPairingCompleter: Sendable {
         case notSignedIn
         case wrongAccount
         case fingerprintNotEchoed
+        case keychainTimedOut(seconds: Int)
 
         var errorDescription: String? {
             switch self {
@@ -577,13 +578,17 @@ struct CloudPairingCompleter: Sendable {
                 return "That pairing code belongs to a different Clawdline Cloud account."
             case .fingerprintNotEchoed:
                 return "The pairing service echoed a different fingerprint than the code carries."
+            case .keychainTimedOut(let seconds):
+                return "Pairing stopped because this Mac's Keychain did not answer within "
+                    + "\(seconds) seconds. Its operation may still finish, but the pairing "
+                    + "window is no longer waiting for it."
             }
         }
     }
 
-    var restoredIdentity: @Sendable () throws -> CloudMachineIdentity?
-    var deviceKeyPair: @Sendable () throws -> CloudDeviceKeyPair
-    var masterSecret: @Sendable () throws -> CloudMasterSecret
+    var restoredIdentity: @Sendable () async throws -> CloudMachineIdentity?
+    var deviceKeyPair: @Sendable () async throws -> CloudDeviceKeyPair
+    var masterSecret: @Sendable () async throws -> CloudMasterSecret
     var deliver: @Sendable (String, CloudOpaquePairingBlob) async throws -> CloudPairingDelivery
     var pin: @Sendable (CloudPairedDevice, String) throws -> Void
     var nowMilliseconds: @Sendable () -> Int64
@@ -592,17 +597,48 @@ struct CloudPairingCompleter: Sendable {
     static func production(
         client: CloudAccountClient = CloudAccountClient(),
         keys: CloudKeys = CloudKeys(),
-        pairedDevices: CloudPairedDeviceStore = CloudPairedDeviceStore()
+        pairedDevices: CloudPairedDeviceStore = CloudPairedDeviceStore(),
+        keychainTimeoutSeconds: Int = CloudKeychainReader<CloudMachineIdentity?>.defaultTimeoutSeconds,
+        nowMilliseconds: @escaping @Sendable () -> Int64 = {
+            Int64(Date().timeIntervalSince1970 * 1_000)
+        }
     ) -> CloudPairingCompleter {
         CloudPairingCompleter(
-            restoredIdentity: { try client.restoredMachineIdentity() },
-            deviceKeyPair: { try keys.loadOrCreateDeviceKeyPair() },
-            masterSecret: { try keys.loadOrCreateMasterSecret() },
+            restoredIdentity: {
+                do {
+                    return try await CloudKeychainReader(
+                        label: "clawdline.cloud.pairing-identity",
+                        timeoutSeconds: keychainTimeoutSeconds
+                    ) { try client.restoredMachineIdentity() }.value()
+                } catch CloudKeychainReader<CloudMachineIdentity?>.AwaitError.timedOut(let seconds) {
+                    throw Failure.keychainTimedOut(seconds: seconds)
+                }
+            },
+            deviceKeyPair: {
+                do {
+                    return try await CloudKeychainReader(
+                        label: "clawdline.cloud.pairing-device-key",
+                        timeoutSeconds: keychainTimeoutSeconds
+                    ) { try keys.loadOrCreateDeviceKeyPair() }.value()
+                } catch CloudKeychainReader<CloudDeviceKeyPair>.AwaitError.timedOut(let seconds) {
+                    throw Failure.keychainTimedOut(seconds: seconds)
+                }
+            },
+            masterSecret: {
+                do {
+                    return try await CloudKeychainReader(
+                        label: "clawdline.cloud.pairing-master-key",
+                        timeoutSeconds: keychainTimeoutSeconds
+                    ) { try keys.loadOrCreateMasterSecret() }.value()
+                } catch CloudKeychainReader<CloudMasterSecret>.AwaitError.timedOut(let seconds) {
+                    throw Failure.keychainTimedOut(seconds: seconds)
+                }
+            },
             deliver: { pairingID, blob in
                 try await client.completePairing(pairingID: pairingID, blob: blob)
             },
             pin: { device, accountID in try pairedDevices.pin(device, accountID: accountID) },
-            nowMilliseconds: { Int64(Date().timeIntervalSince1970 * 1_000) },
+            nowMilliseconds: nowMilliseconds,
             randomBytes: { count in
                 var generator = SystemRandomNumberGenerator()
                 return Data((0..<count).map { _ in
@@ -619,12 +655,12 @@ struct CloudPairingCompleter: Sendable {
     /// cannot produce a command anyway. Doing it in the other order would leave a pinned viewer
     /// behind every failed delivery.
     func complete(offerFragment: String) async throws -> Outcome {
-        guard let identity = try restoredIdentity() else { throw Failure.notSignedIn }
+        guard let identity = try await restoredIdentity() else { throw Failure.notSignedIn }
         let now = nowMilliseconds()
         let offer = try CloudHandover.decodeOfferFragment(offerFragment, nowMilliseconds: now)
         guard offer.accountID == identity.accountID else { throw Failure.wrongAccount }
 
-        let signing = try deviceKeyPair()
+        let signing = try await deviceKeyPair()
         let machineFingerprint = try CloudPairing.ed25519Fingerprint(
             publicKeyRaw: signing.publicKeyRaw)
         let handover = CloudPairingHandover(
@@ -633,7 +669,7 @@ struct CloudPairingCompleter: Sendable {
             machineSigningKey: signing.publicKeyRaw.base64EncodedString(),
             machineFingerprint: machineFingerprint,
             keyID: CloudBridgeLifecycle.masterKeyID,
-            masterSecret: try masterSecret().rawRepresentation.base64EncodedString())
+            masterSecret: try await masterSecret().rawRepresentation.base64EncodedString())
         let wrapper = try CloudHandover.seal(
             handover, for: offer,
             machineDeviceID: identity.machineID,

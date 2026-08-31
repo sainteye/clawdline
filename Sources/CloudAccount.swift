@@ -2,12 +2,16 @@
 // long-lived machine credential; CloudTransport owns short-lived relay tokens.
 
 import Foundation
+import os
 
 enum CloudAccountError: Error, LocalizedError, Equatable {
     case missingMachineCredential
     case invalidResponse
     case http(status: Int, code: String?)
     case invalidPairingBlob
+    case loginAbandoned
+    case credentialInvalidationFailed(String)
+    case credentialCleanupPending(String)
 
     var errorDescription: String? {
         switch self {
@@ -20,6 +24,130 @@ enum CloudAccountError: Error, LocalizedError, Equatable {
             return "The Clawdline Cloud API returned HTTP \(status)\(suffix)."
         case .invalidPairingBlob:
             return "The pairing handover is not valid opaque base64 data."
+        case .loginAbandoned:
+            return "This Mac was signed out while that sign-in was still finishing, "
+                + "so the new credential was discarded."
+        case .credentialInvalidationFailed(let reason):
+            return "This Clawdline process stopped using the credential, but could not durably "
+                + "mark it invalid (\(reason)). A restart could admit it again; retry "
+                + "invalidation before restarting."
+        case .credentialCleanupPending(let reason):
+            return "The credential is durably invalid, but its stale Keychain item could not "
+                + "be removed (\(reason)). Retry cleanup; it cannot be used after restart."
+        }
+    }
+}
+
+/// Which sign-in a credential belongs to.
+///
+/// It exists because cancelling a `Task` is a request rather than a guarantee: a transport that
+/// ignores cancellation still returns a real credential, and by then the person may have signed
+/// out. Comparing this value inside the persistence transaction is what refuses that write —
+/// a check anywhere above the store cannot, because the write is already on its way.
+struct CloudCredentialGeneration: Equatable, Sendable {
+    fileprivate let value: UInt64
+
+    init(_ value: UInt64) { self.value = value }
+}
+
+/// Durable, nonsecret invalidation state. A Keychain item whose embedded epoch is older than
+/// this value is unusable even when `SecItemDelete` failed, including after process restart.
+protocol CloudCredentialInvalidationStoring: Sendable {
+    /// Raise the process-local floor synchronously. This is atomic-only and must not touch a
+    /// persistence API: Settings calls it before cancelling the in-flight login Task.
+    func reserve(atLeast epoch: UInt64) -> UInt64
+    func currentEpoch() throws -> UInt64
+    func advance(to epoch: UInt64) throws
+}
+
+final class CloudInMemoryCredentialInvalidationStore:
+    CloudCredentialInvalidationStoring, @unchecked Sendable
+{
+    private let epoch: OSAllocatedUnfairLock<UInt64>
+
+    init(epoch: UInt64 = 0) {
+        self.epoch = OSAllocatedUnfairLock(initialState: epoch)
+    }
+
+    func reserve(atLeast wanted: UInt64) -> UInt64 {
+        epoch.withLock { current in
+            current = max(current, wanted)
+            return current
+        }
+    }
+
+    func currentEpoch() throws -> UInt64 { epoch.withLock { $0 } }
+
+    func advance(to wanted: UInt64) throws {
+        epoch.withLock { current in current = max(current, wanted) }
+    }
+}
+
+/// Production persistence for the nonsecret epoch. UserDefaults is intentionally separate from
+/// the Keychain: an unavailable or locked Keychain must not be able to roll invalidation back.
+final class CloudCredentialInvalidationDefaultsStore:
+    CloudCredentialInvalidationStoring, @unchecked Sendable
+{
+    static let defaultKey = "cloud.machine-credential.minimum-valid-epoch"
+
+    private final class ProcessCoordinator: @unchecked Sendable {
+        let lock = NSLock()
+        var floor: UInt64 = 0
+    }
+
+    /// UserDefaults has no compare-and-swap operation. Instances addressing the same durable
+    /// subject share this read/reserve/write coordinator, so a low writer cannot overtake a high
+    /// reservation. The namespace is explicit because a defaults key alone does not identify a
+    /// domain; test suites and production must never share a process floor by spelling accident.
+    private static let coordinators = OSAllocatedUnfairLock(
+        initialState: [String: ProcessCoordinator]())
+
+    private let defaults: UserDefaults
+    private let key: String
+    private let coordinator: ProcessCoordinator
+
+    init(
+        defaults: UserDefaults = .standard,
+        key: String = defaultKey,
+        persistenceNamespace: String = "user-defaults.standard"
+    ) {
+        self.defaults = defaults
+        self.key = key
+        let subject = persistenceNamespace + "\u{0}" + key
+        coordinator = Self.coordinators.withLock { values in
+            if let existing = values[subject] { return existing }
+            let created = ProcessCoordinator()
+            values[subject] = created
+            return created
+        }
+    }
+
+    func reserve(atLeast wanted: UInt64) -> UInt64 {
+        coordinator.lock.lock()
+        defer { coordinator.lock.unlock() }
+        coordinator.floor = max(coordinator.floor, wanted)
+        return coordinator.floor
+    }
+
+    func currentEpoch() throws -> UInt64 {
+        coordinator.lock.lock()
+        defer { coordinator.lock.unlock() }
+        let durable = (defaults.object(forKey: key) as? NSNumber)?.uint64Value ?? 0
+        coordinator.floor = max(coordinator.floor, durable)
+        return coordinator.floor
+    }
+
+    func advance(to wanted: UInt64) throws {
+        coordinator.lock.lock()
+        defer { coordinator.lock.unlock() }
+        let durable = (defaults.object(forKey: key) as? NSNumber)?.uint64Value ?? 0
+        let required = max(coordinator.floor, max(wanted, durable))
+        coordinator.floor = required
+        guard required > durable else { return }
+        defaults.set(NSNumber(value: required), forKey: key)
+        let retained = (defaults.object(forKey: key) as? NSNumber)?.uint64Value ?? 0
+        guard retained >= required else {
+            throw CloudAccountError.credentialInvalidationFailed("the epoch was not retained")
         }
     }
 }
@@ -63,6 +191,9 @@ struct CloudDeviceLoginStart: Equatable, Sendable,
     let expiresIn: Int
     let interval: Int
     fileprivate let receivedAt: TimeInterval
+    /// Captured when the flow opened, so every poll it later makes is judged against the state
+    /// of the world *before* the person could have signed out.
+    fileprivate let generation: CloudCredentialGeneration
 
     var description: String {
         "CloudDeviceLoginStart(deviceCode: <redacted>, userCode: \(userCode), interval: \(interval))"
@@ -96,6 +227,14 @@ struct CloudMachineCredential: Equatable, Codable, Sendable,
     let accountID: String
     let machineID: String
     fileprivate let secret: String
+    fileprivate let validityEpoch: UInt64
+
+    init(accountID: String, machineID: String, secret: String, validityEpoch: UInt64 = 0) {
+        self.accountID = accountID
+        self.machineID = machineID
+        self.secret = secret
+        self.validityEpoch = validityEpoch
+    }
 
     var description: String {
         "CloudMachineCredential(accountID: \(accountID), machineID: \(machineID), secret: <redacted>)"
@@ -107,6 +246,24 @@ struct CloudMachineCredential: Equatable, Codable, Sendable,
         case accountID = "account_id"
         case machineID = "machine_id"
         case secret = "machine_credential"
+        case validityEpoch = "validity_epoch"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        accountID = try values.decode(String.self, forKey: .accountID)
+        machineID = try values.decode(String.self, forKey: .machineID)
+        secret = try values.decode(String.self, forKey: .secret)
+        // Credentials written before the invariant existed belong to the original epoch.
+        validityEpoch = try values.decodeIfPresent(UInt64.self, forKey: .validityEpoch) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(accountID, forKey: .accountID)
+        try values.encode(machineID, forKey: .machineID)
+        try values.encode(secret, forKey: .secret)
+        try values.encode(validityEpoch, forKey: .validityEpoch)
     }
 }
 
@@ -245,14 +402,22 @@ final class CloudAccountClient: Sendable {
     let apiBaseURL: URL
     private let transport: any CloudAccountHTTPTransport
     private let credentialStore: any CloudKeyStoring
+    private let invalidationStore: any CloudCredentialInvalidationStoring
     private let deviceKeyLoader: DeviceKeyLoader
     private let sleeper: Sleeper
     private let clock: Clock
+    /// Deliberately **not** guarded by the store's coordinator. Bumping it must never wait on a
+    /// Keychain call, because the callers that bump it — sign-out and cancel — are the ones a
+    /// blocked Keychain would otherwise trap. It only ever increases, so a comparison taken
+    /// inside the transaction is sound without holding the same lock.
+    private let loginGeneration: OSAllocatedUnfairLock<UInt64>
 
     init(
         apiBaseURL: URL,
         transport: any CloudAccountHTTPTransport,
         credentialStore: any CloudKeyStoring,
+        invalidationStore: any CloudCredentialInvalidationStoring =
+            CloudInMemoryCredentialInvalidationStore(),
         deviceKeyLoader: @escaping DeviceKeyLoader,
         sleeper: @escaping Sleeper = { seconds in
             guard seconds > 0 else { return }
@@ -266,26 +431,79 @@ final class CloudAccountClient: Sendable {
         self.apiBaseURL = apiBaseURL
         self.transport = transport
         self.credentialStore = credentialStore
+        self.invalidationStore = invalidationStore
         self.deviceKeyLoader = deviceKeyLoader
         self.sleeper = sleeper
         self.clock = clock
+        loginGeneration = OSAllocatedUnfairLock(
+            initialState: (try? invalidationStore.currentEpoch()) ?? 0)
     }
 
     convenience init(
         apiBaseURL: URL = URL(string: "https://api.clawdline.com")!,
         session: URLSession = .shared,
         credentialStore: any CloudKeyStoring = CloudKeychainStore(),
+        invalidationStore: any CloudCredentialInvalidationStoring =
+            CloudCredentialInvalidationDefaultsStore(),
         keys: CloudKeys = CloudKeys()
     ) {
         self.init(
             apiBaseURL: apiBaseURL,
             transport: CloudAccountURLSessionTransport(session: session),
             credentialStore: credentialStore,
+            invalidationStore: invalidationStore,
             deviceKeyLoader: { try keys.loadOrCreateDeviceKeyPair() }
         )
     }
 
+    /// The generation a credential must still belong to for the store to accept it.
+    func credentialGeneration() -> CloudCredentialGeneration {
+        let durable = (try? invalidationStore.currentEpoch()) ?? 0
+        return CloudCredentialGeneration(loginGeneration.withLock { current in
+            current = max(current, durable)
+            return current
+        })
+    }
+
+    /// Abandon every sign-in already in flight. Their credentials are refused at the store even
+    /// if the network answers afterwards, so cancelling a login cannot leave one behind.
+    ///
+    /// Cheap and non-blocking on purpose: sign-out and cancel both call it from the main actor.
+    @discardableResult
+    func reservePendingLoginInvalidation() -> CloudCredentialGeneration {
+        let candidate = loginGeneration.withLock { current in
+            if current < UInt64.max { current += 1 }
+            return current
+        }
+        let reserved = invalidationStore.reserve(atLeast: candidate)
+        return CloudCredentialGeneration(loginGeneration.withLock { current in
+            current = max(current, reserved)
+            return current
+        })
+    }
+
+    /// Persist a reservation off the main actor. UI adapters reserve synchronously (an atomic
+    /// increment only), then hand this call to their bounded writer so a slow persistence seam
+    /// cannot freeze AppKit.
+    func persistPendingLoginInvalidation(_ generation: CloudCredentialGeneration) throws {
+        do {
+            try invalidationStore.advance(to: generation.value)
+        } catch let error as CloudAccountError {
+            throw error
+        } catch {
+            throw CloudAccountError.credentialInvalidationFailed(Self.message(for: error))
+        }
+    }
+
+    @discardableResult
+    func invalidatePendingLogins() throws -> CloudCredentialGeneration {
+        let generation = reservePendingLoginInvalidation()
+        try persistPendingLoginInvalidation(generation)
+        return generation
+    }
+
     func startDeviceLogin(metadata: CloudMachineMetadata) async throws -> CloudDeviceLoginStart {
+        let generation = credentialGeneration()
         let key = try deviceKeyLoader()
         let body = DeviceStartRequest(
             name: metadata.name,
@@ -314,11 +532,21 @@ final class CloudAccountClient: Sendable {
             verificationCompleteURL: verificationCompleteURL,
             expiresIn: wire.expiresIn,
             interval: wire.interval,
-            receivedAt: receivedAt
+            receivedAt: receivedAt,
+            generation: generation
         )
     }
 
-    func pollDeviceLogin(deviceCode: String) async throws -> CloudDeviceLoginPollState {
+    /// `startedAt` names the sign-in this poll belongs to. Left out, the poll stands for itself
+    /// and is judged from the moment it was made — which still refuses a sign-out that lands
+    /// during the round trip, and is the honest default for a single call.
+    func pollDeviceLogin(
+        deviceCode: String,
+        startedAt generation: CloudCredentialGeneration? = nil
+    ) async throws -> CloudDeviceLoginPollState {
+        // Read before the request leaves. Reading it after the answer arrives would compare the
+        // world against itself and could never notice the sign-out in between.
+        let admitted = generation ?? credentialGeneration()
         let data = try await send(
             method: "POST", path: ["v1", "auth", "device", "poll"],
             body: DevicePollRequest(deviceCode: deviceCode)
@@ -354,8 +582,11 @@ final class CloudAccountClient: Sendable {
                 throw CloudAccountError.invalidResponse
             }
             let credential = CloudMachineCredential(
-                accountID: accountID, machineID: machineID, secret: secret)
-            try withPersistenceTransaction { try persistUnlocked(credential) }
+                accountID: accountID, machineID: machineID, secret: secret,
+                validityEpoch: admitted.value)
+            try withPersistenceTransaction {
+                try persistUnlocked(credential, admittedAt: admitted)
+            }
             return .complete(CloudMachineIdentity(accountID: accountID, machineID: machineID))
         default:
             throw CloudAccountError.invalidResponse
@@ -377,7 +608,8 @@ final class CloudAccountClient: Sendable {
             try await sleeper(min(TimeInterval(delay), remaining))
             try Task.checkCancellation()
             guard clock() < deadline else { return .expired }
-            let state = try await pollDeviceLogin(deviceCode: started.deviceCode)
+            let state = try await pollDeviceLogin(
+                deviceCode: started.deviceCode, startedAt: started.generation)
             try Task.checkCancellation()
             await onState(state)
             switch state {
@@ -406,9 +638,27 @@ final class CloudAccountClient: Sendable {
     }
 
     /// Explicit sign-out removes the persisted bearer before the client reports signed-out state.
+    ///
+    /// **The generation is bumped before the transaction is entered, not inside it.** A poll
+    /// already blocked on the coordinator has captured its generation and will compare it after
+    /// it acquires the lock; bumping first means it sees the new value whichever of the two gets
+    /// there first, so the two orders both end signed out rather than one of them resurrecting
+    /// the credential this call just removed.
+    ///
+    /// It must be called off the main thread: ``CloudKeychainStore/remove(_:)`` refuses there.
     func signOut() throws {
-        try withPersistenceTransaction {
-            try credentialStore.remove(Self.machineCredentialAccount)
+        let invalidation = reservePendingLoginInvalidation()
+        try signOut(reservedAt: invalidation)
+    }
+
+    func signOut(reservedAt invalidation: CloudCredentialGeneration) throws {
+        try persistPendingLoginInvalidation(invalidation)
+        do {
+            try withPersistenceTransaction {
+                try credentialStore.remove(Self.machineCredentialAccount)
+            }
+        } catch {
+            throw CloudAccountError.credentialCleanupPending(Self.message(for: error))
         }
     }
 
@@ -686,6 +936,37 @@ final class CloudAccountClient: Sendable {
         try credentialStore.set(data, for: Self.machineCredentialAccount)
     }
 
+    /// Persist a freshly minted credential, unless the sign-in that minted it was abandoned.
+    ///
+    /// **The generation is read twice, and the two reads are not redundant.**
+    ///
+    /// The first refuses the ordinary case — sign-out happened while the network was answering —
+    /// and its value is that the secret is *never written*. Undoing a write is second best: by
+    /// then the credential has been on disk.
+    ///
+    /// The second closes the window the first cannot see. `signOut()` bumps the generation
+    /// *before* it queues behind this transaction, so a sign-out arriving between the guard and
+    /// `SecItemAdd` returning would find nothing to remove and leave the credential behind.
+    /// Taking it back here is what makes "signed out" mean signed out under either interleaving.
+    ///
+    /// Deleting either one leaves a test red; they were checked separately for that reason.
+    private func persistUnlocked(
+        _ credential: CloudMachineCredential, admittedAt admitted: CloudCredentialGeneration
+    ) throws {
+        guard credentialGeneration() == admitted else { throw CloudAccountError.loginAbandoned }
+        try persistUnlocked(credential)
+        guard credentialGeneration() == admitted else {
+            do {
+                try credentialStore.remove(Self.machineCredentialAccount)
+                throw CloudAccountError.loginAbandoned
+            } catch let error as CloudAccountError {
+                throw error
+            } catch {
+                throw CloudAccountError.credentialCleanupPending(Self.message(for: error))
+            }
+        }
+    }
+
     private func loadCredentialUnlocked() throws -> CloudMachineCredential? {
         guard let data = try credentialStore.data(for: Self.machineCredentialAccount) else {
             return nil
@@ -694,6 +975,14 @@ final class CloudAccountClient: Sendable {
             let credential = try JSONDecoder().decode(CloudMachineCredential.self, from: data)
             guard !credential.accountID.isEmpty, !credential.machineID.isEmpty,
                   !credential.secret.isEmpty else { throw CloudAccountError.invalidResponse }
+            let durableEpoch: UInt64
+            do {
+                durableEpoch = try invalidationStore.currentEpoch()
+            } catch {
+                throw CloudAccountError.credentialInvalidationFailed(Self.message(for: error))
+            }
+            let requiredEpoch = max(durableEpoch, credentialGeneration().value)
+            guard credential.validityEpoch >= requiredEpoch else { return nil }
             return credential
         } catch let error as CloudAccountError {
             throw error
@@ -713,6 +1002,15 @@ final class CloudAccountClient: Sendable {
         _ body: @Sendable () throws -> T
     ) rethrows -> T {
         try credentialStore.coordinator.withCriticalRegion(body)
+    }
+
+    private static func message(for error: Error) -> String {
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription, !description.isEmpty {
+            return description
+        }
+        let description = error.localizedDescription
+        return description.isEmpty ? "unknown persistence error" : description
     }
 
     private func decodeRevocation(_ data: Data, machine: Bool) throws -> CloudRevocation {

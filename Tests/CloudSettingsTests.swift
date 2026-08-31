@@ -184,6 +184,52 @@ private actor PollCompletionGate {
     }
 }
 
+private final class CancellationOrderingRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+
+    func record(_ value: String) {
+        lock.lock(); values.append(value); lock.unlock()
+    }
+
+    func snapshot() -> [String] {
+        lock.lock(); defer { lock.unlock() }; return values
+    }
+}
+
+private final class CancellationRaceWaiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered = false
+    private var continuation: CheckedContinuation<CloudDeviceLoginPollState, Never>?
+
+    func wait(recorder: CancellationOrderingRecorder) async -> CloudDeviceLoginPollState {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                entered = true
+                self.continuation = continuation
+                lock.unlock()
+            }
+        } onCancel: {
+            recorder.record("cancel-task")
+        }
+    }
+
+    func hasEntered() -> Bool {
+        lock.lock(); defer { lock.unlock() }; return entered
+    }
+
+    /// Resume the ignored-cancellation transport answer synchronously. The task's MainActor
+    /// publication may run later, but the answer has already landed in the reservation/cancel gap.
+    func complete(_ identity: CloudMachineIdentity) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: .complete(identity))
+    }
+}
+
 @MainActor
 private final class OpenRecorder {
     var urls: [URL] = []
@@ -237,13 +283,25 @@ private struct CloudSettingsTests {
     static func services(
         restored: CloudMachineIdentity? = nil,
         start: @escaping @Sendable () async throws -> CloudSettingsLoginAttempt,
-        signOut: @escaping @MainActor () throws -> Void = {},
+        reserveCredentialInvalidation: @escaping @MainActor () -> CloudCredentialGeneration = {
+            CloudCredentialGeneration(0)
+        },
+        signOut: @escaping @MainActor (
+            CloudCredentialGeneration,
+            @escaping @MainActor (CloudKeychainWriteOutcome) -> Void
+        ) -> Void = { _, completion in completion(.succeeded) },
+        abandonPendingLogins: @escaping @MainActor (
+            CloudCredentialGeneration,
+            @escaping @MainActor (CloudKeychainWriteOutcome) -> Void
+        ) -> Void = { _, completion in completion(.succeeded) },
         opener: @escaping @MainActor (URL) -> Bool = { _ in true }
     ) -> CloudSettingsServices {
         CloudSettingsServices(
             restoredIdentity: { restored },
             startLogin: { _ in try await start() },
+            reserveCredentialInvalidation: reserveCredentialInvalidation,
             signOut: signOut,
+            abandonPendingLogins: abandonPendingLogins,
             openVerificationURL: opener)
     }
 
@@ -265,6 +323,24 @@ private struct CloudSettingsTests {
         let signedOut = CloudSettingsModel(
             services: services(start: { throw ForcedFailure.test }), metadata: metadata)
         check("missing identity is visibly signed out", signedOut.phase == .signedOut)
+
+        var restoration: (@MainActor (Result<CloudMachineIdentity?, Error>) -> Void)?
+        let reconciling = CloudSettingsModel(
+            services: CloudSettingsServices(
+                readRestoredIdentity: { restoration = $0 },
+                startLogin: { _ in throw ForcedFailure.test },
+                reserveCredentialInvalidation: { CloudCredentialGeneration(0) },
+                signOut: { _, completion in completion(.succeeded) },
+                abandonPendingLogins: { _, completion in completion(.succeeded) },
+                openVerificationURL: { _ in true }),
+            metadata: metadata)
+        restoration?(.failure(CloudKeyError.operationTimedOut(seconds: 1)))
+        check("restoration timeout is unknown progress rather than signed out",
+              reconciling.phase == .restorationReconciliation(
+                message: CloudKeyError.operationTimedOut(seconds: 1).errorDescription!))
+        restoration?(.success(identity))
+        check("restoration retains its late terminal identity for reconciliation",
+              reconciling.phase == .connected(identity: identity, origin: .restored))
     }
 
     @MainActor
@@ -523,19 +599,246 @@ private struct CloudSettingsTests {
         var fail = true
         var observed: [CloudSettingsModel.Phase] = []
         let model = CloudSettingsModel(
-            services: services(restored: identity, start: { throw ForcedFailure.test }, signOut: {
-                if let phase = box.value?.phase { observed.append(phase) }
-                if fail { throw ForcedFailure.test }
-            }), metadata: metadata)
+            services: services(
+                restored: identity, start: { throw ForcedFailure.test },
+                signOut: { _, completion in
+                    if let phase = box.value?.phase { observed.append(phase) }
+                    completion(fail ? .failed(ForcedFailure.test) : .succeeded)
+                }),
+            metadata: metadata)
         box.value = model
 
         model.signOut()
         check("sign-out failure keeps identity visible", model.phase == .signOutFailed(identity: identity, message: "forced failure"))
-        check("signed-out state is not published before credential removal", observed == [.connected(identity: identity, origin: .restored)])
+        check("signed-out state is not published before credential removal",
+              observed == [.signingOut(identity: identity)])
 
         fail = false
         model.signOut()
         check("successful credential removal publishes signed out", model.phase == .signedOut)
+    }
+
+    /// The sign-out half of the Keychain-write boundary: that the window is never blocked
+    /// waiting for the store, that an answer which never comes still reaches the person, and
+    /// that a login already in flight is abandoned before the credential is removed.
+    @MainActor
+    static func testBoundedSignOutCannotFreezeOrResurrect() {
+        var deferred: (@MainActor (CloudKeychainWriteOutcome) -> Void)?
+        var signOutCalls = 0
+        var connectionChanges = 0
+        let model = CloudSettingsModel(
+            services: services(
+                restored: identity, start: { throw ForcedFailure.test },
+                signOut: { _, completion in
+                    signOutCalls += 1
+                    deferred = completion
+                }),
+            metadata: metadata)
+        let previousConnectionChange = CloudSettingsModel.onConnectionChange
+        var connectionTruth: [Bool] = []
+        CloudSettingsModel.onConnectionChange = { connected in
+            connectionChanges += 1
+            connectionTruth.append(connected)
+        }
+        defer { CloudSettingsModel.onConnectionChange = previousConnectionChange }
+
+        model.signOut()
+        check("a sign-out that has not answered publishes its own phase, not silence",
+              model.phase == .signingOut(identity: identity))
+        check("sign-out owns one durable invalidation-and-removal attempt", signOutCalls == 1)
+        check("reservation detaches the bridge before persistence or removal answers",
+              connectionChanges == 1 && connectionTruth == [false]
+                  && model.connectedIdentity == nil)
+
+        // Timeout is progress: Security is still running and may already have removed the item.
+        // The bridge stays attached until the retained terminal result settles that uncertainty.
+        deferred?(.timedOut(seconds: CloudKeychainWriter.defaultTimeoutSeconds))
+        let timedOutMessage = CloudKeychainWriteOutcome
+            .timedOut(seconds: CloudKeychainWriter.defaultTimeoutSeconds).message
+        check("a timed-out removal is reported as unknown while reconciliation continues",
+              model.phase == .signOutReconciliation(identity: identity, message: timedOutMessage))
+        check("the timeout message names unknown state and retained reconciliation",
+              timedOutMessage.contains("unknown") && timedOutMessage.contains("reconcil"))
+        check("timeout stays detached instead of publishing a second connection transition",
+              connectionChanges == 1 && connectionTruth == [false]
+                  && model.connectedIdentity == nil)
+
+        deferred?(.succeeded)
+        check("a late terminal success completes sign-out without a retry",
+              model.phase == .signedOut)
+
+        // The same invariant with a retry in flight: either removal can settle the shared store.
+        // A late success from the first attempt must not be discarded merely because a second
+        // attempt has started.
+        let retryModel = CloudSettingsModel(
+            services: services(
+                restored: identity, start: { throw ForcedFailure.test },
+                signOut: { _, completion in signOutCalls += 1; deferred = completion }),
+            metadata: metadata)
+        retryModel.signOut()
+        let firstAttempt = deferred
+        firstAttempt?(.timedOut(seconds: CloudKeychainWriter.defaultTimeoutSeconds))
+        check("a timed-out attempt offers retry without claiming failure",
+              retryModel.phase == .signOutReconciliation(identity: identity, message: timedOutMessage))
+        retryModel.signOut()
+        let secondAttempt = deferred
+        check("a retry re-enters the busy phase", retryModel.phase == .signingOut(identity: identity))
+        firstAttempt?(.succeeded)
+        check("the first removal's late success settles the retrying model and store",
+              retryModel.phase == .signedOut)
+        secondAttempt?(.succeeded)
+        check("a redundant terminal answer leaves the settled model signed out",
+              retryModel.phase == .signedOut)
+        check("each removal owns exactly one durable invalidation reservation", signOutCalls == 3)
+
+        var reversedAnswers: [(@MainActor (CloudKeychainWriteOutcome) -> Void)] = []
+        let reversedModel = CloudSettingsModel(
+            services: services(
+                restored: identity, start: { throw ForcedFailure.test },
+                signOut: { _, completion in reversedAnswers.append(completion) }),
+            metadata: metadata)
+        reversedModel.signOut()
+        reversedAnswers[0](.timedOut(seconds: 1))
+        reversedModel.signOut()
+        reversedAnswers[1](.failed(
+            CloudAccountError.credentialCleanupPending("forced cleanup failure")))
+        check("a retry failure waits while the timed-out original is still authoritative",
+              reversedModel.phase == .signOutReconciliation(
+                identity: identity,
+                message: "A retry failed, but an earlier Keychain removal is still running; "
+                    + "its terminal result remains authoritative."))
+        reversedAnswers[0](.succeeded)
+        check("the original removal's later success settles after the retry failed first",
+              reversedModel.phase == .signedOut)
+
+        var nextReservation: UInt64 = 70
+        var invalidationReservations: [CloudCredentialGeneration] = []
+        var invalidationAnswers: [(@MainActor (CloudKeychainWriteOutcome) -> Void)] = []
+        let invalidationModel = CloudSettingsModel(
+            services: services(
+                restored: identity, start: { throw ForcedFailure.test },
+                reserveCredentialInvalidation: {
+                    nextReservation += 1
+                    return CloudCredentialGeneration(nextReservation)
+                },
+                signOut: { reservation, completion in
+                    invalidationReservations.append(reservation)
+                    invalidationAnswers.append(completion)
+                }),
+            metadata: metadata)
+        invalidationModel.signOut()
+        let invalidationError = CloudAccountError
+            .credentialInvalidationFailed("forced persistence failure")
+        invalidationAnswers[0](.failed(invalidationError))
+        check("durable invalidation failure is neither connected nor signed out",
+              invalidationModel.phase == .signOutInvalidationPending(
+                identity: identity, message: invalidationError.errorDescription!)
+                && invalidationModel.connectedIdentity == nil)
+        check("invalidation failure copy names restart risk and explicit retry ownership",
+              invalidationError.errorDescription!.contains("restart")
+                && invalidationError.errorDescription!.contains("retry"))
+        invalidationModel.signOut()
+        check("retry persists the same already-reserved invalidation epoch",
+              invalidationReservations == [CloudCredentialGeneration(71),
+                                           CloudCredentialGeneration(71)])
+        invalidationAnswers[1](.succeeded)
+        check("successful retry closes invalidation-pending state",
+              invalidationModel.phase == .signedOut)
+    }
+
+    /// Cancelling a sign-in must abandon it at the credential store too. A cancelled `Task` is a
+    /// request; a transport that ignores it still returns a credential somebody has to refuse.
+    @MainActor
+    static func testCancelAbandonsPendingLogins() async {
+        var abandonCalls = 0
+        var invalidationAnswers: [(@MainActor (CloudKeychainWriteOutcome) -> Void)] = []
+        let gate = PollCompletionGate()
+        let model = CloudSettingsModel(
+            services: services(
+                start: {
+                    attempt(wait: { _ in await gate.waitIgnoringCancellation() })
+                },
+                abandonPendingLogins: { _, completion in
+                    abandonCalls += 1
+                    invalidationAnswers.append(completion)
+                }),
+            metadata: metadata)
+        model.connect()
+        guard await eventually({ model.phase == .code(userCode: "ABCD-EFGH") }) else {
+            check("cancel test reaches the code phase", false)
+            return
+        }
+        model.confirmAndOpen()
+        guard await eventuallyAsync({ await gate.hasEntered() }) else {
+            check("cancel test reaches the waiting poll", false)
+            return
+        }
+        check("no login is abandoned while one is legitimately in flight", abandonCalls == 0)
+        model.cancel()
+        check("cancelling abandons the sign-in at the credential store", abandonCalls == 1)
+        check("durable invalidation has an observable in-progress phase", model.phase == .cancelling)
+        invalidationAnswers[0](.timedOut(seconds: 1))
+        check("invalidation timeout remains unknown while its terminal answer is retained",
+              model.phase == .cancellationReconciliation(
+                message: CloudKeychainWriteOutcome.timedOut(seconds: 1).message))
+        model.retry()
+        check("failed or unknown cancellation owns an explicit retry", abandonCalls == 2
+              && model.phase == .cancelling)
+        invalidationAnswers[1](.failed(
+            CloudAccountError.credentialInvalidationFailed("forced retry failure")))
+        check("cancellation retry failure waits for the timed-out original terminal",
+              model.phase == .cancellationReconciliation(
+                message: "A retry failed, but an earlier invalidation is still running; "
+                    + "its terminal result remains authoritative."))
+        invalidationAnswers[0](.succeeded)
+        check("the first invalidation's late success settles a retrying cancellation",
+              model.phase == .cancelled)
+        invalidationAnswers[1](.succeeded)
+        check("a redundant invalidation answer cannot undo cancellation", model.phase == .cancelled)
+
+        // The precise UI ordering seam: an ignored-cancellation completion is released while
+        // reserveCredentialInvalidation is still on the stack. Reservation must already exist
+        // before Task.cancel() invokes its synchronous cancellation handler.
+        let ordering = CancellationOrderingRecorder()
+        let race = CancellationRaceWaiter()
+        var reservedForPersistence: CloudCredentialGeneration?
+        let racingModel = CloudSettingsModel(
+            services: services(
+                start: {
+                    attempt(wait: { _ in await race.wait(recorder: ordering) })
+                },
+                reserveCredentialInvalidation: {
+                    ordering.record("reserve")
+                    race.complete(identity)
+                    return CloudCredentialGeneration(41)
+                },
+                abandonPendingLogins: { reservation, completion in
+                    ordering.record("persist")
+                    reservedForPersistence = reservation
+                    completion(.succeeded)
+                }),
+            metadata: metadata)
+        racingModel.connect()
+        guard await eventually({ racingModel.phase == .code(userCode: "ABCD-EFGH") }) else {
+            check("ordering test reaches the code phase", false)
+            return
+        }
+        racingModel.confirmAndOpen()
+        guard await eventually({ race.hasEntered() }) else {
+            check("ordering test reaches the cancellable wait", false)
+            return
+        }
+        racingModel.cancel()
+        let events = ordering.snapshot()
+        check("invalidation reserves before cancelling the in-flight Task",
+              events.first == "reserve"
+                  && events.firstIndex(of: "reserve")! < events.firstIndex(of: "cancel-task")!)
+        check("the exact synchronous reservation is handed to durable persistence",
+              reservedForPersistence == CloudCredentialGeneration(41)
+                  && events.last == "persist")
+        await Task.yield()
+        check("a completion released in the reservation/cancel gap cannot reconnect the model",
+              racingModel.phase == .cancelled)
     }
 
     @MainActor
@@ -550,6 +853,8 @@ private struct CloudSettingsTests {
         await testDeinitCancelsOwnedPollingWithoutLatePublication()
         await testDeinitCancelsOwnedStartWithoutLatePublication()
         testSignOutOrdering()
+        testBoundedSignOutCannotFreezeOrResurrect()
+        await testCancelAbandonsPendingLogins()
 
         guard failures.isEmpty else {
             throw CloudSettingsTestFailure(failures: failures, checks: checks)

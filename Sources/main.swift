@@ -39,7 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // same gap `Settings.swift` names where it builds `CloudSettingsModel`. Keep the actor
         // boundary explicit rather than making the delegate's AppKit callbacks `@MainActor`.
         MainActor.assumeIsolated {
-            CloudSettingsModel.onConnectionChange = { CloudBridgeLifecycle.shared.apply() }
+            CloudSettingsModel.onConnectionChange = { connected in
+                if connected {
+                    CloudBridgeLifecycle.shared.apply()
+                } else {
+                    CloudBridgeLifecycle.shared.signedOut()
+                }
+            }
             CloudBridgeLifecycle.shared.apply()
         }
         // Somebody, somewhere, is asking to pair. The code is shown **here and nowhere else** —

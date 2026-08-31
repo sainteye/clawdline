@@ -6,16 +6,20 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:82,CloudTransport:67,CloudAppBridge:49,CloudSettings:28,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:76'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:67,CloudAppBridge:49,CloudSettings:59,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:87'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
 # the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,
 # schedule-title, Feature-status and Claude-only spending correction adds 3. Splitting owned-child
 # dispatch from detached automation adds 8. Clawdfather succession adds 75. Root Assignment
-# event-time delivery receipts add 16.
+# event-time delivery receipts add 16. Bounded Keychain writes add 22. The consolidated
+# Keychain/signing correction adds 43 more: CloudAccount
+# 92 -> 105, CloudSettings 40 -> 59 and CloudLifecycle 76 -> 87. Every added check is
+# unconditional and outside a loop, so the delta is arithmetic rather than an estimate; the
+# paired checks inside do/catch contribute one each.
 # The exact candidate-tree run remains authoritative and must update this guard if its observed
 # final count differs.
-expected_swift_receipt='7245 checks passed'
+expected_swift_receipt='7310 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

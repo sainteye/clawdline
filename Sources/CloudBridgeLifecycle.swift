@@ -218,6 +218,10 @@ struct CloudIdentityReadPolicy {
         return generation == tracker.latestGeneration ? .accept : .discard
     }
 
+    static func acceptsTimeout(generation: UInt64, tracker: Tracker) -> Bool {
+        tracker.inFlightGeneration == generation && tracker.knowledge == .reading
+    }
+
     /// Sign-out is an authoritative foreground event. It invalidates an answer already on its
     /// way back without pretending the blocking operation itself can be cancelled.
     static func resolveWithoutRead(_ tracker: inout Tracker) {
@@ -285,6 +289,7 @@ final class CloudBridgeLifecycle {
 
     private let services: Services
     private var identityRead = CloudIdentityReadPolicy.Tracker()
+    private(set) var identityReadTimeoutSeconds: Int?
 
     /// This is separate from `state`: while a refresh is blocked in Keychain, an attached bridge
     /// remains honestly attached, while a launch-time `.detached` is not yet proof of sign-out.
@@ -308,9 +313,18 @@ final class CloudBridgeLifecycle {
     }
 
     private func startIdentityRead(generation: UInt64) {
-        services.identityReader.read { [weak self] result in
-            self?.finishedIdentityRead(result, generation: generation)
-        }
+        services.identityReader.read(
+            onTimeout: { [weak self] seconds in
+                guard let self else { return }
+                guard CloudIdentityReadPolicy.acceptsTimeout(
+                    generation: generation, tracker: self.identityRead) else { return }
+                self.identityReadTimeoutSeconds = seconds
+                self.services.log("cloud: Keychain identity read timed out; state remains unknown while reconciliation continues")
+                self.onChange?()
+            },
+            completion: { [weak self] result in
+                self?.finishedIdentityRead(result, generation: generation)
+            })
     }
 
     private func finishedIdentityRead(
@@ -319,12 +333,14 @@ final class CloudBridgeLifecycle {
         let wasReading = identityRead.knowledge == .reading
         switch CloudIdentityReadPolicy.complete(generation: generation, tracker: &identityRead) {
         case .restart(let next):
+            identityReadTimeoutSeconds = nil
             startIdentityRead(generation: next)
             return
         case .discard:
             if wasReading && identityRead.knowledge != .reading { onChange?() }
             return
         case .accept:
+            identityReadTimeoutSeconds = nil
             break
         }
 
@@ -406,6 +422,7 @@ final class CloudBridgeLifecycle {
     func signedOut() {
         let wasReading = identityRead.knowledge == .reading
         CloudIdentityReadPolicy.resolveWithoutRead(&identityRead)
+        identityReadTimeoutSeconds = nil
         detach()
         set(.detached)
         if wasReading { onChange?() }

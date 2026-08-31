@@ -12,37 +12,137 @@ APP_NAME="$(basename "$APP")"
 BUNDLE_ID="com.tsunamiworks.clawdline"
 LOCAL_SIGN_IDENTITY_NAME="Clawdline Local Development"
 LOCAL_SIGNING=0
+# BEGIN keychain-rebuild-focused: bounded signing commands
+# Every Keychain-touching command below can reach a system dialog — "unlock the login keychain",
+# "codesign wants to access key" — that waits for a person who may not be at the Mac. macOS ships
+# no timeout(1) and /bin/bash here is 3.2, so `wait -n` is out too: a watchdog subshell it is.
+#
+# The marker file is what tells a timeout apart from an ordinary non-zero exit. Deriving it from
+# the signal number cannot: 143 is also what a command killed by anything else reports.
+CLAWDLINE_SIGN_QUERY_TIMEOUT="${CLAWDLINE_SIGN_QUERY_TIMEOUT:-30}"
+CLAWDLINE_CODESIGN_TIMEOUT="${CLAWDLINE_CODESIGN_TIMEOUT:-120}"
+clawdline_require_positive_integer() {
+  local name=$1 value=$2
+  case "$value" in
+    ''|*[!0-9]*|0)
+      echo "!! $name must be a positive integer, got: $value" >&2
+      return 2
+      ;;
+  esac
+}
+clawdline_require_positive_integer CLAWDLINE_SIGN_QUERY_TIMEOUT "$CLAWDLINE_SIGN_QUERY_TIMEOUT" || exit $?
+clawdline_require_positive_integer CLAWDLINE_CODESIGN_TIMEOUT "$CLAWDLINE_CODESIGN_TIMEOUT" || exit $?
+
+# `CLAWDLINE_BOUNDED_OUTCOME` is the typed side channel. Exit 124 alone is ambiguous because the
+# child itself is allowed to exit 124; only `timeout` means the watchdog killed a live process.
+CLAWDLINE_BOUNDED_OUTCOME=not_run
+clawdline_bounded() {
+  local seconds=$1 outfile=$2
+  shift 2
+  local marker="$outfile.timed-out"
+  rm -f "$marker"
+  "$@" >"$outfile" 2>&1 &
+  local pid=$!
+  (
+    sleep "$seconds"
+    kill -TERM "$pid" 2>/dev/null && : > "$marker"
+    sleep 2
+    kill -KILL "$pid" 2>/dev/null
+  ) >/dev/null 2>&1 &
+  local watchdog=$!
+  local status=0
+  wait "$pid" 2>/dev/null || status=$?
+  kill -TERM "$watchdog" 2>/dev/null || true
+  wait "$watchdog" 2>/dev/null || true
+  if [ -e "$marker" ]; then
+    rm -f "$marker"
+    CLAWDLINE_BOUNDED_OUTCOME=timeout
+    return 124
+  fi
+  CLAWDLINE_BOUNDED_OUTCOME=exit
+  return "$status"
+}
+# END keychain-rebuild-focused: bounded signing commands
 # BEGIN keychain-rebuild-focused: signing identity selection
+# The login keychain is only ever *probed*, never unlocked: a build that could unlock somebody's
+# Keychain would be a build that could be asked to.
+LOCAL_SIGN_KEYCHAIN="${CLAWDLINE_LOCAL_SIGN_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
+if [ -n "${CLAWDLINE_KEYCHAIN_STATUS_HELPER:-}" ]; then
+  keychain_status_command=("$CLAWDLINE_KEYCHAIN_STATUS_HELPER")
+else
+  keychain_status_command=(xcrun swift tools/keychain-status.swift)
+fi
+signing_probe_out=$(mktemp "${TMPDIR:-/tmp}/clawdline-signing-probe.XXXXXX")
+trap 'rm -f "$signing_probe_out" "$signing_probe_out.timed-out"' EXIT
 if [ "${CLAWDLINE_SIGN_IDENTITY+x}" = x ]; then
   # An explicit value keeps its historical meaning, including an empty value becoming ad-hoc.
   SIGN_IDENTITY="${CLAWDLINE_SIGN_IDENTITY:--}"
+elif [ "${CLAWDLINE_SIGN_ADHOC:-0}" = 1 ]; then
+  # The documented ad-hoc contract: chosen, not fallen into. Nothing below is consulted, so it
+  # is also the way past a locked Keychain without unlocking anything.
+  SIGN_IDENTITY=-
+  echo "→ CLAWDLINE_SIGN_ADHOC=1; signing ad-hoc by explicit request"
+  echo "  Ad-hoc means a new code identity every rebuild: macOS re-asks to authorise iTerm2"
+  echo "  automation, and the Cloud Keychain items are re-authorised on first use."
 else
-  if identity_output=$(security find-identity -v -p codesigning 2>&1); then
+  identity_status=0
+  clawdline_bounded "$CLAWDLINE_SIGN_QUERY_TIMEOUT" "$signing_probe_out" \
+    security find-identity -v -p codesigning "$LOCAL_SIGN_KEYCHAIN" || identity_status=$?
+  if [ "$identity_status" -eq 0 ]; then
+    identity_output=$(cat "$signing_probe_out")
     identity_hashes=$(printf '%s\n' "$identity_output" \
       | awk -v name="$LOCAL_SIGN_IDENTITY_NAME" \
           'index($0, "\"" name "\"") { print $2 }')
     identity_count=$(printf '%s\n' "$identity_hashes" \
       | awk 'NF { count++ } END { print count + 0 }')
     if [ "$identity_count" -eq 1 ]; then
-      SIGN_IDENTITY=$(printf '%s\n' "$identity_hashes" | awk 'NF { print; exit }')
-      LOCAL_SIGNING=1
+      # An identity that exists in a locked Keychain is worse than one that does not: codesign
+      # finds it, then stops on an unlock dialog. Ask first, and say so instead of hanging.
+      keychain_status=0
+      clawdline_bounded "$CLAWDLINE_SIGN_QUERY_TIMEOUT" "$signing_probe_out" \
+        "${keychain_status_command[@]}" "$LOCAL_SIGN_KEYCHAIN" || keychain_status=$?
+      if [ "$keychain_status" -eq 0 ]; then
+        SIGN_IDENTITY=$(printf '%s\n' "$identity_hashes" | awk 'NF { print; exit }')
+        LOCAL_SIGNING=1
+      else
+        if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
+          echo "!! the login Keychain did not answer within ${CLAWDLINE_SIGN_QUERY_TIMEOUT}s" >&2
+        else
+          echo "!! the login Keychain is locked or unreadable: $LOCAL_SIGN_KEYCHAIN (status $keychain_status)" >&2
+        fi
+        echo "   $LOCAL_SIGN_IDENTITY_NAME exists there, so signing would stop on an unlock" >&2
+        echo "   dialog. Clawdline will not unlock a Keychain for you." >&2
+        echo "   Unlock it yourself:  security unlock-keychain $LOCAL_SIGN_KEYCHAIN" >&2
+        echo "   Or build ad-hoc:     CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
+        exit 1
+      fi
     elif [ "$identity_count" -gt 1 ]; then
       echo "!! multiple valid code-signing identities are named $LOCAL_SIGN_IDENTITY_NAME" >&2
       printf '   %s\n' $identity_hashes >&2
       echo "   Remove or rename the extra identity; Clawdline will not choose by Keychain order." >&2
       exit 1
     else
-      SIGN_IDENTITY=-
-      echo "→ no stable local signing identity; using ad-hoc signing"
-      echo "  Run tools/setup-local-signing-identity.sh to stop Keychain asking after every rebuild."
+      echo "!! no valid $LOCAL_SIGN_IDENTITY_NAME identity exists in $LOCAL_SIGN_KEYCHAIN" >&2
+      echo "   Run tools/setup-local-signing-identity.sh, or explicitly choose ad-hoc:" >&2
+      echo "     CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
+      exit 1
     fi
   else
-    SIGN_IDENTITY=-
-    echo "→ could not inspect code-signing identities; using ad-hoc signing"
-    echo "  Run tools/setup-local-signing-identity.sh to stop Keychain asking after every rebuild."
+    if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
+      echo "!! code-signing identity lookup did not answer within ${CLAWDLINE_SIGN_QUERY_TIMEOUT}s" >&2
+    else
+      echo "!! code-signing identity lookup failed with status $identity_status" >&2
+    fi
+    echo "   Refusing an implicit ad-hoc fallback. Inspect $LOCAL_SIGN_KEYCHAIN, or explicitly choose:" >&2
+    echo "     CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
+    exit 1
   fi
 fi
 # END keychain-rebuild-focused: signing identity selection
+# The probe's own trap is replaced by cleanup_build further down, so retire it here rather than
+# leaving the file behind for whoever empties TMPDIR next.
+rm -f "$signing_probe_out" "$signing_probe_out.timed-out"
+trap - EXIT
 
 mkdir -p "$APP_PARENT"
 # Build beside the installed app, on the same filesystem. The final rename is then quick and
@@ -126,29 +226,76 @@ PLIST
 # Runtime, a trusted timestamp, and only the two resource entitlements the app actually uses.
 # The private key for either identity never enters this repository.
 # BEGIN keychain-rebuild-focused: signing branches
+codesign_out=$(mktemp "${TMPDIR:-/tmp}/clawdline-codesign.XXXXXX")
 if [ "$SIGN_IDENTITY" = - ]; then
-  codesign --force --sign - --identifier "$BUNDLE_ID" "$STAGED_APP" >/dev/null 2>&1 \
-    || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
+  adhoc_sign_status=0
+  clawdline_bounded "$CLAWDLINE_CODESIGN_TIMEOUT" "$codesign_out" \
+    codesign --force --sign - --identifier "$BUNDLE_ID" "$STAGED_APP" \
+    || adhoc_sign_status=$?
+  if [ "$adhoc_sign_status" -ne 0 ]; then
+    cat "$codesign_out" >&2
+    if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
+      echo "!! ad-hoc codesign timed out after ${CLAWDLINE_CODESIGN_TIMEOUT}s; staged bundle state is unknown" >&2
+    else
+      echo "!! ad-hoc codesign failed with status $adhoc_sign_status" >&2
+    fi
+    exit "$adhoc_sign_status"
+  fi
 elif [ "$LOCAL_SIGNING" = 1 ]; then
-  echo "→ using stable local signing; a locked login Keychain may still ask to be unlocked"
-  codesign --force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$STAGED_APP"
+  echo "→ using stable local signing"
+  local_sign_status=0
+  clawdline_bounded "$CLAWDLINE_CODESIGN_TIMEOUT" "$codesign_out" \
+    codesign --force --sign "$SIGN_IDENTITY" --keychain "$LOCAL_SIGN_KEYCHAIN" \
+    --identifier "$BUNDLE_ID" "$STAGED_APP" \
+    || local_sign_status=$?
+  if [ "$local_sign_status" -ne 0 ]; then
+    cat "$codesign_out" >&2
+    if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
+      # The one failure the person cannot see, because the dialog it is waiting on may be
+      # behind another window or on another Space.
+      echo "!! codesign did not finish within ${CLAWDLINE_CODESIGN_TIMEOUT}s" >&2
+      echo "   That is what an unanswered Keychain access dialog looks like from here." >&2
+      echo "   Configure the key's code-signing access yourself in Keychain Access or with" >&2
+      echo "   SecurityTool. Its set-key-partition-list command requires '-k password'," >&2
+      echo "   which Clawdline does not accept or pass." >&2
+    else
+      echo "!! signing with $LOCAL_SIGN_IDENTITY_NAME failed (exit $local_sign_status)" >&2
+    fi
+    echo "   Or build ad-hoc:    CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
+    rm -f "$codesign_out" "$codesign_out.timed-out"
+    exit "$local_sign_status"
+  fi
   echo "✓ signed with stable local identity $LOCAL_SIGN_IDENTITY_NAME"
   echo "  After changing signing identity, first use may show up to three Keychain prompts (machine credential and two Cloud keys); approve each item you use."
 else
   signed=0
+  release_sign_status=0
   for attempt in 1 2 3; do
-    if codesign --force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" \
+    if clawdline_bounded "$CLAWDLINE_CODESIGN_TIMEOUT" "$codesign_out" \
+        codesign --force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" \
         --options runtime --timestamp --entitlements Resources/Clawdline.entitlements \
         "$STAGED_APP"; then
       signed=1
       break
+    else
+      release_sign_status=$?
+    fi
+    cat "$codesign_out" >&2
+    if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
+      echo "!! Developer ID codesign timed out after ${CLAWDLINE_CODESIGN_TIMEOUT}s; staged bundle state is unknown" >&2
+      exit 124
     fi
     [ "$attempt" = 3 ] && break
     echo "  Apple timestamp service did not answer; retrying Developer ID signing ($attempt/3)"
     sleep $((attempt * 5))
   done
-  [ "$signed" = 1 ] || { echo "!! Developer ID signing failed after 3 attempts"; exit 1; }
+  [ "$signed" = 1 ] || {
+    echo "!! Developer ID signing failed after 3 attempts"
+    rm -f "$codesign_out" "$codesign_out.timed-out"
+    exit "$release_sign_status"
+  }
 fi
+rm -f "$codesign_out" "$codesign_out.timed-out"
 # END keychain-rebuild-focused: signing branches
 
 # Packaging and CI build beside the installed app but must never inspect, stop, replace, or reopen

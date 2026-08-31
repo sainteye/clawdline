@@ -3003,6 +3003,10 @@ private final class CloudSettingsControl: NSView, SelfSizing {
             text = "Reading this Mac's Cloud identity without blocking Settings…"
             dot = .busy
             actions = []
+        case .restorationReconciliation(let message):
+            text = "Cloud identity state is not known yet. \(message)"
+            dot = .warn
+            actions = []
         case .signedOut:
             text = "This Mac is not connected to Clawdline Cloud."
             dot = .idle
@@ -3036,6 +3040,27 @@ private final class CloudSettingsControl: NSView, SelfSizing {
                  { [weak self] in self?.beginQRPairing() }),
                 ("Sign Out", false, { [weak model] in model?.signOut() }),
             ]
+        case .signingOut(let identity):
+            text = "Signing out of account \(identity.accountID)… "
+                + "Waiting for this Mac's Keychain to release the credential."
+            dot = .busy
+            actions = []
+        case .signOutReconciliation(let identity, let message):
+            text = "Sign-out state for account \(identity.accountID) is not known yet. \(message)"
+            dot = .warn
+            actions = [("Retry Sign Out", false, { [weak model] in model?.signOut() })]
+        case .cleaningUpSignOut(let identity):
+            text = "Signed out of account \(identity.accountID). Cleaning up its stale Keychain item…"
+            dot = .busy
+            actions = []
+        case .signOutCleanupPending(let identity, let message):
+            text = "Signed out of account \(identity.accountID), but Keychain cleanup is pending: \(message)"
+            dot = .warn
+            actions = [("Retry Cleanup", false, { [weak model] in model?.signOut() })]
+        case .signOutInvalidationPending(let identity, let message):
+            text = "Credential state for account \(identity.accountID) is not durable yet. \(message)"
+            dot = .warn
+            actions = [("Retry Invalidation", false, { [weak model] in model?.signOut() })]
         case .denied:
             text = "GitHub connection was denied. No Cloud identity was added."
             dot = .warn
@@ -3048,6 +3073,18 @@ private final class CloudSettingsControl: NSView, SelfSizing {
             text = "GitHub connection was cancelled."
             dot = .idle
             actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .cancelling:
+            text = "Cancelling the GitHub connection and durably invalidating its credential…"
+            dot = .busy
+            actions = []
+        case .cancellationReconciliation(let message):
+            text = "Cancellation state is not known yet. \(message)"
+            dot = .warn
+            actions = [("Retry Cancellation", false, { [weak model] in model?.retry() })]
+        case .cancellationFailed(let message):
+            text = "Cancellation could not be made durable: \(message)"
+            dot = .warn
+            actions = [("Retry Cancellation", false, { [weak model] in model?.retry() })]
         case .failed(let message):
             text = "GitHub connection failed: \(message)"
             dot = .warn
