@@ -308,14 +308,25 @@ session 不自己 commit，改完交回去；不要跑 build，因為它會把�
 ## 安裝
 
 從零開始到第一個 Session、Shell 與終端機設定、瀏覽器／手機、Clawdline Cloud、E2EE 與疑難排解，
-請看完整的**[繁體中文公開使用手冊](https://clawdline.com/docs)**。下面保留最短安裝路徑。
+請看完整的**[繁體中文公開使用手冊](https://clawdline.com/docs)**。先選你想怎麼安裝；兩條路裝到的是
+同一個 Mac app。
 
-**Homebrew**
+### 交給 AI 安裝（建議）
 
-```sh
-brew install --cask sainteye/tap/clawdline
-xattr -dr com.apple.quarantine /Applications/Clawdline.app
+把下面這段完整貼給已經在這台 Mac 上執行的 Claude Code 或 Codex：
+
+```text
+請幫我安裝 Clawdline。先閱讀 https://clawdline.com/docs/install 與
+https://github.com/sainteye/clawdline/blob/main/install.sh，確認這台 Mac 符合需求，
+說明你準備採用的安裝方式與會執行的指令，再完成安裝並驗證 Clawdline 能開啟。
+不要變更我的 Claude Code、Codex 或專案設定。
 ```
+
+AI 會依這台 Mac 的狀況選擇安裝方式；遇到 macOS 權限或需要你確認的系統動作時，仍會停下來請你操作。
+
+### 自己手動安裝
+
+以下選一種即可。第一次安裝建議用可先檢查內容的安裝腳本。
 
 **用腳本抓最新版**
 
@@ -323,6 +334,13 @@ xattr -dr com.apple.quarantine /Applications/Clawdline.app
 curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh -o install.sh
 less install.sh          # 先看過 Shell 即將執行的完整腳本
 bash install.sh          # 或 bash install.sh ~/Applications
+```
+
+**Homebrew**
+
+```sh
+brew install --cask sainteye/tap/clawdline
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
 ```
 
 **手動** —— 從 [Releases](https://github.com/sainteye/clawdline/releases/latest) 下載 `.zip`，
@@ -401,10 +419,39 @@ tunnel 是另一個開關，而且在配對過任何裝置之前它拒絕啟動�
 **輸入條的下緣一定會寫出它瞄準的是誰。** 它不會盲送——一個不肯告訴你字會送去哪的輸入框，比沒有
 輸入框更糟。[目標是怎麼選的 →](docs/interface.md#which-session-it-sends-to)
 
-## 用瀏覽器，或用手機
+## 先選你要在哪裡操作
 
-在**設定 → 遠端**打開。如果瀏覽器就在這台 Mac 上，按**用瀏覽器打開**，它會發一把鑰匙並開一個
-已經登入的頁面。手機的話，按「配對手機……」會畫一個 QR code。
+這裡有兩個目的。用電腦時走本機瀏覽器；用手機時，再選 Clawdline.com 或自己管理的
+Cloudflare Tunnel。三條路最後看到的是同一台 Mac 上的同一批 Session。
+
+```text
+我要操作本機的 Clawdline
+├─ 用這台電腦的瀏覽器 → 本機瀏覽器（不需要帳號）
+└─ 用手機
+   ├─ 透過 Clawdline.com → Clawdline Cloud（帳號 + E2EE；目前為 preview）
+   └─ 使用自己的網址 → Cloudflare Tunnel（自己管理 Cloudflare 與網域）
+```
+
+### 目的 1：用這台電腦的瀏覽器操作
+
+在**設定 → 遠端**打開「讓瀏覽器或你的手機看得到你的 session」，再按**用瀏覽器打開**。Clawdline
+會替這個瀏覽器建立一個裝置憑證，開啟 `http://127.0.0.1:7717`，並自動登入。不需要 Clawdline
+帳號、Cloudflare 或手機配對。
+
+### 目的 2：用手機操作
+
+手機有兩條互相獨立的連線方式：
+
+- **透過 Clawdline.com**：登入 Clawdline Cloud，在 Mac 的**設定 → 遠端 → Clawdline Cloud**
+  連接這台 Mac，再由已信任的裝置完成手機配對。這條路讓 Relay 只承載簽章過的密文；目前 Cloud
+  帳號仍是 preview，尚未全面開放。完整流程見 [Clawdline Cloud](docs/cloud.md)。
+- **透過自己的 Cloudflare Tunnel 網址**：先開啟本機瀏覽器並建立至少一個配對裝置，再安裝
+  `cloudflared`，於**設定 → 遠端 → 從任何地方連到這台 Mac**選擇臨時網址或**我的自訂網域**。
+  用手機開啟該 HTTPS 網址後，再完成手機配對。自訂網址、Tunnel 與 Cloudflare 帳號都由你管理；
+  完整設定見 [Named Tunnel](docs/remote.md#named--your-own-domain)。
+
+不論選哪一條手機路徑，「看得到」和「可以操作」仍是兩個權限。只需要監看時不要打開「讓配對過的
+裝置寫進 session」；要從手機送訊息、開啟或結束 Session 時才打開它。
 
 **那個頁面是同一支艦隊，不是刪減版。** 這台 Mac 看得到的每一個 session 都在上面，分組方式一樣
 ——被派出去的子 session 縮排在叫它出來的那個底下——每一個都帶著自己的逐字稿、自己的狀態、卡住

@@ -373,14 +373,26 @@ canonical conversation-and-assistant tuple, including Codex-to-Claude and Claude
 
 For the complete zero-to-first-Session path, Shell and terminal setup, browser/phone access,
 Clawdline Cloud, E2EE, and troubleshooting, use the
-**[public manual](https://clawdline.com/docs)**. The commands below remain the short install path.
+**[public manual](https://clawdline.com/docs)**. First choose how you want to install; both paths
+install the same Mac app.
 
-**Homebrew**
+### Ask an AI to install it (recommended)
 
-```sh
-brew install --cask sainteye/tap/clawdline
-xattr -dr com.apple.quarantine /Applications/Clawdline.app
+Paste this whole prompt into Claude Code or Codex already running on this Mac:
+
+```text
+Install Clawdline for me. First read https://clawdline.com/docs/install and
+https://github.com/sainteye/clawdline/blob/main/install.sh, check that this Mac meets the
+requirements, explain the installation method and commands you plan to use, then install it and
+verify that Clawdline opens. Do not change my Claude Code, Codex, or project configuration.
 ```
+
+The AI can choose the installation method that fits this Mac. It will still stop for macOS
+permissions or system actions that need your confirmation.
+
+### Install it yourself
+
+Choose one method below. For a first install, the inspectable installer script is recommended.
 
 **Script**
 
@@ -388,6 +400,13 @@ xattr -dr com.apple.quarantine /Applications/Clawdline.app
 curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh -o install.sh
 less install.sh          # inspect the exact script before your Shell runs it
 bash install.sh          # or: bash install.sh ~/Applications
+```
+
+**Homebrew**
+
+```sh
+brew install --cask sainteye/tap/clawdline
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
 ```
 
 **By hand** — download the `.zip` from
@@ -472,10 +491,43 @@ is whatever it was before. Set `"scope_app": ""` to make it global.
 will not tell you where the text goes is worse than no prompt box at all.
 [How the target is chosen →](docs/interface.md#which-session-it-sends-to)
 
-## From a browser, or your phone
+## First choose where you want to control Clawdline
 
-Turn it on in **Settings → Remote**. If the browser is on this Mac, *Open in a browser* mints a
-device and opens the page already signed in. For a phone, *Pair a phone…* draws a QR code.
+There are two goals. On a computer, use the local browser. On a phone, choose either Clawdline.com
+or a Cloudflare Tunnel you manage. All three paths reach the same Sessions on the same Mac.
+
+```text
+I want to control Clawdline on this Mac
+├─ From this computer's browser → local browser (no account)
+└─ From a phone
+   ├─ Through Clawdline.com → Clawdline Cloud (account + E2EE; currently preview)
+   └─ At my own URL → Cloudflare Tunnel (you manage Cloudflare and the domain)
+```
+
+### Goal 1: Control it from a browser on this computer
+
+In **Settings → Remote**, turn on *Let a browser or your phone see your sessions*, then choose
+*Open in a browser*. Clawdline creates a device credential for that browser, opens
+`http://127.0.0.1:7717`, and signs it in. This needs no Clawdline account, Cloudflare setup, or
+phone pairing.
+
+### Goal 2: Control it from a phone
+
+The phone has two independent connection paths:
+
+- **Through Clawdline.com:** sign in to Clawdline Cloud, connect this Mac under
+  **Settings → Remote → Clawdline Cloud**, then approve the phone from an already trusted device.
+  The relay carries signed ciphertext. Cloud account enrollment is currently a preview and is not
+  generally available yet. See [Clawdline Cloud](docs/cloud.md) for the complete flow.
+- **Through your own Cloudflare Tunnel URL:** first open the local browser and create at least one
+  paired device. Install `cloudflared`, then choose a temporary address or *My own domain* under
+  **Settings → Remote → Reach this Mac from anywhere**. Open that HTTPS address on the phone and
+  finish pairing it. You manage the custom hostname, Tunnel, and Cloudflare account; see
+  [Named Tunnel](docs/remote.md#named--your-own-domain) for the complete setup.
+
+Whichever phone path you choose, viewing and control remain separate permissions. Leave *Let a
+paired device write into a session* off when the phone only needs to monitor work; turn it on only
+when the phone must send messages, start Sessions, or end them.
 
 **The page is the same fleet, not a cut-down one.** Every session the Mac can see is on it, grouped
 the same way — a dispatched child indented under the session that asked for it — with each one's
