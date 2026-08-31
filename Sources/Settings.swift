@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import UniformTypeIdentifiers
 
 /// The settings, as controls rather than as a file.
@@ -3555,6 +3556,9 @@ private final class CloudSettingsControl: NSView, SelfSizing {
     /// place the two fingerprints a person is comparing appear on this side.
     private var pairingNote: String?
     private var pairing = false
+    private var pairingTask: Task<Void, Never>?
+    private var pairingWindow: NSWindow?
+    private var pairingCloseObserver: NSObjectProtocol?
 
     init(model: CloudSettingsModel) {
         self.model = model
@@ -3616,7 +3620,7 @@ private final class CloudSettingsControl: NSView, SelfSizing {
             dot = .live
             actions = [
                 (pairing ? "Pairing…" : "Pair a Phone…", true,
-                 { [weak self] in self?.askForPairingCode() }),
+                 { [weak self] in self?.beginQRPairing() }),
                 ("Sign Out", false, { [weak model] in model?.signOut() }),
             ]
         case .denied:
@@ -3654,52 +3658,146 @@ private final class CloudSettingsControl: NSView, SelfSizing {
         if notifyResize { onResize?() }
     }
 
-    /// Ask for the code the phone is showing, then finish the handover.
-    ///
-    /// A paste field rather than a camera: the offer is what the *browser* generated, so the
-    /// picture to scan is on the phone and the reader would have to be here. Until this window
-    /// can scan one, the code is short enough to send to yourself and long enough that nobody
-    /// types it by hand — which is the same trade the local door's six digits make in reverse.
-    private func askForPairingCode() {
+    /// Put the one-time secret on the Mac as a QR, then wait for the signed-in phone to return
+    /// its encrypted viewer offer. The QR secret is in a URL fragment, so neither the web server
+    /// nor the OAuth redirect receives it; Cloud stores only its SHA-256 and the opaque offer.
+    private func beginQRPairing() {
         guard !pairing else { return }
-        let alert = NSAlert()
-        alert.messageText = "Pair a phone with this Mac"
-        alert.informativeText = "Open app.clawdline.com on the phone, sign in, and paste the "
-            + "pairing code it shows. Then check that the fingerprint below matches the one on "
-            + "the phone before you use it."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Pair")
-        alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
-        field.placeholderString = "Pairing code"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let fragment = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !fragment.isEmpty else { return }
-
         pairing = true
         pairingNote = nil
         refresh()
+        let client = CloudAccountClient()
         let completer = CloudPairingCompleter.production()
-        Task { [weak self] in
-            let note: String
+        pairingTask = Task { [weak self] in
             do {
+                var generator = SystemRandomNumberGenerator()
+                let secret = Data((0..<CloudPairingInvitation.secretBytes).map { _ in
+                    UInt8.random(in: .min ... .max, using: &generator)
+                })
+                let started = try await client.startPairingInvitation(
+                    secretHash: Data(SHA256.hash(data: secret)))
+                let invitation = try CloudPairingInvitation(
+                    invitationID: started.invitationID, secret: secret,
+                    expiresAtMilliseconds: Int64(started.expiresAt.timeIntervalSince1970 * 1_000))
+                guard let url = invitation.qrURL() else {
+                    throw CloudHandoverError.malformedInvitation
+                }
+                await MainActor.run { self?.showPairingQR(url: url, expiresIn: started.expiresIn) }
+
+                let ready: (String, String, CloudOpaquePairingBlob)
+                poll: while true {
+                    try Task.checkCancellation()
+                    switch try await client.pollPairingInvitation(
+                        invitationID: invitation.invitationID) {
+                    case .pending:
+                        try await Task.sleep(nanoseconds: 1_500_000_000)
+                    case .ready(let accountID, let viewerDeviceID, let machineID, let encryptedOffer):
+                        guard let identity = try client.restoredMachineIdentity(),
+                              identity.accountID == accountID, identity.machineID == machineID else {
+                            throw CloudPairingCompleter.Failure.wrongAccount
+                        }
+                        ready = (viewerDeviceID, accountID, encryptedOffer)
+                        break poll
+                    }
+                }
+                let fragment = try invitation.openEncryptedOffer(
+                    ready.2, nowMilliseconds: Int64(Date().timeIntervalSince1970 * 1_000))
                 let outcome = try await completer.complete(offerFragment: fragment)
-                note = "Paired \(outcome.viewerDeviceID). Phone fingerprint "
+                guard outcome.viewerDeviceID == ready.0 else {
+                    throw CloudHandoverError.wrongSender
+                }
+                let note = "Paired \(outcome.viewerDeviceID). Phone fingerprint "
                     + "\(outcome.viewerFingerprint); this Mac's is \(outcome.machineFingerprint)."
+                await MainActor.run { self?.finishPairing(note: note) }
+            } catch is CancellationError {
+                await MainActor.run { self?.finishPairing(note: nil) }
             } catch {
                 let described = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription
-                note = "Pairing failed: \(described)"
-            }
-            await MainActor.run {
-                guard let self else { return }
-                self.pairing = false
-                self.pairingNote = note
-                self.refresh()
+                await MainActor.run {
+                    self?.finishPairing(note: "Pairing failed: \(described)")
+                }
             }
         }
+    }
+
+    private func showPairingQR(url: URL, expiresIn: Int) {
+        guard pairing, pairingWindow == nil else { return }
+        let width: CGFloat = 420
+        let height: CGFloat = 570
+        let side: CGFloat = 280
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+
+        func label(_ text: String, frame: NSRect, size: CGFloat, weight: NSFont.Weight,
+                   color: NSColor = .labelColor) -> NSTextField {
+            let field = NSTextField(wrappingLabelWithString: text)
+            field.font = NSFont.systemFont(ofSize: size, weight: weight)
+            field.textColor = color
+            field.alignment = .center
+            field.frame = frame
+            return field
+        }
+
+        content.addSubview(label(
+            "Scan with your phone", frame: NSRect(x: 24, y: 522, width: 372, height: 28),
+            size: 20, weight: .semibold))
+        content.addSubview(label(
+            "GitHub confirms your Clawdline account. The QR confirms this is the Mac in front of you.",
+            frame: NSRect(x: 32, y: 472, width: 356, height: 44), size: 13, weight: .regular,
+            color: .secondaryLabelColor))
+
+        let image = NSImageView(frame: NSRect(x: 70, y: 176, width: side, height: side))
+        image.image = RemoteQR.image(for: url.absoluteString, side: side)
+        image.imageScaling = .scaleNone
+        image.wantsLayer = true
+        image.layer?.backgroundColor = NSColor.white.cgColor
+        content.addSubview(image)
+
+        content.addSubview(label(
+            "Open your camera and scan. Sign in if asked; pairing then finishes automatically.",
+            frame: NSRect(x: 32, y: 124, width: 356, height: 42), size: 12, weight: .medium,
+            color: .secondaryLabelColor))
+        content.addSubview(label(
+            "End-to-end encrypted: Cloud relays ciphertext only. The decryption keys stay on this Mac and your phone.",
+            frame: NSRect(x: 32, y: 66, width: 356, height: 48), size: 11, weight: .regular,
+            color: .tertiaryLabelColor))
+        content.addSubview(label(
+            "Waiting for scan · expires in about \(max(1, expiresIn / 60)) min",
+            frame: NSRect(x: 32, y: 26, width: 356, height: 22), size: 11,
+            weight: .medium, color: Style.accent))
+
+        let window = NSWindow(
+            contentRect: content.frame, styleMask: [.titled, .closable],
+            backing: .buffered, defer: false)
+        window.title = "Pair a Phone"
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = Style.ink
+        window.titlebarAppearsTransparent = true
+        window.contentView = content
+        window.isReleasedWhenClosed = false
+        window.center()
+        pairingWindow = window
+        pairingCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            self?.pairingTask?.cancel()
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func finishPairing(note: String?) {
+        pairing = false
+        pairingNote = note
+        pairingTask = nil
+        if let observer = pairingCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+            pairingCloseObserver = nil
+        }
+        let window = pairingWindow
+        pairingWindow = nil
+        window?.close()
+        refresh()
     }
 }
 

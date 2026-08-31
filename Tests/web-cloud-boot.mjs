@@ -318,6 +318,38 @@ for (const [status, code, expected, why] of [
 }
 
 {
+    let claims = 0;
+    let accepted = null;
+    const invitation = { invitation_id: "invite-1" };
+    const fakeSession = {
+        now: function () { return 1000; },
+        startPairing: function () {
+            return Promise.resolve({ pairingID: "pair-1", expiresAt: 9000 });
+        },
+        acceptPairingInvitation: function (seenInvitation, pending) {
+            accepted = { invitation: seenInvitation, pending: pending };
+            return Promise.resolve(pending);
+        },
+        claimPairing: function () {
+            claims += 1;
+            if (claims === 1) {
+                const error = new Error("pending");
+                error.code = "pairing_unfinished";
+                return Promise.reject(error);
+            }
+            return Promise.resolve({ machineID: "mac-qr" });
+        }
+    };
+    const paired = await boot.pairViewerFromInvitation(fakeSession, invitation, {
+        sleep: function () { return Promise.resolve(); }
+    });
+    assert.equal(accepted.invitation, invitation,
+        "QR-first pairing returns the viewer offer only to the scanned invitation");
+    assert.equal(claims, 2, "then waits for the Mac's encrypted handover");
+    assert.equal(paired.machineID, "mac-qr", "and completes through the existing handover");
+}
+
+{
     let now = 1000;
     const expiring = {
         now: function () { return now; },

@@ -22,6 +22,36 @@ function bytes(base64) {
     return Uint8Array.from(Buffer.from(base64, "base64"));
 }
 
+/* ---- the Mac-displayed QR carries a secret only in its fragment --------- */
+
+const invitationSecret = Uint8Array.from({ length: 32 }, (_, index) => index);
+const invitationJSON = pairing.canonicalJSON({
+    v: 1, type: "pairing_invitation", invitation_id: "invite-vector-01",
+    secret: Buffer.from(invitationSecret).toString("base64"), expires_at: 1900000
+});
+const invitation = pairing.decodePairingInvitation(
+    pairing.base64URL(new TextEncoder().encode(invitationJSON)), 1800000);
+const sealedInvitation = await pairing.encryptPairingOfferForInvitation(
+    invitation, "viewer-offer-fragment", new Uint8Array(12).fill(7));
+assert.equal(sealedInvitation.secretHash,
+    "Yw3NKWbEM2aRElRIu7JbT/QSpJxzLbLIq8G4WBvXEN0=",
+    "the browser proves it scanned the QR with only the secret hash");
+const invitationCombined = bytes(sealedInvitation.encryptedOffer);
+const invitationKey = await crypto.subtle.importKey(
+    "raw", invitationSecret, { name: "AES-GCM" }, false, ["decrypt"]);
+const invitationClear = await crypto.subtle.decrypt({
+    name: "AES-GCM", iv: invitationCombined.slice(0, 12),
+    additionalData: new TextEncoder().encode(
+        "clawdline-pairing-invitation-v1\0invite-vector-01"), tagLength: 128
+}, invitationKey, invitationCombined.slice(12));
+assert.equal(new TextDecoder().decode(invitationClear), "viewer-offer-fragment",
+    "the QR secret opens the opaque viewer offer that Cloud relays");
+assert.throws(function () {
+    pairing.decodePairingInvitation(
+        pairing.base64URL(new TextEncoder().encode(invitationJSON)), 1900001);
+}, function (error) { return error.code === "invitation_expired"; },
+"an expired QR invitation is rejected before it can pair");
+
 /** WebCrypto imports a raw X25519 scalar only through PKCS#8; the prefix is OID 1.3.101.110. */
 async function importEphemeral(base64) {
     const prefix = Buffer.from("302e020100300506032b656e04220420", "hex");

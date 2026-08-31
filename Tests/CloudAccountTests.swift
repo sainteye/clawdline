@@ -878,10 +878,34 @@ func runCloudAccountTests() async throws -> Int {
     try require(!String(describing: opaque).contains(opaqueBase64),
                 "opaque blob descriptions redact ciphertext")
 
+    let invitationSecretHash = Data(repeating: 0x5a, count: 32)
+    await fake.enqueue(json: """
+    {"status":"pending","invitation_id":"invite-1",
+     "expires_at":"2026-08-27T09:15:00.000Z","expires_in":300}
+    """)
+    let invitation = try await client.startPairingInvitation(secretHash: invitationSecretHash)
+    try require(invitation.invitationID == "invite-1" && invitation.expiresIn == 300,
+                "pairing invitation start decodes its one-time routing handle")
+    await fake.enqueue(status: 202, json: "{\"status\":\"pending\"}")
+    try require(try await client.pollPairingInvitation(invitationID: "invite-1") == .pending,
+                "pairing invitation models the deployed 202 pending response")
+    await fake.enqueue(json: """
+    {"status":"ready","account_id":"acct-1","viewer_device_id":"viewer-1",
+     "machine_id":"machine-1","encrypted_offer":"AAEC/w=="}
+    """)
+    let invitationPoll = try await client.pollPairingInvitation(invitationID: "invite-1")
+    try require(invitationPoll == .ready(
+        accountID: "acct-1", viewerDeviceID: "viewer-1", machineID: "machine-1",
+        encryptedOffer: opaque), "pairing invitation returns the opaque viewer offer")
+
     requests = await fake.captured()
     let pairingStartRequest = try cloudAccountRequest(requests, path: "/root/v1/pairing/start")
     let pairingCompleteRequest = try cloudAccountRequest(requests, path: "/root/v1/pairing/complete")
     let pairingClaimRequest = try cloudAccountRequest(requests, path: "/root/v1/pairing/claim")
+    let invitationStartRequest = try cloudAccountRequest(
+        requests, path: "/root/v1/pairing/invitations/start")
+    let invitationPollRequest = try cloudAccountRequest(
+        requests, path: "/root/v1/pairing/invitations/poll")
     try require(pairingStartRequest.httpMethod == "POST"
                 && (try cloudAccountBody(pairingStartRequest))["fingerprint"] as? String == "AB12-CD34-EF56-7890",
                 "pairing start uses the exact route and body")
@@ -890,6 +914,13 @@ func runCloudAccountTests() async throws -> Int {
     let claimBody = try cloudAccountBody(pairingClaimRequest)
     try require(Set(claimBody.keys) == ["pairing_id", "claim_nonce"],
                 "pairing claim sends only the pinned routing values")
+    try require(
+        (try cloudAccountBody(invitationStartRequest))["secret_hash"] as? String
+            == invitationSecretHash.base64EncodedString(),
+        "pairing invitation sends only the QR secret hash with the machine bearer")
+    try require(
+        (try cloudAccountBody(invitationPollRequest))["invitation_id"] as? String == "invite-1",
+        "pairing invitation polling sends only its routing handle")
 
     let lifecycleFake = CloudAccountFakeHTTP()
     let lifecycleStore = CloudInMemoryKeyStore()

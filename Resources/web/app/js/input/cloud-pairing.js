@@ -1,13 +1,11 @@
 /* --------------------------------------------------------------------------
    The hosted console's pairing screen
 
-   The local door asks the Mac for a six-digit code that appears on the Mac and
-   nowhere else. The cloud door is the same idea with the direction reversed,
-   because the thing that has to travel is the account's content key and only the
-   Mac has it: this browser asks the control plane for a one-time claim handle,
-   shows the resulting offer, and the person carries that offer to the Mac. The
-   control plane relays one ciphertext it cannot read, and neither device trusts
-   anything the cloud says about the other's key.
+   The Mac displays a one-time QR. This browser keeps its secret in the URL fragment,
+   proves the same Cloud account through GitHub, then returns its ordinary viewer offer
+   encrypted by that QR secret. The control plane relays ciphertext it cannot read; the
+   Mac returns the account key through the existing X25519 handover, and neither device
+   trusts anything the cloud says about the other's key.
 
    The words here are borrowed from the local door's entries in the string table,
    because that table is served by `RemoteServer` and this change does not own that
@@ -16,8 +14,11 @@
    -------------------------------------------------------------------------- */
 
 import { T } from "../core/i18n.js";
-import { pairViewer } from "../net/cloud-boot.js";
+import { pairViewer, pairViewerFromInvitation } from "../net/cloud-boot.js";
+import { decodePairingInvitation } from "../net/cloud-pairing.js";
 import { drawIcon } from "../core/pixels.js";
+
+const INVITATION_STORAGE_KEY = "clawdline.pairing.invitation.v1";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -26,6 +27,36 @@ function say(text, calm) {
     if (!line) return;
     line.textContent = text || "";
     line.classList.toggle("calm", calm === true);
+}
+
+/**
+ * Capture the QR secret before OAuth navigation. It stays in sessionStorage and in the URL
+ * fragment only; neither form is sent to app.clawdline.com or api.clawdline.com.
+ */
+export function captureCloudPairingInvitation(scope, nowMilliseconds) {
+    var raw = "";
+    var hash = scope.location && typeof scope.location.hash === "string"
+        ? scope.location.hash : "";
+    if (hash.indexOf("#pair=") === 0) {
+        raw = hash.slice(6);
+        scope.sessionStorage.setItem(INVITATION_STORAGE_KEY, raw);
+        if (scope.history && typeof scope.history.replaceState === "function") {
+            scope.history.replaceState(null, "", scope.location.pathname + scope.location.search);
+        }
+    } else {
+        raw = scope.sessionStorage.getItem(INVITATION_STORAGE_KEY) || "";
+    }
+    if (!raw) return null;
+    try {
+        return decodePairingInvitation(raw, nowMilliseconds);
+    } catch (error) {
+        scope.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
+        throw error;
+    }
+}
+
+export function clearCloudPairingInvitation(storage) {
+    storage.removeItem(INVITATION_STORAGE_KEY);
 }
 
 /**
@@ -41,7 +72,13 @@ export function showCloudPairing(session, options) {
     var confirm = byId("cloud-door-confirm");
     var restart = byId("cloud-door-restart");
     var offerField = byId("cloud-door-offer");
+    var offerLabel = byId("cloud-door-offer-label");
     var fingerprint = byId("cloud-door-fingerprint");
+    var fingerprintLine = byId("cloud-door-fingerprint-line");
+    var fingerprintPrefix = byId("cloud-door-fingerprint-prefix");
+    var fingerprintSuffix = byId("cloud-door-fingerprint-suffix");
+    var lede = byId("cloud-door-lede");
+    var guide = byId("cloud-door-guide");
     var mark = byId("cloud-door-mark");
     if (!door) return Promise.reject(new Error("the cloud door is not in this page"));
     if (mark && typeof drawIcon === "function") { try { drawIcon(mark); } catch (e) { /* cosmetic */ } }
@@ -73,7 +110,11 @@ export function showCloudPairing(session, options) {
             offerField.setAttribute("aria-label", "Pairing code");
         }
         if (fingerprint) fingerprint.textContent = pending.fingerprint || "";
-        say(T.webDoorCodeLede, true);
+        if (options.invitation) {
+            say("QR confirmed. Waiting for the Mac to finish the encrypted key handover…", true);
+        } else {
+            say(T.webDoorCodeLede, true);
+        }
     }
 
     // Bound once for the life of the page. `showCloudPairing` is called again whenever the
@@ -89,11 +130,33 @@ export function showCloudPairing(session, options) {
 
     function attempt() {
         say(T.webDoorAsking, true);
-        return pairViewer(session, {
+        var runOptions = {
             onOffer: showOffer,
             sleep: sleep,
             intervalMs: options.intervalMs || 2000
-        });
+        };
+        return options.invitation
+            ? pairViewerFromInvitation(session, options.invitation, runOptions)
+            : pairViewer(session, runOptions);
+    }
+
+    if (options.invitation) {
+        if (lede) lede.textContent = "Finish secure pairing";
+        if (guide) guide.textContent = "GitHub confirms this is your Clawdline account. "
+            + "The QR confirms this is the Mac in front of you. Both checks are required "
+            + "because Cloud only relays end-to-end encrypted data.";
+        if (offerLabel) offerLabel.hidden = true;
+        if (offerField) offerField.hidden = true;
+        if (confirm) confirm.hidden = true;
+        if (fingerprintLine) fingerprintLine.hidden = false;
+        if (fingerprintPrefix) fingerprintPrefix.textContent = "This phone's fingerprint is ";
+        if (fingerprintSuffix) fingerprintSuffix.textContent = ". The Mac pins it when pairing completes.";
+    } else {
+        if (offerLabel) offerLabel.hidden = false;
+        if (offerField) offerField.hidden = false;
+        if (confirm) confirm.hidden = false;
+        if (fingerprintPrefix) fingerprintPrefix.textContent = "This browser's fingerprint is ";
+        if (fingerprintSuffix) fingerprintSuffix.textContent = " — the Mac shows the same one.";
     }
 
     return new Promise(function (resolve) {
@@ -101,6 +164,7 @@ export function showCloudPairing(session, options) {
             attempt().then(function (paired) {
                 say(T.webDoorPaired, true);
                 door.hidden = true;
+                if (typeof options.onPaired === "function") options.onPaired();
                 resolve(paired);
             }, function (error) {
                 var code = error && error.code;

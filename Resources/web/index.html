@@ -980,10 +980,10 @@ document.documentElement.className = "booting";
     </div>
 </div>
 
-<!-- The cloud door. The same shape as the door above and the opposite direction: what has
-     to cross the room is the account's content key, and only the Mac has one, so this browser
-     asks the control plane for a one-time claim handle and shows the offer that goes with it.
-     The Mac seals its key for exactly that offer; the cloud carries a blob it cannot read.
+<!-- The cloud door. A Mac-displayed QR proves which physical Mac the phone is facing, while
+     GitHub proves both devices belong to the same Cloud account. The QR secret encrypts this
+     browser's offer; the Mac seals its account key for exactly that offer, and Cloud carries
+     only blobs it cannot read.
      Three lines here are English in every language — the string table is served by the Mac and
      the change that added this screen does not own that file. See docs/cloud.md. -->
 <div class="door" id="cloud-door" hidden>
@@ -992,14 +992,14 @@ document.documentElement.className = "booting";
 
         <section>
             <p class="lede" id="cloud-door-lede">Look at the Mac.</p>
-            <p class="fine">Open Clawdline on the Mac, go to Settings &rarr; Cloud, and give it the
+            <p class="fine" id="cloud-door-guide">Open Clawdline on the Mac, go to Settings &rarr; Cloud, and give it the
                 code below. It is only good for a few minutes and only once.</p>
-            <label for="cloud-door-offer">Pairing code</label>
+            <label for="cloud-door-offer" id="cloud-door-offer-label">Pairing code</label>
             <input id="cloud-door-offer" type="text" readonly spellcheck="false"
                    autocomplete="off" autocapitalize="off"
                    data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
-            <p class="fine">This browser&rsquo;s fingerprint is
-                <b id="cloud-door-fingerprint"></b> &mdash; the Mac shows the same one.</p>
+            <p class="fine" id="cloud-door-fingerprint-line"><span id="cloud-door-fingerprint-prefix">This browser&rsquo;s fingerprint is</span>
+                <b id="cloud-door-fingerprint"></b><span id="cloud-door-fingerprint-suffix"> &mdash; the Mac shows the same one.</span></p>
             <button class="go" id="cloud-door-confirm" type="button">Pair this device</button>
             <button class="alt" id="cloud-door-restart" type="button" hidden>Start again</button>
         </section>

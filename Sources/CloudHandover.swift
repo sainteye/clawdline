@@ -19,14 +19,15 @@ import CryptoKit
 /// **Direction, and why it is this way round.** The blob the API can carry travels from the
 /// *sender* (`complete`) to the *requester* (`start` then `claim`), and the master secret has
 /// to travel Mac → viewer. So the **viewer** is the requester: it asks the control plane for a
-/// `pairing_id` and a one-time `claim_nonce`, shows them with its own public keys as an
-/// offer fragment, and the human carries that fragment to the Mac. The Mac seals the account
-/// key material for exactly that offer and writes it into the one slot; the viewer claims it
-/// once and the record is destroyed.
+/// `pairing_id` and a one-time `claim_nonce`, then returns that offer to the Mac through the
+/// Mac-displayed ``CloudPairingInvitation``. The QR secret encrypts the offer before Cloud sees
+/// it, so the human carries only one short-lived QR scan; the Mac seals the account key material
+/// for exactly that offer and writes it into the one slot; the viewer claims it once and the
+/// record is destroyed.
 ///
 /// The property PROTOCOL §3 asks for survives: an attacker holding the OAuth session can
 /// register a viewer device and call `start`, but no Mac ever seals for a `pairing_id` that
-/// was not physically handed to it, so the attacker's device gets no master secret and can
+/// was not encrypted by the QR on its own screen, so the attacker's device gets no master secret and can
 /// produce no command any Mac will accept. Both sides pin the other's Ed25519 key from the
 /// out-of-band material rather than from anything the cloud says.
 
@@ -46,6 +47,8 @@ enum CloudHandoverError: Error, LocalizedError, Equatable {
     case offerLifetimeTooLong
     case wrongAccount
     case wrongSender
+    case malformedInvitation
+    case invitationExpired
     case storeUnreadable
     case storeUnwritable
 
@@ -57,9 +60,82 @@ enum CloudHandoverError: Error, LocalizedError, Equatable {
         case .offerLifetimeTooLong: return "That pairing offer claims an unusable lifetime."
         case .wrongAccount: return "That pairing offer belongs to another account."
         case .wrongSender: return "The handover was sealed by a different device."
+        case .malformedInvitation: return "The QR pairing invitation is malformed."
+        case .invitationExpired: return "That QR has expired; show a fresh one."
         case .storeUnreadable: return "The paired-device store could not be read."
         case .storeUnwritable: return "The paired-device store could not be written."
         }
+    }
+}
+
+/// A one-time Mac-displayed QR that transports the viewer's existing pairing offer back to
+/// this Mac without making the offer readable to Cloud.
+///
+/// GitHub establishes account ownership. Possession of `secret` establishes that the browser
+/// scanned the QR on this physical Mac. The browser encrypts its ordinary offer with that
+/// secret, Cloud relays only the opaque AES-GCM bytes, and the original X25519 handover still
+/// moves the account master secret directly from Mac to viewer.
+struct CloudPairingInvitation: Equatable, Sendable {
+    static let secretBytes = 32
+    static let fragmentName = "pair"
+
+    let invitationID: String
+    let secret: Data
+    let expiresAtMilliseconds: Int64
+
+    init(invitationID: String, secret: Data, expiresAtMilliseconds: Int64) throws {
+        guard !invitationID.isEmpty, invitationID.utf8.count <= 128,
+              secret.count == Self.secretBytes, expiresAtMilliseconds >= 0 else {
+            throw CloudHandoverError.malformedInvitation
+        }
+        self.invitationID = invitationID
+        self.secret = secret
+        self.expiresAtMilliseconds = expiresAtMilliseconds
+    }
+
+    var secretHash: Data { Data(SHA256.hash(data: secret)) }
+
+    func qrURL(appOrigin: URL = URL(string: "https://app.clawdline.com/")!) -> URL? {
+        let value = CloudJSONValue.object([
+            "v": .int(1),
+            "type": .string("pairing_invitation"),
+            "invitation_id": .string(invitationID),
+            "secret": .string(secret.base64EncodedString()),
+            "expires_at": .int(expiresAtMilliseconds),
+        ])
+        let fragment = CloudPairing.encodeCanonicalBase64URL(
+            CloudCanonicalJSON.canonicalData(value))
+        var components = URLComponents(url: appOrigin, resolvingAgainstBaseURL: false)
+        components?.fragment = Self.fragmentName + "=" + fragment
+        return components?.url
+    }
+
+    func openEncryptedOffer(
+        _ blob: CloudOpaquePairingBlob, nowMilliseconds: Int64
+    ) throws -> String {
+        guard nowMilliseconds >= 0, expiresAtMilliseconds >= nowMilliseconds else {
+            throw CloudHandoverError.invitationExpired
+        }
+        guard let combined = Data(base64Encoded: blob.wireBase64) else {
+            throw CloudHandoverError.malformedInvitation
+        }
+        do {
+            let box = try AES.GCM.SealedBox(combined: combined)
+            let clear = try AES.GCM.open(
+                box, using: SymmetricKey(data: secret), authenticating: authenticatedData)
+            guard let offer = String(data: clear, encoding: .utf8), !offer.isEmpty else {
+                throw CloudHandoverError.malformedInvitation
+            }
+            return offer
+        } catch let error as CloudHandoverError {
+            throw error
+        } catch {
+            throw CloudHandoverError.malformedInvitation
+        }
+    }
+
+    private var authenticatedData: Data {
+        Data(("clawdline-pairing-invitation-v1\0" + invitationID).utf8)
     }
 }
 

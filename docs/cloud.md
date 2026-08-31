@@ -135,11 +135,21 @@ produces a complete handover into `Tests/protocol-vectors.json`;
 of broken here — nothing throws, pairing simply never completes for a real person — so the
 agreement is measured rather than asserted in a comment.
 
-**How a person does it.** On the phone: open `app.clawdline.com`, sign in with GitHub, and the
-console shows a pairing code and this browser's fingerprint. On the Mac: Settings → Cloud →
-*Pair a Phone…*, paste the code, and compare the two fingerprints. The browser polls
-`POST /v1/pairing/claim`, whose `202 pairing_pending` is the ordinary waiting state rather than a
-failure, and connects as soon as the slot is written.
+**How a person does it.** On the Mac: Settings → Cloud → *Pair a Phone…*. The Mac creates a
+short-lived secret locally, sends only its SHA-256 to `POST /v1/pairing/invitations/start`, and
+shows `https://app.clawdline.com/#pair=…` as a QR. On the phone: scan it and sign in with GitHub if
+asked. The fragment is captured into same-tab `sessionStorage` before OAuth and removed from the
+address bar; neither the app server nor the OAuth callback receives it. The browser makes its
+ordinary viewer offer, encrypts it with AES-GCM under the QR secret, and sends only the secret hash
+and opaque bytes to `POST /v1/pairing/invitations/accept`. The Mac polls
+`POST /v1/pairing/invitations/poll`, decrypts that offer locally, and the existing
+`complete`/`claim` X25519 handover moves the account master secret Mac → viewer.
+
+There are deliberately two user-visible checks. GitHub proves the phone and Mac belong to the
+same Clawdline account; scanning the QR proves the phone is pairing with the Mac physically in
+front of the person. Both are required because the Cloud service is only a ciphertext relay: it
+never receives the QR secret, the plaintext viewer offer, or the account master secret. The old
+long offer remains a protocol compatibility seam, not the primary UI.
 
 ## Building and deploying the hosted console
 

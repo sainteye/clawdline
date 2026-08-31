@@ -30,6 +30,7 @@ export const OFFER_LIFETIME_MS = 600000;
 const SALT_DOMAIN = "clawdline-pair-salt-v1";
 const INFO_DOMAIN = "clawdline-pair-v1";
 const GRANT_PHASE = "grant";
+const INVITATION_AAD = "clawdline-pairing-invitation-v1\0";
 
 const OFFER_MEMBERS = [
     "v", "type", "pairing_id", "claim_nonce", "pairing_nonce", "account_id",
@@ -43,6 +44,7 @@ const HANDOVER_MEMBERS = [
 const WRAPPER_MEMBERS = [
     "v", "phase", "pairing_id", "sender_device_id", "ephemeral_key", "nonce", "ct"
 ];
+const INVITATION_MEMBERS = ["v", "type", "invitation_id", "secret", "expires_at"];
 
 export function pairingError(code, message) {
     var error = new Error(message || code);
@@ -130,6 +132,51 @@ export function base64URLBytes(text) {
         throw pairingError("bad_fragment", "the pairing fragment is not canonical base64url");
     }
     return bytes;
+}
+
+/* ---- the Mac-displayed QR invitation ------------------------------------ */
+
+export function decodePairingInvitation(fragment, nowMilliseconds) {
+    var text = decoder.decode(base64URLBytes(fragment));
+    var invitation;
+    try { invitation = JSON.parse(text); } catch (e) {
+        throw pairingError("bad_invitation", "the QR invitation is not JSON");
+    }
+    if (!invitation || typeof invitation !== "object" || Array.isArray(invitation)) {
+        throw pairingError("bad_invitation", "the QR invitation is not an object");
+    }
+    exactMembers(invitation, INVITATION_MEMBERS, "bad_invitation");
+    if (invitation.v !== 1 || invitation.type !== "pairing_invitation" ||
+        canonicalJSON(invitation) !== text || typeof invitation.invitation_id !== "string" ||
+        !invitation.invitation_id || invitation.invitation_id.length > 128) {
+        throw pairingError("bad_invitation", "the QR invitation is not canonical version 1");
+    }
+    invitation.secretBytes = requireLength(
+        base64Bytes(invitation.secret, "invitation_secret"), 32, "invitation_secret");
+    if (!Number.isSafeInteger(invitation.expires_at) || invitation.expires_at < nowMilliseconds) {
+        throw pairingError("invitation_expired", "that QR invitation has expired");
+    }
+    return invitation;
+}
+
+/** Encrypt the viewer's ordinary offer for the QR-scanning Mac. */
+export async function encryptPairingOfferForInvitation(invitation, offerFragment, nonce) {
+    if (!invitation || !(invitation.secretBytes instanceof Uint8Array)) {
+        throw pairingError("bad_invitation", "the QR invitation has no secret");
+    }
+    var iv = nonce ? requireLength(nonce, 12, "invitation_nonce")
+        : crypto.getRandomValues(new Uint8Array(12));
+    var key = await subtle().importKey(
+        "raw", invitation.secretBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+    var ciphertext = new Uint8Array(await subtle().encrypt({
+        name: "AES-GCM", iv: iv,
+        additionalData: encoder.encode(INVITATION_AAD + invitation.invitation_id),
+        tagLength: 128
+    }, key, encoder.encode(offerFragment)));
+    return {
+        encryptedOffer: bytesBase64(concat([iv, ciphertext])),
+        secretHash: bytesBase64(await sha256(invitation.secretBytes))
+    };
 }
 
 /* ---- primitives ---------------------------------------------------------- */

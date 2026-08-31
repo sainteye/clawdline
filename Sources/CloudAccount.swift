@@ -186,6 +186,10 @@ struct CloudOpaquePairingBlob: Equatable, Sendable,
     /// only caller is the suite, proving that what went to `POST /v1/pairing/complete` is what
     /// a viewer can open.
     var wireBase64ForTesting: String { base64 }
+
+    /// The opaque bytes at the transport/cryptography seam. Callers still cannot inspect them
+    /// through logs or descriptions; invitation decryption is the second legitimate consumer.
+    var wireBase64: String { base64 }
 }
 
 struct CloudPairingStart: Equatable, Sendable,
@@ -209,6 +213,19 @@ struct CloudPairingDelivery: Equatable, Sendable {
 enum CloudPairingClaim: Equatable, Sendable {
     case pending
     case complete(blob: CloudOpaquePairingBlob, senderDeviceID: String?)
+}
+
+struct CloudPairingInvitationStart: Equatable, Sendable {
+    let invitationID: String
+    let expiresAt: Date
+    let expiresIn: Int
+}
+
+enum CloudPairingInvitationPoll: Equatable, Sendable {
+    case pending
+    case ready(
+        accountID: String, viewerDeviceID: String, machineID: String,
+        encryptedOffer: CloudOpaquePairingBlob)
 }
 
 /// Client-side QR key derivation is intentionally outside this transport seam. A later UX
@@ -527,6 +544,47 @@ final class CloudAccountClient: Sendable {
         return .complete(blob: blob, senderDeviceID: wire.senderDeviceID)
     }
 
+    func startPairingInvitation(secretHash: Data) async throws -> CloudPairingInvitationStart {
+        guard secretHash.count == 32 else { throw CloudAccountError.invalidPairingBlob }
+        let data = try await send(
+            method: "POST", path: ["v1", "pairing", "invitations", "start"],
+            body: PairingInvitationStartRequest(secretHash: secretHash.base64EncodedString()),
+            authorization: .machineCredential
+        )
+        try requireObject(data, keys: ["status", "invitation_id", "expires_at", "expires_in"])
+        let wire: PairingInvitationStartResponse = try decode(data)
+        guard wire.status == "pending", !wire.invitationID.isEmpty,
+              let expiresAt = parseDate(wire.expiresAt), wire.expiresIn > 0 else {
+            throw CloudAccountError.invalidResponse
+        }
+        return CloudPairingInvitationStart(
+            invitationID: wire.invitationID, expiresAt: expiresAt, expiresIn: wire.expiresIn)
+    }
+
+    func pollPairingInvitation(invitationID: String) async throws -> CloudPairingInvitationPoll {
+        let result = try await rawSend(
+            method: "POST", path: ["v1", "pairing", "invitations", "poll"],
+            body: PairingInvitationPollRequest(invitationID: invitationID),
+            authorization: .machineCredential
+        )
+        if result.response.statusCode == 202 {
+            let wire: PairingInvitationPendingResponse = try decode(result.data)
+            guard wire.status == "pending" else { throw CloudAccountError.invalidResponse }
+            return .pending
+        }
+        try requireStatus(result, expected: 200)
+        try requireObject(
+            result.data,
+            keys: ["status", "account_id", "viewer_device_id", "machine_id", "encrypted_offer"])
+        let wire: PairingInvitationReadyResponse = try decode(result.data)
+        guard wire.status == "ready", !wire.accountID.isEmpty, !wire.viewerDeviceID.isEmpty,
+              !wire.machineID.isEmpty else { throw CloudAccountError.invalidResponse }
+        return .ready(
+            accountID: wire.accountID, viewerDeviceID: wire.viewerDeviceID,
+            machineID: wire.machineID,
+            encryptedOffer: try CloudOpaquePairingBlob(base64: wire.encryptedOffer))
+    }
+
     private enum Authorization {
         case machineCredential
         case browserSessionCookie(String)
@@ -762,6 +820,46 @@ private struct PairingClaimResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case ciphertext
         case senderDeviceID = "sender_device_id"
+    }
+}
+
+private struct PairingInvitationStartRequest: Encodable {
+    let secretHash: String
+    enum CodingKeys: String, CodingKey { case secretHash = "secret_hash" }
+}
+
+private struct PairingInvitationStartResponse: Decodable {
+    let status: String
+    let invitationID: String
+    let expiresAt: String
+    let expiresIn: Int
+    enum CodingKeys: String, CodingKey {
+        case status
+        case invitationID = "invitation_id"
+        case expiresAt = "expires_at"
+        case expiresIn = "expires_in"
+    }
+}
+
+private struct PairingInvitationPollRequest: Encodable {
+    let invitationID: String
+    enum CodingKeys: String, CodingKey { case invitationID = "invitation_id" }
+}
+
+private struct PairingInvitationPendingResponse: Decodable { let status: String }
+
+private struct PairingInvitationReadyResponse: Decodable {
+    let status: String
+    let accountID: String
+    let viewerDeviceID: String
+    let machineID: String
+    let encryptedOffer: String
+    enum CodingKeys: String, CodingKey {
+        case status
+        case accountID = "account_id"
+        case viewerDeviceID = "viewer_device_id"
+        case machineID = "machine_id"
+        case encryptedOffer = "encrypted_offer"
     }
 }
 

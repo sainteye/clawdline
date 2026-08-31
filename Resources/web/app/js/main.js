@@ -25,7 +25,9 @@ import {
     CloudViewerSession, chooseTransport, idleClient, keepConnected, readCloudConfig
 } from "./net/cloud-boot.js";
 import { handlers } from "./net/handlers.js";
-import { showCloudPairing } from "./input/cloud-pairing.js";
+import {
+    captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudPairing
+} from "./input/cloud-pairing.js";
 import "./door/door.js";
 import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
@@ -95,6 +97,12 @@ if (transportKind === "cloud") {
     useApi(idleClient());
     handlers.conn("connecting");
     var cloudSession = new CloudViewerSession({ config: cloudConfig, handlers: handlers });
+    var cloudInvitation = null;
+    try {
+        cloudInvitation = captureCloudPairingInvitation(window, Date.now());
+    } catch (invitationError) {
+        console.error("clawdline: " + invitationError.message);
+    }
     var startCloudViewer = function () {
         keepConnected(cloudSession, {
             onState: function (update) {
@@ -107,7 +115,13 @@ if (transportKind === "cloud") {
                     // Signed in, but this browser holds no account key yet. Pairing is the one
                     // thing that can produce one, and it cannot be done from the relay.
                     handlers.conn("locked");
-                    showCloudPairing(cloudSession).then(startCloudViewer);
+                    showCloudPairing(cloudSession, {
+                        invitation: cloudInvitation,
+                        onPaired: function () {
+                            clearCloudPairingInvitation(window.sessionStorage);
+                            cloudInvitation = null;
+                        }
+                    }).then(startCloudViewer);
                 } else if (update.state === "revoked") {
                     handlers.conn("locked");
                 }

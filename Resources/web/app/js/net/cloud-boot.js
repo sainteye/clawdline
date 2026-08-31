@@ -20,7 +20,8 @@
 import { CloudClient } from "./cloud-client.js";
 import { importSenderPublicKey, loadCryptoKey, storeCryptoKey } from "./cloud-crypto.js";
 import {
-    createPairingOffer, ed25519Fingerprint, openPairingHandover, pairingError
+    createPairingOffer, ed25519Fingerprint, encryptPairingOfferForInvitation,
+    openPairingHandover, pairingError
 } from "./cloud-pairing.js";
 
 /** Capabilities this console asks for. The four-way split is PROTOCOL §12's, unmerged. */
@@ -309,6 +310,34 @@ export class CloudViewerSession {
     }
 
     /**
+     * Prove this browser scanned the Mac's QR, and relay its offer encrypted by that QR secret.
+     * The API receives the SHA-256 proof and opaque AES-GCM bytes, never the secret or offer.
+     */
+    async acceptPairingInvitation(invitation, pending) {
+        var sealed = await encryptPairingOfferForInvitation(invitation, pending.fragment);
+        var accepted = await json(
+            this.fetch, this.config.apiOrigin + "/v1/pairing/invitations/accept", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    invitation_id: invitation.invitation_id,
+                    secret_hash: sealed.secretHash,
+                    encrypted_offer: sealed.encryptedOffer
+                })
+            });
+        if (accepted.status === 403) {
+            throw pairingError("wrong_invitation", "that QR does not belong to this account or Mac");
+        }
+        if (accepted.status === 409) {
+            throw pairingError("invitation_expired", "that QR has expired or was already scanned");
+        }
+        if (accepted.status !== 200 || !accepted.body || accepted.body.status !== "delivered") {
+            throw pairingError("invitation_failed", "the encrypted pairing offer could not be delivered");
+        }
+        return pending;
+    }
+
+    /**
      * Take the one blob the Mac left, exactly once, and keep what was in it.
      *
      * Both keys are stored as CryptoKeys and neither can be read back out: the account key is
@@ -417,6 +446,29 @@ export async function pairViewer(session, options) {
     var onOffer = options.onOffer || function () {};
     var pending = await session.startPairing();
     onOffer(pending);
+    for (;;) {
+        try {
+            return await session.claimPairing(pending);
+        } catch (error) {
+            if (!error || error.code !== "pairing_unfinished") throw error;
+            if (session.now() >= pending.expiresAt) {
+                throw pairingError("offer_expired", "that pairing offer expired unanswered");
+            }
+            await sleep(interval);
+        }
+    }
+}
+
+/** QR-first pairing: the Mac displays; this viewer scans, authenticates and answers. */
+export async function pairViewerFromInvitation(session, invitation, options) {
+    options = options || {};
+    var pending = await session.startPairing();
+    if (options.onOffer) options.onOffer(pending);
+    await session.acceptPairingInvitation(invitation, pending);
+    var sleep = options.sleep || function (ms) {
+        return new Promise(function (resolve) { setTimeout(resolve, ms); });
+    };
+    var interval = options.intervalMs || 2000;
     for (;;) {
         try {
             return await session.claimPairing(pending);

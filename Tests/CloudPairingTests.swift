@@ -180,6 +180,44 @@ private func phaseWriteWrapper(bodyExactByteCount target: Int, claimNonce: Strin
 public func runCloudPairingTests() async throws -> Int {
     var t = CloudPairingTestHarness()
 
+    let invitationSecret = Data((0..<32).map(UInt8.init))
+    let invitation = try CloudPairingInvitation(
+        invitationID: "invite-vector-01", secret: invitationSecret,
+        expiresAtMilliseconds: 1_900_000)
+    try t.equal(
+        invitation.secretHash.base64EncodedString(),
+        "Yw3NKWbEM2aRElRIu7JbT/QSpJxzLbLIq8G4WBvXEN0=",
+        "invitation sends only the SHA-256 of its QR secret to Cloud")
+    guard let invitationURL = invitation.qrURL() else {
+        throw CloudPairingTestFailure.failed("invitation URL was not made")
+    }
+    try t.equal(invitationURL.host, "app.clawdline.com", "invitation QR uses the public console")
+    try t.check(invitationURL.query == nil && invitationURL.fragment?.hasPrefix("pair=") == true,
+                "invitation secret stays in the URL fragment and never reaches the server")
+    let invitationPlaintext = "viewer-offer-fragment"
+    let invitationNonce = try AES.GCM.Nonce(data: Data(repeating: 7, count: 12))
+    let invitationAAD = Data("clawdline-pairing-invitation-v1\0invite-vector-01".utf8)
+    let invitationBox = try AES.GCM.seal(
+        Data(invitationPlaintext.utf8), using: SymmetricKey(data: invitationSecret),
+        nonce: invitationNonce, authenticating: invitationAAD)
+    guard let invitationCombined = invitationBox.combined else {
+        throw CloudPairingTestFailure.failed("AES-GCM did not make combined bytes")
+    }
+    let invitationBlob = try CloudOpaquePairingBlob(
+        base64: invitationCombined.base64EncodedString())
+    try t.equal(
+        try invitation.openEncryptedOffer(invitationBlob, nowMilliseconds: 1_800_000),
+        invitationPlaintext, "Mac opens only the offer encrypted by the scanned QR secret")
+    try t.rejects("another QR secret cannot open the relayed offer") {
+        let other = try CloudPairingInvitation(
+            invitationID: invitation.invitationID, secret: Data(repeating: 9, count: 32),
+            expiresAtMilliseconds: invitation.expiresAtMilliseconds)
+        _ = try other.openEncryptedOffer(invitationBlob, nowMilliseconds: 1_800_000)
+    }
+    try t.rejects("an expired QR cannot open a relayed offer") {
+        _ = try invitation.openEncryptedOffer(invitationBlob, nowMilliseconds: 1_900_001)
+    }
+
     let viewerPrivate = pairingHex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
     let viewerPublicText = "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo="
     let macPrivate = pairingHex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
