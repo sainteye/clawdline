@@ -986,14 +986,24 @@ document.documentElement.className = "booting";
      only blobs it cannot read.
      Three lines here are English in every language — the string table is served by the Mac and
      the change that added this screen does not own that file. See docs/cloud.md. -->
-<div class="door" id="cloud-door" hidden>
+<div class="door" id="cloud-door" data-step="cloud" hidden>
     <div class="door-card" role="dialog" aria-modal="true" aria-label="Pair this browser">
         <div class="door-head"><canvas id="cloud-door-mark"></canvas><b>clawdline</b></div>
 
-        <section>
+        <section data-step="cloud">
             <p class="lede" id="cloud-door-lede">Look at the Mac.</p>
             <p class="fine" id="cloud-door-guide">Open Clawdline on the Mac, go to Settings &rarr; Cloud, and give it the
                 code below. It is only good for a few minutes and only once.</p>
+            <ol class="cloud-install-steps" id="cloud-door-install-steps" hidden>
+                <li>Tap Safari&rsquo;s <b>Share</b> button.</li>
+                <li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+                <li>Close Safari and open <b>Clawdline</b> from your Home Screen.</li>
+            </ol>
+            <div class="cloud-camera" id="cloud-door-camera-frame" hidden>
+                <video id="cloud-door-camera" playsinline muted aria-label="Camera preview for the Mac pairing QR"></video>
+                <span>Keep the Mac&rsquo;s QR inside the frame</span>
+            </div>
+            <button class="go" id="cloud-door-scan" type="button" hidden>Scan the QR on the Mac</button>
             <label for="cloud-door-offer" id="cloud-door-offer-label">Pairing code</label>
             <input id="cloud-door-offer" type="text" readonly spellcheck="false"
                    autocomplete="off" autocapitalize="off"

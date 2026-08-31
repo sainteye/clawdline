@@ -69,7 +69,8 @@ def collect_assets():
     """Every file under `Resources/web/app`, relative and sorted. The directory is the list."""
     files = sorted(
         path for path in APP.rglob("*")
-        if path.is_file() and path.suffix in {".css", ".js"} and not path.name.endswith(".test.mjs")
+        if path.is_file() and path.suffix in {".css", ".js", ".txt"}
+        and not path.name.endswith(".test.mjs")
     )
     return [(path.relative_to(APP).as_posix(), path.read_bytes()) for path in files]
 
@@ -169,6 +170,7 @@ def build(out, app_origin, api_origin, relay_url):
         write(f"icon-{size}.png", body)
 
     manifest = {
+        "id": "/",
         "name": "Clawdline",
         "short_name": "Clawdline",
         "display": "standalone",

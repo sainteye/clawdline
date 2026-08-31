@@ -99,6 +99,7 @@ node Tests/web-project-artifacts.mjs
 # vectors, and that the static bundle a person uploads by hand is the same bytes twice.
 node Tests/web-cloud-boot.mjs
 node Tests/web-cloud-pairing.mjs
+node Tests/web-cloud-onboarding.mjs
 node Tests/web-app-build.mjs
 node Tests/dispatch-role-contract.mjs
 node Tests/restart-rollout-contract.mjs

@@ -135,13 +135,20 @@ produces a complete handover into `Tests/protocol-vectors.json`;
 of broken here — nothing throws, pairing simply never completes for a real person — so the
 agreement is measured rather than asserted in a comment.
 
-**How a person does it.** On the Mac: Settings → Cloud → *Pair a Phone…*. The Mac creates a
-short-lived secret locally, sends only its SHA-256 to `POST /v1/pairing/invitations/start`, and
-shows `https://app.clawdline.com/#pair=…` as a QR. On the phone: scan it and sign in with GitHub if
-asked. The fragment is captured into same-tab `sessionStorage` before OAuth and removed from the
-address bar; neither the app server nor the OAuth callback receives it. The browser makes its
-ordinary viewer offer, encrypts it with AES-GCM under the QR secret, and sends only the secret hash
-and opaque bytes to `POST /v1/pairing/invitations/accept`. The Mac polls
+**How a person does it.** On an iPhone, open `app.clawdline.com` in Safari, add Clawdline to the
+Home Screen, close Safari, and continue from the installed app. That order is part of the security
+model rather than presentation: Safari and the Home Screen app have isolated IndexedDB stores,
+and neither the viewer's signing key nor the account content key is extractable. The Safari page
+therefore stops before login and before `POST /v1/auth/session`; it does not consume a viewer slot
+whose key could never move into the PWA.
+
+In the installed app, sign in with GitHub. Then on the Mac use Settings → Cloud → *Pair a
+Phone…*. The Mac creates a short-lived secret locally, sends only its SHA-256 to
+`POST /v1/pairing/invitations/start`, and shows `https://app.clawdline.com/#pair=…` as a QR. The
+PWA scans and decodes that QR locally; camera frames never leave the phone. The fragment is kept
+only for this pairing and neither the app server nor the OAuth callback receives it. The PWA makes
+its ordinary viewer offer, encrypts it with AES-GCM under the QR secret, and sends only the secret
+hash and opaque bytes to `POST /v1/pairing/invitations/accept`. The Mac polls
 `POST /v1/pairing/invitations/poll`, decrypts that offer locally, and the existing
 `complete`/`claim` X25519 handover moves the account master secret Mac → viewer.
 
@@ -167,7 +174,9 @@ What it does is the static half of what `RemoteServer.page` does per request: st
 cloud slots, drops the twenty `apple-touch-startup-image` links the Mac draws on demand, writes
 `manifest.webmanifest` with icons copied byte-for-byte out of `Resources/Clawdline.icns`, and
 writes `_headers` with a CSP whose inline-script hashes are computed from the exact scripts it
-emitted — no `'unsafe-inline'`, and `connect-src` limited to the declared API and relay.
+emitted — no `'unsafe-inline'`, and `connect-src` limited to the declared API and relay. The
+bundled MIT-licensed QR decoder and worker are content-stamped with the rest of the app; its
+license is shipped beside it.
 
 Upload `dist/app-console` as the Pages deployment for `app.clawdline.com` and follow §4 of the
 cloud repository's `RUNBOOK-DEPLOY.md` for the DNS cutover. Deploy is owned by the operator, not
@@ -196,9 +205,6 @@ with these clients, these are exactly the claims that rest on reading rather tha
   `index.html` are English in every language. The string table is served by
   `Sources/RemoteServer.swift`, which this change does not own; adding proper names to `T` and to
   `/v1/strings` is a follow-up that must touch that file.
-- **A scanner.** The offer is generated in the browser, so the code to scan is on the phone and
-  the reader would have to be the Mac. The settings sheet takes a paste; a camera or a QR image
-  is a later improvement, not a protocol change.
 - **Transcripts and push.** The viewer subscribes to `t/<machine>/<session>` on demand, which the
   relay supports, but the Mac does not yet publish transcript envelopes. Web push needs the Mac's
   VAPID keys and does not work through the relay, so the hosted console registers no service

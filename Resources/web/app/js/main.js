@@ -7,7 +7,7 @@
    entirely for what they do on the way in — a listener bound, a clock started.
    The list is the manifest, and it is the one place the whole page is written down.
    -------------------------------------------------------------------------- */
-import { MOCK } from "./core/env.js";
+import { MOCK, params } from "./core/env.js";
 import "./core/esc.js";
 import { applyStrings } from "./core/i18n.js";
 import { S } from "./core/state.js";
@@ -26,8 +26,10 @@ import {
 } from "./net/cloud-boot.js";
 import { handlers } from "./net/handlers.js";
 import {
-    captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudPairing
+    captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudInstallGate,
+    showCloudPairing
 } from "./input/cloud-pairing.js";
+import { cloudOnboardingMode } from "./net/cloud-onboarding.js";
 import "./door/door.js";
 import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
@@ -96,39 +98,54 @@ if (transportKind === "cloud") {
     // binding — once the relay handshake has actually completed.
     useApi(idleClient());
     handlers.conn("connecting");
-    var cloudSession = new CloudViewerSession({ config: cloudConfig, handlers: handlers });
-    var cloudInvitation = null;
-    try {
-        cloudInvitation = captureCloudPairingInvitation(window, Date.now());
-    } catch (invitationError) {
-        console.error("clawdline: " + invitationError.message);
-    }
-    var startCloudViewer = function () {
-        keepConnected(cloudSession, {
-            onState: function (update) {
-                if (update.state === "connected") {
-                    useApi(update.client);
-                    bindTranscriptEvents(update.client);
-                } else if (update.state === "sign_in") {
-                    location.replace(update.url);
-                } else if (update.state === "pairing_required") {
-                    // Signed in, but this browser holds no account key yet. Pairing is the one
-                    // thing that can produce one, and it cannot be done from the relay.
-                    handlers.conn("locked");
-                    showCloudPairing(cloudSession, {
-                        invitation: cloudInvitation,
-                        onPaired: function () {
-                            clearCloudPairingInvitation(window.sessionStorage);
-                            cloudInvitation = null;
-                        }
-                    }).then(startCloudViewer);
-                } else if (update.state === "revoked") {
-                    handlers.conn("locked");
+    var cloudOnboarding = cloudOnboardingMode(window);
+    if (cloudOnboarding === "install") {
+        // Do not call ensureSession here. A Safari viewer would consume a device slot and its
+        // non-extractable key cannot cross into the Home Screen app's isolated IndexedDB.
+        // A QR opened in Safari is intentionally discarded too: keeping its secret in the
+        // address bar would invite a flow this storage container is not allowed to finish.
+        try { captureCloudPairingInvitation(window, Date.now()); } catch (discardedInvitation) {
+            console.error("clawdline: " + discardedInvitation.message);
+        }
+        clearCloudPairingInvitation(window.sessionStorage);
+        handlers.conn("locked");
+        showCloudInstallGate();
+    } else {
+        var cloudSession = new CloudViewerSession({ config: cloudConfig, handlers: handlers });
+        var cloudInvitation = null;
+        try {
+            cloudInvitation = captureCloudPairingInvitation(window, Date.now());
+        } catch (invitationError) {
+            console.error("clawdline: " + invitationError.message);
+        }
+        var startCloudViewer = function () {
+            keepConnected(cloudSession, {
+                onState: function (update) {
+                    if (update.state === "connected") {
+                        useApi(update.client);
+                        bindTranscriptEvents(update.client);
+                    } else if (update.state === "sign_in") {
+                        location.replace(update.url);
+                    } else if (update.state === "pairing_required") {
+                        // Signed in, but this app holds no account key yet. The installed PWA
+                        // scans the Mac's QR itself so the key is born in the storage that keeps it.
+                        handlers.conn("locked");
+                        showCloudPairing(cloudSession, {
+                            invitation: cloudInvitation,
+                            scan: cloudOnboarding === "pwa" && !cloudInvitation,
+                            onPaired: function () {
+                                clearCloudPairingInvitation(window.sessionStorage);
+                                cloudInvitation = null;
+                            }
+                        }).then(startCloudViewer);
+                    } else if (update.state === "revoked") {
+                        handlers.conn("locked");
+                    }
                 }
-            }
-        });
-    };
-    startCloudViewer();
+            });
+        };
+        startCloudViewer();
+    }
 } else if (transportKind === "blocked") {
     useApi(idleClient());
     handlers.conn("offline");
@@ -137,6 +154,13 @@ if (transportKind === "cloud") {
 } else {
     useApi(transportKind === "mock" ? Mock : Live);
     bindTranscriptEvents(api);
+}
+
+// A deterministic visual fixture for the same bundled page. It never runs outside mock mode,
+// never opens a Cloud session, and lets mobile layout checks hold the install/scan screen still.
+if (MOCK && params.get("cloud-onboarding") === "install") showCloudInstallGate();
+if (MOCK && params.get("cloud-onboarding") === "scan") {
+    showCloudPairing({}, { scan: true });
 }
 Diagnostics.bind({ state: S, elements: els });
 

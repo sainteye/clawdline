@@ -6043,6 +6043,7 @@ final class RemoteServer: @unchecked Sendable {
 
     private func manifest() -> Response {
         let obj: [String: Any] = [
+            "id": "/",
             "name": "Clawdline",
             "short_name": "Clawdline",
             "display": "standalone",

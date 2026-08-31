@@ -81,6 +81,12 @@ try {
         "every module but the entry point is preloaded, not just a few: " + preloads.length);
     assert.ok(index.includes('href="/app/' + stamp + '/js/net/cloud-boot.js"'),
         "including the one that decides this is a cloud console");
+    assert.ok(files.includes("app/" + stamp + "/js/vendor/qr-scanner.min.js"),
+        "the PWA ships its QR decoder instead of sending camera frames to a service");
+    assert.ok(files.includes("app/" + stamp + "/js/vendor/qr-scanner-worker.min.js"),
+        "and its offline decoder worker is in the same immutable bundle");
+    assert.ok(files.includes("app/" + stamp + "/js/vendor/qr-scanner.LICENSE.txt"),
+        "the distributed third-party decoder carries its license");
 
     /* ---- the headers the stamp earns, and the policy it allows ----------- */
 
@@ -103,6 +109,7 @@ try {
     /* ---- the manifest names icons that are actually there ---------------- */
 
     const manifest = JSON.parse(readFileSync(join(first, "manifest.webmanifest"), "utf8"));
+    assert.equal(manifest.id, "/", "reinstalling names the same PWA identity");
     assert.ok(manifest.icons.length > 0, "the manifest ships icons");
     for (const icon of manifest.icons) {
         const name = icon.src.replace(/^\//, "");

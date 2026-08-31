@@ -16,6 +16,7 @@
 import { T } from "../core/i18n.js";
 import { pairViewer, pairViewerFromInvitation } from "../net/cloud-boot.js";
 import { decodePairingInvitation } from "../net/cloud-pairing.js";
+import { scanCloudPairingInvitation } from "../net/cloud-qr-scanner.js";
 import { drawIcon } from "../core/pixels.js";
 
 const INVITATION_STORAGE_KEY = "clawdline.pairing.invitation.v1";
@@ -60,6 +61,28 @@ export function clearCloudPairingInvitation(storage) {
 }
 
 /**
+ * Safari and an installed iOS web app do not share IndexedDB. Stop before Cloud creates a
+ * disposable Safari viewer; the PWA will own login, its signing key, and the account key.
+ */
+export function showCloudInstallGate() {
+    var door = byId("cloud-door");
+    if (!door) return;
+    var mark = byId("cloud-door-mark");
+    if (mark && typeof drawIcon === "function") { try { drawIcon(mark); } catch (e) { /* cosmetic */ } }
+    door.hidden = false;
+    byId("cloud-door-lede").textContent = "Install Clawdline first";
+    byId("cloud-door-guide").textContent = "Safari and a Home Screen app keep separate secure storage. "
+        + "Install first so your end-to-end encryption keys are created in the app you will keep using.";
+    byId("cloud-door-install-steps").hidden = false;
+    ["cloud-door-camera-frame", "cloud-door-scan", "cloud-door-offer-label",
+        "cloud-door-offer", "cloud-door-fingerprint-line", "cloud-door-confirm",
+        "cloud-door-restart"].forEach(function (id) {
+        var element = byId(id); if (element) element.hidden = true;
+    });
+    say("Nothing has been registered yet. Continue from the Home Screen app.", true);
+}
+
+/**
  * Run one pairing, start to finish, with the screen following it.
  *
  * Resolves when this browser holds the account key; rejects only when the person has to be
@@ -80,6 +103,10 @@ export function showCloudPairing(session, options) {
     var lede = byId("cloud-door-lede");
     var guide = byId("cloud-door-guide");
     var mark = byId("cloud-door-mark");
+    var installSteps = byId("cloud-door-install-steps");
+    var scanButton = byId("cloud-door-scan");
+    var cameraFrame = byId("cloud-door-camera-frame");
+    var camera = byId("cloud-door-camera");
     if (!door) return Promise.reject(new Error("the cloud door is not in this page"));
     if (mark && typeof drawIcon === "function") { try { drawIcon(mark); } catch (e) { /* cosmetic */ } }
     door.hidden = false;
@@ -104,13 +131,15 @@ export function showCloudPairing(session, options) {
         });
     }
 
+    var invitation = options.invitation || null;
+
     function showOffer(pending) {
         if (offerField) {
             offerField.value = pending.fragment;
             offerField.setAttribute("aria-label", "Pairing code");
         }
         if (fingerprint) fingerprint.textContent = pending.fingerprint || "";
-        if (options.invitation) {
+        if (invitation) {
             say("QR confirmed. Waiting for the Mac to finish the encrypted key handover…", true);
         } else {
             say(T.webDoorCodeLede, true);
@@ -135,12 +164,12 @@ export function showCloudPairing(session, options) {
             sleep: sleep,
             intervalMs: options.intervalMs || 2000
         };
-        return options.invitation
-            ? pairViewerFromInvitation(session, options.invitation, runOptions)
+        return invitation
+            ? pairViewerFromInvitation(session, invitation, runOptions)
             : pairViewer(session, runOptions);
     }
 
-    if (options.invitation) {
+    function showInvitationCopy() {
         if (lede) lede.textContent = "Finish secure pairing";
         if (guide) guide.textContent = "GitHub confirms this is your Clawdline account. "
             + "The QR confirms this is the Mac in front of you. Both checks are required "
@@ -151,6 +180,24 @@ export function showCloudPairing(session, options) {
         if (fingerprintLine) fingerprintLine.hidden = false;
         if (fingerprintPrefix) fingerprintPrefix.textContent = "This phone's fingerprint is ";
         if (fingerprintSuffix) fingerprintSuffix.textContent = ". The Mac pins it when pairing completes.";
+        if (scanButton) scanButton.hidden = true;
+        if (cameraFrame) cameraFrame.hidden = true;
+    }
+
+    if (installSteps) installSteps.hidden = true;
+    if (invitation) {
+        showInvitationCopy();
+    } else if (options.scan === true) {
+        if (lede) lede.textContent = "Scan the QR on your Mac";
+        if (guide) guide.textContent = "GitHub confirms your Cloud account. The QR confirms the physical Mac in front of you. "
+            + "Clawdline requires both because terminal data is end-to-end encrypted and Cloud never receives the key.";
+        if (offerLabel) offerLabel.hidden = true;
+        if (offerField) offerField.hidden = true;
+        if (confirm) confirm.hidden = true;
+        if (fingerprintLine) fingerprintLine.hidden = true;
+        if (scanButton) scanButton.hidden = false;
+        if (cameraFrame) cameraFrame.hidden = true;
+        say("The QR is decoded only on this phone.", true);
     } else {
         if (offerLabel) offerLabel.hidden = false;
         if (offerField) offerField.hidden = false;
@@ -183,6 +230,31 @@ export function showCloudPairing(session, options) {
             });
         }
         if (restart) restart.hidden = true;
-        round();
+        if (options.scan === true && !invitation) {
+            scanButton.onclick = function () {
+                scanButton.disabled = true;
+                cameraFrame.hidden = false;
+                say("Opening the camera…", true);
+                scanCloudPairingInvitation(camera, {
+                    onInvalid: function (error) {
+                        say(error && error.code === "wrong_pairing_origin"
+                            ? "That QR belongs to another site. Point the camera at Clawdline on your Mac."
+                            : "Keep the Clawdline QR inside the frame.", false);
+                    }
+                }).then(function (scanned) {
+                    invitation = scanned;
+                    scanButton.onclick = null;
+                    scanButton.disabled = false;
+                    showInvitationCopy();
+                    round();
+                }, function () {
+                    cameraFrame.hidden = true;
+                    scanButton.disabled = false;
+                    say("Camera access is required to scan the Mac's one-time QR. Allow it and try again.", false);
+                });
+            };
+        } else {
+            round();
+        }
     });
 }
