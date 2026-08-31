@@ -709,11 +709,16 @@ enum ITerm {
         let assistants: [String: Assistant.Running]
         let error: String?
         let observedAt: Date
+        /// This caller shared an already-admitted refresh rather than starting another process.
+        /// Its map may be prior complete evidence; its timestamp says exactly how old that is.
+        let coalesced: Bool
 
-        init(assistants: [String: Assistant.Running], error: String?, observedAt: Date = Date()) {
+        init(assistants: [String: Assistant.Running], error: String?, observedAt: Date = Date(),
+             coalesced: Bool = false) {
             self.assistants = assistants
             self.error = error
             self.observedAt = observedAt
+            self.coalesced = coalesced
         }
 
         var isComplete: Bool { error == nil }
@@ -734,8 +739,44 @@ enum ITerm {
     static var identityProcessEvidenceForTesting:
         ((Set<String>) -> IdentityProcessEvidence)?
 
-    private static let pidLock = NSLock()
+    private static let pidCondition = NSCondition()
     private static var pidCache: (at: CFAbsoluteTime, scan: AssistantProcessScan)?
+    private static var pidScanInFlight = false
+
+    /// Replaces and briefly delays the one process-list subprocess behind the cached status
+    /// reader. Both seams are bounded values rather than caller code: a test fixture cannot hang
+    /// forever inside the admission flag it is meant to inspect.
+    static var assistantProcessRunForTesting:
+        (out: String, timedOut: Bool, status: Int32?)?
+    static var assistantProcessDelayForTesting: TimeInterval?
+    private static var assistantProcessTestRuns = 0
+
+    static func assistantProcessScanInFlightForTesting() -> Bool {
+        pidCondition.lock(); defer { pidCondition.unlock() }
+        return pidScanInFlight
+    }
+
+    static func assistantProcessRunCountForTesting() -> Int {
+        pidCondition.lock(); defer { pidCondition.unlock() }
+        return assistantProcessTestRuns
+    }
+
+    @discardableResult
+    static func expireAssistantProcessCacheForTesting() -> Bool {
+        pidCondition.lock(); defer { pidCondition.unlock() }
+        guard !pidScanInFlight, let cached = pidCache else { return false }
+        pidCache = (0, cached.scan)
+        return true
+    }
+
+    @discardableResult
+    static func resetAssistantProcessScanForTesting() -> Bool {
+        pidCondition.lock(); defer { pidCondition.unlock() }
+        guard !pidScanInFlight else { return false }
+        pidCache = nil
+        assistantProcessTestRuns = 0
+        return true
+    }
 
     /// Turn one `ps` answer into a confidence-bearing result.
     ///
@@ -781,22 +822,70 @@ enum ITerm {
     /// a single failed `ps` into several authoritative-looking empty scans, which is the failure
     /// mode this confidence bit exists to prevent.
     static func assistantProcessScan() -> AssistantProcessScan {
-        pidLock.lock()
+        pidCondition.lock()
         if let c = pidCache, CFAbsoluteTimeGetCurrent() - c.at < 2 {
-            defer { pidLock.unlock() }
+            defer { pidCondition.unlock() }
             return c.scan
         }
-        pidLock.unlock()
+        if pidScanInFlight {
+            // Status readers prefer old, real evidence to an authoritative-looking empty map.
+            // Keep it explicitly incomplete and carry the original observation time so a
+            // publication cannot silently call it fresh.
+            if let cached = pidCache {
+                pidCondition.unlock()
+                return AssistantProcessScan(
+                    assistants: cached.scan.assistants,
+                    error: "assistant process scan already in flight; using prior complete evidence",
+                    observedAt: cached.scan.observedAt, coalesced: true)
+            }
+            // A synchronous main-queue reader may never wait for the background inventory it
+            // collided with. Background callers at cold start share that admitted work instead
+            // of manufacturing a second `ps`; the production subprocess has its own hard bound.
+            guard !Thread.isMainThread else {
+                pidCondition.unlock()
+                return AssistantProcessScan(
+                    assistants: [:], error: "assistant process scan already in flight",
+                    coalesced: true)
+            }
+            let deadline = Date().addingTimeInterval(18)
+            while pidScanInFlight && pidCache == nil {
+                guard pidCondition.wait(until: deadline) else { break }
+            }
+            if let cached = pidCache {
+                pidCondition.unlock()
+                return cached.scan
+            }
+            let error = pidScanInFlight
+                ? "assistant process scan coalesced wait timed out"
+                : "assistant process scan produced no complete evidence"
+            pidCondition.unlock()
+            return AssistantProcessScan(
+                assistants: [:], error: error, coalesced: true)
+        }
+        pidScanInFlight = true
+        let testingRun = assistantProcessRunForTesting
+        let testingDelay = assistantProcessDelayForTesting.map { min(max($0, 0), 1) }
+        if testingRun != nil { assistantProcessTestRuns += 1 }
+        pidCondition.unlock()
 
+        var completedScan: AssistantProcessScan?
+        defer {
+            pidCondition.lock()
+            if let completedScan, completedScan.isComplete {
+                pidCache = (CFAbsoluteTimeGetCurrent(), completedScan)
+            }
+            pidScanInFlight = false
+            pidCondition.broadcast()
+            pidCondition.unlock()
+        }
+
+        if let testingDelay { Thread.sleep(forTimeInterval: testingDelay) }
         let observedAt = Date()
-        let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,lstart=,command="])
+        let run = testingRun
+            ?? shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,lstart=,command="])
         let scan = parseAssistantProcessScan(run.out, timedOut: run.timedOut,
                                              exitStatus: run.status, observedAt: observedAt)
-        if scan.isComplete {
-            pidLock.lock()
-            pidCache = (CFAbsoluteTimeGetCurrent(), scan)
-            pidLock.unlock()
-        }
+        completedScan = scan
         return scan
     }
 
@@ -1014,7 +1103,9 @@ enum ITerm {
 
         if !processScan.isComplete {
             snap.isComplete = false
-            snap.error = processScan.error
+            // Coalescing is expected backpressure, not a terminal warning for the person using
+            // the panel. The incomplete bit still prevents this inventory claiming freshness.
+            if !processScan.coalesced { snap.error = processScan.error }
         }
         if stoppedTerminalContradictsProcesses(appRunning: listed["appRunning"] as? Bool,
                                                processScan: processScan) {

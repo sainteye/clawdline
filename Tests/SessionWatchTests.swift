@@ -360,6 +360,68 @@ group("one published Session inventory owns process evidence and bounded subproc
     expect("process evidence keeps the instant before the terminal walk",
            stampedScan.observedAt, processStamp)
 
+    // Hold one ps boundary open, then ask again on this thread. A cache lock that is released
+    // before launch admits both callers; real backpressure returns an incomplete observation
+    // immediately and leaves the first caller as the only subprocess owner.
+    let processScanFixtureWasIdle = ITerm.resetAssistantProcessScanForTesting()
+    let firstProcessScanFinished = DispatchSemaphore(value: 0)
+    ITerm.assistantProcessRunForTesting = ("ttys006 101 1 claude", false, 0)
+    ITerm.assistantProcessDelayForTesting = 0.25
+    let processScanFixtureQueue = DispatchQueue(label: "process-scan-single-flight-fixture")
+    processScanFixtureQueue.async {
+        _ = ITerm.assistantProcessScan()
+        firstProcessScanFinished.signal()
+    }
+    let firstAdmissionDeadline = Date().addingTimeInterval(2)
+    while !ITerm.assistantProcessScanInFlightForTesting() && Date() < firstAdmissionDeadline {
+        Thread.sleep(forTimeInterval: 0.002)
+    }
+    let firstProcessScanStarted = ITerm.assistantProcessScanInFlightForTesting()
+    check("the assistant process scan fixture starts from an idle admitted boundary",
+          processScanFixtureWasIdle && firstProcessScanStarted)
+    let coalescedProcessScan = firstProcessScanStarted
+        ? ITerm.assistantProcessScan()
+        : ITerm.AssistantProcessScan(assistants: [:], error: "fixture was not admitted")
+    let admittedProcessScans = ITerm.assistantProcessRunCountForTesting()
+    check("concurrent assistant process refreshes admit one subprocess and fail closed without waiting",
+          admittedProcessScans == 1 && !coalescedProcessScan.isComplete
+            && coalescedProcessScan.error?.contains("already in flight") == true,
+          "calls=\(admittedProcessScans), error=\(coalescedProcessScan.error ?? "nil")")
+    let firstProcessScanCompleted = firstProcessScanFinished.wait(timeout: .now() + 2) == .success
+
+    let staleBoundaryReady = firstProcessScanCompleted
+        && ITerm.expireAssistantProcessCacheForTesting()
+    let refreshProcessScanFinished = DispatchSemaphore(value: 0)
+    ITerm.assistantProcessRunForTesting = ("ttys006 202 1 claude", false, 0)
+    processScanFixtureQueue.async {
+        _ = ITerm.assistantProcessScan()
+        refreshProcessScanFinished.signal()
+    }
+    let refreshAdmissionDeadline = Date().addingTimeInterval(2)
+    while !ITerm.assistantProcessScanInFlightForTesting() && Date() < refreshAdmissionDeadline {
+        Thread.sleep(forTimeInterval: 0.002)
+    }
+    let refreshProcessScanStarted = ITerm.assistantProcessScanInFlightForTesting()
+    let staleProcessScan = refreshProcessScanStarted
+        ? ITerm.assistantProcessScan()
+        : ITerm.AssistantProcessScan(assistants: [:], error: "refresh fixture was not admitted")
+    check("a coalesced refresh keeps prior process evidence but cannot claim it is fresh",
+          staleBoundaryReady && refreshProcessScanStarted
+            && ITerm.assistantProcessRunCountForTesting() == 2
+            && staleProcessScan.assistants["ttys006"]?.pid == 101
+            && !staleProcessScan.isComplete && staleProcessScan.coalesced
+            && staleProcessScan.error?.contains("already in flight") == true,
+          "ready=\(staleBoundaryReady), started=\(refreshProcessScanStarted), "
+            + "calls=\(ITerm.assistantProcessRunCountForTesting()), "
+            + "pid=\(staleProcessScan.assistants["ttys006"].map { String($0.pid) } ?? "nil"), "
+            + "error=\(staleProcessScan.error ?? "nil")")
+    let refreshProcessScanCompleted = refreshProcessScanFinished.wait(timeout: .now() + 2) == .success
+    ITerm.assistantProcessRunForTesting = nil
+    ITerm.assistantProcessDelayForTesting = nil
+    check("completed single-flight process scans return to an idle cache boundary",
+          firstProcessScanCompleted && refreshProcessScanCompleted
+            && ITerm.resetAssistantProcessScanForTesting())
+
     // Partial output, non-zero exit and a TERM-resistant timeout take different exits through
     // the same cleanup. Sequential repetitions make the expected high-water mark exactly one
     // process/four parent pipe handles; any accumulation changes the counters deterministically.
