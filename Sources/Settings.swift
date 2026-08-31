@@ -225,7 +225,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// two paragraphs — sitting in a field of nothing. The width stays put so the window does not
     /// appear to breathe sideways as you move along the strip; only the bottom edge moves, and the
     /// title bar stays where the hand that is about to reach for it last saw it.
-    private func showPane(_ index: Int) {
+    private func showPane(_ index: Int, restoringScrollY: CGFloat? = nil) {
         guard let root, panes.indices.contains(index) else { return }
         current = index
         strip?.current = index
@@ -266,6 +266,17 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         next.origin.y += next.height - sized.height
         next.size = sized.size
         w.setFrame(next, display: true)
+
+        // Rebuilding the document view is how live, self-sizing controls become honest, but
+        // AppKit resets a newly assigned document to its origin. A Cloud login status change or a
+        // schedule refresh must not throw somebody back to the first row they already read.
+        if let restoringScrollY, let scroll {
+            let y = Self.restoredScrollY(previous: restoringScrollY,
+                                         document: paneHeight,
+                                         viewport: fit.viewport)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
     }
 
     /// How tall the window ends up, and how much of that the scroller gets to show.
@@ -278,6 +289,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                            chrome: CGFloat) -> (height: CGFloat, viewport: CGFloat) {
         let height = min(natural, ceiling)
         return (height, max(height - chrome, 0))
+    }
+
+    /// The reading position that survives a live relayout.
+    ///
+    /// Content can shrink while a status card changes sentence, so restoring the old value
+    /// verbatim could leave the clip view beyond the document. Keep the same row when it still
+    /// exists and land on the new bottom when it does not.
+    static func restoredScrollY(previous: CGFloat, document: CGFloat,
+                                viewport: CGFloat) -> CGFloat {
+        min(max(previous, 0), max(document - viewport, 0))
     }
 
     /// The tallest the content is allowed to get: what the screen leaves once the window's own
@@ -357,7 +378,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     // MARK: - The tabs
     //
-    // Five, cut from the six sections the scrolling form had. Three changes, all of them from
+    // Six, cut from the sections the scrolling form had. Four changes, all of them from
     // reading what is actually in those sections:
     //
     // - **"The bar" and "Reading" share a tab.** They were never two subjects. The reading pane is
@@ -370,9 +391,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     //   make that choice. `send_images_as_paste` still works in the file.
     // - **The hooks tab gained `on_state_change`**, as a statement rather than a control. See
     //   ``hooksPane()``.
+    // - **Dispatch and schedules have their own tab.** They operate work rather than connect a
+    //   device, and their changing inventories no longer move the Cloud login controls while a
+    //   person is trying to finish a device code.
 
     private func makePanes() -> [SettingsPane] {
-        [generalPane(), barPane(), dictationPane(), remotePane(), hooksPane()]
+        [generalPane(), barPane(), dictationPane(), remotePane(), orchestratorPane(), hooksPane()]
     }
 
     private func generalPane() -> SettingsPane {
@@ -523,29 +547,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         tunnelCard = card
         pane.right.block(label: nil, view: card, hint: nil)
 
-        // On this tab rather than in General because it gates the same thing the rest of the tab
-        // gates: something that is not the person at the keyboard getting a session started on
-        // this Mac. See Sources/Orchestrator.swift.
-        pane.right.head(L.t.settingsOrchestrator)
-        pane.right.row(L.t.settingsOrchestratorEnabled,
-                       switchFor({ Config.shared.orchestratorEnabled },
-                                 { Config.shared.orchestratorEnabled = $0 }),
-                       hint: L.t.settingsOrchestratorEnabledHint)
-        pane.right.row(L.t.settingsOrchestratorMax, childrenPopUp(),
-                       hint: L.t.settingsOrchestratorMaxHint)
-        pane.right.row(L.t.settingsOrchestratorPermission, permissionPopUp(),
-                       hint: L.t.settingsOrchestratorPermissionHint)
-        pane.right.row(L.t.settingsOrchestratorNotify,
-                       switchFor({ Config.shared.orchestratorNotifyRoot },
-                                 { Config.shared.orchestratorNotifyRoot = $0 }),
-                       hint: L.t.settingsOrchestratorNotifyHint)
-        pane.right.row(L.t.settingsOrchestratorClose, lingerPopUp(),
-                       hint: L.t.settingsOrchestratorCloseHint)
-        pane.right.block(label: L.t.settingsOrchestratorPolicy, view: policyControl(),
-                         hint: L.t.settingsOrchestratorPolicyHint)
-        pane.right.mono(Orchestrator.policyURL.path
-            .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-
         let cloud = CloudSettingsControl(model: cloudSettings)
         cloud.onResize = { [weak self] in self?.relayoutCurrent() }
         cloudSettingsControl = cloud
@@ -553,6 +554,34 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                         hint: "Connect this Mac with GitHub to use Clawdline Cloud. The browser opens only after you confirm the one-time code.")
         pane.wide.block(label: L.t.settingsRemoteDevices, view: devicesControl(),
                         hint: L.t.settingsRemotePhoneHint)
+        return pane
+    }
+
+    /// Work launched away from the current keyboard: delegation on the left, recurring work on
+    /// the right. These used to share Remote with account and device pairing, so an inventory
+    /// refresh changed the height underneath the one-time login flow.
+    private func orchestratorPane() -> SettingsPane {
+        let pane = SettingsPane(title: L.t.settingsOrchestrator)
+
+        pane.left.row(L.t.settingsOrchestratorEnabled,
+                      switchFor({ Config.shared.orchestratorEnabled },
+                                { Config.shared.orchestratorEnabled = $0 }),
+                      hint: L.t.settingsOrchestratorEnabledHint)
+        pane.left.row(L.t.settingsOrchestratorMax, childrenPopUp(),
+                      hint: L.t.settingsOrchestratorMaxHint)
+        pane.left.row(L.t.settingsOrchestratorPermission, permissionPopUp(),
+                      hint: L.t.settingsOrchestratorPermissionHint)
+        pane.left.row(L.t.settingsOrchestratorNotify,
+                      switchFor({ Config.shared.orchestratorNotifyRoot },
+                                { Config.shared.orchestratorNotifyRoot = $0 }),
+                      hint: L.t.settingsOrchestratorNotifyHint)
+        pane.left.row(L.t.settingsOrchestratorClose, lingerPopUp(),
+                      hint: L.t.settingsOrchestratorCloseHint)
+        pane.left.block(label: L.t.settingsOrchestratorPolicy, view: policyControl(),
+                        hint: L.t.settingsOrchestratorPolicyHint)
+        pane.left.mono(Orchestrator.policyURL.path
+            .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+
         pane.right.block(label: L.t.settingsSchedules, view: scheduleControl(),
                          hint: Orchestrator.scheduleDirectory.path
                             .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
@@ -710,7 +739,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// reading actually moved: re-laying out on every tick would resize the window under the
     /// pointer once a second for no reason.
     private func relayoutCurrent() {
-        showPane(current)
+        let previous = scroll?.documentVisibleRect.minY
+        showPane(current, restoringScrollY: previous)
     }
 
     // MARK: - Where the hotkey fires

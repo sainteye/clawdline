@@ -401,6 +401,13 @@ group("a settings tab taller than the screen is capped, and the overflow goes to
     let squeezed = SettingsWindow.contentFit(natural: 2000, ceiling: 60, chrome: chrome)
     check("a ceiling below the chrome itself never asks for a negative viewport",
           squeezed.viewport == 0, "got \(squeezed.viewport)")
+
+    check("a live settings relayout keeps the reader at the same row",
+          SettingsWindow.restoredScrollY(previous: 420, document: 1200, viewport: 600) == 420)
+    check("a shrinking settings pane clamps the old position to its new bottom",
+          SettingsWindow.restoredScrollY(previous: 700, document: 850, viewport: 600) == 250)
+    check("a settings relayout never restores a negative scroll position",
+          SettingsWindow.restoredScrollY(previous: -20, document: 850, viewport: 600) == 0)
 }
 
 group("the ledger reads every usage spelling and decides the shape by arithmetic") {

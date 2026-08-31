@@ -13,7 +13,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # schedule-title, Feature-status and Claude-only spending correction adds 3.
 # The exact candidate-tree run remains authoritative and must update this guard if its observed
 # final count differs.
-expected_swift_receipt='7068 checks passed'
+expected_swift_receipt='7071 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
