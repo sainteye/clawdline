@@ -379,8 +379,10 @@ export var LocalClient = {
     /** The REST half of the interface; start()/events() owns the SSE half. */
     sessions: function () { return jsonFetch("/v1/sessions"); },
 
-    transcript: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/transcript?limit=200");
+    transcript: function (id, phases, demand) {
+        var priority = demand && demand.foreground ? "&priority=foreground" : "";
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) +
+                         "/transcript?limit=200" + priority, undefined, phases);
     },
 
     /// Every task the app knows about — what a session dispatched, and which session got it.
@@ -517,6 +519,13 @@ export var LocalClient = {
     /// transcript that can be fifty megabytes; the client gives the answer a short-lived cache.
     info: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/info");
+    },
+
+    // Transcript-derived status facts only. Git, links/deploy and iTerm permission remain on
+    // the complete `/info` request made by an explicit card open.
+    infoSummary: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) +
+                         "/info?parts=summary");
     },
 
     places: function () { return jsonFetch("/v1/places"); },

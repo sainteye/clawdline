@@ -81,12 +81,15 @@ assert.deepEqual(ordering, [{ id: "same", entries: [duplicate] }],
 const reads = [];
 const accepts = [];
 const deferred = [];
+const postPaint = [];
 function fetchTranscript(id) {
     reads.push(id);
     return new Promise(function (resolve, reject) { deferred.push({ resolve, reject }); });
 }
 const request = createTranscriptRequests(fetchTranscript, function (id, ticket, outcome) {
     accepts.push({ id, ticket, outcome });
+}, {
+    afterPaint: function (work) { postPaint.push(work); }
 });
 
 const calls = [];
@@ -100,14 +103,18 @@ assert.equal(accepts.length, 0, "the superseded active result never paints");
 const newestCall = request("A", 21);
 deferred[1].resolve({ entries: [{ text: "new" }], signature: "new" });
 await new Promise(function (resolve) { setImmediate(resolve); });
-assert.equal(reads.length, 3,
-    "a revision during the trailing read schedules one final newest GET");
-assert.equal(accepts.length, 0, "the trailing result cannot paint bytes from before the revision");
+assert.equal(reads.length, 2,
+    "a revision during the trailing read cannot immediately extend the network burst");
+assert.equal(accepts.length, 1, "the trailing readable result paints instead of waiting for quiet");
+assert.equal(postPaint.length, 1, "one newest refresh waits behind that paint");
+postPaint[0]();
+assert.equal(reads.length, 3, "the newest GET begins after the paint boundary");
 deferred[2].resolve({ entries: [{ text: "newest" }], signature: "newest" });
 await Promise.all(calls.concat(newestCall));
-assert.equal(accepts.length, 1, "only the newest coalesced result settles the transcript");
-assert.equal(accepts[0].ticket, 21, "the final result belongs to the newest ticket");
-assert.equal(accepts[0].outcome.value.signature, "newest", "the newest result is the one painted");
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.equal(accepts.length, 2, "the post-paint refresh settles the newest coalesced result");
+assert.equal(accepts[1].ticket, 21, "the final result belongs to the newest ticket");
+assert.equal(accepts[1].outcome.value.signature, "newest", "the newest result is eventually painted");
 
 const failures = [];
 const failDeferred = [];

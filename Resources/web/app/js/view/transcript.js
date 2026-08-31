@@ -18,10 +18,15 @@ import { ShellPanel } from "../input/shell-panel.js";
 import {
     connectArtifactTile, createImageLightbox, reconcileArtifactTiles
 } from "./transcript-images.js";
+import {
+    planTranscriptRenderChunks, scheduleTranscriptRender
+} from "../session/transcript-requests.js";
 
 /* ---- the transcript ------------------------------------------------------ */
 
 var artifactRenderQueue = [];
+var transcriptRenderTicket = 0;
+var paintTicket = 0;
 var imageLightbox = createImageLightbox(
     els["image-lightbox"], els["image-lightbox-image"],
     els["image-lightbox-close"], document);
@@ -100,6 +105,9 @@ export function renderDetailHead() {
 
 export function renderTranscript() {
     var box = els.tx;
+    // Every invocation, including a skeleton or empty state, cancels incremental work belonging
+    // to the previously open session before that work can append another chunk.
+    var renderTicket = ++transcriptRenderTicket;
     Diagnostics.note("transcript.render", {
         open: !!S.openId, agent: !!S.agent, loading: !!(S.agent || S.tx).loading,
         entries: ((S.agent || S.tx).entries || []).length,
@@ -136,6 +144,7 @@ export function renderTranscript() {
     if (!S.agent) viewEntries = viewEntries.concat(Optimistic.entries(S.openId));
     if (view.error && !viewEntries.length) {
         box.innerHTML = '<div class="tx-note err">' + esc(view.error) + "</div>";
+        announceMeaningfulPaint(renderTicket, 0, false);
         return;
     }
     var transcriptNotice = view.error
@@ -151,6 +160,7 @@ export function renderTranscript() {
         // An agent with nothing in its file is not the same absence as a session with nothing in
         // its file, and it is common: the first second of every agent's life looks like this.
         box.innerHTML = '<div class="tx-note">' + esc(S.agent ? T.agentEmpty : T.noOutput) + "</div>";
+        announceMeaningfulPaint(renderTicket, 0, false);
         return;
     }
 
@@ -163,7 +173,9 @@ export function renderTranscript() {
     var liveAt = -1;
     var i = 0;
     while (i < entries.length) {
-        if (entries[i].role !== "tool") { blocks.push(entryHTML(entries[i])); i += 1; continue; }
+        if (entries[i].role !== "tool") {
+            blocks.push({ kind: "entry", rows: [entries[i]] }); i += 1; continue;
+        }
         // Read/search commands are useful as a summary and noisy as a transcript. Keep adjacent
         // Explored items in the same compact run, just as ordinary shell calls were displayed
         // before structured activity detail existed. Opening the pill still reveals every card.
@@ -175,25 +187,27 @@ export function renderTranscript() {
                 if (!nextActivity || nextActivity.kind !== "explored") break;
                 exploredRun.push(entries[i]); i += 1;
             }
-            blocks.push(exploredRunHTML(exploredRun));
+            blocks.push({ kind: "explored", rows: exploredRun });
             continue;
         }
         // Codex has already given this item a lossless patch. It is authored output worth
         // reading, not machinery to bury inside the surrounding shell/tool run.
         if (fileChangesOf(entries[i]) || planOf(entries[i]) || activityOf(entries[i])) {
-            blocks.push(entryHTML(entries[i])); i += 1; continue;
+            blocks.push({ kind: "entry", rows: [entries[i]] }); i += 1; continue;
         }
         // A question is its own block and breaks the run around it. Everything else a tool does
         // is machinery that folds away; this one is a sentence somebody was asked, and it is the
         // only thing in the pane that was ever addressed to the reader.
-        if (askOf(entries[i])) { blocks.push(askHTML(entries[i])); i += 1; continue; }
+        if (askOf(entries[i])) {
+            blocks.push({ kind: "ask", rows: [entries[i]] }); i += 1; continue;
+        }
         var run = [];
         while (i < entries.length && entries[i].role === "tool" && !askOf(entries[i]) &&
                !fileChangesOf(entries[i]) && !planOf(entries[i]) && !activityOf(entries[i])) {
             run.push(entries[i]); i += 1;
         }
         liveRun = run; liveAt = blocks.length;
-        blocks.push(runHTML(run));
+        blocks.push({ kind: "run", rows: run, live: false });
     }
     // The run at the end of a session that is still working is the one happening right now: its
     // count is still climbing and the call at the end of it has not come back yet. Drawn a
@@ -201,19 +215,82 @@ export function renderTranscript() {
     // the work that is moving. It has to be the *last* block — a run with an answer written
     // under it is finished, whatever the session is doing now.
     if (liveRun && liveAt === blocks.length - 1 && transcriptWorking()) {
-        blocks[liveAt] = runHTML(liveRun, true);
+        blocks[liveAt].live = true;
     }
     if (S.newestFirst) blocks.reverse();
-    replaceTranscriptContents(box, transcriptNotice + blocks.join(""));
-    var pending = box.querySelectorAll(".entry.pending canvas.spin");
-    for (var p = 0; p < pending.length; p++) {
-        drawSpinner(pending[p], spinPhase);
-        optimisticSpinners.push(pending[p]);
+
+    function renderBlock(block) {
+        if (block.kind === "run") return runHTML(block.rows, block.live);
+        if (block.kind === "explored") return exploredRunHTML(block.rows);
+        if (block.kind === "ask") return askHTML(block.rows[0]);
+        return entryHTML(block.rows[0]);
     }
+    function blockBytes(block) {
+        return block.rows.reduce(function (total, row) {
+            var bytes = String((row && row.text) || "").length;
+            if (row && row.fileChanges) bytes += JSON.stringify(row.fileChanges).length;
+            if (row && row.activity) bytes += JSON.stringify(row.activity).length;
+            return total + bytes;
+        }, 0);
+    }
+    function activateSpinners(root) {
+        var pending = root.querySelectorAll(".entry.pending canvas.spin");
+        for (var p = 0; p < pending.length; p++) {
+            drawSpinner(pending[p], spinPhase);
+            optimisticSpinners.push(pending[p]);
+        }
+    }
+    var chunks = planTranscriptRenderChunks(blocks, blockBytes,
+        { byteBudget: 128 * 1024, itemBudget: 12 });
+    var sourceBytes = blocks.reduce(function (n, block) { return n + blockBytes(block); }, 0);
+    var chunked = sourceBytes > 512 * 1024 && chunks.length > 1;
+    scheduleTranscriptRender({
+        chunks: chunked ? chunks : [blocks],
+        newestFirst: !!S.newestFirst,
+        entryCount: entries.length,
+        isCurrent: function () { return renderTicket === transcriptRenderTicket; },
+        insert: function (chunk, placement) {
+            var html = chunk.map(renderBlock).join("");
+            var result;
+            if (placement.first) {
+                // Image connectors remain inert until the scheduler's meaningful-paint boundary.
+                result = replaceTranscriptContents(box, transcriptNotice + html);
+            } else result = insertTranscriptContents(box, html, placement.prepend);
+            activateSpinners(box);
+            result.entries = chunk.reduce(function (n, block) {
+                return n + block.rows.length;
+            }, 0);
+            return result;
+        },
+        hydrate: hydrateArtifactImages,
+        adjustScroll: function (heightDelta) {
+            els["tx-scroll"].scrollTop += heightDelta;
+        },
+        note: function (name, data) { Diagnostics.note("transcript." + name, data); },
+        meaningful: function () {
+            document.dispatchEvent(new CustomEvent("clawdline:meaningful-transcript-paint"));
+        },
+        complete: function () {
+            document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+        }
+    });
     // Said out loud so the keyboard-bar guard above can put the new buttons back out of the tab
     // order. A custom event rather than a direct call: this function is the transcript's, and
     // what somebody else needs to do afterwards is their business, not a line in here.
     document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+}
+
+function announceMeaningfulPaint(renderTicket, entryCount, chunked) {
+    var mine = ++paintTicket;
+    var schedule = typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame : function (work) { setTimeout(work, 0); };
+    schedule(function () { schedule(function () {
+        if (mine !== paintTicket || renderTicket !== transcriptRenderTicket) return;
+        Diagnostics.note("transcript.meaningful-paint", {
+            entries: entryCount, chunked: chunked, deferredImages: 0
+        });
+        document.dispatchEvent(new CustomEvent("clawdline:meaningful-transcript-paint"));
+    }); });
 }
 
 /**
@@ -863,9 +940,24 @@ function replaceTranscriptContents(box, html) {
     );
     // Only fresh tiles acquire a live role, text, listeners or src. An unchanged tile is
     // deliberately absent here, so its request and announcement state stay untouched.
-    hydrateArtifactImages(reconciliation.fresh);
     oldChildren.forEach(function (child) { child.remove(); });
     reconciliation.restoreFocus();
+    return { images: reconciliation.fresh, heightDelta: 0 };
+}
+
+/** Add one independently parsed large-transcript chunk without rebuilding rows already painted. */
+function insertTranscriptContents(box, html, prepend) {
+    var beforeHeight = prepend ? box.scrollHeight : 0;
+    var template = document.createElement("template");
+    template.innerHTML = html;
+    var tiles = Array.from(template.content.querySelectorAll("[data-artifact-slot]"));
+    // Keep a held-read error above the conversation while older chunks fill in underneath it.
+    if (prepend) box.insertBefore(template.content, box.querySelector(".entry"));
+    else box.appendChild(template.content);
+    return {
+        images: tiles,
+        heightDelta: prepend ? Math.max(0, box.scrollHeight - beforeHeight) : 0
+    };
 }
 
 /**

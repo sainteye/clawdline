@@ -165,6 +165,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the slow-reading gate agrees with dispatch",
     "the usage analytics gate accepts both documented read credentials",
     "usage analytics saturation is isolated from ordinary remote readings",
+    "transcript backpressure is typed and independent",
     "the slow-reading depth is paired on every exit",
     "terminal writes cannot hold the remote server queue",
     "key and end terminal mutations leave health and SSE turns responsive",

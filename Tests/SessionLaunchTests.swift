@@ -36,6 +36,7 @@ func remoteErrorMessage(_ response: RemoteServer.Response) -> String {
 func runSessionLaunchTests() {
 group("the expensive remote reads take exactly one bounded side door") {
     func slow(_ path: String) -> Bool { RemoteServer.isSlowReading(path) }
+    func transcript(_ path: String) -> Bool { RemoteServer.isTranscriptReading(path) }
     func limited(_ path: String) -> Bool { RemoteServer.isLimitedSlowReading(path) }
 
     check("the places list leaves the shared server queue", slow("/v1/places"))
@@ -46,7 +47,10 @@ group("the expensive remote reads take exactly one bounded side door") {
             && RemoteServer.isUsageAnalyticsReading("/v1/orchestrator/usage/analytics.csv")
             && RemoteServer.isUsageAnalyticsReading("/v1/orchestrator/usage/analytics.json"))
     check("session info leaves it", slow("/v1/sessions/ABC/info"))
-    check("the session transcript leaves it", slow("/v1/sessions/ABC/transcript"))
+    check("the session transcript has its own side door",
+          transcript("/v1/sessions/ABC/transcript"))
+    check("the session transcript cannot queue behind info or places",
+          !slow("/v1/sessions/ABC/transcript"))
     check("an encoded session id is still one segment", slow("/v1/sessions/A%2FB/info"))
 
     check("a places subroute is not selected", !slow("/v1/places/anything"))
@@ -60,9 +64,13 @@ group("the expensive remote reads take exactly one bounded side door") {
 
     check("places consumes the shared depth", limited("/v1/places"))
     check("info consumes it", limited("/v1/sessions/ABC/info"))
-    check("transcript deliberately does not",
+    check("transcript is outside the deferred-reader admission budget",
           !limited("/v1/sessions/ABC/transcript"))
     check("nor does an unrelated path", !limited("/v1/health"))
+    check("the status summary independently defers screen, Git and links",
+          !RemoteServer.infoIncludesDeferredComponents(["parts": "summary"]))
+    check("legacy info keeps every deferred component",
+          RemoteServer.infoIncludesDeferredComponents([:]))
 }
 
 group("the slow-reading gate agrees with dispatch") {
@@ -106,6 +114,160 @@ group("usage analytics saturation is isolated from ordinary remote readings") {
     ordinary.finish("/v1/sessions/ABC/info")
     for _ in 0..<RemoteServer.usageAnalyticsDepth { analytics.finish() }
     expect("both independent budgets drain to zero", [analytics.count, ordinary.count], [0, 0])
+}
+
+group("transcript backpressure is typed and independent") {
+    var transcript = TranscriptReadCoordinator.Limiter()
+    check("one quiet refresh enters the background share",
+          transcript.admit(foreground: false,
+                           depth: TranscriptReadCoordinator.depth,
+                           backgroundDepth: TranscriptReadCoordinator.backgroundDepth))
+    check("a second quiet refresh cannot spend the first-open reserve",
+          !transcript.admit(foreground: false,
+                            depth: TranscriptReadCoordinator.depth,
+                            backgroundDepth: TranscriptReadCoordinator.backgroundDepth))
+    check("a foreground first-open is admitted behind that background read",
+          transcript.admit(foreground: true,
+                           depth: TranscriptReadCoordinator.depth,
+                           backgroundDepth: TranscriptReadCoordinator.backgroundDepth))
+    check("active plus trailing remains the hard global bound",
+          !transcript.admit(foreground: true,
+                            depth: TranscriptReadCoordinator.depth,
+                            backgroundDepth: TranscriptReadCoordinator.backgroundDepth))
+    let busy = RemoteServer.transcriptBusyResponse(retryDebt: transcript.count)
+    check("saturation is typed and carries a truthful one-second retry receipt",
+          busy.status == 429 && remoteErrorCode(busy) == "transcript_busy"
+            && busy.headers["Retry-After"] == "1")
+    transcript.finish(foreground: false)
+    transcript.finish(foreground: true)
+    expect("both transcript admission counters drain",
+           [transcript.count, transcript.backgroundCount], [0, 0])
+
+    let reader = RemoteAuth.addDevice(name: "transcript worker test", caps: [.read])
+    defer {
+        RemoteAuth.revoke(id: reader.id)
+        RemoteServer.shared.configureTranscriptReadForTesting(executor: nil, route: nil)
+    }
+    func request(_ suffix: String = "?priority=foreground") -> RemoteServer.Request {
+        remoteRequest("GET", "/v1/sessions/WORKER/transcript\(suffix)",
+                      headers: ["Authorization": "Bearer \(reader.token)"])
+    }
+    func outstanding() -> [Int] {
+        let ready = DispatchSemaphore(value: 0)
+        var result = [-1, -1]
+        RemoteServer.shared.transcriptOutstandingForTesting { total, background in
+            result = [total, background]; ready.signal()
+        }
+        _ = ready.wait(timeout: .now() + 1)
+        return result
+    }
+
+    // The same binary becomes the recorded wrong-queue mutation when this environment flag is
+    // set. Production uses the transcript queue; running work inline occupies the server queue
+    // and must make the health/heartbeat checks below red.
+    let wrongQueue = ProcessInfo.processInfo.environment[
+        "CLAWDLINE_TRANSCRIPT_TEST_MUTATION"] == "wrong-queue"
+    let workerEntered = DispatchSemaphore(value: 0)
+    let workerRelease = DispatchSemaphore(value: 0)
+    let workerFinished = DispatchSemaphore(value: 0)
+    RemoteServer.shared.configureTranscriptReadForTesting(
+        executor: wrongQueue ? { work in work() } : nil,
+        route: { _ in
+            workerEntered.signal()
+            _ = workerRelease.wait(timeout: .now() + 4)
+            return .json(["ok": true])
+        })
+    RemoteServer.shared.transcriptReadForTesting(request()) { _ in workerFinished.signal() }
+    check("the injectable production transcript worker starts",
+          workerEntered.wait(timeout: .now() + 1) == .success)
+    let health = DispatchSemaphore(value: 0)
+    let heartbeat = DispatchSemaphore(value: 0)
+    RemoteServer.shared.routeOnServerQueueForTesting(remoteRequest("GET", "/v1/health")) {
+        if $0.status == 200 { health.signal() }
+    }
+    RemoteServer.shared.heartbeatTurnForTesting { heartbeat.signal() }
+    check("health turns remain responsive while transcript parsing is blocked",
+          health.wait(timeout: .now() + 1) == .success)
+    check("SSE heartbeat turns remain responsive while transcript parsing is blocked",
+          heartbeat.wait(timeout: .now() + 1) == .success)
+    workerRelease.signal()
+    check("the blocked transcript worker completes through the shared seam",
+          workerFinished.wait(timeout: .now() + 1) == .success)
+
+    RemoteServer.shared.configureTranscriptReadForTesting(
+        executor: nil, route: { _ in .json(["ok": true]) })
+    let success = DispatchSemaphore(value: 0)
+    var successStatus = 0
+    RemoteServer.shared.transcriptReadForTesting(request()) {
+        successStatus = $0.status; success.signal()
+    }
+    check("a successful worker answer is delivered",
+          success.wait(timeout: .now() + 1) == .success && successStatus == 200)
+    expect("success drains before delivery", outstanding(), [0, 0])
+
+    RemoteServer.shared.configureTranscriptReadForTesting(
+        executor: nil,
+        route: { _ in .error(500, "transcript_fixture_error", "fixture") })
+    let errored = DispatchSemaphore(value: 0)
+    var errorCode = ""
+    RemoteServer.shared.transcriptReadForTesting(request()) {
+        errorCode = remoteErrorCode($0); errored.signal()
+    }
+    check("a typed worker error is delivered",
+          errored.wait(timeout: .now() + 1) == .success
+            && errorCode == "transcript_fixture_error")
+    expect("typed error drains before delivery", outstanding(), [0, 0])
+
+    RemoteServer.shared.configureTranscriptReadForTesting(
+        executor: nil, route: { _ in .json(["ok": true]) })
+    let interrupted = DispatchSemaphore(value: 0)
+    RemoteServer.shared.transcriptReadForTesting(request()) { _ in
+        // Deliberately do no send-equivalent work: a cancelled NWConnection changes delivery,
+        // not worker completion or accounting.
+        interrupted.signal()
+    }
+    check("an ignored-send completion is still reached",
+          interrupted.wait(timeout: .now() + 1) == .success)
+    expect("interrupted-send-equivalent drains before delivery", outstanding(), [0, 0])
+
+    let queueEntered = DispatchSemaphore(value: 0)
+    let queueRelease = DispatchSemaphore(value: 0)
+    let queueFinished = DispatchSemaphore(value: 0)
+    RemoteServer.shared.configureTranscriptReadForTesting(
+        executor: nil,
+        route: { _ in
+            queueEntered.signal()
+            _ = queueRelease.wait(timeout: .now() + 4)
+            return .json(["ok": true])
+        })
+    RemoteServer.shared.transcriptReadForTesting(request("")) { _ in queueFinished.signal() }
+    check("the background worker occupies the active slot",
+          queueEntered.wait(timeout: .now() + 1) == .success)
+    let backgroundRefused = DispatchSemaphore(value: 0)
+    var backgroundCode = ""
+    RemoteServer.shared.transcriptReadForTesting(request("")) {
+        backgroundCode = remoteErrorCode($0); backgroundRefused.signal()
+    }
+    check("a second background refresh is refused with typed debt",
+          backgroundRefused.wait(timeout: .now() + 1) == .success
+            && backgroundCode == "transcript_busy")
+    RemoteServer.shared.transcriptReadForTesting(request()) { _ in queueFinished.signal() }
+    let foregroundRefused = DispatchSemaphore(value: 0)
+    var foregroundCode = ""
+    RemoteServer.shared.transcriptReadForTesting(request()) {
+        foregroundCode = remoteErrorCode($0); foregroundRefused.signal()
+    }
+    check("the foreground trailing slot is bounded and typed",
+          foregroundRefused.wait(timeout: .now() + 1) == .success
+            && foregroundCode == "transcript_busy")
+    queueRelease.signal()
+    check("the reserved foreground read runs after the active background read",
+          queueEntered.wait(timeout: .now() + 1) == .success)
+    queueRelease.signal()
+    check("active and trailing workers both settle",
+          queueFinished.wait(timeout: .now() + 1) == .success
+            && queueFinished.wait(timeout: .now() + 1) == .success)
+    expect("the real worker queue drains both counters", outstanding(), [0, 0])
 }
 
 group("the slow-reading depth is paired on every exit") {

@@ -6,6 +6,8 @@ import { assistantLogo, assistantName } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId } from "../view/derive.js";
 import { listUnknown } from "../view/waits.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
+import { createTieredSessionFacts } from "../session/transcript-requests.js";
 
 /**
  * One small cache in front of the expensive session-info read. The status line needs those facts
@@ -13,32 +15,16 @@ import { listUnknown } from "../view/waits.js";
  * read the same transcript and run the same `git status` twice. A minute is fresh enough for a
  * glance; ending a turn and the card's Refresh button both ask explicitly for a newer answer.
  */
-export var SessionFacts = (function () {
-    var TTL = 60000;
-    var cache = {};       // id -> { data, at }
-    var pending = {};     // id -> Promise
-
-    return {
-        peek: function (id) { return cache[id] ? cache[id].data : null; },
-        fresh: function (id) { return !!(cache[id] && Date.now() - cache[id].at < TTL); },
-        drop: function (id) { if (id) delete cache[id]; },
-        get: function (id, force) {
-            if (!id || typeof api.info !== "function") return Promise.resolve(null);
-            if (!force && this.fresh(id)) return Promise.resolve(cache[id].data);
-            if (pending[id]) return pending[id];
-            pending[id] = api.info(id).then(function (answer) {
-                var data = (answer && answer.info) || null;
-                cache[id] = { data: data, at: Date.now() };
-                delete pending[id];
-                return data;
-            }).catch(function (e) {
-                delete pending[id];
-                throw e;
-            });
-            return pending[id];
-        }
-    };
-})();
+export var SessionFacts = createTieredSessionFacts(
+    function (id) {
+        return typeof api.info === "function" ? api.info(id) : Promise.resolve(null);
+    },
+    function (id) {
+        var read = typeof api.infoSummary === "function" ? api.infoSummary : api.info;
+        return typeof read === "function" ? read.call(api, id) : Promise.resolve(null);
+    },
+    { ttl: 60000 }
+);
 
 /**
  * The persistent status line under the open transcript. This is the compact reading of the
@@ -58,6 +44,7 @@ export var StatusLine = (function () {
     var nextAt = 0;
     var stateSeen = "";
     var deployTicker = null;
+    var deferredFor = null;
 
     function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
 
@@ -212,12 +199,15 @@ export var StatusLine = (function () {
         if (!forId) return;
         var id = forId, mine = ++ticket;
         nextAt = Date.now() + 60000;
-        SessionFacts.get(id, force).then(function (facts) {
+        Diagnostics.note("session.extras.info.request", { force: !!force });
+        SessionFacts.getSummary(id, force).then(function (facts) {
             if (mine !== ticket || forId !== id) return;
             data = facts;
+            Diagnostics.note("session.extras.info.response", { available: !!facts });
             draw();
-        }).catch(function () {
+        }).catch(function (error) {
             if (mine !== ticket || forId !== id) return;
+            Diagnostics.note("session.extras.info.failure", { code: error && error.code });
             // Keep the last good reading. If there was none, the basic session identity remains.
             draw();
         });
@@ -235,14 +225,23 @@ export var StatusLine = (function () {
                 stateSeen = state;
                 nextAt = 0;
                 draw();
-                if (id) load(false);
+                if (id && deferredFor !== id) load(false);
                 return;
             }
             // The completed turn is when totals and limits have most likely changed.
             var endedTurn = stateSeen === "working" && state !== "working";
             stateSeen = state;
+            if (deferredFor === id) return;
             if (endedTurn) load(true);
             else if (id && Date.now() >= nextAt) load(false);
+        },
+        /** Keep the automatic, expensive `/info` read behind the transcript's first paint.
+         *  Info.open calls SessionFacts directly, so a deliberate user gesture bypasses this. */
+        defer: function (id) { deferredFor = id || null; },
+        resume: function (id) {
+            if (!id || deferredFor !== id) return;
+            deferredFor = null;
+            if (forId === id && !data) load(false);
         },
         refresh: function (force) {
             if (!forId) return;
@@ -250,7 +249,10 @@ export var StatusLine = (function () {
         },
         receive: function (id, facts) {
             if (id !== forId || !facts) return;
-            data = facts;
+            // A full card answer invalidates any summary completion already in flight. The local
+            // ticket also prevents that old completion from drawing after this explicit upgrade.
+            ticket += 1;
+            data = SessionFacts.receiveFull(id, facts);
             nextAt = Date.now() + 60000;
             draw();
         }

@@ -109,6 +109,21 @@ green, so the arithmetic completion receipt moves 7,267 → 7,310 while the orde
 unchanged. This is focused pre-integration evidence; the landing root still owns the one exact
 candidate-tree full-suite receipt that settles the count.
 
+### Transcript first-paint isolation extraction (2026-09-01)
+
+The first transcript-paint candidate initially failed the combined architecture preflight before
+compilation: `RemoteServer.swift` reached 6,504 lines against the sealed 6,385-line dispatch-door
+receipt. The correction does not raise that limit. `TranscriptReadCoordinator` owns only the
+transport-agnostic foreground/background admission budget, serial worker, retry debt and completion
+accounting; its work and result types are generic, with no `RemoteServer.Request`/`Response`
+dependency or cross-file `RemoteServer` extension. `RemoteServer` privately retains authentication,
+HTTP retry encoding, cache policy, route execution and delivery, and returns to exactly 6,385
+lines. The single exposed failure-injection method configures its private test backing state on the
+owner queue. The deterministic source manifest moves to 99 production files, and the one new
+transcript-worker group moves the ordered group receipt from 462 to 463 without adding a test runner
+or suite file. Its 25 unconditional Swift checks move the expected executable receipt from 7,341
+to 7,366. These are candidate receipts until the exact staged-tree suite observes them.
+
 ### Ordered suite and dependency manifest
 
 `Tests/main.swift` owns process order only. It enters subprocess probes, installs isolation, runs

@@ -14,9 +14,11 @@ import { GitPanel } from "../input/git-panel.js";
 import { ShellPanel } from "../input/shell-panel.js";
 import { ActionConfirm } from "../input/action-confirm.js";
 import { Info } from "../input/info.js";
+import { StatusLine } from "../input/status-line.js";
 import { Shots } from "../input/shots.js";
 import { SkillPicker } from "../input/composer.js";
 import {
+    beginTranscriptLoad,
     createTranscriptRequests,
     createTranscriptRevisionObserver
 } from "./transcript-requests.js";
@@ -31,12 +33,29 @@ import { reconcileOptimisticBeforeSignature } from "../view/optimistic-data.js";
 // last and erase the final entry that the newer one had already drawn.
 var transcriptTicket = 0;
 
-var transcriptRequests = createTranscriptRequests(function (id) {
-    return api.transcript(id);
-}, settleTranscript);
+var transcriptRequests = createTranscriptRequests(function (id, demand) {
+    return api.transcript(id, {
+        response: function (data) { Diagnostics.note("transcript.response", data); },
+        parse: function (data) { Diagnostics.note("transcript.parse", data); }
+    }, demand);
+}, settleTranscript, {
+    phase: function (name, data) {
+        Diagnostics.note("transcript." + name, data);
+    }
+});
 
-var transcriptRevisions = createTranscriptRevisionObserver(function (id, revision, quiet) {
-    loadTranscript(id, quiet, revision);
+// The renderer emits this only after content has reached a paint opportunity. It contains no
+// session id or prose; the currently open session is the only one whose optional hydration can
+// be released, and switching has already moved StatusLine's gate to the new id.
+document.addEventListener("clawdline:meaningful-transcript-paint", function () {
+    if (S.openId) {
+        Diagnostics.note("session.extras.begin", {});
+        StatusLine.resume(S.openId);
+    }
+});
+
+var transcriptRevisions = createTranscriptRevisionObserver(function (id, revision, quiet, demand) {
+    loadTranscript(id, quiet, revision, demand);
 });
 
 export function observeTranscriptRevision(id, revision, quiet) {
@@ -57,7 +76,7 @@ export function rearmTranscriptRevision(id, revision, quiet) {
     transcriptRevisions.rearm(id, revision, quiet);
 }
 
-export function loadTranscript(id, quiet, revision) {
+export function loadTranscript(id, quiet, revision, demand) {
     // Composer/refresh callers predate revision tracking. Fold them into the same observed
     // contract so a direct refresh cannot overwrite the coalesced cycle's revision context.
     var session = byId(id);
@@ -71,11 +90,15 @@ export function loadTranscript(id, quiet, revision) {
         // Only the loud kind waits visibly. A refetch behind a transcript that is already on
         // screen has nothing to stand in for — the reader is reading the last version of it.
         Waits.tx.start();
-        renderTranscript();
+        return beginTranscriptLoad(function () {
+            return transcriptRequests(id, ticket, revision, { foreground: true });
+        }, renderTranscript);
     }
     // Returned, so a control that started this can wait for the whole coalesced cycle. A revision
     // storm gets one active read and one trailing read, whose answer owns the newest ticket.
-    return transcriptRequests(id, ticket, revision);
+    return transcriptRequests(id, ticket, revision, {
+        foreground: !!(demand && demand.foreground)
+    });
 }
 
 function settleTranscript(id, ticket, outcome, revision) {
@@ -83,7 +106,9 @@ function settleTranscript(id, ticket, outcome, revision) {
         openMatches: S.openId === id, ticketMatches: ticket === transcriptTicket,
         failed: !!outcome.error, revisionKnown: revision != null
     });
-    if (revision != null) transcriptRevisions.settle(id, revision, !outcome.error);
+    if (revision != null) {
+        transcriptRevisions.settle(id, revision, !outcome.error, outcome.error);
+    }
     // A later request owns both the result and the visible wait. Settling an older request here
     // would take down the skeleton while the request that superseded it is still out.
     if (S.openId !== id || ticket !== transcriptTicket) return;
@@ -194,10 +219,13 @@ export function openSession(id, keepFocus, forceRefresh) {
         S.expanded = {};
         // And a picture picked for one session is not a picture for the next one.
         Shots.clear();
+        StatusLine.defer(id);
+        transcriptRequests.activate(id);
+        observeTranscriptRevision(id, revisionOf(s), false);
+        // These surfaces may draw immediately, so they follow the synchronous transcript issue.
         Info.follow();
         GitPanel.follow();
-    ShellPanel.follow();
-        observeTranscriptRevision(id, revisionOf(s), false);
+        ShellPanel.follow();
     } else if (forceRefresh) loadTranscript(id, true);
     if (phone()) {
         // A touch on a row does not reliably take focus from the filter on iOS. Release it before
@@ -235,6 +263,7 @@ export function closeDetail(silent) {
         delete transcriptFileSignatures[S.openId];
     }
     S.openId = null;
+    transcriptRequests.activate(null);
     S.agent = null;
     S.tx = {
         id: null, entries: [], signature: null, revision: null,

@@ -60,8 +60,14 @@ assert.ok(!tileBuilder.includes('role="status"'),
     "an inert replacement placeholder cannot make a premature live announcement");
 const reconciliationSource = transcriptSource.split("function replaceTranscriptContents")[1];
 assert.ok(reconciliationSource.includes("reconcileArtifactTiles("));
-assert.ok(reconciliationSource.includes("hydrateArtifactImages(reconciliation.fresh)"),
-    "only genuinely new image tiles acquire listeners and a request");
+assert.ok(reconciliationSource.includes("return { images: reconciliation.fresh"),
+    "reconciliation returns only genuinely new image tiles to the render scheduler");
+assert.ok(!reconciliationSource.includes("hydrateArtifactImages(reconciliation.fresh)"),
+    "reconciliation cannot start image listeners or requests before meaningful paint");
+const schedulerSource = transcriptSource.split("scheduleTranscriptRender({")[1]
+    .split("// Said out loud")[0];
+assert.ok(schedulerSource.includes("hydrate: hydrateArtifactImages"),
+    "the scheduler owns the single post-meaningful-paint image connector");
 assert.ok(reconciliationSource.includes("box.appendChild(template.content)"));
 assert.ok(reconciliationSource.includes("child.remove()"),
     "old transcript rows leave only after reusable image nodes move into the new rows");

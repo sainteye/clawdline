@@ -22,7 +22,9 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # five direct-publication checks makes the net change 31.
 # The exact candidate-tree run remains authoritative and must update this guard if its observed
 # final count differs.
-expected_swift_receipt='7341 checks passed'
+# Transcript first-paint isolation adds 25 unconditional checks: three route/tier predicates and
+# twenty-two admission, completion, drain, interruption and queue-responsiveness checks.
+expected_swift_receipt='7366 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -92,19 +94,29 @@ swift tools/generate-protocol-vectors.swift --check Tests/protocol-vectors.json
 
 # Keep the small browser-independent renderer contracts beside the Swift suite. The web app's
 # scoped package.json marks its shipped files as ESM, matching the browser's module entry.
-node Tests/web-schedules.mjs
-node Tests/web-coordinator.mjs
-node Tests/web-clawdfather.mjs
-node Tests/web-optimistic.mjs
-node Tests/web-session-resilience.mjs
-node Tests/web-viewport.mjs
-node Tests/web-layout-diagnostics.mjs
-node Tests/web-session-disposition.mjs
-node Tests/web-session-closeability.mjs
-node Tests/web-title-transport.mjs
-node Tests/web-code-copy.mjs
-node Tests/web-message-images.mjs
-node Tests/web-project-artifacts.mjs
+browser_contract_suites=(
+  Tests/web-schedules.mjs
+  Tests/web-coordinator.mjs
+  Tests/web-clawdfather.mjs
+  Tests/web-optimistic.mjs
+  Tests/web-transcript-requests.mjs
+  Tests/web-session-resilience.mjs
+  Tests/web-viewport.mjs
+  Tests/web-layout-diagnostics.mjs
+  Tests/web-session-disposition.mjs
+  Tests/web-session-closeability.mjs
+  Tests/web-title-transport.mjs
+  Tests/web-code-copy.mjs
+  Tests/web-message-images.mjs
+  Tests/web-project-artifacts.mjs
+)
+if [ "${#browser_contract_suites[@]}" -ne 14 ]; then
+  echo "browser contract roster changed without updating its sealed count" >&2
+  exit 1
+fi
+for browser_contract_suite in "${browser_contract_suites[@]}"; do
+  node "$browser_contract_suite"
+done
 # The hosted console: which transport it is, the pairing mirror against the checked-in
 # vectors, and that the static bundle a person uploads by hand is the same bytes twice.
 node Tests/web-cloud-boot.mjs

@@ -1442,7 +1442,8 @@ group("the Web transcript has an inert Clawdline card") {
             && explored.html.contains(#"class="pill""#)
             && explored.html.contains(#"aria-expanded="false""#)
             && explored.html.contains("shell")
-            && js.contains("exploredRunHTML(exploredRun)"))
+            && js.contains(#"blocks.push({ kind: "explored", rows: exploredRun })"#)
+            && js.contains(#"return exploredRunHTML(block.rows)"#))
     check("a closed Explored pill omits its verbose search and read rows",
           !explored.html.contains(#"data-role="explored""#)
             && !explored.html.contains("Search") && !explored.html.contains("Read")

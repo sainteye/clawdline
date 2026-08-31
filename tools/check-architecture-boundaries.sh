@@ -66,8 +66,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 462 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 462"
+[ "$manifest_group_count" -eq 463 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 463"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do

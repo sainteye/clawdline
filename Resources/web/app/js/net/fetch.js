@@ -3,7 +3,8 @@ import { T } from "../core/i18n.js";
 
 /* ---- the real one -------------------------------------------------------- */
 
-export function jsonFetch(path, options) {
+export function jsonFetch(path, options, phases) {
+    phases = phases || {};
     return fetch(path, options).catch(function () {
         // `fetch` rejects with "Failed to fetch" and nothing else when there is no server at the
         // other end. That string ends up in front of somebody as an explanation, so it is turned
@@ -12,9 +13,11 @@ export function jsonFetch(path, options) {
         dead.code = "offline";
         throw dead;
     }).then(function (res) {
+        if (typeof phases.response === "function") phases.response({ status: res.status });
         return res.text().then(function (body) {
             var data = null;
             try { data = body ? JSON.parse(body) : null; } catch (e) { /* below */ }
+            if (typeof phases.parse === "function") phases.parse({ parsed: !!data });
             if (!res.ok) {
                 var err = data && data.error ? data.error : { code: "http_" + res.status, message: res.statusText || T.webRequestFailed };
                 var e2 = new Error(err.message || err.code);
@@ -28,6 +31,11 @@ export function jsonFetch(path, options) {
                 // Whisper" and "Whisper is there but has no model" — two different afternoons.
                 if (typeof err.app === "string") e2.app = err.app;
                 if (typeof err.reason === "string") e2.reason = err.reason;
+                if (typeof err.retry_after === "number") {
+                    e2.retryAfter = err.retry_after;
+                    e2.retry_after = err.retry_after;
+                }
+                if (typeof err.retry_debt === "number") e2.retryDebt = err.retry_debt;
                 // And the 409 from closing a session carries `lost` — the live children and
                 // stranded waiters the close would take — so the page can put the list in
                 // front of the person instead of a sentence about a list.

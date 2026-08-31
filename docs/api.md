@@ -319,11 +319,17 @@ $ curl -s "http://127.0.0.1:7717/v1/sessions/B3ACDE0D-DE72-4E58-A99A-AB845A539C9
 `limit` is the number of entries from the **end**, clamped to 1…1000, and anything unparseable
 falls back to 200 — `?limit=0` gives one entry and `?limit=9999` gives a thousand.
 
-This route stands in the same queue as [`/v1/sessions/:id/info`](#get-v1sessionsidinfo) but is
-**never** refused by its limit, deliberately: it is the cheapest of the three, a page refetches it
-about once a second while a session works, and a refusal there would replace a conversation
-somebody is reading with an error. So a client polling this does not have to handle `429 busy` —
-it can still be delayed behind slower readings, but it will be answered.
+This route has an independent serial worker and a depth of two (one active plus one trailing), so
+screen capture, Git and `/v1/places` can never stand in front of transcript bytes. Quiet/background
+refreshes may occupy only one slot; `?priority=foreground` identifies a first-open read and reserves
+the other slot, so two background refreshes cannot starve a newly opened session.
+
+When the relevant share is full the route returns typed `429 transcript_busy`, with numeric
+`error.retry_after` seconds, `error.retry_debt` reads currently ahead and the same value in the
+HTTP `Retry-After` header. A client keeps its last readable entries, waits that interval and retries
+within a bounded debt budget; it must not spend a fixed burst of immediate retries before the
+serial worker can drain. This admission queue is separate from the eight-place `busy` queue used by
+full Info and places.
 
 `signature` is the transcript file's size and modification time joined by a dash. It is a cheap way
 to ask *would fetching this again tell me anything new*, and nothing else — do not try to read
@@ -477,6 +483,14 @@ forms, embedding and external resources.
 
 One card about a session and the assistant behind it — what the status line at the bottom of a
 Claude Code terminal says, for somebody who is not at that terminal.
+
+`GET /v1/sessions/:id/info?parts=summary` is the automatic post-transcript-paint form. It keeps the
+`session`, transcript-derived `usage`/`context`, `limits`, cost and model facts, but omits
+`permission`, `files`, `links` and `deploy`; therefore it performs no iTerm screen capture, Git
+status, or project-link/deploy discovery. Missing `parts`, `parts=full`, and every unknown value
+retain the backward-compatible full payload. A later summary must never downgrade a full payload
+already held by the client; force/drop begins a new cache generation and invalidates older
+completions.
 
 **This is the expensive one**, and it is answered off the queue every other request is read on:
 gathering it runs `lsof`, reads the whole transcript, asks iTerm2 for the visible screen over an
@@ -4107,7 +4121,8 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | a sliding window of counted attempts is full — pairing attempts, dispatches per ten minutes, schedules written per ten minutes, agent notifications per hour. What was counted ages out of the window on its own; nothing is draining, which is what separates this from `busy` |
-| `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. The terminal broker admits eight operations globally and two per terminal session, shared by remote terminal mutations, terminal-bearing orchestrator writes and automatic child close; a same-key in-flight retry joins without consuming another place. These refusals are not filed under an `Idempotency-Key` |
+| `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand. The terminal broker admits eight operations globally and two per terminal session, shared by remote terminal mutations, terminal-bearing orchestrator writes and automatic child close; a same-key in-flight retry joins without consuming another place. These refusals are not filed under an `Idempotency-Key` |
+| `transcript_busy` | 429 | the independent transcript worker's active+trailing bound or the one-slot background share is full. `retry_after` and `Retry-After` give bounded delay seconds; `retry_debt` records how many admitted transcript reads are ahead. A foreground first-open has the reserved share and cannot be refused merely because one background refresh is active |
 | `over_capacity` | 429 | the root's child slots are full — `orchestrator_max_children` — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
 | `terminal_io_failed` | 502 | a terminal mutation reached its isolated command queue but the selected backend did not complete the handoff; this includes a bounded tmux subprocess timeout after cleanup |
 | `iterm_attention_required` | 502 | an iTerm Apple Event timed out or returned a malformed list; `app` is `iTerm2`, `action` is `answer_dialog`, and a well-formed later list response re-enables automation. The timed-out event may still execute later |

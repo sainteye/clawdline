@@ -93,6 +93,7 @@ clawdline_production_sources=(
   Sources/Targets.swift
   Sources/Tmux.swift
   Sources/Transcript.swift
+  Sources/TranscriptReadCoordinator.swift
   Sources/TranscriptRevisionWatch.swift
   Sources/UsageLedger.swift
   Sources/Voice.swift
