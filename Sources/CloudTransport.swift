@@ -21,6 +21,11 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
     /// `invalidTokenResponse` because retrying it is pointless: the reconnect loop here treats
     /// every failure as transient, so somebody above has to be able to tell the two apart.
     case unauthorized
+    case upgradeRefused(statusCode: Int)
+    case connectionTimedOut
+    case authenticationTimedOut
+    case receiveTimedOut
+    case connectionFailed(String)
     case notConnected
     case unexpectedFrame(String)
     case relay(String, String)
@@ -35,6 +40,16 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
             return "The device-token response is invalid."
         case .unauthorized:
             return "Clawdline Cloud refused this device's credential."
+        case .upgradeRefused(let statusCode):
+            return "The cloud relay refused the WebSocket upgrade (HTTP \(statusCode))."
+        case .connectionTimedOut:
+            return "The cloud relay WebSocket did not open before its deadline."
+        case .authenticationTimedOut:
+            return "The cloud relay authentication handshake did not finish before its deadline."
+        case .receiveTimedOut:
+            return "The cloud relay stopped sending frames before its receive deadline."
+        case .connectionFailed(let reason):
+            return "The cloud relay connection failed: \(reason)"
         case .notConnected:
             return "CloudTransport is not connected."
         case .unexpectedFrame(let type):
@@ -185,56 +200,245 @@ protocol CloudTransportSocket: AnyObject, Sendable {
     func close()
 }
 
+/// A connector can own a started URLSession task internally, but it only exports this value after
+/// the HTTP upgrade has completed. Authentication is a later state, represented separately below.
+struct CloudEstablishedTransportSocket: Sendable {
+    fileprivate let raw: any CloudTransportSocket
+
+    init(_ raw: any CloudTransportSocket) {
+        self.raw = raw
+    }
+
+    fileprivate func send(text: String) async throws { try await raw.send(text: text) }
+    fileprivate func receiveText() async throws -> String { try await raw.receiveText() }
+    fileprivate func close() { raw.close() }
+}
+
+/// This value can only be created after challenge/hello/ready validation. Keeping it distinct from
+/// an established socket prevents a resumed task or a completed HTTP upgrade from being stored as
+/// the transport's authenticated connection.
+private struct CloudAuthenticatedTransportSocket: Sendable {
+    let established: CloudEstablishedTransportSocket
+
+    func send(text: String) async throws { try await established.send(text: text) }
+    func receiveText() async throws -> String { try await established.receiveText() }
+    func close() { established.close() }
+}
+
 protocol CloudTransportSocketConnecting: Sendable {
     /// Implementations may suspend while establishing a socket, but must terminate promptly when
     /// the calling task is cancelled. `CloudTransport` owns that task and cancels/joins it during
     /// shutdown, before any socket exists that could otherwise be closed.
-    func connect(url: URL, bearerToken: String) async throws -> any CloudTransportSocket
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket
 }
 
-struct CloudURLSessionSocketConnector: CloudTransportSocketConnecting, Sendable {
-    let session: URLSession
+protocol CloudStartedTransportSocket: CloudTransportSocket {
+    func resume()
+}
 
-    init(session: URLSession = .shared) {
-        self.session = session
-    }
+protocol CloudURLSessionSocketStarting: Sendable {
+    func start(
+        request: URLRequest,
+        configuration: URLSessionConfiguration,
+        observer: CloudWebSocketOpenObserver
+    ) -> any CloudStartedTransportSocket
+}
 
-    func connect(url: URL, bearerToken: String) async throws -> any CloudTransportSocket {
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+struct CloudFoundationURLSessionSocketStarter: CloudURLSessionSocketStarting, Sendable {
+    func start(
+        request: URLRequest,
+        configuration: URLSessionConfiguration,
+        observer: CloudWebSocketOpenObserver
+    ) -> any CloudStartedTransportSocket {
+        let session = URLSession(
+            configuration: configuration, delegate: observer, delegateQueue: nil
+        )
         let task = session.webSocketTask(with: request)
-        task.resume()
         return CloudURLSessionSocket(session: session, task: task)
     }
 }
 
-private final class CloudURLSessionSocket: CloudTransportSocket, @unchecked Sendable {
-    private let session: URLSession
-    private let task: URLSessionWebSocketTask
+struct CloudURLSessionSocketConnector: CloudTransportSocketConnecting, Sendable {
+    let openingTimeout: TimeInterval
+    let connectionLifetime: TimeInterval
+    private let starter: any CloudURLSessionSocketStarting
 
-    init(session: URLSession, task: URLSessionWebSocketTask) {
-        self.session = session
-        self.task = task
+    init(
+        openingTimeout: TimeInterval = 15,
+        connectionLifetime: TimeInterval = 7 * 24 * 60 * 60,
+        starter: any CloudURLSessionSocketStarting = CloudFoundationURLSessionSocketStarter()
+    ) {
+        self.openingTimeout = max(0.01, openingTimeout)
+        self.connectionLifetime = max(60, connectionLifetime)
+        self.starter = starter
     }
 
-    func send(text: String) async throws {
-        try await task.send(.string(text))
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        let observer = CloudWebSocketOpenObserver()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = openingTimeout
+        configuration.timeoutIntervalForResource = connectionLifetime
+        let started = starter.start(
+            request: request, configuration: configuration, observer: observer
+        )
+        started.resume()
+        do {
+            try await withTaskCancellationHandler {
+                try await observer.waitUntilOpen(timeout: openingTimeout)
+            } onCancel: {
+                started.close()
+                observer.cancel()
+            }
+            try Task.checkCancellation()
+            return CloudEstablishedTransportSocket(started)
+        } catch {
+            if error is CancellationError { throw error }
+            started.close()
+            if let transportError = error as? CloudTransportError { throw transportError }
+            throw CloudTransportError.connectionFailed(error.localizedDescription)
+        }
     }
+}
 
-    func receiveText() async throws -> String {
-        switch try await task.receive() {
-        case .string(let text):
-            return text
-        case .data:
-            throw CloudTransportError.unexpectedFrame("binary")
-        @unknown default:
-            throw CloudTransportError.unexpectedFrame("unknown")
+/// URLSession's WebSocket task is only *started* after `resume()`. The delegate callback is the
+/// first evidence that the HTTP upgrade completed, and task completion is where a 401/403 lives.
+/// This one-shot observer converts those callbacks into a bounded async result.
+final class CloudWebSocketOpenObserver: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var outcome: Result<Void, Error>?
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func waitUntilOpen(timeout: TimeInterval) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { [self] in try await waitForDelegate() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(max(0.01, timeout) * 1_000_000_000))
+                throw CloudTransportError.connectionTimedOut
+            }
+            do {
+                _ = try await group.next()
+                group.cancelAll()
+            } catch {
+                group.cancelAll()
+                throw error
+            }
         }
     }
 
+    func opened() { finish(.success(())) }
+
+    func failed(statusCode: Int?, error: Error?) {
+        if statusCode == 401 || statusCode == 403 {
+            finish(.failure(CloudTransportError.unauthorized))
+        } else if let statusCode {
+            finish(.failure(CloudTransportError.upgradeRefused(statusCode: statusCode)))
+        } else {
+            finish(.failure(CloudTransportError.connectionFailed(
+                error?.localizedDescription ?? "the WebSocket task ended before opening"
+            )))
+        }
+    }
+
+    func cancel() { finish(.failure(CancellationError())) }
+
+    func urlSession(
+        _ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        opened()
+    }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
+    ) {
+        failed(statusCode: (task.response as? HTTPURLResponse)?.statusCode, error: error)
+    }
+
+    private func waitForDelegate() async throws {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { next in
+                lock.lock()
+                if let outcome {
+                    lock.unlock()
+                    next.resume(with: outcome)
+                } else {
+                    continuation = next
+                    lock.unlock()
+                }
+            }
+        } onCancel: {
+            cancel()
+        }
+    }
+
+    private func finish(_ result: Result<Void, Error>) {
+        lock.lock()
+        guard outcome == nil else {
+            lock.unlock()
+            return
+        }
+        outcome = result
+        let next = continuation
+        continuation = nil
+        lock.unlock()
+        next?.resume(with: result)
+    }
+}
+
+final class CloudURLSessionSocket: CloudStartedTransportSocket, @unchecked Sendable {
+    private let resumeTask: @Sendable () -> Void
+    private let sendText: @Sendable (String) async throws -> Void
+    private let receiveTextFrame: @Sendable () async throws -> String
+    private let cancelTask: @Sendable () -> Void
+    private let invalidateSession: @Sendable () -> Void
+
+    init(session: URLSession, task: URLSessionWebSocketTask) {
+        resumeTask = { task.resume() }
+        sendText = { text in try await task.send(.string(text)) }
+        receiveTextFrame = {
+            switch try await task.receive() {
+            case .string(let text):
+                return text
+            case .data:
+                throw CloudTransportError.unexpectedFrame("binary")
+            @unknown default:
+                throw CloudTransportError.unexpectedFrame("unknown")
+            }
+        }
+        cancelTask = { task.cancel(with: .goingAway, reason: nil) }
+        invalidateSession = { session.invalidateAndCancel() }
+    }
+
+    init(
+        resume: @escaping @Sendable () -> Void,
+        send: @escaping @Sendable (String) async throws -> Void,
+        receive: @escaping @Sendable () async throws -> String,
+        cancel: @escaping @Sendable () -> Void,
+        invalidate: @escaping @Sendable () -> Void
+    ) {
+        resumeTask = resume
+        sendText = send
+        receiveTextFrame = receive
+        cancelTask = cancel
+        invalidateSession = invalidate
+    }
+
+    func resume() { resumeTask() }
+
+    func send(text: String) async throws {
+        try await sendText(text)
+    }
+
+    func receiveText() async throws -> String {
+        try await receiveTextFrame()
+    }
+
     func close() {
-        task.cancel(with: .goingAway, reason: nil)
-        _ = session
+        cancelTask()
+        invalidateSession()
     }
 }
 
@@ -260,14 +464,17 @@ actor CloudTransport {
     private let refreshAhead: TimeInterval
     private let initialBackoff: TimeInterval
     private let maximumBackoff: TimeInterval
+    private let backoffResetAfter: TimeInterval
+    private let authenticationTimeout: TimeInterval
+    private let receiveTimeout: TimeInterval
     private let commandContinuation: AsyncStream<CloudInboundCommand>.Continuation
     private let readyContinuation: AsyncStream<UInt64>.Continuation
 
     private var state: CloudTransportState = .idle
     private var role: CloudTransportRole?
-    private var connectorTask: Task<any CloudTransportSocket, Error>?
-    private var connectingSocket: (any CloudTransportSocket)?
-    private var socket: (any CloudTransportSocket)?
+    private var connectorTask: Task<CloudEstablishedTransportSocket, Error>?
+    private var connectingSocket: CloudEstablishedTransportSocket?
+    private var socket: CloudAuthenticatedTransportSocket?
     private var cachedToken: CloudDeviceToken?
     private var receiveTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
@@ -286,6 +493,9 @@ actor CloudTransport {
         refreshAhead: TimeInterval = 60,
         initialBackoff: TimeInterval = 0.25,
         maximumBackoff: TimeInterval = 30,
+        backoffResetAfter: TimeInterval = 30,
+        authenticationTimeout: TimeInterval = 15,
+        receiveTimeout: TimeInterval = 90,
         logger: @escaping Logger = { _ in }
     ) {
         self.relayBaseURL = relayBaseURL
@@ -296,6 +506,9 @@ actor CloudTransport {
         self.refreshAhead = max(0, refreshAhead)
         self.initialBackoff = max(0.01, initialBackoff)
         self.maximumBackoff = max(initialBackoff, maximumBackoff)
+        self.backoffResetAfter = max(0.01, backoffResetAfter)
+        self.authenticationTimeout = max(0.01, authenticationTimeout)
+        self.receiveTimeout = max(0.01, receiveTimeout)
         self.logger = logger
         var continuation: AsyncStream<CloudInboundCommand>.Continuation!
         commands = AsyncStream { continuation = $0 }
@@ -320,6 +533,7 @@ actor CloudTransport {
             if state != .shutDown {
                 state = .idle
                 self.role = nil
+                logger("CloudTransport initial connection failed reason=\(failureCode(for: error))")
             }
             throw error
         }
@@ -371,7 +585,7 @@ actor CloudTransport {
         if let task { await task.value }
     }
 
-    private func establish(role: CloudTransportRole) async throws -> (socket: any CloudTransportSocket, generation: Int) {
+    private func establish(role: CloudTransportRole) async throws -> (socket: CloudAuthenticatedTransportSocket, generation: Int) {
         let token = try await validToken()
         // `validToken()` may suspend while another actor turn completes shutdown. From this check
         // through `connectorTask` registration there is no suspension, so a terminal transport
@@ -384,7 +598,7 @@ actor CloudTransport {
             try await connector.connect(url: url, bearerToken: token.value)
         }
         connectorTask = attempt
-        let newSocket: any CloudTransportSocket
+        let newSocket: CloudEstablishedTransportSocket
         do {
             newSocket = try await withTaskCancellationHandler {
                 try await attempt.value
@@ -393,6 +607,10 @@ actor CloudTransport {
             }
         } catch {
             connectorTask = nil
+            if let transportError = error as? CloudTransportError,
+               transportError == .unauthorized {
+                cachedToken = nil
+            }
             throw error
         }
         connectorTask = nil
@@ -401,12 +619,13 @@ actor CloudTransport {
             throw CancellationError()
         }
         connectingSocket = newSocket
-        defer {
-            if connectingSocket === newSocket { connectingSocket = nil }
-        }
+        defer { connectingSocket = nil }
 
         do {
-            let challengeText = try await newSocket.receiveText()
+            let challengeText = try await boundedReceive(
+                from: newSocket, timeout: authenticationTimeout,
+                timeoutError: .authenticationTimedOut
+            )
             let challenge = try decodeChallenge(challengeText)
             let key = try await keyProvider.deviceKeyPair()
             let signed = [challenge.context, challenge.account, challenge.device, challenge.challenge]
@@ -414,7 +633,10 @@ actor CloudTransport {
             let signature = try key.signature(for: Data(signed.utf8)).base64EncodedString()
             try await newSocket.send(text: try encode(HelloFrame(sig: signature)))
 
-            let readyText = try await newSocket.receiveText()
+            let readyText = try await boundedReceive(
+                from: newSocket, timeout: authenticationTimeout,
+                timeoutError: .authenticationTimedOut
+            )
             let header = try JSONDecoder().decode(FrameHeader.self, from: Data(readyText.utf8))
             if header.type == "error" {
                 let relayError = try JSONDecoder().decode(ErrorFrame.self, from: Data(readyText.utf8))
@@ -434,10 +656,11 @@ actor CloudTransport {
 
             generation += 1
             let currentGeneration = generation
-            socket = newSocket
+            let authenticated = CloudAuthenticatedTransportSocket(established: newSocket)
+            try await flushPending(over: authenticated)
+            socket = authenticated
             state = .ready
             scheduleRefresh(token: token, generation: currentGeneration)
-            try await flushPending(over: newSocket)
             switch readyContinuation.yield(UInt64(currentGeneration)) {
             case .dropped:
                 droppedReadyGenerations += 1
@@ -446,7 +669,7 @@ actor CloudTransport {
             @unknown default:
                 break
             }
-            return (newSocket, currentGeneration)
+            return (authenticated, currentGeneration)
         } catch {
             newSocket.close()
             throw error
@@ -485,47 +708,115 @@ actor CloudTransport {
         return url
     }
 
-    private func receiveAndReconnect(socket initialSocket: any CloudTransportSocket, generation initialGeneration: Int) async {
+    private func receiveAndReconnect(socket initialSocket: CloudAuthenticatedTransportSocket, generation initialGeneration: Int) async {
         var activeSocket = initialSocket
         var activeGeneration = initialGeneration
         var backoff = initialBackoff
+        var connectedAt = await clock.now()
 
         while state != .shutDown, !Task.isCancelled {
             do {
-                let text = try await activeSocket.receiveText()
+                let text = try await boundedReceive(
+                    from: activeSocket, timeout: receiveTimeout,
+                    timeoutError: .receiveTimedOut
+                )
                 try await handle(text)
-                backoff = initialBackoff
                 continue
             } catch is CancellationError {
                 return
             } catch {
                 if state == .shutDown || Task.isCancelled { return }
+                if (await clock.now()).timeIntervalSince(connectedAt) >= backoffResetAfter {
+                    backoff = initialBackoff
+                }
+                activeSocket.close()
                 if generation == activeGeneration {
                     self.socket = nil
                     refreshTask?.cancel()
                     refreshTask = nil
                     state = .reconnecting
                 }
-            }
+                var retryError = error
 
-            while state != .shutDown, !Task.isCancelled {
-                let jitter = 0.75 + (await clock.jitterUnit() * 0.5)
-                do {
-                    try await clock.sleep(for: min(maximumBackoff, backoff) * jitter)
-                    guard let role else { return }
-                    let established = try await establish(role: role)
-                    activeSocket = established.socket
-                    activeGeneration = established.generation
-                    backoff = initialBackoff
-                    break
-                } catch is CancellationError {
-                    return
-                } catch {
-                    if state == .shutDown || Task.isCancelled { return }
-                    state = .reconnecting
-                    backoff = min(maximumBackoff, backoff * 2)
+                while state != .shutDown, !Task.isCancelled {
+                    let jitter = 0.75 + (await clock.jitterUnit() * 0.5)
+                    let delay = min(maximumBackoff, backoff) * jitter
+                    logger("CloudTransport reconnect waiting reason=\(failureCode(for: retryError)) retry_in_ms=\(Int(delay * 1_000))")
+                    do {
+                        try await clock.sleep(for: delay)
+                        backoff = min(maximumBackoff, backoff * 2)
+                        guard let role else { return }
+                        let established = try await establish(role: role)
+                        activeSocket = established.socket
+                        activeGeneration = established.generation
+                        connectedAt = await clock.now()
+                        break
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        if state == .shutDown || Task.isCancelled { return }
+                        state = .reconnecting
+                        retryError = error
+                    }
                 }
             }
+        }
+    }
+
+    private func boundedReceive(
+        from socket: CloudEstablishedTransportSocket, timeout: TimeInterval,
+        timeoutError: CloudTransportError
+    ) async throws -> String {
+        try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask { try await socket.receiveText() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                throw timeoutError
+            }
+            do {
+                let text = try await group.next()!
+                group.cancelAll()
+                return text
+            } catch {
+                socket.close()
+                group.cancelAll()
+                throw normalizedConnectionError(error)
+            }
+        }
+    }
+
+    private func boundedReceive(
+        from socket: CloudAuthenticatedTransportSocket, timeout: TimeInterval,
+        timeoutError: CloudTransportError
+    ) async throws -> String {
+        try await boundedReceive(
+            from: socket.established, timeout: timeout, timeoutError: timeoutError
+        )
+    }
+
+    private func normalizedConnectionError(_ error: Error) -> Error {
+        if error is CancellationError { return error }
+        if let transportError = error as? CloudTransportError { return transportError }
+        return CloudTransportError.connectionFailed(error.localizedDescription)
+    }
+
+    private func failureCode(for error: Error) -> String {
+        guard let transportError = error as? CloudTransportError else {
+            return "connection_failed"
+        }
+        switch transportError {
+        case .unauthorized: return "unauthorized"
+        case .upgradeRefused(let status): return "upgrade_refused_\(status)"
+        case .connectionTimedOut: return "connection_timeout"
+        case .authenticationTimedOut: return "authentication_timeout"
+        case .receiveTimedOut: return "receive_timeout"
+        case .connectionFailed: return "connection_failed"
+        case .alreadyConnected: return "already_connected"
+        case .invalidRelayURL: return "invalid_relay_url"
+        case .invalidTokenResponse: return "invalid_token_response"
+        case .notConnected: return "not_connected"
+        case .unexpectedFrame: return "unexpected_frame"
+        case .relay(let code, _): return "relay_\(code)"
         }
     }
 
@@ -614,7 +905,7 @@ actor CloudTransport {
         socket?.close()
     }
 
-    private func flushPending(over socket: any CloudTransportSocket) async throws {
+    private func flushPending(over socket: CloudAuthenticatedTransportSocket) async throws {
         let pending = pendingByChannel.values.sorted { $0.ch < $1.ch }
         pendingByChannel.removeAll()
         do {
@@ -625,7 +916,7 @@ actor CloudTransport {
         }
     }
 
-    private func sendPublish(_ envelope: CloudEnvelope, over socket: any CloudTransportSocket) async throws {
+    private func sendPublish(_ envelope: CloudEnvelope, over socket: CloudAuthenticatedTransportSocket) async throws {
         try await socket.send(text: try encode(PublishFrame(envelope: envelope)))
     }
 

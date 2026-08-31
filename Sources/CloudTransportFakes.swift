@@ -16,6 +16,428 @@ enum CloudLoopbackRelayError: Error, LocalizedError {
     }
 }
 
+/// A reconnect probe whose relay side drops every authenticated receive without closing the
+/// client half. The transport therefore has to dispose of each predecessor itself; dropping its
+/// reference is observable as more than one live socket. The probe is intentionally independent
+/// of URLSession and localhost so the ownership invariant is deterministic in sandboxes.
+final class CloudReconnectSocketProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var live = 0
+    private var peak = 0
+    private var opened = 0
+    private var closed = 0
+
+    fileprivate func didOpen() {
+        lock.lock()
+        opened += 1
+        live += 1
+        peak = max(peak, live)
+        lock.unlock()
+    }
+
+    fileprivate func didClose() {
+        lock.lock()
+        closed += 1
+        live -= 1
+        lock.unlock()
+    }
+
+    func snapshot() -> (opened: Int, live: Int, peak: Int, closed: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (opened, live, peak, closed)
+    }
+}
+
+struct CloudReconnectProbeConnector: CloudTransportSocketConnecting, Sendable {
+    let probe: CloudReconnectSocketProbe
+    let behavior: CloudReconnectProbeBehavior
+    let onHandledFrame: @Sendable () async -> Void
+
+    init(probe: CloudReconnectSocketProbe, dropsAfterAuthentication: Bool = true) {
+        self.probe = probe
+        behavior = dropsAfterAuthentication ? .disconnectAfterAuthentication : .stayConnected
+        onHandledFrame = {}
+    }
+
+    init(
+        probe: CloudReconnectSocketProbe,
+        behavior: CloudReconnectProbeBehavior,
+        onHandledFrame: @escaping @Sendable () async -> Void = {}
+    ) {
+        self.probe = probe
+        self.behavior = behavior
+        self.onHandledFrame = onHandledFrame
+    }
+
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        CloudEstablishedTransportSocket(CloudReconnectProbeSocket(
+            probe: probe, behavior: behavior, onHandledFrame: onHandledFrame
+        ))
+    }
+}
+
+enum CloudReconnectProbeBehavior: Equatable, Sendable {
+    case disconnectAfterAuthentication
+    case handledFrameThenDisconnect
+    case unexpectedFrame
+    case failPendingPublish
+    case stayConnected
+}
+
+final class CloudReconnectSequenceConnector: CloudTransportSocketConnecting, @unchecked Sendable {
+    private let lock = NSLock()
+    private let probe: CloudReconnectSocketProbe
+    private let behaviors: [CloudReconnectProbeBehavior]
+    private let onHandledFrame: @Sendable () async -> Void
+    private var index = 0
+
+    init(
+        probe: CloudReconnectSocketProbe,
+        behaviors: [CloudReconnectProbeBehavior],
+        onHandledFrame: @escaping @Sendable () async -> Void = {}
+    ) {
+        self.probe = probe
+        self.behaviors = behaviors
+        self.onHandledFrame = onHandledFrame
+    }
+
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        let behavior = nextBehavior()
+        return CloudEstablishedTransportSocket(CloudReconnectProbeSocket(
+            probe: probe, behavior: behavior, onHandledFrame: onHandledFrame
+        ))
+    }
+
+    private func nextBehavior() -> CloudReconnectProbeBehavior {
+        lock.lock()
+        defer { lock.unlock() }
+        let behavior = behaviors[min(index, behaviors.count - 1)]
+        index += 1
+        return behavior
+    }
+}
+
+final class CloudUnauthorizedReconnectConnector: CloudTransportSocketConnecting,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let probe: CloudReconnectSocketProbe
+    private var attempts = 0
+    private var tokens: [String] = []
+
+    init(probe: CloudReconnectSocketProbe) {
+        self.probe = probe
+    }
+
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        let attempt = recordAttempt(token: bearerToken)
+        if attempt == 2 { throw CloudTransportError.unauthorized }
+        let behavior: CloudReconnectProbeBehavior = attempt == 1
+            ? .disconnectAfterAuthentication : .stayConnected
+        return CloudEstablishedTransportSocket(CloudReconnectProbeSocket(
+            probe: probe, behavior: behavior
+        ))
+    }
+
+    private func recordAttempt(token: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        attempts += 1
+        tokens.append(token)
+        return attempts
+    }
+
+    func observedTokens() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return tokens
+    }
+}
+
+private final class CloudReconnectProbeSocket: CloudTransportSocket, @unchecked Sendable {
+    private let probe: CloudReconnectSocketProbe
+    private let lock = NSLock()
+    private let continuation: AsyncThrowingStream<String, Error>.Continuation
+    private var iterator: AsyncThrowingStream<String, Error>.Iterator
+    private var didSendHello = false
+    private var isClosed = false
+    private let behavior: CloudReconnectProbeBehavior
+    private let onHandledFrame: @Sendable () async -> Void
+    private var receivedFrameCount = 0
+
+    init(
+        probe: CloudReconnectSocketProbe,
+        behavior: CloudReconnectProbeBehavior,
+        onHandledFrame: @escaping @Sendable () async -> Void = {}
+    ) {
+        self.probe = probe
+        self.behavior = behavior
+        self.onHandledFrame = onHandledFrame
+        var continuation: AsyncThrowingStream<String, Error>.Continuation!
+        let stream = AsyncThrowingStream<String, Error> { continuation = $0 }
+        self.continuation = continuation
+        iterator = stream.makeAsyncIterator()
+        probe.didOpen()
+        let challenge = Data(repeating: 0x5a, count: 32).base64EncodedString()
+        continuation.yield("{\"type\":\"challenge\",\"v\":1,\"context\":\"clawdline-challenge-v1\",\"account\":\"probe-account\",\"device\":\"probe-device\",\"challenge\":\"\(challenge)\",\"expires_in_ms\":15000}")
+    }
+
+    func send(text: String) async throws {
+        let shouldReady = claimHello()
+        guard shouldReady else {
+            if behavior == .failPendingPublish { throw CloudTransportError.notConnected }
+            return
+        }
+        continuation.yield("{\"type\":\"ready\",\"v\":1,\"account\":\"probe-account\",\"device\":\"probe-device\",\"role\":\"machine\",\"connected_at\":0,\"token_expires_at\":3600000}")
+        switch behavior {
+        case .disconnectAfterAuthentication, .failPendingPublish:
+            continuation.finish(throwing: CloudTransportError.notConnected)
+        case .handledFrameThenDisconnect:
+            continuation.yield("{\"type\":\"pong\"}")
+            continuation.finish(throwing: CloudTransportError.notConnected)
+        case .unexpectedFrame:
+            continuation.yield("{\"type\":\"bogus\"}")
+        case .stayConnected:
+            break
+        }
+    }
+
+    private func claimHello() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let shouldReady = !didSendHello && !isClosed
+        didSendHello = true
+        return shouldReady
+    }
+
+    func receiveText() async throws -> String {
+        guard let text = try await iterator.next() else { throw CloudTransportError.notConnected }
+        receivedFrameCount += 1
+        if receivedFrameCount > 2, behavior == .handledFrameThenDisconnect {
+            await onHandledFrame()
+        }
+        return text
+    }
+
+    func close() {
+        lock.lock()
+        guard !isClosed else {
+            lock.unlock()
+            return
+        }
+        isClosed = true
+        lock.unlock()
+        continuation.finish()
+        probe.didClose()
+    }
+}
+
+actor CloudReconnectProbeClock: CloudTransportClock {
+    private var sleeps: [TimeInterval] = []
+    private var date = Date()
+
+    func now() -> Date { date }
+    func jitterUnit() -> Double { 0.5 }
+
+    func advance(by seconds: TimeInterval) { date = date.addingTimeInterval(seconds) }
+
+    func sleep(for seconds: TimeInterval) async throws {
+        // Token refresh shares this clock. Keep that long-lived timer suspended without letting
+        // it masquerade as a reconnect delay in the probe's reading.
+        if seconds > 100 {
+            try await Task.sleep(nanoseconds: 3_600_000_000_000)
+            return
+        }
+        sleeps.append(seconds)
+        if sleeps.count >= 3 {
+            try await Task.sleep(nanoseconds: 3_600_000_000_000)
+        }
+    }
+
+    func recordedSleeps() -> [TimeInterval] { sleeps }
+}
+
+enum CloudURLSessionConnectorProbeOutcome: Sendable {
+    case opens
+    case unauthorized
+    case stalls
+}
+
+final class CloudURLSessionConnectorProbe: CloudURLSessionSocketStarting, @unchecked Sendable {
+    struct Snapshot {
+        let authorization: String?
+        let waitsForConnectivity: Bool
+        let requestTimeout: TimeInterval
+        let resourceTimeout: TimeInterval
+        let resumed: Bool
+        let closed: Bool
+        let socketsClosed: Int
+    }
+
+    private let lock = NSLock()
+    private let outcome: CloudURLSessionConnectorProbeOutcome
+    private var authorization: String?
+    private var waitsForConnectivity = true
+    private var requestTimeout: TimeInterval = 0
+    private var resourceTimeout: TimeInterval = 0
+    private var socket: CloudURLSessionConnectorProbeSocket?
+    private var socketsClosed = 0
+
+    init(outcome: CloudURLSessionConnectorProbeOutcome) {
+        self.outcome = outcome
+    }
+
+    func start(
+        request: URLRequest,
+        configuration: URLSessionConfiguration,
+        observer: CloudWebSocketOpenObserver
+    ) -> any CloudStartedTransportSocket {
+        let socket = CloudURLSessionConnectorProbeSocket(
+            observer: observer, outcome: outcome,
+            resourceTimeout: configuration.timeoutIntervalForResource,
+            onClose: { [weak self] in self?.didCloseSocket() }
+        )
+        lock.lock()
+        authorization = request.value(forHTTPHeaderField: "Authorization")
+        waitsForConnectivity = configuration.waitsForConnectivity
+        requestTimeout = configuration.timeoutIntervalForRequest
+        resourceTimeout = configuration.timeoutIntervalForResource
+        self.socket = socket
+        lock.unlock()
+        return socket
+    }
+
+    func snapshot() -> Snapshot {
+        lock.lock()
+        let authorization = authorization
+        let waitsForConnectivity = waitsForConnectivity
+        let requestTimeout = requestTimeout
+        let resourceTimeout = resourceTimeout
+        let socketsClosed = socketsClosed
+        let socket = socket
+        lock.unlock()
+        let lifecycle = socket?.snapshot() ?? (resumed: false, closed: false)
+        return Snapshot(
+            authorization: authorization,
+            waitsForConnectivity: waitsForConnectivity,
+            requestTimeout: requestTimeout,
+            resourceTimeout: resourceTimeout,
+            resumed: lifecycle.resumed,
+            closed: lifecycle.closed,
+            socketsClosed: socketsClosed
+        )
+    }
+
+    private func didCloseSocket() {
+        lock.lock()
+        socketsClosed += 1
+        lock.unlock()
+    }
+
+    func close() {
+        lock.lock()
+        let socket = socket
+        lock.unlock()
+        socket?.close()
+    }
+}
+
+private final class CloudURLSessionConnectorProbeSocket: CloudStartedTransportSocket,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let observer: CloudWebSocketOpenObserver
+    private let outcome: CloudURLSessionConnectorProbeOutcome
+    private let resourceTimeout: TimeInterval
+    private let onClose: @Sendable () -> Void
+    private let continuation: AsyncThrowingStream<String, Error>.Continuation
+    private var iterator: AsyncThrowingStream<String, Error>.Iterator
+    private var expiryTask: Task<Void, Never>?
+    private var resumed = false
+    private var closed = false
+    private var didSendHello = false
+
+    init(
+        observer: CloudWebSocketOpenObserver,
+        outcome: CloudURLSessionConnectorProbeOutcome,
+        resourceTimeout: TimeInterval,
+        onClose: @escaping @Sendable () -> Void
+    ) {
+        self.observer = observer
+        self.outcome = outcome
+        self.resourceTimeout = resourceTimeout
+        self.onClose = onClose
+        var continuation: AsyncThrowingStream<String, Error>.Continuation!
+        let stream = AsyncThrowingStream<String, Error> { continuation = $0 }
+        self.continuation = continuation
+        iterator = stream.makeAsyncIterator()
+    }
+
+    func resume() {
+        lock.lock()
+        resumed = true
+        lock.unlock()
+        switch outcome {
+        case .opens:
+            observer.opened()
+            let challenge = Data(repeating: 0x5b, count: 32).base64EncodedString()
+            continuation.yield("{\"type\":\"challenge\",\"v\":1,\"context\":\"clawdline-challenge-v1\",\"account\":\"urlsession-probe\",\"device\":\"probe-device\",\"challenge\":\"\(challenge)\",\"expires_in_ms\":15000}")
+            expiryTask = Task { [weak self] in
+                guard let self else { return }
+                try? await Task.sleep(
+                    nanoseconds: UInt64(max(0.001, resourceTimeout) * 1_000_000_000)
+                )
+                if !Task.isCancelled { self.close() }
+            }
+        case .unauthorized:
+            observer.failed(statusCode: 401, error: nil)
+        case .stalls:
+            break
+        }
+    }
+
+    func send(text: String) async throws {
+        let shouldReady = claimHello()
+        if shouldReady {
+            continuation.yield("{\"type\":\"ready\",\"v\":1,\"account\":\"urlsession-probe\",\"device\":\"probe-device\",\"role\":\"machine\",\"connected_at\":0,\"token_expires_at\":3600000}")
+        }
+    }
+
+    private func claimHello() -> Bool {
+        lock.lock()
+        let shouldReady = !didSendHello && !closed
+        didSendHello = true
+        lock.unlock()
+        return shouldReady
+    }
+
+    func receiveText() async throws -> String {
+        guard let text = try await iterator.next() else { throw CloudTransportError.notConnected }
+        return text
+    }
+
+    func close() {
+        lock.lock()
+        guard !closed else {
+            lock.unlock()
+            return
+        }
+        closed = true
+        let expiryTask = expiryTask
+        lock.unlock()
+        expiryTask?.cancel()
+        continuation.finish()
+        onClose()
+    }
+
+    func snapshot() -> (resumed: Bool, closed: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (resumed, closed)
+    }
+}
+
 /// A deliberately small, in-process WebSocket relay for transport tests. It binds only to
 /// 127.0.0.1, validates the Bearer upgrade and real relay challenge signature, and implements
 /// challenge/hello/ready, publish/ack, envelope delivery, and forced disconnects.
@@ -452,8 +874,10 @@ private final class CloudLoopbackContinuationGate: @unchecked Sendable {
 struct CloudLoopbackSocketConnector: CloudTransportSocketConnecting, Sendable {
     let relay: CloudLoopbackRelay
 
-    func connect(url: URL, bearerToken: String) async throws -> any CloudTransportSocket {
-        try await relay.connectInProcess(url: url, bearerToken: bearerToken)
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        CloudEstablishedTransportSocket(
+            try await relay.connectInProcess(url: url, bearerToken: bearerToken)
+        )
     }
 }
 
