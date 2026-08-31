@@ -159,6 +159,12 @@ check(CredentialLifetimePolicy.shouldRevokeUnseen(
 check(!CredentialLifetimePolicy.shouldRevokeUnseen(
         expectedDeviceID: "expected", devices: [exactSeen]),
       "a credential that supplied lastSeen remains usable")
+// Both checks above hold a one-device list, so they cannot tell "the exact device was seen" from
+// "some device was seen". A mixed list is the only input that separates them, and getting it wrong
+// leaves a live unseen key behind whenever anything else on the Mac is active.
+check(CredentialLifetimePolicy.shouldRevokeUnseen(
+        expectedDeviceID: "expected", devices: [otherSeen, exactUnseen]),
+      "another device lastSeen does not save an unseen route credential")
 
 var mintCount = 0
 func mint(_ name: String, _ caps: Set<RemoteAuth.Capability>, _ local: Bool)
@@ -260,8 +266,8 @@ check(HomeReopenPolicy.shouldShowHome(hasVisibleWindows: false) &&
       !HomeReopenPolicy.shouldShowHome(hasVisibleWindows: true),
       "Dock reopen preserves an already-visible Settings or prompt window")
 
-check(checks == 48, "expected Swift behavior check count")
-print("49 Swift checks passed")
+check(checks == 49, "expected Swift behavior check count")
+print("50 Swift checks passed")
 `, "utf8");
 
   const compile = spawnSync("xcrun", [
@@ -278,7 +284,7 @@ print("49 Swift checks passed")
   const run = spawnSync(binary, [join(work, "store")], { encoding: "utf8" });
   process.stdout.write(run.stdout);
   process.stderr.write(run.stderr);
-  checkNode(run.status === 0 && run.stdout.includes("49 Swift checks passed"),
+  checkNode(run.status === 0 && run.stdout.includes("50 Swift checks passed"),
             "focused seam behavior passes its asserted check count");
 
   const copyFiles = readdirSync(sourcesDirectory).filter((name) => /^Copy\+.*\.swift$/.test(name));
