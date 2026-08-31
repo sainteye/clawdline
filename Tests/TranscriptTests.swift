@@ -1230,7 +1230,7 @@ group("the Web transcript has an inert Clawdline card") {
               && noticeRenderer.contains("T.webNoticeHandoffPickedUp")
               && noticeRenderer.contains("T.webNoticeHandoffNeedsDelivery")
               && noticeRenderer.contains("T.webNoticeRecheckGit"))
-    func renderEntry(_ entry: [String: Any]) -> (html: String, status: Int32) {
+    func renderEntry(_ entry: [String: Any], expanded: Bool = false) -> (html: String, status: Int32) {
         guard let rendererStart = js.range(of: "function whoHTML(role, at) {") else {
             return ("", -1)
         }
@@ -1241,9 +1241,10 @@ group("the Web transcript has an inert Clawdline card") {
                                                    options: [.fragmentsAllowed])
             return String(decoding: data, as: UTF8.self)
         }
+        let expandedState = expanded ? #"{"activity-test-patch":true}"# : "{}"
         let script = """
         var WHO = { user: "you", assistant: "claude", peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: "tool" };
-        var S = { assistantIcons: false, expanded: {} };
+        var S = { assistantIcons: false, expanded: \(expandedState) };
         var T = new Proxy({}, { get: function (_, key) { return String(key); } });
         function byId() { return null; }
         function assistantLogo(value) { return "LOGO:" + esc(value); }
@@ -1251,6 +1252,12 @@ group("the Web transcript has an inert Clawdline card") {
         function clockOf(value) { return String(value || ""); }
         function fill(value) { return String(value || ""); }
         function foldKey() { return "test-patch"; }
+        function foldHTML(key, names, open) {
+            return '<div class="entry folded" data-role="tool"><div class="body">' +
+                '<button type="button" class="pill" data-fold="' + key +
+                '" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+                '<span class="what">' + esc(names.join(' ')) + '</span></button></div></div>';
+        }
         function esc(value) {
             return String(value == null ? "" : value)
                 .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -1430,18 +1437,39 @@ group("the Web transcript has an inert Clawdline card") {
             ["kind": "read", "name": "Codex.swift", "path": "Sources/Codex.swift"],
         ]],
     ])
-    check("an Explored activity renders typed search and read actions",
-          explored.status == 0 && explored.html.contains(#"data-role="explored""#)
-            && explored.html.contains("Search") && explored.html.contains("Read")
-            && explored.html.contains("Codex.swift") && explored.html.contains("Sources"))
+    check("an Explored activity defaults to the existing compact action pill",
+          explored.status == 0 && explored.html.contains(#"class="entry folded""#)
+            && explored.html.contains(#"class="pill""#)
+            && explored.html.contains(#"aria-expanded="false""#)
+            && explored.html.contains("shell")
+            && js.contains("exploredRunHTML(exploredRun)"))
+    check("a closed Explored pill omits its verbose search and read rows",
+          !explored.html.contains(#"data-role="explored""#)
+            && !explored.html.contains("Search") && !explored.html.contains("Read")
+            && !explored.html.contains("Codex.swift") && !explored.html.contains("title &lt;tag&gt;"))
+    let expandedExplored = renderEntry([
+        "role": "tool", "tool": "shell", "text": "Explore files",
+        "activity": ["kind": "explored", "status": "completed", "actions": [
+            ["kind": "search", "query": "title <tag>", "path": "Sources"],
+            ["kind": "read", "name": "Codex.swift", "path": "Sources/Codex.swift"],
+        ]],
+    ], expanded: true)
+    check("opening an Explored pill reveals its typed search and read actions",
+          expandedExplored.status == 0
+            && expandedExplored.html.contains(#"aria-expanded="true""#)
+            && expandedExplored.html.contains(#"data-role="explored""#)
+            && expandedExplored.html.contains("Search") && expandedExplored.html.contains("Read")
+            && expandedExplored.html.contains("Codex.swift")
+            && expandedExplored.html.contains("Sources"))
     check("an activity path is nested under its subject instead of occupying a right column",
-          explored.html.contains(#"class="activity-detail"><span class="activity-subject""#)
-            && explored.html.contains(#"</span><span class="activity-path">Sources/Codex.swift"#))
+          expandedExplored.html.contains(#"class="activity-detail"><span class="activity-subject""#)
+            && expandedExplored.html.contains(#"</span><span class="activity-path">Sources/Codex.swift"#))
     check("activity detail uses a full-width stacked subject and secondary path",
           css.contains(#".activity-detail { min-width: 0; flex: 1 1 auto; }"#)
             && css.contains(#".activity-path { display: block; margin-left: 0;"#))
     check("activity fields are escaped and never become transcript markup",
-          explored.html.contains("title &lt;tag&gt;") && !explored.html.contains("<tag>"))
+          expandedExplored.html.contains("title &lt;tag&gt;")
+            && !expandedExplored.html.contains("<tag>"))
     let repeatedExploration = renderEntry([
         "role": "tool", "tool": "shell", "text": "Explore files",
         "activity": ["kind": "explored", "status": "completed", "actions": [
@@ -1450,11 +1478,13 @@ group("the Web transcript has an inert Clawdline card") {
             ["kind": "search", "query": "Settings", "path": "Sources"],
             ["kind": "read", "name": "Settings.swift", "path": "Sources/Settings.swift"],
         ]],
-    ])
+    ], expanded: true)
     let repeatedRows = repeatedExploration.html.components(separatedBy: "<li>").count - 1
     expect("only adjacent duplicate activity rows are collapsed", repeatedRows, 3)
     expect("a repeated activity after a different action remains visible",
            repeatedExploration.html.components(separatedBy: "Settings.swift").count - 1, 4)
+    check("structured activity content participates in a fold's stable identity",
+          js.contains(#"text += "\u0001" + JSON.stringify(e.activity)"#))
     check("task state lookup rejects inherited object properties and keeps a generic title",
           noticeRenderer.contains("Object.prototype.hasOwnProperty.call(states, n.state)")
               && noticeRenderer.contains("var title = T.webNoticeFinished"))

@@ -164,6 +164,20 @@ export function renderTranscript() {
     var i = 0;
     while (i < entries.length) {
         if (entries[i].role !== "tool") { blocks.push(entryHTML(entries[i])); i += 1; continue; }
+        // Read/search commands are useful as a summary and noisy as a transcript. Keep adjacent
+        // Explored items in the same compact run, just as ordinary shell calls were displayed
+        // before structured activity detail existed. Opening the pill still reveals every card.
+        var activity = activityOf(entries[i]);
+        if (activity && activity.kind === "explored") {
+            var exploredRun = [];
+            while (i < entries.length && entries[i].role === "tool") {
+                var nextActivity = activityOf(entries[i]);
+                if (!nextActivity || nextActivity.kind !== "explored") break;
+                exploredRun.push(entries[i]); i += 1;
+            }
+            blocks.push(exploredRunHTML(exploredRun));
+            continue;
+        }
         // Codex has already given this item a lossless patch. It is authored output worth
         // reading, not machinery to bury inside the surrounding shell/tool run.
         if (fileChangesOf(entries[i]) || planOf(entries[i]) || activityOf(entries[i])) {
@@ -480,6 +494,11 @@ function foldKey(run) {
         // Two edits of the same filenames are not the same fold merely because their short
         // summaries match. The patch bytes are the stable identity the rollout supplied.
         if (Array.isArray(e.fileChanges)) text += "\u0001" + JSON.stringify(e.fileChanges);
+        // Likewise, two searches with the same generic summary are different runs. Keep the
+        // typed Read/Search payload in the identity so an opened pill cannot jump to another.
+        if (e.activity && typeof e.activity === "object") {
+            text += "\u0001" + JSON.stringify(e.activity);
+        }
         for (var i = 0; i < text.length; i++) {
             hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
         }
@@ -613,7 +632,7 @@ function activityActionsHTML(actions) {
     return rows.join("");
 }
 
-function activityHTML(e) {
+function activityCardHTML(e) {
     var activity = activityOf(e) || {};
     var kind = activity.kind === "explored" ? "explored" : "called";
     var title = kind === "called" ? String(activity.title || e.text || e.tool || "") : "";
@@ -628,6 +647,28 @@ function activityHTML(e) {
         (title ? '<span class="activity-title">' + esc(title) + '</span>' : "") +
         '<span class="activity-meta">' + esc(meta.join(" · ")) + '</span></header>' +
         (actions ? '<ul>' + actions + '</ul>' : "") + result + '</section></div></div>';
+}
+
+/** The old compact tool-run presentation, now with lossless Explored detail behind its handle. */
+function exploredRunHTML(run) {
+    var names = [];
+    run.forEach(function (e) {
+        var activity = activityOf(e);
+        var count = activity && Array.isArray(activity.actions) ? activity.actions.length : 0;
+        for (var i = 0; i < count; i++) names.push(e.tool || "shell");
+    });
+    // A valid Explored activity normally has at least one typed action. Stay visible if an older
+    // server ever supplies an empty array rather than rendering a misleading zero-step pill.
+    if (!names.length) run.forEach(function (e) { names.push(e.tool || "shell"); });
+    var key = "activity-" + foldKey(run);
+    var open = !!S.expanded[key];
+    return foldHTML(key, names, open, false) + (open ? run.map(activityCardHTML).join("") : "");
+}
+
+function activityHTML(e) {
+    var activity = activityOf(e);
+    return activity && activity.kind === "explored"
+        ? exploredRunHTML([e]) : activityCardHTML(e);
 }
 
 function patchPath(path) {

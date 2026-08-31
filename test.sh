@@ -14,7 +14,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # dispatch from detached automation adds 8. Clawdfather succession adds 75.
 # The exact candidate-tree run remains authoritative and must update this guard if its observed
 # final count differs.
-expected_swift_receipt='7226 checks passed'
+expected_swift_receipt='7229 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
