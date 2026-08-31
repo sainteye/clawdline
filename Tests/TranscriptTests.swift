@@ -1363,6 +1363,25 @@ group("the Web transcript has an inert Clawdline card") {
             && edited.html.contains(#"<span class="new">7</span>"#)
             && edited.html.contains(#"data-kind="add""#)
             && edited.html.contains("let second = false"))
+    let largeContent = (1...25).map { "let item\($0) = true" }.joined(separator: "\n") + "\n"
+    let largeEdit = renderEntry([
+        "role": "tool", "tool": "edit", "text": "Large.swift, Note.swift",
+        "fileChanges": [
+            ["path": "/Users/me/a/Large.swift", "kind": "update", "content": largeContent],
+            ["path": "/Users/me/a/Note.swift", "kind": "add", "content": "one line\n"],
+        ],
+    ])
+    check("a large patch defaults closed instead of filling the transcript",
+          largeEdit.status == 0
+            && largeEdit.html.contains(#"data-role="patch""#)
+            && largeEdit.html.contains(#"aria-expanded="false""#))
+    check("a closed large patch still names every changed file and its totals",
+          largeEdit.html.contains("Large.swift") && largeEdit.html.contains("Note.swift")
+            && largeEdit.html.contains(#"<span class="add">+25</span>"#)
+            && largeEdit.html.contains(#"<span class="add">+1</span>"#))
+    check("a closed large patch omits source rows until the reader expands it",
+          !largeEdit.html.contains(#"class="diff-line add""#)
+            && !largeEdit.html.contains("let item25 = true"))
     let written = renderEntry([
         "role": "tool", "tool": "Write", "text": "/tmp/task/artifacts/format-sample.md",
         "fileChanges": [["path": "/tmp/task/artifacts/format-sample.md", "kind": "write",

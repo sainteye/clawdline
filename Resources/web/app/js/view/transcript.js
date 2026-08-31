@@ -688,8 +688,12 @@ function diffLineHTML(line) {
         '<code>' + esc(line.text) + '</code></div>';
 }
 
-function fileChangeHTML(change) {
-    var lines = linesOfChange(change);
+// Eighteen source rows are enough to show the shape of an edit without turning one tool event
+// into the whole phone screen. Larger patches still list every file and its totals; the reader
+// can explicitly open the authored diff when the source itself is what they came to inspect.
+var PATCH_DETAIL_LINE_LIMIT = 18;
+
+function fileChangeHTML(change, lines, showLines) {
     var additions = lines.filter(function (line) { return line.kind === "add"; }).length;
     var deletions = lines.filter(function (line) { return line.kind === "del"; }).length;
     var moved = change.movePath
@@ -700,20 +704,31 @@ function fileChangeHTML(change) {
         '<header><span class="diff-path">' + esc(patchPath(change.path)) + '</span>' + moved +
         '<span class="diff-kind">' + esc(change.kind || "change") + '</span>' +
         '<span class="diff-stats">' + stats + '</span></header>' +
-        (lines.length ? '<div class="diff-scroll"><div class="diff-lines">' +
+        (showLines && lines.length ? '<div class="diff-scroll"><div class="diff-lines">' +
             lines.map(diffLineHTML).join("") + '</div></div>' : "") + '</section>';
 }
 
 function patchHTML(e) {
     var changes = fileChangesOf(e) || [];
+    var views = changes.map(function (change) {
+        return { change: change, lines: linesOfChange(change) };
+    });
     var key = "p" + foldKey([e]);
-    var open = S.expanded[key] !== false;
-    return '<div class="entry patch" data-role="patch"><div class="who">' + esc(WHO.tool) +
+    var lineCount = views.reduce(function (total, view) {
+        return total + view.lines.length;
+    }, 0);
+    var defaultOpen = lineCount <= PATCH_DETAIL_LINE_LIMIT;
+    var open = defaultOpen ? S.expanded[key] !== false : !!S.expanded[key];
+    return '<div class="entry patch" data-role="patch" data-detail="' +
+        (open ? "open" : "collapsed") + '"><div class="who">' + esc(WHO.tool) +
         '</div><div class="body"><button type="button" class="patch-title" data-fold="' + key +
-        '" data-default-open="1" aria-expanded="' + (open ? "true" : "false") + '">' +
+        '" data-default-open="' + (defaultOpen ? "1" : "0") + '" aria-expanded="' +
+        (open ? "true" : "false") + '">' +
         '<span class="caret">' + (open ? "⏷" : "⏵") + '</span><span class="toolname">' +
         esc(e.tool) + '</span><span class="subject">' + esc(e.text || "") + '</span></button>' +
-        (open ? '<div class="patch-body">' + changes.map(fileChangeHTML).join("") + '</div>' : "") +
+        '<div class="patch-body">' + views.map(function (view) {
+            return fileChangeHTML(view.change, view.lines, open);
+        }).join("") + '</div>' +
         '</div></div>';
 }
 

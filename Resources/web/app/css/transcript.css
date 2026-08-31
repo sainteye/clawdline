@@ -249,6 +249,8 @@
 }
 .patch-title:hover .subject, .patch-title:focus-visible .subject { color: var(--ink); }
 .patch-body { display: grid; gap: 9px; margin-top: 6px; }
+.entry.patch[data-detail="collapsed"] .patch-body { gap: 5px; margin-top: 4px; }
+.entry.patch[data-detail="collapsed"] .diff-file > header { border-bottom: 0; }
 .diff-file {
     min-width: 0; overflow: hidden;
     border: 1px solid var(--line); border-radius: 8px;
