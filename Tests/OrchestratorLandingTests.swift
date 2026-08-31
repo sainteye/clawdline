@@ -747,114 +747,35 @@ group("pending landing ownership is one fail-closed observation across list and 
            "missing")
 }
 
-group("bounded coordinator inventory keeps timed-out and in-flight cache reads stale") {
-    let manager = FileManager.default
-    let coordinatorDirectory = manager.temporaryDirectory
-        .appendingPathComponent("clawdline-bounded-coordinator-\(UUID().uuidString)",
-                                isDirectory: true)
-    try! manager.createDirectory(at: coordinatorDirectory, withIntermediateDirectories: true)
-    Coordinator.storeURLOverrideForTesting = coordinatorDirectory
-        .appendingPathComponent("coordinator.json")
-    Coordinator.forgetForTesting()
-    let orchestratorStore = Orchestrator.storeURL
-    let orchestratorBefore = try? Data(contentsOf: orchestratorStore)
-    Orchestrator.forget()
-    let refreshGate = DispatchSemaphore(value: 0)
-    RemoteServer.coordinatorInventoryRefreshGateForTesting = refreshGate
-    defer {
-        refreshGate.signal()
-        RemoteServer.coordinatorInventoryRefreshGateForTesting = nil
-        RemoteServer.shared.seedCoordinatorInventoryForTesting(nil)
-        Coordinator.storeURLOverrideForTesting = nil
-        Coordinator.forgetForTesting()
-        try? manager.removeItem(at: coordinatorDirectory)
-        if let orchestratorBefore {
-            try? orchestratorBefore.write(to: orchestratorStore, options: .atomic)
-        } else {
-            try? manager.removeItem(at: orchestratorStore)
-        }
-        Orchestrator.forget()
-    }
+group("published coordinator inventory is a direct fail-closed read") {
+    let source = (try? String(contentsOfFile: "Sources/RemoteServer.swift",
+                              encoding: .utf8)) ?? ""
+    let observation = sourceSlice(
+        source, from: "func coordinatorObservation()",
+        through: "static func attachCoordinator")
+    check("coordinator projection reads one publication without a main hop or semaphore",
+          observation.contains("publishedInventory()")
+            && !observation.contains("DispatchQueue.main")
+            && !observation.contains("DispatchSemaphore")
+            && !observation.contains("onMain("), observation)
 
-    let durable = coordinatorFixture("bounded-durable")
-    guard case .ok = Coordinator.register(
-        durable, among: [durable], now: Date(timeIntervalSince1970: 100)) else {
-        check("the bounded-inventory coordinator fixture registers", false)
-        return
-    }
-    let taskID = "71717171-8181-9191-a1a1-b1b1b1b1b1b1"
-    let taskSecret = String(repeating: "71", count: 32)
-    var task = Orchestrator.Task(
-        id: taskID, state: .success, kind: "custom", title: "bounded stale landing",
-        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
-        created: Date(timeIntervalSince1970: 1), finishedAt: Date(timeIntervalSince1970: 2),
-        rootSessionId: "bounded-root", rootAssistant: .codex,
-        rootLabel: "bounded owner", claims: ["Sources/Bounded.swift"],
-        claimsDeclared: true, secretHash: Orchestrator.hash(ofSecret: taskSecret))
-    task.landing = Orchestrator.Landing(
-        state: .pending, target: "main", delivery: nil,
-        ownerRootKey: Orchestrator.rootKeyDigest("bounded-root"),
-        since: Date(timeIntervalSince1970: 10), commit: nil, note: nil)
-    Orchestrator.holdScheduleTaskForTesting(task)
+    expect("a never-observed production publication renders as missing evidence",
+           RemoteServer.coordinatorSessionsFresh(complete: false, observedAt: nil), true)
+    expect("an observed incomplete production publication renders as stale evidence",
+           RemoteServer.coordinatorSessionsFresh(complete: false, observedAt: Date()), false)
 
-    RemoteServer.shared.seedCoordinatorInventoryForTesting(.init(
-        targets: [], states: [:], complete: true,
-        observedAt: Date(timeIntervalSince1970: 200), generation: 9))
-    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
-    func payload(_ path: String) -> [String: Any]? {
-        let done = DispatchSemaphore(value: 0)
-        let resultLock = NSLock()
-        var result: [String: Any]?
-        Thread.detachNewThread {
-            let response = RemoteServer.shared.route(remoteRequest("GET", path, headers: auth))
-            let decoded = (try? JSONSerialization.jsonObject(with: response.body))
-                as? [String: Any]
-            resultLock.lock()
-            result = decoded
-            resultLock.unlock()
-            done.signal()
-        }
-        done.wait()
-        resultLock.lock(); defer { resultLock.unlock() }
-        return result
-    }
-    func sessionFreshness(_ payload: [String: Any]?) -> String? {
-        if let sources = payload?["sources"] as? [String: Any] {
-            return (sources["sessions"] as? [String: Any])?["freshness"] as? String
-        }
-        let bearings = payload?["bearings"] as? [String: Any]
-        return ((bearings?["sources"] as? [String: Any])?["sessions"]
-            as? [String: Any])?["freshness"] as? String
-    }
-
-    let timedOut = payload("/v1/orchestrator/landings")
-    let timedOutRows = timedOut?["landings"] as? [[String: Any]] ?? []
-    check("a timed-out bounded refresh returns the cached inventory as stale",
-          sessionFreshness(timedOut) == "stale"
-            && timedOutRows.count == 1
-            && (timedOutRows[0]["ownership"] as? [String: Any])?["status"]
-                as? String == "unknown")
-
-    let inFlight = payload("/v1/orchestrator/coordinator")
-    let inFlightCoordinator = inFlight?["coordinator"] as? [String: Any]
-    let inFlightRows = (inFlight?["bearings"] as? [String: Any])?["pending_landings"]
-        as? [[String: Any]] ?? []
-    check("an in-flight bounded refresh also returns stale and preserves every durable row",
-          sessionFreshness(inFlight) == "stale"
-            && inFlightRows.count == 1
-            && (inFlightRows[0]["ownership"] as? [String: Any])?["status"]
-                as? String == "unknown")
-    check("stale cached absence never positively asserts the durable coordinator offline",
-          inFlightCoordinator?["status"] as? String == "unknown"
-            && inFlightCoordinator?["lifecycle"] as? String == "unknown")
-    let refreshState = RemoteServer.shared.coordinatorInventoryRefreshStateForTesting()
-    check("repeated timed-out reads schedule no second main-queue refresh while one is pending",
-          refreshState.pending && refreshState.scheduled == 1,
-          "pending=\(refreshState.pending), scheduled=\(refreshState.scheduled)")
-
-    refreshGate.signal()
+    RemoteServer.coordinatorObservationUnavailableForTesting = true
+    defer { RemoteServer.coordinatorObservationUnavailableForTesting = false }
+    let response = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/coordinator",
+        headers: ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]))
+    expect("missing publication evidence still returns the durable coordinator surface",
+           response.status, 200)
+    let payload = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+    let sources = (payload?["bearings"] as? [String: Any])?["sources"] as? [String: Any]
+    expect("missing publication evidence is typed rather than rendered as an empty scan",
+           (sources?["sessions"] as? [String: Any])?["freshness"] as? String, "missing")
 }
-
 group("cleanup retains pending landing obligations beyond the ordinary registry cap") {
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)

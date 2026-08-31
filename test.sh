@@ -17,9 +17,12 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # 92 -> 105, CloudSettings 40 -> 59 and CloudLifecycle 76 -> 87. Every added check is
 # unconditional and outside a loop, so the delta is arithmetic rather than an estimate; the
 # paired checks inside do/catch contribute one each.
+# Publication-bound Session process evidence and bounded subprocess cleanup add 31 checks; removing
+# five obsolete main-crossing sites and replacing the four-check coordinator wait fixture with
+# five direct-publication checks makes the net change 27.
 # The exact candidate-tree run remains authoritative and must update this guard if its observed
 # final count differs.
-expected_swift_receipt='7310 checks passed'
+expected_swift_receipt='7337 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

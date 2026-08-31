@@ -118,10 +118,6 @@ final class RemoteServer: @unchecked Sendable {
     private var cloudPublishTail: Task<Void, Never>?
     private var cloudLifecycleTask: Task<Void, Never>?
     private var cloudLifecycleGeneration: UInt64 = 0
-    private let coordinatorInventoryLock = NSLock()
-    private var coordinatorInventoryCache: CoordinatorSessionInventory?
-    private var coordinatorInventoryRefreshPending = false
-    private var coordinatorInventoryRefreshScheduleCountForTesting = 0
     /// Main-thread mirror used only to decide whether SessionWatch still needs its observer when
     /// the loopback listener is off.
     private var cloudAttached = false
@@ -135,10 +131,6 @@ final class RemoteServer: @unchecked Sendable {
     /// sets it; route tests use it to prove landings remain readable when live observation is
     /// unavailable.
     static var coordinatorObservationUnavailableForTesting = false
-    /// Holds the real main-queue refresh after it has been scheduled. Tests combine this with a
-    /// seeded cache to exercise the production timeout and single-flight branches rather than a
-    /// route-level observation replacement.
-    static var coordinatorInventoryRefreshGateForTesting: DispatchSemaphore?
     /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
     /// replace only SessionWatch's external terminal inventory with deterministic rows.
     static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
@@ -1066,7 +1058,27 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(404, "not_found", "No session named that")
             }
             if parts.count == 1 {
-                return .json(["session": json(of: session)])
+                let publication = SessionWatch.shared.publishedInventory()
+                let supplied = Self.sessionPayloadForTesting
+                let targets = supplied?.0 ?? publication.targets
+                let states = supplied?.1 ?? publication.states
+                guard let fixed = Self.session(withID: id, among: targets) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+                let identity = Self.sessionWorkIdentity(
+                    fixed, publishedIdentity: publication.identities[fixed.id])
+                let matches = Self.identityMatchCounts(
+                    targets.filter(\.isAssistant).map { candidate in
+                        Self.sessionWorkIdentity(
+                            candidate,
+                            publishedIdentity: publication.identities[candidate.id])
+                    })
+                return .json(["session": json(
+                    of: fixed, stateOverride: states[fixed.id], identity: identity,
+                    identityMatches: matches[fixed.id] ?? 1,
+                    inventory: sessionInventoryEvidence(publication),
+                    acceptedPublication: publication,
+                    publishedIdentity: publication.identities[fixed.id])])
             }
             if parts.count == 2, parts[1] == "transcript" {
                 let limit = min(max(Int(request.query["limit"] ?? "") ?? 200, 1), 1000)
@@ -1505,12 +1517,14 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(403, "forbidden",
                               "Reading the sessions a wait can name needs the orchestrator token.")
             }
-            let watch = SessionWatch.shared
             let supplied = Self.sessionPayloadForTesting
+            let publication = SessionWatch.shared.publishedInventory()
             return .json(["sessions": Self.coordinationSessionRows(
-                            supplied?.0 ?? watch.targets,
-                            states: supplied?.1 ?? watch.states,
-                            inventory: self.sessionInventoryEvidence()),
+                            supplied?.0 ?? publication.targets,
+                            states: supplied?.1 ?? publication.states,
+                            inventory: self.sessionInventoryEvidence(publication),
+                            publishedIdentities: publication.identities,
+                            publishedLabels: publication.labels),
                           "at": Int(Date().timeIntervalSince1970)])
 
         // A process asks which terminal-neutral address currently holds its exact conversation.
@@ -1683,8 +1697,11 @@ final class RemoteServer: @unchecked Sendable {
                     }
                 }
 
+                let labelPublication = SessionWatch.shared.publishedInventory()
                 let message = ClawdlineSessionMessage.Message(
-                    source: .init(id: source.id, label: source.displayLabel,
+                    source: .init(
+                        id: source.id,
+                        label: labelPublication.labels[source.id] ?? source.coordinate,
                                   assistant: sourceAssistant),
                     body: text,
                     artifacts: stored.map(\.artifact))
@@ -2472,7 +2489,8 @@ final class RemoteServer: @unchecked Sendable {
                                                     "downstream": downstream])
                 DispatchQueue.main.async { SessionWatch.shared.labelsDidChange() }
                 return .json(["ok": true, "title": title ?? "",
-                              "display_title": session.displayLabel, "local_applied": durable,
+                              "display_title": session.observedDisplayLabel,
+                              "local_applied": durable,
                               "downstream": downstream, "downstream_synced": synced])
             }
 
@@ -2940,7 +2958,12 @@ final class RemoteServer: @unchecked Sendable {
             return
         }
         let id = String(request.path.dropFirst("/v1/sessions/".count).dropLast("/send".count))
-        guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+        let terminalPublication = SessionWatch.shared.publishedInventory()
+        let suppliedInventory = Self.sessionPayloadForTesting
+        let terminalTargets = suppliedInventory?.0 ?? terminalPublication.targets
+        let terminalStates = suppliedInventory?.1 ?? terminalPublication.states
+        guard let session = Self.session(
+            withID: id.removingPercentEncoding ?? id, among: terminalTargets) else {
             let response = Response.error(404, "not_found", "No session named that")
             remember(response, under: key, for: request, by: device)
             deliver(response)
@@ -2975,7 +2998,7 @@ final class RemoteServer: @unchecked Sendable {
         }
 
         terminalPending[key] = [deliver]
-        let shouldCheckMenu = SessionWatch.shared.states[session.id] == .waiting
+        let shouldCheckMenu = terminalStates[session.id] == .waiting
 
         let admitted = enqueueTerminalCommand(channel: session.id) { [weak self] in
             guard let self else { return }
@@ -4104,8 +4127,12 @@ final class RemoteServer: @unchecked Sendable {
     /// comes from the same pass as the limits rather than from the totals: the last assistant
     /// turn of a session that just hit its window is `<synthetic>`, and that is not a model.
     private func infoPayload(for session: TargetSession) -> [String: Any] {
-        let cwd = Targets.workingDirectory(of: session)
-        let record = Transcript.record(of: session)
+        let publication = SessionWatch.shared.publishedInventory()
+        let publishedIdentity = publication.identities[session.id]
+        let cwd = publishedIdentity?.workingDirectory ?? session.cwd
+        let record = publishedIdentity.flatMap { identity in
+            identity.recordURL.map { (url: $0, assistant: identity.assistant) }
+        }
 
         var usage: Orchestrator.Usage?
         var context: SessionInfo.Context?
@@ -4160,11 +4187,12 @@ final class RemoteServer: @unchecked Sendable {
         let permission = session.assistant == .claude
             ? SessionInfo.permissionMode(screen: Targets.visibleScreen(of: session)) : nil
         var payload = SessionInfo.payload(
-            id: session.id, title: session.displayLabel, assistant: session.assistant,
+            id: session.id, title: publication.labels[session.id] ?? session.coordinate,
+            assistant: session.assistant,
             sessionId: Self.sessionIdentity(assistant: session.assistant,
-                                            processBound: Transcript.sessionID(of: session)),
+                                            processBound: publishedIdentity?.conversationID),
             model: model,
-            cwd: cwd, startedAt: Targets.processStart(of: session),
+            cwd: cwd, startedAt: publishedIdentity?.processStart,
             usage: usage, context: context, costOverrideUsd: costOverrideUsd, limits: limits,
             files: cwd.flatMap { SessionInfo.files(cwd: $0) },
             deploy: deploy, models: SessionInfo.models(for: session.assistant),
@@ -4175,33 +4203,40 @@ final class RemoteServer: @unchecked Sendable {
 
     private func sessionsPayload() -> [String: Any] {
         let watch = SessionWatch.shared
+        let publication = watch.publishedInventory()
         let supplied = Self.sessionPayloadForTesting
-        let targets = supplied?.0 ?? watch.targets
-        let states = supplied?.1
+        let targets = supplied?.0 ?? publication.targets
+        let states = supplied?.1 ?? publication.states
         // The identity walk is done once for the whole list and handed down. Each row needed it
         // anyway, and the duplicate count is a fact about the list rather than about one row.
         let identities = Dictionary(
-            targets.map { ($0.id, Self.sessionWorkIdentity($0)) },
+            targets.map { session in
+                (session.id, Self.sessionWorkIdentity(
+                    session, publishedIdentity: publication.identities[session.id]))
+            },
             uniquingKeysWith: { first, _ in first })
         let matches = Self.identityMatchCounts(
             targets.filter(\.isAssistant).compactMap { identities[$0.id] })
-        let evidence = sessionInventoryEvidence()
+        let evidence = sessionInventoryEvidence(publication)
         let registry = Orchestrator.closeabilityRegistrySnapshot()
         return [
             "sessions": targets.map {
-                json(of: $0, stateOverride: states?[$0.id], identity: identities[$0.id],
+                json(of: $0, stateOverride: states[$0.id], identity: identities[$0.id],
                      identityMatches: matches[$0.id] ?? 1, inventory: evidence,
-                     closeabilityRegistry: registry)
+                     closeabilityRegistry: registry,
+                     acceptedPublication: publication,
+                     publishedIdentity: publication.identities[$0.id])
             },
             "at": Int(Date().timeIntervalSince1970),
             "scan": [
-                "epoch": watch.scanEpoch,
-                "generation": watch.scanGeneration,
-                "complete": watch.scanComplete,
-                "emptyAuthoritative": watch.emptyInventoryAuthoritative,
+                "epoch": publication.epoch,
+                "generation": publication.generation,
+                "complete": publication.complete,
+                "provenance": publication.provenance,
+                "emptyAuthoritative": publication.emptyAuthoritative,
                 "completed": [
-                    "sequence": watch.completedScanSequence,
-                    "complete": watch.completedScanComplete,
+                    "sequence": publication.completedSequence,
+                    "complete": publication.completedComplete,
                 ],
             ],
         ]
@@ -4224,12 +4259,25 @@ final class RemoteServer: @unchecked Sendable {
     /// all-fields task comparison; it can never promote a stale receipt.
     static func sessionWorkIdentity(_ session: TargetSession) -> Orchestrator.SessionWorkIdentity {
         if let supplied = sessionWorkIdentityForTesting { return supplied(session) }
-        let pid = Targets.pid(of: session)
+        let publishedIdentity = SessionWatch.shared.publishedInventory().identities[session.id]
+        return sessionWorkIdentity(session, publishedIdentity: publishedIdentity)
+    }
+
+    static func sessionWorkIdentity(
+        _ session: TargetSession, publishedIdentity: SessionWatch.PublishedIdentity?
+    ) -> Orchestrator.SessionWorkIdentity {
+        if let supplied = sessionWorkIdentityForTesting { return supplied(session) }
+        let evidence = publishedIdentity.flatMap { identity -> SessionWatch.PublishedIdentity? in
+            guard identity.assistant == session.assistant, identity.tty == session.tty else {
+                return nil
+            }
+            return identity
+        }
         return Orchestrator.SessionWorkIdentity(
-            terminalID: session.id, assistant: session.assistant, tty: session.tty, pid: pid,
-            processStart: pid.flatMap { Targets.processStart(ofPID: $0) },
+            terminalID: session.id, assistant: session.assistant, tty: session.tty,
+            pid: evidence?.pid, processStart: evidence?.processStart,
             conversationID: sessionIdentity(
-                assistant: session.assistant, processBound: Transcript.sessionID(of: session)))
+                assistant: session.assistant, processBound: evidence?.conversationID))
     }
 
     /// What the SessionWatch reading that produced a row was worth. Closeability needs all
@@ -4250,7 +4298,9 @@ final class RemoteServer: @unchecked Sendable {
         SessionClosePolicy.identityMatchCounts(identities)
     }
 
-    private func sessionInventoryEvidence() -> SessionInventoryEvidence {
+    private func sessionInventoryEvidence(
+        _ acceptedPublication: SessionWatch.InventoryPublication? = nil
+    ) -> SessionInventoryEvidence {
         if let supplied = Self.coordinatorObservationEvidenceForTesting {
             return SessionInventoryEvidence(complete: supplied.complete,
                                             observedAt: supplied.observedAt,
@@ -4259,27 +4309,30 @@ final class RemoteServer: @unchecked Sendable {
         if Self.sessionPayloadForTesting != nil {
             return SessionInventoryEvidence(complete: true, observedAt: Date(), generation: nil)
         }
-        return onMain(from: "RemoteServer.closeabilityInventory") {
-            let snapshot = SessionWatch.shared.identitySnapshot()
-            return SessionInventoryEvidence(
-                complete: snapshot.complete, observedAt: snapshot.observedAt,
-                generation: snapshot.generation)
-        }
+        let publication = acceptedPublication ?? SessionWatch.shared.publishedInventory()
+        return SessionInventoryEvidence(
+            complete: publication.complete, observedAt: publication.observedAt,
+            generation: publication.generation)
     }
 
     private func sessionIdentityMatchCount(for identity: Orchestrator.SessionWorkIdentity)
         -> Int {
         guard identity.assistant != nil, identity.conversationID != nil else { return 1 }
         let targets: [TargetSession]
+        let publishedIdentities: [String: SessionWatch.PublishedIdentity]
         if let supplied = Self.sessionPayloadForTesting?.0 {
             targets = supplied
+            publishedIdentities = [:]
         } else {
-            targets = onMain(from: "RemoteServer.closeabilityIdentities") {
-                SessionWatch.shared.targets
-            }
+            let publication = SessionWatch.shared.publishedInventory()
+            targets = publication.targets
+            publishedIdentities = publication.identities
         }
         let counts = Self.identityMatchCounts(
-            targets.filter(\.isAssistant).map(Self.sessionWorkIdentity))
+            targets.filter(\.isAssistant).map { session in
+                Self.sessionWorkIdentity(
+                    session, publishedIdentity: publishedIdentities[session.id])
+            })
         return counts[identity.terminalID] ?? 0
     }
 
@@ -4334,15 +4387,24 @@ final class RemoteServer: @unchecked Sendable {
     struct CoordinatorSessionInventory {
         let targets: [TargetSession]
         let states: [String: SessionState]
+        let identities: [String: SessionWatch.PublishedIdentity]
+        let labels: [String: String]
         let complete: Bool
         let observedAt: Date?
         let generation: Int?
-    }
 
-    private enum CoordinatorInventoryAvailability {
-        case current(CoordinatorSessionInventory)
-        case stale(CoordinatorSessionInventory)
-        case missing
+        init(targets: [TargetSession], states: [String: SessionState],
+             identities: [String: SessionWatch.PublishedIdentity] = [:],
+             labels: [String: String] = [:], complete: Bool,
+             observedAt: Date?, generation: Int?) {
+            self.targets = targets
+            self.states = states
+            self.identities = identities
+            self.labels = labels
+            self.complete = complete
+            self.observedAt = observedAt
+            self.generation = generation
+        }
     }
 
     struct CoordinatorObservation {
@@ -4353,88 +4415,8 @@ final class RemoteServer: @unchecked Sendable {
         let registry: Orchestrator.CoordinatorSnapshot
     }
 
-    private func cachedCoordinatorInventory() -> CoordinatorSessionInventory? {
-        coordinatorInventoryLock.lock(); defer { coordinatorInventoryLock.unlock() }
-        return coordinatorInventoryCache
-    }
-
-    private func storeCoordinatorInventory(_ inventory: CoordinatorSessionInventory) {
-        coordinatorInventoryLock.lock()
-        coordinatorInventoryCache = inventory
-        coordinatorInventoryLock.unlock()
-    }
-
-    private func beginCoordinatorInventoryRefresh() -> Bool {
-        coordinatorInventoryLock.lock(); defer { coordinatorInventoryLock.unlock() }
-        guard !coordinatorInventoryRefreshPending else { return false }
-        coordinatorInventoryRefreshPending = true
-        return true
-    }
-
-    private func finishCoordinatorInventoryRefresh(_ inventory: CoordinatorSessionInventory) {
-        coordinatorInventoryLock.lock()
-        coordinatorInventoryCache = inventory
-        coordinatorInventoryRefreshPending = false
-        coordinatorInventoryLock.unlock()
-    }
-
-    /// Production-faithful inventory seam: only the cache is supplied. The route still executes
-    /// `boundedCoordinatorInventory`, schedules its normal main-queue refresh, waits on its real
-    /// bound, and converts the resulting current/stale/missing availability itself.
-    func seedCoordinatorInventoryForTesting(_ inventory: CoordinatorSessionInventory?) {
-        coordinatorInventoryLock.lock()
-        coordinatorInventoryCache = inventory
-        coordinatorInventoryRefreshPending = false
-        coordinatorInventoryRefreshScheduleCountForTesting = 0
-        coordinatorInventoryLock.unlock()
-    }
-
-    func coordinatorInventoryRefreshStateForTesting() -> (pending: Bool, scheduled: Int) {
-        coordinatorInventoryLock.lock(); defer { coordinatorInventoryLock.unlock() }
-        return (coordinatorInventoryRefreshPending,
-                coordinatorInventoryRefreshScheduleCountForTesting)
-    }
-
-    private func readCoordinatorInventoryOnMain() -> CoordinatorSessionInventory {
-        let watch = SessionWatch.shared
-        let acceptedScanEvidence = (watch.scanObservedAt, watch.scanGeneration)
-        return CoordinatorSessionInventory(
-            targets: watch.targets, states: watch.states, complete: watch.scanComplete,
-            observedAt: acceptedScanEvidence.0, generation: acceptedScanEvidence.1)
-    }
-
-    /// Coordination reads cannot inherit an unbounded synchronous dependency on AppKit's main
-    /// queue. A successful observation refreshes a cache; a wedged queue returns that cache as
-    /// stale, or explicit missing evidence when the process has never observed SessionWatch.
-    private func boundedCoordinatorInventory() -> CoordinatorInventoryAvailability {
-        if Self.coordinatorObservationUnavailableForTesting { return .missing }
-        if MainQueue.isCurrent {
-            let inventory = readCoordinatorInventoryOnMain()
-            storeCoordinatorInventory(inventory)
-            return .current(inventory)
-        }
-        guard beginCoordinatorInventoryRefresh() else {
-            if let cached = cachedCoordinatorInventory() { return .stale(cached) }
-            return .missing
-        }
-        let completed = DispatchSemaphore(value: 0)
-        coordinatorInventoryLock.lock()
-        coordinatorInventoryRefreshScheduleCountForTesting += 1
-        coordinatorInventoryLock.unlock()
-        let refreshGate = Self.coordinatorInventoryRefreshGateForTesting
-        DispatchQueue.main.async { [weak self] in
-            refreshGate?.wait()
-            if let self = self {
-                self.finishCoordinatorInventoryRefresh(self.readCoordinatorInventoryOnMain())
-            }
-            completed.signal()
-        }
-        if completed.wait(timeout: .now() + 0.25) == .success,
-           let inventory = cachedCoordinatorInventory() {
-            return .current(inventory)
-        }
-        if let cached = cachedCoordinatorInventory() { return .stale(cached) }
-        return .missing
+    static func coordinatorSessionsFresh(complete: Bool, observedAt: Date?) -> Bool {
+        observedAt == nil ? true : complete
     }
 
     /// SessionWatch and Orchestrator are independent sources, so they are observed in that order
@@ -4458,27 +4440,27 @@ final class RemoteServer: @unchecked Sendable {
                     sessionsObservedAt: observedAt,
                     sessionsGeneration: evidence?.generation))
         }
-        let inventory: CoordinatorSessionInventory
-        let sessionsFresh: Bool
-        switch boundedCoordinatorInventory() {
-        case .current(let current):
-            inventory = current
-            sessionsFresh = current.complete
-        case .stale(let cached):
-            inventory = cached
-            sessionsFresh = false
-        case .missing:
-            inventory = CoordinatorSessionInventory(
-                targets: [], states: [:], complete: false, observedAt: nil, generation: nil)
-            // `fresh + no observed_at` is the closed `missing` source state; ownership still sees
-            // a timestamp-less inventory and therefore returns unknown for every row.
-            sessionsFresh = true
-        }
+        let publication = SessionWatch.shared.publishedInventory()
+        let unavailable = Self.coordinatorObservationUnavailableForTesting
+        let inventory = CoordinatorSessionInventory(
+            targets: unavailable ? [] : publication.targets,
+            states: unavailable ? [:] : publication.states,
+            identities: unavailable ? [:] : publication.identities,
+            labels: unavailable ? [:] : publication.labels,
+            complete: unavailable ? false : publication.complete,
+            observedAt: unavailable ? nil : publication.observedAt,
+            generation: unavailable ? nil : publication.generation)
+        // Missing evidence has no observed time and fails ownership closed as unknown. Otherwise
+        // freshness is the confidence bit from the exact immutable publication being projected.
+        let sessionsFresh = Self.coordinatorSessionsFresh(
+            complete: inventory.complete, observedAt: inventory.observedAt)
         let bases = inventory.targets.filter(\.isAssistant).map { session in
             CoordinatorSessionBase(
-                identity: Self.sessionWorkIdentity(session),
+                identity: Self.sessionWorkIdentity(
+                    session, publishedIdentity: inventory.identities[session.id]),
                 state: inventory.states[session.id] ?? .unknown,
-                label: session.displayLabel, cwd: Targets.workingDirectory(of: session))
+                label: inventory.labels[session.id] ?? session.coordinate,
+                cwd: inventory.identities[session.id]?.workingDirectory)
         }
         let registry = Orchestrator.coordinatorSnapshot(
             bases.map { .init(identity: $0.identity, terminalState: $0.state) },
@@ -4558,10 +4540,16 @@ final class RemoteServer: @unchecked Sendable {
     /// address that cannot answer, and would make this a list of every terminal window open.
     static func coordinationSessionRows(_ sessions: [TargetSession],
                                         states: [String: SessionState],
-                                        inventory: SessionInventoryEvidence? = nil)
+                                        inventory: SessionInventoryEvidence? = nil,
+                                        publishedIdentities:
+                                            [String: SessionWatch.PublishedIdentity] = [:],
+                                        publishedLabels: [String: String] = [:])
         -> [[String: Any]] {
         let assistants = sessions.filter { $0.isAssistant }
-        let identities = Dictionary(assistants.map { ($0.id, sessionWorkIdentity($0)) },
+        let identities = Dictionary(assistants.map {
+            ($0.id, sessionWorkIdentity(
+                $0, publishedIdentity: publishedIdentities[$0.id]))
+        },
                                     uniquingKeysWith: { first, _ in first })
         let matches = identityMatchCounts(assistants.compactMap { identities[$0.id] })
         let evidence = inventory ?? SessionInventoryEvidence(
@@ -4582,13 +4570,14 @@ final class RemoteServer: @unchecked Sendable {
                 registrySnapshot: registry)
             var row: [String: Any] = [
                 "id": session.id,
-                "label": session.displayLabel,
+                "label": publishedLabels[session.id] ?? session.coordinate,
                 "state": name(of: terminalState),
                 "work_state": work.state.rawValue,
                 "closeability": closeable.wire,
             ]
             if let assistant = session.assistant { row["assistant"] = assistant.rawValue }
-            if let cwd = Targets.workingDirectory(of: session) { row["cwd"] = cwd }
+            let cwd = publishedIdentities[session.id]?.workingDirectory
+            if let cwd { row["cwd"] = cwd }
             // The task this tab was opened for, when Clawdline opened it. The same credential
             // already reads the whole record at `GET /v1/orchestrator/tasks`, so this discloses
             // nothing new — and it is the one address that needs no label matching at all.
@@ -4597,8 +4586,9 @@ final class RemoteServer: @unchecked Sendable {
                 row["root_assignment"] = assignment
             }
             let live = coordinatorProjectionSession(
-                identity: identity, label: session.displayLabel,
-                cwd: Targets.workingDirectory(of: session), workState: work.state,
+                identity: identity,
+                label: publishedLabels[session.id] ?? session.coordinate,
+                cwd: cwd, workState: work.state,
                 waitingOnSession: false, hasWaiters: false, closeability: closeable.state)
             attachCoordinator(to: &row, liveSession: live)
             return row
@@ -4662,16 +4652,15 @@ final class RemoteServer: @unchecked Sendable {
         return .resolved(second[0], assistant, canonical)
     }
 
-    /// The reading lives on the main thread and this runs on the server's queue, so the crossing
-    /// is here and nowhere else — one hop for a dictionary lookup, rather than a copy of the
-    /// session list kept in two places and drifting.
+    /// SessionWatch publishes an immutable lock-protected generation. This server-queue lookup
+    /// reads that value directly; opening one row neither synchronously enters main nor asks the
+    /// machine for a replacement process observation.
     func session(withID id: String) -> TargetSession? {
         if let supplied = Self.sessionPayloadForTesting?.0 {
             return Self.session(withID: id, among: supplied)
         }
-        return onMain(from: "RemoteServer.session(withID:)") {
-            Self.session(withID: id, among: SessionWatch.shared.targets)
-        }
+        return Self.session(
+            withID: id, among: SessionWatch.shared.publishedInventory().targets)
     }
 
     private func sessionMessageSource(withID id: String) -> TargetSession? {
@@ -4681,12 +4670,11 @@ final class RemoteServer: @unchecked Sendable {
                                      processBound: session.id)
             }
         }
-        let sessions = onMain(from: "RemoteServer.sessionMessageSource(withID:)") {
-            SessionWatch.shared.targets
-        }
+        let publication = SessionWatch.shared.publishedInventory()
+        let sessions = publication.targets
         return Self.sessionMessageSource(withID: id, among: sessions) { session in
             Self.sessionIdentity(assistant: session.assistant,
-                                 processBound: Transcript.sessionID(of: session))
+                                 processBound: publication.identities[session.id]?.conversationID)
         }
     }
 
@@ -4694,9 +4682,7 @@ final class RemoteServer: @unchecked Sendable {
         if let supplied = Self.sessionPayloadForTesting?.1 {
             return supplied[sessionID] ?? .unknown
         }
-        return onMain(from: "RemoteServer.state(of:)") {
-            SessionWatch.shared.states[sessionID] ?? .unknown
-        }
+        return SessionWatch.shared.publishedInventory().states[sessionID] ?? .unknown
     }
 
     private func titleState(of sessionID: String) -> SessionState {
@@ -4729,8 +4715,9 @@ final class RemoteServer: @unchecked Sendable {
     /// failure the caller already reports, and answering it here would file "the owner is gone"
     /// under "the owner is busy".
     private func coordinationReadiness(_ targetID: String) -> String? {
-        guard let target = session(withID: targetID),
-              SessionWatch.shared.states[target.id] == .waiting,
+        let publication = SessionWatch.shared.publishedInventory()
+        guard let target = Self.session(withID: targetID, among: publication.targets),
+              publication.states[target.id] == .waiting,
               Targets.isChoosing(target) else { return nil }
         return "That session is showing a menu, so typing into it would confirm whichever "
             + "option is highlighted rather than deliver this notice."
@@ -4741,16 +4728,21 @@ final class RemoteServer: @unchecked Sendable {
                       identity precomputedIdentity: Orchestrator.SessionWorkIdentity? = nil,
                       identityMatches: Int? = nil,
                       inventory: SessionInventoryEvidence? = nil,
-                      closeabilityRegistry: Orchestrator.CloseabilityRegistrySnapshot? = nil)
+                      closeabilityRegistry: Orchestrator.CloseabilityRegistrySnapshot? = nil,
+                      acceptedPublication: SessionWatch.InventoryPublication? = nil,
+                      publishedIdentity acceptedPublishedIdentity:
+                        SessionWatch.PublishedIdentity? = nil)
         -> [String: Any] {
         let watch = SessionWatch.shared
-        let state = stateOverride ?? watch.states[session.id] ?? .unknown
-        let menu = watch.menu(of: session.id)
+        let publication = acceptedPublication ?? watch.publishedInventory()
+        let publishedIdentity = acceptedPublishedIdentity ?? publication.identities[session.id]
+        let state = stateOverride ?? publication.states[session.id] ?? .unknown
+        let menu = publication.menus[session.id]
         var out: [String: Any] = [
             "id": session.id,
             "backend": session.backend.rawValue,
             "tty": session.tty.replacingOccurrences(of: "/dev/", with: ""),
-            "label": session.displayLabel,
+            "label": publication.labels[session.id] ?? session.coordinate,
             // Kept next to `assistant`, and it means what it always did. A page built against
             // the old field still draws a Claude Code session correctly; what it does with a
             // Codex one is show it as an ordinary terminal, which is wrong but not broken —
@@ -4790,16 +4782,16 @@ final class RemoteServer: @unchecked Sendable {
             let waitingOn = coordination.waitingOn.map { raw -> [String: Any] in
                 var row = raw
                 if let id = row["ownerSessionId"] as? String,
-                   let owner = watch.targets.first(where: { $0.id == id }) {
-                    row["ownerLabel"] = owner.displayLabel
+                   let owner = publication.targets.first(where: { $0.id == id }) {
+                    row["ownerLabel"] = publication.labels[owner.id] ?? owner.coordinate
                 }
                 return row
             }
             let waitedOnBy = coordination.waitedOnBy.map { raw -> [String: Any] in
                 var row = raw
                 if let id = row["waiterSessionId"] as? String,
-                   let waiter = watch.targets.first(where: { $0.id == id }) {
-                    row["waiterLabel"] = waiter.displayLabel
+                   let waiter = publication.targets.first(where: { $0.id == id }) {
+                    row["waiterLabel"] = publication.labels[waiter.id] ?? waiter.coordinate
                 }
                 return row
             }
@@ -4809,8 +4801,9 @@ final class RemoteServer: @unchecked Sendable {
             ]
         }
         Self.attachCoordinator(to: &out, liveSession: Self.coordinatorProjectionSession(
-            identity: identity, label: session.displayLabel,
-            cwd: Targets.workingDirectory(of: session), workState: work.state,
+            identity: identity,
+            label: publication.labels[session.id] ?? session.coordinate,
+            cwd: publishedIdentity?.workingDirectory ?? session.cwd, workState: work.state,
             waitingOnSession: !coordination.waitingOn.isEmpty,
             hasWaiters: !coordination.waitedOnBy.isEmpty,
             closeability: (out["closeability"] as? [String: Any])
@@ -4829,18 +4822,18 @@ final class RemoteServer: @unchecked Sendable {
         // read — which the page has to handle anyway, because that is the old behaviour and it
         // is still what happens when a dialog is drawn in a shape this does not recognise.
         if let menu { out["menu"] = json(of: menu) }
-        let agents = watch.agents(of: session.id)
+        let agents = publication.agents[session.id] ?? []
         if !agents.isEmpty { out["agents"] = agents.map { json(of: $0) } }
         // The commands it left running, which are the reason an idle row is not a finished one.
         // Absent rather than empty, like the agents above: a page built before this existed
         // draws exactly what it drew before.
-        let shells = watch.shells(of: session.id)
+        let shells = publication.shells[session.id] ?? []
         if !shells.isEmpty { out["shells"] = shells.map { json(of: $0) } }
-        if let cwd = Targets.workingDirectory(of: session) { out["cwd"] = cwd }
+        if let cwd = publishedIdentity?.workingDirectory ?? session.cwd { out["cwd"] = cwd }
         if let sessionID = identity.conversationID {
             out["sessionId"] = sessionID
         }
-        if let grid = watch.grid(of: session.id) { out["icon"] = json(of: grid) }
+        if let grid = publication.grids[session.id] { out["icon"] = json(of: grid) }
         return out
     }
 
@@ -4961,7 +4954,8 @@ final class RemoteServer: @unchecked Sendable {
         var out: [String: Any] = ["entries": [], "signature": ""]
         // The strip's own row for it, so a reader who followed a link sees the same description,
         // state and cost that the row they clicked was showing.
-        if let agent = SessionWatch.shared.agents(of: session.id).first(where: { $0.id == id }) {
+        let publication = SessionWatch.shared.publishedInventory()
+        if let agent = publication.agents[session.id]?.first(where: { $0.id == id }) {
             out["agent"] = json(of: agent)
         }
         var signature = Transcript.signature(of: file)
@@ -5007,7 +5001,8 @@ final class RemoteServer: @unchecked Sendable {
             "at": Int(read.at.timeIntervalSince1970),
             "signature": read.signature,
         ]
-        if let shell = SessionWatch.shared.shells(of: session.id).first(where: { $0.id == id }) {
+        let publication = SessionWatch.shared.publishedInventory()
+        if let shell = publication.shells[session.id]?.first(where: { $0.id == id }) {
             out["shell"] = json(of: shell)
         }
         return .json(out)

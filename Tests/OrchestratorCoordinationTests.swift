@@ -714,9 +714,30 @@ group("the wait session index says what a wait must name, and nothing off the sc
                                  assistant: .claude, cwd: nil)
     let states: [String: SessionState] = ["SESSION-A": .working("editing RemoteServer.swift"),
                                           "%codex": .waiting]
+    let observedAt = Date(timeIntervalSince1970: 1_800_000_000)
+    func published(_ session: TargetSession, pid: Int32) -> SessionWatch.PublishedIdentity {
+        SessionWatch.PublishedIdentity(
+            assistant: session.assistant!, tty: session.tty, pid: pid,
+            processStart: observedAt.addingTimeInterval(-60), conversationID: nil,
+            workingDirectory: session.cwd, recordURL: nil, observedAt: observedAt,
+            provenance: "coordination_serializer_fixture", conversationSource: .test,
+            conversationObservedAt: observedAt)
+    }
+    let publishedIdentities = [
+        claude.id: published(claude, pid: 4_001),
+        codex.id: published(codex, pid: 4_002),
+        homeless.id: published(homeless, pid: 4_003),
+    ]
+    let publishedLabels = [
+        claude.id: "fix the webhook",
+        codex.id: codex.coordinate,
+        homeless.id: homeless.coordinate,
+    ]
 
     let rows = RemoteServer.coordinationSessionRows([claude, codex, shell, homeless],
-                                                    states: states)
+                                                    states: states,
+                                                    publishedIdentities: publishedIdentities,
+                                                    publishedLabels: publishedLabels)
     expect("a shell prompt is not an address a wait can be delivered to", rows.count, 3)
     check("and it is the one without an assistant in it",
           !rows.contains { $0["id"] as? String == "JUST-A-SHELL" })
@@ -778,7 +799,9 @@ group("the wait session index says what a wait must name, and nothing off the sc
     try! data.write(to: store, options: .atomic)
     Orchestrator.forget()
     Orchestrator.load(force: true)
-    let named = RemoteServer.coordinationSessionRows([claude, codex], states: states)
+    let named = RemoteServer.coordinationSessionRows(
+        [claude, codex], states: states, publishedIdentities: publishedIdentities,
+        publishedLabels: [claude.id: "the envelope work", codex.id: codex.coordinate])
     expect("a tab Clawdline opened for a task says which task", named.first?["taskId"] as? String,
            openedFor)
     expect("and is called by the title the dispatcher gave it",

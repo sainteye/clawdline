@@ -74,6 +74,13 @@ struct TargetSession: Equatable, Identifiable {
     /// resolution below reads authoritative records only, and a terminal that has been renamed to
     /// `WRONG`, to `Default`, or to nothing at all cannot change a single row.
     var displayLabel: String {
+        if let published = SessionWatch.shared.publishedInventory().labels[id] { return published }
+        return observedDisplayLabel
+    }
+
+    /// The impure naming lookup used only while SessionWatch's background worker is assembling
+    /// the next publication. Consumers use ``displayLabel`` and therefore cannot repeat it.
+    var observedDisplayLabel: String {
         Self.preferredDisplayLabel(
             manualTitle: Config.shared.sessionTitle(for: self),
             orchestratorTitle: Orchestrator.title(forTerminal: id),
@@ -443,9 +450,97 @@ enum ITerm {
         appleEventTimedOut || listRowsMalformed
     }
 
-    /// Somewhere for the reader thread to put what it read. A class, not a captured `var`,
-    /// so the handoff across the semaphore is a reference and not a copy in flight.
-    private final class Sink { var data = Data() }
+    /// Somewhere for a reader thread to put what it read. A class, not a captured `var`, so the
+    /// dispatch-group handoff is a reference and not a copy in flight.
+    private final class Sink {
+        private let lock = NSLock()
+        private var data = Data()
+
+        func store(_ value: Data) {
+            lock.lock(); data = value; lock.unlock()
+        }
+
+        func load() -> Data {
+            lock.lock(); defer { lock.unlock() }
+            return data
+        }
+    }
+
+    struct SubprocessMetrics: Equatable {
+        let started: Int
+        let finished: Int
+        let timedOut: Int
+        let forceKilled: Int
+        let readerTimeouts: Int
+        let inFlight: Int
+        let openPipeHandles: Int
+        let peakInFlight: Int
+        let peakOpenPipeHandles: Int
+    }
+
+    private static let subprocessMetricsLock = NSLock()
+    private static var subprocessStarted = 0
+    private static var subprocessFinished = 0
+    private static var subprocessTimedOut = 0
+    private static var subprocessForceKilled = 0
+    private static var subprocessReaderTimeouts = 0
+    private static var subprocessInFlight = 0
+    private static var subprocessOpenPipeHandles = 0
+    private static var subprocessPeakInFlight = 0
+    private static var subprocessPeakOpenPipeHandles = 0
+
+    static func subprocessMetrics() -> SubprocessMetrics {
+        subprocessMetricsLock.lock(); defer { subprocessMetricsLock.unlock() }
+        return SubprocessMetrics(
+            started: subprocessStarted, finished: subprocessFinished,
+            timedOut: subprocessTimedOut, forceKilled: subprocessForceKilled,
+            readerTimeouts: subprocessReaderTimeouts, inFlight: subprocessInFlight,
+            openPipeHandles: subprocessOpenPipeHandles,
+            peakInFlight: subprocessPeakInFlight,
+            peakOpenPipeHandles: subprocessPeakOpenPipeHandles)
+    }
+
+    @discardableResult
+    static func resetSubprocessMetricsForTesting() -> Bool {
+        subprocessMetricsLock.lock(); defer { subprocessMetricsLock.unlock() }
+        guard subprocessInFlight == 0, subprocessOpenPipeHandles == 0 else { return false }
+        subprocessStarted = 0
+        subprocessFinished = 0
+        subprocessTimedOut = 0
+        subprocessForceKilled = 0
+        subprocessReaderTimeouts = 0
+        subprocessPeakInFlight = 0
+        subprocessPeakOpenPipeHandles = 0
+        return true
+    }
+
+    private static func subprocessDidStart(pipeHandles: Int) {
+        subprocessMetricsLock.lock()
+        subprocessStarted += 1
+        subprocessInFlight += 1
+        subprocessOpenPipeHandles += pipeHandles
+        subprocessPeakInFlight = max(subprocessPeakInFlight, subprocessInFlight)
+        subprocessPeakOpenPipeHandles = max(
+            subprocessPeakOpenPipeHandles, subprocessOpenPipeHandles)
+        subprocessMetricsLock.unlock()
+    }
+
+    private static func subprocessDidClosePipeHandle() {
+        subprocessMetricsLock.lock()
+        subprocessOpenPipeHandles -= 1
+        subprocessMetricsLock.unlock()
+    }
+
+    private static func subprocessDidFinish(timedOut: Bool, forceKilled: Bool,
+                                            readerTimedOut: Bool) {
+        subprocessMetricsLock.lock()
+        subprocessFinished += 1
+        subprocessInFlight -= 1
+        if timedOut { subprocessTimedOut += 1 }
+        if forceKilled { subprocessForceKilled += 1 }
+        if readerTimedOut { subprocessReaderTimeouts += 1 }
+        subprocessMetricsLock.unlock()
+    }
 
     /// Run something and hand back what it printed, or admit that it never finished.
     ///
@@ -466,28 +561,101 @@ enum ITerm {
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
         let out = Pipe()
+        let err = Pipe()
         p.standardOutput = out
-        p.standardError = Pipe()
-        do { try p.run() } catch { return ("", false, nil) }
-        // Read on another thread rather than here, because the deadline must not be waiting on
-        // the pipe: a child stuck in an Apple event has written nothing and is not going to
-        // close its end of it either.
-        let sink = Sink()
-        let done = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
-            sink.data = out.fileHandleForReading.readDataToEndOfFile()
-            done.signal()
+        p.standardError = err
+
+        let stdout = Sink()
+        let stderr = Sink()
+        let readers = DispatchGroup()
+        func drain(_ handle: FileHandle, into sink: Sink) {
+            readers.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                sink.store(handle.readDataToEndOfFile())
+                readers.leave()
+            }
         }
-        if done.wait(timeout: .now() + timeout) == .timedOut {
+        drain(out.fileHandleForReading, into: stdout)
+        drain(err.fileHandleForReading, into: stderr)
+
+        let pipeHandles = 4
+        var timedOut = false
+        var forceKilled = false
+        var readerTimedOut = false
+        var outWriteOwned = true
+        var errWriteOwned = true
+        var outReadOwned = true
+        var errReadOwned = true
+        func closeOwned(_ handle: FileHandle, _ owned: inout Bool) {
+            guard owned else { return }
+            owned = false
+            handle.closeFile()
+            subprocessDidClosePipeHandle()
+        }
+        subprocessDidStart(pipeHandles: pipeHandles)
+        defer {
+            // The parent owns both ends represented by each Foundation Pipe. Close every one on
+            // launch failure, success, timeout and a reader which returned only partial data.
+            closeOwned(out.fileHandleForWriting, &outWriteOwned)
+            closeOwned(err.fileHandleForWriting, &errWriteOwned)
+            closeOwned(out.fileHandleForReading, &outReadOwned)
+            closeOwned(err.fileHandleForReading, &errReadOwned)
+            subprocessDidFinish(timedOut: timedOut, forceKilled: forceKilled,
+                                readerTimedOut: readerTimedOut)
+        }
+
+        let exited = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in exited.signal() }
+        do { try p.run() } catch {
+            closeOwned(out.fileHandleForWriting, &outWriteOwned)
+            closeOwned(err.fileHandleForWriting, &errWriteOwned)
+            if readers.wait(timeout: .now() + 0.25) == .timedOut { readerTimedOut = true }
+            return ("", false, nil)
+        }
+        // Process.run duplicates the write descriptors into the child. The parent's duplicates
+        // have no reason to remain open and would otherwise keep EOF from either reader.
+        closeOwned(out.fileHandleForWriting, &outWriteOwned)
+        closeOwned(err.fileHandleForWriting, &errWriteOwned)
+
+        var exitedCleanly = exited.wait(timeout: .now() + timeout) == .success
+        if !exitedCleanly {
+            timedOut = true
             // Killing `osascript` does not cancel an Apple event iTerm2 has already been handed:
             // whatever was asked for still happens, once the person at the Mac answers the sheet.
             // What this buys is that nothing here is still holding the queue while they decide.
             p.terminate()
-            _ = done.wait(timeout: .now() + 2)
-            return ("", true, nil)
+            exitedCleanly = exited.wait(timeout: .now() + 0.25) == .success
+            if !exitedCleanly {
+                forceKilled = true
+                kill(p.processIdentifier, SIGKILL)
+                exitedCleanly = exited.wait(timeout: .now() + 1) == .success
+            }
         }
-        p.waitQuietly()
-        return (String(data: sink.data, encoding: .utf8) ?? "", false, p.terminationStatus)
+        if readers.wait(timeout: .now() + 0.5) == .timedOut {
+            readerTimedOut = true
+            // An inherited descriptor in a descendant must not retain either reader. Closing
+            // our read ends makes the resource bound independent of that descendant's lifetime.
+            closeOwned(out.fileHandleForReading, &outReadOwned)
+            closeOwned(err.fileHandleForReading, &errReadOwned)
+            // A parent process which exited while a descendant retained the write descriptors
+            // did not produce a complete answer. Even if closing our read ends wakes both
+            // readers immediately, report the observation as incomplete rather than turning a
+            // truncated `ps` into confident process absence. Sink's lock is the synchronisation
+            // edge when a Foundation reader takes longer than the bounded follow-up wait.
+            _ = readers.wait(timeout: .now() + 0.25)
+            _ = stdout.load()
+            _ = stderr.load()
+            timedOut = true
+        }
+        guard !timedOut else { return ("", true, nil) }
+        let status = exitedCleanly ? p.terminationStatus : nil
+        return (String(data: stdout.load(), encoding: .utf8) ?? "", false, status)
+    }
+
+    static func runSubprocessForTesting(_ path: String, _ args: [String],
+                                        timeout: TimeInterval)
+        -> (out: String, timedOut: Bool, status: Int32?) {
+        shell(path, args, timeout: timeout)
     }
 
     private static var scriptPath: String? {
@@ -540,6 +708,13 @@ enum ITerm {
     struct AssistantProcessScan {
         let assistants: [String: Assistant.Running]
         let error: String?
+        let observedAt: Date
+
+        init(assistants: [String: Assistant.Running], error: String?, observedAt: Date = Date()) {
+            self.assistants = assistants
+            self.error = error
+            self.observedAt = observedAt
+        }
 
         var isComplete: Bool { error == nil }
     }
@@ -571,19 +746,25 @@ enum ITerm {
     /// transient subprocess failure from becoming a confident "every session closed" event.
     static func parseAssistantProcessScan(_ output: String,
                                           timedOut: Bool,
-                                          exitStatus: Int32? = 0) -> AssistantProcessScan {
+                                          exitStatus: Int32? = 0,
+                                          observedAt: Date = Date()) -> AssistantProcessScan {
         if timedOut {
-            return AssistantProcessScan(assistants: [:], error: "assistant process scan timed out")
+            return AssistantProcessScan(assistants: [:], error: "assistant process scan timed out",
+                                        observedAt: observedAt)
         }
         guard exitStatus == 0 else {
             let detail = exitStatus.map(String.init) ?? "launch failure"
             return AssistantProcessScan(assistants: [:],
-                                        error: "assistant process scan failed (\(detail))")
+                                        error: "assistant process scan failed (\(detail))",
+                                        observedAt: observedAt)
         }
         guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return AssistantProcessScan(assistants: [:], error: "assistant process scan returned no data")
+            return AssistantProcessScan(assistants: [:],
+                                        error: "assistant process scan returned no data",
+                                        observedAt: observedAt)
         }
-        return AssistantProcessScan(assistants: Assistant.reading(ofPS: output), error: nil)
+        return AssistantProcessScan(assistants: Assistant.reading(ofPS: output), error: nil,
+                                    observedAt: observedAt)
     }
 
     /// JXA saying the app is stopped is normally a trustworthy empty inventory. It stops being
@@ -607,9 +788,10 @@ enum ITerm {
         }
         pidLock.unlock()
 
+        let observedAt = Date()
         let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,lstart=,command="])
         let scan = parseAssistantProcessScan(run.out, timedOut: run.timedOut,
-                                             exitStatus: run.status)
+                                             exitStatus: run.status, observedAt: observedAt)
         if scan.isComplete {
             pidLock.lock()
             pidCache = (CFAbsoluteTimeGetCurrent(), scan)
@@ -624,9 +806,10 @@ enum ITerm {
     /// and cannot prove two independent identity observations made microseconds apart.
     static func identityProcessEvidence(forTTYs ttys: Set<String>) -> IdentityProcessEvidence {
         if let supplied = identityProcessEvidenceForTesting { return supplied(ttys) }
+        let observedAt = Date()
         let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,lstart=,command="])
         let scan = parseAssistantProcessScan(run.out, timedOut: run.timedOut,
-                                             exitStatus: run.status)
+                                             exitStatus: run.status, observedAt: observedAt)
         guard scan.isComplete else {
             return IdentityProcessEvidence(scan: scan, openFilesByPID: [:])
         }
@@ -804,6 +987,10 @@ enum ITerm {
     // MARK: - API
 
     static func snapshot() -> Targets.Snapshot {
+        snapshot(processScan: assistantProcessScan())
+    }
+
+    static func snapshot(processScan: AssistantProcessScan) -> Targets.Snapshot {
         var snap = Targets.Snapshot()
 
         let listed = osa(["list"])
@@ -825,7 +1012,6 @@ enum ITerm {
             snap.error = listed["error"] as? String ?? L.t.cannotList
         }
 
-        let processScan = assistantProcessScan()
         if !processScan.isComplete {
             snap.isComplete = false
             snap.error = processScan.error

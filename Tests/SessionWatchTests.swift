@@ -26,12 +26,7 @@ let productionCrossingCallSites: [(file: String, site: String, callSites: Int)] 
     ("Sources/Orchestrator.swift", "Orchestrator.rootTargets", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.titleState(of:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionRefresh", 1),
-    ("Sources/RemoteServer.swift", "RemoteServer.session(withID:)", 1),
-    ("Sources/RemoteServer.swift", "RemoteServer.sessionMessageSource(withID:)", 1),
-    ("Sources/RemoteServer.swift", "RemoteServer.state(of:)", 1),
     ("Sources/RemoteServer.swift", "RemoteServer.sessionWhoAmI", 1),
-    ("Sources/RemoteServer.swift", "RemoteServer.closeabilityIdentities", 1),
-    ("Sources/RemoteServer.swift", "RemoteServer.closeabilityInventory", 1),
 ]
 
 /// The production crossings the fixture at the end of this file drives for real and watches hop.
@@ -43,10 +38,6 @@ let dynamicallyExercisedCrossingSites: Set<String> = [
     "SessionImagePresentation.materialize",
     "Orchestrator.resolveAttachment",
     "RemoteServer.titleState(of:)",
-    "RemoteServer.session(withID:)",
-    "RemoteServer.sessionMessageSource(withID:)",
-    "RemoteServer.state(of:)",
-    "RemoteServer.closeabilityInventory",
 ]
 
 /// The file with its whole-line comments dropped, so this guard is about the code and not about
@@ -75,6 +66,13 @@ func occurrences(of needle: String, in haystack: String) -> Int {
 /// dispatch are outside the production convention and therefore do not silently join the count.
 func compactCode(_ text: String) -> String {
     String(codeOnly(text).filter { !$0.isWhitespace })
+}
+
+func sourceSlice(_ text: String, from start: String, through end: String) -> String {
+    guard let lower = text.range(of: start)?.lowerBound,
+          let upper = text.range(of: end, range: lower..<text.endIndex)?.upperBound
+    else { return "" }
+    return String(text[lower..<upper])
 }
 
 
@@ -209,6 +207,222 @@ group("every direct SessionWatch nudge call site is inventoried across productio
     } else {
         check("Orchestrator source is readable for the direct nudge guard", false)
     }
+}
+
+group("one published Session inventory owns process evidence and bounded subprocess cleanup") {
+    let sessionWatch = (try? String(contentsOfFile: "Sources/SessionWatch.swift",
+                                    encoding: .utf8)) ?? ""
+    let orchestrator = (try? String(contentsOfFile: "Sources/Orchestrator.swift",
+                                    encoding: .utf8)) ?? ""
+    let remote = (try? String(contentsOfFile: "Sources/RemoteServer.swift",
+                              encoding: .utf8)) ?? ""
+    let iterm = (try? String(contentsOfFile: "Sources/ITerm.swift", encoding: .utf8)) ?? ""
+    check("SessionWatch publishes every cross-queue Session field and provenance together",
+          sessionWatch.contains("struct InventoryPublication")
+            && sessionWatch.contains("let identities: [String: PublishedIdentity]")
+            && sessionWatch.contains("let labels: [String: String]")
+            && sessionWatch.contains("let menus: [String: SessionState.Menu]")
+            && sessionWatch.contains("let agents: [String: [Subagents.Agent]]")
+            && sessionWatch.contains("let shells: [String: [Shells.Shell]]")
+            && sessionWatch.contains("let provenance: String"))
+
+    let beat = sourceSlice(orchestrator,
+                           from: "static func beat(fromTimer: Bool)",
+                           through: "guard !liveIDs.isEmpty else { return }")
+    check("the Orchestrator beat consumes identities already bound to its watch snapshot",
+          beat.contains("watchSnapshot.identities")
+            && !beat.contains("map(RemoteServer.sessionWorkIdentity)"), beat)
+
+    let identity = sourceSlice(remote,
+                               from: "static func sessionWorkIdentity(_ session: TargetSession)",
+                               through: "struct SessionInventoryEvidence")
+    check("session serialization cannot start a fresh process scan",
+          !identity.contains("Targets.pid")
+            && !identity.contains("Targets.processStart")
+            && !identity.contains("Transcript.sessionID(of:")
+            && identity.contains("publishedIdentity"), identity)
+
+    let producer = sourceSlice(sessionWatch,
+                               from: "private static func identities(",
+                               through: "private func read()")
+    check("publication assembly does not re-enter main or start per-row naming readers",
+          !producer.contains("observedDisplayLabel")
+            && !producer.contains("MainQueue.hop")
+            && !producer.contains("Targets.processStart")
+            && !producer.contains("Transcript.sessionID(of:"), producer)
+
+    let coordinator = sourceSlice(remote,
+                                  from: "func coordinatorObservation()",
+                                  through: "static func attachCoordinator")
+    check("coordinator inventory never parks the main queue on a semaphore",
+          !coordinator.contains("DispatchQueue.main")
+            && !coordinator.contains("DispatchSemaphore")
+            && !coordinator.contains("onMain(")
+            && coordinator.contains("publishedInventory"), coordinator)
+
+    let shell = sourceSlice(iterm,
+                            from: "private static func shell(_ path: String",
+                            through: "private static var scriptPath")
+    check("every bounded subprocess has a forced termination rung and explicit pipe closure",
+          shell.contains("SIGKILL")
+            && occurrences(of: "closeOwned(", in: shell) >= 11, shell)
+
+    // Hold one exact Session and one exact publication still. This is the route the browser uses
+    // to open the row; process counters and the shared hop recorder make "no scan" observable
+    // rather than inferred from its response time.
+    SessionWatch.shared.stop()
+    let fixedID = "SESSION-PUBLISHED-IDENTITY"
+    let conversationID = "11111111-3333-4555-8777-999999999999"
+    let fixed = TargetSession(
+        backend: .iterm, id: fixedID, name: "fixed", tty: "/dev/ttys933",
+        windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: "/tmp/fixed-project")
+    let shellOnly = TargetSession(
+        backend: .iterm, id: "SESSION-SHELL-ONLY", name: "shell", tty: "/dev/ttys934",
+        windowIndex: 0, tabIndex: 1, assistant: nil, cwd: "/tmp/shell-project")
+    let observedAt = Date(timeIntervalSince1970: 1_800_000_000)
+    let published = SessionWatch.PublishedIdentity(
+        assistant: .codex, tty: fixed.tty, pid: 93_300,
+        processStart: observedAt.addingTimeInterval(-60), conversationID: conversationID,
+        workingDirectory: fixed.cwd, recordURL: nil,
+        observedAt: observedAt,
+        provenance: "session_watch_codex_rollout_process_scan",
+        conversationSource: .codexRollout, conversationObservedAt: observedAt)
+    SessionWatch.shared.installPublicationForTesting(
+        targets: [fixed, shellOnly], states: [fixedID: .idle, shellOnly.id: .idle],
+        identities: [fixedID: published], labels: [fixedID: "fixed publication"],
+        complete: true, observedAt: observedAt)
+    expect("subprocess metrics reset accepts an idle boundary",
+           ITerm.resetSubprocessMetricsForTesting(), true)
+    MainQueue.beginRecordingHopsForTesting()
+    let reader = RemoteAuth.addDevice(name: "fixed publication route", caps: [.read])
+    let opened = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/sessions/\(fixedID)",
+        headers: ["Authorization": "Bearer \(reader.token)"]))
+    RemoteAuth.revoke(id: reader.id)
+    let hops = MainQueue.endRecordingHopsForTesting()
+    let routeMetrics = ITerm.subprocessMetrics()
+    expect("opening the fixed published Session succeeds", opened.status, 200)
+    let openedBody = (try? JSONSerialization.jsonObject(with: opened.body)) as? [String: Any]
+    let openedSession = openedBody?["session"] as? [String: Any]
+    expect("the route returns the conversation bound by that publication",
+           openedSession?["sessionId"] as? String, conversationID)
+    check("session open starts no ps, lsof or osascript subprocess",
+          routeMetrics.started == 0 && routeMetrics.inFlight == 0
+            && routeMetrics.openPipeHandles == 0, "\(routeMetrics)")
+    check("session open performs no synchronous main-queue hop or semaphore crossing",
+          hops.sites.isEmpty && !hops.overflowed, "\(hops)")
+    let accepted = SessionWatch.shared.publishedInventory()
+    check("identity freshness and provenance remain attached to the accepted generation",
+          accepted.observedAt == observedAt
+            && accepted.identities[fixedID]?.observedAt == observedAt
+            && accepted.identities[fixedID]?.provenance
+                == "session_watch_codex_rollout_process_scan"
+            && accepted.identities[fixedID]?.conversationSource == .codexRollout)
+    check("the publication carries a complete label map even without process identity",
+          accepted.labels.count == 2
+            && accepted.labels[fixedID] == "fixed publication"
+            && accepted.labels[shellOnly.id] == shellOnly.coordinate, "\(accepted.labels)")
+
+    let seamOnly = TargetSession(
+        backend: .iterm, id: "SESSION-ROUTE-SEAM", name: "seam", tty: "/dev/ttys935",
+        windowIndex: 0, tabIndex: 2, assistant: nil, cwd: nil)
+    RemoteServer.sessionPayloadForTesting = ([seamOnly], [seamOnly.id: .idle])
+    let seamReader = RemoteAuth.addDevice(name: "detail route seam", caps: [.read])
+    let seamOpened = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/sessions/\(seamOnly.id)",
+        headers: ["Authorization": "Bearer \(seamReader.token)"]))
+    RemoteAuth.revoke(id: seamReader.id)
+    RemoteServer.sessionPayloadForTesting = nil
+    expect("the detail route consumes the same fixture inventory as the list route",
+           seamOpened.status, 200)
+
+    let spawn = Date(timeIntervalSince1970: 2_000)
+    expect("registry provenance stays on the registry identity ladder",
+           Orchestrator.publishedClaudeConversation(
+                id: conversationID, source: .registry, sourceObservedAt: observedAt,
+                spawnedAt: spawn).registryID,
+           conversationID)
+    expect("a tty hook older than the task remains fail closed",
+           Orchestrator.publishedClaudeConversation(
+                id: conversationID, source: .hook,
+                sourceObservedAt: spawn.addingTimeInterval(-1), spawnedAt: spawn).hookID,
+           nil)
+    expect("a fresh published tty hook stays distinct from registry evidence",
+           Orchestrator.publishedClaudeConversation(
+                id: conversationID, source: .hook,
+                sourceObservedAt: spawn, spawnedAt: spawn).hookID,
+           conversationID)
+
+    let processStamp = Date(timeIntervalSince1970: 1_700_000_123)
+    let stampedScan = ITerm.parseAssistantProcessScan(
+        "?? 1 0 Mon Jan  1 00:00:00 2024 /sbin/launchd", timedOut: false,
+        observedAt: processStamp)
+    expect("process evidence keeps the instant before the terminal walk",
+           stampedScan.observedAt, processStamp)
+
+    // Partial output, non-zero exit and a TERM-resistant timeout take different exits through
+    // the same cleanup. Sequential repetitions make the expected high-water mark exactly one
+    // process/four parent pipe handles; any accumulation changes the counters deterministically.
+    expect("subprocess metrics reset remains observable before cleanup checks",
+           ITerm.resetSubprocessMetricsForTesting(), true)
+    let partial = ITerm.runSubprocessForTesting(
+        "/bin/sh", ["-c", "printf partial; printf diagnostic >&2; exit 7"], timeout: 1)
+    expect("a partial-output failure preserves stdout", partial.out, "partial")
+    expect("a partial-output failure preserves its exit status", partial.status, 7)
+    expect("a partial-output failure is not mislabeled timeout", partial.timedOut, false)
+    let timeoutStart = Date()
+    var timeoutReceipts = 0
+    for _ in 0..<3 {
+        let receipt = ITerm.runSubprocessForTesting(
+            "/bin/sh", ["-c", "trap '' TERM; printf partial; while :; do :; done"],
+            timeout: 0.15)
+        if receipt.timedOut { timeoutReceipts += 1 }
+    }
+    let timeoutSeconds = Date().timeIntervalSince(timeoutStart)
+    let cleanup = ITerm.subprocessMetrics()
+    expect("every injected hung subprocess reaches its deadline", timeoutReceipts, 3)
+    check("the timeout ladder has an explicit wall-clock upper bound",
+          timeoutSeconds < 6, "\(timeoutSeconds) seconds")
+    check("success, partial failure and timeout leave no process or pipe ownership behind",
+          cleanup.started == 4 && cleanup.finished == 4 && cleanup.timedOut == 3
+            && cleanup.forceKilled >= 1 && cleanup.inFlight == 0
+            && cleanup.openPipeHandles == 0 && cleanup.peakInFlight == 1
+            && cleanup.peakOpenPipeHandles == 4, "\(cleanup)")
+
+    expect("the descendant-pipe probe starts from a clean metrics boundary",
+           ITerm.resetSubprocessMetricsForTesting(), true)
+    let inheritedStart = Date()
+    let inherited = ITerm.runSubprocessForTesting(
+        "/bin/sh", ["-c", "printf inherited; sleep 3 & exit 0"], timeout: 5)
+    let inheritedSeconds = Date().timeIntervalSince(inheritedStart)
+    let inheritedMetrics = ITerm.subprocessMetrics()
+    check("a descendant-held pipe is returned only as fail-closed incomplete output",
+          inherited.timedOut && inherited.status == nil && inherited.out.isEmpty,
+          "\(inherited)")
+    check("reader timeout closes every parent pipe on a bounded wall clock",
+          inheritedSeconds < 2 && inheritedMetrics.readerTimeouts == 1
+            && inheritedMetrics.timedOut == 1 && inheritedMetrics.inFlight == 0
+            && inheritedMetrics.openPipeHandles == 0,
+          "\(inheritedSeconds) seconds; \(inheritedMetrics)")
+
+    expect("the in-flight reset probe starts from a clean boundary",
+           ITerm.resetSubprocessMetricsForTesting(), true)
+    let resetProbeFinished = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+        _ = ITerm.runSubprocessForTesting("/bin/sh", ["-c", "sleep 0.35"], timeout: 1)
+        resetProbeFinished.signal()
+    }
+    let resetProbeDeadline = Date().addingTimeInterval(1)
+    while ITerm.subprocessMetrics().inFlight == 0 && Date() < resetProbeDeadline {
+        Thread.sleep(forTimeInterval: 0.005)
+    }
+    expect("metrics reset reports refusal while a subprocess owns resources",
+           ITerm.resetSubprocessMetricsForTesting(), false)
+    _ = resetProbeFinished.wait(timeout: .now() + 2)
+    let afterResetProbe = ITerm.subprocessMetrics()
+    check("the reset refusal does not disturb eventual subprocess cleanup",
+          afterResetProbe.finished == 1 && afterResetProbe.inFlight == 0
+            && afterResetProbe.openPipeHandles == 0, "\(afterResetProbe)")
 }
 
 group("whoami revalidates real Claude and Codex files across fresh process passes") {

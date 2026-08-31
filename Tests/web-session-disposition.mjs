@@ -286,8 +286,12 @@ assert.match(sessionInfoSource,
     "the info payload preserves the complete supplied Session title");
 const remoteServerSource = await readFile(
     new URL("../Sources/RemoteServer.swift", import.meta.url), "utf8");
-assert.match(remoteServerSource, /id: session\.id, title: session\.displayLabel/,
-    "the Session info route supplies the same complete title as the Session list");
+assert.match(remoteServerSource,
+    /id: session\.id, title: publication\.labels\[session\.id\] \?\? session\.coordinate/,
+    "the Session info route consumes the complete title from its accepted publication");
+assert.match(remoteServerSource,
+    /"label": publication\.labels\[session\.id\] \?\? session\.coordinate/,
+    "the Session list consumes the same publication title as the info route");
 
 const css = await readFile(
     new URL("../Resources/web/app/css/list.css", import.meta.url), "utf8");

@@ -20,6 +20,61 @@ import Foundation
 /// else on a machine that is not running any.
 final class SessionWatch {
 
+    /// Process-bound identity carried by the same background observation that classified the
+    /// terminal row. Consumers may project it into their own domain types, but may not refill a
+    /// missing field by running another process scan: absence is explicit fail-closed evidence.
+    struct PublishedIdentity: Equatable {
+        enum ConversationSource: String, Equatable {
+            case registry, hook, codexRollout = "codex_rollout", test
+        }
+
+        let assistant: Assistant
+        let tty: String
+        let pid: Int32
+        let processStart: Date?
+        let conversationID: String?
+        let workingDirectory: String?
+        let recordURL: URL?
+        let observedAt: Date
+        let provenance: String
+        let conversationSource: ConversationSource?
+        let conversationObservedAt: Date?
+    }
+
+    /// Inputs needed to refresh presentation labels after a rename. They are captured while the
+    /// background read already owns transcript/process evidence; republishing a label therefore
+    /// never starts a process, reads a transcript, or synchronously enters the main queue.
+    private struct LabelEvidence {
+        let processStart: Date?
+        let conversationID: String?
+        let conversationTitle: String?
+        let customTitle: String?
+        let handle: String?
+    }
+
+    /// The immutable, lock-protected handoff from SessionWatch's background worker. It is the
+    /// complete cross-queue Session inventory: targets, states, presentation rows, identity and
+    /// freshness cannot be sampled from different generations, and reading it performs no
+    /// terminal or process I/O.
+    struct InventoryPublication {
+        let targets: [TargetSession]
+        let states: [String: SessionState]
+        let identities: [String: PublishedIdentity]
+        let labels: [String: String]
+        let menus: [String: SessionState.Menu]
+        let agents: [String: [Subagents.Agent]]
+        let shells: [String: [Shells.Shell]]
+        let grids: [String: ProjectIcon.Grid]
+        let generation: Int
+        let complete: Bool
+        let observedAt: Date?
+        let epoch: String
+        let provenance: String
+        let emptyAuthoritative: Bool
+        let completedSequence: Int
+        let completedComplete: Bool
+    }
+
     /// One coherent publication of the addressable session registry. The target population and
     /// its provenance are copied together on the main queue, which is the only place a completed
     /// scan publishes them. Process-bound conversation identity is deliberately resolved by the
@@ -27,16 +82,42 @@ final class SessionWatch {
     /// move while this in-memory snapshot is being inspected.
     struct IdentitySnapshot {
         let targets: [TargetSession]
+        let identities: [String: PublishedIdentity]
         let generation: Int
         let complete: Bool
         let observedAt: Date?
         /// Process-local namespace for `generation`. Generation one after replacement must never
         /// compare equal to generation one from the process which was replaced.
         let epoch: String
+        let provenance: String
+
+        init(targets: [TargetSession], identities: [String: PublishedIdentity] = [:],
+             generation: Int, complete: Bool, observedAt: Date?, epoch: String,
+             provenance: String = "session_watch_background_inventory") {
+            self.targets = targets
+            self.identities = identities
+            self.generation = generation
+            self.complete = complete
+            self.observedAt = observedAt
+            self.epoch = epoch
+            self.provenance = provenance
+        }
     }
 
     static let shared = SessionWatch()
-    private init() {}
+    private let publicationLock = NSLock()
+    private var inventoryPublication: InventoryPublication
+    private(set) var scanEpoch: String
+
+    private init() {
+        let epoch = UUID().uuidString.lowercased()
+        scanEpoch = epoch
+        inventoryPublication = InventoryPublication(
+            targets: [], states: [:], identities: [:], labels: [:], menus: [:], agents: [:],
+            shells: [:], grids: [:], generation: 0, complete: false,
+            observedAt: nil, epoch: epoch, provenance: "session_watch_not_observed",
+            emptyAuthoritative: false, completedSequence: 0, completedComplete: false)
+    }
 
     /// Every session that could be a target, newest reading.
     private(set) var targets: [TargetSession] = []
@@ -101,6 +182,11 @@ final class SessionWatch {
     /// Kept because the directory watcher needs something to compare against — see
     /// ``registryDidChange()`` — and because it is where a session's own id comes from.
     private(set) var registry = SessionRegistry.Reading()
+    /// Process/conversation identity accepted with ``targets``. It is never populated by a
+    /// consumer and never carried across a failed process scan.
+    private var publishedIdentities: [String: PublishedIdentity] = [:]
+    private var publishedLabels: [String: String] = [:]
+    private var publishedLabelEvidence: [String: LabelEvidence] = [:]
 
     private var timer: Timer?
     private var reading = false
@@ -129,15 +215,34 @@ final class SessionWatch {
     /// an HTTP read time or process-local generation, this is the evidence's own observation time.
     private(set) var scanObservedAt: Date?
     private(set) var emptyInventoryAuthoritative = false
-    private(set) var scanEpoch = UUID().uuidString.lowercased()
-
     private var interval: TimeInterval { isForeground ? 1.2 : 20 }
 
     func identitySnapshot() -> IdentitySnapshot {
-        dispatchPrecondition(condition: .onQueue(.main))
-        return IdentitySnapshot(targets: targets, generation: scanGeneration,
-                                complete: scanComplete, observedAt: scanObservedAt,
-                                epoch: scanEpoch)
+        let publication = publishedInventory()
+        return IdentitySnapshot(
+            targets: publication.targets, identities: publication.identities,
+            generation: publication.generation, complete: publication.complete,
+            observedAt: publication.observedAt, epoch: publication.epoch,
+            provenance: publication.provenance)
+    }
+
+    func publishedInventory() -> InventoryPublication {
+        publicationLock.lock(); defer { publicationLock.unlock() }
+        return inventoryPublication
+    }
+
+    private func publishInventorySnapshot(provenance: String? = nil) {
+        publicationLock.lock()
+        inventoryPublication = InventoryPublication(
+            targets: targets, states: states, identities: publishedIdentities,
+            labels: publishedLabels, menus: menus, agents: agents, shells: shells, grids: grids,
+            generation: scanGeneration, complete: scanComplete, observedAt: scanObservedAt,
+            epoch: scanEpoch,
+            provenance: provenance ?? inventoryPublication.provenance,
+            emptyAuthoritative: emptyInventoryAuthoritative,
+            completedSequence: completedScanSequence,
+            completedComplete: completedScanComplete)
+        publicationLock.unlock()
     }
 
     func start() {
@@ -280,6 +385,136 @@ final class SessionWatch {
         schedule(work, after: delay)
     }
 
+    /// Bind every row to the process scan already paid for by this inventory. Claude's named
+    /// transcript is validated against that process start; Codex's rollout is selected from one
+    /// batched lsof performed here on the same background worker. No reader may repeat either
+    /// operation for this generation.
+    private static func identities(
+        of sessions: [TargetSession], processScan: ITerm.AssistantProcessScan,
+        registry: SessionRegistry.Reading, notes: [String: HookBridge.Note], observedAt: Date
+    ) -> (identities: [String: PublishedIdentity], labels: [String: LabelEvidence]) {
+        guard processScan.isComplete else { return ([:], [:]) }
+        func running(_ session: TargetSession) -> Assistant.Running? {
+            let tty = session.tty.hasPrefix("/dev/")
+                ? String(session.tty.dropFirst("/dev/".count)) : session.tty
+            guard let process = processScan.assistants[tty],
+                  process.assistant == session.assistant else { return nil }
+            return process
+        }
+
+        let codexPIDs = sessions.compactMap { session -> Int32? in
+            guard session.assistant == .codex else { return nil }
+            return running(session)?.pid
+        }
+        let codexFiles = ITerm.openFiles(ofPIDs: codexPIDs)
+        var result: [String: PublishedIdentity] = [:]
+        var labelEvidence: [String: LabelEvidence] = [:]
+        for session in sessions {
+            guard let assistant = session.assistant, let process = running(session) else {
+                labelEvidence[session.id] = LabelEvidence(
+                    processStart: nil, conversationID: nil, conversationTitle: nil,
+                    customTitle: nil, handle: nil)
+                continue
+            }
+            let conversationID: String?
+            let workingDirectory: String?
+            let recordURL: URL?
+            let source: PublishedIdentity.ConversationSource?
+            let sourceObservedAt: Date?
+            let handle: String?
+            switch assistant {
+            case .claude:
+                let entry = SessionRegistry.entry(for: session.id, in: registry)
+                let tty = session.tty.hasPrefix("/dev/")
+                    ? String(session.tty.dropFirst("/dev/".count)) : session.tty
+                let note = notes[tty]
+                let named: String?
+                let proposedSource: PublishedIdentity.ConversationSource?
+                let proposedObservedAt: Date?
+                if let registryID = entry?.sessionID, !registryID.isEmpty {
+                    named = registryID
+                    proposedSource = .registry
+                    proposedObservedAt = observedAt
+                } else if let hookID = note?.session, !hookID.isEmpty {
+                    named = hookID
+                    proposedSource = .hook
+                    proposedObservedAt = note?.at
+                } else {
+                    named = nil
+                    proposedSource = nil
+                    proposedObservedAt = nil
+                }
+                let cwd = entry?.cwd ?? session.cwd
+                    ?? ITerm.workingDirectory(ofPID: process.pid)
+                if let named, let cwd,
+                   let url = Transcript.locate(
+                        cwd: cwd, tabTitle: "", startedAt: process.processStart,
+                        sessionID: named),
+                   let accepted = Transcript.sessionID(in: url, assistant: .claude) {
+                    conversationID = accepted
+                    workingDirectory = cwd
+                    recordURL = url
+                    source = proposedSource
+                    sourceObservedAt = proposedObservedAt
+                } else {
+                    conversationID = nil
+                    workingDirectory = cwd
+                    recordURL = nil
+                    source = nil
+                    sourceObservedAt = nil
+                }
+                handle = entry?.name
+            case .codex:
+                let identity = Codex.identity(
+                    among: codexFiles[process.pid] ?? [], fresh: true)
+                conversationID = identity?.id
+                recordURL = identity?.url
+                workingDirectory = identity.flatMap { Codex.head(of: $0.url)?.cwd }
+                    ?? session.cwd
+                source = identity == nil ? nil : .codexRollout
+                sourceObservedAt = identity == nil ? nil : observedAt
+                handle = nil
+            }
+            let conversationTitle = recordURL.flatMap { url in
+                assistant == .claude ? Transcript.title(ofTranscript: url) : nil
+            }
+            let customTitle = recordURL.flatMap { url in
+                assistant == .claude ? Transcript.customTitle(ofTranscript: url) : nil
+            }
+            labelEvidence[session.id] = LabelEvidence(
+                processStart: process.processStart, conversationID: conversationID,
+                conversationTitle: conversationTitle, customTitle: customTitle, handle: handle)
+            result[session.id] = PublishedIdentity(
+                assistant: assistant, tty: session.tty, pid: process.pid,
+                processStart: process.processStart, conversationID: conversationID,
+                workingDirectory: workingDirectory, recordURL: recordURL,
+                observedAt: observedAt,
+                provenance: source.map { "session_watch_\($0.rawValue)_process_scan" }
+                    ?? "session_watch_background_process_scan",
+                conversationSource: source, conversationObservedAt: sourceObservedAt)
+        }
+        return (result, labelEvidence)
+    }
+
+    private static func labels(of sessions: [TargetSession],
+                               identities: [String: PublishedIdentity],
+                               evidence: [String: LabelEvidence]) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: sessions.map { session in
+            let label = evidence[session.id]
+            let manual = Config.shared.sessionTitle(
+                sessionID: label?.conversationID, terminalID: session.id,
+                conversationStart: { label?.processStart },
+                currentCustomTitle: { _ in label?.customTitle })
+            let thread = CodexNaming.shared.publishedTitle(
+                for: session, processStart: label?.processStart,
+                conversationID: label?.conversationID)
+            return (session.id, TargetSession.preferredDisplayLabel(
+                manualTitle: manual, orchestratorTitle: Orchestrator.title(forTerminal: session.id),
+                conversationTitle: label?.conversationTitle, threadName: thread,
+                handle: label?.handle, coordinate: session.coordinate))
+        })
+    }
+
     /// Read every session's screen, once. Overlapping readings are dropped rather than queued:
     /// on a loaded machine a slow round trip would otherwise pile up behind itself.
     private func read() {
@@ -320,7 +555,7 @@ final class SessionWatch {
             // remains as an ordinary shell. Always take a real terminal inventory so an empty
             // result can never permanently forget a shell-only child on process evidence alone.
             // `ITerm.list` is also the bounded recovery probe that clears an automation circuit.
-            let snap = inventory?.snapshot ?? Targets.snapshot()
+            let snap = inventory?.snapshot ?? Targets.snapshot(processScan: processScan)
             let anyAssistant = !processScan.assistants.isEmpty
             let contradiction = snap.isComplete && Targets.hasLiveProcessContradiction(
                 previous: knownTargets, scanned: snap.sessions,
@@ -364,7 +599,8 @@ final class SessionWatch {
             // machine is too old to write the files, and for every Codex session — and empty is
             // exactly today's behaviour, because everything below it is a no-op on an empty one.
             let registry = useRegistry && anyAssistant
-                ? Targets.registry(of: sessions) : SessionRegistry.Reading()
+                ? Targets.registry(of: sessions, processScan: processScan)
+                : SessionRegistry.Reading()
             // A registry `waiting` opens the same parsing gate a hook note opens, and it opens it
             // on better grounds: it is written when something is genuinely blocked, where the
             // permission notes fire for requests auto mode approves without drawing anything.
@@ -384,6 +620,12 @@ final class SessionWatch {
             // true. Neither can move a session off a menu found on the screen.
             let heard = HookBridge.merge(notes, into: screens.states, sessions: sessions)
             let states = SessionRegistry.merge(registry, into: heard, sessions: sessions)
+            let observedAt = Date()
+            let identityReading = Self.identities(
+                of: sessions, processScan: processScan, registry: registry, notes: notes,
+                observedAt: processScan.observedAt)
+            let labels = Self.labels(of: sessions, identities: identityReading.identities,
+                                     evidence: identityReading.labels)
             // Dropped for any session the merge moved off `waiting`: a note can settle that a
             // turn ended before the terminal has repainted, and a menu left behind from the
             // capture would be a set of buttons for a question nobody is asking any more.
@@ -460,6 +702,9 @@ final class SessionWatch {
                 self.shells = shells
                 self.registry = registry
                 self.apply(targets: sessions, states: states,
+                           identities: identityReading.identities, labels: labels,
+                           labelEvidence: identityReading.labels,
+                           observedAt: observedAt,
                            scanComplete: inventoryComplete,
                            emptyInventoryAuthoritative: emptyAuthoritative)
                 self.finishReading(scanComplete: inventoryComplete)
@@ -477,6 +722,7 @@ final class SessionWatch {
         reading = false
         lastReadCompletedAt = Self.refreshClockForTesting?()
             ?? ProcessInfo.processInfo.systemUptime
+        publishInventorySnapshot()
         // This publication is intentionally independent of `apply`'s content-change observer.
         // A manual request needs to hear that its exact read ended even when nothing changed, and
         // it needs the false outcome when a prerequisite or terminal inventory was incomplete.
@@ -513,6 +759,8 @@ final class SessionWatch {
     private var lastShells: [String: [Shells.Shell]] = [:]
 
     private func apply(targets: [TargetSession], states: [String: SessionState],
+                       identities: [String: PublishedIdentity], labels: [String: String],
+                       labelEvidence: [String: LabelEvidence], observedAt: Date,
                        scanComplete: Bool, emptyInventoryAuthoritative: Bool) {
         // Working → not working, and still there. A session that has gone away has not finished
         // anything; it has been closed, and closing a tab is not an achievement worth dancing at.
@@ -539,7 +787,7 @@ final class SessionWatch {
             || emptyInventoryAuthoritative != self.emptyInventoryAuthoritative
         scanGeneration &+= 1
         self.scanComplete = scanComplete
-        if scanComplete { self.scanObservedAt = Date() }
+        if scanComplete { self.scanObservedAt = observedAt }
         self.emptyInventoryAuthoritative = emptyInventoryAuthoritative
         let changed = targets.map(\.id) != self.targets.map(\.id) || states != self.states
             || menus != lastMenus || agents != lastAgents || shells != lastShells
@@ -548,7 +796,11 @@ final class SessionWatch {
         lastShells = shells
         self.targets = targets
         self.states = states
+        self.publishedIdentities = identities
+        self.publishedLabels = labels
+        self.publishedLabelEvidence = labelEvidence
         self.justFinished = finished
+        publishInventorySnapshot(provenance: "session_watch_background_inventory")
         // Off by default. Kept on the reading path because this is where a brand-new Codex rollout
         // first becomes concrete, and where Claude reaching idle proves its own first-turn naming
         // opportunity has ended without an `aiTitle` before the fallback spends a model turn.
@@ -561,6 +813,9 @@ final class SessionWatch {
     /// a presentation update so every surface can redraw without another terminal round trip.
     func labelsDidChange() {
         dispatchPrecondition(condition: .onQueue(.main))
+        publishedLabels = Self.labels(
+            of: targets, identities: publishedIdentities, evidence: publishedLabelEvidence)
+        publishInventorySnapshot(provenance: "session_watch_label_republication")
         for observe in observers.values { observe() }
     }
 
@@ -613,6 +868,33 @@ final class SessionWatch {
     /// about the same instant.
     static var inventoryForTesting: (() -> (scan: ITerm.AssistantProcessScan,
                                             snapshot: Targets.Snapshot))?
+    /// Install one already-measured generation without starting the timer or any machine reader.
+    /// Route tests use it to hold one fixed Session still while subprocess and main-hop counters
+    /// prove that opening its record is a pure publication read.
+    func installPublicationForTesting(
+        targets: [TargetSession], states: [String: SessionState],
+        identities: [String: PublishedIdentity], labels: [String: String] = [:],
+        complete: Bool, observedAt: Date
+    ) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        self.targets = targets
+        self.states = states
+        self.publishedIdentities = identities
+        self.publishedLabelEvidence = Dictionary(uniqueKeysWithValues: targets.map { target in
+            let identity = identities[target.id]
+            return (target.id, LabelEvidence(
+                processStart: identity?.processStart, conversationID: identity?.conversationID,
+                conversationTitle: nil, customTitle: nil, handle: nil))
+        })
+        self.publishedLabels = Dictionary(uniqueKeysWithValues: targets.map { target in
+            (target.id, labels[target.id] ?? target.coordinate)
+        })
+        scanGeneration &+= 1
+        scanComplete = complete
+        scanObservedAt = observedAt
+        emptyInventoryAuthoritative = complete && targets.isEmpty
+        publishInventorySnapshot(provenance: "session_watch_test_publication")
+    }
     /// Monotonic time and delayed-main scheduling, replaced together by the rate-limit fixture.
     /// Production leaves both nil.
     static var refreshClockForTesting: (() -> TimeInterval)?
@@ -623,6 +905,51 @@ final class SessionWatch {
 // pure vocabulary beside that publication also keeps Orchestrator's already-large persistence
 // engine within the repository's enforced architecture boundary.
 extension Orchestrator {
+    struct PublishedClaudeConversation: Equatable {
+        let registryID: String?
+        let hookID: String?
+    }
+
+    /// Registry identity is process-bound; a tty hook additionally has to prove it was observed
+    /// after this task spawned, because the tty and its note can both outlive their old process.
+    static func publishedClaudeConversation(
+        id: String?, source: SessionWatch.PublishedIdentity.ConversationSource?,
+        sourceObservedAt: Date?, spawnedAt: Date?
+    ) -> PublishedClaudeConversation {
+        guard let id, !id.isEmpty else {
+            return PublishedClaudeConversation(registryID: nil, hookID: nil)
+        }
+        switch source {
+        case .registry:
+            return PublishedClaudeConversation(registryID: id, hookID: nil)
+        case .hook:
+            guard let sourceObservedAt, let spawnedAt, sourceObservedAt >= spawnedAt else {
+                return PublishedClaudeConversation(registryID: nil, hookID: nil)
+            }
+            return PublishedClaudeConversation(registryID: nil, hookID: id)
+        case .codexRollout, .test, .none:
+            return PublishedClaudeConversation(registryID: nil, hookID: nil)
+        }
+    }
+
+    /// Consume only a fresh hook publication. Returning nil preserves the legacy fallback for a
+    /// missing or stale hook without letting that answer masquerade as registry evidence.
+    static func adoptPublishedHookIdentity(
+        _ identity: SessionWatch.PublishedIdentity?, spawnedAt: Date?, in task: inout Task
+    ) -> Bool? {
+        let published = publishedClaudeConversation(
+            id: identity?.conversationID, source: identity?.conversationSource,
+            sourceObservedAt: identity?.conversationObservedAt, spawnedAt: spawnedAt)
+        guard let hookID = published.hookID else { return nil }
+        var changed = adoptHookIdentity(sessionID: hookID, in: &task)
+        if task.transcriptPath == nil, let transcript = identity?.recordURL {
+            task.transcriptPath = transcript.path
+            task.transcriptProven = false
+            changed = true
+        }
+        return noteTranscriptProof(in: &task) || changed
+    }
+
     enum ExecutorReconciliationStatus: String, Equatable {
         case observed, pending
         case executorMissing = "executor_missing"

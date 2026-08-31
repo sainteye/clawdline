@@ -99,10 +99,6 @@ func sessionWatchCrossingProbe() async
                     seamsLeftSet.append(
                         "RemoteServer.coordinatorObservationUnavailableForTesting")
                 }
-                if RemoteServer.coordinatorInventoryRefreshGateForTesting != nil {
-                    seamsLeftSet.append(
-                        "RemoteServer.coordinatorInventoryRefreshGateForTesting")
-                }
                 if RemoteServer.sessionPayloadForTesting != nil {
                     seamsLeftSet.append("RemoteServer.sessionPayloadForTesting")
                 }

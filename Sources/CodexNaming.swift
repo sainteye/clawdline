@@ -377,6 +377,26 @@ final class CodexNaming {
     /// The low-precedence title to put on Clawdline surfaces. The terminal's own title remains
     /// untouched: Codex persists this in thread metadata, while Claude's fallback is local and
     /// yields to any `customTitle` or `aiTitle` its transcript later supplies.
+    /// Resolve only against process/conversation evidence already carried by SessionWatch.
+    /// Publication assembly uses this path so a label cannot start `ps`, read a transcript, or
+    /// synchronously hop queues after the inventory's one process observation.
+    func publishedTitle(for target: TargetSession, processStart: Date?,
+                        conversationID: String?) -> String? {
+        guard let assistant = target.assistant else { return nil }
+        lock.lock(); defer { lock.unlock() }
+        if let displayed = displayedTitles[target.id], displayed.assistant == assistant,
+           displayed.conversationID == conversationID {
+            return displayed.title
+        }
+        guard let resumed = resumedTitles[target.id], resumed.assistant == assistant else {
+            return nil
+        }
+        if let known = resumed.startedAt {
+            return Config.sameConversation(known, processStart) ? resumed.title : nil
+        }
+        return conversationID == resumed.conversationID ? resumed.title : nil
+    }
+
     func title(for target: TargetSession) -> String? {
         guard let assistant = target.assistant else { return nil }
         lock.lock()

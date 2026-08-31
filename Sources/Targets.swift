@@ -109,8 +109,15 @@ enum Targets {
     }
 
     static func snapshot() -> Snapshot {
+        snapshot(processScan: ITerm.assistantProcessScan())
+    }
+
+    /// Combine terminal backends against one already-observed process population. SessionWatch
+    /// owns that population; accepting it here prevents ITerm snapshot construction from
+    /// starting a second ps for the same publication.
+    static func snapshot(processScan: ITerm.AssistantProcessScan) -> Snapshot {
         var snap = Snapshot()
-        let iterm = ITerm.snapshot()
+        let iterm = ITerm.snapshot(processScan: processScan)
         snap.currentID = iterm.currentID
         snap.isComplete = iterm.isComplete
 
@@ -892,12 +899,20 @@ enum Targets {
     /// registry file was actually found for — which is also the whole of why nothing in here
     /// names Codex. A Codex session writes no file, so it drops out at the same line a Claude
     /// Code session with no registry at all drops out at.
-    static func registry(of sessions: [TargetSession]) -> SessionRegistry.Reading {
+    static func registry(of sessions: [TargetSession],
+                         processScan: ITerm.AssistantProcessScan? = nil)
+        -> SessionRegistry.Reading {
         var pids: [String: Int32] = [:]
         var byID: [String: TargetSession] = [:]
         for session in sessions where session.isAssistant {
             byID[session.id] = session
-            if let pid = pid(of: session) { pids[session.id] = pid }
+            let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
+            if let process = processScan?.assistants[bare],
+               process.assistant == session.assistant {
+                pids[session.id] = process.pid
+            } else if processScan == nil, let pid = pid(of: session) {
+                pids[session.id] = pid
+            }
         }
         guard !pids.isEmpty else { return SessionRegistry.Reading() }
 
@@ -905,8 +920,12 @@ enum Targets {
         out.entries = SessionRegistry.entries(pids: Array(pids.values))
         for (id, pid) in pids where out.entries[pid] != nil {
             guard let session = byID[id] else { continue }
+            let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
+            let publishedStart = processScan?.assistants[bare].flatMap { process in
+                process.assistant == session.assistant ? process.processStart : nil
+            }
             out.processes[id] = SessionRegistry.Process(pid: pid,
-                                                        started: processStart(of: session))
+                started: processScan == nil ? processStart(of: session) : publishedStart)
         }
         // A parked tab's file is about a conversation that has left it, so the other half of the
         // reading is where that conversation went. Free unless somebody has parked something:

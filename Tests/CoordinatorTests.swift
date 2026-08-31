@@ -1359,10 +1359,13 @@ group("the production route preserves scan evidence across cache reads and app g
     let serverSource = try! String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8)
     let watchSource = try! String(contentsOfFile: "Sources/SessionWatch.swift", encoding: .utf8)
     check("production carries SessionWatch's accepted-scan time instead of HTTP read time",
-          serverSource.contains("watch.scanObservedAt, watch.scanGeneration")
+          serverSource.contains("let publication = SessionWatch.shared.publishedInventory()")
+            && serverSource.contains(
+                "observedAt: unavailable ? nil : publication.observedAt")
             && !serverSource.contains("Date(), watch.scanGeneration"))
     check("only an accepted complete scan advances the evidence timestamp",
-          watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
+          watchSource.contains("if scanComplete { self.scanObservedAt = observedAt }")
+            && !watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
 }
 
 group("Clawdfather succession keeps every handoff and rebind boundary durable") {

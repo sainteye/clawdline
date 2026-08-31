@@ -8400,7 +8400,8 @@ enum Orchestrator {
         let watchSnapshot = SessionWatch.shared.identitySnapshot()
         let visibleTerminals = Set(watchSnapshot.targets.map(\.id))
         let executorIdentities = watchSnapshot.targets.filter(\.isAssistant)
-            .map(RemoteServer.sessionWorkIdentity)
+            .map { RemoteServer.sessionWorkIdentity(
+                $0, publishedIdentity: watchSnapshot.identities[$0.id]) }
         reconcileRestartInventory(watchSnapshot, identities: executorIdentities)
         // Outside this type's lock, because it takes one of its own and nothing here needs the
         // two held together.
@@ -8676,7 +8677,9 @@ enum Orchestrator {
             task.childTTY = child.tty
             guard replaceTask(task, expecting: .spawning) else { return false }
         }
-        let changed = noteChildIdentity(child, in: &task)
+        let publishedIdentity = SessionWatch.shared.publishedInventory().identities[child.id]
+        let changed = noteChildIdentity(
+            child, publishedIdentity: publishedIdentity, in: &task)
         let screen = Targets.capture(child)
         // A brand-new tab has no hook or registry receipt yet; the fact that this task opened it
         // supplies the independent gate an unnumbered startup picker needs. An attached session
@@ -9181,7 +9184,8 @@ enum Orchestrator {
            let child = snapshot.targets.first(where: { $0.id == childID }) {
             task.lastSeenChild = Date()
             let refreshed = childIdentityRefreshForTesting?(child, &task)
-                ?? noteChildIdentity(child, in: &task)
+                ?? noteChildIdentity(
+                    child, publishedIdentity: snapshot.identities[child.id], in: &task)
             changed = refreshed || changed
         }
         let inventory = ExecutorInventory(
@@ -9206,24 +9210,22 @@ enum Orchestrator {
 
     /// Fill in the assistant's own durable identity as soon as it exists. Briefing and watching
     /// share this because the transcript is now the boundary between those two states.
-    private static func noteChildIdentity(_ child: TargetSession, in task: inout Task) -> Bool {
+    private static func noteChildIdentity(
+        _ child: TargetSession, publishedIdentity: SessionWatch.PublishedIdentity?,
+        in task: inout Task) -> Bool {
         var changed = false
-        // Claude writes a process registry, so its pid pair and registry supply identity before
-        // delivery pins the pair. Codex writes no registry, so it deliberately uses lsof to name
-        // a rollout and its task marker to prove delivery. In either branch the marker is a
-        // delivery receipt, not proof that two different processes share an identity.
+        let published = publishedIdentity.flatMap { identity in
+            identity.assistant == child.assistant && identity.tty == child.tty ? identity : nil
+        }
+        // SessionWatch has already bound pid, start and transcript to this terminal generation on
+        // its background worker. A beat consumes those fields or fails closed; it never fills a
+        // missing field with ps/lsof from the main queue.
         switch task.assistant {
         case .claude:
-            let observedPID = Targets.pid(of: child)
-            let observedStart = observedPID.flatMap { Targets.processStart(ofPID: $0) }
-            let registrySessionID = SessionRegistry.sessionID(of: child)
-            let registryTranscript = registrySessionID.flatMap { sessionID in
-                // Match Transcript.record(of:): the id names a candidate, while locate proves
-                // its file exists in the child's cwd and postdates this process.
-                Transcript.locate(cwd: Targets.workingDirectory(of: child) ?? cwd(of: task),
-                                  tabTitle: child.name, startedAt: task.spawnedAt,
-                                  sessionID: sessionID)
-            }
+            let observedPID = published?.pid
+            let observedStart = published?.processStart
+            let registrySessionID = published?.conversationSource == .registry ? published?.conversationID : nil
+            let registryTranscript = published?.conversationSource == .registry ? published?.recordURL : nil
             let observation = ChildObservation(pid: observedPID, procStart: observedStart,
                                                registrySessionID: registrySessionID,
                                                registryTranscript: registryTranscript)
@@ -9273,15 +9275,15 @@ enum Orchestrator {
                                                 in: &task) || changed
                 changed = noteTranscriptProof(in: &task) || changed
             case .none:
-                // A missing or not-yet-verifiable registry answer is only a source miss. The
-                // complete note + locate ladder remains the fallback and decides normally.
-                changed = noteClaudeIdentityFromLegacySources(child, in: &task) || changed
+                changed = (adoptPublishedHookIdentity(
+                    published, spawnedAt: task.spawnedAt, in: &task)
+                    ?? noteClaudeIdentityFromLegacySources(child, in: &task)) || changed
             case .refuseForeignProcess:
                 break
             }
         case .codex:
-            let observedPID = Targets.pid(of: child)
-            let observedStart = observedPID.flatMap { Targets.processStart(ofPID: $0) }
+            let observedPID = published?.pid
+            let observedStart = published?.processStart
             let observation = ChildObservation(pid: observedPID, procStart: observedStart)
             changed = recordProcessIdentity(from: observation, in: &task) || changed
             guard let recordedPID = task.childPID, recordedPID == observedPID,
@@ -9295,9 +9297,7 @@ enum Orchestrator {
                 ])
                 return false
             }
-            if task.transcriptPath == nil,
-               let rollout = Codex.locate(cwd: cwd(of: task), startedAt: task.spawnedAt,
-                                           pid: observedPID) {
+            if task.transcriptPath == nil, let rollout = published?.recordURL {
                 task.transcriptPath = rollout.path
                 task.transcriptProven = false
                 changed = true
