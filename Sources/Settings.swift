@@ -75,6 +75,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var hooksCard: NoteCard?
     private var policyCard: NoteCard?
     private var deviceChips: DeviceChips?
+    /// The pairing button, kept so the live tunnel reading can switch it off. A phone key is only
+    /// worth minting when there is a public address to put in the code — see ``pairPhone()``.
+    private var phoneButton: ChipButton?
     private var tunnelCard: NoteCard?
     private var smartHealthCard: NoteCard?
     private var schedulesControl: ScheduleSettingsControl?
@@ -141,6 +144,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         panes = []
         schedulesControl = nil
         cloudSettingsControl = nil
+        phoneButton = nil
         schedulesRefreshAt = .distantPast
         schedulesRefreshing = false
         schedulesRefreshPending = false
@@ -1097,6 +1101,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         open.action = { [weak self] in self?.openRemote() }
         let phone = ChipButton(title: L.t.settingsRemotePhone, prominent: true)
         phone.action = { [weak self] in self?.pairPhone() }
+        phoneButton = phone
         let revoke = ChipButton(title: L.t.settingsRemoteRevokeAll)
         revoke.action = { [weak self] in self?.revokeAllDevices() }
         box.buttons = [open, phone, revoke]
@@ -1160,6 +1165,14 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             card.text = why
             card.dot = .warn
         }
+        // The pairing button lives on this tab too, and this is the reading that decides whether
+        // it can produce anything. Set every tick rather than only on a change: the button is
+        // rebuilt whenever the pane is, and a stale enabled state is the failure this guards.
+        if case .up = RemoteTunnel.shared.state {
+            phoneButton?.isEnabled = true
+        } else {
+            phoneButton?.isEnabled = false
+        }
         if card.text != was { relayoutCurrent() }
     }
 
@@ -1184,8 +1197,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// Its own device, not this Mac's token: a photograph of a screen is a thing that happens, and
     /// what should survive that is a row in the list above with a name on it that can be taken
     /// away — not the key the machine uses for itself.
+    ///
+    /// **Only while a tunnel is actually up.** `RemoteQR.signInURL` answers for `.up` and returns
+    /// nothing otherwise, because a configured hostname is intent rather than evidence and loopback
+    /// is not an address a phone has. Minting first and asking afterwards is how this ends with a
+    /// live key in the list above and an empty white square on screen — a credential created for a
+    /// scan that cannot happen. The button is switched off in ``refreshTunnel()`` for the same
+    /// reason, next to the card that says which of *not installed*, *off*, *starting* or *failed*
+    /// this is; this guard is the one that has to hold if anything ever calls it another way.
     private func pairPhone() {
-        guard Config.shared.remote else { return }
+        guard Config.shared.remote, case .up = RemoteTunnel.shared.state else { return }
         let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]
         let made = RemoteAuth.addDevice(name: "Phone", caps: caps)
         let url = RemoteQR.signInURL(token: made.token,

@@ -9,6 +9,7 @@ const source = resolve(process.env.CLAWDLINE_ONBOARDING_SOURCE || "Sources/Onboa
 const remoteQRSource = resolve(process.env.CLAWDLINE_REMOTE_QR_SOURCE || "Sources/RemoteQR.swift");
 const sourcesDirectory = resolve(process.env.CLAWDLINE_SOURCES_DIR || "Sources");
 const installer = resolve(process.env.CLAWDLINE_INSTALL_SOURCE || "install.sh");
+const settings = resolve(process.env.CLAWDLINE_SETTINGS_SOURCE || "Sources/Settings.swift");
 const work = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "clawdline-onboarding-"));
 const harness = join(work, "main.swift");
 const binary = join(work, "onboarding-focused");
@@ -162,13 +163,26 @@ if (!signInFunction.includes("guard case .up") ||
 }
 console.log("✓ phone QR is gated on the live tunnel URL");
 
+// The gate above only decides what a code may contain. Settings has the other half: it mints a
+// real RemoteAuth device before it asks for an address, so an ungated caller leaves a live key in
+// the device list and shows an empty square. Assert the order, not just the presence of a guard.
+const settingsSource = readFileSync(settings, "utf8");
+const pairPhone = settingsSource.match(/private func pairPhone\(\) \{[\s\S]*?^    \}/m)?.[0] || "";
+const gateAt = pairPhone.indexOf("case .up = RemoteTunnel.shared.state");
+const mintAt = pairPhone.indexOf("RemoteAuth.addDevice");
+if (gateAt === -1 || mintAt === -1 || gateAt > mintAt) {
+  process.stderr.write("FAIL after 31 checks: Settings mints a phone key without a live tunnel\n");
+  process.exit(7);
+}
+console.log("✓ settings refuses to mint a phone key with no live tunnel");
+
 const copyFiles = readdirSync(sourcesDirectory).filter((name) => /^Copy\+.*\.swift$/.test(name));
 const conformers = copyFiles.reduce((count, name) => {
   const text = readFileSync(join(sourcesDirectory, name), "utf8");
   return count + (text.match(/func setupCloudFacts\(/g) || []).length;
 }, 0);
 if (conformers !== 14) {
-  process.stderr.write(`FAIL after 31 checks: expected 14 localized onboarding conformers, found ${conformers}\n`);
+  process.stderr.write(`FAIL after 32 checks: expected 14 localized onboarding conformers, found ${conformers}\n`);
   process.exit(6);
 }
 console.log("✓ all 14 copy conformers carry the remote onboarding facts");
@@ -192,4 +206,4 @@ if (launchProbe.status !== 0 || launchProbe.stdout !== "/tmp/Clawdline Install P
   process.exit(4);
 }
 console.log("✓ installer opens the exact installed app path");
-console.log("34 checks passed");
+console.log("35 checks passed");
