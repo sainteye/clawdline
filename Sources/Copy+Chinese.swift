@@ -749,6 +749,12 @@ struct TraditionalChinese: Copy {
     let menuClose = "關閉視窗"
     let menuHome = "主頁／設定中心"
     let menuHelpDocumentation = "Clawdline 說明文件"
+    func menuAbout(_ app: String) -> String { "關於 \(app)" }
+    let menuServices = "服務"
+    func menuHide(_ app: String) -> String { "隱藏 \(app)" }
+    let menuHideOthers = "隱藏其他項目"
+    let menuShowAll = "全部顯示"
+    let menuMinimize = "縮到最小"
     let homeTitle = "Clawdline 主頁"
     let homeWelcome = "先選你想連到哪裡。設定畫面會顯示實際證據，不只顯示你切換了哪個開關。"
     let homePurpose = "你想連接什麼？"
@@ -764,7 +770,13 @@ struct TraditionalChinese: Copy {
     let setupExpected = "預期結果"
     let setupRecovery = "復原方式"
     let setupLocalServerOff = "本機回送伺服器已關閉。"
+    let setupLocalConfigurationFailed = "無法儲存本機瀏覽器設定；沒有套用任何變更。"
     let setupLocalChecking = "正在檢查實際的 /v1/health 端點⋯⋯"
+    let setupLocalHealthTransport = "無法連到健康端點。請檢查連接埠，以及是否被其他程式占用。"
+    let setupLocalHealthTimedOut = "健康端點逾時。請檢查連接埠後再試一次。"
+    func setupLocalHealthHTTP(_ status: Int) -> String { "健康端點回傳 HTTP \(status)，不是健康回應。" }
+    let setupLocalHealthUnhealthy = "端點有回應，但回報 ok: false。"
+    let setupLocalHealthInvalid = "端點沒有回傳有效的健康回應。請檢查設定的連接埠由誰占用。"
     let setupLocalReady = "健康狀態端點已就緒，尚未建立瀏覽器憑證。"
     let setupLocalWaiting = "瀏覽器已開啟；正在等候這個裝置完成驗證。"
     let setupLocalConnected = "已連線。這個瀏覽器裝置確實已聯絡 Clawdline。"
@@ -775,8 +787,10 @@ struct TraditionalChinese: Copy {
     let setupFinish = "完成"
     let setupLocalExpected = "唯讀瀏覽器會開啟並完成驗證；即使沒有作用中的工作階段也算成功。"
     let setupLocalRecovery = "若停在這裡，請保持此視窗開啟並再次檢查。你也可在「設定」查看伺服器與連接埠。"
+    let setupNoRecovery = "此路線已有證明，不需要復原。"
+    let setupLocalReadOnlyAction = "此動作會儲存唯讀設定 · 並關閉控制功能"
     let setupReadOnly = "唯讀 · 控制功能保持關閉"
-    let setupLocalDeviceName = "這台 Mac 上的瀏覽器"
+    let setupLocalDeviceName = "這台 Mac 的設定中心瀏覽器"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {
         "模式：\(mode)\nTunnel：\(tunnel)\nQR 主機名稱：\(hostname)\n狀態：\(status)"
     }
@@ -809,15 +823,19 @@ struct TraditionalChinese: Copy {
     let setupPairCloudPhone = "到 Cloud 設定配對手機"
     let setupReviewCloudPreview = "檢視 Preview 狀態"
     let setupProofAbsent = "不存在"
-    let setupProofNotProved = "尚未證實"
     let setupProofUnavailable = "無法取得證明"
     func setupProofFailed(_ reason: String) -> String { "失敗 — \(reason)" }
-    let setupProofProved = "已證實"
+    let setupCloudIdentityReadFailed = "無法讀取鑰匙圈身分"
+    let setupCloudRelayFailed = "Relay 回報失敗；請查看 Cloud 設定與記錄"
+    let setupCloudPairingReadFailed = "無法讀取已配對裝置儲存區"
+    let setupCloudPairingAmbiguous = "同時出現多個新 Viewer；請重新開始配對"
     func setupCloudAccountProved(_ account: String) -> String { "已登入 \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "鑰匙圈中有 \(machine) 的憑證" }
     func setupCloudPairingProved(_ device: String) -> String { "已釘選指定 Viewer \(device)" }
     let setupCloudflareDeviceName = "透過 Cloudflare 的手機"
     let setupScanLiveTunnel = "用手機掃描已上線的 Tunnel"
+    let setupDismissalHint = "關閉首頁後便不會自動開啟；可隨時從 App 選單、Dock、狀態列或 clawdline://home 重開設定中心。"
+    let setupCompletionFailed = "Clawdline 無法儲存 onboarding 已完成。請檢查 ~/.config/clawdline 權限後再關閉首頁。"
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"
@@ -1586,6 +1604,12 @@ struct SimplifiedChinese: Copy {
     let menuClose = "关闭窗口"
     let menuHome = "主页／设置中心"
     let menuHelpDocumentation = "Clawdline 文档"
+    func menuAbout(_ app: String) -> String { "关于 \(app)" }
+    let menuServices = "服务"
+    func menuHide(_ app: String) -> String { "隐藏 \(app)" }
+    let menuHideOthers = "隐藏其他"
+    let menuShowAll = "全部显示"
+    let menuMinimize = "最小化"
     let homeTitle = "Clawdline 主页"
     let homeWelcome = "先选择你想连接到哪里。设置会显示实际证据，而不只是你切换了哪个开关。"
     let homePurpose = "你想连接什么？"
@@ -1601,7 +1625,13 @@ struct SimplifiedChinese: Copy {
     let setupExpected = "预期结果"
     let setupRecovery = "恢复方法"
     let setupLocalServerOff = "本机回环服务器已关闭。"
+    let setupLocalConfigurationFailed = "无法保存本机浏览器设置；没有应用任何更改。"
     let setupLocalChecking = "正在检查实际的 /v1/health 端点…"
+    let setupLocalHealthTransport = "无法连接健康端点。请检查端口，以及是否被其他程序占用。"
+    let setupLocalHealthTimedOut = "健康端点超时。请检查端口后重试。"
+    func setupLocalHealthHTTP(_ status: Int) -> String { "健康端点返回 HTTP \(status)，不是健康响应。" }
+    let setupLocalHealthUnhealthy = "端点有响应，但报告 ok: false。"
+    let setupLocalHealthInvalid = "端点没有返回有效的健康响应。请检查配置的端口由谁占用。"
     let setupLocalReady = "健康端点已就绪，尚未创建浏览器凭据。"
     let setupLocalWaiting = "浏览器已打开；正在等待此设备完成验证。"
     let setupLocalConnected = "已连接。这个浏览器设备确实已联系 Clawdline。"
@@ -1612,8 +1642,10 @@ struct SimplifiedChinese: Copy {
     let setupFinish = "完成"
     let setupLocalExpected = "只读浏览器会打开并完成验证；即使没有活动会话也算成功。"
     let setupLocalRecovery = "如果停在这里，请保持窗口打开并再次检查。也可在“设置”中查看服务器和端口。"
+    let setupNoRecovery = "此路线已有证明，无需恢复。"
+    let setupLocalReadOnlyAction = "此操作会保存只读设置 · 并关闭控制功能"
     let setupReadOnly = "只读 · 控制功能保持关闭"
-    let setupLocalDeviceName = "这台 Mac 上的浏览器"
+    let setupLocalDeviceName = "这台 Mac 的设置中心浏览器"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {
         "模式：\(mode)\nTunnel：\(tunnel)\nQR 主机名：\(hostname)\n状态：\(status)"
     }
@@ -1646,15 +1678,19 @@ struct SimplifiedChinese: Copy {
     let setupPairCloudPhone = "到 Cloud 设置配对手机"
     let setupReviewCloudPreview = "查看 Preview 状态"
     let setupProofAbsent = "不存在"
-    let setupProofNotProved = "尚未证实"
     let setupProofUnavailable = "无法取得证明"
     func setupProofFailed(_ reason: String) -> String { "失败 — \(reason)" }
-    let setupProofProved = "已证实"
+    let setupCloudIdentityReadFailed = "无法读取钥匙串身份"
+    let setupCloudRelayFailed = "Relay 报告失败；请查看 Cloud 设置和日志"
+    let setupCloudPairingReadFailed = "无法读取已配对设备存储区"
+    let setupCloudPairingAmbiguous = "同时出现多个新 Viewer；请重新开始配对"
     func setupCloudAccountProved(_ account: String) -> String { "已登录 \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "钥匙串中有 \(machine) 的凭据" }
     func setupCloudPairingProved(_ device: String) -> String { "已固定指定 Viewer \(device)" }
     let setupCloudflareDeviceName = "通过 Cloudflare 的手机"
     let setupScanLiveTunnel = "用手机扫描已上线的 Tunnel"
+    let setupDismissalHint = "关闭主页后便不会自动打开；可随时从 App 菜单、Dock、状态栏或 clawdline://home 重新打开设置中心。"
+    let setupCompletionFailed = "Clawdline 无法保存 onboarding 已完成。请检查 ~/.config/clawdline 权限后再次关闭主页。"
 
     let menuOpen = "打开输入框"
     let menuReveal = "跳到目标标签页"

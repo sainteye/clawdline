@@ -750,6 +750,12 @@ struct Turkish: Copy {
     let menuClose = "Pencereyi Kapat"
     let menuHome = "Ana Sayfa / Kurulum Merkezi"
     let menuHelpDocumentation = "Clawdline Belgeleri"
+    func menuAbout(_ app: String) -> String { "\(app) Hakkında" }
+    let menuServices = "Servisler"
+    func menuHide(_ app: String) -> String { "\(app)’ı Gizle" }
+    let menuHideOthers = "Diğerlerini Gizle"
+    let menuShowAll = "Tümünü Göster"
+    let menuMinimize = "Küçült"
     let homeTitle = "Clawdline Ana Sayfa"
     let homeWelcome = "Bağlantı amacınızı seçin. Kurulum yalnızca değiştirdiğiniz anahtarı değil, gerçek kanıtı gösterir."
     let homePurpose = "Neye bağlanmak istiyorsunuz?"
@@ -766,6 +772,12 @@ struct Turkish: Copy {
     let setupRecovery = "Kurtarma"
     let setupLocalServerOff = "Geri döngü sunucusu kapalı."
     let setupLocalChecking = "Gerçek /v1/health uç noktası denetleniyor…"
+    let setupLocalConfigurationFailed = "Yerel tarayıcı ayarı kaydedilemedi; hiçbir şey değiştirilmedi."
+    let setupLocalHealthTransport = "Sağlık uç noktasına ulaşılamadı. Bağlantı noktasını ve diğer programları denetleyin."
+    let setupLocalHealthTimedOut = "Sağlık uç noktası zaman aşımına uğradı. Bağlantı noktasını denetleyip yeniden deneyin."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "Sağlık uç noktası sağlıklı yanıt yerine HTTP \(status) döndürdü." }
+    let setupLocalHealthUnhealthy = "Uç nokta yanıt verdi ancak ok: false bildirdi."
+    let setupLocalHealthInvalid = "Uç nokta geçerli bir sağlık yanıtı vermedi. Yapılandırılmış bağlantı noktasını denetleyin."
     let setupLocalReady = "Sağlık uç noktası hazır. Henüz tarayıcı kimlik bilgisi yok."
     let setupLocalWaiting = "Tarayıcı açıldı; tam olarak bu aygıtın kimlik doğrulaması bekleniyor."
     let setupLocalConnected = "Bağlandı. Bu tarayıcı aygıtı Clawdline’a ulaştı."
@@ -776,8 +788,10 @@ struct Turkish: Copy {
     let setupFinish = "Bitti"
     let setupLocalExpected = "Salt okunur tarayıcı açılıp kimlik doğrular; etkin oturum olmasa da başarılıdır."
     let setupLocalRecovery = "Takılırsa bu pencereyi açık tutup yeniden denetleyin. Sunucu ve bağlantı noktası Ayarlar’dadır."
+    let setupNoRecovery = "Kurtarma gerekmiyor; bu yol kanıtlandı."
+    let setupLocalReadOnlyAction = "Bu eylem salt okunuru kaydeder · denetimi kapatır"
     let setupReadOnly = "Salt okunur · denetim kapalı kalır"
-    let setupLocalDeviceName = "Bu Mac’teki tarayıcı"
+    let setupLocalDeviceName = "Kurulum Merkezi tarayıcısı"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Mod: \(mode)\nTünel: \(tunnel)\nQR ana makinesi: \(hostname)\nDurum: \(status)" }
     let setupTunnelModeOff = "Kapalı"
     let setupTunnelModeQuick = "Hızlı"
@@ -805,15 +819,19 @@ struct Turkish: Copy {
     let setupPairCloudPhone = "Cloud’da Telefon Eşleştir"
     let setupReviewCloudPreview = "Preview Durumunu İncele"
     let setupProofAbsent = "yok"
-    let setupProofNotProved = "kanıtlanmadı"
     let setupProofUnavailable = "kanıt kullanılamıyor"
     func setupProofFailed(_ reason: String) -> String { "başarısız — \(reason)" }
-    let setupProofProved = "kanıtlandı"
+    let setupCloudIdentityReadFailed = "Anahtar Zinciri kimliği okunamadı"
+    let setupCloudRelayFailed = "relay hata bildirdi; Cloud Ayarları ve günlüğü inceleyin"
+    let setupCloudPairingReadFailed = "eşlenmiş cihaz deposu okunamadı"
+    let setupCloudPairingAmbiguous = "birden fazla yeni viewer göründü; eşlemeyi yeniden başlatın"
     func setupCloudAccountProved(_ account: String) -> String { "\(account) olarak oturum açıldı" }
     func setupCloudCredentialProved(_ machine: String) -> String { "\(machine) için Anahtar Zinciri kimliği" }
     func setupCloudPairingProved(_ device: String) -> String { "tam viewer \(device) için sabitlendi" }
     let setupCloudflareDeviceName = "Cloudflare üzerinden telefon"
     let setupScanLiveTunnel = "Canlı tüneli telefonunuzla tarayın"
+    let setupDismissalHint = "Home’u kapatmak otomatik açılmayı durdurur. Kurulum Merkezi’ni menü, Dock, durum öğesi veya clawdline://home ile yeniden açın."
+    let setupCompletionFailed = "Clawdline tamamlanmayı kaydedemedi. ~/.config/clawdline izinlerini denetleyip Home’u yeniden kapatın."
 
     let menuOpen = "Giriş çubuğunu aç"
     let menuReveal = "Hedef sekmeye git"

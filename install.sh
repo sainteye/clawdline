@@ -19,7 +19,7 @@ trap 'rm -rf "$TMP"' EXIT
 # replaying download, replacement, or signature checks. Production always uses macOS `open`;
 # the optional argument is only a focused-test probe.
 launch_installed_app() {
-  local opener="${1:-/usr/bin/open}"
+  local opener="${1:-${CLAWDLINE_OPEN_COMMAND:-/usr/bin/open}}"
   "$opener" "$DEST/$APP"
 }
 

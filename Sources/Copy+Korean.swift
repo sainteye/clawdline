@@ -748,6 +748,12 @@ struct Korean: Copy {
     let menuClose = "윈도우 닫기"
     let menuHome = "홈 / 설정 센터"
     let menuHelpDocumentation = "Clawdline 문서"
+    func menuAbout(_ app: String) -> String { "\(app)에 관하여" }
+    let menuServices = "서비스"
+    func menuHide(_ app: String) -> String { "\(app) 가리기" }
+    let menuHideOthers = "기타 가리기"
+    let menuShowAll = "모두 보기"
+    let menuMinimize = "최소화"
     let homeTitle = "Clawdline 홈"
     let homeWelcome = "원하는 연결 목적을 선택하세요. 설정한 스위치뿐 아니라 실제로 확인된 증거를 표시합니다."
     let homePurpose = "무엇에 연결할까요?"
@@ -764,6 +770,12 @@ struct Korean: Copy {
     let setupRecovery = "복구 방법"
     let setupLocalServerOff = "루프백 서버가 꺼져 있습니다."
     let setupLocalChecking = "실제 /v1/health 엔드포인트 확인 중…"
+    let setupLocalConfigurationFailed = "로컬 브라우저 설정을 저장하지 못했습니다. 변경 사항은 적용되지 않았습니다."
+    let setupLocalHealthTransport = "상태 엔드포인트에 연결할 수 없습니다. 포트와 다른 프로그램을 확인하세요."
+    let setupLocalHealthTimedOut = "상태 엔드포인트 시간이 초과되었습니다. 포트를 확인하고 다시 시도하세요."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "상태 엔드포인트가 정상 응답 대신 HTTP \(status)을 반환했습니다." }
+    let setupLocalHealthUnhealthy = "엔드포인트가 응답했지만 ok: false를 보고했습니다."
+    let setupLocalHealthInvalid = "유효한 상태 응답이 아닙니다. 설정한 포트를 누가 사용하는지 확인하세요."
     let setupLocalReady = "상태 엔드포인트가 준비되었습니다. 브라우저 자격 증명은 아직 없습니다."
     let setupLocalWaiting = "브라우저를 열었습니다. 이 장치의 인증을 기다리는 중입니다."
     let setupLocalConnected = "연결되었습니다. 이 브라우저 장치가 Clawdline에 접속했습니다."
@@ -774,8 +786,10 @@ struct Korean: Copy {
     let setupFinish = "완료"
     let setupLocalExpected = "읽기 전용 브라우저가 열리고 인증됩니다. 활성 세션이 없어도 성공입니다."
     let setupLocalRecovery = "멈추면 이 윈도우를 열어 둔 채 다시 확인하세요. 설정에서 서버와 포트도 확인할 수 있습니다."
+    let setupNoRecovery = "복구가 필요 없습니다. 이 경로는 증명되었습니다."
+    let setupLocalReadOnlyAction = "이 동작은 읽기 전용을 저장하고 · 제어를 끕니다"
     let setupReadOnly = "읽기 전용 · 제어는 계속 꺼짐"
-    let setupLocalDeviceName = "이 Mac의 브라우저"
+    let setupLocalDeviceName = "설정 센터 브라우저"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "모드: \(mode)\n터널: \(tunnel)\nQR 호스트 이름: \(hostname)\n상태: \(status)" }
     let setupTunnelModeOff = "끔"
     let setupTunnelModeQuick = "빠른"
@@ -803,15 +817,19 @@ struct Korean: Copy {
     let setupPairCloudPhone = "Cloud에서 휴대폰 페어링"
     let setupReviewCloudPreview = "Preview 상태 검토"
     let setupProofAbsent = "없음"
-    let setupProofNotProved = "증명되지 않음"
     let setupProofUnavailable = "증명 사용 불가"
     func setupProofFailed(_ reason: String) -> String { "실패 — \(reason)" }
-    let setupProofProved = "증명됨"
+    let setupCloudIdentityReadFailed = "키체인 신원을 읽지 못했습니다"
+    let setupCloudRelayFailed = "Relay가 실패를 보고했습니다. Cloud 설정과 로그를 확인하세요"
+    let setupCloudPairingReadFailed = "페어링 기기 저장소를 읽지 못했습니다"
+    let setupCloudPairingAmbiguous = "새 Viewer가 여러 개 나타났습니다. 페어링을 다시 시작하세요"
     func setupCloudAccountProved(_ account: String) -> String { "\(account)(으)로 로그인됨" }
     func setupCloudCredentialProved(_ machine: String) -> String { "\(machine)의 키체인 자격 증명" }
     func setupCloudPairingProved(_ device: String) -> String { "정확한 Viewer \(device)에 고정됨" }
     let setupCloudflareDeviceName = "Cloudflare를 통한 휴대폰"
     let setupScanLiveTunnel = "휴대폰으로 실행 중인 터널 스캔"
+    let setupDismissalHint = "Home을 닫으면 자동으로 열리지 않습니다. App 메뉴, Dock, 상태 항목 또는 clawdline://home에서 설정 센터를 다시 여세요."
+    let setupCompletionFailed = "완료 상태를 저장하지 못했습니다. ~/.config/clawdline 권한을 확인하고 Home을 다시 닫으세요."
 
     let menuOpen = "입력창 열기"
     let menuReveal = "대상 탭으로 이동"

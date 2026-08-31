@@ -749,6 +749,12 @@ struct English: Copy {
     let menuClose = "Close Window"
     let menuHome = "Home / Setup Center"
     let menuHelpDocumentation = "Clawdline Documentation"
+    func menuAbout(_ app: String) -> String { "About \(app)" }
+    let menuServices = "Services"
+    func menuHide(_ app: String) -> String { "Hide \(app)" }
+    let menuHideOthers = "Hide Others"
+    let menuShowAll = "Show All"
+    let menuMinimize = "Minimize"
     let homeTitle = "Clawdline Home"
     let homeWelcome = "Choose what you want to reach. Setup shows the evidence it has, not just the switch you changed."
     let homePurpose = "What do you want to connect?"
@@ -764,7 +770,13 @@ struct English: Copy {
     let setupExpected = "Expected result"
     let setupRecovery = "Recovery"
     let setupLocalServerOff = "The loopback server is off."
+    let setupLocalConfigurationFailed = "The local browser setting could not be saved; nothing was changed."
     let setupLocalChecking = "Checking the actual /v1/health endpoint…"
+    let setupLocalHealthTransport = "The health endpoint could not be reached. Check the port and whether another program owns it."
+    let setupLocalHealthTimedOut = "The health endpoint timed out. Check the port and try again."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "The health endpoint returned HTTP \(status), not a healthy response." }
+    let setupLocalHealthUnhealthy = "The endpoint answered, but reported ok: false."
+    let setupLocalHealthInvalid = "The endpoint did not return a valid health response. Check what owns the configured port."
     let setupLocalReady = "The health endpoint is ready. No browser credential exists yet."
     let setupLocalWaiting = "The browser opened; waiting for this exact device to authenticate."
     let setupLocalConnected = "Connected. This exact browser device has contacted Clawdline."
@@ -775,8 +787,10 @@ struct English: Copy {
     let setupFinish = "Done"
     let setupLocalExpected = "A read-only browser opens, authenticates, and succeeds even when no sessions are active."
     let setupLocalRecovery = "If this stalls, keep this window open and check again. You can review the server and port in Settings."
+    let setupNoRecovery = "No recovery is needed; this route is proved."
+    let setupLocalReadOnlyAction = "This action saves read only · it turns control off"
     let setupReadOnly = "Read only · control remains off"
-    let setupLocalDeviceName = "Browser on this Mac"
+    let setupLocalDeviceName = "Setup browser on this Mac"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {
         "Mode: \(mode)\nTunnel: \(tunnel)\nQR hostname: \(hostname)\nStatus: \(status)"
     }
@@ -809,15 +823,19 @@ struct English: Copy {
     let setupPairCloudPhone = "Pair a Phone in Cloud Settings"
     let setupReviewCloudPreview = "Review Preview Status"
     let setupProofAbsent = "not present"
-    let setupProofNotProved = "not proved"
     let setupProofUnavailable = "proof unavailable"
     func setupProofFailed(_ reason: String) -> String { "failed — \(reason)" }
-    let setupProofProved = "proved"
+    let setupCloudIdentityReadFailed = "the Keychain identity could not be read"
+    let setupCloudRelayFailed = "the relay reported a failure; review Cloud Settings and the log"
+    let setupCloudPairingReadFailed = "the paired-device store could not be read"
+    let setupCloudPairingAmbiguous = "more than one new viewer appeared; start pairing again"
     func setupCloudAccountProved(_ account: String) -> String { "signed in as \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "Keychain credential for \(machine)" }
     func setupCloudPairingProved(_ device: String) -> String { "pinned for exact viewer \(device)" }
     let setupCloudflareDeviceName = "Phone through Cloudflare"
     let setupScanLiveTunnel = "Scan the live tunnel with your phone"
+    let setupDismissalHint = "Closing Home stops automatic opening. Reopen Setup Center anytime from the app menu, Dock, status item, or clawdline://home."
+    let setupCompletionFailed = "Clawdline could not save that onboarding is complete. Check permissions for ~/.config/clawdline and close Home again."
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"

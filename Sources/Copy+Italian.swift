@@ -750,6 +750,12 @@ struct Italian: Copy {
     let menuClose = "Chiudi finestra"
     let menuHome = "Home / Centro configurazione"
     let menuHelpDocumentation = "Documentazione di Clawdline"
+    func menuAbout(_ app: String) -> String { "Informazioni su \(app)" }
+    let menuServices = "Servizi"
+    func menuHide(_ app: String) -> String { "Nascondi \(app)" }
+    let menuHideOthers = "Nascondi altre"
+    let menuShowAll = "Mostra tutte"
+    let menuMinimize = "Contrai"
     let homeTitle = "Home di Clawdline"
     let homeWelcome = "Scegli cosa vuoi collegare. La configurazione mostra le prove reali, non solo l’interruttore cambiato."
     let homePurpose = "Cosa vuoi collegare?"
@@ -766,6 +772,12 @@ struct Italian: Copy {
     let setupRecovery = "Ripristino"
     let setupLocalServerOff = "Il server di loopback è disattivato."
     let setupLocalChecking = "Verifica dell’endpoint /v1/health reale…"
+    let setupLocalConfigurationFailed = "L’impostazione del browser locale non è stata salvata; nulla è cambiato."
+    let setupLocalHealthTransport = "Endpoint di stato irraggiungibile. Controlla la porta e gli altri programmi."
+    let setupLocalHealthTimedOut = "Timeout dell’endpoint di stato. Controlla la porta e riprova."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "L’endpoint di stato ha restituito HTTP \(status), non una risposta sana." }
+    let setupLocalHealthUnhealthy = "L’endpoint ha risposto, ma con ok: false."
+    let setupLocalHealthInvalid = "L’endpoint non ha restituito una risposta di stato valida. Controlla la porta."
     let setupLocalReady = "L’endpoint di stato è pronto. Non esistono ancora credenziali del browser."
     let setupLocalWaiting = "Il browser è aperto; attesa dell’autenticazione di questo preciso dispositivo."
     let setupLocalConnected = "Connesso. Questo dispositivo browser ha contattato Clawdline."
@@ -776,8 +788,10 @@ struct Italian: Copy {
     let setupFinish = "Fine"
     let setupLocalExpected = "Si apre e autentica un browser in sola lettura, anche senza sessioni attive."
     let setupLocalRecovery = "Se si blocca, tieni aperta questa finestra e riprova. Server e porta sono visibili nelle Impostazioni."
+    let setupNoRecovery = "Nessun ripristino necessario; questo percorso è provato."
+    let setupLocalReadOnlyAction = "Questa azione salva la sola lettura · disattiva il controllo"
     let setupReadOnly = "Sola lettura · controllo ancora disattivato"
-    let setupLocalDeviceName = "Browser su questo Mac"
+    let setupLocalDeviceName = "Browser del Centro configurazione"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Modalità: \(mode)\nTunnel: \(tunnel)\nHost del QR: \(hostname)\nStato: \(status)" }
     let setupTunnelModeOff = "Disattivato"
     let setupTunnelModeQuick = "Rapido"
@@ -805,15 +819,19 @@ struct Italian: Copy {
     let setupPairCloudPhone = "Abbina un telefono in Cloud"
     let setupReviewCloudPreview = "Controlla stato Preview"
     let setupProofAbsent = "assente"
-    let setupProofNotProved = "non provato"
     let setupProofUnavailable = "prova non disponibile"
     func setupProofFailed(_ reason: String) -> String { "non riuscito — \(reason)" }
-    let setupProofProved = "provato"
+    let setupCloudIdentityReadFailed = "impossibile leggere l’identità nel Portachiavi"
+    let setupCloudRelayFailed = "il relay ha segnalato un errore; controlla Impostazioni Cloud e log"
+    let setupCloudPairingReadFailed = "impossibile leggere l’archivio dei dispositivi associati"
+    let setupCloudPairingAmbiguous = "sono apparsi più viewer nuovi; riavvia l’associazione"
     func setupCloudAccountProved(_ account: String) -> String { "accesso come \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "credenziale Portachiavi per \(machine)" }
     func setupCloudPairingProved(_ device: String) -> String { "fissato per il viewer esatto \(device)" }
     let setupCloudflareDeviceName = "Telefono tramite Cloudflare"
     let setupScanLiveTunnel = "Scansiona il tunnel attivo col telefono"
+    let setupDismissalHint = "Chiudendo Home si interrompe l’apertura automatica. Riapri il Centro configurazione da menu, Dock, stato o clawdline://home."
+    let setupCompletionFailed = "Clawdline non ha potuto salvare il completamento. Controlla i permessi di ~/.config/clawdline e richiudi Home."
 
     let menuOpen = "Apri la barra"
     let menuReveal = "Vai alla scheda di destinazione"

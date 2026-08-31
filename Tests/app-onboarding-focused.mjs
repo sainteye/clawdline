@@ -1,31 +1,70 @@
 #!/usr/bin/env node
 
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const source = resolve(process.env.CLAWDLINE_ONBOARDING_SOURCE || "Sources/Onboarding.swift");
-const remoteQRSource = resolve(process.env.CLAWDLINE_REMOTE_QR_SOURCE || "Sources/RemoteQR.swift");
 const sourcesDirectory = resolve(process.env.CLAWDLINE_SOURCES_DIR || "Sources");
 const installer = resolve(process.env.CLAWDLINE_INSTALL_SOURCE || "install.sh");
-const settings = resolve(process.env.CLAWDLINE_SETTINGS_SOURCE || "Sources/Settings.swift");
 const work = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "clawdline-onboarding-"));
-const harness = join(work, "main.swift");
-const binary = join(work, "onboarding-focused");
 
-// Read first so a missing or empty subject cannot turn into a successful zero-check run.
-if (!readFileSync(source, "utf8").includes("enum LocalBrowserPolicy")) {
-  throw new Error(`onboarding policy seam not found in ${source}`);
+let nodeChecks = 0;
+function checkNode(condition, name, status = 2) {
+  if (!condition) {
+    process.stderr.write(`FAIL after ${nodeChecks} node checks: ${name}\n`);
+    process.exitCode = status;
+    throw new Error(name);
+  }
+  nodeChecks += 1;
+  console.log(`✓ ${name}`);
 }
 
-writeFileSync(harness, String.raw`
+function executable(path, body) {
+  writeFileSync(path, body, "utf8");
+  chmodSync(path, 0o755);
+}
+
+try {
+  const subject = readFileSync(source, "utf8");
+  checkNode(subject.includes("enum OnboardingEvidencePolicy") &&
+            subject.includes("enum PhoneCredentialIssuer") &&
+            subject.includes("enum CloudPreviewEvidencePolicy"),
+            "focused subject contains the production evidence seams");
+
+  const harness = join(work, "main.swift");
+  const binary = join(work, "onboarding-focused");
+  writeFileSync(harness, String.raw`
 import Foundation
+
+enum RemoteAuth {
+    enum Capability: String, Hashable { case read, send, admin }
+    struct Device { var id: String; var lastSeen: Date?; var local: Bool }
+}
+
+enum RemoteTunnel {
+    enum State { case off; case starting; case up(url: String); case failed(reason: String) }
+}
+
+struct CloudMachineIdentity: Equatable { let accountID: String; let machineID: String }
+struct CloudPairedDevice: Equatable { let deviceID: String }
+enum CloudBridgeLifecycle {
+    enum State: Equatable {
+        case detached
+        case attached(accountID: String, machineID: String)
+        case unauthorized(accountID: String, machineID: String)
+        case failed(reason: String)
+    }
+}
+enum ProbeError: Error { case failed }
 
 var checks = 0
 func check(_ condition: @autoclosure () -> Bool, _ name: String) {
     guard condition() else {
-        FileHandle.standardError.write(Data(("FAIL: " + name + "\n").utf8))
+        FileHandle.standardError.write(Data(("FAIL after \(checks) Swift checks: " + name + "\n").utf8))
         exit(1)
     }
     checks += 1
@@ -43,167 +82,269 @@ check(store.markCurrent(now: Date(timeIntervalSince1970: 1_700_000_000)), "curre
 check(store.isCurrent, "current completion reopens quietly")
 let mode = try! FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as! NSNumber
 check(mode.intValue == 0o600, "completion file is private")
+let blockedStore = OnboardingCompletionStore(fileURL: root)
+check(!blockedStore.markCurrent(), "completion persistence failure is reported to the UI layer")
 
-let off = LocalBrowserPolicy.decide(serverEnabled: false, healthReady: false,
-                                    deviceCreated: false, deviceLastSeen: false)
-check(off.phase == .serverOff && off.action == .enableServer, "server-off has one enable action")
-check(!off.mayMintDevice && !off.succeeded, "server-off cannot mint or succeed")
+check(LocalHealthEvidencePolicy.interpret(statusCode: nil, bodyOK: nil,
+                                           errorCode: NSURLErrorTimedOut) == .failed(.timedOut),
+      "timeout stays distinguishable")
+check(LocalHealthEvidencePolicy.interpret(statusCode: nil, bodyOK: nil,
+                                           errorCode: NSURLErrorCannotConnectToHost) == .failed(.transport),
+      "transport failure stays distinguishable")
+check(LocalHealthEvidencePolicy.interpret(statusCode: 500, bodyOK: nil,
+                                           errorCode: nil) == .failed(.httpStatus(500)),
+      "HTTP failure keeps its status")
+check(LocalHealthEvidencePolicy.interpret(statusCode: 200, bodyOK: false,
+                                           errorCode: nil) == .failed(.unhealthy),
+      "HTTP 200 with ok false is not healthy")
+check(LocalHealthEvidencePolicy.interpret(statusCode: 200, bodyOK: nil,
+                                           errorCode: nil) == .failed(.invalidResponse),
+      "HTTP 200 without an ok fact is invalid")
+check(LocalHealthEvidencePolicy.interpret(statusCode: 200, bodyOK: true,
+                                           errorCode: nil) == .ready,
+      "only HTTP 200 with ok true is ready")
+check(OnboardingPollingPolicy.interval > OnboardingPollingPolicy.requestTimeout,
+      "poll interval cannot invalidate a still-live request")
+check(OnboardingPollingPolicy.shouldStartRequest(isInFlight: false) &&
+      !OnboardingPollingPolicy.shouldStartRequest(isInFlight: true),
+      "polling never overlaps an in-flight health request")
+let evidenceNow = Date(timeIntervalSince1970: 100)
+check(!OnboardingPollingPolicy.shouldRefreshEvidence(
+        now: evidenceNow, lastRefresh: Date(timeIntervalSince1970: 95), isInFlight: false) &&
+      OnboardingPollingPolicy.shouldRefreshEvidence(
+        now: evidenceNow, lastRefresh: Date(timeIntervalSince1970: 80), isInFlight: false) &&
+      !OnboardingPollingPolicy.shouldRefreshEvidence(
+        now: evidenceNow, lastRefresh: nil, isInFlight: true),
+      "Keychain, pairing-store, and PATH evidence is cached and never overlaps")
 
-let checking = LocalBrowserPolicy.decide(serverEnabled: true, healthReady: false,
-                                         deviceCreated: false, deviceLastSeen: false)
-check(checking.phase == .checkingHealth && checking.action == .retryHealth,
-      "config switch alone remains checking")
-check(!checking.mayMintDevice && !checking.succeeded, "health failure cannot mint or succeed")
+let seenDate = Date(timeIntervalSince1970: 1)
+let exactUnseen = RemoteAuth.Device(id: "expected", lastSeen: nil, local: false)
+let exactSeen = RemoteAuth.Device(id: "expected", lastSeen: seenDate, local: false)
+let otherSeen = RemoteAuth.Device(id: "other", lastSeen: seenDate, local: false)
+let serverOff = OnboardingEvidencePolicy.local(
+    serverEnabled: false, health: .ready, expectedDeviceID: nil, devices: [])
+check(serverOff.phase == .serverOff && !serverOff.mayMintDevice,
+      "server-off cannot mint despite a stale ready health fact")
+let saveFailed = OnboardingEvidencePolicy.local(
+    serverEnabled: false, configurationFailed: true, health: .notChecked,
+    expectedDeviceID: nil, devices: [])
+check(saveFailed.phase == .configurationFailed && !saveFailed.mayMintDevice,
+      "failed config save does not claim the server changed")
+let healthFailed = OnboardingEvidencePolicy.local(
+    serverEnabled: true, health: .failed(.httpStatus(500)), expectedDeviceID: nil, devices: [])
+check(healthFailed.phase == .healthFailed(.httpStatus(500)) && !healthFailed.mayMintDevice,
+      "health failure cannot mint")
+let ready = OnboardingEvidencePolicy.local(
+    serverEnabled: true, health: .ready, expectedDeviceID: nil, devices: [])
+check(ready.phase == .readyToOpen && ready.mayMintDevice, "proved health permits one mint")
+let localCredential = LocalBrowserCredentialPolicy.plan(for: ready)
+check(localCredential?.remoteCapabilities() == [.read] && localCredential?.local == false,
+      "local onboarding can mint only a non-local read credential")
+check(LocalBrowserCredentialPolicy.plan(for: healthFailed) == nil,
+      "local onboarding cannot mint before health proof")
+let wrongDevice = OnboardingEvidencePolicy.local(
+    serverEnabled: true, health: .ready, expectedDeviceID: "expected", devices: [otherSeen])
+check(!wrongDevice.succeeded, "another device lastSeen cannot complete local setup")
+let unseen = OnboardingEvidencePolicy.local(
+    serverEnabled: true, health: .ready, expectedDeviceID: "expected", devices: [exactUnseen])
+check(unseen.phase == .awaitingDevice && !unseen.succeeded,
+      "the exact unseen device remains pending")
+let connected = OnboardingEvidencePolicy.local(
+    serverEnabled: true, health: .ready, expectedDeviceID: "expected", devices: [exactSeen])
+check(connected.phase == .connected && connected.succeeded,
+      "only the exact seen device completes local setup")
+check(CredentialLifetimePolicy.shouldRevokeUnseen(
+        expectedDeviceID: "expected", devices: [exactUnseen]),
+      "an unseen route credential is revoked when its gate disappears")
+check(!CredentialLifetimePolicy.shouldRevokeUnseen(
+        expectedDeviceID: "expected", devices: [exactSeen]),
+      "a credential that supplied lastSeen remains usable")
 
-let ready = LocalBrowserPolicy.decide(serverEnabled: true, healthReady: true,
-                                      deviceCreated: false, deviceLastSeen: false)
-check(ready.phase == .readyToOpen && ready.action == .openBrowser,
-      "health readiness offers browser open")
-check(ready.mayMintDevice && !ready.succeeded, "only health readiness permits minting")
+var mintCount = 0
+func mint(_ name: String, _ caps: Set<RemoteAuth.Capability>, _ local: Bool)
+    -> (id: String, token: String) {
+    mintCount += 1
+    check(name == "Phone", "issuer forwards the visible device name")
+    check(caps == [.read], "read-only plan maps to the actual RemoteAuth capability")
+    check(!local, "phone credentials are explicitly non-local")
+    return ("phone-1", "secret")
+}
+let refused = PhoneCredentialIssuer.issue(
+    remoteEnabled: true, remoteWrite: false, tunnel: .starting, name: "Phone", mint: mint)
+check(refused == nil && mintCount == 0, "issuer never mints before a live tunnel URL")
+let empty = PhoneCredentialIssuer.issue(
+    remoteEnabled: true, remoteWrite: false, tunnel: .up(url: ""), name: "Phone", mint: mint)
+check(empty == nil && mintCount == 0, "issuer never mints for an empty live URL")
+let issued = PhoneCredentialIssuer.issue(
+    remoteEnabled: true, remoteWrite: false, tunnel: .up(url: "https://phone.example/"),
+    name: "Phone", mint: mint)
+check(issued?.signInURL == "https://phone.example/?t=secret" && mintCount == 1,
+      "issuer mints after its gate and builds the public sign-in URL")
+let controlPlan = PhoneCredentialPolicy.plan(
+    remoteEnabled: true, remoteWrite: true, tunnel: .up(url: "https://phone.example"))
+check(controlPlan?.remoteCapabilities() == [.read, .send],
+      "control capability appears only when the saved control setting is on")
 
-let unseen = LocalBrowserPolicy.decide(serverEnabled: true, healthReady: true,
-                                       deviceCreated: true, deviceLastSeen: false)
-check(unseen.phase == .awaitingDevice && unseen.action == .openBrowserAgain,
-      "minted but unseen device remains pending")
-check(!unseen.succeeded, "device allocation is not success")
-
-let seen = LocalBrowserPolicy.decide(serverEnabled: true, healthReady: true,
-                                     deviceCreated: true, deviceLastSeen: true)
-check(seen.phase == .connected && seen.action == .finish, "exact seen device completes")
-check(seen.succeeded && !seen.mayMintDevice, "connected is success without another credential")
-check(AppLaunchPolicy.shouldShowHome(onboardingComplete: false), "fresh launch shows Home")
-check(!AppLaunchPolicy.shouldShowHome(onboardingComplete: true), "completed launch may stay quiet")
-
-let missingTunnel = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: false, tunnel: .off, deviceCreated: false,
-    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
-check(missingTunnel.phase == .cloudflaredMissing && missingTunnel.qrURL == nil,
-      "missing cloudflared cannot offer a QR")
-let tunnelOff = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: true, tunnel: .off, deviceCreated: false,
-    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
-check(tunnelOff.phase == .tunnelOff && tunnelOff.action == .openSettings,
-      "tunnel-off has one settings action")
-let tunnelStarting = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: true, tunnel: .starting, deviceCreated: false,
-    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
-check(tunnelStarting.phase == .starting && tunnelStarting.qrURL == nil,
+let startingTunnel = OnboardingEvidencePolicy.cloudflare(
+    cloudflaredInstalled: true, tunnelState: .starting,
+    expectedDeviceID: nil, devices: [])
+check(startingTunnel.qrURL == nil && !startingTunnel.mayMintDevice,
       "starting tunnel cannot offer a QR")
-let reason = "Set remote_hostname to the hostname you routed to that tunnel"
-let tunnelFailed = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: true, tunnel: .failed(reason: reason), deviceCreated: false,
-    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
-check(tunnelFailed.phase == .failed(reason: reason), "tunnel failure preserves its exact reason")
-let live = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
-    deviceCreated: false, exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
-check(live.qrURL == "https://fresh.trycloudflare.com" && live.mayMintDevice,
-      "only live tunnel URL permits QR minting")
-let localSeen = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
-    deviceCreated: true, exactDeviceIsNonLocal: false, exactDeviceLastSeen: true)
-check(!localSeen.succeeded, "local device never completes phone setup")
-let exactUnseen = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
-    deviceCreated: true, exactDeviceIsNonLocal: true, exactDeviceLastSeen: false)
-let isAwaiting: Bool
-if case .awaitingDevice = exactUnseen.phase { isAwaiting = true } else { isAwaiting = false }
-check(isAwaiting && !exactUnseen.succeeded,
-      "minted exact phone without lastSeen remains pending")
-let exactSeen = CloudflareOnboardingPolicy.decide(
-    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
-    deviceCreated: true, exactDeviceIsNonLocal: true, exactDeviceLastSeen: true)
-let isConnected: Bool
-if case .connected = exactSeen.phase { isConnected = true } else { isConnected = false }
-check(isConnected && exactSeen.succeeded,
-      "exact non-local phone lastSeen completes tunnel route")
+let liveTunnel = OnboardingEvidencePolicy.cloudflare(
+    cloudflaredInstalled: true, tunnelState: .up(url: "https://fresh.example"),
+    expectedDeviceID: nil, devices: [])
+check(liveTunnel.qrURL == "https://fresh.example" && liveTunnel.mayMintDevice,
+      "the actual live tunnel URL permits QR minting")
+let wrongPhone = OnboardingEvidencePolicy.cloudflare(
+    cloudflaredInstalled: true, tunnelState: .up(url: "https://fresh.example"),
+    expectedDeviceID: "expected", devices: [otherSeen])
+check(!wrongPhone.succeeded, "another phone lastSeen cannot complete tunnel setup")
+let exactPhone = OnboardingEvidencePolicy.cloudflare(
+    cloudflaredInstalled: true, tunnelState: .up(url: "https://fresh.example"),
+    expectedDeviceID: "expected", devices: [exactSeen])
+check(exactPhone.succeeded, "the exact QR device lastSeen completes tunnel setup")
 
-let accountOnly = CloudPreviewPolicy.decide(
-    account: .proved("account-1"), machineCredential: .proved("machine-1"),
-    relayReady: .notProved, e2eePairing: .absent, viewerReceipt: .unavailable)
-check(accountOnly.relayReady == .notProved && accountOnly.viewerReceipt == .unavailable,
-      "cloud account does not promote relay or viewer receipt")
-check(accountOnly.action == .pairPhone && !accountOnly.succeeded,
-      "credential without pairing offers exactly pairing")
-let pairedPreview = CloudPreviewPolicy.decide(
-    account: .proved("account-1"), machineCredential: .proved("machine-1"),
-    relayReady: .notProved, e2eePairing: .proved("viewer-1"), viewerReceipt: .unavailable)
-check(pairedPreview.action == .reviewPreviewStatus && !pairedPreview.succeeded,
-      "E2EE pairing cannot stand in for relay readiness or viewer receipt")
+let identityFailure = CloudPreviewEvidencePolicy.evaluate(
+    identityResult: .failure(ProbeError.failed), lifecycle: .detached,
+    devicesResult: nil, pairingAttempt: nil)
+check(identityFailure.decision.account == .failed(.identityRead) &&
+      identityFailure.decision.machineCredential == .failed(.identityRead) &&
+      identityFailure.decision.e2eePairing == .unavailable,
+      "identity read failure never asserts that pairing is absent")
+let noIdentity = CloudPreviewEvidencePolicy.evaluate(
+    identityResult: .success(nil), lifecycle: .detached,
+    devicesResult: nil, pairingAttempt: nil)
+check(noIdentity.decision.account == .absent && noIdentity.decision.e2eePairing == .unavailable,
+      "proved missing identity and unavailable pairing remain distinct")
+let identity = CloudMachineIdentity(accountID: "account", machineID: "machine")
+let beforePairing = CloudPreviewEvidencePolicy.evaluate(
+    identityResult: .success(identity), lifecycle: .attached(accountID: "account", machineID: "machine"),
+    devicesResult: .success([CloudPairedDevice(deviceID: "old")]), pairingAttempt: nil)
+check(beforePairing.decision.relayReady == .unavailable &&
+      beforePairing.decision.e2eePairing == .unavailable,
+      "attached relay and pre-action devices are not promoted to proof")
+let attempt = CloudPairingAttempt(baselineDeviceIDs: ["old"], boundDeviceID: nil)
+let oneNew = CloudPreviewEvidencePolicy.evaluate(
+    identityResult: .success(identity), lifecycle: .detached,
+    devicesResult: .success([CloudPairedDevice(deviceID: "old"), CloudPairedDevice(deviceID: "new")]),
+    pairingAttempt: attempt)
+check(oneNew.boundDeviceID == "new" && oneNew.decision.e2eePairing == .proved("new"),
+      "one identity appearing after the pairing action is bound exactly")
+let held = CloudPreviewEvidencePolicy.evaluate(
+    identityResult: .success(identity), lifecycle: .detached,
+    devicesResult: .success([CloudPairedDevice(deviceID: "new"), CloudPairedDevice(deviceID: "later")]),
+    pairingAttempt: CloudPairingAttempt(baselineDeviceIDs: ["old"], boundDeviceID: "new"))
+check(held.boundDeviceID == "new" && held.decision.e2eePairing == .proved("new"),
+      "a later viewer cannot replace the bound viewer")
+let ambiguous = CloudPreviewEvidencePolicy.evaluate(
+    identityResult: .success(identity), lifecycle: .detached,
+    devicesResult: .success([CloudPairedDevice(deviceID: "new-1"), CloudPairedDevice(deviceID: "new-2")]),
+    pairingAttempt: attempt)
+check(ambiguous.boundDeviceID == nil &&
+      ambiguous.decision.e2eePairing == .failed(.pairingAmbiguous),
+      "multiple new viewers fail closed instead of choosing by wall clock")
+
 let allCloudProofs = CloudPreviewPolicy.decide(
-    account: .proved("account-1"), machineCredential: .proved("machine-1"),
-    relayReady: .proved("ready"), e2eePairing: .proved("viewer-1"),
+    account: .proved("account"), machineCredential: .proved("machine"),
+    relayReady: .proved("ready"), e2eePairing: .proved("viewer"),
     viewerReceipt: .proved("received"))
-check(allCloudProofs.succeeded, "cloud succeeds only when all five facts are proved")
-check(checks == 29, "expected focused policy check count")
-print("30 checks passed")
+check(allCloudProofs.succeeded, "cloud success still requires all five independent proofs")
+check(OnboardingExitPolicy.shouldRecordCompletion(for: .routeSucceeded),
+      "a proved route records completion")
+check(OnboardingExitPolicy.shouldRecordCompletion(for: .homeDismissed),
+      "closing Home is an independent onboarding exit")
+check(AppLaunchPolicy.shouldShowHome(onboardingComplete: false) &&
+      !AppLaunchPolicy.shouldShowHome(onboardingComplete: true),
+      "only the completion record controls automatic Home opening")
+check(HomeReopenPolicy.shouldShowHome(hasVisibleWindows: false) &&
+      !HomeReopenPolicy.shouldShowHome(hasVisibleWindows: true),
+      "Dock reopen preserves an already-visible Settings or prompt window")
+
+check(checks == 48, "expected Swift behavior check count")
+print("49 Swift checks passed")
 `, "utf8");
 
-const compile = spawnSync("xcrun", ["swiftc", "-D", "ONBOARDING_POLICY_ONLY", source, harness, "-o", binary], {
-  encoding: "utf8",
-});
-if (compile.status !== 0) {
-  process.stderr.write(compile.stdout + compile.stderr);
-  process.exit(compile.status || 1);
-}
+  const compile = spawnSync("xcrun", [
+    "swiftc", "-swift-version", "5", "-target", "arm64-apple-macos13.0",
+    "-D", "ONBOARDING_POLICY_ONLY", source, harness, "-o", binary,
+  ], { encoding: "utf8" });
+  if (compile.status !== 0) {
+    process.stderr.write(compile.stdout + compile.stderr);
+    process.exitCode = compile.status || 1;
+    throw new Error("focused Swift seam did not compile");
+  }
+  checkNode(true, "focused seam compiles under the shipping Swift and deployment target");
 
-const run = spawnSync(binary, [join(work, "store")], { encoding: "utf8" });
-process.stdout.write(run.stdout);
-process.stderr.write(run.stderr);
-if (run.status !== 0 || !run.stdout.includes("30 checks passed")) {
-  process.exit(run.status || 2);
-}
+  const run = spawnSync(binary, [join(work, "store")], { encoding: "utf8" });
+  process.stdout.write(run.stdout);
+  process.stderr.write(run.stderr);
+  checkNode(run.status === 0 && run.stdout.includes("49 Swift checks passed"),
+            "focused seam behavior passes its asserted check count");
 
-const remoteSource = readFileSync(remoteQRSource, "utf8");
-const signInFunction = remoteSource.match(/static func signInURL[\s\S]*?^    \}/m)?.[0] || "";
-if (!signInFunction.includes("guard case .up") ||
-    !signInFunction.includes('else { return "" }') || signInFunction.includes("127.0.0.1")) {
-  process.stderr.write("FAIL after 30 checks: phone QR accepts a non-up or loopback address\n");
-  process.exit(5);
-}
-console.log("✓ phone QR is gated on the live tunnel URL");
+  const copyFiles = readdirSync(sourcesDirectory).filter((name) => /^Copy\+.*\.swift$/.test(name));
+  const conformerCount = (member) => copyFiles.reduce((count, name) => {
+    const text = readFileSync(join(sourcesDirectory, name), "utf8");
+    return count + (text.match(new RegExp(`(?:let|func) ${member}\\b`, "g")) || []).length;
+  }, 0);
+  checkNode(conformerCount("setupDismissalHint") === 14 &&
+            conformerCount("setupCompletionFailed") === 14 &&
+            conformerCount("setupLocalReadOnlyAction") === 14 &&
+            conformerCount("setupLocalHealthTransport") === 14 &&
+            conformerCount("menuAbout") === 14,
+            "all 14 Copy conformers carry exit, failure, and standard-menu copy");
 
-// The gate above only decides what a code may contain. Settings has the other half: it mints a
-// real RemoteAuth device before it asks for an address, so an ungated caller leaves a live key in
-// the device list and shows an empty square. Assert the order, not just the presence of a guard.
-const settingsSource = readFileSync(settings, "utf8");
-const pairPhone = settingsSource.match(/private func pairPhone\(\) \{[\s\S]*?^    \}/m)?.[0] || "";
-const gateAt = pairPhone.indexOf("case .up = RemoteTunnel.shared.state");
-const mintAt = pairPhone.indexOf("RemoteAuth.addDevice");
-if (gateAt === -1 || mintAt === -1 || gateAt > mintAt) {
-  process.stderr.write("FAIL after 31 checks: Settings mints a phone key without a live tunnel\n");
-  process.exit(7);
-}
-console.log("✓ settings refuses to mint a phone key with no live tunnel");
+  const fakeBin = join(work, "fake-bin");
+  const installDest = join(work, "Install Destination");
+  const openRecord = join(work, "open-record");
+  mkdirSync(fakeBin, { recursive: true });
+  executable(join(fakeBin, "curl"), `#!/bin/bash
+out=""
+latest=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *releases/latest) latest=1; shift ;;
+    *) shift ;;
+  esac
+done
+if [ "$latest" = 1 ]; then
+  printf '%s' '{"assets":[{"name":"Clawdline.zip","browser_download_url":"https://example.invalid/v-test/Clawdline.zip"}]}' > "$out"
+  printf '200'
+else
+  : > "$out"
+fi
+`);
+  executable(join(fakeBin, "ditto"), `#!/bin/bash
+if [ "$1" = "-x" ]; then
+  dest="$4"
+  mkdir -p "$dest/Clawdline.app"
+else
+  mkdir -p "$2"
+fi
+`);
+  executable(join(fakeBin, "codesign"), "#!/bin/bash\nprintf 'adhoc signature\\n'\n");
+  executable(join(fakeBin, "xattr"), "#!/bin/bash\nexit 0\n");
+  executable(join(fakeBin, "open-probe"), `#!/bin/bash
+printf '%s' "$1" > "${openRecord}"
+`);
 
-const copyFiles = readdirSync(sourcesDirectory).filter((name) => /^Copy\+.*\.swift$/.test(name));
-const conformers = copyFiles.reduce((count, name) => {
-  const text = readFileSync(join(sourcesDirectory, name), "utf8");
-  return count + (text.match(/func setupCloudFacts\(/g) || []).length;
-}, 0);
-if (conformers !== 14) {
-  process.stderr.write(`FAIL after 32 checks: expected 14 localized onboarding conformers, found ${conformers}\n`);
-  process.exit(6);
-}
-console.log("✓ all 14 copy conformers carry the remote onboarding facts");
+  const installRun = spawnSync("/bin/bash", [installer, installDest], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}:/usr/bin:/bin`,
+      CLAWDLINE_OPEN_COMMAND: join(fakeBin, "open-probe"),
+    },
+  });
+  process.stdout.write(installRun.stdout);
+  process.stderr.write(installRun.stderr);
+  checkNode(installRun.status === 0, "installer reaches successful completion in the isolated probe");
+  checkNode(existsSync(openRecord) &&
+            readFileSync(openRecord, "utf8") === join(installDest, "Clawdline.app"),
+            "successful install actually calls open on the exact installed app path");
 
-const installSource = readFileSync(installer, "utf8");
-const launchFunction = installSource.match(/launch_installed_app\(\) \{[\s\S]*?^\}/m)?.[0];
-if (!launchFunction) {
-  process.stderr.write("FAIL: installer has no bounded launch_installed_app behavior\n");
-  process.exit(3);
+  checkNode(nodeChecks === 6, "expected Node integration check count");
+  console.log("7 node checks passed");
+} finally {
+  rmSync(work, { recursive: true, force: true });
 }
-console.log("✓ installer has bounded launch behavior");
-
-const launchProbe = spawnSync("/bin/bash", ["-c", `${launchFunction}
-DEST='/tmp/Clawdline Install Probe'
-APP='Clawdline.app'
-open() { printf '%s' "$1"; }
-launch_installed_app open
-`], { encoding: "utf8" });
-if (launchProbe.status !== 0 || launchProbe.stdout !== "/tmp/Clawdline Install Probe/Clawdline.app") {
-  process.stderr.write("FAIL: installer did not open the exact installed app path\n");
-  process.exit(4);
-}
-console.log("✓ installer opens the exact installed app path");
-console.log("35 checks passed");

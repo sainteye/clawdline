@@ -1339,6 +1339,12 @@ protocol Copy {
     var menuClose: String { get }
     var menuHome: String { get }
     var menuHelpDocumentation: String { get }
+    func menuAbout(_ app: String) -> String
+    var menuServices: String { get }
+    func menuHide(_ app: String) -> String
+    var menuHideOthers: String { get }
+    var menuShowAll: String { get }
+    var menuMinimize: String { get }
     var homeTitle: String { get }
     var homeWelcome: String { get }
     var homePurpose: String { get }
@@ -1354,7 +1360,14 @@ protocol Copy {
     var setupExpected: String { get }
     var setupRecovery: String { get }
     var setupLocalServerOff: String { get }
+    var setupLocalConfigurationFailed: String { get }
     var setupLocalChecking: String { get }
+    var setupLocalHealthTransport: String { get }
+    var setupLocalHealthTimedOut: String { get }
+    func setupLocalHealthHTTP(_ status: Int) -> String
+    var setupLocalHealthUnhealthy: String { get }
+    var setupLocalHealthInvalid: String { get }
+    func setupLocalHealthFailure(_ failure: LocalHealthFailure) -> String
     var setupLocalReady: String { get }
     var setupLocalWaiting: String { get }
     var setupLocalConnected: String { get }
@@ -1363,8 +1376,12 @@ protocol Copy {
     var setupLocalOpen: String { get }
     var setupLocalOpenAgain: String { get }
     var setupFinish: String { get }
+    func setupLocalExpected(_ phase: LocalBrowserPhase) -> String
+    func setupLocalRecovery(_ phase: LocalBrowserPhase) -> String
     var setupLocalExpected: String { get }
     var setupLocalRecovery: String { get }
+    var setupNoRecovery: String { get }
+    var setupLocalReadOnlyAction: String { get }
     var setupReadOnly: String { get }
     var setupLocalDeviceName: String { get }
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String,
@@ -1381,6 +1398,8 @@ protocol Copy {
     func setupTunnelReady(_ url: String) -> String
     func setupTunnelWaiting(_ url: String) -> String
     func setupTunnelConnected(_ url: String) -> String
+    func setupTunnelExpected(_ phase: CloudflareOnboardingPhase) -> String
+    func setupTunnelRecovery(_ phase: CloudflareOnboardingPhase) -> String
     var setupTunnelExpected: String { get }
     var setupTunnelRecovery: String { get }
     var setupOpenRemoteSettings: String { get }
@@ -1390,21 +1409,28 @@ protocol Copy {
     var setupCloudRelayUnauthorized: String { get }
     func setupCloudFacts(_ account: String, _ credential: String, _ relay: String,
                          _ pairing: String, _ receipt: String) -> String
+    func setupCloudExpected(_ decision: CloudPreviewDecision) -> String
+    func setupCloudRecovery(_ decision: CloudPreviewDecision) -> String
     var setupCloudExpected: String { get }
     var setupCloudRecovery: String { get }
     var setupOpenCloudSettings: String { get }
     var setupPairCloudPhone: String { get }
     var setupReviewCloudPreview: String { get }
     var setupProofAbsent: String { get }
-    var setupProofNotProved: String { get }
     var setupProofUnavailable: String { get }
     func setupProofFailed(_ reason: String) -> String
-    var setupProofProved: String { get }
+    func setupProofFailed(_ failure: CloudPreviewFailure) -> String
+    var setupCloudIdentityReadFailed: String { get }
+    var setupCloudRelayFailed: String { get }
+    var setupCloudPairingReadFailed: String { get }
+    var setupCloudPairingAmbiguous: String { get }
     func setupCloudAccountProved(_ account: String) -> String
     func setupCloudCredentialProved(_ machine: String) -> String
     func setupCloudPairingProved(_ device: String) -> String
     var setupCloudflareDeviceName: String { get }
     var setupScanLiveTunnel: String { get }
+    var setupDismissalHint: String { get }
+    var setupCompletionFailed: String { get }
 
     // Alerts
     func hotkeyFailedTitle(_ combo: String) -> String
@@ -1416,6 +1442,93 @@ extension Copy {
     /// Languages that do not inflect this sentence may keep their established form twice.
     var closeabilityBlockedOne: String { closeabilityBlocked }
     var closeabilityBlockedMany: String { closeabilityBlocked }
+
+    func setupLocalHealthFailure(_ failure: LocalHealthFailure) -> String {
+        switch failure {
+        case .transport: return setupLocalHealthTransport
+        case .timedOut: return setupLocalHealthTimedOut
+        case .httpStatus(let status): return setupLocalHealthHTTP(status)
+        case .unhealthy: return setupLocalHealthUnhealthy
+        case .invalidResponse: return setupLocalHealthInvalid
+        }
+    }
+
+    func setupLocalExpected(_ phase: LocalBrowserPhase) -> String {
+        switch phase {
+        case .serverOff, .configurationFailed: return setupLocalChecking
+        case .checkingHealth, .healthFailed: return setupLocalReady
+        case .readyToOpen: return setupLocalWaiting
+        case .awaitingDevice, .connected: return setupLocalConnected
+        }
+    }
+
+    func setupLocalRecovery(_ phase: LocalBrowserPhase) -> String {
+        switch phase {
+        case .serverOff, .configurationFailed:
+            return "\(setupNextAction): \(setupLocalEnable)"
+        case .checkingHealth, .healthFailed:
+            return "\(setupNextAction): \(setupLocalRetry)"
+        case .readyToOpen:
+            return "\(setupNextAction): \(setupLocalOpen)"
+        case .awaitingDevice:
+            return "\(setupNextAction): \(setupLocalOpenAgain)"
+        case .connected:
+            return setupNoRecovery
+        }
+    }
+
+    func setupTunnelExpected(_ phase: CloudflareOnboardingPhase) -> String {
+        switch phase {
+        case .cloudflaredMissing, .tunnelOff: return setupTunnelStarting
+        case .starting: return setupTunnelExpected
+        case .ready(let url): return setupTunnelWaiting(url)
+        case .awaitingDevice(let url), .connected(let url): return setupTunnelConnected(url)
+        case .failed: return setupTunnelExpected
+        }
+    }
+
+    func setupTunnelRecovery(_ phase: CloudflareOnboardingPhase) -> String {
+        switch phase {
+        case .cloudflaredMissing, .tunnelOff, .failed:
+            return "\(setupNextAction): \(setupOpenRemoteSettings)"
+        case .starting:
+            return "\(setupNextAction): \(setupCheckTunnel)"
+        case .ready:
+            return "\(setupNextAction): \(setupShowPhoneQR)"
+        case .awaitingDevice:
+            return "\(setupNextAction): \(setupShowPhoneQRAgain)"
+        case .connected:
+            return setupNoRecovery
+        }
+    }
+
+    func setupCloudExpected(_ decision: CloudPreviewDecision) -> String {
+        switch decision.action {
+        case .openCloudSettings: return setupOpenCloudSettings
+        case .pairPhone: return setupPairCloudPhone
+        case .reviewPreviewStatus: return setupCloudExpected
+        }
+    }
+
+    func setupCloudRecovery(_ decision: CloudPreviewDecision) -> String {
+        switch decision.action {
+        case .openCloudSettings: return "\(setupNextAction): \(setupOpenCloudSettings)"
+        case .pairPhone: return "\(setupNextAction): \(setupPairCloudPhone)"
+        case .reviewPreviewStatus: return "\(setupNextAction): \(setupReviewCloudPreview)"
+        }
+    }
+
+    func setupProofFailed(_ failure: CloudPreviewFailure) -> String {
+        let reason: String
+        switch failure {
+        case .identityRead: reason = setupCloudIdentityReadFailed
+        case .relayUnauthorized: reason = setupCloudRelayUnauthorized
+        case .relayFailed: reason = setupCloudRelayFailed
+        case .pairingRead: reason = setupCloudPairingReadFailed
+        case .pairingAmbiguous: reason = setupCloudPairingAmbiguous
+        }
+        return setupProofFailed(reason)
+    }
 }
 
 /// Which language the interface speaks, and the words themselves.

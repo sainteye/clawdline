@@ -1168,11 +1168,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         // The pairing button lives on this tab too, and this is the reading that decides whether
         // it can produce anything. Set every tick rather than only on a change: the button is
         // rebuilt whenever the pane is, and a stale enabled state is the failure this guards.
-        if case .up = RemoteTunnel.shared.state {
-            phoneButton?.isEnabled = true
-        } else {
-            phoneButton?.isEnabled = false
-        }
+        phoneButton?.isEnabled = PhoneCredentialPolicy.plan(
+            remoteEnabled: Config.shared.remote,
+            remoteWrite: Config.shared.remoteWrite,
+            tunnel: RemoteTunnel.shared.state) != nil
         if card.text != was { relayoutCurrent() }
     }
 
@@ -1198,23 +1197,19 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// what should survive that is a row in the list above with a name on it that can be taken
     /// away — not the key the machine uses for itself.
     ///
-    /// **Only while a tunnel is actually up.** `RemoteQR.signInURL` answers for `.up` and returns
-    /// nothing otherwise, because a configured hostname is intent rather than evidence and loopback
-    /// is not an address a phone has. Minting first and asking afterwards is how this ends with a
-    /// live key in the list above and an empty white square on screen — a credential created for a
-    /// scan that cannot happen. The button is switched off in ``refreshTunnel()`` for the same
-    /// reason, next to the card that says which of *not installed*, *off*, *starting* or *failed*
-    /// this is; this guard is the one that has to hold if anything ever calls it another way.
+    /// **Only while a tunnel is actually up.** ``PhoneCredentialIssuer`` gates the address before
+    /// it invokes the mint closure, because a configured hostname is intent rather than evidence
+    /// and loopback is not an address a phone has. The button consumes that same policy in
+    /// ``refreshTunnel()``; this handler contains no second, weaker version of the rule.
     private func pairPhone() {
-        guard Config.shared.remote, case .up = RemoteTunnel.shared.state else { return }
-        let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]
-        let made = RemoteAuth.addDevice(name: "Phone", caps: caps)
-        let url = RemoteQR.signInURL(token: made.token,
-                                     hostname: Config.shared.remoteHostname,
-                                     tunnel: RemoteTunnel.shared.state,
-                                     port: Config.shared.remotePort)
+        guard let made = PhoneCredentialIssuer.issue(
+            remoteEnabled: Config.shared.remote,
+            remoteWrite: Config.shared.remoteWrite,
+            tunnel: RemoteTunnel.shared.state,
+            name: "Phone",
+            mint: { RemoteAuth.addDevice(name: $0, caps: $1, local: $2) }) else { return }
         refreshDevices()
-        showQR(url)
+        showQR(made.signInURL)
     }
 
     private var qrWindow: NSWindow?

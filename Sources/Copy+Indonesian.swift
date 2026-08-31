@@ -750,6 +750,12 @@ struct Indonesian: Copy {
     let menuClose = "Tutup jendela"
     let menuHome = "Beranda / Pusat penyiapan"
     let menuHelpDocumentation = "Dokumentasi Clawdline"
+    func menuAbout(_ app: String) -> String { "Tentang \(app)" }
+    let menuServices = "Layanan"
+    func menuHide(_ app: String) -> String { "Sembunyikan \(app)" }
+    let menuHideOthers = "Sembunyikan Lainnya"
+    let menuShowAll = "Tampilkan Semua"
+    let menuMinimize = "Minimalkan"
     let homeTitle = "Beranda Clawdline"
     let homeWelcome = "Pilih tujuan koneksi. Penyiapan menampilkan bukti nyata, bukan sekadar sakelar yang diubah."
     let homePurpose = "Apa yang ingin Anda hubungkan?"
@@ -766,6 +772,12 @@ struct Indonesian: Copy {
     let setupRecovery = "Pemulihan"
     let setupLocalServerOff = "Server loopback mati."
     let setupLocalChecking = "Memeriksa endpoint /v1/health yang sebenarnya…"
+    let setupLocalConfigurationFailed = "Pengaturan browser lokal tidak dapat disimpan; tidak ada perubahan."
+    let setupLocalHealthTransport = "Endpoint kesehatan tidak dapat dijangkau. Periksa port dan program lain yang memakainya."
+    let setupLocalHealthTimedOut = "Endpoint kesehatan kehabisan waktu. Periksa port lalu coba lagi."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "Endpoint kesehatan mengembalikan HTTP \(status), bukan respons sehat." }
+    let setupLocalHealthUnhealthy = "Endpoint menjawab, tetapi melaporkan ok: false."
+    let setupLocalHealthInvalid = "Endpoint tidak memberi respons kesehatan yang valid. Periksa pemilik port."
     let setupLocalReady = "Endpoint kesehatan siap. Kredensial browser belum ada."
     let setupLocalWaiting = "Browser terbuka; menunggu perangkat ini melakukan autentikasi."
     let setupLocalConnected = "Terhubung. Perangkat browser ini telah menghubungi Clawdline."
@@ -776,8 +788,10 @@ struct Indonesian: Copy {
     let setupFinish = "Selesai"
     let setupLocalExpected = "Browser hanya-baca terbuka dan terautentikasi, bahkan tanpa sesi aktif."
     let setupLocalRecovery = "Jika macet, biarkan jendela ini terbuka lalu periksa lagi. Server dan port tersedia di Pengaturan."
+    let setupNoRecovery = "Tidak perlu pemulihan; rute ini telah terbukti."
+    let setupLocalReadOnlyAction = "Tindakan ini menyimpan hanya-baca · kendali dimatikan"
     let setupReadOnly = "Hanya baca · kendali tetap mati"
-    let setupLocalDeviceName = "Browser di Mac ini"
+    let setupLocalDeviceName = "Browser Pusat Penyiapan"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Mode: \(mode)\nTunnel: \(tunnel)\nHostname QR: \(hostname)\nStatus: \(status)" }
     let setupTunnelModeOff = "Mati"
     let setupTunnelModeQuick = "Cepat"
@@ -805,15 +819,19 @@ struct Indonesian: Copy {
     let setupPairCloudPhone = "Pasangkan Ponsel di Cloud"
     let setupReviewCloudPreview = "Tinjau Status Preview"
     let setupProofAbsent = "tidak ada"
-    let setupProofNotProved = "belum terbukti"
     let setupProofUnavailable = "bukti tidak tersedia"
     func setupProofFailed(_ reason: String) -> String { "gagal — \(reason)" }
-    let setupProofProved = "terbukti"
+    let setupCloudIdentityReadFailed = "identitas Keychain tidak dapat dibaca"
+    let setupCloudRelayFailed = "relay melaporkan kegagalan; periksa Pengaturan Cloud dan log"
+    let setupCloudPairingReadFailed = "penyimpanan perangkat terpasang tidak dapat dibaca"
+    let setupCloudPairingAmbiguous = "lebih dari satu viewer baru muncul; mulai pemasangan lagi"
     func setupCloudAccountProved(_ account: String) -> String { "masuk sebagai \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "kredensial Keychain untuk \(machine)" }
     func setupCloudPairingProved(_ device: String) -> String { "disematkan untuk viewer tepat \(device)" }
     let setupCloudflareDeviceName = "Ponsel melalui Cloudflare"
     let setupScanLiveTunnel = "Pindai tunnel aktif dengan ponsel"
+    let setupDismissalHint = "Menutup Beranda menghentikan pembukaan otomatis. Buka lagi Pusat Penyiapan dari menu app, Dock, item status, atau clawdline://home."
+    let setupCompletionFailed = "Clawdline tidak dapat menyimpan bahwa penyiapan selesai. Periksa izin ~/.config/clawdline lalu tutup Beranda lagi."
 
     let menuOpen = "Buka bilah masukan"
     let menuReveal = "Ke tab tujuan"

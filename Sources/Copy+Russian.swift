@@ -750,6 +750,12 @@ struct Russian: Copy {
     let menuClose = "Закрыть окно"
     let menuHome = "Главная / Центр настройки"
     let menuHelpDocumentation = "Документация Clawdline"
+    func menuAbout(_ app: String) -> String { "О программе \(app)" }
+    let menuServices = "Службы"
+    func menuHide(_ app: String) -> String { "Скрыть \(app)" }
+    let menuHideOthers = "Скрыть остальные"
+    let menuShowAll = "Показать все"
+    let menuMinimize = "Свернуть"
     let homeTitle = "Главная Clawdline"
     let homeWelcome = "Выберите цель подключения. Настройка показывает реальные подтверждения, а не только изменённый переключатель."
     let homePurpose = "Что вы хотите подключить?"
@@ -766,6 +772,12 @@ struct Russian: Copy {
     let setupRecovery = "Восстановление"
     let setupLocalServerOff = "Сервер обратной петли выключен."
     let setupLocalChecking = "Проверяется настоящий endpoint /v1/health…"
+    let setupLocalConfigurationFailed = "Не удалось сохранить настройку локального браузера; ничего не изменено."
+    let setupLocalHealthTransport = "Endpoint здоровья недоступен. Проверьте порт и другие программы."
+    let setupLocalHealthTimedOut = "Истекло время ожидания endpoint здоровья. Проверьте порт и повторите."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "Endpoint здоровья вернул HTTP \(status), а не исправный ответ." }
+    let setupLocalHealthUnhealthy = "Endpoint ответил, но сообщил ok: false."
+    let setupLocalHealthInvalid = "Endpoint не вернул допустимый ответ здоровья. Проверьте занятость порта."
     let setupLocalReady = "Endpoint состояния готов. Учётных данных браузера ещё нет."
     let setupLocalWaiting = "Браузер открыт; ожидается аутентификация именно этого устройства."
     let setupLocalConnected = "Подключено. Это устройство браузера связалось с Clawdline."
@@ -776,8 +788,10 @@ struct Russian: Copy {
     let setupFinish = "Готово"
     let setupLocalExpected = "Браузер только для чтения открывается и проходит проверку даже без активных сеансов."
     let setupLocalRecovery = "Если процесс остановился, оставьте окно открытым и проверьте снова. Сервер и порт указаны в Настройках."
+    let setupNoRecovery = "Восстановление не требуется; этот маршрут доказан."
+    let setupLocalReadOnlyAction = "Действие сохраняет режим чтения · управление отключается"
     let setupReadOnly = "Только чтение · управление выключено"
-    let setupLocalDeviceName = "Браузер на этом Mac"
+    let setupLocalDeviceName = "Браузер центра настройки"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Режим: \(mode)\nТуннель: \(tunnel)\nХост QR: \(hostname)\nСостояние: \(status)" }
     let setupTunnelModeOff = "Выключен"
     let setupTunnelModeQuick = "Быстрый"
@@ -805,15 +819,19 @@ struct Russian: Copy {
     let setupPairCloudPhone = "Сопрячь телефон в Cloud"
     let setupReviewCloudPreview = "Проверить состояние Preview"
     let setupProofAbsent = "отсутствует"
-    let setupProofNotProved = "не доказано"
     let setupProofUnavailable = "доказательство недоступно"
     func setupProofFailed(_ reason: String) -> String { "ошибка — \(reason)" }
-    let setupProofProved = "доказано"
+    let setupCloudIdentityReadFailed = "не удалось прочитать идентификатор из Связки ключей"
+    let setupCloudRelayFailed = "Relay сообщил об ошибке; проверьте настройки Cloud и журнал"
+    let setupCloudPairingReadFailed = "не удалось прочитать хранилище сопряжённых устройств"
+    let setupCloudPairingAmbiguous = "появилось несколько новых Viewer; начните сопряжение заново"
     func setupCloudAccountProved(_ account: String) -> String { "выполнен вход как \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "данные Связки ключей для \(machine)" }
     func setupCloudPairingProved(_ device: String) -> String { "закреплён точный Viewer \(device)" }
     let setupCloudflareDeviceName = "Телефон через Cloudflare"
     let setupScanLiveTunnel = "Сканируйте работающий туннель телефоном"
+    let setupDismissalHint = "После закрытия Home не открывается автоматически. Откройте центр настройки через меню, Dock, значок состояния или clawdline://home."
+    let setupCompletionFailed = "Не удалось сохранить завершение. Проверьте права ~/.config/clawdline и снова закройте Home."
 
     let menuOpen = "Открыть строку ввода"
     let menuReveal = "Перейти к нужной вкладке"

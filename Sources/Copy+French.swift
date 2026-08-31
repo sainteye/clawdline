@@ -750,6 +750,12 @@ struct French: Copy {
     let menuClose = "Fermer la fenêtre"
     let menuHome = "Accueil / Centre de configuration"
     let menuHelpDocumentation = "Documentation de Clawdline"
+    func menuAbout(_ app: String) -> String { "À propos de \(app)" }
+    let menuServices = "Services"
+    func menuHide(_ app: String) -> String { "Masquer \(app)" }
+    let menuHideOthers = "Masquer les autres"
+    let menuShowAll = "Tout afficher"
+    let menuMinimize = "Réduire"
     let homeTitle = "Accueil Clawdline"
     let homeWelcome = "Choisissez ce que vous voulez connecter. La configuration montre les preuves observées, pas seulement l’interrupteur modifié."
     let homePurpose = "Que voulez-vous connecter ?"
@@ -766,6 +772,12 @@ struct French: Copy {
     let setupRecovery = "Récupération"
     let setupLocalServerOff = "Le serveur de bouclage est désactivé."
     let setupLocalChecking = "Vérification du véritable endpoint /v1/health…"
+    let setupLocalConfigurationFailed = "Le réglage du navigateur local n’a pas pu être enregistré ; rien n’a changé."
+    let setupLocalHealthTransport = "Le endpoint de santé est inaccessible. Vérifiez le port et qu’aucun autre programme ne l’occupe."
+    let setupLocalHealthTimedOut = "Le endpoint de santé a expiré. Vérifiez le port puis réessayez."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "Le endpoint de santé a renvoyé HTTP \(status), pas une réponse saine." }
+    let setupLocalHealthUnhealthy = "Le endpoint a répondu, mais avec ok: false."
+    let setupLocalHealthInvalid = "Le endpoint n’a pas renvoyé de réponse de santé valide. Vérifiez le port configuré."
     let setupLocalReady = "L’endpoint de santé est prêt. Aucun identifiant de navigateur n’existe encore."
     let setupLocalWaiting = "Le navigateur est ouvert ; attente de l’authentification de cet appareil précis."
     let setupLocalConnected = "Connecté. Cet appareil de navigation a bien contacté Clawdline."
@@ -776,8 +788,10 @@ struct French: Copy {
     let setupFinish = "Terminé"
     let setupLocalExpected = "Un navigateur en lecture seule s’ouvre et s’authentifie, même sans session active."
     let setupLocalRecovery = "En cas de blocage, gardez cette fenêtre ouverte et revérifiez. Serveur et port sont visibles dans Réglages."
+    let setupNoRecovery = "Aucune récupération nécessaire ; cette route est prouvée."
+    let setupLocalReadOnlyAction = "Cette action enregistre la lecture seule · elle désactive le contrôle"
     let setupReadOnly = "Lecture seule · contrôle toujours désactivé"
-    let setupLocalDeviceName = "Navigateur sur ce Mac"
+    let setupLocalDeviceName = "Navigateur du Centre de configuration"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Mode : \(mode)\nTunnel : \(tunnel)\nHôte du QR : \(hostname)\nÉtat : \(status)" }
     let setupTunnelModeOff = "Désactivé"
     let setupTunnelModeQuick = "Rapide"
@@ -805,15 +819,19 @@ struct French: Copy {
     let setupPairCloudPhone = "Jumeler un téléphone dans Cloud"
     let setupReviewCloudPreview = "Examiner l’état de l’aperçu"
     let setupProofAbsent = "absent"
-    let setupProofNotProved = "non prouvé"
     let setupProofUnavailable = "preuve indisponible"
     func setupProofFailed(_ reason: String) -> String { "échec — \(reason)" }
-    let setupProofProved = "prouvé"
+    let setupCloudIdentityReadFailed = "l’identité du Trousseau n’a pas pu être lue"
+    let setupCloudRelayFailed = "le relais a signalé un échec ; consultez les réglages Cloud et le journal"
+    let setupCloudPairingReadFailed = "le stockage des appareils jumelés n’a pas pu être lu"
+    let setupCloudPairingAmbiguous = "plusieurs nouveaux viewers sont apparus ; recommencez le jumelage"
     func setupCloudAccountProved(_ account: String) -> String { "connecté comme \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "identifiant Trousseau pour \(machine)" }
     func setupCloudPairingProved(_ device: String) -> String { "épinglé pour le viewer exact \(device)" }
     let setupCloudflareDeviceName = "Téléphone via Cloudflare"
     let setupScanLiveTunnel = "Scannez le tunnel actif avec votre téléphone"
+    let setupDismissalHint = "Fermer Accueil arrête son ouverture automatique. Rouvrez le Centre de configuration depuis le menu, le Dock, l’icône d’état ou clawdline://home."
+    let setupCompletionFailed = "Clawdline n’a pas pu enregistrer la fin de l’accueil. Vérifiez les permissions de ~/.config/clawdline puis refermez Accueil."
 
     let menuOpen = "Ouvrir la barre"
     let menuReveal = "Aller à l'onglet cible"

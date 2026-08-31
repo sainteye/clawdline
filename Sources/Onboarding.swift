@@ -7,6 +7,24 @@ enum AppLaunchPolicy {
     static func shouldShowHome(onboardingComplete: Bool) -> Bool { !onboardingComplete }
 }
 
+enum HomeReopenPolicy {
+    static func shouldShowHome(hasVisibleWindows: Bool) -> Bool { !hasVisibleWindows }
+}
+
+enum OnboardingPollingPolicy {
+    static let interval: TimeInterval = 2.0
+    static let requestTimeout: TimeInterval = 1.5
+    static let evidenceInterval: TimeInterval = 10.0
+
+    static func shouldStartRequest(isInFlight: Bool) -> Bool { !isInFlight }
+
+    static func shouldRefreshEvidence(now: Date, lastRefresh: Date?, isInFlight: Bool) -> Bool {
+        guard !isInFlight else { return false }
+        guard let lastRefresh else { return true }
+        return now.timeIntervalSince(lastRefresh) >= evidenceInterval
+    }
+}
+
 /// Versioned separately from configuration semantics so a future onboarding revision can be
 /// shown once without pretending an existing preference disappeared.
 struct OnboardingCompletionStore {
@@ -55,9 +73,41 @@ struct OnboardingCompletionStore {
     }
 }
 
+enum LocalHealthFailure: Equatable {
+    case transport
+    case timedOut
+    case httpStatus(Int)
+    case unhealthy
+    case invalidResponse
+}
+
+enum LocalHealthEvidence: Equatable {
+    case notChecked
+    case checking
+    case ready
+    case failed(LocalHealthFailure)
+}
+
+/// Turns the complete URLSession observation into one honest health fact. The UI never needs to
+/// infer a negative from missing data, and a 200 is not promoted unless the body also says
+/// `ok: true`.
+enum LocalHealthEvidencePolicy {
+    static func interpret(statusCode: Int?, bodyOK: Bool?, errorCode: Int?) -> LocalHealthEvidence {
+        if let errorCode {
+            return errorCode == NSURLErrorTimedOut ? .failed(.timedOut) : .failed(.transport)
+        }
+        guard let statusCode else { return .failed(.invalidResponse) }
+        guard statusCode == 200 else { return .failed(.httpStatus(statusCode)) }
+        guard let bodyOK else { return .failed(.invalidResponse) }
+        return bodyOK ? .ready : .failed(.unhealthy)
+    }
+}
+
 enum LocalBrowserPhase: Equatable {
     case serverOff
+    case configurationFailed
     case checkingHealth
+    case healthFailed(LocalHealthFailure)
     case readyToOpen
     case awaitingDevice
     case connected
@@ -82,21 +132,32 @@ struct LocalBrowserDecision: Equatable {
 /// intentionally absent: only a successful request to `/v1/health` supplies `healthReady`, and
 /// only the exact newly minted non-local device supplies `deviceLastSeen`.
 enum LocalBrowserPolicy {
-    static func decide(serverEnabled: Bool, healthReady: Bool,
-                       deviceCreated: Bool, deviceLastSeen: Bool) -> LocalBrowserDecision {
+    static func decide(serverEnabled: Bool, configurationFailed: Bool = false,
+                       health: LocalHealthEvidence,
+                       deviceCreated: Bool, exactDeviceLastSeen: Bool) -> LocalBrowserDecision {
+        if configurationFailed {
+            return LocalBrowserDecision(phase: .configurationFailed, action: .enableServer,
+                                        mayMintDevice: false, succeeded: false)
+        }
         guard serverEnabled else {
             return LocalBrowserDecision(phase: .serverOff, action: .enableServer,
                                         mayMintDevice: false, succeeded: false)
         }
-        guard healthReady else {
+        switch health {
+        case .notChecked, .checking:
             return LocalBrowserDecision(phase: .checkingHealth, action: .retryHealth,
                                         mayMintDevice: false, succeeded: false)
+        case .failed(let failure):
+            return LocalBrowserDecision(phase: .healthFailed(failure), action: .retryHealth,
+                                        mayMintDevice: false, succeeded: false)
+        case .ready:
+            break
         }
         guard deviceCreated else {
             return LocalBrowserDecision(phase: .readyToOpen, action: .openBrowser,
                                         mayMintDevice: true, succeeded: false)
         }
-        guard deviceLastSeen else {
+        guard exactDeviceLastSeen else {
             return LocalBrowserDecision(phase: .awaitingDevice, action: .openBrowserAgain,
                                         mayMintDevice: false, succeeded: false)
         }
@@ -144,8 +205,7 @@ struct CloudflareOnboardingDecision: Equatable {
 /// non-local device minted for this route to have reported `lastSeen`.
 enum CloudflareOnboardingPolicy {
     static func decide(cloudflaredInstalled: Bool, tunnel: CloudflareOnboardingTunnel,
-                       deviceCreated: Bool, exactDeviceIsNonLocal: Bool,
-                       exactDeviceLastSeen: Bool) -> CloudflareOnboardingDecision {
+                       deviceCreated: Bool, exactDeviceLastSeen: Bool) -> CloudflareOnboardingDecision {
         guard cloudflaredInstalled else {
             return CloudflareOnboardingDecision(
                 phase: .cloudflaredMissing, action: .installCloudflared, qrURL: nil,
@@ -175,7 +235,7 @@ enum CloudflareOnboardingPolicy {
                     phase: .ready(url: url), action: .showQR, qrURL: url,
                     mayMintDevice: true, succeeded: false)
             }
-            guard exactDeviceIsNonLocal, exactDeviceLastSeen else {
+            guard exactDeviceLastSeen else {
                 return CloudflareOnboardingDecision(
                     phase: .awaitingDevice(url: url), action: .showQRAgain, qrURL: url,
                     mayMintDevice: false, succeeded: false)
@@ -187,12 +247,19 @@ enum CloudflareOnboardingPolicy {
     }
 }
 
+enum CloudPreviewFailure: Equatable {
+    case identityRead
+    case relayUnauthorized
+    case relayFailed
+    case pairingRead
+    case pairingAmbiguous
+}
+
 enum CloudPreviewProof: Equatable {
     case absent
-    case notProved
     case unavailable
     case proved(String)
-    case failed(String)
+    case failed(CloudPreviewFailure)
 }
 
 enum CloudPreviewAction: Equatable {
@@ -239,32 +306,268 @@ enum CloudPreviewPolicy {
     }
 }
 
+enum OnboardingCapability: String, Hashable {
+    case read
+    case send
+}
+
+struct RouteCredentialPlan: Equatable {
+    let capabilities: Set<OnboardingCapability>
+    let local: Bool
+
+    func remoteCapabilities() -> Set<RemoteAuth.Capability> {
+        Set(capabilities.compactMap { RemoteAuth.Capability(rawValue: $0.rawValue) })
+    }
+}
+
+enum LocalBrowserCredentialPolicy {
+    static func plan(for decision: LocalBrowserDecision) -> RouteCredentialPlan? {
+        guard decision.mayMintDevice else { return nil }
+        return RouteCredentialPlan(capabilities: [.read], local: false)
+    }
+}
+
+struct PhoneCredentialPlan: Equatable {
+    let publicBaseURL: String
+    let capabilities: Set<OnboardingCapability>
+    let local: Bool
+
+    func signInURL(token: String) -> String {
+        "\(publicBaseURL.hasSuffix("/") ? String(publicBaseURL.dropLast()) : publicBaseURL)/?t=\(token)"
+    }
+
+    func remoteCapabilities() -> Set<RemoteAuth.Capability> {
+        Set(capabilities.compactMap { RemoteAuth.Capability(rawValue: $0.rawValue) })
+    }
+}
+
+/// This is the single gate shared by Home and Settings. A caller cannot mint and then discover
+/// that it had no deliverable address: no live, non-empty tunnel URL means no credential plan.
+enum PhoneCredentialPolicy {
+    static func plan(remoteEnabled: Bool, remoteWrite: Bool,
+                     tunnel: RemoteTunnel.State) -> PhoneCredentialPlan? {
+        guard remoteEnabled, case .up(let url) = tunnel, !url.isEmpty else { return nil }
+        return PhoneCredentialPlan(
+            publicBaseURL: url,
+            capabilities: remoteWrite ? [.read, .send] : [.read],
+            local: false)
+    }
+}
+
+struct IssuedPhoneCredential: Equatable {
+    let id: String
+    let token: String
+    let signInURL: String
+}
+
+enum PhoneCredentialIssuer {
+    static func issue(remoteEnabled: Bool, remoteWrite: Bool, tunnel: RemoteTunnel.State,
+                      name: String,
+                      mint: (String, Set<RemoteAuth.Capability>, Bool) -> (id: String, token: String))
+        -> IssuedPhoneCredential? {
+        guard let plan = PhoneCredentialPolicy.plan(
+            remoteEnabled: remoteEnabled, remoteWrite: remoteWrite, tunnel: tunnel) else {
+            return nil
+        }
+        let made = mint(name, plan.remoteCapabilities(), plan.local)
+        return IssuedPhoneCredential(
+            id: made.id, token: made.token, signInURL: plan.signInURL(token: made.token))
+    }
+}
+
+struct OnboardingDeviceObservation: Equatable {
+    let id: String
+    let wasSeen: Bool
+
+    init(_ device: RemoteAuth.Device) {
+        id = device.id
+        wasSeen = device.lastSeen != nil
+    }
+}
+
+enum OnboardingEvidencePolicy {
+    static func local(serverEnabled: Bool, configurationFailed: Bool = false,
+                      health: LocalHealthEvidence,
+                      expectedDeviceID: String?, devices: [RemoteAuth.Device]) -> LocalBrowserDecision {
+        let exact = expectedDeviceID.flatMap { wanted in
+            devices.map(OnboardingDeviceObservation.init).first(where: { $0.id == wanted })
+        }
+        return LocalBrowserPolicy.decide(
+            serverEnabled: serverEnabled, configurationFailed: configurationFailed, health: health,
+            deviceCreated: expectedDeviceID != nil,
+            exactDeviceLastSeen: exact?.wasSeen == true)
+    }
+
+    static func cloudflare(cloudflaredInstalled: Bool, tunnelState: RemoteTunnel.State,
+                           expectedDeviceID: String?, devices: [RemoteAuth.Device])
+        -> CloudflareOnboardingDecision {
+        let tunnel: CloudflareOnboardingTunnel
+        switch tunnelState {
+        case .off: tunnel = .off
+        case .starting: tunnel = .starting
+        case .up(let url): tunnel = .up(url: url)
+        case .failed(let reason): tunnel = .failed(reason: reason)
+        }
+        let exact = expectedDeviceID.flatMap { wanted in
+            devices.map(OnboardingDeviceObservation.init).first(where: { $0.id == wanted })
+        }
+        return CloudflareOnboardingPolicy.decide(
+            cloudflaredInstalled: cloudflaredInstalled, tunnel: tunnel,
+            deviceCreated: expectedDeviceID != nil,
+            exactDeviceLastSeen: exact?.wasSeen == true)
+    }
+}
+
+enum CredentialLifetimePolicy {
+    static func shouldRevokeUnseen(expectedDeviceID: String?, devices: [RemoteAuth.Device]) -> Bool {
+        guard let expectedDeviceID else { return false }
+        return devices.first(where: { $0.id == expectedDeviceID })?.lastSeen == nil
+    }
+}
+
+struct CloudPairingAttempt: Equatable {
+    let baselineDeviceIDs: Set<String>
+    var boundDeviceID: String?
+}
+
+struct CloudPreviewEvidenceResult: Equatable {
+    let decision: CloudPreviewDecision
+    let boundDeviceID: String?
+}
+
+/// Converts the real Keychain, lifecycle and pairing-store readings into the five proof slots.
+/// No view code decides whether missing evidence is absence, unavailability, failure or proof.
+enum CloudPreviewEvidencePolicy {
+    static func evaluate(identityResult: Result<CloudMachineIdentity?, Error>,
+                         lifecycle: CloudBridgeLifecycle.State,
+                         devicesResult: Result<[CloudPairedDevice], Error>?,
+                         pairingAttempt: CloudPairingAttempt?) -> CloudPreviewEvidenceResult {
+        let identity: CloudMachineIdentity?
+        let account: CloudPreviewProof
+        let credential: CloudPreviewProof
+        switch identityResult {
+        case .success(let restored):
+            identity = restored
+            if let restored {
+                account = .proved(restored.accountID)
+                credential = .proved(restored.machineID)
+            } else {
+                account = .absent
+                credential = .absent
+            }
+        case .failure:
+            identity = nil
+            account = .failed(.identityRead)
+            credential = .failed(.identityRead)
+        }
+
+        let relay: CloudPreviewProof
+        switch lifecycle {
+        case .unauthorized:
+            relay = .failed(.relayUnauthorized)
+        case .failed:
+            relay = .failed(.relayFailed)
+        case .detached, .attached:
+            relay = .unavailable
+        }
+
+        var bound = pairingAttempt?.boundDeviceID
+        let pairing: CloudPreviewProof
+        if identity == nil {
+            pairing = .unavailable
+        } else if let devicesResult {
+            switch devicesResult {
+            case .failure:
+                pairing = .failed(.pairingRead)
+            case .success(let devices):
+                if let existing = bound.flatMap({ id in devices.first(where: { $0.deviceID == id }) }) {
+                    pairing = .proved(existing.deviceID)
+                } else if let attempt = pairingAttempt {
+                    let candidates = devices.filter { !attempt.baselineDeviceIDs.contains($0.deviceID) }
+                    if candidates.count == 1, let only = candidates.first {
+                        bound = only.deviceID
+                        pairing = .proved(only.deviceID)
+                    } else if candidates.count > 1 {
+                        bound = nil
+                        pairing = .failed(.pairingAmbiguous)
+                    } else {
+                        bound = nil
+                        pairing = .absent
+                    }
+                } else {
+                    pairing = .unavailable
+                }
+            }
+        } else {
+            pairing = .unavailable
+        }
+
+        return CloudPreviewEvidenceResult(
+            decision: CloudPreviewPolicy.decide(
+                account: account, machineCredential: credential, relayReady: relay,
+                e2eePairing: pairing, viewerReceipt: .unavailable),
+            boundDeviceID: bound)
+    }
+}
+
+enum OnboardingCompletionTrigger: Equatable {
+    case routeSucceeded
+    case homeDismissed
+}
+
+enum OnboardingExitPolicy {
+    static func shouldRecordCompletion(for trigger: OnboardingCompletionTrigger) -> Bool {
+        switch trigger {
+        case .routeSucceeded, .homeDismissed: return true
+        }
+    }
+}
+
 #if !ONBOARDING_POLICY_ONLY
 import AppKit
 
-final class HomeWindow: NSObject, NSWindowDelegate {
+/// AppKit owns this singleton on the main thread. The only background closure captures it weakly
+/// and returns through `DispatchQueue.main` before reading or mutating any field.
+final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
     static let shared = HomeWindow()
 
     private var window: NSWindow?
     private var stateValue: NSTextField?
+    private var localExpectedValue: NSTextField?
+    private var localRecoveryValue: NSTextField?
     private var actionButton: NSButton?
     private var timer: Timer?
-    private var healthReady = false
+    private var health = LocalHealthEvidence.notChecked
+    private var healthRequestInFlight = false
     private var healthRequestGeneration = 0
+    private var localConfigurationFailed = false
     private var localDeviceID: String?
     private var localToken: String?
     private var cloudflareStateValue: NSTextField?
+    private var cloudflareExpectedValue: NSTextField?
     private var cloudflareRecoveryValue: NSTextField?
     private var cloudflareActionButton: NSButton?
     private var cloudflareDeviceID: String?
     private var cloudflareToken: String?
     private var cloudflareQRWindow: NSWindow?
     private var cloudStateValue: NSTextField?
+    private var cloudExpectedValue: NSTextField?
     private var cloudRecoveryValue: NSTextField?
     private var cloudActionButton: NSButton?
-    private var cloudRouteStartedAtMilliseconds = Int64(Date().timeIntervalSince1970 * 1_000)
-    private var cloudPairedDeviceID: String?
+    private var cloudPairingAttempt: CloudPairingAttempt?
+    private var cloudKnownDeviceIDs = Set<String>()
+    private var cloudDeviceSnapshotAvailable = false
+    private var cloudDecisionCache = CloudPreviewPolicy.decide(
+        account: .unavailable, machineCredential: .unavailable,
+        relayReady: .unavailable, e2eePairing: .unavailable, viewerReceipt: .unavailable)
+    private var cloudflaredInstalled = false
+    private var evidenceRefreshInFlight = false
+    private var lastEvidenceRefreshAt: Date?
+    private let evidenceQueue = DispatchQueue(label: "clawdline.onboarding.evidence",
+                                               qos: .utility)
     private var completionRecorded = false
+    private var completionAttempted = false
+    private var completionStatusValue: NSTextField?
 
     private override init() { super.init() }
 
@@ -272,22 +575,37 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         if window == nil { window = buildWindow() }
         refresh()
         startPolling()
-        window?.center()
+        if window?.isVisible != true { window?.center() }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func rebuildIfVisible() {
         guard window?.isVisible == true else { return }
+        let oldFrame = window?.frame
+        let wasKey = window?.isKeyWindow == true
         timer?.invalidate()
+        healthRequestGeneration += 1
+        healthRequestInFlight = false
+        health = .notChecked
         window?.orderOut(nil)
         window = nil
-        show()
+        window = buildWindow()
+        if let oldFrame { window?.setFrame(oldFrame, display: false) }
+        refresh()
+        startPolling()
+        if wasKey { window?.makeKeyAndOrderFront(nil) } else { window?.orderFront(nil) }
     }
 
     func windowWillClose(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
         timer?.invalidate()
         timer = nil
+        healthRequestGeneration += 1
+        healthRequestInFlight = false
+        closeCloudflareQR(revokingUnseenCredential: true)
+        discardUnseenLocalCredential()
+        recordCompletion(for: .homeDismissed)
     }
 
     private func buildWindow() -> NSWindow {
@@ -324,13 +642,15 @@ final class HomeWindow: NSObject, NSWindowDelegate {
 
         let state = label("", size: 13, weight: .medium)
         stateValue = state
-        detail.addArrangedSubview(label(L.t.setupReadOnly, size: 13,
+        let localExpected = label("", size: 13)
+        let localRecovery = label("", size: 13)
+        localExpectedValue = localExpected
+        localRecoveryValue = localRecovery
+        detail.addArrangedSubview(label(L.t.setupLocalReadOnlyAction, size: 13,
                                         color: .secondaryLabelColor))
         detail.addArrangedSubview(row(L.t.setupDetected, value: state))
-        detail.addArrangedSubview(row(L.t.setupExpected,
-                                      value: label(L.t.setupLocalExpected, size: 13)))
-        detail.addArrangedSubview(row(L.t.setupRecovery,
-                                      value: label(L.t.setupLocalRecovery, size: 13)))
+        detail.addArrangedSubview(row(L.t.setupExpected, value: localExpected))
+        detail.addArrangedSubview(row(L.t.setupRecovery, value: localRecovery))
         let action = NSButton(title: "", target: self, action: #selector(performLocalAction))
         action.bezelStyle = .rounded
         actionButton = action
@@ -350,6 +670,8 @@ final class HomeWindow: NSObject, NSWindowDelegate {
                                         action: #selector(performCloudflareAction))
         cloudflareAction.bezelStyle = .rounded
         cloudflareStateValue = cloudflareState
+        let cloudflareExpected = label("", size: 12)
+        cloudflareExpectedValue = cloudflareExpected
         cloudflareRecoveryValue = cloudflareRecovery
         cloudflareActionButton = cloudflareAction
         cloudflare.content.addArrangedSubview(compactRow(
@@ -357,7 +679,7 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         cloudflare.content.addArrangedSubview(compactRow(
             L.t.setupNextAction, value: cloudflareAction))
         cloudflare.content.addArrangedSubview(compactRow(
-            L.t.setupExpected, value: label(L.t.setupTunnelExpected, size: 12)))
+            L.t.setupExpected, value: cloudflareExpected))
         cloudflare.content.addArrangedSubview(compactRow(
             L.t.setupRecovery, value: cloudflareRecovery))
 
@@ -369,17 +691,23 @@ final class HomeWindow: NSObject, NSWindowDelegate {
                                    action: #selector(performCloudAction))
         cloudAction.bezelStyle = .rounded
         cloudStateValue = cloudState
+        let cloudExpected = label("", size: 12)
+        cloudExpectedValue = cloudExpected
         cloudRecoveryValue = cloudRecovery
         cloudActionButton = cloudAction
         preview.content.addArrangedSubview(compactRow(L.t.setupDetected, value: cloudState))
         preview.content.addArrangedSubview(compactRow(L.t.setupNextAction, value: cloudAction))
         preview.content.addArrangedSubview(compactRow(
-            L.t.setupExpected, value: label(L.t.setupCloudExpected, size: 12)))
+            L.t.setupExpected, value: cloudExpected))
         preview.content.addArrangedSubview(compactRow(L.t.setupRecovery, value: cloudRecovery))
 
         remoteCards.addArrangedSubview(cloudflare.box)
         remoteCards.addArrangedSubview(preview.box)
         stack.addArrangedSubview(remoteCards)
+        let completionStatus = label(L.t.setupDismissalHint, size: 12,
+                                     color: .secondaryLabelColor)
+        completionStatusValue = completionStatus
+        stack.addArrangedSubview(completionStatus)
         NSLayoutConstraint.activate([
             local.box.widthAnchor.constraint(equalTo: stack.widthAnchor),
             remoteCards.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -450,99 +778,30 @@ final class HomeWindow: NSObject, NSWindowDelegate {
     }
 
     private var decision: LocalBrowserDecision {
-        let seen = localDeviceID.flatMap { id in
-            RemoteAuth.approvedDevices.first(where: { $0.id == id })?.lastSeen
-        } != nil
-        return LocalBrowserPolicy.decide(serverEnabled: Config.shared.remote,
-                                         healthReady: healthReady,
-                                         deviceCreated: localDeviceID != nil,
-                                         deviceLastSeen: seen)
+        OnboardingEvidencePolicy.local(
+            serverEnabled: Config.shared.remote,
+            configurationFailed: localConfigurationFailed,
+            health: health,
+            expectedDeviceID: localDeviceID,
+            devices: RemoteAuth.approvedDevices)
     }
 
     private var cloudflareDecision: CloudflareOnboardingDecision {
-        let device = cloudflareDeviceID.flatMap { id in
-            RemoteAuth.approvedDevices.first(where: { $0.id == id })
-        }
-        let tunnel: CloudflareOnboardingTunnel
-        switch RemoteTunnel.shared.state {
-        case .off: tunnel = .off
-        case .starting: tunnel = .starting
-        case .up(let url): tunnel = .up(url: url)
-        case .failed(let reason): tunnel = .failed(reason: reason)
-        }
-        return CloudflareOnboardingPolicy.decide(
-            cloudflaredInstalled: RemoteTunnel.isInstalled, tunnel: tunnel,
-            deviceCreated: device != nil, exactDeviceIsNonLocal: device?.local == false,
-            exactDeviceLastSeen: device?.lastSeen != nil)
-    }
-
-    private var cloudDecision: CloudPreviewDecision {
-        let identity: CloudMachineIdentity?
-        let account: CloudPreviewProof
-        let credential: CloudPreviewProof
-        do {
-            identity = try CloudAccountClient().restoredMachineIdentity()
-            if let identity {
-                account = .proved(identity.accountID)
-                credential = .proved(identity.machineID)
-            } else {
-                account = .absent
-                credential = .absent
-            }
-        } catch {
-            identity = nil
-            account = .notProved
-            credential = .failed(Self.message(for: error))
-        }
-
-        let relay: CloudPreviewProof
-        let lifecycle = MainActor.assumeIsolated { CloudBridgeLifecycle.shared.state }
-        switch lifecycle {
-        case .unauthorized:
-            relay = .failed(L.t.setupCloudRelayUnauthorized)
-        case .failed(let reason):
-            relay = .failed(reason)
-        case .detached, .attached:
-            // `attached` means a bridge was built. The lifecycle exposes no ready-frame fact, so
-            // it cannot be promoted to relay-ready on this card.
-            relay = .notProved
-        }
-
-        let pairing: CloudPreviewProof
-        if let identity {
-            do {
-                let devices = try CloudPairedDeviceStore().devices(accountID: identity.accountID)
-                let exact: CloudPairedDevice?
-                if let bound = cloudPairedDeviceID {
-                    exact = devices.first(where: { $0.deviceID == bound })
-                } else {
-                    exact = devices
-                        .filter({ $0.pairedAtMilliseconds >= cloudRouteStartedAtMilliseconds })
-                        .min(by: { $0.pairedAtMilliseconds < $1.pairedAtMilliseconds })
-                    cloudPairedDeviceID = exact?.deviceID
-                }
-                if let exact {
-                    pairing = .proved(exact.deviceID)
-                } else {
-                    pairing = .absent
-                }
-            } catch {
-                pairing = .failed(Self.message(for: error))
-            }
-        } else {
-            pairing = .absent
-        }
-
-        return CloudPreviewPolicy.decide(
-            account: account, machineCredential: credential, relayReady: relay,
-            e2eePairing: pairing, viewerReceipt: .unavailable)
+        OnboardingEvidencePolicy.cloudflare(
+            cloudflaredInstalled: cloudflaredInstalled,
+            tunnelState: RemoteTunnel.shared.state,
+            expectedDeviceID: cloudflareDeviceID,
+            devices: RemoteAuth.approvedDevices)
     }
 
     private func refresh() {
         let current = decision
         switch current.phase {
         case .serverOff: stateValue?.stringValue = L.t.setupLocalServerOff
+        case .configurationFailed: stateValue?.stringValue = L.t.setupLocalConfigurationFailed
         case .checkingHealth: stateValue?.stringValue = L.t.setupLocalChecking
+        case .healthFailed(let failure):
+            stateValue?.stringValue = L.t.setupLocalHealthFailure(failure)
         case .readyToOpen: stateValue?.stringValue = L.t.setupLocalReady
         case .awaitingDevice: stateValue?.stringValue = L.t.setupLocalWaiting
         case .connected: stateValue?.stringValue = L.t.setupLocalConnected
@@ -554,9 +813,9 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         case .openBrowserAgain: actionButton?.title = L.t.setupLocalOpenAgain
         case .finish: actionButton?.title = L.t.setupFinish
         }
-        if current.succeeded, !completionRecorded {
-            completionRecorded = OnboardingCompletionStore.production.markCurrent()
-        }
+        localExpectedValue?.stringValue = L.t.setupLocalExpected(current.phase)
+        localRecoveryValue?.stringValue = L.t.setupLocalRecovery(current.phase)
+        if current.succeeded { recordCompletion(for: .routeSucceeded) }
 
         refreshCloudflare()
         refreshCloud()
@@ -585,38 +844,30 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         default: liveURL = nil
         }
         let hostname = liveURL.flatMap { URL(string: $0)?.host }
-            ?? Config.shared.remoteHostname.trimmingCharacters(in: .whitespaces)
-        let shownHost = hostname.isEmpty ? L.t.setupNone : hostname
+        let shownHost = hostname.flatMap { $0.isEmpty ? nil : $0 } ?? L.t.setupNone
         let access = Config.shared.remoteWrite ? L.t.setupControlChosen : L.t.setupReadOnly
 
         let status: String
-        let recovery: String
         switch current.phase {
         case .cloudflaredMissing:
             status = L.t.setupTunnelMissing
-            recovery = L.t.setupTunnelRecovery
         case .tunnelOff:
             status = L.t.setupTunnelOff
-            recovery = L.t.setupTunnelRecovery
         case .starting:
             status = L.t.setupTunnelStarting
-            recovery = L.t.setupTunnelRecovery
         case .ready(let url):
             status = L.t.setupTunnelReady(url)
-            recovery = L.t.setupTunnelRecovery
         case .awaitingDevice(let url):
             status = L.t.setupTunnelWaiting(url)
-            recovery = L.t.setupTunnelRecovery
         case .connected(let url):
             status = L.t.setupTunnelConnected(url)
-            recovery = L.t.setupTunnelRecovery
         case .failed(let reason):
             status = reason
-            recovery = L.t.setupTunnelRecovery
         }
         cloudflareStateValue?.stringValue = L.t.setupTunnelFacts(
             modeName, tunnelName, shownHost, status + "\n" + access)
-        cloudflareRecoveryValue?.stringValue = recovery
+        cloudflareExpectedValue?.stringValue = L.t.setupTunnelExpected(current.phase)
+        cloudflareRecoveryValue?.stringValue = L.t.setupTunnelRecovery(current.phase)
         switch current.action {
         case .installCloudflared, .openSettings:
             cloudflareActionButton?.title = L.t.setupOpenRemoteSettings
@@ -630,16 +881,13 @@ final class HomeWindow: NSObject, NSWindowDelegate {
             cloudflareActionButton?.title = L.t.setupFinish
         }
         if current.qrURL == nil {
-            cloudflareQRWindow?.orderOut(nil)
-            cloudflareQRWindow = nil
+            closeCloudflareQR(revokingUnseenCredential: true)
         }
-        if current.succeeded, !completionRecorded {
-            completionRecorded = OnboardingCompletionStore.production.markCurrent()
-        }
+        if current.succeeded { recordCompletion(for: .routeSucceeded) }
     }
 
     private func refreshCloud() {
-        let current = cloudDecision
+        let current = cloudDecisionCache
         cloudStateValue?.stringValue = L.t.setupCloudFacts(
             cloudProof(current.account, kind: .account),
             cloudProof(current.machineCredential, kind: .credential),
@@ -654,7 +902,8 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         case .reviewPreviewStatus:
             cloudActionButton?.title = L.t.setupReviewCloudPreview
         }
-        cloudRecoveryValue?.stringValue = L.t.setupCloudRecovery
+        cloudExpectedValue?.stringValue = L.t.setupCloudExpected(current)
+        cloudRecoveryValue?.stringValue = L.t.setupCloudRecovery(current)
     }
 
     private enum CloudProofKind { case account, credential, relay, pairing, receipt }
@@ -663,18 +912,16 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         switch proof {
         case .absent:
             return L.t.setupProofAbsent
-        case .notProved:
-            return L.t.setupProofNotProved
         case .unavailable:
             return L.t.setupProofUnavailable
-        case .failed(let reason):
-            return L.t.setupProofFailed(reason)
+        case .failed(let failure):
+            return L.t.setupProofFailed(failure)
         case .proved(let value):
             switch kind {
             case .account: return L.t.setupCloudAccountProved(value)
             case .credential: return L.t.setupCloudCredentialProved(value)
             case .pairing: return L.t.setupCloudPairingProved(value)
-            case .relay, .receipt: return L.t.setupProofProved
+            case .relay, .receipt: return value
             }
         }
     }
@@ -683,17 +930,31 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         let current = decision
         switch current.action {
         case .enableServer:
+            let oldRemote = Config.shared.remote
+            let oldRemoteWrite = Config.shared.remoteWrite
             Config.shared.remote = true
             Config.shared.remoteWrite = false
-            _ = Config.shared.save()
+            guard Config.shared.save() else {
+                Config.shared.remote = oldRemote
+                Config.shared.remoteWrite = oldRemoteWrite
+                localConfigurationFailed = true
+                Log.write("onboarding: local browser settings were not persisted")
+                refresh()
+                return
+            }
+            localConfigurationFailed = false
             NotificationCenter.default.post(name: .clawdlineConfigChanged, object: nil)
-            healthReady = false
+            health = .notChecked
             checkHealth()
         case .retryHealth:
             checkHealth()
         case .openBrowser:
-            guard current.mayMintDevice else { return }
-            let made = RemoteAuth.addDevice(name: L.t.setupLocalDeviceName, caps: [.read])
+            guard let plan = LocalBrowserCredentialPolicy.plan(for: current) else { return }
+            let issuedAt = DateFormatter.localizedString(
+                from: Date(), dateStyle: .short, timeStyle: .short)
+            let made = RemoteAuth.addDevice(
+                name: "\(L.t.setupLocalDeviceName) · \(issuedAt)",
+                caps: plan.remoteCapabilities(), local: plan.local)
             localDeviceID = made.id
             localToken = made.token
             openLocalBrowser()
@@ -713,15 +974,23 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         case .checkAgain:
             RemoteTunnel.shared.apply()
         case .showQR:
-            guard current.mayMintDevice else { return }
-            let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite
-                ? [.read, .send] : [.read]
-            let made = RemoteAuth.addDevice(name: L.t.setupCloudflareDeviceName, caps: caps)
+            guard current.mayMintDevice,
+                  let made = PhoneCredentialIssuer.issue(
+                    remoteEnabled: Config.shared.remote,
+                    remoteWrite: Config.shared.remoteWrite,
+                    tunnel: RemoteTunnel.shared.state,
+                    name: L.t.setupCloudflareDeviceName,
+                    mint: { RemoteAuth.addDevice(name: $0, caps: $1, local: $2) }) else { return }
             cloudflareDeviceID = made.id
             cloudflareToken = made.token
-            showCloudflareQR()
+            showCloudflareQR(url: made.signInURL)
         case .showQRAgain:
-            showCloudflareQR()
+            guard let token = cloudflareToken,
+                  let plan = PhoneCredentialPolicy.plan(
+                    remoteEnabled: Config.shared.remote,
+                    remoteWrite: Config.shared.remoteWrite,
+                    tunnel: RemoteTunnel.shared.state) else { return }
+            showCloudflareQR(url: plan.signInURL(token: token))
         case .finish:
             window?.performClose(nil)
         }
@@ -731,19 +1000,17 @@ final class HomeWindow: NSObject, NSWindowDelegate {
     @objc private func performCloudAction() {
         // The existing Cloud settings control owns device-code login and E2EE key handover. Home
         // observes their durable evidence rather than creating a second login/pairing state machine.
-        if cloudDecision.action == .pairPhone {
-            cloudPairedDeviceID = nil
-            cloudRouteStartedAtMilliseconds = Int64(Date().timeIntervalSince1970 * 1_000)
+        if cloudDecisionCache.action == .pairPhone {
+            cloudPairingAttempt = cloudDeviceSnapshotAvailable
+                ? CloudPairingAttempt(baselineDeviceIDs: cloudKnownDeviceIDs, boundDeviceID: nil)
+                : nil
         }
         SettingsWindow.shared.show()
+        refreshEvidence(force: true)
+        refresh()
     }
 
-    private func showCloudflareQR() {
-        guard let token = cloudflareToken else { return }
-        let url = RemoteQR.signInURL(token: token, hostname: Config.shared.remoteHostname,
-                                     tunnel: RemoteTunnel.shared.state,
-                                     port: Config.shared.remotePort)
-        guard !url.isEmpty else { return }
+    private func showCloudflareQR(url: String) {
         let side: CGFloat = 280
         let content = NSView(frame: NSRect(x: 0, y: 0, width: side + 48, height: side + 126))
         let title = label(L.t.setupScanLiveTunnel, size: 16, weight: .semibold)
@@ -774,7 +1041,7 @@ final class HomeWindow: NSObject, NSWindowDelegate {
     }
 
     private func openLocalBrowser() {
-        guard healthReady, let token = localToken,
+        guard health == .ready, let token = localToken,
               let url = URL(string: "http://127.0.0.1:\(Config.shared.remotePort)/#t=\(token)") else {
             return
         }
@@ -783,13 +1050,15 @@ final class HomeWindow: NSObject, NSWindowDelegate {
 
     private func startPolling() {
         timer?.invalidate()
-        let timer = Timer(timeInterval: 0.75, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: OnboardingPollingPolicy.interval, repeats: true) { [weak self] _ in
             self?.checkHealth()
+            self?.refreshEvidence()
             self?.refresh()
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
         checkHealth()
+        refreshEvidence(force: true)
     }
 
     /// A listener object is not evidence that bytes can make the round trip. This request is the
@@ -797,33 +1066,122 @@ final class HomeWindow: NSObject, NSWindowDelegate {
     private func checkHealth() {
         guard Config.shared.remote,
               let url = URL(string: "http://127.0.0.1:\(Config.shared.remotePort)/v1/health") else {
-            healthReady = false
+            health = .notChecked
             refresh()
             return
         }
+        guard OnboardingPollingPolicy.shouldStartRequest(
+            isInFlight: healthRequestInFlight) else { return }
+        healthRequestInFlight = true
+        if health == .notChecked { health = .checking }
         healthRequestGeneration += 1
         let generation = healthRequestGeneration
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData,
-                                 timeoutInterval: 1.5)
+                                 timeoutInterval: OnboardingPollingPolicy.requestTimeout)
         request.httpMethod = "GET"
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             let status = (response as? HTTPURLResponse)?.statusCode
             let object = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-            let ready = status == 200 && object?["ok"] as? Bool == true
+            let errorCode = (error as? URLError)?.errorCode
+            let evidence = LocalHealthEvidencePolicy.interpret(
+                statusCode: status, bodyOK: object?["ok"] as? Bool, errorCode: errorCode)
             DispatchQueue.main.async {
                 guard let self, generation == self.healthRequestGeneration else { return }
-                self.healthReady = ready
+                self.healthRequestInFlight = false
+                self.health = evidence
                 self.refresh()
             }
         }.resume()
     }
 
-    private static func message(for error: Error) -> String {
-        if let localized = error as? LocalizedError,
-           let description = localized.errorDescription, !description.isEmpty {
-            return description
+    private func refreshEvidence(force: Bool = false) {
+        let now = Date()
+        guard force || OnboardingPollingPolicy.shouldRefreshEvidence(
+            now: now, lastRefresh: lastEvidenceRefreshAt,
+            isInFlight: evidenceRefreshInFlight) else { return }
+        guard !evidenceRefreshInFlight else { return }
+        evidenceRefreshInFlight = true
+        lastEvidenceRefreshAt = now
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let lifecycle = CloudBridgeLifecycle.shared.state
+            self.evidenceQueue.async { [weak self] in
+                let installed = RemoteTunnel.isInstalled
+                let identityResult: Result<CloudMachineIdentity?, Error>
+                do {
+                    identityResult = .success(try CloudAccountClient().restoredMachineIdentity())
+                } catch {
+                    Log.write("onboarding: Cloud identity proof could not be read — \(error.localizedDescription)")
+                    identityResult = .failure(error)
+                }
+
+                let devicesResult: Result<[CloudPairedDevice], Error>?
+                if case .success(let identity?) = identityResult {
+                    do {
+                        devicesResult = .success(
+                            try CloudPairedDeviceStore().devices(accountID: identity.accountID))
+                    } catch {
+                        Log.write("onboarding: Cloud pairing proof could not be read — \(error.localizedDescription)")
+                        devicesResult = .failure(error)
+                    }
+                } else {
+                    devicesResult = nil
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    let result = CloudPreviewEvidencePolicy.evaluate(
+                        identityResult: identityResult, lifecycle: lifecycle,
+                        devicesResult: devicesResult, pairingAttempt: self.cloudPairingAttempt)
+                    self.cloudDecisionCache = result.decision
+                    if self.cloudPairingAttempt != nil {
+                        self.cloudPairingAttempt?.boundDeviceID = result.boundDeviceID
+                    }
+                    if case .success(let devices)? = devicesResult {
+                        self.cloudKnownDeviceIDs = Set(devices.map(\.deviceID))
+                        self.cloudDeviceSnapshotAvailable = true
+                    } else {
+                        self.cloudDeviceSnapshotAvailable = false
+                    }
+                    self.cloudflaredInstalled = installed
+                    self.evidenceRefreshInFlight = false
+                    self.refresh()
+                }
+            }
         }
-        return error.localizedDescription
+    }
+
+    private func closeCloudflareQR(revokingUnseenCredential: Bool) {
+        cloudflareQRWindow?.orderOut(nil)
+        cloudflareQRWindow = nil
+        guard revokingUnseenCredential, let id = cloudflareDeviceID else { return }
+        if CredentialLifetimePolicy.shouldRevokeUnseen(
+            expectedDeviceID: id, devices: RemoteAuth.approvedDevices) {
+            RemoteAuth.revoke(id: id)
+            cloudflareDeviceID = nil
+            cloudflareToken = nil
+        }
+    }
+
+    private func discardUnseenLocalCredential() {
+        guard let id = localDeviceID else { return }
+        if CredentialLifetimePolicy.shouldRevokeUnseen(
+            expectedDeviceID: id, devices: RemoteAuth.approvedDevices) {
+            RemoteAuth.revoke(id: id)
+        }
+        localDeviceID = nil
+        localToken = nil
+    }
+
+    private func recordCompletion(for trigger: OnboardingCompletionTrigger) {
+        guard !completionRecorded,
+              OnboardingExitPolicy.shouldRecordCompletion(for: trigger) else { return }
+        if completionAttempted, trigger != .homeDismissed { return }
+        completionAttempted = true
+        completionRecorded = OnboardingCompletionStore.production.markCurrent()
+        if !completionRecorded {
+            Log.write("onboarding: completion could not be persisted")
+            completionStatusValue?.stringValue = L.t.setupCompletionFailed
+        }
     }
 }
 #endif

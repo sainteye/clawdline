@@ -748,6 +748,12 @@ struct Japanese: Copy {
     let menuClose = "ウインドウを閉じる"
     let menuHome = "ホーム／設定センター"
     let menuHelpDocumentation = "Clawdline ドキュメント"
+    func menuAbout(_ app: String) -> String { "\(app) について" }
+    let menuServices = "サービス"
+    func menuHide(_ app: String) -> String { "\(app) を隠す" }
+    let menuHideOthers = "ほかを隠す"
+    let menuShowAll = "すべてを表示"
+    let menuMinimize = "しまう"
     let homeTitle = "Clawdline ホーム"
     let homeWelcome = "接続したい用途を選んでください。設定したスイッチだけでなく、確認できた証拠を表示します。"
     let homePurpose = "何に接続しますか？"
@@ -764,6 +770,12 @@ struct Japanese: Copy {
     let setupRecovery = "復旧方法"
     let setupLocalServerOff = "ループバックサーバはオフです。"
     let setupLocalChecking = "実際の /v1/health エンドポイントを確認中…"
+    let setupLocalConfigurationFailed = "ローカルブラウザ設定を保存できませんでした。変更は適用されていません。"
+    let setupLocalHealthTransport = "ヘルスエンドポイントに接続できません。ポートと他のプログラムを確認してください。"
+    let setupLocalHealthTimedOut = "ヘルスエンドポイントがタイムアウトしました。ポートを確認して再試行してください。"
+    func setupLocalHealthHTTP(_ status: Int) -> String { "ヘルスエンドポイントは正常な応答ではなく HTTP \(status) を返しました。" }
+    let setupLocalHealthUnhealthy = "エンドポイントは応答しましたが、ok: false でした。"
+    let setupLocalHealthInvalid = "有効なヘルス応答ではありません。設定したポートの使用元を確認してください。"
     let setupLocalReady = "ヘルスエンドポイントは準備完了です。ブラウザ認証情報はまだありません。"
     let setupLocalWaiting = "ブラウザを開きました。この端末の認証を待っています。"
     let setupLocalConnected = "接続しました。このブラウザ端末が Clawdline に到達しました。"
@@ -774,8 +786,10 @@ struct Japanese: Copy {
     let setupFinish = "完了"
     let setupLocalExpected = "読み取り専用ブラウザが開いて認証されます。アクティブなセッションがなくても成功です。"
     let setupLocalRecovery = "止まった場合はこのウインドウを開いたまま再確認してください。設定でサーバとポートも確認できます。"
+    let setupNoRecovery = "復旧は不要です。この経路は証明済みです。"
+    let setupLocalReadOnlyAction = "この操作で読み取り専用を保存し · 操作機能をオフにします"
     let setupReadOnly = "読み取り専用 · 操作はオフのまま"
-    let setupLocalDeviceName = "この Mac のブラウザ"
+    let setupLocalDeviceName = "設定センターのブラウザ"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "モード：\(mode)\nトンネル：\(tunnel)\nQR ホスト名：\(hostname)\n状態：\(status)" }
     let setupTunnelModeOff = "オフ"
     let setupTunnelModeQuick = "クイック"
@@ -803,15 +817,19 @@ struct Japanese: Copy {
     let setupPairCloudPhone = "Cloud でスマートフォンをペアリング"
     let setupReviewCloudPreview = "Preview 状態を確認"
     let setupProofAbsent = "存在しません"
-    let setupProofNotProved = "未証明"
     let setupProofUnavailable = "証明を取得できません"
     func setupProofFailed(_ reason: String) -> String { "失敗 — \(reason)" }
-    let setupProofProved = "証明済み"
+    let setupCloudIdentityReadFailed = "キーチェーンの識別情報を読み取れませんでした"
+    let setupCloudRelayFailed = "Relay が失敗を報告しました。Cloud 設定とログを確認してください"
+    let setupCloudPairingReadFailed = "ペアリング済み端末の保存領域を読み取れませんでした"
+    let setupCloudPairingAmbiguous = "複数の新しい Viewer が現れました。ペアリングをやり直してください"
     func setupCloudAccountProved(_ account: String) -> String { "\(account) でサインイン済み" }
     func setupCloudCredentialProved(_ machine: String) -> String { "\(machine) のキーチェーン資格情報" }
     func setupCloudPairingProved(_ device: String) -> String { "Viewer \(device) を固定済み" }
     let setupCloudflareDeviceName = "Cloudflare 経由のスマートフォン"
     let setupScanLiveTunnel = "スマートフォンで稼働中のトンネルを読み取る"
+    let setupDismissalHint = "Home を閉じると自動表示を停止します。App メニュー、Dock、ステータス項目、clawdline://home から設定センターを再表示できます。"
+    let setupCompletionFailed = "完了状態を保存できませんでした。~/.config/clawdline の権限を確認して Home をもう一度閉じてください。"
 
     let menuOpen = "入力バーを開く"
     let menuReveal = "対象のタブへ移動"

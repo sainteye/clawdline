@@ -750,6 +750,12 @@ struct German: Copy {
     let menuClose = "Fenster schließen"
     let menuHome = "Home / Einrichtungscenter"
     let menuHelpDocumentation = "Clawdline-Dokumentation"
+    func menuAbout(_ app: String) -> String { "Über \(app)" }
+    let menuServices = "Dienste"
+    func menuHide(_ app: String) -> String { "\(app) ausblenden" }
+    let menuHideOthers = "Andere ausblenden"
+    let menuShowAll = "Alle einblenden"
+    let menuMinimize = "Minimieren"
     let homeTitle = "Clawdline Home"
     let homeWelcome = "Wähle, was du verbinden möchtest. Die Einrichtung zeigt echte Nachweise, nicht nur den geänderten Schalter."
     let homePurpose = "Was möchtest du verbinden?"
@@ -766,6 +772,12 @@ struct German: Copy {
     let setupRecovery = "Wiederherstellung"
     let setupLocalServerOff = "Der Loopback-Server ist aus."
     let setupLocalChecking = "Der echte /v1/health-Endpunkt wird geprüft…"
+    let setupLocalConfigurationFailed = "Die Einstellung für den lokalen Browser konnte nicht gespeichert werden; nichts wurde geändert."
+    let setupLocalHealthTransport = "Der Health-Endpunkt ist nicht erreichbar. Port und andere Programme prüfen."
+    let setupLocalHealthTimedOut = "Zeitüberschreitung am Health-Endpunkt. Port prüfen und erneut versuchen."
+    func setupLocalHealthHTTP(_ status: Int) -> String { "Der Health-Endpunkt antwortete mit HTTP \(status), nicht gesund." }
+    let setupLocalHealthUnhealthy = "Der Endpunkt antwortete, meldete aber ok: false."
+    let setupLocalHealthInvalid = "Der Endpunkt lieferte keine gültige Health-Antwort. Belegung des Ports prüfen."
     let setupLocalReady = "Der Health-Endpunkt ist bereit. Browser-Zugangsdaten gibt es noch nicht."
     let setupLocalWaiting = "Der Browser ist geöffnet; dieses genaue Gerät muss sich noch authentifizieren."
     let setupLocalConnected = "Verbunden. Dieses Browser-Gerät hat Clawdline erreicht."
@@ -776,8 +788,10 @@ struct German: Copy {
     let setupFinish = "Fertig"
     let setupLocalExpected = "Ein schreibgeschützter Browser öffnet und authentifiziert sich, auch ohne aktive Sitzungen."
     let setupLocalRecovery = "Bei Stillstand dieses Fenster offen lassen und erneut prüfen. Server und Port stehen in den Einstellungen."
+    let setupNoRecovery = "Keine Wiederherstellung nötig; dieser Weg ist belegt."
+    let setupLocalReadOnlyAction = "Diese Aktion speichert Nur-Lesen · Steuerung wird ausgeschaltet"
     let setupReadOnly = "Nur Lesen · Steuerung bleibt aus"
-    let setupLocalDeviceName = "Browser auf diesem Mac"
+    let setupLocalDeviceName = "Browser des Setup-Centers"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Modus: \(mode)\nTunnel: \(tunnel)\nQR-Hostname: \(hostname)\nStatus: \(status)" }
     let setupTunnelModeOff = "Aus"
     let setupTunnelModeQuick = "Schnell"
@@ -805,15 +819,19 @@ struct German: Copy {
     let setupPairCloudPhone = "Telefon in Cloud koppeln"
     let setupReviewCloudPreview = "Preview-Status prüfen"
     let setupProofAbsent = "nicht vorhanden"
-    let setupProofNotProved = "nicht bewiesen"
     let setupProofUnavailable = "Beweis nicht verfügbar"
     func setupProofFailed(_ reason: String) -> String { "fehlgeschlagen — \(reason)" }
-    let setupProofProved = "bewiesen"
+    let setupCloudIdentityReadFailed = "die Schlüsselbund-Identität konnte nicht gelesen werden"
+    let setupCloudRelayFailed = "das Relay meldete einen Fehler; Cloud-Einstellungen und Protokoll prüfen"
+    let setupCloudPairingReadFailed = "der Speicher gekoppelter Geräte konnte nicht gelesen werden"
+    let setupCloudPairingAmbiguous = "mehrere neue Viewer erschienen; Kopplung erneut starten"
     func setupCloudAccountProved(_ account: String) -> String { "angemeldet als \(account)" }
     func setupCloudCredentialProved(_ machine: String) -> String { "Schlüsselbund-Zugangsdaten für \(machine)" }
     func setupCloudPairingProved(_ device: String) -> String { "für exakten Viewer \(device) angeheftet" }
     let setupCloudflareDeviceName = "Telefon über Cloudflare"
     let setupScanLiveTunnel = "Live-Tunnel mit dem Telefon scannen"
+    let setupDismissalHint = "Nach dem Schließen öffnet sich Home nicht mehr automatisch. Setup-Center jederzeit über Menü, Dock, Statussymbol oder clawdline://home öffnen."
+    let setupCompletionFailed = "Clawdline konnte den Abschluss nicht speichern. Rechte für ~/.config/clawdline prüfen und Home erneut schließen."
 
     let menuOpen = "Eingabeleiste öffnen"
     let menuReveal = "Zum Ziel-Tab springen"

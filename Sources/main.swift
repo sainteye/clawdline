@@ -102,6 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {
+        if !HomeReopenPolicy.shouldShowHome(hasVisibleWindows: flag) {
+            NSApp.activate(ignoringOtherApps: true)
+            return false
+        }
         HomeWindow.shared.show()
         return true
     }
@@ -179,6 +183,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem(title: L.t.menuApplication, action: nil, keyEquivalent: "")
         let appMenu = NSMenu()
 
+        appMenu.addItem(NSMenuItem(
+            title: L.t.menuAbout(L.t.menuApplication),
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""))
+        appMenu.addItem(.separator())
+
         let home = NSMenuItem(title: L.t.menuHome, action: #selector(showHome), keyEquivalent: "h")
         home.keyEquivalentModifierMask = [.command, .shift]
         home.target = self
@@ -190,6 +200,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.target = self
         appMenu.addItem(settings)
         appMenu.addItem(.separator())
+
+        let services = NSMenuItem(title: L.t.menuServices, action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu()
+        services.submenu = servicesMenu
+        appMenu.addItem(services)
+        NSApp.servicesMenu = servicesMenu
+        appMenu.addItem(.separator())
+
+        appMenu.addItem(NSMenuItem(title: L.t.menuHide(L.t.menuApplication),
+                                   action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+        let hideOthers = NSMenuItem(title: L.t.menuHideOthers,
+                                    action: #selector(NSApplication.hideOtherApplications(_:)),
+                                    keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(NSMenuItem(title: L.t.menuShowAll,
+                                   action: #selector(NSApplication.unhideAllApplications(_:)),
+                                   keyEquivalent: ""))
+        appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(title: L.t.menuQuit,
                                    action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appItem.submenu = appMenu
@@ -199,8 +228,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let windowMenu = NSMenu()
         windowMenu.addItem(NSMenuItem(title: L.t.menuClose, action: #selector(NSWindow.performClose(_:)),
                                       keyEquivalent: "w"))
+        windowMenu.addItem(NSMenuItem(title: L.t.menuMinimize,
+                                      action: #selector(NSWindow.performMiniaturize(_:)),
+                                      keyEquivalent: "m"))
         windowItem.submenu = windowMenu
         main.addItem(windowItem)
+        NSApp.windowsMenu = windowMenu
 
         let helpItem = NSMenuItem(title: L.t.menuHelp, action: nil, keyEquivalent: "")
         let helpMenu = NSMenu()
@@ -210,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         helpMenu.addItem(documentation)
         helpItem.submenu = helpMenu
         main.addItem(helpItem)
+        NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = main
     }
@@ -461,7 +495,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func configChanged() {
         L.reload()
         installMainMenu()
-        HomeWindow.shared.rebuildIfVisible()
         PromptController.shared.reloadMascot()
         PromptController.shared.applyCardOpacity()
         applyHotKey()
@@ -471,6 +504,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RemoteServer.shared.apply()
         RemoteTunnel.shared.apply()
         MainActor.assumeIsolated { CloudBridgeLifecycle.shared.apply() }
+        HomeWindow.shared.rebuildIfVisible()
         CodexNaming.shared.apply()
         refreshStatusItem()
     }
@@ -491,7 +525,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Config.shared.load()
         L.reload()
         installMainMenu()
-        HomeWindow.shared.rebuildIfVisible()
         PromptController.shared.reloadMascot()
         PromptController.shared.applyCardOpacity()
         if !applyHotKey() {
@@ -508,6 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RemoteServer.shared.apply()
         RemoteTunnel.shared.apply()
         MainActor.assumeIsolated { CloudBridgeLifecycle.shared.apply() }
+        HomeWindow.shared.rebuildIfVisible()
         CodexNaming.shared.apply()
         refreshStatusItem()
     }

@@ -754,6 +754,12 @@ struct Hindi: Copy {
     let menuClose = "विंडो बंद करें"
     let menuHome = "होम / सेटअप सेंटर"
     let menuHelpDocumentation = "Clawdline दस्तावेज़"
+    func menuAbout(_ app: String) -> String { "\(app) के बारे में" }
+    let menuServices = "सेवाएँ"
+    func menuHide(_ app: String) -> String { "\(app) छिपाएँ" }
+    let menuHideOthers = "अन्य छिपाएँ"
+    let menuShowAll = "सभी दिखाएँ"
+    let menuMinimize = "छोटा करें"
     let homeTitle = "Clawdline होम"
     let homeWelcome = "चुनें कि आप क्या जोड़ना चाहते हैं। सेटअप केवल बदला हुआ स्विच नहीं, बल्कि वास्तविक प्रमाण दिखाता है।"
     let homePurpose = "आप क्या जोड़ना चाहते हैं?"
@@ -770,6 +776,12 @@ struct Hindi: Copy {
     let setupRecovery = "सुधार"
     let setupLocalServerOff = "loopback server बंद है।"
     let setupLocalChecking = "असल /v1/health endpoint जाँचा जा रहा है…"
+    let setupLocalConfigurationFailed = "local browser setting save नहीं हुई; कोई बदलाव लागू नहीं हुआ।"
+    let setupLocalHealthTransport = "health endpoint तक नहीं पहुँचा जा सका। port और उसे उपयोग कर रहे दूसरे program जाँचें।"
+    let setupLocalHealthTimedOut = "health endpoint timed out हुआ। port जाँचकर फिर कोशिश करें।"
+    func setupLocalHealthHTTP(_ status: Int) -> String { "health endpoint ने HTTP \(status) दिया, healthy response नहीं।" }
+    let setupLocalHealthUnhealthy = "endpoint ने उत्तर दिया, लेकिन ok: false बताया।"
+    let setupLocalHealthInvalid = "endpoint ने valid health response नहीं दिया। configured port जाँचें।"
     let setupLocalReady = "health endpoint तैयार है। अभी browser credential नहीं है।"
     let setupLocalWaiting = "browser खुल गया; इसी device के authenticate होने की प्रतीक्षा है।"
     let setupLocalConnected = "जुड़ गया। इसी browser device ने Clawdline से संपर्क किया।"
@@ -780,8 +792,10 @@ struct Hindi: Copy {
     let setupFinish = "पूरा"
     let setupLocalExpected = "read-only browser खुलकर authenticate होता है; active session न होने पर भी यह सफल है।"
     let setupLocalRecovery = "रुकने पर यह विंडो खुली रखें और फिर जाँचें। Settings में server और port देख सकते हैं।"
+    let setupNoRecovery = "recovery की जरूरत नहीं; यह route प्रमाणित है।"
+    let setupLocalReadOnlyAction = "यह action read-only save करता है · control बंद करता है"
     let setupReadOnly = "केवल पढ़ना · control बंद रहता है"
-    let setupLocalDeviceName = "इस Mac का browser"
+    let setupLocalDeviceName = "Setup Center का browser"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "मोड: \(mode)\nTunnel: \(tunnel)\nQR hostname: \(hostname)\nस्थिति: \(status)" }
     let setupTunnelModeOff = "बंद"
     let setupTunnelModeQuick = "त्वरित"
@@ -809,15 +823,19 @@ struct Hindi: Copy {
     let setupPairCloudPhone = "Cloud में फ़ोन pair करें"
     let setupReviewCloudPreview = "Preview स्थिति देखें"
     let setupProofAbsent = "मौजूद नहीं"
-    let setupProofNotProved = "साबित नहीं"
     let setupProofUnavailable = "प्रमाण उपलब्ध नहीं"
     func setupProofFailed(_ reason: String) -> String { "विफल — \(reason)" }
-    let setupProofProved = "साबित"
+    let setupCloudIdentityReadFailed = "Keychain identity पढ़ी नहीं जा सकी"
+    let setupCloudRelayFailed = "relay ने failure बताया; Cloud Settings और log देखें"
+    let setupCloudPairingReadFailed = "paired-device store पढ़ा नहीं जा सका"
+    let setupCloudPairingAmbiguous = "एक से अधिक नए viewer दिखे; pairing फिर शुरू करें"
     func setupCloudAccountProved(_ account: String) -> String { "\(account) के रूप में signed in" }
     func setupCloudCredentialProved(_ machine: String) -> String { "\(machine) का Keychain credential" }
     func setupCloudPairingProved(_ device: String) -> String { "ठीक viewer \(device) के लिए pinned" }
     let setupCloudflareDeviceName = "Cloudflare से फ़ोन"
     let setupScanLiveTunnel = "फ़ोन से live tunnel scan करें"
+    let setupDismissalHint = "Home बंद करने पर यह अपने आप नहीं खुलेगा। App menu, Dock, status item या clawdline://home से Setup Center फिर खोलें।"
+    let setupCompletionFailed = "Clawdline completion save नहीं कर सका। ~/.config/clawdline permissions जाँचकर Home फिर बंद करें।"
 
     let menuOpen = "इनपुट बार खोलें"
     let menuReveal = "लक्ष्य tab पर जाएँ"
