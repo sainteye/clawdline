@@ -598,13 +598,27 @@ function activityActionHTML(action) {
         esc(subject) + '</span>' + where + '</li>';
 }
 
+/** Collapse only rows that would be identical and adjacent on screen. The transcript remains
+ * untouched, so execution counts and later non-adjacent repeats keep their original meaning. */
+function activityActionsHTML(actions) {
+    var rows = [];
+    var previous = null;
+    actions.forEach(function (action) {
+        var row = activityActionHTML(action);
+        if (!row || row === previous) return;
+        rows.push(row);
+        previous = row;
+    });
+    return rows.join("");
+}
+
 function activityHTML(e) {
     var activity = activityOf(e) || {};
     var kind = activity.kind === "explored" ? "explored" : "called";
     var title = kind === "called" ? String(activity.title || e.text || e.tool || "") : "";
     var duration = durationText(activity.durationMs);
     var meta = [activity.status, duration].filter(function (value) { return !!value; });
-    var actions = kind === "explored" ? activity.actions.map(activityActionHTML).join("") : "";
+    var actions = kind === "explored" ? activityActionsHTML(activity.actions) : "";
     var result = kind === "called" && typeof activity.result === "string" && activity.result.length
         ? '<pre class="activity-result">' + esc(activity.result) + '</pre>' : "";
     return '<div class="entry activity" data-role="' + kind + '"><div class="who">' + esc(WHO.tool) +

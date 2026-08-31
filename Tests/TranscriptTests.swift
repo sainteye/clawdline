@@ -1417,6 +1417,19 @@ group("the Web transcript has an inert Clawdline card") {
             && explored.html.contains("Codex.swift") && explored.html.contains("Sources"))
     check("activity fields are escaped and never become transcript markup",
           explored.html.contains("title &lt;tag&gt;") && !explored.html.contains("<tag>"))
+    let repeatedExploration = renderEntry([
+        "role": "tool", "tool": "shell", "text": "Explore files",
+        "activity": ["kind": "explored", "status": "completed", "actions": [
+            ["kind": "read", "name": "Settings.swift", "path": "Sources/Settings.swift"],
+            ["kind": "read", "name": "Settings.swift", "path": "Sources/Settings.swift"],
+            ["kind": "search", "query": "Settings", "path": "Sources"],
+            ["kind": "read", "name": "Settings.swift", "path": "Sources/Settings.swift"],
+        ]],
+    ])
+    let repeatedRows = repeatedExploration.html.components(separatedBy: "<li>").count - 1
+    expect("only adjacent duplicate activity rows are collapsed", repeatedRows, 3)
+    expect("a repeated activity after a different action remains visible",
+           repeatedExploration.html.components(separatedBy: "Settings.swift").count - 1, 4)
     check("task state lookup rejects inherited object properties and keeps a generic title",
           noticeRenderer.contains("Object.prototype.hasOwnProperty.call(states, n.state)")
               && noticeRenderer.contains("var title = T.webNoticeFinished"))
