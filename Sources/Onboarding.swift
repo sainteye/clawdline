@@ -526,16 +526,238 @@ enum OnboardingExitPolicy {
 #if !ONBOARDING_POLICY_ONLY
 import AppKit
 
+
+private final class HomeProofList: NSView, SelfSizing {
+    var text = "" {
+        didSet {
+            guard text != oldValue else { return }
+            rebuild()
+        }
+    }
+
+    private var rows: [NSTextField] = []
+    override var isFlipped: Bool { true }
+
+    private func rebuild() {
+        rows.forEach { $0.removeFromSuperview() }
+        rows = text.split(separator: "\n", omittingEmptySubsequences: false).map { part in
+            let value = String(part)
+            let field = NSTextField(labelWithString: value)
+            field.font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+            field.textColor = Metric.soft
+            field.isSelectable = true
+            field.lineBreakMode = .byTruncatingMiddle
+            field.maximumNumberOfLines = 1
+            field.toolTip = value
+            addSubview(field)
+            return field
+        }
+        needsLayout = true
+    }
+
+    func height(forWidth width: CGFloat) -> CGFloat {
+        CGFloat(rows.count) * 20
+    }
+
+    override func layout() {
+        super.layout()
+        for (index, row) in rows.enumerated() {
+            row.frame = NSRect(x: 0, y: CGFloat(index) * 20,
+                               width: bounds.width, height: 16)
+        }
+    }
+}
+
+/// One route, expressed in the same dark surfaces, hairlines, pixels and chips as Settings.
+/// The order lives here once so Local, Cloudflare and Cloud cannot silently drift apart again.
+private final class HomeRouteCard: NSView, SelfSizing {
+    private enum Field { case detected, expected, recovery, nextAction }
+    private static let fieldOrder: [Field] = [.detected, .expected, .recovery, .nextAction]
+
+    private let primary: Bool
+    private let titleLabel: NSTextField
+    private let summaryLabel: NSTextField
+    private let noticeLabel: NSTextField?
+    private let rule = Hairline()
+    private let detectedHeading = makeLabel(L.t.setupDetected.uppercased(),
+                                            Metric.headFont, Metric.faint)
+    private let expectedHeading = makeLabel(L.t.setupExpected.uppercased(),
+                                            Metric.headFont, Metric.faint)
+    private let recoveryHeading = makeLabel(L.t.setupRecovery.uppercased(),
+                                            Metric.headFont, Metric.faint)
+    private let actionHeading = makeLabel(L.t.setupNextAction.uppercased(),
+                                          Metric.headFont, Metric.faint)
+    private let detectedNote = NoteCard()
+    private let proofList: HomeProofList?
+    private let expectedLabel = makeLabel("", Metric.noteFont, Metric.soft)
+    private let recoveryLabel = makeLabel("", Metric.noteFont, Metric.soft)
+    private let actionButton: ChipButton
+    private var recoveryText: String?
+
+    override var isFlipped: Bool { true }
+
+    init(title: String, summary: String, notice: String? = nil,
+         primary: Bool, proofList: Bool = false, action: @escaping () -> Void) {
+        self.primary = primary
+        self.titleLabel = makeLabel(
+            title, NSFont.systemFont(ofSize: primary ? 19 : 15.5,
+                                     weight: primary ? .semibold : .medium),
+            Metric.label)
+        self.summaryLabel = makeLabel(summary, Metric.noteFont, Metric.soft)
+        self.noticeLabel = notice.map {
+            makeLabel($0, NSFont.systemFont(ofSize: 11.5, weight: .medium), Style.accent)
+        }
+        self.proofList = proofList ? HomeProofList() : nil
+        self.actionButton = ChipButton(title: "", prominent: primary)
+        super.init(frame: .zero)
+
+        [titleLabel, summaryLabel, rule, detectedHeading, expectedHeading,
+         recoveryHeading, actionHeading, expectedLabel, recoveryLabel, actionButton]
+            .forEach(addSubview)
+        if let noticeLabel { addSubview(noticeLabel) }
+        if let selfProofList = self.proofList {
+            detectedNote.isHidden = true
+            addSubview(selfProofList)
+        } else {
+            addSubview(detectedNote)
+        }
+        actionButton.action = action
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(title)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(state: String, dot: PixelDot.State, expected: String,
+                recovery: String?, actionTitle: String) {
+        if let proofList {
+            proofList.text = state
+        } else {
+            detectedNote.text = state
+            detectedNote.dot = dot
+        }
+        expectedLabel.stringValue = expected
+        recoveryText = recovery
+        recoveryLabel.stringValue = recovery ?? ""
+        recoveryHeading.isHidden = recovery == nil
+        recoveryLabel.isHidden = recovery == nil
+        actionButton.title = actionTitle
+        needsLayout = true
+    }
+
+    private func heading(for field: Field) -> NSTextField {
+        switch field {
+        case .detected: return detectedHeading
+        case .expected: return expectedHeading
+        case .recovery: return recoveryHeading
+        case .nextAction: return actionHeading
+        }
+    }
+
+    private func valueHeight(for field: Field, width: CGFloat) -> CGFloat {
+        switch field {
+        case .detected:
+            if let proofList { return proofList.height(forWidth: width) }
+            return detectedNote.height(forWidth: width)
+        case .expected:
+            return labelHeight(expectedLabel.stringValue, Metric.noteFont, width: width)
+        case .recovery:
+            guard recoveryText != nil else { return 0 }
+            return labelHeight(recoveryLabel.stringValue, Metric.noteFont, width: width)
+        case .nextAction:
+            return actionButton.frame.height
+        }
+    }
+
+    private func value(for field: Field) -> NSView {
+        switch field {
+        case .detected: return proofList ?? detectedNote
+        case .expected: return expectedLabel
+        case .recovery: return recoveryLabel
+        case .nextAction: return actionButton
+        }
+    }
+
+    private func walk(width: CGFloat, place: Bool) -> CGFloat {
+        let inset: CGFloat = primary ? 20 : 16
+        let inner = max(80, width - inset * 2)
+        var y = inset
+
+        let titleHeight = labelHeight(titleLabel.stringValue, titleLabel.font ?? Metric.labelFont,
+                                      width: inner)
+        if place { titleLabel.frame = NSRect(x: inset, y: y, width: inner, height: titleHeight) }
+        y += titleHeight + 7
+
+        let summaryHeight = labelHeight(summaryLabel.stringValue, Metric.noteFont, width: inner)
+        if place { summaryLabel.frame = NSRect(x: inset, y: y, width: inner, height: summaryHeight) }
+        y += summaryHeight
+
+        if let noticeLabel {
+            y += 10
+            let noticeHeight = labelHeight(noticeLabel.stringValue,
+                                           noticeLabel.font ?? Metric.noteFont, width: inner)
+            if place {
+                noticeLabel.frame = NSRect(x: inset, y: y, width: inner, height: noticeHeight)
+            }
+            y += noticeHeight
+        }
+
+        y += 15
+        if place { rule.frame = NSRect(x: inset, y: y, width: inner, height: 1) }
+        y += 15
+
+        for field in Self.fieldOrder {
+            if field == .recovery, recoveryText == nil { continue }
+            let label = heading(for: field)
+            if place { label.frame = NSRect(x: inset, y: y, width: inner, height: 13) }
+            y += 18
+            let height = valueHeight(for: field, width: inner)
+            if place {
+                value(for: field).frame = NSRect(x: inset, y: y, width: inner, height: height)
+            }
+            y += height + 13
+        }
+        return y + inset - 13
+    }
+
+    func height(forWidth width: CGFloat) -> CGFloat { walk(width: width, place: false) }
+
+    override func layout() {
+        super.layout()
+        _ = walk(width: bounds.width, place: true)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: primary ? 12 : 9, yRadius: primary ? 12 : 9)
+        let fill = primary
+            ? Style.accent.withAlphaComponent(0.075)
+            : Style.chipFill.withAlphaComponent(0.72)
+        fill.setFill()
+        path.fill()
+        (primary ? Style.accent.withAlphaComponent(0.52) : Style.chipEdge).setStroke()
+        path.lineWidth = primary ? 1.25 : 1
+        path.stroke()
+    }
+}
+
+
 /// AppKit owns this singleton on the main thread. The only background closure captures it weakly
 /// and returns through `DispatchQueue.main` before reading or mutating any field.
 final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
     static let shared = HomeWindow()
 
     private var window: NSWindow?
-    private var stateValue: NSTextField?
-    private var localExpectedValue: NSTextField?
-    private var localRecoveryValue: NSTextField?
-    private var actionButton: NSButton?
+    private var scroll: NSScrollView?
+    private var document: FlippedView?
+    private var titleLabel: NSTextField?
+    private var welcomeLabel: NSTextField?
+    private var purposeLabel: NSTextField?
+    private var headerRule: Hairline?
+    private var localCard: HomeRouteCard?
+    private var cloudflareCard: HomeRouteCard?
+    private var cloudCard: HomeRouteCard?
+    private var completionStatusValue: NSTextField?
     private var timer: Timer?
     private var health = LocalHealthEvidence.notChecked
     private var healthRequestInFlight = false
@@ -543,17 +765,9 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
     private var localConfigurationFailed = false
     private var localDeviceID: String?
     private var localToken: String?
-    private var cloudflareStateValue: NSTextField?
-    private var cloudflareExpectedValue: NSTextField?
-    private var cloudflareRecoveryValue: NSTextField?
-    private var cloudflareActionButton: NSButton?
     private var cloudflareDeviceID: String?
     private var cloudflareToken: String?
     private var cloudflareQRWindow: NSWindow?
-    private var cloudStateValue: NSTextField?
-    private var cloudExpectedValue: NSTextField?
-    private var cloudRecoveryValue: NSTextField?
-    private var cloudActionButton: NSButton?
     private var cloudPairingAttempt: CloudPairingAttempt?
     private var cloudKnownDeviceIDs = Set<String>()
     private var cloudDeviceSnapshotAvailable = false
@@ -567,7 +781,6 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
                                                qos: .utility)
     private var completionRecorded = false
     private var completionAttempted = false
-    private var completionStatusValue: NSTextField?
 
     private override init() { super.init() }
 
@@ -609,172 +822,138 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
     }
 
     private func buildWindow() -> NSWindow {
-        let frame = NSRect(x: 0, y: 0, width: 760, height: 820)
-        let content = NSView(frame: frame)
+        let frame = NSRect(x: 0, y: 0, width: 820, height: 740)
+        let content = FlippedView(frame: frame)
         content.wantsLayer = true
-        content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        content.layer?.backgroundColor = Style.ink.cgColor
 
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -28),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 26),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -26),
-        ])
+        let scroll = NSScrollView(frame: content.bounds)
+        scroll.autoresizingMask = [.width, .height]
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.contentView.drawsBackground = false
+        content.addSubview(scroll)
+        self.scroll = scroll
 
-        let title = label(L.t.homeTitle, size: 28, weight: .bold)
-        stack.addArrangedSubview(title)
-        stack.addArrangedSubview(label(L.t.homeWelcome, size: 14, color: .secondaryLabelColor))
-        stack.addArrangedSubview(label(L.t.homePurpose, size: 16, weight: .semibold))
+        let document = FlippedView(frame: frame)
+        scroll.documentView = document
+        self.document = document
 
-        let local = card(title: L.t.homeLocalTitle, summary: L.t.homeLocalSummary)
-        let detail = NSStackView()
-        detail.orientation = .vertical
-        detail.alignment = .leading
-        detail.spacing = 8
-        detail.translatesAutoresizingMaskIntoConstraints = false
-        local.content.addArrangedSubview(detail)
+        let title = makeLabel(L.t.homeTitle,
+                              NSFont.systemFont(ofSize: 27, weight: .semibold), Metric.label)
+        let welcome = makeLabel(L.t.homeWelcome, Metric.noteFont, Metric.soft)
+        let purpose = makeLabel(L.t.homePurpose,
+                                NSFont.systemFont(ofSize: 13, weight: .semibold), Style.accent)
+        let rule = Hairline()
+        [title, welcome, purpose, rule].forEach(document.addSubview)
+        titleLabel = title
+        welcomeLabel = welcome
+        purposeLabel = purpose
+        headerRule = rule
 
-        let state = label("", size: 13, weight: .medium)
-        stateValue = state
-        let localExpected = label("", size: 13)
-        let localRecovery = label("", size: 13)
-        localExpectedValue = localExpected
-        localRecoveryValue = localRecovery
-        detail.addArrangedSubview(label(L.t.setupLocalReadOnlyAction, size: 13,
-                                        color: .secondaryLabelColor))
-        detail.addArrangedSubview(row(L.t.setupDetected, value: state))
-        detail.addArrangedSubview(row(L.t.setupExpected, value: localExpected))
-        detail.addArrangedSubview(row(L.t.setupRecovery, value: localRecovery))
-        let action = NSButton(title: "", target: self, action: #selector(performLocalAction))
-        action.bezelStyle = .rounded
-        actionButton = action
-        detail.addArrangedSubview(row(L.t.setupNextAction, value: action))
-        stack.addArrangedSubview(local.box)
+        let local = HomeRouteCard(
+            title: L.t.homeLocalTitle, summary: L.t.homeLocalSummary,
+            notice: L.t.setupLocalReadOnlyAction, primary: true,
+            action: { [weak self] in self?.performLocalAction() })
+        let cloudflare = HomeRouteCard(
+            title: L.t.homeCloudflareTitle, summary: L.t.homeCloudflareSummary,
+            primary: false, action: { [weak self] in self?.performCloudflareAction() })
+        let cloud = HomeRouteCard(
+            title: L.t.homeCloudPreviewTitle, summary: L.t.homeCloudPreviewSummary,
+            primary: false, proofList: true,
+            action: { [weak self] in self?.performCloudAction() })
+        [local, cloudflare, cloud].forEach(document.addSubview)
+        localCard = local
+        cloudflareCard = cloudflare
+        cloudCard = cloud
 
-        let remoteCards = NSStackView()
-        remoteCards.orientation = .horizontal
-        remoteCards.alignment = .top
-        remoteCards.distribution = .fillEqually
-        remoteCards.spacing = 14
-        let cloudflare = card(title: L.t.homeCloudflareTitle,
-                              summary: L.t.homeCloudflareSummary)
-        let cloudflareState = label("", size: 12, weight: .medium)
-        let cloudflareRecovery = label("", size: 12)
-        let cloudflareAction = NSButton(title: "", target: self,
-                                        action: #selector(performCloudflareAction))
-        cloudflareAction.bezelStyle = .rounded
-        cloudflareStateValue = cloudflareState
-        let cloudflareExpected = label("", size: 12)
-        cloudflareExpectedValue = cloudflareExpected
-        cloudflareRecoveryValue = cloudflareRecovery
-        cloudflareActionButton = cloudflareAction
-        cloudflare.content.addArrangedSubview(compactRow(
-            L.t.setupDetected, value: cloudflareState))
-        cloudflare.content.addArrangedSubview(compactRow(
-            L.t.setupNextAction, value: cloudflareAction))
-        cloudflare.content.addArrangedSubview(compactRow(
-            L.t.setupExpected, value: cloudflareExpected))
-        cloudflare.content.addArrangedSubview(compactRow(
-            L.t.setupRecovery, value: cloudflareRecovery))
-
-        let preview = card(title: L.t.homeCloudPreviewTitle,
-                           summary: L.t.homeCloudPreviewSummary)
-        let cloudState = label("", size: 12, weight: .medium)
-        let cloudRecovery = label("", size: 12)
-        let cloudAction = NSButton(title: "", target: self,
-                                   action: #selector(performCloudAction))
-        cloudAction.bezelStyle = .rounded
-        cloudStateValue = cloudState
-        let cloudExpected = label("", size: 12)
-        cloudExpectedValue = cloudExpected
-        cloudRecoveryValue = cloudRecovery
-        cloudActionButton = cloudAction
-        preview.content.addArrangedSubview(compactRow(L.t.setupDetected, value: cloudState))
-        preview.content.addArrangedSubview(compactRow(L.t.setupNextAction, value: cloudAction))
-        preview.content.addArrangedSubview(compactRow(
-            L.t.setupExpected, value: cloudExpected))
-        preview.content.addArrangedSubview(compactRow(L.t.setupRecovery, value: cloudRecovery))
-
-        remoteCards.addArrangedSubview(cloudflare.box)
-        remoteCards.addArrangedSubview(preview.box)
-        stack.addArrangedSubview(remoteCards)
-        let completionStatus = label(L.t.setupDismissalHint, size: 12,
-                                     color: .secondaryLabelColor)
+        let completionStatus = makeLabel(L.t.setupDismissalHint, Metric.hintFont, Metric.faint)
+        completionStatus.isSelectable = true
+        document.addSubview(completionStatus)
         completionStatusValue = completionStatus
-        stack.addArrangedSubview(completionStatus)
-        NSLayoutConstraint.activate([
-            local.box.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            remoteCards.widthAnchor.constraint(equalTo: stack.widthAnchor),
-        ])
 
         let window = NSWindow(contentRect: frame,
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = L.t.homeTitle
-        window.minSize = NSSize(width: 680, height: 760)
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = Style.ink
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.minSize = NSSize(width: 680, height: 620)
         window.contentView = content
         window.isReleasedWhenClosed = false
         window.delegate = self
+        window.initialFirstResponder = content
+        layoutHome()
         return window
     }
 
-    private typealias Card = (box: NSBox, content: NSStackView)
-
-    private func card(title: String, summary: String) -> Card {
-        let box = NSBox()
-        box.boxType = .custom
-        box.borderColor = NSColor.separatorColor
-        box.cornerRadius = 10
-        box.contentViewMargins = NSSize(width: 18, height: 16)
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 9
-        stack.addArrangedSubview(label(title, size: 17, weight: .semibold))
-        stack.addArrangedSubview(label(summary, size: 13, color: .secondaryLabelColor))
-        box.contentView = stack
-        return (box, stack)
+    func windowDidResize(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
+        layoutHome()
     }
 
-    private func row(_ name: String, value: NSView) -> NSView {
-        let stack = NSStackView()
-        stack.orientation = .horizontal
-        stack.alignment = .top
-        stack.spacing = 10
-        let heading = label(name, size: 12, weight: .semibold, color: .secondaryLabelColor)
-        heading.widthAnchor.constraint(equalToConstant: 118).isActive = true
-        stack.addArrangedSubview(heading)
-        stack.addArrangedSubview(value)
-        return stack
-    }
+    private func layoutHome() {
+        guard let scroll, let document, let titleLabel, let welcomeLabel, let purposeLabel,
+              let headerRule, let localCard, let cloudflareCard, let cloudCard,
+              let completionStatusValue else { return }
 
-    private func compactRow(_ name: String, value: NSView) -> NSView {
-        let stack = NSStackView()
-        stack.orientation = .horizontal
-        stack.alignment = .top
-        stack.spacing = 8
-        let heading = label(name, size: 11, weight: .semibold, color: .secondaryLabelColor)
-        heading.widthAnchor.constraint(equalToConstant: 82).isActive = true
-        stack.addArrangedSubview(heading)
-        stack.addArrangedSubview(value)
-        return stack
-    }
+        let width = max(640, scroll.contentSize.width)
+        let inset: CGFloat = 30
+        let inner = width - inset * 2
+        var y: CGFloat = 27
 
-    private func label(_ text: String, size: CGFloat,
-                       weight: NSFont.Weight = .regular,
-                       color: NSColor = .labelColor) -> NSTextField {
-        let field = NSTextField(wrappingLabelWithString: text)
-        field.font = NSFont.systemFont(ofSize: size, weight: weight)
-        field.textColor = color
-        field.maximumNumberOfLines = 0
-        field.lineBreakMode = .byWordWrapping
-        return field
+        let titleHeight = labelHeight(titleLabel.stringValue,
+                                      titleLabel.font ?? Metric.labelFont, width: inner)
+        titleLabel.frame = NSRect(x: inset, y: y, width: inner, height: titleHeight)
+        y += titleHeight + 8
+
+        let welcomeWidth = min(inner, Metric.maxMeasure)
+        let welcomeHeight = labelHeight(welcomeLabel.stringValue, Metric.noteFont,
+                                        width: welcomeWidth)
+        welcomeLabel.frame = NSRect(x: inset, y: y, width: welcomeWidth, height: welcomeHeight)
+        y += welcomeHeight + 18
+
+        purposeLabel.frame = NSRect(x: inset, y: y, width: inner, height: 17)
+        y += 25
+        headerRule.frame = NSRect(x: inset, y: y, width: inner, height: 1)
+        y += 18
+
+        let localHeight = localCard.height(forWidth: inner)
+        localCard.frame = NSRect(x: inset, y: y, width: inner, height: localHeight)
+        y += localHeight + 16
+
+        let twoUp = inner >= 700
+        if twoUp {
+            let gap: CGFloat = 16
+            let cardWidth = (inner - gap) / 2
+            let cloudflareHeight = cloudflareCard.height(forWidth: cardWidth)
+            let cloudHeight = cloudCard.height(forWidth: cardWidth)
+            cloudflareCard.frame = NSRect(x: inset, y: y, width: cardWidth,
+                                          height: cloudflareHeight)
+            cloudCard.frame = NSRect(x: inset + cardWidth + gap, y: y, width: cardWidth,
+                                     height: cloudHeight)
+            y += max(cloudflareHeight, cloudHeight) + 18
+        } else {
+            let cloudflareHeight = cloudflareCard.height(forWidth: inner)
+            cloudflareCard.frame = NSRect(x: inset, y: y, width: inner,
+                                          height: cloudflareHeight)
+            y += cloudflareHeight + 14
+            let cloudHeight = cloudCard.height(forWidth: inner)
+            cloudCard.frame = NSRect(x: inset, y: y, width: inner, height: cloudHeight)
+            y += cloudHeight + 18
+        }
+
+        let footerWidth = min(inner, Metric.maxMeasure)
+        let footerHeight = labelHeight(completionStatusValue.stringValue,
+                                       Metric.hintFont, width: footerWidth)
+        completionStatusValue.frame = NSRect(x: inset, y: y,
+                                             width: footerWidth, height: footerHeight)
+        y += footerHeight + 28
+        document.frame = NSRect(x: 0, y: 0, width: width, height: y.rounded())
+        document.needsLayout = true
     }
 
     private var decision: LocalBrowserDecision {
@@ -796,29 +975,44 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
 
     private func refresh() {
         let current = decision
+        let state: String
         switch current.phase {
-        case .serverOff: stateValue?.stringValue = L.t.setupLocalServerOff
-        case .configurationFailed: stateValue?.stringValue = L.t.setupLocalConfigurationFailed
-        case .checkingHealth: stateValue?.stringValue = L.t.setupLocalChecking
-        case .healthFailed(let failure):
-            stateValue?.stringValue = L.t.setupLocalHealthFailure(failure)
-        case .readyToOpen: stateValue?.stringValue = L.t.setupLocalReady
-        case .awaitingDevice: stateValue?.stringValue = L.t.setupLocalWaiting
-        case .connected: stateValue?.stringValue = L.t.setupLocalConnected
+        case .serverOff: state = L.t.setupLocalServerOff
+        case .configurationFailed: state = L.t.setupLocalConfigurationFailed
+        case .checkingHealth: state = L.t.setupLocalChecking
+        case .healthFailed(let failure): state = L.t.setupLocalHealthFailure(failure)
+        case .readyToOpen: state = L.t.setupLocalReady
+        case .awaitingDevice: state = L.t.setupLocalWaiting
+        case .connected: state = L.t.setupLocalConnected
         }
+
+        let actionTitle: String
         switch current.action {
-        case .enableServer: actionButton?.title = L.t.setupLocalEnable
-        case .retryHealth: actionButton?.title = L.t.setupLocalRetry
-        case .openBrowser: actionButton?.title = L.t.setupLocalOpen
-        case .openBrowserAgain: actionButton?.title = L.t.setupLocalOpenAgain
-        case .finish: actionButton?.title = L.t.setupFinish
+        case .enableServer: actionTitle = L.t.setupLocalEnable
+        case .retryHealth: actionTitle = L.t.setupLocalRetry
+        case .openBrowser: actionTitle = L.t.setupLocalOpen
+        case .openBrowserAgain: actionTitle = L.t.setupLocalOpenAgain
+        case .finish: actionTitle = L.t.setupFinish
         }
-        localExpectedValue?.stringValue = L.t.setupLocalExpected(current.phase)
-        localRecoveryValue?.stringValue = L.t.setupLocalRecovery(current.phase)
+        localCard?.update(
+            state: state, dot: localDot(for: current.phase),
+            expected: L.t.setupLocalExpected(current.phase),
+            recovery: L.t.setupLocalRecovery(current.phase),
+            actionTitle: actionTitle)
         if current.succeeded { recordCompletion(for: .routeSucceeded) }
 
         refreshCloudflare()
         refreshCloud()
+        layoutHome()
+    }
+
+    private func localDot(for phase: LocalBrowserPhase) -> PixelDot.State {
+        switch phase {
+        case .checkingHealth: return .busy
+        case .configurationFailed, .healthFailed: return .warn
+        case .readyToOpen, .awaitingDevice, .connected: return .live
+        case .serverOff: return .idle
+        }
     }
 
     private func refreshCloudflare() {
@@ -849,61 +1043,70 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
 
         let status: String
         switch current.phase {
-        case .cloudflaredMissing:
-            status = L.t.setupTunnelMissing
-        case .tunnelOff:
-            status = L.t.setupTunnelOff
-        case .starting:
-            status = L.t.setupTunnelStarting
-        case .ready(let url):
-            status = L.t.setupTunnelReady(url)
-        case .awaitingDevice(let url):
-            status = L.t.setupTunnelWaiting(url)
-        case .connected(let url):
-            status = L.t.setupTunnelConnected(url)
-        case .failed(let reason):
-            status = reason
+        case .cloudflaredMissing: status = L.t.setupTunnelMissing
+        case .tunnelOff: status = L.t.setupTunnelOff
+        case .starting: status = L.t.setupTunnelStarting
+        case .ready(let url): status = L.t.setupTunnelReady(url)
+        case .awaitingDevice(let url): status = L.t.setupTunnelWaiting(url)
+        case .connected(let url): status = L.t.setupTunnelConnected(url)
+        case .failed(let reason): status = reason
         }
-        cloudflareStateValue?.stringValue = L.t.setupTunnelFacts(
-            modeName, tunnelName, shownHost, status + "\n" + access)
-        cloudflareExpectedValue?.stringValue = L.t.setupTunnelExpected(current.phase)
-        cloudflareRecoveryValue?.stringValue = L.t.setupTunnelRecovery(current.phase)
+
+        let actionTitle: String
         switch current.action {
         case .installCloudflared, .openSettings:
-            cloudflareActionButton?.title = L.t.setupOpenRemoteSettings
+            actionTitle = L.t.setupOpenRemoteSettings
         case .checkAgain:
-            cloudflareActionButton?.title = L.t.setupCheckTunnel
+            actionTitle = L.t.setupCheckTunnel
         case .showQR:
-            cloudflareActionButton?.title = L.t.setupShowPhoneQR
+            actionTitle = L.t.setupShowPhoneQR
         case .showQRAgain:
-            cloudflareActionButton?.title = L.t.setupShowPhoneQRAgain
+            actionTitle = L.t.setupShowPhoneQRAgain
         case .finish:
-            cloudflareActionButton?.title = L.t.setupFinish
+            actionTitle = L.t.setupFinish
         }
+        cloudflareCard?.update(
+            state: L.t.setupTunnelFacts(modeName, tunnelName, shownHost, status + "\n" + access),
+            dot: cloudflareDot(for: current.phase),
+            expected: L.t.setupTunnelExpected(current.phase),
+            recovery: L.t.setupTunnelRecovery(current.phase),
+            actionTitle: actionTitle)
+
         if current.qrURL == nil {
             closeCloudflareQR(revokingUnseenCredential: true)
         }
         if current.succeeded { recordCompletion(for: .routeSucceeded) }
     }
 
+    private func cloudflareDot(for phase: CloudflareOnboardingPhase) -> PixelDot.State {
+        switch phase {
+        case .starting: return .busy
+        case .failed, .cloudflaredMissing: return .warn
+        case .ready, .awaitingDevice, .connected: return .live
+        case .tunnelOff: return .idle
+        }
+    }
+
     private func refreshCloud() {
         let current = cloudDecisionCache
-        cloudStateValue?.stringValue = L.t.setupCloudFacts(
+        let facts = L.t.setupCloudFacts(
             cloudProof(current.account, kind: .account),
             cloudProof(current.machineCredential, kind: .credential),
             cloudProof(current.relayReady, kind: .relay),
             cloudProof(current.e2eePairing, kind: .pairing),
             cloudProof(current.viewerReceipt, kind: .receipt))
+
+        let actionTitle: String
         switch current.action {
-        case .openCloudSettings:
-            cloudActionButton?.title = L.t.setupOpenCloudSettings
-        case .pairPhone:
-            cloudActionButton?.title = L.t.setupPairCloudPhone
-        case .reviewPreviewStatus:
-            cloudActionButton?.title = L.t.setupReviewCloudPreview
+        case .openCloudSettings: actionTitle = L.t.setupOpenCloudSettings
+        case .pairPhone: actionTitle = L.t.setupPairCloudPhone
+        case .reviewPreviewStatus: actionTitle = L.t.setupReviewCloudPreview
         }
-        cloudExpectedValue?.stringValue = L.t.setupCloudExpected(current)
-        cloudRecoveryValue?.stringValue = L.t.setupCloudRecovery(current)
+        cloudCard?.update(
+            state: facts, dot: .idle,
+            expected: L.t.setupCloudExpected(current),
+            recovery: L.t.setupCloudRecovery(current),
+            actionTitle: actionTitle)
     }
 
     private enum CloudProofKind { case account, credential, relay, pairing, receipt }
@@ -1013,7 +1216,10 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
     private func showCloudflareQR(url: String) {
         let side: CGFloat = 280
         let content = NSView(frame: NSRect(x: 0, y: 0, width: side + 48, height: side + 126))
-        let title = label(L.t.setupScanLiveTunnel, size: 16, weight: .semibold)
+        content.wantsLayer = true
+        content.layer?.backgroundColor = Style.ink.cgColor
+        let title = makeLabel(L.t.setupScanLiveTunnel,
+                              NSFont.systemFont(ofSize: 16, weight: .semibold), Metric.label)
         title.alignment = .center
         title.frame = NSRect(x: 24, y: side + 82, width: side, height: 24)
         content.addSubview(title)
@@ -1023,7 +1229,7 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
         image.wantsLayer = true
         image.layer?.backgroundColor = NSColor.white.cgColor
         content.addSubview(image)
-        let address = label(url, size: 9, color: .secondaryLabelColor)
+        let address = makeLabel(url, Metric.monoFont, Metric.faint)
         address.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
         address.alignment = .center
         address.isSelectable = true
@@ -1032,6 +1238,9 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
         let qr = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable],
                           backing: .buffered, defer: false)
         qr.title = L.t.homeCloudflareTitle
+        qr.titlebarAppearsTransparent = true
+        qr.backgroundColor = Style.ink
+        qr.appearance = NSAppearance(named: .darkAqua)
         qr.contentView = content
         qr.isReleasedWhenClosed = false
         qr.center()

@@ -789,7 +789,7 @@ struct Spanish: Copy {
     let setupLocalExpected = "Se abre y autentica un navegador de solo lectura; también funciona sin sesiones activas."
     let setupLocalRecovery = "Si se detiene, mantén esta ventana abierta y vuelve a comprobar. Puedes revisar servidor y puerto en Ajustes."
     let setupNoRecovery = "No hace falta recuperación; esta ruta está probada."
-    let setupLocalReadOnlyAction = "Esta acción guarda solo lectura · desactiva el control"
+    let setupLocalReadOnlyAction = "Esta acción guarda el acceso de solo lectura y mantiene el control desactivado."
     let setupReadOnly = "Solo lectura · el control sigue desactivado"
     let setupLocalDeviceName = "Navegador del Centro de configuración"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Modo: \(mode)\nTúnel: \(tunnel)\nHost del QR: \(hostname)\nEstado: \(status)" }

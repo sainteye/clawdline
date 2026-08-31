@@ -789,7 +789,7 @@ struct Russian: Copy {
     let setupLocalExpected = "Браузер только для чтения открывается и проходит проверку даже без активных сеансов."
     let setupLocalRecovery = "Если процесс остановился, оставьте окно открытым и проверьте снова. Сервер и порт указаны в Настройках."
     let setupNoRecovery = "Восстановление не требуется; этот маршрут доказан."
-    let setupLocalReadOnlyAction = "Действие сохраняет режим чтения · управление отключается"
+    let setupLocalReadOnlyAction = "Это действие сохраняет доступ только для чтения и оставляет управление выключенным."
     let setupReadOnly = "Только чтение · управление выключено"
     let setupLocalDeviceName = "Браузер центра настройки"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Режим: \(mode)\nТуннель: \(tunnel)\nХост QR: \(hostname)\nСостояние: \(status)" }

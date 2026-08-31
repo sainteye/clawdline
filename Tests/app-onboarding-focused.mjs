@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 
 const source = resolve(process.env.CLAWDLINE_ONBOARDING_SOURCE || "Sources/Onboarding.swift");
 const sourcesDirectory = resolve(process.env.CLAWDLINE_SOURCES_DIR || "Sources");
+const stringsSource = resolve(process.env.CLAWDLINE_STRINGS_SOURCE || "Sources/Strings.swift");
 const installer = resolve(process.env.CLAWDLINE_INSTALL_SOURCE || "install.sh");
 const work = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "clawdline-onboarding-"));
 
@@ -34,6 +35,23 @@ try {
             subject.includes("enum PhoneCredentialIssuer") &&
             subject.includes("enum CloudPreviewEvidencePolicy"),
             "focused subject contains the production evidence seams");
+
+  checkNode(subject.includes(
+              "private static let fieldOrder: [Field] = [.detected, .expected, .recovery, .nextAction]"),
+            "all Home routes share detected, expected, recovery, next-action order");
+
+  const strings = readFileSync(stringsSource, "utf8");
+  const localRecovery = strings.match(
+    /func setupLocalRecovery\(_ phase: LocalBrowserPhase\) -> String\? \{[\s\S]*?\n    \}/)?.[0] || "";
+  const tunnelRecovery = strings.match(
+    /func setupTunnelRecovery\(_ phase: CloudflareOnboardingPhase\) -> String\? \{[\s\S]*?\n    \}/)?.[0] || "";
+  const cloudRecovery = strings.match(
+    /func setupCloudRecovery\(_ decision: CloudPreviewDecision\) -> String\? \{[\s\S]*?\n    \}/)?.[0] || "";
+  checkNode(localRecovery.length > 0 && tunnelRecovery.length > 0 && cloudRecovery.length > 0 &&
+            !localRecovery.includes("setupNextAction") &&
+            !tunnelRecovery.includes("setupNextAction") &&
+            !cloudRecovery.includes("setupNextAction"),
+            "recovery is optional guidance, never a restatement of its action label");
 
   const harness = join(work, "main.swift");
   const binary = join(work, "onboarding-focused");
@@ -349,8 +367,8 @@ printf '%s' "$1" > "${openRecord}"
             readFileSync(openRecord, "utf8") === join(installDest, "Clawdline.app"),
             "successful install actually calls open on the exact installed app path");
 
-  checkNode(nodeChecks === 6, "expected Node integration check count");
-  console.log("7 node checks passed");
+  checkNode(nodeChecks === 8, "expected Node integration check count");
+  console.log("9 node checks passed");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

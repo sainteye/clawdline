@@ -787,7 +787,7 @@ struct Japanese: Copy {
     let setupLocalExpected = "読み取り専用ブラウザが開いて認証されます。アクティブなセッションがなくても成功です。"
     let setupLocalRecovery = "止まった場合はこのウインドウを開いたまま再確認してください。設定でサーバとポートも確認できます。"
     let setupNoRecovery = "復旧は不要です。この経路は証明済みです。"
-    let setupLocalReadOnlyAction = "この操作で読み取り専用を保存し · 操作機能をオフにします"
+    let setupLocalReadOnlyAction = "この操作は読み取り専用アクセスを保存し、操作機能をオフのままにします。"
     let setupReadOnly = "読み取り専用 · 操作はオフのまま"
     let setupLocalDeviceName = "設定センターのブラウザ"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "モード：\(mode)\nトンネル：\(tunnel)\nQR ホスト名：\(hostname)\n状態：\(status)" }

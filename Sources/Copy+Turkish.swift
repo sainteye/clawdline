@@ -789,7 +789,7 @@ struct Turkish: Copy {
     let setupLocalExpected = "Salt okunur tarayıcı açılıp kimlik doğrular; etkin oturum olmasa da başarılıdır."
     let setupLocalRecovery = "Takılırsa bu pencereyi açık tutup yeniden denetleyin. Sunucu ve bağlantı noktası Ayarlar’dadır."
     let setupNoRecovery = "Kurtarma gerekmiyor; bu yol kanıtlandı."
-    let setupLocalReadOnlyAction = "Bu eylem salt okunuru kaydeder · denetimi kapatır"
+    let setupLocalReadOnlyAction = "Bu eylem salt okunur erişimi kaydeder ve denetimi kapalı tutar."
     let setupReadOnly = "Salt okunur · denetim kapalı kalır"
     let setupLocalDeviceName = "Kurulum Merkezi tarayıcısı"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Mod: \(mode)\nTünel: \(tunnel)\nQR ana makinesi: \(hostname)\nDurum: \(status)" }

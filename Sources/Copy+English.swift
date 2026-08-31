@@ -788,7 +788,7 @@ struct English: Copy {
     let setupLocalExpected = "A read-only browser opens, authenticates, and succeeds even when no sessions are active."
     let setupLocalRecovery = "If this stalls, keep this window open and check again. You can review the server and port in Settings."
     let setupNoRecovery = "No recovery is needed; this route is proved."
-    let setupLocalReadOnlyAction = "This action saves read only · it turns control off"
+    let setupLocalReadOnlyAction = "This saves read-only access and keeps control turned off."
     let setupReadOnly = "Read only · control remains off"
     let setupLocalDeviceName = "Setup browser on this Mac"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {

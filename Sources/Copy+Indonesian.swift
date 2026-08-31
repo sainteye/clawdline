@@ -789,7 +789,7 @@ struct Indonesian: Copy {
     let setupLocalExpected = "Browser hanya-baca terbuka dan terautentikasi, bahkan tanpa sesi aktif."
     let setupLocalRecovery = "Jika macet, biarkan jendela ini terbuka lalu periksa lagi. Server dan port tersedia di Pengaturan."
     let setupNoRecovery = "Tidak perlu pemulihan; rute ini telah terbukti."
-    let setupLocalReadOnlyAction = "Tindakan ini menyimpan hanya-baca · kendali dimatikan"
+    let setupLocalReadOnlyAction = "Tindakan ini menyimpan akses hanya baca dan membiarkan kendali tetap mati."
     let setupReadOnly = "Hanya baca · kendali tetap mati"
     let setupLocalDeviceName = "Browser Pusat Penyiapan"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Mode: \(mode)\nTunnel: \(tunnel)\nHostname QR: \(hostname)\nStatus: \(status)" }

@@ -788,7 +788,7 @@ struct TraditionalChinese: Copy {
     let setupLocalExpected = "唯讀瀏覽器會開啟並完成驗證；即使沒有作用中的工作階段也算成功。"
     let setupLocalRecovery = "若停在這裡，請保持此視窗開啟並再次檢查。你也可在「設定」查看伺服器與連接埠。"
     let setupNoRecovery = "此路線已有證明，不需要復原。"
-    let setupLocalReadOnlyAction = "此動作會儲存唯讀設定 · 並關閉控制功能"
+    let setupLocalReadOnlyAction = "這會儲存唯讀存取方式，並讓控制功能保持關閉。"
     let setupReadOnly = "唯讀 · 控制功能保持關閉"
     let setupLocalDeviceName = "這台 Mac 的設定中心瀏覽器"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {
@@ -1643,7 +1643,7 @@ struct SimplifiedChinese: Copy {
     let setupLocalExpected = "只读浏览器会打开并完成验证；即使没有活动会话也算成功。"
     let setupLocalRecovery = "如果停在这里，请保持窗口打开并再次检查。也可在“设置”中查看服务器和端口。"
     let setupNoRecovery = "此路线已有证明，无需恢复。"
-    let setupLocalReadOnlyAction = "此操作会保存只读设置 · 并关闭控制功能"
+    let setupLocalReadOnlyAction = "这会保存只读访问方式，并让控制功能保持关闭。"
     let setupReadOnly = "只读 · 控制功能保持关闭"
     let setupLocalDeviceName = "这台 Mac 的设置中心浏览器"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {

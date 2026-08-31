@@ -98,6 +98,7 @@ clawdline_production_sources=(
   Sources/Voice.swift
   Sources/WebPush.swift
   Sources/Whisper.swift
+  Sources/WindowChrome.swift
   Sources/main.swift
 )
 

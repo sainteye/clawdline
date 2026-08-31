@@ -793,7 +793,7 @@ struct Hindi: Copy {
     let setupLocalExpected = "read-only browser खुलकर authenticate होता है; active session न होने पर भी यह सफल है।"
     let setupLocalRecovery = "रुकने पर यह विंडो खुली रखें और फिर जाँचें। Settings में server और port देख सकते हैं।"
     let setupNoRecovery = "recovery की जरूरत नहीं; यह route प्रमाणित है।"
-    let setupLocalReadOnlyAction = "यह action read-only save करता है · control बंद करता है"
+    let setupLocalReadOnlyAction = "यह कार्रवाई केवल-पढ़ने की पहुँच सहेजती है और नियंत्रण बंद रखती है।"
     let setupReadOnly = "केवल पढ़ना · control बंद रहता है"
     let setupLocalDeviceName = "Setup Center का browser"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "मोड: \(mode)\nTunnel: \(tunnel)\nQR hostname: \(hostname)\nस्थिति: \(status)" }

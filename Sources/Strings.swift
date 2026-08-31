@@ -1377,7 +1377,7 @@ protocol Copy {
     var setupLocalOpenAgain: String { get }
     var setupFinish: String { get }
     func setupLocalExpected(_ phase: LocalBrowserPhase) -> String
-    func setupLocalRecovery(_ phase: LocalBrowserPhase) -> String
+    func setupLocalRecovery(_ phase: LocalBrowserPhase) -> String?
     var setupLocalExpected: String { get }
     var setupLocalRecovery: String { get }
     var setupNoRecovery: String { get }
@@ -1399,7 +1399,7 @@ protocol Copy {
     func setupTunnelWaiting(_ url: String) -> String
     func setupTunnelConnected(_ url: String) -> String
     func setupTunnelExpected(_ phase: CloudflareOnboardingPhase) -> String
-    func setupTunnelRecovery(_ phase: CloudflareOnboardingPhase) -> String
+    func setupTunnelRecovery(_ phase: CloudflareOnboardingPhase) -> String?
     var setupTunnelExpected: String { get }
     var setupTunnelRecovery: String { get }
     var setupOpenRemoteSettings: String { get }
@@ -1410,7 +1410,7 @@ protocol Copy {
     func setupCloudFacts(_ account: String, _ credential: String, _ relay: String,
                          _ pairing: String, _ receipt: String) -> String
     func setupCloudExpected(_ decision: CloudPreviewDecision) -> String
-    func setupCloudRecovery(_ decision: CloudPreviewDecision) -> String
+    func setupCloudRecovery(_ decision: CloudPreviewDecision) -> String?
     var setupCloudExpected: String { get }
     var setupCloudRecovery: String { get }
     var setupOpenCloudSettings: String { get }
@@ -1462,18 +1462,12 @@ extension Copy {
         }
     }
 
-    func setupLocalRecovery(_ phase: LocalBrowserPhase) -> String {
+    func setupLocalRecovery(_ phase: LocalBrowserPhase) -> String? {
         switch phase {
-        case .serverOff, .configurationFailed:
-            return "\(setupNextAction): \(setupLocalEnable)"
-        case .checkingHealth, .healthFailed:
-            return "\(setupNextAction): \(setupLocalRetry)"
-        case .readyToOpen:
-            return "\(setupNextAction): \(setupLocalOpen)"
-        case .awaitingDevice:
-            return "\(setupNextAction): \(setupLocalOpenAgain)"
-        case .connected:
-            return setupNoRecovery
+        case .configurationFailed, .healthFailed:
+            return setupLocalRecovery
+        case .serverOff, .checkingHealth, .readyToOpen, .awaitingDevice, .connected:
+            return nil
         }
     }
 
@@ -1487,35 +1481,21 @@ extension Copy {
         }
     }
 
-    func setupTunnelRecovery(_ phase: CloudflareOnboardingPhase) -> String {
+    func setupTunnelRecovery(_ phase: CloudflareOnboardingPhase) -> String? {
         switch phase {
         case .cloudflaredMissing, .tunnelOff, .failed:
-            return "\(setupNextAction): \(setupOpenRemoteSettings)"
-        case .starting:
-            return "\(setupNextAction): \(setupCheckTunnel)"
-        case .ready:
-            return "\(setupNextAction): \(setupShowPhoneQR)"
-        case .awaitingDevice:
-            return "\(setupNextAction): \(setupShowPhoneQRAgain)"
-        case .connected:
-            return setupNoRecovery
+            return setupTunnelRecovery
+        case .starting, .ready, .awaitingDevice, .connected:
+            return nil
         }
     }
 
     func setupCloudExpected(_ decision: CloudPreviewDecision) -> String {
-        switch decision.action {
-        case .openCloudSettings: return setupOpenCloudSettings
-        case .pairPhone: return setupPairCloudPhone
-        case .reviewPreviewStatus: return setupCloudExpected
-        }
+        setupCloudExpected
     }
 
-    func setupCloudRecovery(_ decision: CloudPreviewDecision) -> String {
-        switch decision.action {
-        case .openCloudSettings: return "\(setupNextAction): \(setupOpenCloudSettings)"
-        case .pairPhone: return "\(setupNextAction): \(setupPairCloudPhone)"
-        case .reviewPreviewStatus: return "\(setupNextAction): \(setupReviewCloudPreview)"
-        }
+    func setupCloudRecovery(_ decision: CloudPreviewDecision) -> String? {
+        decision.succeeded ? nil : setupCloudRecovery
     }
 
     func setupProofFailed(_ failure: CloudPreviewFailure) -> String {

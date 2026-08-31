@@ -787,7 +787,7 @@ struct Korean: Copy {
     let setupLocalExpected = "읽기 전용 브라우저가 열리고 인증됩니다. 활성 세션이 없어도 성공입니다."
     let setupLocalRecovery = "멈추면 이 윈도우를 열어 둔 채 다시 확인하세요. 설정에서 서버와 포트도 확인할 수 있습니다."
     let setupNoRecovery = "복구가 필요 없습니다. 이 경로는 증명되었습니다."
-    let setupLocalReadOnlyAction = "이 동작은 읽기 전용을 저장하고 · 제어를 끕니다"
+    let setupLocalReadOnlyAction = "이 동작은 읽기 전용 접근을 저장하고 제어 기능을 계속 꺼 둡니다."
     let setupReadOnly = "읽기 전용 · 제어는 계속 꺼짐"
     let setupLocalDeviceName = "설정 센터 브라우저"
     func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "모드: \(mode)\n터널: \(tunnel)\nQR 호스트 이름: \(hostname)\n상태: \(status)" }
