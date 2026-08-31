@@ -1089,6 +1089,13 @@ group("the languages the interface speaks") {
         // interface really does say "online"/"offline" — anglicisms macOS itself uses there.
         "fr:webCoordSectionAdmin",
         "de:webCoordOnline", "de:webCoordOffline",
+        // The App menu's own title is the application's name, in every language macOS speaks.
+        "*:menuApplication",
+        // "Services" is the French word, and it is what the French system menu says.
+        "fr:menuServices",
+        // German keeps the loanword here: this file's own menuHome reads
+        // "Home / Einrichtungscenter", so "Clawdline Home" is its choice rather than a gap.
+        "de:homeTitle",
     ]
     let en = English()
 

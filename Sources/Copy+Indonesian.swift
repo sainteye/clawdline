@@ -796,7 +796,7 @@ struct Indonesian: Copy {
     let setupTunnelModeOff = "Mati"
     let setupTunnelModeQuick = "Cepat"
     let setupTunnelModeNamed = "Bernama"
-    let setupTunnelQuickName = "Cloudflare Quick Tunnel"
+    let setupTunnelQuickName = "Terowongan Cepat Cloudflare"
     let setupNone = "Tidak ada"
     let setupControlChosen = "Baca + kontrol · diaktifkan secara eksplisit di Pengaturan"
     let setupTunnelMissing = "cloudflared belum terpasang."
