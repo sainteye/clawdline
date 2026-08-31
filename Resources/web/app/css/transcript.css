@@ -553,8 +553,9 @@
 .activity-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .activity-meta { margin-left: auto; white-space: nowrap; color: var(--faint); font-size: 10.5px; }
 .activity-verb { flex: 0 0 48px; color: var(--accent); font-family: var(--mono); font-size: 11px; }
-.activity-subject { min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
-.activity-path { margin-left: auto; color: var(--faint); font-family: var(--mono); font-size: 10.5px; overflow-wrap: anywhere; }
+.activity-detail { min-width: 0; flex: 1 1 auto; }
+.activity-subject { display: block; color: var(--ink); overflow-wrap: anywhere; }
+.activity-path { display: block; margin-left: 0; margin-top: 1px; color: var(--faint); font-family: var(--mono); font-size: 10.5px; line-height: 1.3; overflow-wrap: anywhere; }
 .activity-result {
     margin: 0; padding: 9px 11px; border: 0; border-top: 1px solid var(--line);
     border-radius: 0; background: rgba(0, 0, 0, 0.12); color: var(--dim);

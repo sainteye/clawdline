@@ -594,8 +594,9 @@ function activityActionHTML(action) {
         ? String(action.query || action.command || "") : String(action.name || action.path || action.command || "");
     var where = action.path && action.path !== subject
         ? '<span class="activity-path">' + esc(action.path) + '</span>' : "";
-    return '<li><span class="activity-verb">' + label + '</span><span class="activity-subject">' +
-        esc(subject) + '</span>' + where + '</li>';
+    return '<li><span class="activity-verb">' + label +
+        '</span><span class="activity-detail"><span class="activity-subject">' +
+        esc(subject) + '</span>' + where + '</span></li>';
 }
 
 /** Collapse only rows that would be identical and adjacent on screen. The transcript remains

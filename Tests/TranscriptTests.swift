@@ -1415,6 +1415,12 @@ group("the Web transcript has an inert Clawdline card") {
           explored.status == 0 && explored.html.contains(#"data-role="explored""#)
             && explored.html.contains("Search") && explored.html.contains("Read")
             && explored.html.contains("Codex.swift") && explored.html.contains("Sources"))
+    check("an activity path is nested under its subject instead of occupying a right column",
+          explored.html.contains(#"class="activity-detail"><span class="activity-subject""#)
+            && explored.html.contains(#"</span><span class="activity-path">Sources/Codex.swift"#))
+    check("activity detail uses a full-width stacked subject and secondary path",
+          css.contains(#".activity-detail { min-width: 0; flex: 1 1 auto; }"#)
+            && css.contains(#".activity-path { display: block; margin-left: 0;"#))
     check("activity fields are escaped and never become transcript markup",
           explored.html.contains("title &lt;tag&gt;") && !explored.html.contains("<tag>"))
     let repeatedExploration = renderEntry([
