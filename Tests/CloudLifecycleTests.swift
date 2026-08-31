@@ -110,6 +110,27 @@ private final class LifecycleIdentityBox: @unchecked Sendable {
     }
 }
 
+private final class LifecycleReadGate: @unchecked Sendable {
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var finished = false
+
+    func wait() {
+        entered.signal()
+        release.wait()
+        lock.lock(); finished = true; lock.unlock()
+    }
+
+    func hasFinished() -> Bool {
+        lock.lock(); defer { lock.unlock() }; return finished
+    }
+
+    func awaitEntry() -> Bool {
+        entered.wait(timeout: .now() + 1) == .success
+    }
+}
+
 private struct LifecycleTestTokenProvider: CloudDeviceTokenProviding, Sendable {
     let error: Error?
 
@@ -530,16 +551,19 @@ private struct CloudLifecycleTests {
         let master = try? CloudMasterSecret()
         let sequence = CloudSequenceFile(
             url: sequenceDirectory.appendingPathComponent("cloud-sequence.json"))
-        return CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
-            restoredIdentity: identity,
-            appIdentity: { machine in
-                if appIdentityFails { throw ForcedLifecycleFailure() }
-                guard let master else { throw ForcedLifecycleFailure() }
-                return CloudAppIdentity(
+        let identityReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?> {
+            guard let machine = try identity() else { return nil }
+            if appIdentityFails { throw ForcedLifecycleFailure() }
+            guard let master else { throw ForcedLifecycleFailure() }
+            return CloudBridgeLifecycle.RestoredIdentity(
+                machine: machine,
+                app: CloudAppIdentity(
                     machineID: machine.machineID, deviceID: machine.machineID,
                     keyID: CloudBridgeLifecycle.masterKeyID,
-                    masterSecret: master, signingKey: signing)
-            },
+                    masterSecret: master, signingKey: signing))
+        }
+        return CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
+            identityReader: identityReader,
             makeTransport: { _, _, _ in transports },
             sequencing: { _ in sequence },
             attach: { recorder.attach($0) },
@@ -571,17 +595,17 @@ private struct CloudLifecycleTests {
 
         lifecycle.apply()
         lifecycle.apply()
-        _ = await eventually { lifecycle.identityKnowledge == .resolved }
+        let refreshResolved = await eventually { lifecycle.identityKnowledge == .resolved }
         check("re-applying with the same identity leaves the live bridge alone",
-              lifecycle.generation == generation && recorder.attaches.count == 1)
+              refreshResolved && lifecycle.generation == generation && recorder.attaches.count == 1)
 
         identity.set(CloudMachineIdentity(accountID: "acct", machineID: "mac-2"))
         lifecycle.apply()
-        _ = await eventually {
+        let changedIdentityAttached = await eventually {
             lifecycle.state == .attached(accountID: "acct", machineID: "mac-2")
         }
         check("a changed machine identity replaces the bridge",
-              lifecycle.state == .attached(accountID: "acct", machineID: "mac-2"))
+              changedIdentityAttached)
         check("replacing detaches the old bridge before attaching the new one",
               recorder.attaches.count == 3 && recorder.attaches[1] == nil
                   && recorder.attaches[2] != nil)
@@ -602,18 +626,18 @@ private struct CloudLifecycleTests {
             sequenceDirectory: directory)
         lifecycle.apply()
         lifecycle.apply()
-        _ = await eventually { lifecycle.identityKnowledge == .resolved }
+        let signedOutResolved = await eventually { lifecycle.identityKnowledge == .resolved }
         check("a Mac that is not signed in attaches nothing and does not churn",
-              quiet.attaches.isEmpty && lifecycle.state == .detached)
+              signedOutResolved && quiet.attaches.isEmpty && lifecycle.state == .detached)
 
         let throwing = AttachRecorder()
         let unreadable = makeLifecycle(
             identity: { throw ForcedLifecycleFailure() }, recorder: throwing,
             transports: LifecycleTestTransport(), sequenceDirectory: directory)
         unreadable.apply()
-        _ = await eventually { unreadable.identityKnowledge == .resolved }
+        let unreadableResolved = await eventually { unreadable.identityKnowledge == .resolved }
         check("an unreadable credential store reports failed rather than attaching",
-              unreadable.attachedBridge == nil)
+              unreadableResolved && unreadable.attachedBridge == nil)
         if case .failed = unreadable.state {
             check("the failure carries a reason", true)
         } else {
@@ -626,9 +650,52 @@ private struct CloudLifecycleTests {
             recorder: broken, transports: LifecycleTestTransport(),
             appIdentityFails: true, sequenceDirectory: directory)
         noKeys.apply()
-        _ = await eventually { noKeys.identityKnowledge == .resolved }
+        let keyFailureResolved = await eventually { noKeys.identityKnowledge == .resolved }
         check("a Keychain failure leaves no half-built bridge attached",
-              noKeys.attachedBridge == nil && broken.attachedCount == 0)
+              keyFailureResolved && noKeys.attachedBridge == nil && broken.attachedCount == 0)
+    }
+
+    @MainActor
+    static func testSignOutInvalidatesInFlightIdentity() async {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = AttachRecorder()
+        let gate = LifecycleReadGate()
+        let machine = CloudMachineIdentity(accountID: "acct", machineID: "mac-1")
+        let signing = CloudDeviceKeyPair()
+        guard let master = try? CloudMasterSecret() else {
+            check("sign-out invalidation fixture builds", false)
+            return
+        }
+        let reader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?> {
+            gate.wait()
+            return CloudBridgeLifecycle.RestoredIdentity(
+                machine: machine,
+                app: CloudAppIdentity(
+                    machineID: machine.machineID, deviceID: machine.machineID,
+                    keyID: CloudBridgeLifecycle.masterKeyID,
+                    masterSecret: master, signingKey: signing))
+        }
+        let lifecycle = CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
+            identityReader: reader,
+            makeTransport: { _, _, _ in LifecycleTestTransport() },
+            sequencing: { _ in CloudSequenceFile(
+                url: directory.appendingPathComponent("cloud-sequence.json")) },
+            attach: { recorder.attach($0) },
+            allowCloudCommands: { false },
+            commandRouter: { LifecycleTestRouter() },
+            commandResult: { _ in },
+            log: { _ in }))
+
+        lifecycle.apply()
+        let started = gate.awaitEntry()
+        lifecycle.signedOut()
+        gate.release.signal()
+        let returned = await eventually { gate.hasFinished() }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        check("sign-out invalidates an identity already returning",
+              started && returned && recorder.attachedCount == 0
+                  && lifecycle.attachedBridge == nil && lifecycle.state == .detached)
     }
 
     @MainActor
@@ -641,15 +708,17 @@ private struct CloudLifecycleTests {
         var refusal: (@Sendable (CloudTransportError) -> Void)?
         let signing = CloudDeviceKeyPair()
         let master = try? CloudMasterSecret()
-        let lifecycle = CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
-            restoredIdentity: { identity },
-            appIdentity: { machine in
-                guard let master else { throw ForcedLifecycleFailure() }
-                return CloudAppIdentity(
-                    machineID: machine.machineID, deviceID: machine.machineID,
+        let identityReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?> {
+            guard let master else { throw ForcedLifecycleFailure() }
+            return CloudBridgeLifecycle.RestoredIdentity(
+                machine: identity,
+                app: CloudAppIdentity(
+                    machineID: identity.machineID, deviceID: identity.machineID,
                     keyID: CloudBridgeLifecycle.masterKeyID,
-                    masterSecret: master, signingKey: signing)
-            },
+                    masterSecret: master, signingKey: signing))
+        }
+        let lifecycle = CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
+            identityReader: identityReader,
             makeTransport: { _, _, onTerminalFailure in
                 refusal = onTerminalFailure
                 return transport
@@ -672,9 +741,12 @@ private struct CloudLifecycleTests {
               lifecycle.state == .unauthorized(accountID: "acct", machineID: "mac-1"))
 
         lifecycle.apply()
-        _ = await eventually { lifecycle.identityKnowledge == .resolved }
+        let refusalRefreshResolved = await eventually {
+            lifecycle.identityKnowledge == .resolved
+        }
         check("applying again does not walk back into a refusal loop",
-              recorder.attachedCount == 1, "\(recorder.attaches.count)")
+              refusalRefreshResolved && recorder.attachedCount == 1,
+              "\(recorder.attaches.count)")
 
         lifecycle.retry()
         let retried = await eventually { recorder.attachedCount == 2 }
@@ -685,12 +757,12 @@ private struct CloudLifecycleTests {
         let stale = refusal
         lifecycle.signedOut()
         lifecycle.retry()
-        _ = await eventually { lifecycle.attachedBridge != nil }
+        let replacementAttached = await eventually { lifecycle.attachedBridge != nil }
         let before = lifecycle.generation
         stale?(.unauthorized)
         let unchanged = await eventually { lifecycle.generation == before }
         check("a stale refusal does not detach the bridge that replaced it",
-              unchanged && lifecycle.attachedBridge != nil)
+              replacementAttached && unchanged && lifecycle.attachedBridge != nil)
     }
 
     @MainActor
@@ -879,6 +951,7 @@ private struct CloudLifecycleTests {
         await testKeyProvider()
         await testAttachmentIsSingular()
         await testNoCredentialAndFailures()
+        await testSignOutInvalidatesInFlightIdentity()
         await testRevocationStopsReconnecting()
         await testWriteGateAndCommandSeam()
         await testPairingCompleter()

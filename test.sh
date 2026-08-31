@@ -6,7 +6,7 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:64,CloudAccount:82,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:75'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:64,CloudAccount:82,CloudTransport:29,CloudAppBridge:49,CloudSettings:28,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:76'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
 # the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,

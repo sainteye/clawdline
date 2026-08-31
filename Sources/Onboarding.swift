@@ -256,6 +256,7 @@ enum CloudPreviewFailure: Equatable {
 }
 
 enum CloudPreviewProof: Equatable {
+    case reading
     case absent
     case unavailable
     case proved(String)
@@ -523,6 +524,71 @@ enum OnboardingExitPolicy {
     }
 }
 
+enum HomeRouteField: CaseIterable, Equatable {
+    case detected
+    case expected
+    case recovery
+    case nextAction
+}
+
+/// The card does not own a second ordering or omission decision. Layout walks this tested plan,
+/// and visibility asks the same plan, so an absent Recovery value cannot leave an empty heading.
+struct HomeRouteFieldPlan: Equatable {
+    let fields: [HomeRouteField]
+
+    init(hasRecovery: Bool) {
+        fields = hasRecovery
+            ? [.detected, .expected, .recovery, .nextAction]
+            : [.detected, .expected, .nextAction]
+    }
+
+    func contains(_ field: HomeRouteField) -> Bool { fields.contains(field) }
+
+    func walk(_ body: (HomeRouteField) -> Void) {
+        fields.forEach(body)
+    }
+}
+
+enum HomeRecoveryPresentation: Equatable {
+    case hidden
+    case guidance
+    case proved
+}
+
+/// Recovery is a semantic state, not a convenient string-or-nil convention. The same policy
+/// chooses whether the row exists and which kind of copy fills it for every Home route.
+enum HomeRecoveryPolicy {
+    static func local(_ phase: LocalBrowserPhase) -> HomeRecoveryPresentation {
+        switch phase {
+        case .configurationFailed, .healthFailed: return .guidance
+        case .connected: return .proved
+        case .serverOff, .checkingHealth, .readyToOpen, .awaitingDevice: return .hidden
+        }
+    }
+
+    static func tunnel(_ phase: CloudflareOnboardingPhase) -> HomeRecoveryPresentation {
+        switch phase {
+        case .cloudflaredMissing, .tunnelOff, .failed: return .guidance
+        case .connected: return .proved
+        case .starting, .ready, .awaitingDevice: return .hidden
+        }
+    }
+
+    static func cloud(_ decision: CloudPreviewDecision) -> HomeRecoveryPresentation {
+        decision.succeeded ? .proved : .guidance
+    }
+
+    static func text<Value>(
+        _ presentation: HomeRecoveryPresentation, guidance: Value, proved: Value
+    ) -> Value? {
+        switch presentation {
+        case .hidden: return nil
+        case .guidance: return guidance
+        case .proved: return proved
+        }
+    }
+}
+
 #if !ONBOARDING_POLICY_ONLY
 import AppKit
 
@@ -571,9 +637,6 @@ private final class HomeProofList: NSView, SelfSizing {
 /// One route, expressed in the same dark surfaces, hairlines, pixels and chips as Settings.
 /// The order lives here once so Local, Cloudflare and Cloud cannot silently drift apart again.
 private final class HomeRouteCard: NSView, SelfSizing {
-    private enum Field { case detected, expected, recovery, nextAction }
-    private static let fieldOrder: [Field] = [.detected, .expected, .recovery, .nextAction]
-
     private let primary: Bool
     private let titleLabel: NSTextField
     private let summaryLabel: NSTextField
@@ -593,6 +656,7 @@ private final class HomeRouteCard: NSView, SelfSizing {
     private let recoveryLabel = makeLabel("", Metric.noteFont, Metric.soft)
     private let actionButton: ChipButton
     private var recoveryText: String?
+    private var fieldPlan = HomeRouteFieldPlan(hasRecovery: false)
 
     override var isFlipped: Bool { true }
 
@@ -638,14 +702,18 @@ private final class HomeRouteCard: NSView, SelfSizing {
         }
         expectedLabel.stringValue = expected
         recoveryText = recovery
+        fieldPlan = HomeRouteFieldPlan(hasRecovery: recovery != nil)
         recoveryLabel.stringValue = recovery ?? ""
-        recoveryHeading.isHidden = recovery == nil
-        recoveryLabel.isHidden = recovery == nil
+        HomeRouteField.allCases.forEach { field in
+            let hidden = !fieldPlan.contains(field)
+            heading(for: field).isHidden = hidden
+            value(for: field).isHidden = hidden
+        }
         actionButton.title = actionTitle
         needsLayout = true
     }
 
-    private func heading(for field: Field) -> NSTextField {
+    private func heading(for field: HomeRouteField) -> NSTextField {
         switch field {
         case .detected: return detectedHeading
         case .expected: return expectedHeading
@@ -654,7 +722,7 @@ private final class HomeRouteCard: NSView, SelfSizing {
         }
     }
 
-    private func valueHeight(for field: Field, width: CGFloat) -> CGFloat {
+    private func valueHeight(for field: HomeRouteField, width: CGFloat) -> CGFloat {
         switch field {
         case .detected:
             if let proofList { return proofList.height(forWidth: width) }
@@ -669,7 +737,7 @@ private final class HomeRouteCard: NSView, SelfSizing {
         }
     }
 
-    private func value(for field: Field) -> NSView {
+    private func value(for field: HomeRouteField) -> NSView {
         switch field {
         case .detected: return proofList ?? detectedNote
         case .expected: return expectedLabel
@@ -706,8 +774,7 @@ private final class HomeRouteCard: NSView, SelfSizing {
         if place { rule.frame = NSRect(x: inset, y: y, width: inner, height: 1) }
         y += 15
 
-        for field in Self.fieldOrder {
-            if field == .recovery, recoveryText == nil { continue }
+        fieldPlan.walk { field in
             let label = heading(for: field)
             if place { label.frame = NSRect(x: inset, y: y, width: inner, height: 13) }
             y += 18
@@ -772,7 +839,7 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
     private var cloudKnownDeviceIDs = Set<String>()
     private var cloudDeviceSnapshotAvailable = false
     private var cloudDecisionCache = CloudPreviewPolicy.decide(
-        account: .unavailable, machineCredential: .unavailable,
+        account: .reading, machineCredential: .reading,
         relayReady: .unavailable, e2eePairing: .unavailable, viewerReceipt: .unavailable)
     private var cloudflaredInstalled = false
     private var evidenceRefreshInFlight = false
@@ -1113,6 +1180,8 @@ final class HomeWindow: NSObject, NSWindowDelegate, @unchecked Sendable {
 
     private func cloudProof(_ proof: CloudPreviewProof, kind: CloudProofKind) -> String {
         switch proof {
+        case .reading:
+            return L.t.setupProofReading
         case .absent:
             return L.t.setupProofAbsent
         case .unavailable:

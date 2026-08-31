@@ -823,6 +823,7 @@ struct TraditionalChinese: Copy {
     let setupPairCloudPhone = "到 Cloud 設定配對手機"
     let setupReviewCloudPreview = "檢視 Preview 狀態"
     let setupProofAbsent = "不存在"
+    let setupProofReading = "正在讀取證明⋯⋯"
     let setupProofUnavailable = "無法取得證明"
     func setupProofFailed(_ reason: String) -> String { "失敗 — \(reason)" }
     let setupCloudIdentityReadFailed = "無法讀取鑰匙圈身分"
@@ -1678,6 +1679,7 @@ struct SimplifiedChinese: Copy {
     let setupPairCloudPhone = "到 Cloud 设置配对手机"
     let setupReviewCloudPreview = "查看 Preview 状态"
     let setupProofAbsent = "不存在"
+    let setupProofReading = "正在读取证明…"
     let setupProofUnavailable = "无法取得证明"
     func setupProofFailed(_ reason: String) -> String { "失败 — \(reason)" }
     let setupCloudIdentityReadFailed = "无法读取钥匙串身份"

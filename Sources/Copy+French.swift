@@ -819,6 +819,7 @@ struct French: Copy {
     let setupPairCloudPhone = "Jumeler un téléphone dans Cloud"
     let setupReviewCloudPreview = "Examiner l’état de l’aperçu"
     let setupProofAbsent = "absent"
+    let setupProofReading = "lecture de la preuve…"
     let setupProofUnavailable = "preuve indisponible"
     func setupProofFailed(_ reason: String) -> String { "échec — \(reason)" }
     let setupCloudIdentityReadFailed = "l’identité du Trousseau n’a pas pu être lue"

@@ -819,6 +819,7 @@ struct Spanish: Copy {
     let setupPairCloudPhone = "Emparejar teléfono en Cloud"
     let setupReviewCloudPreview = "Revisar estado de Preview"
     let setupProofAbsent = "ausente"
+    let setupProofReading = "leyendo la prueba…"
     let setupProofUnavailable = "prueba no disponible"
     func setupProofFailed(_ reason: String) -> String { "falló — \(reason)" }
     let setupCloudIdentityReadFailed = "no se pudo leer la identidad del Llavero"

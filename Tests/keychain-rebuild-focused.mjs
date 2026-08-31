@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import {
-  chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync,
+  chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
@@ -9,6 +9,8 @@ import { spawnSync } from "node:child_process";
 
 const lifecycleSource = resolve(process.env.CLAWDLINE_KEYCHAIN_LIFECYCLE_SOURCE ||
   "Sources/CloudBridgeLifecycle.swift");
+const keysSource = resolve(process.env.CLAWDLINE_KEYCHAIN_KEYS_SOURCE ||
+  "Sources/CloudKeys.swift");
 const buildSource = resolve(process.env.CLAWDLINE_KEYCHAIN_BUILD_SOURCE || "build.sh");
 const setupSource = resolve(process.env.CLAWDLINE_KEYCHAIN_SETUP_SOURCE ||
   "tools/setup-local-signing-identity.sh");
@@ -85,10 +87,17 @@ function run(path, args = [], env = {}) {
   });
 }
 
+function swiftSources(directory) {
+  return readdirSync(directory, { recursive: true })
+    .filter((path) => path.endsWith(".swift") && path !== "main.swift")
+    .map((path) => join(directory, path)).sort();
+}
+
 try {
   const lifecycle = readFileSync(lifecycleSource, "utf8");
+  const keys = readFileSync(keysSource, "utf8");
   const policy = declaration(lifecycle, "struct CloudIdentityReadPolicy");
-  const reader = declaration(lifecycle, "final class CloudIdentityReader");
+  const reader = declaration(keys, "final class CloudKeychainReader");
   const swiftHarness = join(work, "main.swift");
   const swiftBinary = join(work, "keychain-concurrency");
   writeFileSync(swiftHarness, `
@@ -105,10 +114,13 @@ final class Probe: @unchecked Sendable {
     private(set) var completions = 0
     private(set) var completionOffMain = false
     private(set) var operationOnMain = false
-    func entered() {
-        lock.lock(); running += 1; maximum = max(maximum, running)
+    private(set) var starts = 0
+    func entered() -> Int {
+        lock.lock(); running += 1; starts += 1; maximum = max(maximum, running)
         if Thread.isMainThread { operationOnMain = true }
+        let value = starts
         lock.unlock()
+        return value
     }
     func left() { lock.lock(); running -= 1; lock.unlock() }
     func completed() {
@@ -152,19 +164,20 @@ check(CloudIdentityReadPolicy.complete(generation: 3, tracker: &tracker) == .dis
 let probe = Probe()
 let started = DispatchSemaphore(value: 0)
 let release = DispatchSemaphore(value: 0)
-let identityReader = CloudIdentityReader<Int>(label: "clawdline.test.identity")
+let identityReader = CloudKeychainReader<Int>(label: "clawdline.test.identity") {
+    let call = probe.entered()
+    if call == 1 { started.signal(); release.wait() }
+    probe.left()
+    return call
+}
 let before = Date()
-identityReader.read({
-    probe.entered(); started.signal(); release.wait(); probe.left(); return 1
-}, completion: { _ in probe.completed() })
+identityReader.read { _ in probe.completed() }
 let elapsed = Date().timeIntervalSince(before)
 check(elapsed < 0.1, "starting a blocked read returns to the main thread immediately")
 check(started.wait(timeout: .now() + 1) == .success,
       "the background reader actually starts its operation")
 check(!probe.snapshot().3, "the blocking operation runs off the main thread")
-identityReader.read({
-    probe.entered(); probe.left(); return 2
-}, completion: { _ in probe.completed() })
+identityReader.read { _ in probe.completed() }
 Thread.sleep(forTimeInterval: 0.05)
 check(probe.snapshot().0 == 1, "the dedicated reader never overlaps two operations")
 release.signal()
@@ -184,12 +197,39 @@ print("\\(checks) Swift checks passed")
   process.stderr.write(swift.stderr);
   check(swift.status === 0 && /12 Swift checks passed/.test(swift.stdout),
     "compiled concurrency seam proves background, serial, main-return ordering");
-  check(lifecycle.includes("restoredIdentity: @Sendable () throws") &&
-        !lifecycle.includes("try services.restoredIdentity()"),
-    "the lifecycle dependency is background-callable and apply has no direct credential read");
-  check(lifecycle.includes("identityReader.read(restore)") &&
-        lifecycle.includes("finishedIdentityRead(result, generation: generation)"),
-    "the production lifecycle is wired through the compiled reader and generation policy");
+
+  const storeWork = join(work, "store");
+  mkdirSync(storeWork);
+  const storeHarness = join(storeWork, "main.swift");
+  const storeBinary = join(work, "store-main");
+  writeFileSync(storeHarness, `
+import Foundation
+
+do {
+    _ = try CloudKeychainStore(service: "app.clawdline.focused.main-thread-probe").data(for: "missing")
+    FileHandle.standardError.write(Data("FAIL: main-thread Keychain read was admitted\\n".utf8))
+    exit(1)
+} catch CloudKeyError.mainThreadReadForbidden {
+    print("1 store-boundary check passed")
+} catch {
+    FileHandle.standardError.write(Data(("FAIL: wrong main-thread error: \\(error)\\n").utf8))
+    exit(1)
+}
+`, "utf8");
+  const storeCompile = run("swiftc", ["-swift-version", "5", "-target",
+    "arm64-apple-macos13.0", keysSource, storeHarness, "-framework", "Security",
+    "-o", storeBinary]);
+  check(storeCompile.status === 0, `the production Keychain store guard compiles: ${storeCompile.stderr}`);
+  const storeProbe = run(storeBinary);
+  process.stdout.write(storeProbe.stdout);
+  process.stderr.write(storeProbe.stderr);
+  check(storeProbe.status === 0 && /1 store-boundary check passed/.test(storeProbe.stdout),
+    "the production store rejects a main-thread read before Security is reached");
+
+  const productionTypecheck = run("xcrun", ["swiftc", "-swift-version", "5", "-target",
+    "arm64-apple-macos13.0", "-typecheck", ...swiftSources("Sources")]);
+  check(productionTypecheck.status === 0,
+    `production wiring compiles only through the asynchronous reader: ${productionTypecheck.stderr}`);
 
   const fakeBin = join(work, "fake-bin");
   mkdirSync(fakeBin);
@@ -198,9 +238,25 @@ print("\\(checks) Swift checks passed")
 set -e
 case "$1" in
   find-identity)
-    if [ -s "$FAKE_SECURITY_STATE" ]; then
-      printf '  1) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Clawdline Local Development"\\n'
-    fi
+    case "\${FAKE_SECURITY_MODE:-normal}" in
+      failure) exit 45 ;;
+      duplicate)
+        printf '  1) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Clawdline Local Development"\\n'
+        printf '  2) 2222222222222222222222222222222222222222 "Clawdline Local Development"\\n'
+        ;;
+      invalid)
+        if [ -s "$FAKE_SECURITY_STATE" ]; then
+          printf '  1) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Clawdline Local Development"\\n'
+        else
+          printf '     0 valid identities found\\n'
+        fi
+        ;;
+      *)
+        if [ -s "$FAKE_SECURITY_STATE" ]; then
+          printf '  1) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Clawdline Local Development"\\n'
+        fi
+        ;;
+    esac
     ;;
   import)
     count=0
@@ -234,8 +290,21 @@ done
     "running setup twice exits zero twice and imports exactly one identity");
   check(firstSetup.stdout.includes("created local signing identity") &&
         secondSetup.stdout.includes("already exists") &&
-        secondSetup.stdout.includes("Always Allow"),
-    "setup reports created, unchanged, and the one-time Always Allow step");
+        secondSetup.stdout.includes("up to three Keychain prompts"),
+    "setup reports created, unchanged, and the three-item authorization boundary");
+  const invalidState = join(work, "invalid-identity-count");
+  const invalidSetup = run(setupSource, [], {
+    ...setupEnv, FAKE_SECURITY_STATE: invalidState, FAKE_SECURITY_MODE: "invalid",
+  });
+  check(invalidSetup.status === 0 && readFileSync(invalidState, "utf8") === "1" &&
+        invalidSetup.stdout.includes("created local signing identity"),
+    "an expired or non-code-signing namesake is ignored and a valid identity is created");
+  const duplicateSetup = run(setupSource, [], {
+    ...setupEnv, FAKE_SECURITY_MODE: "duplicate",
+  });
+  check(duplicateSetup.status !== 0 &&
+        (duplicateSetup.stdout + duplicateSetup.stderr).includes("multiple valid"),
+    "setup refuses an ambiguous common name without changing either identity");
 
   const build = readFileSync(buildSource, "utf8");
   const selection = marked(build, "signing identity selection");
@@ -272,6 +341,18 @@ printf 'RESULT=%s|%s\\n' "$SIGN_IDENTITY" "$LOCAL_SIGNING"
   check(absent.status === 0 && absent.stdout.includes("RESULT=-|0") &&
         absent.stdout.includes("tools/setup-local-signing-identity.sh"),
     "missing local identity falls back visibly with the exact repair command");
+  const inaccessible = run(selectionScript, [], {
+    ...selectEnv, FAKE_SECURITY_MODE: "failure",
+  });
+  check(inaccessible.status === 0 && inaccessible.stdout.includes("RESULT=-|0") &&
+        inaccessible.stdout.includes("could not inspect code-signing identities"),
+    "a failed security query reaches the loud ad-hoc fallback instead of errexit");
+  const ambiguous = run(selectionScript, [], {
+    ...selectEnv, FAKE_SECURITY_MODE: "duplicate",
+  });
+  check(ambiguous.status !== 0 &&
+        (ambiguous.stdout + ambiguous.stderr).includes("multiple valid"),
+    "build refuses two valid identities with the same common name");
 
   const signingScript = join(work, "signing-branches.sh");
   const codesignLog = join(work, "codesign.log");
@@ -292,17 +373,18 @@ ${branches}
       FAKE_CODESIGN_LOG: codesignLog, SIGN_IDENTITY: identity, LOCAL_SIGNING: String(local),
     });
     check(result.status === 0, `signing branch exits zero for ${identity}: ${result.stderr}`);
-    return readFileSync(codesignLog, "utf8");
+    return { log: readFileSync(codesignLog, "utf8"), result };
   }
   const adhocArgs = signingArgs("-", 0);
-  check(adhocArgs.includes("--sign - --identifier com.tsunamiworks.clawdline"),
+  check(adhocArgs.log.includes("--sign - --identifier com.tsunamiworks.clawdline"),
     "ad-hoc fallback signs with the bundle identifier");
   const localArgs = signingArgs("LOCALHASH", 1);
-  check(localArgs.includes("--sign LOCALHASH --identifier com.tsunamiworks.clawdline") &&
-        !localArgs.includes("--timestamp") && !localArgs.includes("--options runtime"),
+  check(localArgs.log.includes("--sign LOCALHASH --identifier com.tsunamiworks.clawdline") &&
+        !localArgs.log.includes("--timestamp") && !localArgs.log.includes("--options runtime") &&
+        localArgs.result.stdout.includes("up to three Keychain prompts"),
     "stable local signing uses its identity without release-only options");
   const releaseArgs = signingArgs("Developer ID Application: Example", 0);
-  check(releaseArgs.includes("--options runtime --timestamp --entitlements Resources/Clawdline.entitlements"),
+  check(releaseArgs.log.includes("--options runtime --timestamp --entitlements Resources/Clawdline.entitlements"),
     "Developer ID keeps hardened runtime, timestamp, and release entitlements");
 
   console.log(`${nodeChecks} node checks passed`);

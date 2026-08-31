@@ -819,6 +819,7 @@ struct Turkish: Copy {
     let setupPairCloudPhone = "Cloud’da Telefon Eşleştir"
     let setupReviewCloudPreview = "Preview Durumunu İncele"
     let setupProofAbsent = "yok"
+    let setupProofReading = "kanıt okunuyor…"
     let setupProofUnavailable = "kanıt kullanılamıyor"
     func setupProofFailed(_ reason: String) -> String { "başarısız — \(reason)" }
     let setupCloudIdentityReadFailed = "Anahtar Zinciri kimliği okunamadı"

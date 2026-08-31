@@ -227,27 +227,6 @@ struct CloudIdentityReadPolicy {
     }
 }
 
-/// The executable concurrency seam for credential I/O. Tests run this exact type with a blocking
-/// operation: `read` must return to the main thread immediately, operations must stay serial, and
-/// completion must cross back to the main queue before lifecycle state is touched.
-final class CloudIdentityReader<Value: Sendable>: @unchecked Sendable {
-    private let queue: DispatchQueue
-
-    init(label: String = "clawdline.cloud.identity") {
-        queue = DispatchQueue(label: label, qos: .utility)
-    }
-
-    func read(
-        _ operation: @escaping @Sendable () throws -> Value,
-        completion: @escaping @MainActor (Result<Value, Error>) -> Void
-    ) {
-        queue.async {
-            let result = Result { try operation() }
-            DispatchQueue.main.async { completion(result) }
-        }
-    }
-}
-
 /// Owns exactly one `CloudAppBridge` for the running app.
 ///
 /// Everything under it already existed and none of it was ever built: `CloudAppBridge` had no
@@ -258,6 +237,11 @@ final class CloudIdentityReader<Value: Sendable>: @unchecked Sendable {
 /// may replace a live bridge.
 @MainActor
 final class CloudBridgeLifecycle {
+    struct RestoredIdentity: Sendable {
+        let machine: CloudMachineIdentity
+        let app: CloudAppIdentity
+    }
+
     enum State: Equatable {
         case detached
         case attached(accountID: String, machineID: String)
@@ -269,8 +253,7 @@ final class CloudBridgeLifecycle {
     }
 
     struct Services {
-        var restoredIdentity: @Sendable () throws -> CloudMachineIdentity?
-        var appIdentity: @MainActor (CloudMachineIdentity) throws -> CloudAppIdentity
+        var identityReader: CloudKeychainReader<RestoredIdentity?>
         var makeTransport: @MainActor (
             CloudMachineIdentity, CloudAppIdentity,
             @escaping @Sendable (CloudTransportError) -> Void
@@ -301,7 +284,6 @@ final class CloudBridgeLifecycle {
     var onChange: (() -> Void)?
 
     private let services: Services
-    private let identityReader = CloudIdentityReader<CloudMachineIdentity?>()
     private var identityRead = CloudIdentityReadPolicy.Tracker()
 
     /// This is separate from `state`: while a refresh is blocked in Keychain, an attached bridge
@@ -326,14 +308,13 @@ final class CloudBridgeLifecycle {
     }
 
     private func startIdentityRead(generation: UInt64) {
-        let restore = services.restoredIdentity
-        identityReader.read(restore) { [weak self] result in
+        services.identityReader.read { [weak self] result in
             self?.finishedIdentityRead(result, generation: generation)
         }
     }
 
     private func finishedIdentityRead(
-        _ result: Result<CloudMachineIdentity?, Error>, generation: UInt64
+        _ result: Result<RestoredIdentity?, Error>, generation: UInt64
     ) {
         let wasReading = identityRead.knowledge == .reading
         switch CloudIdentityReadPolicy.complete(generation: generation, tracker: &identityRead) {
@@ -352,7 +333,7 @@ final class CloudBridgeLifecycle {
         case .failure(let error):
             detach()
             set(.failed(reason: Self.message(for: error)))
-            services.log("cloud: the machine credential could not be read — \(Self.message(for: error))")
+            services.log("cloud: the identity material could not be read — \(Self.message(for: error))")
             return
         case .success(nil):
             detach()
@@ -363,7 +344,8 @@ final class CloudBridgeLifecycle {
         }
     }
 
-    private func apply(identity: CloudMachineIdentity) {
+    private func apply(identity restored: RestoredIdentity) {
+        let identity = restored.machine
         switch state {
         case .attached(let account, let machine)
             where account == identity.accountID && machine == identity.machineID:
@@ -385,15 +367,14 @@ final class CloudBridgeLifecycle {
         generation &+= 1
         let owned = generation
         do {
-            let app = try services.appIdentity(identity)
-            let transport = try services.makeTransport(identity, app) { [weak self] error in
+            let transport = try services.makeTransport(identity, restored.app) { [weak self] error in
                 Task { @MainActor [weak self] in
                     self?.authorizationRefused(error, for: identity, generation: owned)
                 }
             }
             let bridge = CloudAppBridge(
                 transport: transport,
-                identity: app,
+                identity: restored.app,
                 sequencing: services.sequencing(identity),
                 allowCloudCommands: services.allowCloudCommands,
                 commandRouter: services.commandRouter(),
@@ -475,10 +456,13 @@ extension CloudBridgeLifecycle.Services {
         sequenceFile: CloudSequenceFile = CloudSequenceFile(),
         relayBaseURL: URL = CloudBridgeLifecycle.defaultRelayURL
     ) -> CloudBridgeLifecycle.Services {
-        CloudBridgeLifecycle.Services(
-            restoredIdentity: { try client.restoredMachineIdentity() },
-            appIdentity: { identity in
-                CloudAppIdentity(
+        let identityReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?>(
+            label: "clawdline.cloud.bridge-identity"
+        ) {
+            guard let identity = try client.restoredMachineIdentity() else { return nil }
+            return CloudBridgeLifecycle.RestoredIdentity(
+                machine: identity,
+                app: CloudAppIdentity(
                     machineID: identity.machineID,
                     // The control plane mints `dev == mid` for `role=machine`
                     // (`api/src/services/tokens.ts`: `deviceId = machine._id`), so the envelope
@@ -486,8 +470,10 @@ extension CloudBridgeLifecycle.Services {
                     deviceID: identity.machineID,
                     keyID: CloudBridgeLifecycle.masterKeyID,
                     masterSecret: try keys.loadOrCreateMasterSecret(),
-                    signingKey: try keys.loadOrCreateDeviceKeyPair())
-            },
+                    signingKey: try keys.loadOrCreateDeviceKeyPair()))
+        }
+        return CloudBridgeLifecycle.Services(
+            identityReader: identityReader,
             makeTransport: { identity, app, onTerminalFailure in
                 CloudTransport(
                     relayBaseURL: relayBaseURL,

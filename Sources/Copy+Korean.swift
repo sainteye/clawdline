@@ -817,6 +817,7 @@ struct Korean: Copy {
     let setupPairCloudPhone = "Cloud에서 휴대폰 페어링"
     let setupReviewCloudPreview = "Preview 상태 검토"
     let setupProofAbsent = "없음"
+    let setupProofReading = "증명 읽는 중…"
     let setupProofUnavailable = "증명 사용 불가"
     func setupProofFailed(_ reason: String) -> String { "실패 — \(reason)" }
     let setupCloudIdentityReadFailed = "키체인 신원을 읽지 못했습니다"

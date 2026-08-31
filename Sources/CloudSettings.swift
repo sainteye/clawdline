@@ -23,7 +23,9 @@ struct CloudSettingsLoginAttempt: Sendable {
 }
 
 struct CloudSettingsServices {
-    let restoredIdentity: @MainActor () throws -> CloudMachineIdentity?
+    let readRestoredIdentity: @MainActor (
+        @escaping @MainActor (Result<CloudMachineIdentity?, Error>) -> Void
+    ) -> Void
     let startLogin: @Sendable (CloudMachineMetadata) async throws -> CloudSettingsLoginAttempt
     let signOut: @MainActor () throws -> Void
     let openVerificationURL: @MainActor (URL) -> Bool
@@ -34,7 +36,9 @@ struct CloudSettingsServices {
         signOut: @escaping @MainActor () throws -> Void,
         openVerificationURL: @escaping @MainActor (URL) -> Bool
     ) {
-        self.restoredIdentity = restoredIdentity
+        self.readRestoredIdentity = { completion in
+            completion(Result { try restoredIdentity() })
+        }
         self.startLogin = startLogin
         self.signOut = signOut
         self.openVerificationURL = openVerificationURL
@@ -44,8 +48,13 @@ struct CloudSettingsServices {
         client: CloudAccountClient = CloudAccountClient(),
         openVerificationURL: @escaping @MainActor (URL) -> Bool
     ) -> CloudSettingsServices {
-        CloudSettingsServices(
-            restoredIdentity: { try client.restoredMachineIdentity() },
+        let identityReader = CloudKeychainReader<CloudMachineIdentity?>(
+            label: "clawdline.cloud.settings-identity"
+        ) {
+            try client.restoredMachineIdentity()
+        }
+        return CloudSettingsServices(
+            readRestoredIdentity: { completion in identityReader.read(completion: completion) },
             startLogin: { metadata in
                 let started = try await client.startDeviceLogin(metadata: metadata)
                 return CloudSettingsLoginAttempt(
@@ -57,6 +66,20 @@ struct CloudSettingsServices {
             },
             signOut: { try client.signOut() },
             openVerificationURL: openVerificationURL)
+    }
+
+    private init(
+        readRestoredIdentity: @escaping @MainActor (
+            @escaping @MainActor (Result<CloudMachineIdentity?, Error>) -> Void
+        ) -> Void,
+        startLogin: @escaping @Sendable (CloudMachineMetadata) async throws -> CloudSettingsLoginAttempt,
+        signOut: @escaping @MainActor () throws -> Void,
+        openVerificationURL: @escaping @MainActor (URL) -> Bool
+    ) {
+        self.readRestoredIdentity = readRestoredIdentity
+        self.startLogin = startLogin
+        self.signOut = signOut
+        self.openVerificationURL = openVerificationURL
     }
 }
 
@@ -79,6 +102,7 @@ final class CloudSettingsModel {
     enum ConnectionOrigin: Equatable { case restored, completed }
 
     enum Phase: Equatable {
+        case restoring
         case signedOut
         case starting
         case code(userCode: String)
@@ -92,7 +116,7 @@ final class CloudSettingsModel {
         case signOutFailed(identity: CloudMachineIdentity, message: String)
     }
 
-    private(set) var phase: Phase = .signedOut
+    private(set) var phase: Phase = .restoring
     var onChange: (() -> Void)?
     /// Set once, by the app, so that signing in or out takes effect without a relaunch.
     ///
@@ -110,12 +134,9 @@ final class CloudSettingsModel {
     init(services: CloudSettingsServices, metadata: CloudMachineMetadata) {
         self.services = services
         self.metadata = metadata
-        do {
-            if let identity = try services.restoredIdentity() {
-                phase = .connected(identity: identity, origin: .restored)
-            }
-        } catch {
-            phase = .failed(message: Self.message(for: error))
+        let wantedGeneration = generation
+        services.readRestoredIdentity { [weak self] result in
+            self?.acceptRestoredIdentity(result, generation: wantedGeneration)
         }
     }
 
@@ -179,6 +200,13 @@ final class CloudSettingsModel {
 
     func close() { cancel() }
 
+    var connectedIdentity: CloudMachineIdentity? {
+        switch phase {
+        case .connected(let identity, _), .signOutFailed(let identity, _): return identity
+        default: return nil
+        }
+    }
+
     /// The signed-out phase is deliberately published only after the credential store confirms
     /// removal. On a Keychain failure the prior identity remains visible and the action is retryable.
     func signOut() {
@@ -205,6 +233,17 @@ final class CloudSettingsModel {
             return true
         default:
             return false
+        }
+    }
+
+    private func acceptRestoredIdentity(
+        _ result: Result<CloudMachineIdentity?, Error>, generation wanted: UInt64
+    ) {
+        guard wanted == generation else { return }
+        switch result {
+        case .success(let identity?): setPhase(.connected(identity: identity, origin: .restored))
+        case .success(nil): setPhase(.signedOut)
+        case .failure(let error): setPhase(.failed(message: Self.message(for: error)))
         }
     }
 

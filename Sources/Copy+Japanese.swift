@@ -817,6 +817,7 @@ struct Japanese: Copy {
     let setupPairCloudPhone = "Cloud でスマートフォンをペアリング"
     let setupReviewCloudPreview = "Preview 状態を確認"
     let setupProofAbsent = "存在しません"
+    let setupProofReading = "証明を読み取り中…"
     let setupProofUnavailable = "証明を取得できません"
     func setupProofFailed(_ reason: String) -> String { "失敗 — \(reason)" }
     let setupCloudIdentityReadFailed = "キーチェーンの識別情報を読み取れませんでした"

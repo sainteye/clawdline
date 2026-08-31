@@ -819,6 +819,7 @@ struct Indonesian: Copy {
     let setupPairCloudPhone = "Pasangkan Ponsel di Cloud"
     let setupReviewCloudPreview = "Tinjau Status Preview"
     let setupProofAbsent = "tidak ada"
+    let setupProofReading = "membaca bukti…"
     let setupProofUnavailable = "bukti tidak tersedia"
     func setupProofFailed(_ reason: String) -> String { "gagal — \(reason)" }
     let setupCloudIdentityReadFailed = "identitas Keychain tidak dapat dibaca"

@@ -9,7 +9,6 @@ import { spawnSync } from "node:child_process";
 
 const source = resolve(process.env.CLAWDLINE_ONBOARDING_SOURCE || "Sources/Onboarding.swift");
 const sourcesDirectory = resolve(process.env.CLAWDLINE_SOURCES_DIR || "Sources");
-const stringsSource = resolve(process.env.CLAWDLINE_STRINGS_SOURCE || "Sources/Strings.swift");
 const installer = resolve(process.env.CLAWDLINE_INSTALL_SOURCE || "install.sh");
 const work = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "clawdline-onboarding-"));
 
@@ -35,23 +34,6 @@ try {
             subject.includes("enum PhoneCredentialIssuer") &&
             subject.includes("enum CloudPreviewEvidencePolicy"),
             "focused subject contains the production evidence seams");
-
-  checkNode(subject.includes(
-              "private static let fieldOrder: [Field] = [.detected, .expected, .recovery, .nextAction]"),
-            "all Home routes share detected, expected, recovery, next-action order");
-
-  const strings = readFileSync(stringsSource, "utf8");
-  const localRecovery = strings.match(
-    /func setupLocalRecovery\(_ phase: LocalBrowserPhase\) -> String\? \{[\s\S]*?\n    \}/)?.[0] || "";
-  const tunnelRecovery = strings.match(
-    /func setupTunnelRecovery\(_ phase: CloudflareOnboardingPhase\) -> String\? \{[\s\S]*?\n    \}/)?.[0] || "";
-  const cloudRecovery = strings.match(
-    /func setupCloudRecovery\(_ decision: CloudPreviewDecision\) -> String\? \{[\s\S]*?\n    \}/)?.[0] || "";
-  checkNode(localRecovery.length > 0 && tunnelRecovery.length > 0 && cloudRecovery.length > 0 &&
-            !localRecovery.includes("setupNextAction") &&
-            !tunnelRecovery.includes("setupNextAction") &&
-            !cloudRecovery.includes("setupNextAction"),
-            "recovery is optional guidance, never a restatement of its action label");
 
   const harness = join(work, "main.swift");
   const binary = join(work, "onboarding-focused");
@@ -171,6 +153,24 @@ let connected = OnboardingEvidencePolicy.local(
     serverEnabled: true, health: .ready, expectedDeviceID: "expected", devices: [exactSeen])
 check(connected.phase == .connected && connected.succeeded,
       "only the exact seen device completes local setup")
+let hiddenFields = HomeRouteFieldPlan(hasRecovery: false)
+check(hiddenFields.fields == [.detected, .expected, .nextAction],
+      "a route without recovery has no empty recovery row")
+let recoveryFields = HomeRouteFieldPlan(hasRecovery: true)
+check(recoveryFields.fields == [.detected, .expected, .recovery, .nextAction],
+      "a route with recovery keeps the shared field order")
+var walkedFields: [HomeRouteField] = []
+recoveryFields.walk { walkedFields.append($0) }
+check(walkedFields == recoveryFields.fields,
+      "the layout walks the tested field plan rather than its own order")
+check(HomeRecoveryPolicy.local(.configurationFailed) == .guidance &&
+      HomeRecoveryPolicy.local(.healthFailed(.transport)) == .guidance &&
+      HomeRecoveryPolicy.local(.connected) == .proved &&
+      HomeRecoveryPolicy.local(.serverOff) == .hidden &&
+      HomeRecoveryPolicy.local(.checkingHealth) == .hidden &&
+      HomeRecoveryPolicy.local(.readyToOpen) == .hidden &&
+      HomeRecoveryPolicy.local(.awaitingDevice) == .hidden,
+      "local recovery distinguishes repair, proof, and no row")
 check(CredentialLifetimePolicy.shouldRevokeUnseen(
         expectedDeviceID: "expected", devices: [exactUnseen]),
       "an unseen route credential is revoked when its gate disappears")
@@ -227,6 +227,13 @@ let exactPhone = OnboardingEvidencePolicy.cloudflare(
     cloudflaredInstalled: true, tunnelState: .up(url: "https://fresh.example"),
     expectedDeviceID: "expected", devices: [exactSeen])
 check(exactPhone.succeeded, "the exact QR device lastSeen completes tunnel setup")
+check(HomeRecoveryPolicy.tunnel(.cloudflaredMissing) == .guidance &&
+      HomeRecoveryPolicy.tunnel(.failed(reason: "down")) == .guidance &&
+      HomeRecoveryPolicy.tunnel(.connected(url: "https://fresh.example")) == .proved &&
+      HomeRecoveryPolicy.tunnel(.starting) == .hidden &&
+      HomeRecoveryPolicy.tunnel(.ready(url: "https://fresh.example")) == .hidden &&
+      HomeRecoveryPolicy.tunnel(.awaitingDevice(url: "https://fresh.example")) == .hidden,
+      "tunnel recovery distinguishes repair, proof, and no row")
 
 let identityFailure = CloudPreviewEvidencePolicy.evaluate(
     identityResult: .failure(ProbeError.failed), lifecycle: .detached,
@@ -240,6 +247,12 @@ let noIdentity = CloudPreviewEvidencePolicy.evaluate(
     devicesResult: nil, pairingAttempt: nil)
 check(noIdentity.decision.account == .absent && noIdentity.decision.e2eePairing == .unavailable,
       "proved missing identity and unavailable pairing remain distinct")
+let identityReading = CloudPreviewPolicy.decide(
+    account: .reading, machineCredential: .reading, relayReady: .unavailable,
+    e2eePairing: .unavailable, viewerReceipt: .unavailable)
+check(identityReading.account == .reading && identityReading.machineCredential == .reading &&
+      !identityReading.succeeded && identityReading.action == .openCloudSettings,
+      "not read yet stays distinct from absent and unavailable")
 let identity = CloudMachineIdentity(accountID: "account", machineID: "machine")
 let beforePairing = CloudPreviewEvidencePolicy.evaluate(
     identityResult: .success(identity), lifecycle: .attached(accountID: "account", machineID: "machine"),
@@ -273,6 +286,12 @@ let allCloudProofs = CloudPreviewPolicy.decide(
     relayReady: .proved("ready"), e2eePairing: .proved("viewer"),
     viewerReceipt: .proved("received"))
 check(allCloudProofs.succeeded, "cloud success still requires all five independent proofs")
+check(HomeRecoveryPolicy.cloud(allCloudProofs) == .proved &&
+      HomeRecoveryPolicy.cloud(noIdentity.decision) == .guidance &&
+      HomeRecoveryPolicy.text(.hidden, guidance: "repair", proved: "proved") == nil &&
+      HomeRecoveryPolicy.text(.guidance, guidance: "repair", proved: "proved") == "repair" &&
+      HomeRecoveryPolicy.text(.proved, guidance: "repair", proved: "proved") == "proved",
+      "cloud recovery and copy selection cannot restate the action label")
 check(OnboardingExitPolicy.shouldRecordCompletion(for: .routeSucceeded),
       "a proved route records completion")
 check(OnboardingExitPolicy.shouldRecordCompletion(for: .homeDismissed),
@@ -284,8 +303,8 @@ check(HomeReopenPolicy.shouldShowHome(hasVisibleWindows: false) &&
       !HomeReopenPolicy.shouldShowHome(hasVisibleWindows: true),
       "Dock reopen preserves an already-visible Settings or prompt window")
 
-check(checks == 49, "expected Swift behavior check count")
-print("50 Swift checks passed")
+check(checks == 56, "expected Swift behavior check count")
+print("57 Swift checks passed")
 `, "utf8");
 
   const compile = spawnSync("xcrun", [
@@ -302,7 +321,7 @@ print("50 Swift checks passed")
   const run = spawnSync(binary, [join(work, "store")], { encoding: "utf8" });
   process.stdout.write(run.stdout);
   process.stderr.write(run.stderr);
-  checkNode(run.status === 0 && run.stdout.includes("50 Swift checks passed"),
+  checkNode(run.status === 0 && run.stdout.includes("57 Swift checks passed"),
             "focused seam behavior passes its asserted check count");
 
   const copyFiles = readdirSync(sourcesDirectory).filter((name) => /^Copy\+.*\.swift$/.test(name));
@@ -314,6 +333,7 @@ print("50 Swift checks passed")
             conformerCount("setupCompletionFailed") === 14 &&
             conformerCount("setupLocalReadOnlyAction") === 14 &&
             conformerCount("setupLocalHealthTransport") === 14 &&
+            conformerCount("setupProofReading") === 14 &&
             conformerCount("menuAbout") === 14,
             "all 14 Copy conformers carry exit, failure, and standard-menu copy");
 
@@ -367,8 +387,8 @@ printf '%s' "$1" > "${openRecord}"
             readFileSync(openRecord, "utf8") === join(installDest, "Clawdline.app"),
             "successful install actually calls open on the exact installed app path");
 
-  checkNode(nodeChecks === 8, "expected Node integration check count");
-  console.log("9 node checks passed");
+  checkNode(nodeChecks === 6, "expected Node integration check count");
+  console.log("7 node checks passed");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

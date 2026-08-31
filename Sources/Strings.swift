@@ -1417,6 +1417,7 @@ protocol Copy {
     var setupPairCloudPhone: String { get }
     var setupReviewCloudPreview: String { get }
     var setupProofAbsent: String { get }
+    var setupProofReading: String { get }
     var setupProofUnavailable: String { get }
     func setupProofFailed(_ reason: String) -> String
     func setupProofFailed(_ failure: CloudPreviewFailure) -> String
@@ -1463,12 +1464,10 @@ extension Copy {
     }
 
     func setupLocalRecovery(_ phase: LocalBrowserPhase) -> String? {
-        switch phase {
-        case .configurationFailed, .healthFailed:
-            return setupLocalRecovery
-        case .serverOff, .checkingHealth, .readyToOpen, .awaitingDevice, .connected:
-            return nil
-        }
+        HomeRecoveryPolicy.text(
+            HomeRecoveryPolicy.local(phase),
+            guidance: setupLocalRecovery,
+            proved: setupNoRecovery)
     }
 
     func setupTunnelExpected(_ phase: CloudflareOnboardingPhase) -> String {
@@ -1482,12 +1481,10 @@ extension Copy {
     }
 
     func setupTunnelRecovery(_ phase: CloudflareOnboardingPhase) -> String? {
-        switch phase {
-        case .cloudflaredMissing, .tunnelOff, .failed:
-            return setupTunnelRecovery
-        case .starting, .ready, .awaitingDevice, .connected:
-            return nil
-        }
+        HomeRecoveryPolicy.text(
+            HomeRecoveryPolicy.tunnel(phase),
+            guidance: setupTunnelRecovery,
+            proved: setupNoRecovery)
     }
 
     func setupCloudExpected(_ decision: CloudPreviewDecision) -> String {
@@ -1495,7 +1492,10 @@ extension Copy {
     }
 
     func setupCloudRecovery(_ decision: CloudPreviewDecision) -> String? {
-        decision.succeeded ? nil : setupCloudRecovery
+        HomeRecoveryPolicy.text(
+            HomeRecoveryPolicy.cloud(decision),
+            guidance: setupCloudRecovery,
+            proved: setupNoRecovery)
     }
 
     func setupProofFailed(_ failure: CloudPreviewFailure) -> String {

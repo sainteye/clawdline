@@ -6,14 +6,27 @@ set -euo pipefail
 IDENTITY_NAME="Clawdline Local Development"
 KEYCHAIN="${CLAWDLINE_LOCAL_SIGN_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
 
-identity_hash() {
-  security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null \
-    | awk -v name="$IDENTITY_NAME" 'index($0, "\"" name "\"") { print $2; exit }'
+identity_hashes() {
+  local output
+  if ! output=$(security find-identity -v -p codesigning "$KEYCHAIN" 2>&1); then
+    echo "!! could not inspect valid code-signing identities in $KEYCHAIN" >&2
+    return 1
+  fi
+  printf '%s\n' "$output" \
+    | awk -v name="$IDENTITY_NAME" 'index($0, "\"" name "\"") { print $2 }'
 }
 
-if [ -n "$(identity_hash)" ]; then
+if ! hashes=$(identity_hashes); then exit 1; fi
+count=$(printf '%s\n' "$hashes" | awk 'NF { count++ } END { print count + 0 }')
+if [ "$count" -gt 1 ]; then
+  echo "!! multiple valid code-signing identities are named $IDENTITY_NAME" >&2
+  printf '   %s\n' $hashes >&2
+  echo "   Nothing was changed; remove or rename the extra identity and run this again." >&2
+  exit 1
+fi
+if [ "$count" -eq 1 ]; then
   echo "✓ local signing identity already exists: $IDENTITY_NAME"
-  echo "  The first launch after switching identities still asks once; choose Always Allow so rebuilds stop asking."
+  echo "  After changing signing identity, first use may show up to three Keychain prompts (machine credential and two Cloud keys); approve each item you use."
   exit 0
 fi
 
@@ -41,12 +54,20 @@ openssl pkcs12 -export -legacy -name "$IDENTITY_NAME" \
   -out "$work/identity.p12" -passout "pass:$password" >/dev/null 2>&1
 security import "$work/identity.p12" -k "$KEYCHAIN" -P "$password" \
   -T /usr/bin/codesign >/dev/null
+# Trust only the certificate this invocation just generated, and only for code signing. An
+# expired or otherwise invalid namesake is deliberately left untouched above.
+echo "→ macOS may ask once to trust this newly generated certificate for code signing"
+security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" \
+  "$work/certificate.pem" >/dev/null
 
-hash=$(identity_hash)
-[ -n "$hash" ] || {
-  echo "!! Keychain import completed but no code-signing identity was found" >&2
+if ! hashes=$(identity_hashes); then exit 1; fi
+count=$(printf '%s\n' "$hashes" | awk 'NF { count++ } END { print count + 0 }')
+[ "$count" -eq 1 ] || {
+  echo "!! Keychain import completed but found $count valid identities named $IDENTITY_NAME" >&2
+  [ -z "$hashes" ] || printf '   %s\n' $hashes >&2
   exit 1
 }
+hash=$(printf '%s\n' "$hashes" | awk 'NF { print; exit }')
 
 echo "✓ created local signing identity: $IDENTITY_NAME ($hash)"
-echo "  The first launch after switching identities still asks once; choose Always Allow so rebuilds stop asking."
+echo "  After changing signing identity, first use may show up to three Keychain prompts (machine credential and two Cloud keys); approve each item you use."

@@ -823,6 +823,7 @@ struct Hindi: Copy {
     let setupPairCloudPhone = "Cloud में फ़ोन pair करें"
     let setupReviewCloudPreview = "Preview स्थिति देखें"
     let setupProofAbsent = "मौजूद नहीं"
+    let setupProofReading = "प्रमाण पढ़ा जा रहा है…"
     let setupProofUnavailable = "प्रमाण उपलब्ध नहीं"
     func setupProofFailed(_ reason: String) -> String { "विफल — \(reason)" }
     let setupCloudIdentityReadFailed = "Keychain identity पढ़ी नहीं जा सकी"

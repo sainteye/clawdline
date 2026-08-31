@@ -2999,6 +2999,10 @@ private final class CloudSettingsControl: NSView, SelfSizing {
         let actions: [(String, Bool, () -> Void)]
 
         switch model.phase {
+        case .restoring:
+            text = "Reading this Mac's Cloud identity without blocking Settings…"
+            dot = .busy
+            actions = []
         case .signedOut:
             text = "This Mac is not connected to Clawdline Cloud."
             dot = .idle
@@ -3101,7 +3105,9 @@ private final class CloudSettingsControl: NSView, SelfSizing {
                     case .pending:
                         try await Task.sleep(nanoseconds: 1_500_000_000)
                     case .ready(let accountID, let viewerDeviceID, let machineID, let encryptedOffer):
-                        guard let identity = try client.restoredMachineIdentity(),
+                        guard let identity = await MainActor.run(body: {
+                            self?.model.connectedIdentity
+                        }),
                               identity.accountID == accountID, identity.machineID == machineID else {
                             throw CloudPairingCompleter.Failure.wrongAccount
                         }

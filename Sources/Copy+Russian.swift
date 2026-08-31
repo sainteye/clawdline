@@ -819,6 +819,7 @@ struct Russian: Copy {
     let setupPairCloudPhone = "Сопрячь телефон в Cloud"
     let setupReviewCloudPreview = "Проверить состояние Preview"
     let setupProofAbsent = "отсутствует"
+    let setupProofReading = "чтение доказательства…"
     let setupProofUnavailable = "доказательство недоступно"
     func setupProofFailed(_ reason: String) -> String { "ошибка — \(reason)" }
     let setupCloudIdentityReadFailed = "не удалось прочитать идентификатор из Связки ключей"

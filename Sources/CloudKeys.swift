@@ -20,6 +20,7 @@ enum CloudKeyError: Error, LocalizedError, Equatable {
     case invalidMasterSecretLength(Int)
     case invalidRecoveryCode
     case recoveryChecksumMismatch
+    case mainThreadReadForbidden
     case keychain(OSStatus)
 
     var errorDescription: String? {
@@ -32,8 +33,33 @@ enum CloudKeyError: Error, LocalizedError, Equatable {
             return "The recovery code is not valid CLAWD1 base32."
         case .recoveryChecksumMismatch:
             return "The recovery code checksum does not match."
+        case .mainThreadReadForbidden:
+            return "A Keychain read was rejected on the main thread."
         case .keychain(let status):
             return "Keychain operation failed with OSStatus \(status)."
+        }
+    }
+}
+
+/// The UI adapter from synchronous Keychain APIs into app state. The operation is captured
+/// privately and can only be started on its dedicated serial queue, so a caller cannot
+/// accidentally invoke it on the main actor while trying to refresh a screen.
+final class CloudKeychainReader<Value: Sendable>: @unchecked Sendable {
+    private let queue: DispatchQueue
+    private let operation: @Sendable () throws -> Value
+
+    init(
+        label: String = "clawdline.cloud.keychain-read",
+        operation: @escaping @Sendable () throws -> Value
+    ) {
+        queue = DispatchQueue(label: label, qos: .utility)
+        self.operation = operation
+    }
+
+    func read(completion: @escaping @MainActor (Result<Value, Error>) -> Void) {
+        queue.async { [operation] in
+            let result = Result { try operation() }
+            DispatchQueue.main.async { completion(result) }
         }
     }
 }
@@ -180,6 +206,10 @@ final class CloudKeychainStore: CloudKeyStoring {
     }
 
     func data(for account: String) throws -> Data? {
+        guard !Thread.isMainThread else {
+            os_log("Clawdline rejected a Keychain read on the main thread", type: .fault)
+            throw CloudKeyError.mainThreadReadForbidden
+        }
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,

@@ -17,14 +17,28 @@ if [ "${CLAWDLINE_SIGN_IDENTITY+x}" = x ]; then
   # An explicit value keeps its historical meaning, including an empty value becoming ad-hoc.
   SIGN_IDENTITY="${CLAWDLINE_SIGN_IDENTITY:--}"
 else
-  SIGN_IDENTITY=$(security find-identity -p codesigning 2>/dev/null \
-    | awk -v name="$LOCAL_SIGN_IDENTITY_NAME" \
-        'index($0, "\"" name "\"") { print $2; exit }')
-  if [ -n "$SIGN_IDENTITY" ]; then
-    LOCAL_SIGNING=1
+  if identity_output=$(security find-identity -v -p codesigning 2>&1); then
+    identity_hashes=$(printf '%s\n' "$identity_output" \
+      | awk -v name="$LOCAL_SIGN_IDENTITY_NAME" \
+          'index($0, "\"" name "\"") { print $2 }')
+    identity_count=$(printf '%s\n' "$identity_hashes" \
+      | awk 'NF { count++ } END { print count + 0 }')
+    if [ "$identity_count" -eq 1 ]; then
+      SIGN_IDENTITY=$(printf '%s\n' "$identity_hashes" | awk 'NF { print; exit }')
+      LOCAL_SIGNING=1
+    elif [ "$identity_count" -gt 1 ]; then
+      echo "!! multiple valid code-signing identities are named $LOCAL_SIGN_IDENTITY_NAME" >&2
+      printf '   %s\n' $identity_hashes >&2
+      echo "   Remove or rename the extra identity; Clawdline will not choose by Keychain order." >&2
+      exit 1
+    else
+      SIGN_IDENTITY=-
+      echo "→ no stable local signing identity; using ad-hoc signing"
+      echo "  Run tools/setup-local-signing-identity.sh to stop Keychain asking after every rebuild."
+    fi
   else
     SIGN_IDENTITY=-
-    echo "→ no stable local signing identity; using ad-hoc signing"
+    echo "→ could not inspect code-signing identities; using ad-hoc signing"
     echo "  Run tools/setup-local-signing-identity.sh to stop Keychain asking after every rebuild."
   fi
 fi
@@ -116,8 +130,10 @@ if [ "$SIGN_IDENTITY" = - ]; then
   codesign --force --sign - --identifier "$BUNDLE_ID" "$STAGED_APP" >/dev/null 2>&1 \
     || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
 elif [ "$LOCAL_SIGNING" = 1 ]; then
+  echo "→ using stable local signing; a locked login Keychain may still ask to be unlocked"
   codesign --force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$STAGED_APP"
   echo "✓ signed with stable local identity $LOCAL_SIGN_IDENTITY_NAME"
+  echo "  After changing signing identity, first use may show up to three Keychain prompts (machine credential and two Cloud keys); approve each item you use."
 else
   signed=0
   for attempt in 1 2 3; do

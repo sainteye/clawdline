@@ -823,6 +823,7 @@ struct English: Copy {
     let setupPairCloudPhone = "Pair a Phone in Cloud Settings"
     let setupReviewCloudPreview = "Review Preview Status"
     let setupProofAbsent = "not present"
+    let setupProofReading = "reading proof…"
     let setupProofUnavailable = "proof unavailable"
     func setupProofFailed(_ reason: String) -> String { "failed — \(reason)" }
     let setupCloudIdentityReadFailed = "the Keychain identity could not be read"
