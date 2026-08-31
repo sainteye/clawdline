@@ -151,6 +151,30 @@ group("transcript parsing") {
     check("a string content still parses", entries.contains { $0.text == "plain string content" })
     check("unparseable lines are ignored rather than fatal", true)
 
+    let claudeWrite = #"""
+{"type":"assistant","timestamp":"2026-08-31T02:18:28.962Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_write","name":"Write","input":{"file_path":"/tmp/task/artifacts/format-sample.md","content":"cwd: /work\nhead: abc123\ntools: Bash, Write\n"}}]}}
+{"type":"user","timestamp":"2026-08-31T02:18:28.972Z","toolUseResult":{"type":"create","filePath":"/tmp/task/artifacts/format-sample.md","content":"cwd: /work\nhead: abc123\ntools: Bash, Write\n","structuredPatch":[],"originalFile":null,"userModified":false},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_write","content":"File created successfully at: /tmp/task/artifacts/format-sample.md"}]}}
+"""#
+    let writeEntries = Transcript.parse(claudeWrite)
+    expect("a completed Claude Write is one transcript entry, not call plus receipt",
+           writeEntries.count, 1)
+    expect("the rich file entry keeps Claude's own tool name", writeEntries.first?.tool, "Write")
+    expect("the rich file entry keeps its full path", writeEntries.first?.text,
+           "/tmp/task/artifacts/format-sample.md")
+    expect("a Claude Write carries one structured file change",
+           writeEntries.first?.fileChanges.count, 1)
+    expect("the Write content survives losslessly",
+           writeEntries.first?.fileChanges.first?.content,
+           "cwd: /work\nhead: abc123\ntools: Bash, Write\n")
+    expect("the Write change uses a distinct truthful kind",
+           writeEntries.first?.fileChanges.first?.kind, "write")
+    let writeWire = RemoteServer.transcriptRows(writeEntries).first
+    expect("Claude file changes cross the same Web wire as Codex edits",
+           (writeWire?["fileChanges"] as? [[String: Any]])?.first?["kind"] as? String,
+           "write")
+    check("the successful create receipt is not repeated as another tool row",
+          !writeEntries.contains { $0.text.contains("File created successfully") })
+
     expect("the limit keeps the tail", Transcript.parse(sampleTranscript, limit: 2).count, 2)
 
     // It reads backwards from the newest line and stops as soon as it has enough, because
@@ -1255,6 +1279,43 @@ group("the Web transcript has an inert Clawdline card") {
             return ("", -1)
         }
     }
+    func foldedDescription(_ names: [String]) -> (text: String, status: Int32) {
+        guard let start = js.range(of: "function foldedRunDescription(names) {")?.lowerBound,
+              let end = js.range(of: "\nfunction foldHTML", range: start..<js.endIndex)?.lowerBound
+        else { return ("", -1) }
+        let source = String(js[start..<end])
+        let sourceData = try! JSONSerialization.data(withJSONObject: source,
+                                                      options: [.fragmentsAllowed])
+        let namesData = try! JSONSerialization.data(withJSONObject: names)
+        let script = "eval(" + String(decoding: sourceData, as: UTF8.self) + ");"
+            + "process.stdout.write(foldedRunDescription("
+            + String(decoding: namesData, as: UTF8.self) + "));"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["node"]
+        let input = Pipe(), output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            input.fileHandleForWriting.write(Data(script.utf8))
+            try? input.fileHandleForWriting.close()
+            let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(),
+                              as: UTF8.self)
+            process.waitUntilExit()
+            return (text, process.terminationStatus)
+        } catch {
+            return ("", -1)
+        }
+    }
+    let claudeRun = foldedDescription([
+        "mcp__claude-in-chrome__tabs_context_mcp",
+        "mcp__claude-in-chrome__browser_batch", "Bash", "Bash",
+    ])
+    expect("a Claude provider run reads like Claude Code's own compact summary",
+           claudeRun.text, "Called claude-in-chrome, ran 2 shell commands")
+    expect("the compact run summary executes successfully", claudeRun.status, 0)
     let mismatched = renderEntry([
         "role": "notice", "text": "visible row text from the older server",
         "notice": ["kind": "task_finished", "state": "success"],
@@ -1302,6 +1363,19 @@ group("the Web transcript has an inert Clawdline card") {
             && edited.html.contains(#"<span class="new">7</span>"#)
             && edited.html.contains(#"data-kind="add""#)
             && edited.html.contains("let second = false"))
+    let written = renderEntry([
+        "role": "tool", "tool": "Write", "text": "/tmp/task/artifacts/format-sample.md",
+        "fileChanges": [["path": "/tmp/task/artifacts/format-sample.md", "kind": "write",
+                         "content": "cwd: /work\nhead: <unsafe>\ntools: Bash, Write\n"]],
+    ])
+    check("a Claude Write uses the same open patch card without losing its tool name",
+          written.status == 0 && written.html.contains(#"data-role="patch""#)
+            && written.html.contains("Write") && written.html.contains("format-sample.md")
+            && written.html.contains(#"data-kind="write""#))
+    check("Claude Write content is escaped and rendered as added lines",
+          written.html.contains(#"class="diff-line add""#)
+            && written.html.contains("head: &lt;unsafe&gt;")
+            && !written.html.contains("<unsafe>"))
     let planned = renderEntry([
         "role": "tool", "tool": "plan", "text": "Updated Plan",
         "plan": [

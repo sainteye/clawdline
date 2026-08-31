@@ -395,6 +395,39 @@ function firstLine(text) {
     return line || "…";
 }
 
+/** Claude's provider wire names are implementation detail. In a folded run, spell the work the
+ *  way Claude Code does: name the provider once and count shell commands instead of printing a
+ *  wall of `mcp__provider__operation` identifiers. Unknown tools retain their original names. */
+function foldedRunDescription(names) {
+    function unique(values) {
+        var seen = {};
+        return values.filter(function (value) {
+            if (seen[value]) return false;
+            seen[value] = true;
+            return true;
+        });
+    }
+    var providers = [];
+    var shellCount = 0;
+    var others = [];
+    names.forEach(function (name) {
+        var match = /^mcp__(.+?)__/.exec(name);
+        if (match) providers.push(match[1]);
+        else if (name === "Bash") shellCount += 1;
+        else others.push(name);
+    });
+
+    var parts = [];
+    providers = unique(providers);
+    others = unique(others);
+    if (providers.length) parts.push("Called " + providers.join(" · "));
+    if (shellCount) {
+        parts.push("ran " + shellCount + " shell command" + (shellCount === 1 ? "" : "s"));
+    }
+    if (others.length) parts.push(others.join(" · "));
+    return parts.join(", ");
+}
+
 /**
  * The line a folded run leaves behind, and the handle that opens it.
  *
@@ -413,7 +446,7 @@ function foldHTML(key, names, open, live) {
         // beside it: a pill reading "9" above "steps" is the one part of this that has to be
         // legible at a glance.
         '<span class="steps">' + esc(fill(T.webSteps, { n: names.length })) + "</span>" +
-        (open ? "" : '<span class="what">' + esc(distinct(names).join(" · ")) + "</span>") +
+        (open ? "" : '<span class="what">' + esc(foldedRunDescription(names)) + "</span>") +
         "</button></div></div>";
 }
 
@@ -506,11 +539,11 @@ function whoHTML(role, at) {
 }
 
 /* --------------------------------------------------------------------------
-   Codex file changes
+   Structured file changes
    ------------------------------------------------------------------------ */
 
 function fileChangesOf(e) {
-    if (!e || e.role !== "tool" || e.tool !== "edit" || !Array.isArray(e.fileChanges)) return null;
+    if (!e || e.role !== "tool" || !Array.isArray(e.fileChanges)) return null;
     var changes = e.fileChanges.filter(function (change) {
         return change && typeof change.path === "string" && change.path.length > 0;
     });

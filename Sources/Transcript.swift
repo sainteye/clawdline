@@ -295,9 +295,9 @@ enum Transcript {
         return nil
     }
 
-    /// One file inside a Codex `FileChange` item. The rollout already carries the exact patch;
-    /// keeping it structured here lets each surface decide how much to unfold without turning
-    /// code into Markdown or asking Git what the file looks like later.
+    /// One file changed by a tool. Codex carries the exact patch and Claude's `Write` carries
+    /// the complete new file; keeping either structured here lets each surface decide how much
+    /// to unfold without turning code into Markdown or asking Git what the file looks like later.
     struct FileChange: Equatable {
         var path: String
         var kind: String
@@ -1015,12 +1015,32 @@ enum Transcript {
                 }
             case "tool_use":
                 let name = block["name"] as? String ?? "tool"
+                if name == "Write",
+                   let input = block["input"] as? [String: Any],
+                   let path = input["file_path"] as? String, !path.isEmpty,
+                   let content = input["content"] as? String {
+                    out.append(Entry(kind: .tool, text: path, tool: name, time: time,
+                                     fileChanges: [FileChange(path: path, kind: "write",
+                                                              content: content)]))
+                    continue
+                }
                 // A question is the one tool call whose arguments are the whole point of it, so
                 // it carries them rather than a line describing them. See `askPayload`.
                 let text = (name == askTool ? askPayload(input: block["input"]) : nil)
                     ?? summarise(input: block["input"])
                 out.append(Entry(kind: .tool, text: text, tool: name, time: time))
             case "tool_result":
+                // Claude repeats a successful file creation as a user-row receipt after the
+                // `Write` call. The call already carries the complete content above, so drawing
+                // this receipt would turn one edit into a patch card plus a second tool row.
+                // Only the observed, typed create result is suppressed; errors and other result
+                // shapes remain visible instead of being guessed away.
+                if let result = row["toolUseResult"] as? [String: Any],
+                   result["type"] as? String == "create",
+                   let path = result["filePath"] as? String, !path.isEmpty,
+                   result["content"] is String {
+                    continue
+                }
                 let text = firstLine(of: block["content"])
                 guard !text.isEmpty else { continue }
                 out.append(Entry(kind: .toolResult, text: text, tool: nil, time: time))
