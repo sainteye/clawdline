@@ -17,8 +17,8 @@ main_lines=$(line_count Tests/main.swift)
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
-[ "$orchestrator_lines" -le 13539 ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved dispatch-door split receipt (13539)"
+[ "$orchestrator_lines" -le 13592 ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved Root Assignment delivery receipt (13592)"
 
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ "$remote_server_lines" -le 6385 ] \
@@ -49,7 +49,7 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 37 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 37"
+[ "$suite_count" -eq 38 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 38"
 
 echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count"

@@ -131,6 +131,7 @@ clawdline_test_sources=(
   Tests/OrchestratorRecoveryTests.swift
   Tests/PeerMessageTests.swift
   Tests/PlannerTests.swift
+  Tests/RootAssignmentCoordinationTests.swift
   Tests/ScheduleResumeTests.swift
   Tests/ScheduledDispatchTests.swift
   Tests/SessionCloseAndQuotaTests.swift

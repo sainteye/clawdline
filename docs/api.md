@@ -1401,7 +1401,15 @@ Acceptance is persisted before terminal opening. The record advances through `ac
 `workspace_trust_required` and leaves the picker untouched with no broker timeout: the ordinary
 terminal-open-to-briefing deadline is 240 seconds, but time spent waiting for a person's trust decision does
 not consume it. When the picker leaves, durable `prompt_timeout_started_at` starts a fresh
-240-second pre-brief window and the same record may continue to `prompt_ready`.
+240-second pre-brief window and the same record may continue to `prompt_ready`. That deadline is
+measured against the exact completed user turn's transcript event time, not against when the broker
+eventually observes it. Once the record is `prompt_ready`, every beat checks the exact
+process/conversation transcript receipt before the current composer state or observer timeout: a
+receipt whose event time is at or before the deadline advances to `briefed` even if it is first
+observed later. With no exact receipt, or one whose event time is after the deadline, a beat truly
+past the deadline fails with typed `prompt_timeout`. A busy composer is never used as evidence that
+delivery failed and is never typed into again; late observation neither resends the prompt nor
+opens another tab, and the durable transition remains at most once.
 The current build has no automatic workspace-trust authority; a future positive policy adapter
 must explicitly justify acceptance, and the broker durably records `answered_trust_menu` before
 such an adapter may answer the picker so one picker is answered at most once.

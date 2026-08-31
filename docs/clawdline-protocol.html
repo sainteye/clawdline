@@ -315,6 +315,8 @@
   </div>
   <!-- /clawdline-dispatch-role-contract:v1 -->
 
+  <p>A Root Assignment's 240-second pre-brief deadline constrains the delivery event, not the observer. Once a prompt has been sent, the broker checks the exact process/conversation transcript before consulting the current composer or its own clock. A completed user-turn receipt timestamped at or before the deadline advances the assignment to <code>briefed</code> even when observation is late; an absent receipt, or one timestamped after the deadline, becomes typed <code>prompt_timeout</code> only once the deadline has genuinely passed. A busy composer is not a delivery failure and is never typed into again. Late observation does not resend the prompt, reopen the tab, or repeat a durable transition.</p>
+
   <div class="note warn">
     <span class="tag">What it costs, before anything else</span>
     <p>Dispatching is remote code execution with a second step. It does not type a line into an existing session — it opens a <em>new</em> terminal tab, starts an assistant in it, and gives that assistant instructions written by somebody else. Anything that can dispatch can run programs on the machine, as you, in a directory it chose, for up to four hours. Everything in <a href="#credentials">section 18</a> follows from that one sentence.</p>

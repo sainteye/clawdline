@@ -1716,7 +1716,32 @@ enum Orchestrator {
     struct RootAssignmentDeliveryEvidence: Equatable {
         let transcriptKnown: Bool
         let recorded: Bool
+        /// When the assistant's own record says that user turn happened — the delivery itself,
+        /// never the beat that got round to reading it. `nil` is a record carrying the turn
+        /// without a timestamp: a delivery whose moment is simply unknown.
+        let recordedAt: Date?
+        /// The end of the pre-brief window this delivery had to land inside, kept beside the
+        /// event so the comparison cannot quietly become "when did the broker look".
+        let deadline: Date?
         let retryDelayElapsed: Bool
+
+        init(transcriptKnown: Bool, recorded: Bool, recordedAt: Date? = nil,
+             deadline: Date? = nil, retryDelayElapsed: Bool) {
+            self.transcriptKnown = transcriptKnown
+            self.recorded = recorded
+            self.recordedAt = recordedAt
+            self.deadline = deadline
+            self.retryDelayElapsed = retryDelayElapsed
+        }
+
+        /// A prompt that reached the assistant inside the window, however late it was observed.
+        /// An undated receipt counts: the record carries the turn, and refusing it would restore
+        /// the false negative this field exists to remove.
+        var deliveredInWindow: Bool {
+            guard recorded else { return false }
+            guard let recordedAt, let deadline else { return true }
+            return recordedAt <= deadline
+        }
     }
 
     enum RootAssignmentStepDecision: Equatable {
@@ -1734,21 +1759,29 @@ enum Orchestrator {
         inputReady: Bool, delivery: RootAssignmentDeliveryEvidence?, injectAttempts: Int
     ) -> RootAssignmentStepDecision {
         guard ![.accepted, .failed, .inactive, .active].contains(state) else { return .wait }
-        if promptTimedOut { return .fail("prompt_timeout") }
         if state == .briefed { return .activate }
         switch trust {
         case .block: return .block
         case .accept(let row): return answeredTrustMenu ? .wait : .answerTrust(row: row)
         case .none: break
         }
+        if state == .promptReady {
+            // Once a prompt has been sent, its exact transcript receipt is authoritative even if
+            // the assistant is now working and the broker first observes it after the deadline.
+            // Composer readiness only decides whether a retry is safe; it never gates observation.
+            guard let delivery else { return .inspectDelivery }
+            if delivery.deliveredInWindow { return .briefed }
+            if promptTimedOut { return .fail("prompt_timeout") }
+            guard inputReady else { return .wait }
+            if injectAttempts > 0 && !delivery.transcriptKnown { return .wait }
+            guard delivery.retryDelayElapsed else { return .wait }
+            return injectAttempts >= briefingAttemptLimit
+                ? .fail("delivery_unconfirmed") : .inject
+        }
+        if promptTimedOut { return .fail("prompt_timeout") }
         guard inputReady else { return .wait }
         if state == .terminalOpened || state == .blocked { return .promptReady }
-        guard let delivery else { return .inspectDelivery }
-        if delivery.recorded { return .briefed }
-        if injectAttempts > 0 && !delivery.transcriptKnown { return .wait }
-        guard delivery.retryDelayElapsed else { return .wait }
-        return injectAttempts >= briefingAttemptLimit
-            ? .fail("delivery_unconfirmed") : .inject
+        return .wait
     }
 
     struct RootAssignment {
@@ -5567,14 +5600,33 @@ enum Orchestrator {
           + "\(draft.relevantReferences)\n\nACCEPTANCE\n\(draft.acceptance)"
     }
 
-    static func transcriptContainsRootAssignment(_ transcript: String?, assistant: Assistant,
-                                                 assignmentID: String, line: String) -> Bool {
+    /// What one record says about a Root Assignment's delivery: whether the exact briefing line
+    /// is a completed user turn, and when that turn happened. The time is the receipt's own event
+    /// time, which is the only thing the pre-brief deadline may be compared against.
+    struct RootAssignmentTranscriptReceipt: Equatable {
+        let recorded: Bool
+        let at: Date?
+    }
+
+    static func rootAssignmentTranscriptReceipt(_ transcript: String?, assistant: Assistant,
+                                                assignmentID: String, line: String)
+        -> RootAssignmentTranscriptReceipt {
+        let absent = RootAssignmentTranscriptReceipt(recorded: false, at: nil)
         guard let transcript,
               line.hasPrefix("You are an independently owned Clawdline Feature Root for Root "
-                           + "Assignment \(assignmentID).") else { return false }
-        return Transcript.parse(transcript, assistant: assistant, limit: 100).contains {
-            $0.kind == .user && $0.text.contains(line)
-        }
+                           + "Assignment \(assignmentID).") else { return absent }
+        // This receipt may first be observed after a busy Root has already written hundreds of
+        // newer rows. A UI-tail limit would turn observation lag back into prompt_timeout, so this
+        // delivery-only path searches the complete record that its caller has already read.
+        guard let turn = Transcript.parse(transcript, assistant: assistant, limit: Int.max)
+            .first(where: { $0.kind == .user && $0.text.contains(line) }) else { return absent }
+        return RootAssignmentTranscriptReceipt(recorded: true, at: turn.time)
+    }
+
+    static func transcriptContainsRootAssignment(_ transcript: String?, assistant: Assistant,
+                                                 assignmentID: String, line: String) -> Bool {
+        rootAssignmentTranscriptReceipt(transcript, assistant: assistant,
+                                        assignmentID: assignmentID, line: line).recorded
     }
 
     static func rootAssignmentReconciliation(
@@ -5618,11 +5670,18 @@ enum Orchestrator {
         return true
     }
 
+    /// The moment the pre-brief window closes. ``rootAssignmentPromptTimedOut`` asks whether
+    /// *now* is past it; a delivery receipt asks whether the *user turn* was. One boundary, read
+    /// once against the observer and once against the event, so the two can never drift apart.
+    static func rootAssignmentPromptDeadline(openedAt: Date) -> Date {
+        openedAt.addingTimeInterval(readyLimit)
+    }
+
     static func rootAssignmentPromptTimedOut(state: RootAssignmentState, openedAt: Date,
                                              now: Date = Date(), briefed: Bool) -> Bool {
         // A person owns this wait. Unlike the ordinary composer-start deadline, workspace trust
         // has no automatic answer and therefore no four-minute expiry.
-        state != .blocked && !briefed && now.timeIntervalSince(openedAt) > readyLimit
+        state != .blocked && !briefed && now > rootAssignmentPromptDeadline(openedAt: openedAt)
     }
 
     static func rootAssignmentPromptTimeoutAnchor(terminalOpenedAt: Date,
@@ -8837,21 +8896,12 @@ enum Orchestrator {
         }
         lock.unlock()
         let now = Date()
+        let promptWindowOpenedAt = rootAssignmentPromptTimeoutAnchor(
+            terminalOpenedAt: assignment.terminalOpenedAt ?? assignment.created,
+            trustResumedAt: assignment.promptTimeoutStartedAt)
         let timedOut = rootAssignmentPromptTimedOut(
-            state: assignment.state,
-            openedAt: rootAssignmentPromptTimeoutAnchor(
-                terminalOpenedAt: assignment.terminalOpenedAt ?? assignment.created,
-                trustResumedAt: assignment.promptTimeoutStartedAt),
+            state: assignment.state, openedAt: promptWindowOpenedAt,
             now: now, briefed: assignment.briefedAt != nil)
-        if case .fail(let code) = rootAssignmentStepDecision(
-            state: assignment.state, promptTimedOut: timedOut, trust: .none,
-            answeredTrustMenu: assignment.answeredTrustMenu, inputReady: false,
-            delivery: nil, injectAttempts: assignment.injectAttempts) {
-            assignment.state = .failed; assignment.failure = code; assignment.endedAt = now
-            lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock()
-            reportRootAssignmentTransition(id)
-            return true
-        }
         guard let target = target(withID: identity.terminalID),
               target.assistant == assignment.assistant else { return false }
         let screen = Targets.capture(target)
@@ -8924,7 +8974,7 @@ enum Orchestrator {
             relevantReferences: assignment.relevantReferences, acceptance: assignment.acceptance)
         let line = rootAssignmentLine(id: id, draft: draft)
         var transcriptKnown = false
-        var recorded = false
+        var receipt = RootAssignmentTranscriptReceipt(recorded: false, at: nil)
         switch assignment.assistant {
         case .claude:
             _ = Transcript.locate(cwd: assignment.projectDir, tabTitle: target.name,
@@ -8932,9 +8982,10 @@ enum Orchestrator {
                 sessionID: identity.conversationID, accepting: { url in
                     transcriptKnown = true
                     let text = try? String(contentsOf: url, encoding: .utf8)
-                    recorded = transcriptContainsRootAssignment(
+                    let candidate = rootAssignmentTranscriptReceipt(
                         text, assistant: .claude, assignmentID: id, line: line)
-                    return recorded
+                    if candidate.recorded { receipt = candidate }
+                    return candidate.recorded
                 })
         case .codex:
             if let url = Codex.locate(cwd: assignment.projectDir,
@@ -8942,7 +8993,7 @@ enum Orchestrator {
                                       pid: identity.pid),
                let text = try? String(contentsOf: url, encoding: .utf8) {
                 transcriptKnown = true
-                recorded = transcriptContainsRootAssignment(
+                receipt = rootAssignmentTranscriptReceipt(
                     text, assistant: .codex, assignmentID: id, line: line)
             }
         }
@@ -8951,9 +9002,11 @@ enum Orchestrator {
         } ?? true
         let deliveryDecision = rootAssignmentStepDecision(
             state: assignment.state, promptTimedOut: timedOut, trust: .none,
-            answeredTrustMenu: assignment.answeredTrustMenu, inputReady: true,
+            answeredTrustMenu: assignment.answeredTrustMenu, inputReady: inputReady,
             delivery: RootAssignmentDeliveryEvidence(
-                transcriptKnown: transcriptKnown, recorded: recorded,
+                transcriptKnown: transcriptKnown, recorded: receipt.recorded,
+                recordedAt: receipt.at,
+                deadline: rootAssignmentPromptDeadline(openedAt: promptWindowOpenedAt),
                 retryDelayElapsed: retryDelayElapsed),
             injectAttempts: assignment.injectAttempts)
         switch deliveryDecision {

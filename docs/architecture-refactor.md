@@ -69,6 +69,29 @@ boundary: the service owns its independent receipt ledger and lifecycle, while t
 retains only one transport-adapter call. These remain candidate expectations until the exact staged
 tree full suite observes them.
 
+### Root Assignment delivery-observation exception (2026-09-01)
+
+The Root Assignment delivery false-timeout correction moves the executable
+`Orchestrator.swift` guard from 13,539 to the exact candidate count of 13,592 lines and the Swift
+completion receipt from 7,229 to 7,245 checks. This is a narrow bug-fix exception, not Phase 2
+approval. The cohesive lifecycle remains owned by `Orchestrator`: the same step captures terminal
+state, resolves the exact transcript, compares the delivery event with its deadline, persists the
+assignment transition, updates the registry projection and emits the at-most-once audit receipt.
+
+The next extractable boundary is a pure `RootAssignmentDeliveryPolicy`, after the Phase 2 gate and
+fresh human approval. Moving only its value types and helper functions today would leave all state,
+terminal and transcript dependencies in `Orchestrator` and produce an extension-shaped file split
+that changes no dependency direction; moving the complete lifecycle would be an unauthorized
+production relocation mixed into a correctness repair. The owner therefore stays named here, the
+guard is resealed at the exact corrected file size, and later growth must either pass the Phase 2
+gate or record another explicit exception rather than silently raising the number.
+
+The corresponding Root Assignment coordination group is an already-approved Phase 1 test-harness
+boundary, so it moves intact to `RootAssignmentCoordinationTests.swift`: runner and group order stay
+unchanged, `OrchestratorCoordinationTests.swift` falls from 2,046 to 1,690 lines, the new cohesive
+suite is 361 lines, and the sealed suite-file inventory moves from 37 to 38. No production behavior
+or check count is created by the relocation.
+
 ### Ordered suite and dependency manifest
 
 `Tests/main.swift` owns process order only. It enters subprocess probes, installs isolation, runs
