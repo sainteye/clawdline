@@ -19,6 +19,15 @@ from a device whose public key it has pinned locally. A browser viewer holds the
 key — obtained once, by pairing — plus its own non-extractable Ed25519 key. The cloud carries
 ciphertext and routing metadata and can read neither the snapshots nor the commands.
 
+On macOS those secrets currently live in the traditional login Keychain and are guarded by its
+code-signing ACL. The store deliberately sets neither `kSecUseDataProtectionKeychain` nor
+`kSecAttrAccessible`: local builds have no application-identifier/keychain-access-group
+entitlement, so the protected namespace refuses them, and Apple documents the accessibility
+attribute as applying on macOS only in that namespace (or for synchronizable items). Moving to the
+Data Protection Keychain is one future migration that must first give every release and local
+build a compatible entitlement and signing identity; an inert accessibility label is not that
+guarantee.
+
 ## What is wired on the Mac
 
 `CloudAccount`, `CloudKeys`, `CloudTransport`, `CloudEnvelope` and `CloudAppBridge` were all

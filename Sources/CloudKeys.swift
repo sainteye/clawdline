@@ -210,13 +210,9 @@ final class CloudKeychainStore: CloudKeyStoring {
             os_log("Clawdline rejected a Keychain read on the main thread", type: .fault)
             throw CloudKeyError.mainThreadReadForbidden
         }
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
+        var query = Self.identity(service: service, account: account)
+        query[kSecReturnData] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
@@ -227,11 +223,7 @@ final class CloudKeychainStore: CloudKeyStoring {
     }
 
     func set(_ data: Data, for account: String) throws {
-        let identity: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-        ]
+        let identity = Self.identity(service: service, account: account)
         let update: [CFString: Any] = [kSecValueData: data]
         let updateStatus = SecItemUpdate(identity as CFDictionary, update as CFDictionary)
         if updateStatus == errSecSuccess { return }
@@ -239,23 +231,38 @@ final class CloudKeychainStore: CloudKeyStoring {
             throw CloudKeyError.keychain(updateStatus)
         }
 
-        var insert = identity
-        insert[kSecValueData] = data
-        insert[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let insert = Self.insertAttributes(service: service, account: account, data: data)
         let insertStatus = SecItemAdd(insert as CFDictionary, nil)
         guard insertStatus == errSecSuccess else { throw CloudKeyError.keychain(insertStatus) }
     }
 
     func remove(_ account: String) throws {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-        ]
+        let query = Self.identity(service: service, account: account)
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw CloudKeyError.keychain(status)
         }
+    }
+
+    static func identity(service: String, account: String) -> [CFString: Any] {
+        [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+        ]
+    }
+
+    static func insertAttributes(
+        service: String, account: String, data: Data
+    ) -> [CFString: Any] {
+        var insert = identity(service: service, account: account)
+        insert[kSecValueData] = data
+        // Local builds have no application-identifier/keychain-access-group entitlement, so the
+        // Data Protection Keychain refuses them with errSecMissingEntitlement. This store uses
+        // the traditional macOS login keychain and its code-signing ACL deliberately. Do not add
+        // kSecAttrAccessible here: Apple documents that attribute as applying on macOS only in
+        // the Data Protection (or synchronizable) namespace.
+        return insert
     }
 }
 

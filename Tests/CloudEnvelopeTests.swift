@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 
 private struct CloudProtocolVectors: Decodable {
     struct Vector: Decodable {
@@ -138,6 +139,14 @@ func runCloudEnvelopeTests(vectorsURL: URL) throws -> Int {
     let recoveredMaster = try CloudMasterSecret(recoveryCode: firstMaster.recoveryCode)
     try require(firstMaster == recoveredMaster, "recovery re-derives secret")
     try require(firstPair.pairingFingerprint.split(separator: "-").count == 4, "pairing fingerprint format")
+
+    let keychainInsert = CloudKeychainStore.insertAttributes(
+        service: CloudKeychainStore.defaultService, account: CloudKeys.deviceKeyAccount,
+        data: Data(repeating: 0x41, count: 32))
+    try require(keychainInsert[kSecUseDataProtectionKeychain] == nil,
+                "an unentitled local build stays in the macOS login-keychain namespace")
+    try require(keychainInsert[kSecAttrAccessible] == nil,
+                "the file-keychain insert claims no inert data-protection accessibility")
 
     return checks
 }
