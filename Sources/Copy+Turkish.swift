@@ -106,7 +106,7 @@ struct Turkish: Copy {
     let settingsFollow = "Terminal, çubuğun nişan aldığı şeyi gösterir"
     let settingsFollowHint = "O oturumun sekmesini seçer. Terminali öne getirmez — getirseydi, her Tab'a basışta klavye yazmakta olduğun kutudan çıkardı."
     let settingsCodexAutoName = "Yeni oturumları adlandır"
-    let settingsCodexAutoNameHint = "Adsız her oturum için küçük bir Codex Luna turu çalıştırır. İlk isteği kullanır, Codex kullanımından harcar ve senin seçtiğin adı değiştirmez."
+    let settingsCodexAutoNameHint = "Adsız her oturum için seçtiğin asistanla küçük bir tur çalıştırır. İlk isteği kullanır, o asistanın kullanımından harcar ve senin seçtiğin adı değiştirmez."
     let settingsNotch = "Çentikte yaşa"
     let settingsNotchHint = "Kamera yuvasında bir karakter. Kapalı gerçekten kapalı: hiçbir şey çizilmez, pencere açılmaz."
     let settingsPosition = "Ekrandaki yükseklik"

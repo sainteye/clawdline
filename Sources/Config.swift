@@ -329,11 +329,31 @@ final class Config {
     /// Give a new unnamed conversation a short user-facing name from its first request.
     ///
     /// Off until somebody chooses it because this is not local bookkeeping: it starts one small
-    /// Codex turn, sends that request to the configured model and spends Codex usage. Codex
-    /// conversations use it immediately; Claude conversations use it only after the first turn
-    /// ends without Claude Code writing its own title. The helper turn is ephemeral, so naming a
-    /// session never creates another session to name.
+    /// assistant turn, sends that request to a model and spends the selected assistant's usage.
+    /// Codex conversations use it immediately; Claude conversations use it only after the first
+    /// turn ends without Claude Code writing its own title. The helper turn is not persisted, so
+    /// naming a session never creates another session to name.
     var codexAutoName = false
+    /// Which installed assistant performs the one small naming turn.
+    ///
+    /// Codex remains the default so every config written before this choice existed keeps the
+    /// exact behaviour its `codex_auto_name: true` selected. The older boolean stays on disk as
+    /// the enable switch; this value only answers who does the enabled work.
+    var automaticNamingAssistant: Assistant = .codex
+    /// The single settings control has three states without minting an impossible combination of
+    /// an off switch beside a still-selected provider. Turning it off remembers the provider so
+    /// turning it back on does not quietly change whose quota it spends.
+    var automaticNamingSelection: String {
+        get { codexAutoName ? automaticNamingAssistant.rawValue : "off" }
+        set {
+            guard let assistant = Assistant(rawValue: newValue) else {
+                codexAutoName = false
+                return
+            }
+            automaticNamingAssistant = assistant
+            codexAutoName = true
+        }
+    }
     /// The deliberately small model used for that one narrow turn. Kept configurable because
     /// model availability belongs to the account, not to this binary; the default is the current
     /// low-cost Codex model documented for clear, repeatable work.
@@ -544,6 +564,10 @@ final class Config {
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
         if let v = obj["codex_home"] as? String { codexHome = v }
         if let v = obj["codex_auto_name"] as? Bool { codexAutoName = v }
+        if let v = obj["auto_name_assistant"] as? String,
+           let assistant = Assistant(rawValue: v) {
+            automaticNamingAssistant = assistant
+        }
         if let v = obj["codex_auto_name_model"] as? String, !v.isEmpty {
             codexAutoNameModel = v
         }
@@ -634,6 +658,7 @@ final class Config {
             "tmux_path": tmuxPath,
             "codex_home": codexHome,
             "codex_auto_name": codexAutoName,
+            "auto_name_assistant": automaticNamingAssistant.rawValue,
             "codex_auto_name_model": codexAutoNameModel,
             "codex_path": codexPath,
             "orchestrator_enabled": orchestratorEnabled,

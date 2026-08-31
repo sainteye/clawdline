@@ -105,7 +105,7 @@ struct English: Copy {
     let settingsFollow = "The terminal shows whatever the bar is aimed at"
     let settingsFollowHint = "It selects that session's tab. It does not bring the terminal to the front — otherwise every press of Tab would take the keyboard out of the box you are typing into."
     let settingsCodexAutoName = "Name new sessions"
-    let settingsCodexAutoNameHint = "Runs one small Codex Luna turn for each unnamed session. It uses the first request, spends Codex usage, and never replaces a name you chose."
+    let settingsCodexAutoNameHint = "Runs one small turn with the assistant you choose for each unnamed session. It uses the first request, spends that assistant's usage, and never replaces a name you chose."
     let settingsNotch = "Live in the notch"
     let settingsNotchHint = "A character in the camera housing. Off is off — nothing is drawn and no window is made."
     let settingsPosition = "Height on screen"

@@ -109,7 +109,7 @@ struct Portuguese: Copy {
     let settingsFollow = "O terminal mostra aquilo para onde a barra está apontada"
     let settingsFollowHint = "Ele seleciona a aba daquela sessão. Não traz o terminal para a frente: se trouxesse, cada toque em Tab tiraria o teclado da caixa em que você está escrevendo."
     let settingsCodexAutoName = "Nomear novas sessões"
-    let settingsCodexAutoNameHint = "Executa um pequeno turno Codex Luna para cada sessão sem nome. Usa o primeiro pedido, consome uso do Codex e nunca substitui um nome escolhido por você."
+    let settingsCodexAutoNameHint = "Executa um pequeno turno com o assistente escolhido para cada sessão sem nome. Usa o primeiro pedido, consome o uso desse assistente e nunca substitui um nome escolhido por você."
     let settingsNotch = "Viver no entalhe"
     let settingsNotchHint = "Uma personagem na caixa da câmara. Desligado é desligado: nada é desenhado nem é criada janela."
     let settingsPosition = "Altura no ecrã"

@@ -523,6 +523,51 @@ group("a Codex session can be named from its first request") {
     let unnamed: [String: Any] = ["result": ["thread": ["name": NSNull()]]]
     expect("a persisted thread name is recognised", CodexNaming.threadName(in: named), "Bug bash")
     check("a null persisted name is unnamed", CodexNaming.threadName(in: unnamed) == nil)
+
+    let configRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-naming-provider-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: configRoot) }
+    let config = Config(directoryForTesting: configRoot)
+    expect("automatic naming starts off", config.automaticNamingSelection, "off")
+    config.automaticNamingSelection = Assistant.claude.rawValue
+    check("choosing Claude enables naming", config.codexAutoName)
+    expect("Claude is the selected naming assistant", config.automaticNamingAssistant, .claude)
+    check("the provider choice is saved", config.save())
+    let reloaded = Config(directoryForTesting: configRoot)
+    expect("the naming provider survives a reload", reloaded.automaticNamingAssistant, .claude)
+    expect("the enabled provider is the settings selection", reloaded.automaticNamingSelection,
+           Assistant.claude.rawValue)
+    reloaded.automaticNamingSelection = "off"
+    check("off disables naming", !reloaded.codexAutoName)
+    expect("turning naming off remembers the provider", reloaded.automaticNamingAssistant, .claude)
+
+    let start = Date(timeIntervalSince1970: 100)
+    let provisional = CodexNameObservation.observe("the opening request", previous: nil,
+                                                   now: start, settleAfter: 6)
+    check("the first native thread name is not assumed final", !provisional.settled)
+    let stillProvisional = CodexNameObservation.observe(
+        "the opening request", previous: provisional.observation,
+        now: start.addingTimeInterval(3), settleAfter: 6)
+    check("the same early name still waits for Codex's refinement", !stillProvisional.settled)
+    let refined = CodexNameObservation.observe(
+        "A concise title", previous: stillProvisional.observation,
+        now: start.addingTimeInterval(4), settleAfter: 6)
+    check("a changed native name restarts the settling window", !refined.settled)
+    let settled = CodexNameObservation.observe(
+        "A concise title", previous: refined.observation,
+        now: start.addingTimeInterval(10), settleAfter: 6)
+    check("an unchanged refined name eventually settles", settled.settled)
+
+    let claudeEnvelope = #"{"structured_output":{"title":"修正登入逾時"}}"#
+    expect("Claude's schema-validated title is read from its print envelope",
+           CodexNaming.title(inClaudeOutput: claudeEnvelope), "修正登入逾時")
+    let claudeArguments = CodexNaming.claudeArguments(system: "name it", schema: "{}")
+    check("Claude naming is not persisted as another session",
+          claudeArguments.contains("--no-session-persistence"))
+    let toolsFlag = claudeArguments.firstIndex(of: "--tools")
+    check("Claude naming cannot use tools", toolsFlag.map {
+        claudeArguments.indices.contains($0 + 1) && claudeArguments[$0 + 1].isEmpty
+    } ?? false)
     // What used to sit here was `CodexNaming.displayLabel(threadName:terminalLabel:)` and two
     // assertions pinning "an absent Codex name keeps the terminal tab label". Both are gone with
     // it: the function had no caller left in `Sources/` once naming stopped reading tab titles,

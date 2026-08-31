@@ -696,7 +696,8 @@ itself.
 | `follow_target` | `true` | the terminal's tab follows what the bar points at |
 | `tmux_path` | `""` | empty looks in the usual places |
 | `codex_auto_name` | `false` | name a new session from its first request; Claude uses it only when its own title is absent |
-| `codex_auto_name_model` | `gpt-5.6-luna` | model for that one ephemeral, low-reasoning turn |
+| `auto_name_assistant` | `codex` | `codex` or `claude`; which installed assistant spends the naming turn |
+| `codex_auto_name_model` | `gpt-5.6-luna` | model for that turn when `auto_name_assistant` is `codex` |
 | `codex_home` · `codex_path` | `""` | overrides for a nonstandard Codex home or executable |
 
 **Reading a session**

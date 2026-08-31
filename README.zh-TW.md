@@ -601,7 +601,8 @@ claude
 | `follow_target` | `true` | 終端機的分頁跟著輸入條的目標走 |
 | `tmux_path` | `""` | 空的 ＝ 去常見位置找 |
 | `codex_auto_name` | `false` | 從第一則需求替新的 session 命名；Claude 只在自己的名稱缺席時才用 |
-| `codex_auto_name_model` | `gpt-5.6-luna` | 那一次 ephemeral、low-reasoning turn 使用的模型 |
+| `auto_name_assistant` | `codex` | `codex` 或 `claude`；由哪個已安裝的助理消耗命名 turn |
+| `codex_auto_name_model` | `gpt-5.6-luna` | `auto_name_assistant` 是 `codex` 時使用的模型 |
 | `codex_home` · `codex_path` | `""` | Codex home 或執行檔不在慣用位置時覆寫 |
 
 **讀一個 session**

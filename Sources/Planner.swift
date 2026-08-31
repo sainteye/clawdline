@@ -481,7 +481,7 @@ enum Planner {
         return object(inClaudeOutput: raw)
     }
 
-    /// Codex, shaped exactly like ``CodexNaming/generateTitle(request:model:executable:codexHome:timeout:)``.
+    /// Codex, shaped exactly like ``CodexNaming/generateCodexTitle(request:model:executable:codexHome:timeout:)``.
     ///
     /// No `-m`, which is the one deliberate difference: naming a model means first asking
     /// `app-server` whether the account has it, and a fallback that needs a second process up

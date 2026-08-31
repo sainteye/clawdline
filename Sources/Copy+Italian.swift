@@ -106,7 +106,7 @@ struct Italian: Copy {
     let settingsFollow = "Il terminale mostra quello che la barra sta puntando"
     let settingsFollowHint = "Seleziona la scheda di quella sessione. Non porta il terminale in primo piano: altrimenti ogni pressione di Tab toglierebbe la tastiera dalla casella in cui stai scrivendo."
     let settingsCodexAutoName = "Dai un nome alle nuove sessioni"
-    let settingsCodexAutoNameHint = "Esegue un piccolo turno Codex Luna per ogni sessione senza nome. Usa la prima richiesta, consuma utilizzo Codex e non sostituisce mai un nome scelto da te."
+    let settingsCodexAutoNameHint = "Esegue un piccolo turno con l'assistente scelto per ogni sessione senza nome. Usa la prima richiesta, consuma l'utilizzo di quell'assistente e non sostituisce mai un nome scelto da te."
     let settingsNotch = "Vivi nel notch"
     let settingsNotchHint = "Un personaggio nell’alloggiamento della fotocamera. Off è off: non si disegna nulla e non si crea alcuna finestra."
     let settingsPosition = "Altezza sullo schermo"

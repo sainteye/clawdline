@@ -104,7 +104,7 @@ struct Japanese: Copy {
     let settingsFollow = "バーが狙っているものをターミナルにも出す"
     let settingsFollowHint = "そのセッションのタブを選びます。ターミナルを前面には出しません。出してしまうと、Tab を押すたびに入力中の欄からキーボードが離れてしまうからです。"
     let settingsCodexAutoName = "新しいセッションに名前を付ける"
-    let settingsCodexAutoNameHint = "名前のないセッションごとに小さな Codex Luna turn を一度実行します。最初の依頼を使い、Codex の利用量を消費し、自分で付けた名前は変更しません。"
+    let settingsCodexAutoNameHint = "名前のないセッションごとに、選んだアシスタントで小さな turn を一度実行します。最初の依頼を使い、そのアシスタントの利用量を消費し、自分で付けた名前は変更しません。"
     let settingsNotch = "ノッチに住む"
     let settingsNotchHint = "カメラ部分にキャラクターが出ます。オフなら何も描かず、ウィンドウも作りません。"
     let settingsPosition = "画面上の高さ"

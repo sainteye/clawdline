@@ -431,8 +431,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                        switchFor({ Config.shared.followTarget }, { Config.shared.followTarget = $0 }),
                        hint: L.t.settingsFollowHint)
         pane.right.row(L.t.settingsCodexAutoName,
-                       switchFor({ Config.shared.codexAutoName },
-                                 { Config.shared.codexAutoName = $0 }),
+                       popUp([(L.t.settingsOff, "off"),
+                              (Assistant.codex.label, Assistant.codex.rawValue),
+                              (Assistant.claude.label, Assistant.claude.rawValue)],
+                             current: Config.shared.automaticNamingSelection) {
+                           Config.shared.automaticNamingSelection = $0
+                       },
                        hint: L.t.settingsCodexAutoNameHint)
         pane.right.row(L.t.settingsNotch,
                        switchFor({ Config.shared.notch }, { Config.shared.notch = $0 }),

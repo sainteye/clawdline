@@ -106,7 +106,7 @@ struct German: Copy {
     let settingsFollow = "Das Terminal zeigt, worauf die Leiste zielt"
     let settingsFollowHint = "Es wählt den Tab dieser Sitzung aus. Es holt das Terminal nicht nach vorn — sonst würde jeder Druck auf Tab die Tastatur aus dem Feld nehmen, in das du gerade schreibst."
     let settingsCodexAutoName = "Neue Sitzungen benennen"
-    let settingsCodexAutoNameHint = "Führt für jede unbenannte Sitzung einen kleinen Codex-Luna-Turn aus. Verwendet die erste Anfrage, verbraucht Codex-Nutzung und ersetzt nie einen selbst gewählten Namen."
+    let settingsCodexAutoNameHint = "Führt für jede unbenannte Sitzung einen kleinen Turn mit dem gewählten Assistenten aus. Verwendet die erste Anfrage, verbraucht dessen Nutzung und ersetzt nie einen selbst gewählten Namen."
     let settingsNotch = "In der Notch wohnen"
     let settingsNotchHint = "Eine Figur im Kameragehäuse. Aus ist aus — nichts wird gezeichnet, kein Fenster angelegt."
     let settingsPosition = "Höhe am Bildschirm"

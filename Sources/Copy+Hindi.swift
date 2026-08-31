@@ -110,7 +110,7 @@ struct Hindi: Copy {
     let settingsFollow = "बार जिस पर टिकी है, टर्मिनल वही दिखाता है"
     let settingsFollowHint = "यह उस session का tab चुन लेता है। टर्मिनल को सामने नहीं लाता — वरना हर बार Tab दबाते ही keyboard उस डिब्बे से निकल जाता जिसमें आप लिख रहे हैं।"
     let settingsCodexAutoName = "नई sessions को नाम दें"
-    let settingsCodexAutoNameHint = "हर बिना नाम वाली session के लिए एक छोटा Codex Luna turn चलाता है। यह पहली request इस्तेमाल करता है, Codex usage खर्च करता है और आपका चुना नाम नहीं बदलता।"
+    let settingsCodexAutoNameHint = "हर बिना नाम वाली session के लिए चुने हुए assistant से एक छोटा turn चलाता है। यह पहली request इस्तेमाल करता है, उस assistant का usage खर्च करता है और आपका चुना नाम नहीं बदलता।"
     let settingsNotch = "नॉच में रहे"
     let settingsNotchHint = "कैमरा हाउसिंग में एक किरदार। बंद माने बंद — कुछ नहीं बनता, कोई विंडो नहीं।"
     let settingsPosition = "स्क्रीन पर ऊँचाई"

@@ -9,6 +9,18 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Changed: automatic names can use the assistant you choose
+
+The automatic-naming switch is now one three-way choice: off, Codex or Claude Code. Existing
+configs that enabled `codex_auto_name` still select Codex, while `auto_name_assistant` records a
+different choice without making the two controls disagree. Both engines run one tool-free,
+low-effort, non-persisted turn and spend the selected assistant's usage.
+
+Clawdline also keeps observing a native Codex name briefly instead of treating the first non-empty
+value as final. Codex writes the opening request as a provisional thread name and replaces it with
+its concise title a few seconds later; landing in that window no longer leaves a path or the whole
+opening request stuck in the Session list.
+
 ### Added: a session can be called what you called it
 
 What a session was called was decided entirely by machines: the task title this app pinned on a
