@@ -19,7 +19,7 @@ const end = "/clawdline-dispatch-role-contract:v1";
 const clauses = [
     ["owned child", /Owned child[\s\S]*?POST \/v1\/orchestrator\/tasks[\s\S]*?bounded[\s\S]*?retains synthesis, integration, and landing/i],
     ["handoff continuation", /Handoff[\s\S]*?POST \/v1\/orchestrator\/handoffs[\s\S]*?continuation[\s\S]*?REFERENCES[\s\S]*?VERIFICATION[\s\S]*?OPEN THREADS/i],
-    ["detached automation", /Detached automation[\s\S]*?root\.session_id[\s\S]*?null[\s\S]*?root\.poll_only[\s\S]*?true[\s\S]*?never[\s\S]*?Root[\s\S]*?Major Feature/i],
+    ["detached automation", /Detached automation[\s\S]*?POST \/v1\/orchestrator\/detached-tasks[\s\S]*?root\.session_id[\s\S]*?null[\s\S]*?root\.poll_only[\s\S]*?true[\s\S]*?POST \/v1\/orchestrator\/tasks[\s\S]*?refus[\s\S]*?never[\s\S]*?Root[\s\S]*?Major Feature/i],
     ["root assignment", /Root Assignment \/ Feature Launch[\s\S]*?POST \/v1\/orchestrator\/root-assignments[\s\S]*?ordinary independent Root[\s\S]*?objective[\s\S]*?scope[\s\S]*?constraints[\s\S]*?relevant references[\s\S]*?acceptance[\s\S]*?durable machine-auth[\s\S]*?no child[\s\S]*?handoff[\s\S]*?detached[\s\S]*?timeout[\s\S]*?secret[\s\S]*?result[\s\S]*?parent[\s\S]*?landing lineage/i],
 ];
 
@@ -75,6 +75,14 @@ for (const [file, destination] of skillTriggers) {
     for (const trigger of ["send", "message", "report", "status", "finding", "coordination"]) {
         assert.ok(frontmatter.includes(trigger), `${file}: missing ${trigger} trigger`);
     }
+}
+
+for (const file of ["skills/clawdline/SKILL.md", "skills/clawdline/SKILL.zh-TW.md"]) {
+    const text = fs.readFileSync(path.join(root, file), "utf8");
+    assert.ok(text.includes("POST /v1/orchestrator/detached-tasks"),
+        `${file}: missing the dedicated unattended-automation route`);
+    assert.ok(!text.includes('--argjson poll_only "${POLL_ONLY:-false}"'),
+        `${file}: ordinary dispatch still exposes poll-only as a generic switch`);
 }
 
 console.log(`dispatch role contract: ${surfaces.length} surfaces, ${clauses.length} clauses`);

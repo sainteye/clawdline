@@ -89,8 +89,10 @@ reply.
 - **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
   line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
   from OPEN THREADS.
-- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
-  detached automation. It is never a Root and never a Major Feature owner.
+- **Detached automation.** `POST /v1/orchestrator/detached-tasks` is the only public route that
+  accepts `root.session_id: null` with `root.poll_only: true`; ordinary
+  `POST /v1/orchestrator/tasks` refuses poll-only. It is only unattended automation, never a Root
+  or Major Feature owner.
 - **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
   ordinary independent Root and briefs only objective, scope, constraints, relevant references,
   and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
@@ -536,6 +538,16 @@ and do not write it into any file under `/tmp`.**
 Build it with `jq -n` rather than by hand — string-pasting breaks the moment `instructions`
 contains a quote or a newline.
 
+This recipe is for an interactive Root dispatching an owned Child. Fail closed before writing the
+file if the Root identity is missing; an empty lookup is not permission to create detached work:
+
+```bash
+if [ -z "${ROOT_SESSION:-}" ] || [ -z "${ROOT_ASSISTANT:-}" ]; then
+  echo "interactive Root identity is unproved; resolve it with GET /v1/orchestrator/whoami and do not downgrade to detached automation" >&2
+  exit 64
+fi
+```
+
 ```bash
 graph_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
 GRAPH=$(jq -nc --arg id "$graph_id" --arg current "portrait" \
@@ -554,7 +566,6 @@ jq -n \
   --arg root_session "$ROOT_SESSION" \
   --arg root_assistant "$ROOT_ASSISTANT" \
   --arg root_label "clawdline root session" \
-  --argjson poll_only "${POLL_ONLY:-false}" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
   --argjson graph "$GRAPH" \
@@ -563,9 +574,9 @@ jq -n \
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions,
     plan:$plan, graph:$graph,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
-    root:{session_id:(if $root_session=="" then null else $root_session end),
+    root:{session_id:$root_session,
           assistant:$root_assistant, project_dir:$dir, label:$root_label,
-          poll_only:$poll_only}}' \
+          poll_only:false}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
@@ -598,7 +609,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `root.session_id` | this assistant's current process-bound conversation id. A terminal-neutral id belongs only on terminal-addressed routes; an ordinary dispatch must resolve to a live owner |
 | `root.assistant` | **required for every ordinary dispatch with a non-null owner**: the assistant dispatching this task, `claude` or `codex`; it is not the child named by top-level `assistant`. Omission/null is `root_assistant_required`; a legacy missing assistant is unknown for ownership (the old Claude fallback survives only in non-ownership compatibility readers) |
 | `root.parent_task` | **leave it out.** It existed for a dispatching child, and a child cannot dispatch; every dispatch this app now accepts comes from a root, where the field is `null`. It is still validated and still read, because a stored record from an older build carries it |
-| `root.poll_only` | default `false`. Set `true` only for deliberate detached automation with a null session id; it will not receive completion notification or own a child row, so the caller must poll |
+| `root.poll_only` | always `false` on this owned-child recipe. Unattended detached automation uses its own task shape and `/v1/orchestrator/detached-tasks`; it is never a fallback for failed Root identity |
 
 **Declaring `claims` costs about twenty output tokens, and most dispatches skip it anyway.**
 Measured across 206 dispatches on this machine: 60.7% declared nothing at all. A collision costs a
@@ -620,22 +631,22 @@ is the other one, and it announces itself: a claimed path blocks other trees whe
 ever touch it, and at terminal state the broker names every claim the task never touched. Same
 error, pointing the other way — take that report seriously and declare narrower next time.
 
-### Finding your own assistant and session id (required unless deliberately poll-only)
+### Finding your own assistant and session id (required for owned-child dispatch)
 
 > `root.session_id` is the assistant's own conversation id — the Claude transcript uuid or
 > Codex rollout id — never the watched terminal id. At dispatch it resolves that spelling against
 > `root.assistant` and stores one process-bound conversation key for
 > completion notification, grouping, capacity and close cascade. Always inspect `warnings`: a
-> non-null spelling that matches no live owner is refused as `root_unresolved`. If there truly is
-> no interactive owner, set `POLL_ONLY=true` deliberately and accept that polling is the only
-> completion path; never let an empty lookup silently choose that mode.
+> non-null spelling that matches no live owner is refused as `root_unresolved`. Resolve the same
+> interactive Root through authenticated `GET /v1/orchestrator/whoami` and resend; never let an
+> empty lookup silently change the dispatch mode.
 
 Two same-assistant processes proving the same conversation fail as `conversation_ambiguous`; they
 are never deduplicated into one owner. If this assistant genuinely cannot establish its provider
 conversation id, use authenticated `GET /v1/orchestrator/sessions` as the explicit fallback only
 for terminal-addressed operations. Select the live row deliberately and never substitute
-`$ITERM_SESSION_ID`. The index does not manufacture `root.session_id`; dispatch without a
-conversation owner is explicit poll-only automation.
+`$ITERM_SESSION_ID`. The index does not manufacture `root.session_id`; an interactive Root that
+cannot prove its conversation owner must stop rather than dispatch.
 
 
 **Codex:** its current rollout id is exported directly. Do this in the same shell call that writes
@@ -694,13 +705,13 @@ echo "root session = ${ROOT_SESSION:-null}"
 ```
 
 If call B still comes back empty, try once more a call later. If it is still empty, do not dispatch:
-report that the current root identity could not be proved. Only automation deliberately designed
-to be detached may set `ROOT_SESSION=""` and `POLL_ONLY=true`, and that caller must keep polling.
+report that the current Root identity could not be proved. Do not convert that failure into a
+detached task.
 
 **This is worth two things, and the second one is easy to forget:** one, the app needs to know
 which terminal to notify when the task finishes; two, **the child's row in the list is indented
-under you because of this id**. A null id is refused unless the task explicitly declares
-`root.poll_only:true`; that mode is for detached automation, not a fallback for a failed lookup.
+under you because of this id**. A null id is refused on the owned-child route; detached automation
+has a separate task shape and endpoint, not a fallback for a failed lookup.
 Never guess an id. `ROOT_SESSION` and `ROOT_ASSISTANT` have to be in the same bash call
 as step 4's `jq`, or the variables will not survive; alternatively paste both strings straight
 into `--arg`.
@@ -711,7 +722,7 @@ and returns `422 root_identity_is_terminal` with `canonical_root_session_id` and
 `canonical_root_assistant`. Evidence is independent of what you put in `root.assistant`, so replace
 both values with that actual tuple. Unknown or offline identities are not guessed and are refused
 as `root_unresolved`; multiple same-assistant process owners are refused as
-`conversation_ambiguous`. Detached automation uses null plus `root.poll_only:true`.
+`conversation_ambiguous`. Do not change modes to escape either refusal.
 
 ---
 
@@ -739,7 +750,8 @@ Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`. **Bra
 | `depth_exceeded` | **you are already at the bottom of the tree** | stop now, tell the user as in §0, and do this one yourself. Do not route around it |
 | `over_capacity` | the allowance is full | `message` says whether it is your session's allowance or the whole Mac's. The error carries `retry_after` in seconds. Wait and resend, or send fewer / in batches. **Do not hammer it** |
 | `bad_task` | `task.json` does not validate | read `message`, fix the file, resend the same `task_id` (same id is idempotent). A bad `model` lands here too |
-| `root_session_required` | `root.session_id` is empty and the task did not explicitly opt into polling | find this assistant's current conversation id. Use `root.poll_only:true` only for intentionally detached automation |
+| `detached_route_required` | the owned-child endpoint received a poll-only task | resolve the interactive Root and resend with `poll_only:false`; only automation designed from the start as unattended uses `/v1/orchestrator/detached-tasks` |
+| `root_session_required` | `root.session_id` is empty | prove this assistant's current conversation id through `GET /v1/orchestrator/whoami`; do not downgrade the task |
 | `root_assistant_required` | a non-null owner omitted `root.assistant` | set the actual dispatching assistant to `claude` or `codex`; do not rely on the legacy Claude read fallback |
 | `root_unresolved` | the supplied root id matches no live process-bound owner | refresh the current conversation id; do not let the child open under a stale or guessed id |
 | `conversation_ambiguous` | multiple live processes of the declared assistant prove the same conversation id | stop and resolve the duplicate ownership; do not select an arbitrary terminal |
@@ -750,6 +762,24 @@ Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`. **Bra
 
 **Resending the same `task_id` is safe** — you get the record that already exists, not a second
 tab. So a retry after a timeout is just a resend; there is no need for an `Idempotency-Key`.
+
+### 5.1 Unattended detached automation is a different door
+
+Use this only when the operation was designed from the start to have no interactive Root—for
+example, an external automation that persists its own polling loop. It is never a Child dispatch,
+Root Assignment, Major Feature launch, or recovery from a failed identity lookup. Build the task
+with `root.session_id:null` and `root.poll_only:true`, then send the same closed body to:
+
+```bash
+curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+```
+
+The route refuses an owner or a missing `poll_only:true` as `detached_task_required`. The ordinary
+`/tasks` route refuses this task shape as `detached_route_required`. A detached caller must poll
+the exact task and read `result.json`; there is deliberately no Root notification or grouping.
 
 ---
 
@@ -1066,7 +1096,8 @@ this is the short form.
    may still name the vanished old terminal. The same resolver works under tmux; labels, cwd and
    state are not identity fallbacks. If the provider conversation id genuinely cannot be
    established, read authenticated `GET /v1/orchestrator/sessions` and deliberately select the
-   live row for terminal-addressed work only; ownerless dispatch remains explicit poll-only.
+   live row for terminal-addressed work only; an interactive Root still stops if it cannot prove
+   its conversation id.
 2. **Read the state first** — `GET /v1/orchestrator/coordinator`, with `$TOKEN` from step 1 of this
    skill. `coordinator.configured` false means nobody holds it; otherwise `coordinator.status` is
    `online`, `offline`, or `unknown`, and `coordinator.id` and `coordinator.generation` are the pair
@@ -1276,7 +1307,7 @@ else
 fi
 
 if [ -z "$ROOT_SESSION" ]; then
-  echo "refusing detached dispatch: current root conversation id was not found" >&2
+  echo "refusing owned-child dispatch: current Root conversation id was not found" >&2
   exit 2
 fi
 

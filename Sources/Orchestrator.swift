@@ -4034,7 +4034,7 @@ enum Orchestrator {
     /// Positive evidence that a caller put a physical terminal id where the task protocol needs
     /// the assistant process's conversation id. Its assistant is an observed fact, not filtered
     /// through the caller's label. Empty or conflicting evidence is deliberately inconclusive;
-    /// the HTTP boundary then refuses an unresolved owner unless detached polling was explicit.
+    /// the owned-child HTTP boundary refuses an unresolved owner rather than changing modes.
     struct RootIdentityEvidence: Equatable {
         let source: String
         let terminalID: String
@@ -4054,8 +4054,8 @@ enum Orchestrator {
         return .refused(
             status: 422, code: "root_identity_is_terminal",
             message: "root.session_id is a physical terminal id; use the assistant process-bound "
-                + "conversation id returned as canonical_root_session_id, or use null together "
-                + "with root.poll_only true for intentionally detached automation.",
+                + "conversation id returned as canonical_root_session_id, verify it through "
+                + "GET /v1/orchestrator/whoami, and resend the owned child dispatch.",
             extra: [
                 "supplied_root_session_id": claimed,
                 "canonical_root_session_id": proof.canonicalSessionID,
@@ -4064,16 +4064,44 @@ enum Orchestrator {
             ])
     }
 
-    /// The HTTP boundary requires an owner unless detached polling is a deliberate choice.
-    /// Kept pure so the refusal can be proved without registering a task or opening a terminal.
+    /// After the ingress door selects owned-child or detached mode, enforce the remaining owner
+    /// requirement. Kept pure so refusal is proved without registration or terminal open.
     static func rootSessionRequirementRefusal(sessionID: String?, pollOnly: Bool) -> Reply? {
         guard sessionID == nil, !pollOnly else { return nil }
         return .refused(
             status: 422, code: "root_session_required",
             message: "root.session_id is required for API dispatch so the child can be "
-                + "grouped, closed and reported back to its owner. Use this assistant's "
-                + "current conversation id, or set root.poll_only to true for an "
-                + "intentionally detached task that the caller will poll.",
+                + "grouped, closed and reported back to its owner. Resolve this interactive "
+                + "Root with GET /v1/orchestrator/whoami, then resend with its current "
+                + "process-bound conversation id and assistant.",
+            extra: [:])
+    }
+
+    /// Interactive ownership and unattended automation are different ingress primitives. A
+    /// generic `poll_only` switch on the ordinary child route made an identity lookup failure look
+    /// like a valid detached decision; by the time the caller noticed, a real executor was already
+    /// working with no completion owner. The route selects the mode now, before registration or a
+    /// terminal starter can run.
+    static func dispatchDoorRefusal(sessionID: String?, pollOnly: Bool,
+                                    allowDetachedAutomation: Bool) -> Reply? {
+        if allowDetachedAutomation {
+            guard sessionID != nil || !pollOnly else { return nil }
+            return .refused(
+                status: 422, code: "detached_task_required",
+                message: "The detached automation route requires root.session_id null and "
+                    + "root.poll_only true. Owned Root-to-Child work belongs on "
+                    + "POST /v1/orchestrator/tasks after resolving the Root with "
+                    + "GET /v1/orchestrator/whoami.",
+                extra: [:])
+        }
+        guard pollOnly else { return nil }
+        return .refused(
+            status: 422, code: "detached_route_required",
+            message: "POST /v1/orchestrator/tasks creates an owned Child and never accepts "
+                + "root.poll_only. Resolve this interactive Root with "
+                + "GET /v1/orchestrator/whoami and resend with root.session_id plus "
+                + "root.assistant. Only unattended automation may use poll-only, through "
+                + "POST /v1/orchestrator/detached-tasks.",
             extra: [:])
     }
 
@@ -5764,6 +5792,7 @@ enum Orchestrator {
 
     static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil,
                          requireRootSession: Bool = false,
+                         allowDetachedAutomation: Bool = false,
                          respawn: RespawnOrigin? = nil) -> Reply {
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
@@ -5791,6 +5820,13 @@ enum Orchestrator {
         switch draft(from: obj, expecting: taskID) {
         case .bad(let why): return .refused(422, "bad_task", why)
         case .ok(let ok): made = ok
+        }
+        if requireRootSession || allowDetachedAutomation,
+           let refusal = dispatchDoorRefusal(
+                sessionID: made.rootSessionId, pollOnly: made.pollOnly,
+                allowDetachedAutomation: allowDetachedAutomation) {
+            refundDispatchRate(rateTicket)
+            return refusal
         }
         if requireRootSession,
            let refusal = rootSessionRequirementRefusal(
@@ -13365,8 +13401,9 @@ enum Orchestrator {
         return .refused(
             status: code == "conversation_ambiguous" ? 409 : 422, code: code,
             message: (warning["message"] as? String ?? "root.session_id is unresolved.")
-                + " Use the current process-bound conversation id, or use a null "
-                + "root.session_id with root.poll_only true and poll the task explicitly.",
+                + " Resolve the interactive Root with GET /v1/orchestrator/whoami and resend "
+                + "with the current process-bound conversation id; do not downgrade owned "
+                + "work to detached polling.",
             extra: [:])
     }
 

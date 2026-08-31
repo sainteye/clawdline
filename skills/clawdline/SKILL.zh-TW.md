@@ -83,8 +83,10 @@ curl -s "http://127.0.0.1:$PORT/v1/health"
 - **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
   line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
   from OPEN THREADS.
-- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
-  detached automation. It is never a Root and never a Major Feature owner.
+- **Detached automation.** `POST /v1/orchestrator/detached-tasks` is the only public route that
+  accepts `root.session_id: null` with `root.poll_only: true`; ordinary
+  `POST /v1/orchestrator/tasks` refuses poll-only. It is only unattended automation, never a Root
+  or Major Feature owner.
 - **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
   ordinary independent Root and briefs only objective, scope, constraints, relevant references,
   and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,
@@ -460,6 +462,16 @@ body），app 再放進注入給 child 的第一句話。app 只留 SHA-256。
 
 用 `jq -n` 組，不要手拼字串——`instructions` 裡有引號或換行時手拼一定會壞。
 
+這份 recipe 是互動式 Root 派出有 owner 的 Child。Root 身分缺失時要在寫檔前 fail closed；空的查詢
+結果不代表可以把工作改成 detached：
+
+```bash
+if [ -z "${ROOT_SESSION:-}" ] || [ -z "${ROOT_ASSISTANT:-}" ]; then
+  echo "無法證明互動式 Root 身分；請用 GET /v1/orchestrator/whoami 解析，不得降級成 detached automation" >&2
+  exit 64
+fi
+```
+
 ```bash
 graph_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
 GRAPH=$(jq -nc --arg id "$graph_id" --arg current "portrait" \
@@ -478,7 +490,6 @@ jq -n \
   --arg root_session "$ROOT_SESSION" \
   --arg root_assistant "$ROOT_ASSISTANT" \
   --arg root_label "clawdline 主控 session" \
-  --argjson poll_only "${POLL_ONLY:-false}" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
   --argjson graph "$GRAPH" \
@@ -487,9 +498,9 @@ jq -n \
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions,
     plan:$plan, graph:$graph,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
-    root:{session_id:(if $root_session=="" then null else $root_session end),
+    root:{session_id:$root_session,
           assistant:$root_assistant, project_dir:$dir, label:$root_label,
-          poll_only:$poll_only}}' \
+          poll_only:false}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
@@ -521,7 +532,7 @@ unknowns 與 scope，只改 `current_node`；frontier 由 broker 根據 task、r
 | `root.session_id` | 目前這個助理 process-bound conversation id；terminal-neutral id 只屬於 terminal-addressed route，一般派工一定要能解析到 live owner |
 | `root.assistant` | **所有 owner 非 null 的一般派工都必填**：派出這件 task 的助理，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child。省略／null 會回 `root_assistant_required`；legacy 缺 assistant 在 ownership 一律是 unknown，舊 Claude fallback 只留在非 ownership 相容讀路徑 |
 | `root.parent_task` | **不要填。** 這個欄位是給「會往下派的 child」用的，而 child 已經不能派工；現在這個 app 收得到的每一次派工都來自 root，這一格就是 `null`。它還是會被驗證、還是會被讀，因為舊版留下來的紀錄裡有 |
-| `root.poll_only` | 預設 `false`。只有故意做無 root 的自動化時才設為 `true` 並搭配 null session id；它不會收到完成通知或擁有 child row，呼叫者必須自行 poll |
+| `root.poll_only` | 這份 owned-child recipe 永遠是 `false`。無人值守的 detached automation 有自己的 task shape 與 `/v1/orchestrator/detached-tasks`；它不是 Root 身分解析失敗時的 fallback |
 
 **宣告 `claims` 大約只花 root 二十個 output token，而多數派工還是沒寫。** 這台機器 206 筆派工
 裡有 60.7% 什麼都沒宣告。撞一次的代價是整件 task 重來——同一份紀錄上是三百萬到一千八百萬 tokens。
@@ -539,20 +550,20 @@ unknowns 與 scope，只改 `current_node`；frontier 由 broker 根據 task、r
 時，broker 會把「宣告了卻從沒碰過」的路徑一條條點名。同一個錯誤的反方向——收到那份報告就當真，
 下一次宣告窄一點。
 
-### 查自己的助理與 session id（除非明確 poll-only，否則必填）
+### 查自己的助理與 session id（owned-child 派工必填）
 
 > `root.session_id` 就填助理自己的 conversation id——Claude 的 transcript uuid 或 Codex 的
 > rollout id，不能填受監看的 terminal id。派工當下會依 `root.assistant` 解析成同一個
 > process-bound conversation key，完成通知、分組、容量與 root 關閉
 > cascade 全部用這一把 key。一定要讀 response 的 `warnings`：非 null 的值若找不到任何 live owner，
-> 會以 `root_unresolved` 拒絕，不會先開出孤兒形狀的 Child。真的沒有互動式 owner 時，才明確設定
-> `POLL_ONLY=true`，並接受只能靠 polling 得知完成；查詢失敗不能默默替你選這個模式。
+> 會以 `root_unresolved` 拒絕，不會先開出孤兒形狀的 Child。請用 authenticated
+> `GET /v1/orchestrator/whoami` 重新證明同一個互動式 Root，再重送；查詢失敗不能改變派工模式。
 
 同一助理若有兩個 process 證明同一個 conversation，會回 `conversation_ambiguous`，絕不把兩列
 去重成一個 owner。若這個助理真的無法建立 provider conversation id，authenticated
 `GET /v1/orchestrator/sessions` 是 terminal-addressed operation 的明確 fallback：刻意選 live row，
-絕不能拿 `$ITERM_SESSION_ID` 代替。Index 不會製造 `root.session_id`；沒有 conversation owner 的
-dispatch 只能明確採 poll-only。
+絕不能拿 `$ITERM_SESSION_ID` 代替。Index 不會製造 `root.session_id`；互動式 Root 無法證明
+conversation owner 時必須停止，不得派工。
 
 
 **Codex：**目前 rollout id 已直接放在環境變數裡。要跟寫 `task.json` 放在同一個 shell
@@ -608,12 +619,11 @@ echo "root session = ${ROOT_SESSION:-null}"
 ```
 
 呼叫 B 還是撈到空的，就再隔一個呼叫補撈一次；仍然沒有就不要派工，直接回報目前無法證明 root
-身分。只有本來就設計成 detached 的自動化才能設定 `ROOT_SESSION=""` 與 `POLL_ONLY=true`，而且
-呼叫端必須持續 polling。
+身分。不要把這個失敗轉成 detached task。
 
 **這件事有兩個用途，第二個很容易忘：** 一是完成時 app 要知道該回頭通知哪個終端機；二是
-**清單裡那個 child 的 row 要縮排掛在你底下**，靠的就是這個 id。null id 會被拒絕，除非 task
-明確宣告 `root.poll_only:true`；那是 detached automation，不是查詢失敗時的 fallback。不要瞎編 id。
+**清單裡那個 child 的 row 要縮排掛在你底下**，靠的就是這個 id。owned-child route 會拒絕
+null id；detached automation 有獨立的 task shape 與 endpoint，不是查詢失敗時的 fallback。不要瞎編 id。
 `ROOT_SESSION` 與 `ROOT_ASSISTANT` 都要跟步驟 4 的 `jq` 在同一個 bash 呼叫裡，不然變數
 不會留下來——或者直接把兩個字串貼進 `--arg`。
 
@@ -623,7 +633,7 @@ active physical id 或 durable Coordinator 的 physical binding，會回
 `canonical_root_assistant`。證據不受你填的 `root.assistant` 影響；請把 session 與 assistant
 一起換成錯誤回傳的實際 tuple。未知或離線的身分不會被猜測，會以 `root_unresolved`
 拒絕；同一助理有多個 process owner 時則以 `conversation_ambiguous` 拒絕。detached automation
-才使用 null 搭配 `root.poll_only:true`。
+不能用來規避這兩種拒絕。
 
 ---
 
@@ -651,7 +661,8 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 | `depth_exceeded` | **你已經在樹的最底層** | 立刻停，照 §0 回報使用者，然後這件事自己做。不要繞路重試 |
 | `over_capacity` | 額度滿了 | `message` 會說是你這個 session 的額度滿了、還是整台 Mac 的。錯誤物件裡有 `retry_after`（秒）。等它再送，或減件數／分批。**不要連續重打** |
 | `bad_task` | `task.json` 不合格 | 讀 `message`，改檔案，同一個 `task_id` 再送一次（同 id 是冪等的）。`model` 打錯也走這條 |
-| `root_session_required` | `root.session_id` 是空的，而且沒有明確選 poll-only | 找出目前助理的 conversation id；只有故意做 detached automation 時才用 `root.poll_only:true` |
+| `detached_route_required` | owned-child endpoint 收到 poll-only task | 解析互動式 Root 後，以 `poll_only:false` 重送；只有從一開始就設計成無人值守的 automation 才使用 `/v1/orchestrator/detached-tasks` |
+| `root_session_required` | `root.session_id` 是空的 | 用 `GET /v1/orchestrator/whoami` 證明目前助理的 conversation id；不要把 task 降級 |
 | `root_assistant_required` | 非 null owner 沒有明填 `root.assistant` | 填入實際派工助理 `claude` 或 `codex`；不要依賴只供 legacy 紀錄讀取的 Claude fallback |
 | `root_unresolved` | 填入的 root id 找不到任何 live process-bound owner | 重新取得目前 conversation id；不要讓 child 掛在過期或猜來的 id 下 |
 | `conversation_ambiguous` | 同一助理有多個 live process 證明同一個 conversation id | 停止並排除重複 owner；不要任選一個 terminal |
@@ -662,6 +673,23 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 
 **同一個 `task_id` 重送是安全的**，回的是已登記的那筆，不會開第二個分頁。所以逾時重試照送即可，
 不需要 `Idempotency-Key`。
+
+### 5.1 無人值守的 detached automation 是另一扇門
+
+只有工作從一開始就設計成沒有互動式 Root 時才使用，例如會自行持久化 polling loop 的外部
+automation。它不是 Child 派工、Root Assignment、Major Feature launch，也不是身分查詢失敗時的
+復原手段。task 寫成 `root.session_id:null` 與 `root.poll_only:true`，再把同一個 closed body 送到：
+
+```bash
+curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+```
+
+這條 route 若收到 owner 或缺少 `poll_only:true`，會回 `detached_task_required`；普通 `/tasks`
+若收到這個 shape，會回 `detached_route_required`。detached caller 必須 poll 精確 task 並讀
+`result.json`；它刻意沒有 Root 通知與分組。
 
 ---
 
@@ -936,7 +964,7 @@ route 打進你的 session，真正做事的是你。完整版連每一種拒絕
    絕不能拿 `$ITERM_SESSION_ID` 代替：iTerm restart/resume 後它可能還指向已消失的舊 terminal。
    tmux 也走同一條 resolver；label、cwd、state 都不是 identity fallback。Provider conversation id
    若真的無法建立，改讀 authenticated `GET /v1/orchestrator/sessions`，只為 terminal-addressed work
-   刻意選 live row；沒有 owner 的 dispatch 仍須明確 poll-only。
+   刻意選 live row；互動式 Root 無法證明 conversation id 時仍須停止。
 2. **先讀現況**——`GET /v1/orchestrator/coordinator`，用本 skill 第 1 節的 `$TOKEN`。
    `coordinator.configured` 是 false 代表沒有人擔任；否則看 `coordinator.status` 是 `online` 還是
    `offline`／`unknown`；`coordinator.id` 與 `coordinator.generation` 是之後只有在精確證明 offline
@@ -1126,7 +1154,7 @@ else
 fi
 
 if [ -z "$ROOT_SESSION" ]; then
-  echo "拒絕 detached 派工：找不到目前 root conversation id" >&2
+  echo "拒絕 owned-child 派工：找不到目前 Root conversation id" >&2
   exit 2
 fi
 

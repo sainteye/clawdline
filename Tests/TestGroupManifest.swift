@@ -420,6 +420,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the reconnect route is closed, machine-only and refuses online takeover",
     "the production route preserves scan evidence across cache reads and app generations",
     "task completion ingress and delivery are durable protocol facts",
+    "owned child dispatch and detached automation use different doors",
     "completion transport failure injection is typed and bounded",
     "the three ways a completion fails to arrive are each typed and each visible",
     "grandchild completion delivery is bound to the parent's exact process tuple",

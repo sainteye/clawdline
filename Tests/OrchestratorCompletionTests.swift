@@ -195,6 +195,77 @@ group("task completion ingress and delivery are durable protocol facts") {
               && decoded?.body.contains("after observing, ACK") == true)
 }
 
+group("owned child dispatch and detached automation use different doors") {
+    Orchestrator.forget()
+    let wasEnabled = Config.shared.orchestratorEnabled
+    Config.shared.orchestratorEnabled = true
+    let store = Orchestrator.storeURL
+    let storedBefore = try? Data(contentsOf: store)
+    let ownedID = UUID().uuidString.lowercased()
+    let detachedID = UUID().uuidString.lowercased()
+    let taskIDs = [ownedID, detachedID]
+    defer {
+        for id in taskIDs {
+            try? FileManager.default.removeItem(
+                at: Orchestrator.root.appendingPathComponent(id, isDirectory: true))
+        }
+        if let storedBefore {
+            try? storedBefore.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Config.shared.orchestratorEnabled = wasEnabled
+        Orchestrator.forget()
+    }
+
+    func writeDetachedTask(_ id: String) {
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        try! FileManager.default.createDirectory(at: directory,
+                                                 withIntermediateDirectories: true)
+        let task: [String: Any] = [
+            "clawdline_protocol": 1, "task_id": id, "kind": "custom",
+            "assistant": "codex", "project_dir": "/tmp", "title": "poll-only probe",
+            "instructions": "the test starter prevents a real terminal", "timeout_minutes": 5,
+            "root": ["session_id": NSNull(), "poll_only": true,
+                     "label": "unattended fixture"],
+        ]
+        try! JSONSerialization.data(withJSONObject: task)
+            .write(to: directory.appendingPathComponent("task.json"), options: .atomic)
+    }
+    taskIDs.forEach(writeDetachedTask)
+
+    var opened = 0
+    Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
+        opened += 1
+        return .started(id: "TEST-DETACHED-\(opened)", backend: .iterm)
+    }
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let secret = String(repeating: "da", count: 32)
+    func body(_ id: String) -> String {
+        "{\"task_id\":\"\(id)\",\"secret\":\"\(secret)\"}"
+    }
+
+    let ordinary = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/tasks", headers: auth, body: body(ownedID)))
+    expect("ordinary child dispatch refuses poll-only mode", ordinary.status, 422)
+    expect("the wrong door has a typed correction", remoteErrorCode(ordinary),
+           "detached_route_required")
+    expect("the ordinary door opens no detached executor", opened, 0)
+    check("the ordinary refusal registers no detached task",
+          Orchestrator.record(id: ownedID) == nil)
+
+    let detached = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/detached-tasks", headers: auth, body: body(detachedID)))
+    expect("the dedicated automation door accepts an explicit poll-only task",
+           detached.status, 200)
+    expect("the dedicated door opens exactly one executor", opened, 1)
+    check("the detached task remains deliberately ownerless",
+          (Orchestrator.record(id: detachedID)?["root"] as? [String: Any])?["sessionId"] == nil)
+    check("detached automation uses the bounded terminal-worker lane",
+          RemoteServer.isOrchestratorTerminalWorkerRoute(
+            "/v1/orchestrator/detached-tasks"))
+}
+
 group("completion transport failure injection is typed and bounded") {
     let codes: [Orchestrator.CompletionFailureCode] = [
         .rootMissing, .conversationAmbiguous, .rootChoosing, .itermModal, .terminalTimeout,

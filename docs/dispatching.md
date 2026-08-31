@@ -39,8 +39,10 @@ choose follow-up work, integrate safely, and never equate delegation with comple
 - **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
   line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
   from OPEN THREADS.
-- **Detached automation.** `root.session_id: null` with `root.poll_only: true` is only unattended
-  detached automation. It is never a Root and never a Major Feature owner.
+- **Detached automation.** `POST /v1/orchestrator/detached-tasks` is the only public route that
+  accepts `root.session_id: null` with `root.poll_only: true`; ordinary
+  `POST /v1/orchestrator/tasks` refuses poll-only. It is only unattended automation, never a Root
+  or Major Feature owner.
 - **Root Assignment / Feature Launch.** `POST /v1/orchestrator/root-assignments` opens an
   ordinary independent Root and briefs only objective, scope, constraints, relevant references,
   and acceptance. Its durable machine-auth record and UI classification carry no child, handoff,

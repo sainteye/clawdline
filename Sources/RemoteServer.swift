@@ -683,7 +683,9 @@ final class RemoteServer: @unchecked Sendable {
     /// handoff and wait identifiers provide idempotency, so they need bounded isolation but not
     /// the paired-device idempotency table used by session routes.
     static func isOrchestratorTerminalWorkerRoute(_ path: String) -> Bool {
-        if path == "/v1/orchestrator/tasks" || path == "/v1/orchestrator/handoffs"
+        if path == "/v1/orchestrator/tasks"
+            || path == "/v1/orchestrator/detached-tasks"
+            || path == "/v1/orchestrator/handoffs"
             || path == "/v1/orchestrator/root-assignments"
             || path == "/v1/orchestrator/waits" { return true }
         if path.hasPrefix("/v1/orchestrator/schedules/") && path.hasSuffix("/run") {
@@ -1324,6 +1326,21 @@ final class RemoteServer: @unchecked Sendable {
             }
             return answer(Orchestrator.dispatch(taskID: taskID, secret: secret,
                                                 requireRootSession: true))
+
+        case ("POST", "/v1/orchestrator/detached-tasks"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Detached automation needs the orchestrator token.")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            guard let taskID = body["task_id"] as? String,
+                  let secret = body["secret"] as? String else {
+                return .error(400, "bad_request", "task_id and secret are required.")
+            }
+            return answer(Orchestrator.dispatch(
+                taskID: taskID, secret: secret, requireRootSession: true,
+                allowDetachedAutomation: true))
 
         case ("POST", "/v1/orchestrator/notify"):
             guard orchestratorAuthed else {

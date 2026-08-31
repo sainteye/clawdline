@@ -438,21 +438,27 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
-| `root.session_id` | the dispatcher's process-bound assistant conversation id. HTTP dispatch requires a live resolvable owner unless `root.poll_only` is explicitly `true`; a terminal-neutral id belongs only on terminal-addressed routes |
+| `root.session_id` | the dispatcher's process-bound assistant conversation id. Ordinary `/v1/orchestrator/tasks` dispatch requires a live resolvable owner; a terminal-neutral id belongs only on terminal-addressed routes |
 | `root.assistant` | required `claude` or `codex` whenever a new ordinary HTTP dispatch has a non-null `root.session_id`. Omission or explicit `null` is `422 root_assistant_required`; no capacity is spent, task registered or terminal opened. Persisted legacy rows remain readable; absence is unknown in ownership decisions, while the old Claude default remains only in non-ownership compatibility readers. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
-| `root.poll_only` | optional boolean, default `false`. `true` explicitly opts into a detached task and is legal only with a null `root.session_id`; the caller must poll because no completion notice or owner grouping exists |
+| `root.poll_only` | optional boolean, default `false`. Ordinary `/tasks` accepts only `false`; the dedicated `/detached-tasks` route requires `true` with a null `root.session_id`, and its unattended caller must poll |
 
-`root.session_id` is nullable only for an intentionally detached caller that writes
-`root.poll_only: true`. Ordinary HTTP dispatch fails with `422 root_session_required` when the
-field is null or empty. A non-null spelling with no live process-bound owner fails with
+`root.session_id` is required for ordinary owned-child dispatch. `/v1/orchestrator/tasks` fails
+with `422 detached_route_required` when `root.poll_only:true`, and with
+`422 root_session_required` when the field is null or empty. A non-null spelling with no live process-bound owner fails with
 `422 root_unresolved`; a non-null id without explicit `root.assistant` fails first with
 `422 root_assistant_required`; two same-assistant processes proving the same conversation fail with
 `409 conversation_ambiguous`. Neither is a warning followed by an orphan-shaped task. Codex
 normally exports `CODEX_THREAD_ID` (with `CODEX_SESSION_ID` as the compatible spelling)
 and that value is the rollout session id. Claude has no direct self-query and uses the transcript
-nonce procedure in the skill. A caller that genuinely has no interactive owner can still say so
-without inventing one, but it must also accept polling as the only completion path.
+nonce procedure in the skill. Identity failure is not a mode decision: prove the current Root with
+`GET /v1/orchestrator/whoami` and resend the same task id.
+
+Unattended automation that was deliberately designed with no interactive owner uses the separate
+`POST /v1/orchestrator/detached-tasks` route. That door accepts only a null session id together with
+`root.poll_only:true`, otherwise returning `422 detached_task_required`. It has no completion
+notification, owner grouping, per-root capacity, or root-close cascade. It is never a Root,
+Major Feature, or fallback for a failed owned-child lookup.
 
 A watched terminal id is **not** a substitute for that conversation id. On a new dispatch the
 broker compares `root.session_id` with positive process-bound evidence from the active terminal
@@ -460,14 +466,13 @@ inventory and with the durable Coordinator's current binding. When either safely
 supplied value is the physical terminal id, dispatch is refused as
 `422 root_identity_is_terminal`; evidence is collected independently of the caller-declared
 `root.assistant`, and the error includes both `canonical_root_session_id` and the proved
-`canonical_root_assistant`. Correct both values and resend the same task id. An intentionally
-detached caller instead writes a null session id together with `root.poll_only: true` and polls.
+`canonical_root_assistant`. Correct both values and resend the same task id.
 Unknown and offline tuples are not guessed: an HTTP dispatch is refused as `root_unresolved`.
 Conflicting same-assistant process owners are also not guessed and are refused as
 `conversation_ambiguous`. Existing persisted tasks keep their historical root value, and task
 mounting still accepts conversation ids only.
 
-Two things follow from explicit poll-only mode, and the second one surprises people. The task is not told
+Two things follow from the dedicated poll-only mode, and the second one surprises people. The task is not told
 when it finishes, so the dispatcher has to poll. And **its row has nothing to sit under**: the
 list indents a child beneath the session that asked for it, that session is found through this
 id, and a task that named nobody is filed under nobody. The row still says `Child`, because being
@@ -481,8 +486,9 @@ current conversation id becomes the durable root key. Completion
 notification, `liveTasks(dispatchedBy:)`, session grouping and root-close cascade all consume that
 canonical key. If a non-null spelling matches no one, HTTP dispatch returns `422 root_unresolved`;
 two same-assistant processes proving the same conversation return
-`409 conversation_ambiguous`. Both happen before registering or opening anything. Poll-only automation uses a null id
-plus the explicit flag instead of disguising an unresolved owner as a warning.
+`409 conversation_ambiguous`. Both happen before registering or opening anything. Dedicated
+poll-only automation uses a null id plus the explicit flag through its own route; it cannot disguise
+an unresolved owner as a warning.
 
 The broker does not trust either string on its own. For Claude it resolves the exact current
 process's transcript (using the validated process registry when available, otherwise a hook id
@@ -1474,7 +1480,8 @@ which is no help to the first session that needs to wait on somebody.
 If the provider conversation id genuinely cannot be established, the authenticated session index
 is the explicit fallback for terminal-addressed operations: select the live assistant row there,
 never substitute `$ITERM_SESSION_ID`. It does not create a conversation identity and therefore
-cannot be used as `root.session_id`; a dispatch with no conversation owner is explicitly poll-only.
+cannot be used as `root.session_id`; an interactive Root without a proved conversation owner stops
+rather than silently switching to detached automation.
 
 **Two different namespaces, and only one of them is what these routes list.** A root
 identifies itself in `task.json` with whatever id its own assistant gave it — Claude Code's own

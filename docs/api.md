@@ -111,6 +111,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/auth/logout` | — | — |
 | `POST` | `/v1/orchestrator/handoffs` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/detached-tasks` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/root-assignments` | orchestrator token + key | — |
 | `GET` | `/v1/orchestrator/root-assignments` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/root-assignments/:id` | orchestrator token | — |
@@ -1430,7 +1431,7 @@ inventory and audit, not in the live Session projection.
 
 ### `POST /v1/orchestrator/tasks`
 
-**Dispatch.** One session asks for a task to be run by another one: normally Clawdline opens a
+**Owned-child dispatch.** One Session asks for a task to be run by another one: normally Clawdline opens a
 terminal tab in the task's directory, starts the assistant the task named, types a first message
 into it, and watches for the answer. Optional `task.json` field `attach_session` instead names an
 existing assistant Session from `GET /v1/orchestrator/sessions`; the same complete task is typed
@@ -1489,14 +1490,15 @@ Dispatch refusals are closed and typed; a client should branch on every applicab
 | `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
 | `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, typed `graph`, `claims`, `serialize`, or contradictory `root.poll_only`. Graph validation rejects unknown keys, duplicate ids, missing dependencies, self-edges and cycles. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `detached_route_required` | 422 | ordinary `/v1/orchestrator/tasks` received `root.poll_only:true`. Nothing is registered or opened. Resolve the interactive Root through `GET /v1/orchestrator/whoami` and resend with its conversation id and assistant; only unattended automation belongs on `/v1/orchestrator/detached-tasks` |
 | `graph_definition_conflict` | 409 | another task already carries the same graph id with a different destination, node list, unknowns, or out-of-scope boundary. Nothing is registered or opened |
 | `graph_frontier_blocked` | 409 | the task's `current_node` depends on a node without a durable completion receipt. `blocking_nodes` names each node, its derived state, and its task id when one exists |
 | `graph_dependency_failed` | 409 | a dependency task failed, a review node lacks `safe_to_land`, a verification node lacks a passing verification receipt, or another dependency produced a terminal failed state. Correct or replace that node before dispatching its successor |
 | `graph_node_active` | 409 | the current node already has an active task or landing obligation, or another dispatch is atomically admitting it. Its completed evidence cannot be replaced by a concurrent attempt |
 | `graph_node_complete` | 409 | the current node already has durable completion evidence. Model a correction as its own node rather than making the control sheet silently regress |
-| `root_session_required` | 422 | `root.session_id` is null or empty and `root.poll_only` is not `true`. Nothing is registered or opened; send the current assistant conversation id, or explicitly opt into detached polling |
+| `root_session_required` | 422 | `root.session_id` is null or empty. Nothing is registered or opened; prove the current interactive Root through `GET /v1/orchestrator/whoami`, then send its process-bound conversation id |
 | `root_assistant_required` | 422 | a non-null `root.session_id` was supplied without an explicit `root.assistant` of `claude` or `codex`. Nothing is registered or opened and the provisional rate ticket is refunded. New ordinary HTTP dispatch never applies the historical Claude default |
-| `root_unresolved` | 422 | the supplied non-null root id resolves to no live process-bound session for `root.assistant`. Nothing is registered or opened; correct the id, or use null plus `root.poll_only:true` and poll |
+| `root_unresolved` | 422 | the supplied non-null root id resolves to no live process-bound session for `root.assistant`. Nothing is registered or opened; re-prove the same interactive Root through `GET /v1/orchestrator/whoami` and correct the tuple. Do not turn identity failure into detached work |
 | `conversation_ambiguous` | 409 | more than one live process of `root.assistant` proves the same conversation id; no owner is selected and nothing is registered or opened |
 | `root_identity_is_terminal` | 422 | positive active-terminal or durable-Coordinator evidence proves `root.session_id` is a physical terminal id. The evidence is collected independently of caller-declared `root.assistant`; the error returns the actual `canonical_root_session_id` and `canonical_root_assistant`. Conflicting/unknown evidence remains nullable rather than guessed. The task is not registered and the provisional dispatch-rate ticket is refunded |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
@@ -1547,10 +1549,28 @@ cascade use one key. No matching live owner returns `422 root_unresolved`; more 
 same-assistant process proving the conversation returns `409 conversation_ambiguous`. Both tuple
 fields are required for a new ordinary HTTP dispatch: omission or explicit null for
 `root.assistant` returns `422 root_assistant_required` before capacity, registration or terminal
-opening. Every ownership refusal above occurs before registration. If no interactive owner exists
-by design, send
-`"root":{"session_id":null,"poll_only":true,…}`; that explicit mode registers a detached task and
-the caller owns polling it.
+opening. Every ownership refusal above occurs before registration. An identity lookup failure is
+not a mode decision: the caller repairs the same Root tuple and resends the same task id.
+
+### `POST /v1/orchestrator/detached-tasks`
+
+This is the separate door for unattended automation with no interactive owner. It reads the same
+task directory and the same two-field request body as the owned-child route, but accepts only
+`"root":{"session_id":null,"poll_only":true,…}`. The caller owns polling `GET
+/v1/orchestrator/tasks/:id` and `result.json`; no completion notification, owner grouping, per-root
+capacity, or root-close cascade can exist when no Root was named.
+
+The separation is deliberate. `/v1/orchestrator/tasks` refuses poll-only with
+`422 detached_route_required`, so a Root whose identity lookup failed cannot silently downgrade a
+normal Child into a floating task. Conversely, this route returns `422 detached_task_required` if
+the task names an owner or omits `poll_only:true`. Scheduled tasks use the broker's internal
+schedule path and do not need to pretend that an interactive Session dispatched them.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/detached-tasks \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
+```
 
 `"isolation":"worktree"` asks for a clean private checkout and a delivery branch named
 `clawdline/task/<complete-task-id>`. Optional `isolation_base` is resolved to a commit; without it,
@@ -1822,7 +1842,9 @@ installation without the registry/hook, for example—use authenticated
 `GET /v1/orchestrator/sessions` as the explicit address-book fallback for terminal-addressed
 operations. Select the live assistant row deliberately; do not substitute `$ITERM_SESSION_ID`.
 That fallback does not manufacture a task root: `root.session_id` remains a process-bound
-conversation id, so dispatch without one must use explicit `root.poll_only:true` and be polled.
+conversation id, so an interactive Root that cannot prove one must stop rather than dispatch.
+Only unattended automation designed from the start without a Root uses the dedicated
+`POST /v1/orchestrator/detached-tasks` route and owns its polling loop.
 
 ### `POST /v1/orchestrator/messages`
 
