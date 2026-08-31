@@ -501,6 +501,10 @@ export function idleClient() {
         return Promise.reject(bootError("cloud_starting", "the cloud connection is not ready"));
     }
     return {
+        // `main.js` calls `api.start()` for every selected transport after the DOM boots.
+        // The cloud session has already started its own reconnect loop before this placeholder
+        // is installed, so the honest implementation here is deliberately a no-op.
+        start: function () {},
         events: function (listener) {
             listeners.add(listener);
             return function () { listeners.delete(listener); };
