@@ -61,6 +61,13 @@ the executable candidate guard to 6,921. The merged candidate also carries three
 groups, so its ordered manifest guard is 459; both values remain expectations until the final exact
 candidate-tree suite observes them, and must be corrected rather than asserted if either differs.
 
+The Clawdfather succession candidate adds one Coordinator test group and 75 checks, moving the
+executable expectations to 461 groups and 7,185 Swift checks. It keeps `RemoteServer.swift` at the
+6,385-line dispatch-door receipt by introducing the cohesive `CoordinatorSuccessionService`
+boundary: the service owns its independent receipt ledger and lifecycle, while the frozen router
+retains only one transport-adapter call. These remain candidate expectations until the exact staged
+tree full suite observes them.
+
 ### Ordered suite and dependency manifest
 
 `Tests/main.swift` owns process order only. It enters subprocess probes, installs isolation, runs

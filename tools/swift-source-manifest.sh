@@ -32,6 +32,7 @@ clawdline_production_sources=(
   Sources/Config.swift
   Sources/Controller.swift
   Sources/Coordinator.swift
+  Sources/CoordinatorSuccession.swift
   Sources/Copy+Chinese.swift
   Sources/Copy+English.swift
   Sources/Copy+French.swift

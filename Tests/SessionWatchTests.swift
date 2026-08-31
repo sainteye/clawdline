@@ -178,6 +178,7 @@ group("every direct SessionWatch nudge call site is inventoried across productio
     let expected = [
         "Sources/RemoteServer.swift": 11,
         "Sources/Orchestrator.swift": 8,
+        "Sources/CoordinatorSuccession.swift": 1,
         "Sources/main.swift": 1,
     ]
     let sourceFiles = (try? FileManager.default.contentsOfDirectory(atPath: "Sources"))?

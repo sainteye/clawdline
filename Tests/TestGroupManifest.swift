@@ -419,6 +419,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "coordinator routes require the machine token and expose no implicit takeover",
     "the reconnect route is closed, machine-only and refuses online takeover",
     "the production route preserves scan evidence across cache reads and app generations",
+    "Clawdfather succession keeps every handoff and rebind boundary durable",
     "task completion ingress and delivery are durable protocol facts",
     "owned child dispatch and detached automation use different doors",
     "completion transport failure injection is typed and bounded",

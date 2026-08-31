@@ -839,7 +839,7 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(401, "unauthorized", "This needs a paired device.")
             }
         }
-        if let refusal = writeOriginRefusal(request) { return refusal }
+        if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) { return response }
 
         switch (request.method, request.path) {
 
@@ -4286,7 +4286,7 @@ final class RemoteServer: @unchecked Sendable {
     /// One Session's closeability, read through the same seams every other Session read uses.
     /// Used by the close gate and by the attestation route, both of which are about exactly one
     /// session and can afford the identity walk a list route amortises.
-    private func closeability(of session: TargetSession,
+    func closeability(of session: TargetSession,
                               identity: Orchestrator.SessionWorkIdentity? = nil)
         -> Orchestrator.SessionCloseabilityProjection {
         let resolved = identity ?? Self.sessionWorkIdentity(session)
@@ -4345,7 +4345,7 @@ final class RemoteServer: @unchecked Sendable {
         case missing
     }
 
-    private struct CoordinatorObservation {
+    struct CoordinatorObservation {
         let sessions: [Coordinator.LiveSession]
         let sessionsObservedAt: Date?
         let sessionsGeneration: Int?
@@ -4440,7 +4440,7 @@ final class RemoteServer: @unchecked Sendable {
     /// SessionWatch and Orchestrator are independent sources, so they are observed in that order
     /// and carry separate times/provenance. Within the second window, all work/ownership rows and
     /// all three totals are one registry snapshot.
-    private func coordinatorObservation() -> CoordinatorObservation {
+    func coordinatorObservation() -> CoordinatorObservation {
         if let supplied = Self.coordinatorSessionsForTesting {
             let evidence = Self.coordinatorObservationEvidenceForTesting
             let observedAt: Date? = evidence.map(\.observedAt) ?? Date()
@@ -4665,7 +4665,7 @@ final class RemoteServer: @unchecked Sendable {
     /// The reading lives on the main thread and this runs on the server's queue, so the crossing
     /// is here and nowhere else — one hop for a dictionary lookup, rather than a copy of the
     /// session list kept in two places and drifting.
-    private func session(withID id: String) -> TargetSession? {
+    func session(withID id: String) -> TargetSession? {
         if let supplied = Self.sessionPayloadForTesting?.0 {
             return Self.session(withID: id, among: supplied)
         }

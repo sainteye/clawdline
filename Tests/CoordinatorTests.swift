@@ -1364,4 +1364,421 @@ group("the production route preserves scan evidence across cache reads and app g
     check("only an accepted complete scan advances the evidence timestamp",
           watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
 }
+
+group("Clawdfather succession keeps every handoff and rebind boundary durable") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-succession-\(UUID().uuidString)",
+                                isDirectory: true)
+    let handoffRoot = directory.appendingPathComponent("handoffs", isDirectory: true)
+    try! manager.createDirectory(at: handoffRoot, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    CoordinatorSuccession.storeURLOverrideForTesting = directory
+        .appendingPathComponent("coordinator-successions.json")
+    Orchestrator.storeURLOverrideForTesting = directory.appendingPathComponent("orchestrator.json")
+    Orchestrator.handoffRootOverrideForTesting = handoffRoot
+    Coordinator.forgetForTesting()
+    CoordinatorSuccession.forgetForTesting()
+    Orchestrator.forget()
+    defer {
+        RemoteServer.coordinatorSessionsForTesting = nil
+        RemoteServer.coordinatorObservationEvidenceForTesting = nil
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.sessionWorkIdentityForTesting = nil
+        RemoteServer.sessionEndForTesting = nil
+        CoordinatorSuccessionService.closeProofForTesting = nil
+        CoordinatorSuccession.handoffStarterForTesting = nil
+        CoordinatorSuccession.storeSaveInterceptorForTesting = nil
+        CoordinatorSuccession.storeURLOverrideForTesting = nil
+        Coordinator.storeURLOverrideForTesting = nil
+        Orchestrator.storeURLOverrideForTesting = nil
+        Orchestrator.handoffRootOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        CoordinatorSuccession.forgetForTesting()
+        Orchestrator.forget()
+        try? manager.removeItem(at: directory)
+    }
+
+    let coordinatorID = "77777777-8888-4999-8aaa-bbbbbbbbbbbb"
+    let sender = coordinatorFixture(
+        "SENDER", tty: "/dev/ttys301", pid: 3_001,
+        processStart: Date(timeIntervalSince1970: 1_780_003_001),
+        conversation: "sender-conversation")
+    let receiver = coordinatorFixture(
+        "RECEIVER", assistant: .claude, tty: "/dev/ttys302", pid: 3_002,
+        processStart: Date(timeIntervalSince1970: 1_780_003_002),
+        conversation: "receiver-conversation")
+    _ = Coordinator.register(
+        sender, among: [sender, receiver], now: Date(timeIntervalSince1970: 1_780_003_010),
+        makeID: { UUID(uuidString: coordinatorID)! })
+    RemoteServer.coordinatorSessionsForTesting = [sender, receiver]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_780_003_020), generation: 20,
+        complete: true)
+    let senderTarget = TargetSession(
+        backend: .iterm, id: "SENDER", name: "sender", tty: "/dev/ttys301",
+        windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: "/tmp")
+    let receiverTarget = TargetSession(
+        backend: .iterm, id: "RECEIVER", name: "receiver", tty: "/dev/ttys302",
+        windowIndex: 0, tabIndex: 1, assistant: .claude, cwd: "/tmp")
+    RemoteServer.sessionPayloadForTesting = ([senderTarget, receiverTarget],
+                                             ["SENDER": .idle, "RECEIVER": .idle])
+    RemoteServer.sessionWorkIdentityForTesting = { target in
+        target.id == "SENDER" ? sender.identity : receiver.identity
+    }
+
+    let requestID = "88888888-9999-4aaa-8bbb-cccccccccccc"
+    let handoffID = "99999999-aaaa-4bbb-8ccc-dddddddddddd"
+    let package = handoffRoot.appendingPathComponent(handoffID, isDirectory: true)
+    try! manager.createDirectory(at: package, withIntermediateDirectories: true)
+    try! Data("# OBJECTIVE\ncontinue\n".utf8)
+        .write(to: package.appendingPathComponent("handoff.md"), options: .atomic)
+    let request = """
+    {"request_id":"\(requestID)","expected_coordinator_id":"\(coordinatorID)",
+     "expected_generation":1,"sender_session_id":"SENDER","handoff":{
+       "handoff_id":"\(handoffID)","project_dir":"/tmp","assistant":"claude",
+       "title":"Clawdfather succession"}}
+    """
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    var opens = 0
+    CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
+        opens += 1
+        return .started(id: "RECEIVER", backend: .iterm)
+    }
+    let createPath = "/v1/orchestrator/coordinator/successions"
+    let created = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: request))
+    expect("a succession request is accepted", created.status, 200)
+    let createdObject = (try? JSONSerialization.jsonObject(with: created.body)) as? [String: Any]
+    let createdRecord = createdObject?["succession"] as? [String: Any]
+    check("accepted and receiver-opened are separate durable receipts",
+          createdRecord?["accepted_at"] != nil
+            && createdRecord?["receiver_open_requested_at"] != nil
+            && createdRecord?["receiver_opened_at"] != nil
+            && createdRecord?["receiver_session_id"] as? String == "RECEIVER")
+    expect("the receiver tab is opened once", opens, 1)
+
+    let duplicate = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: request))
+    expect("an exact duplicate request is idempotent", duplicate.status, 200)
+    expect("an exact duplicate opens no second receiver", opens, 1)
+    let conflictingRequest = request.replacingOccurrences(
+        of: "Clawdfather succession", with: "different request under the same id")
+    let conflict = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: conflictingRequest))
+    expect("a reused request id with different content is refused", conflict.status, 409)
+    expect("the duplicate-content refusal is typed", remoteErrorCode(conflict),
+           "succession_request_conflict")
+
+    let lostRequestID = "aaaaaaa1-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let lostHandoffID = "aaaaaaa2-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let lostPackage = handoffRoot.appendingPathComponent(lostHandoffID, isDirectory: true)
+    try! manager.createDirectory(at: lostPackage, withIntermediateDirectories: true)
+    try! Data("# OBJECTIVE\nopen once\n".utf8)
+        .write(to: lostPackage.appendingPathComponent("handoff.md"), options: .atomic)
+    let lostRequest = """
+    {"request_id":"\(lostRequestID)","expected_coordinator_id":"\(coordinatorID)",
+     "expected_generation":1,"sender_session_id":"SENDER","handoff":{
+       "handoff_id":"\(lostHandoffID)","project_dir":"/tmp","assistant":"claude",
+       "title":"lost open receipt"}}
+    """
+    var lostSaves = 0
+    var lostOpens = 0
+    CoordinatorSuccession.storeSaveInterceptorForTesting = { _ in
+        lostSaves += 1
+        return lostSaves == 3 ? false : nil
+    }
+    CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
+        lostOpens += 1
+        return .started(id: "LOST-RECEIVER", backend: .iterm)
+    }
+    let lostReceipt = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: lostRequest))
+    expect("a crash-sized save failure after opening is surfaced", lostReceipt.status, 500)
+    expect("the receiver side effect happened only once before its receipt was lost", lostOpens, 1)
+    CoordinatorSuccession.storeSaveInterceptorForTesting = nil
+    let lostRetry = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: lostRequest))
+    expect("restart refuses to guess after an unreceipted receiver open", lostRetry.status, 409)
+    expect("the ambiguous restart is typed", remoteErrorCode(lostRetry),
+           "succession_receiver_open_receipt_lost")
+    expect("the ambiguous retry never opens a duplicate receiver", lostOpens, 1)
+
+    let failedRequestID = "aaaaaaa3-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let failedHandoffID = "aaaaaaa4-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let failedPackage = handoffRoot.appendingPathComponent(failedHandoffID, isDirectory: true)
+    try! manager.createDirectory(at: failedPackage, withIntermediateDirectories: true)
+    try! Data("# OBJECTIVE\nfail delivery\n".utf8)
+        .write(to: failedPackage.appendingPathComponent("handoff.md"), options: .atomic)
+    let failedRequest = """
+    {"request_id":"\(failedRequestID)","expected_coordinator_id":"\(coordinatorID)",
+     "expected_generation":1,"sender_session_id":"SENDER","handoff":{
+       "handoff_id":"\(failedHandoffID)","project_dir":"/tmp","assistant":"claude",
+       "title":"receiver delivery failure"}}
+    """
+    var failedStarts = 0
+    CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
+        failedStarts += 1
+        return .refused(status: 503, code: "terminal_closed",
+                        message: "injected receiver refusal", app: "iTerm2")
+    }
+    let failedDelivery = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: failedRequest))
+    expect("receiver delivery failure remains the HTTP failure", failedDelivery.status, 503)
+    expect("receiver delivery failure is typed at the succession boundary",
+           remoteErrorCode(failedDelivery), "succession_receiver_delivery_failed")
+    let failedDuplicate = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: failedRequest))
+    expect("a failed delivery retry returns its durable failure", failedDuplicate.status, 409)
+    expect("a failed delivery retry opens nothing else", failedStarts, 1)
+
+    CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
+        opens += 1
+        return .started(id: "RECEIVER", backend: .iterm)
+    }
+
+    Orchestrator.settleHandoff(handoffID, delivered: true, assistant: .claude, why: nil)
+    let ackPath = "/v1/orchestrator/coordinator/successions/\(requestID)/ack"
+    let senderAck = RemoteServer.shared.route(remoteRequest(
+        "POST", ackPath, headers: auth,
+        body: #"{"session_id":"SENDER","receipt":"sender_accepted"}"#))
+    expect("the sender explicitly observes acceptance", senderAck.status, 200)
+    let pickup = RemoteServer.shared.route(remoteRequest(
+        "POST", ackPath, headers: auth,
+        body: #"{"session_id":"RECEIVER","receipt":"receiver_picked_up"}"#))
+    expect("the receiver explicitly acknowledges package pickup", pickup.status, 200)
+    let pickupObject = (try? JSONSerialization.jsonObject(with: pickup.body)) as? [String: Any]
+    let pickupRecord = pickupObject?["succession"] as? [String: Any]
+    check("delivery, sender observation and pickup stay three receipts",
+          pickupRecord?["package_delivered_at"] != nil
+            && pickupRecord?["sender_observed_at"] != nil
+            && pickupRecord?["pickup_observed_at"] != nil)
+
+    CoordinatorSuccessionService.closeProofForTesting = { _ in
+        (state: .safe, version: "cl1-safe", lost: [])
+    }
+    RemoteServer.sessionEndForTesting = { _ in "injected close refusal" }
+    let advancePath = "/v1/orchestrator/coordinator/successions/\(requestID)/advance"
+    let closeRefused = RemoteServer.shared.route(remoteRequest(
+        "POST", advancePath, headers: auth, body: "{}"))
+    expect("a terminal close refusal is not hidden as progress", closeRefused.status, 502)
+    expect("the sender close refusal is typed", remoteErrorCode(closeRefused),
+           "succession_sender_close_refused")
+    let afterRefusal = CoordinatorSuccession.publicRecord(requestID: requestID)
+    check("drain proof and close request survive the refused terminal action",
+          afterRefusal?["sender_drain_proven_at"] != nil
+            && afterRefusal?["sender_close_requested_at"] != nil
+            && (afterRefusal?["last_error"] as? [String: Any])?["code"] as? String
+                == "succession_sender_close_refused")
+
+    var closes = 0
+    RemoteServer.sessionEndForTesting = { _ in closes += 1; return nil }
+    let closeRetry = RemoteServer.shared.route(remoteRequest(
+        "POST", advancePath, headers: auth, body: "{}"))
+    expect("a safe retry closes the sender", closeRetry.status, 200)
+    expect("the terminal close is attempted exactly once on that retry", closes, 1)
+    let beforeOffline = CoordinatorSuccession.publicRecord(requestID: requestID)
+    check("a successful close request is not mistaken for exact-offline proof",
+          beforeOffline?["sender_close_requested_at"] != nil
+            && beforeOffline?["old_binding_offline_at"] == nil
+            && beforeOffline?["rebind_committed_at"] == nil)
+    let stillOld = Coordinator.inspection(
+        liveSessions: [sender, receiver],
+        bearings: .init(sessionsFresh: true, activeTaskCount: 0,
+                        pendingLandingCount: 0, openWaitCount: 0,
+                        sessionsObservedAt: Date(timeIntervalSince1970: 1_780_003_025)))
+    expect("the old online binding keeps its generation before offline proof",
+           (stillOld["coordinator"] as? [String: Any])?["generation"] as? Int, 1)
+
+    RemoteServer.coordinatorSessionsForTesting = [receiver]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_780_003_030), generation: 21,
+        complete: true)
+    var rebindReceiptSaves = 0
+    CoordinatorSuccession.storeSaveInterceptorForTesting = { _ in
+        rebindReceiptSaves += 1
+        return rebindReceiptSaves == 2 ? false : nil
+    }
+    let interruptedRebind = RemoteServer.shared.route(remoteRequest(
+        "POST", advancePath, headers: auth, body: "{}"))
+    expect("a crash-sized failure after compare-and-swap is surfaced",
+           interruptedRebind.status, 500)
+    let afterRebindSideEffect = Coordinator.inspection(
+        liveSessions: [receiver],
+        bearings: .init(sessionsFresh: true, activeTaskCount: 0,
+                        pendingLandingCount: 0, openWaitCount: 0,
+                        sessionsObservedAt: Date(timeIntervalSince1970: 1_780_003_031)))
+    expect("the Coordinator side effect still advanced exactly once",
+           (afterRebindSideEffect["coordinator"] as? [String: Any])?["generation"] as? Int, 2)
+    let afterInterruptedRebind = CoordinatorSuccession.publicRecord(requestID: requestID)
+    check("restart recovery has offline proof but no invented rebind receipt",
+          afterInterruptedRebind?["old_binding_offline_at"] != nil
+            && afterInterruptedRebind?["rebind_committed_at"] == nil
+            && afterInterruptedRebind?["receiver_online_at"] == nil)
+    CoordinatorSuccession.storeSaveInterceptorForTesting = nil
+    let rebound = RemoteServer.shared.route(remoteRequest(
+        "POST", advancePath, headers: auth, body: "{}"))
+    expect("a fresh exact-offline observation advances through rebind", rebound.status, 200)
+    let reboundObject = (try? JSONSerialization.jsonObject(with: rebound.body)) as? [String: Any]
+    let reboundRecord = reboundObject?["succession"] as? [String: Any]
+    check("offline proof, rebind commit and receiver-online remain separate receipts",
+          reboundRecord?["old_binding_offline_at"] != nil
+            && reboundRecord?["old_binding_offline_generation"] as? Int == 21
+            && reboundRecord?["rebind_committed_at"] != nil
+            && reboundRecord?["receiver_online_at"] != nil)
+    expect("the stable coordinator advances exactly one generation",
+           (reboundObject?["coordinator"] as? [String: Any])?["generation"] as? Int, 2)
+
+    let observed = RemoteServer.shared.route(remoteRequest(
+        "POST", ackPath, headers: auth,
+        body: #"{"session_id":"RECEIVER","receipt":"receiver_completed"}"#))
+    expect("the replacement explicitly observes completed succession", observed.status, 200)
+    let observedObject = (try? JSONSerialization.jsonObject(with: observed.body)) as? [String: Any]
+    let observedRecord = observedObject?["succession"] as? [String: Any]
+    check("only the receiver observation closes the durable succession",
+          observedRecord?["state"] as? String == "complete"
+            && observedRecord?["receiver_observed_at"] != nil)
+    CoordinatorSuccession.forgetForTesting()
+    let afterRestart = CoordinatorSuccession.publicRecord(requestID: requestID)
+    let durableBoundaries = [
+        "accepted_at", "receiver_open_requested_at", "receiver_opened_at",
+        "package_delivered_at", "sender_observed_at", "pickup_observed_at",
+        "sender_drain_proven_at", "sender_close_requested_at", "old_binding_offline_at",
+        "rebind_committed_at", "receiver_online_at", "receiver_observed_at"
+    ]
+    check("a restart reload preserves every distinct succession receipt",
+          durableBoundaries.allSatisfy { afterRestart?[$0] != nil })
+
+    let boundaryRequestID = "aaaaaaa7-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let boundaryHandoffID = "aaaaaaa8-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let boundaryDraft = CoordinatorSuccession.Draft(
+        requestID: boundaryRequestID, coordinatorID: coordinatorID,
+        expectedGeneration: 2, senderSessionID: "BOUNDARY-SENDER",
+        handoffID: boundaryHandoffID, projectDir: "/tmp", assistant: .codex,
+        model: nil, title: "boundary failures")
+    func successionRefused(_ reply: Orchestrator.Reply) -> Bool {
+        if case .refused = reply { return true }
+        return false
+    }
+    CoordinatorSuccession.storeSaveInterceptorForTesting = { _ in false }
+    let failedAccept = CoordinatorSuccession.accept(boundaryDraft)
+    CoordinatorSuccession.storeSaveInterceptorForTesting = nil
+    check("accept persistence failure goes red", successionRefused(failedAccept))
+    check("failed accept leaves no invented durable row",
+          CoordinatorSuccession.publicRecord(requestID: boundaryRequestID) == nil)
+    _ = CoordinatorSuccession.accept(boundaryDraft)
+    CoordinatorSuccession.forgetForTesting()
+    check("accepted receipt survives restart",
+          CoordinatorSuccession.publicRecord(requestID: boundaryRequestID)?["accepted_at"] != nil)
+
+    func failThenCommitBoundary(_ name: String, key: String,
+                                _ transition: () -> Orchestrator.Reply) {
+        CoordinatorSuccession.storeSaveInterceptorForTesting = { _ in false }
+        let failed = transition()
+        CoordinatorSuccession.storeSaveInterceptorForTesting = nil
+        check("\(name) persistence failure goes red", successionRefused(failed))
+        CoordinatorSuccession.forgetForTesting()
+        check("\(name) failure leaves its receipt absent",
+              CoordinatorSuccession.publicRecord(requestID: boundaryRequestID)?[key] == nil)
+        _ = transition()
+        CoordinatorSuccession.forgetForTesting()
+        check("\(name) receipt survives restart",
+              CoordinatorSuccession.publicRecord(requestID: boundaryRequestID)?[key] != nil)
+    }
+    failThenCommitBoundary("receiver-open request", key: "receiver_open_requested_at") {
+        CoordinatorSuccession.markOpenRequested(boundaryRequestID)
+    }
+    failThenCommitBoundary("receiver-open identity", key: "receiver_opened_at") {
+        CoordinatorSuccession.markReceiverOpened(
+            boundaryRequestID, receiverSessionID: "BOUNDARY-RECEIVER")
+    }
+    failThenCommitBoundary("package delivery", key: "package_delivered_at") {
+        CoordinatorSuccession.markPackageDelivered(boundaryRequestID)
+    }
+    failThenCommitBoundary("sender observation", key: "sender_observed_at") {
+        CoordinatorSuccession.acknowledge(
+            boundaryRequestID, sessionID: "BOUNDARY-SENDER", receipt: "sender_accepted")
+    }
+    failThenCommitBoundary("receiver pickup", key: "pickup_observed_at") {
+        CoordinatorSuccession.acknowledge(
+            boundaryRequestID, sessionID: "BOUNDARY-RECEIVER", receipt: "receiver_picked_up")
+    }
+    failThenCommitBoundary("sender drain proof", key: "sender_drain_proven_at") {
+        CoordinatorSuccession.markDrainProven(
+            boundaryRequestID, closeabilityVersion: "boundary-safe")
+    }
+    failThenCommitBoundary("sender-close request", key: "sender_close_requested_at") {
+        CoordinatorSuccession.markCloseRequested(boundaryRequestID)
+    }
+    failThenCommitBoundary("exact-offline proof", key: "old_binding_offline_at") {
+        CoordinatorSuccession.markOldBindingOffline(
+            boundaryRequestID, observedAt: Date(), sessionsGeneration: 77)
+    }
+    failThenCommitBoundary("rebind commit", key: "rebind_committed_at") {
+        CoordinatorSuccession.markRebindCommitted(boundaryRequestID)
+    }
+    failThenCommitBoundary("receiver-online proof", key: "receiver_online_at") {
+        CoordinatorSuccession.markReceiverOnline(boundaryRequestID)
+    }
+    failThenCommitBoundary("receiver completion", key: "receiver_observed_at") {
+        CoordinatorSuccession.acknowledge(
+            boundaryRequestID, sessionID: "BOUNDARY-RECEIVER", receipt: "receiver_completed")
+    }
+
+    let next = coordinatorFixture(
+        "NEXT", assistant: .claude, tty: "/dev/ttys303", pid: 3_003,
+        processStart: Date(timeIntervalSince1970: 1_780_003_003),
+        conversation: "next-conversation")
+    let rogue = coordinatorFixture(
+        "ROGUE", tty: "/dev/ttys304", pid: 3_004,
+        processStart: Date(timeIntervalSince1970: 1_780_003_004),
+        conversation: "rogue-conversation")
+    RemoteServer.coordinatorSessionsForTesting = [receiver, next, rogue]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(), generation: 22, complete: true)
+    let staleRequestID = "aaaaaaa5-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let staleHandoffID = "aaaaaaa6-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let stalePackage = handoffRoot.appendingPathComponent(staleHandoffID, isDirectory: true)
+    try! manager.createDirectory(at: stalePackage, withIntermediateDirectories: true)
+    try! Data("# OBJECTIVE\nstale generation\n".utf8)
+        .write(to: stalePackage.appendingPathComponent("handoff.md"), options: .atomic)
+    let staleRequest = """
+    {"request_id":"\(staleRequestID)","expected_coordinator_id":"\(coordinatorID)",
+     "expected_generation":2,"sender_session_id":"RECEIVER","handoff":{
+       "handoff_id":"\(staleHandoffID)","project_dir":"/tmp","assistant":"claude",
+       "title":"stale generation"}}
+    """
+    CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
+        .started(id: "NEXT", backend: .iterm)
+    }
+    let staleCreated = RemoteServer.shared.route(remoteRequest(
+        "POST", createPath, headers: auth, body: staleRequest))
+    expect("the second succession begins at the current generation", staleCreated.status, 200)
+    Orchestrator.settleHandoff(staleHandoffID, delivered: true, assistant: .claude, why: nil)
+    let staleAckPath = "/v1/orchestrator/coordinator/successions/\(staleRequestID)/ack"
+    _ = RemoteServer.shared.route(remoteRequest(
+        "POST", staleAckPath, headers: auth,
+        body: #"{"session_id":"RECEIVER","receipt":"sender_accepted"}"#))
+    _ = RemoteServer.shared.route(remoteRequest(
+        "POST", staleAckPath, headers: auth,
+        body: #"{"session_id":"NEXT","receipt":"receiver_picked_up"}"#))
+    let externalObservation = Date()
+    let externalRebind = Coordinator.rebind(
+        expectedCoordinatorID: coordinatorID, expectedGeneration: 2, to: rogue,
+        among: [next, rogue], sessionsFresh: true,
+        sessionsObservedAt: externalObservation,
+        now: externalObservation.addingTimeInterval(1))
+    if case .ok = externalRebind { check("failure injection advances outside the succession", true) }
+    else { check("failure injection advances outside the succession", false) }
+    RemoteServer.coordinatorSessionsForTesting = [next, rogue]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: externalObservation.addingTimeInterval(2), generation: 23,
+        complete: true)
+    let staleAdvancePath = "/v1/orchestrator/coordinator/successions/\(staleRequestID)/advance"
+    let staleAdvance = RemoteServer.shared.route(remoteRequest(
+        "POST", staleAdvancePath, headers: auth, body: "{}"))
+    expect("an externally advanced generation cannot be inherited", staleAdvance.status, 409)
+    expect("the stale generation refusal is typed", remoteErrorCode(staleAdvance),
+           "succession_generation_stale")
+}
 }

@@ -1667,9 +1667,38 @@ menu's `reconnect` command. The menu remains disabled; an authenticated local op
 already-live replacement. Future start/restore or health-driven behavior must keep the separate
 observer provenance and explicit policy boundaries rather than widening this endpoint.
 
-**The web app's new-Session *Name the new session Clawdfather* choice is not a fourth coordinator
-route.** None of the three endpoints above became reachable from a paired device, and none of them
-types into anything. When the creation sheet opens it reads the device-safe Bearings projection.
+### Clawdfather succession: Handoff plus durable lifecycle receipts
+
+The Clawdfather-specific succession routes compose Phase A2 with ordinary Handoff without changing
+either primitive's meaning. An ordinary Handoff still opens an independent root and proves only
+that its canonical first line reached that root. The separate succession ledger records the
+ownership observations and side-effect boundaries that Handoff deliberately does not: accepted,
+receiver open requested/opened, package delivered, sender observed, receiver pickup, sender drain,
+sender close requested, old exact binding offline, rebind committed, receiver online and receiver
+completion observed.
+
+Each transition is persisted under its own machine-local `flock` before the next irreversible
+effect. A duplicate request id is either the same durable operation or a typed conflict. A restart
+after an open request cannot open another receiver without a terminal receipt; a restart after a
+successful terminal close still waits for fresh exact-offline evidence; and a restart after the
+Coordinator compare-and-swap may reconcile the new exact online binding only when the offline
+receipt already exists. Store failure is never treated as progress. Sender close consumes the
+same versioned closeability projection as the close API, with no lost descendants or obligations,
+and recomputes it immediately before ending the terminal.
+
+This automation is intentionally narrower than Handoff. It is machine-token-only, operates on the
+one configured stable Coordinator UUID and expected generation, and never elects from labels,
+recency or transcript prose. It is not a general transfer-of-ownership switch and does not make a
+receiver's first-line `picked_up` receipt mean understanding or completion. The caller still writes
+the named obligations, REFERENCES, VERIFICATION and OPEN THREADS into `handoff.md`; the receiver
+still answers those questions; its final acknowledgement is a distinct succession receipt. The
+closed request bodies, retry rules, public record and typed refusals are in
+[`docs/api.md`](api.md#coordinator-succession).
+
+**The web app's new-Session *Name the new session Clawdfather* choice is not another coordinator
+route.** None of the coordinator lifecycle endpoints above became reachable from a paired device,
+and none of them types into anything. When the creation sheet opens it reads the device-safe
+Bearings projection.
 Only the exact closed state `registration.state === "available"` enables the choice. `configured`
 closes it for every configured durable owner (`online`, `offline` or `unknown`); `blocked`, a missing field, or an unknown
 value also closes it rather than guessing that the store is empty. That projection contains no

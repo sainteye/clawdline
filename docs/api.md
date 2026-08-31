@@ -148,6 +148,10 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/sessions/:id/closure` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/coordinator/successions` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/coordinator/successions/:id` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/coordinator/successions/:id/ack` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/coordinator/successions/:id/advance` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator/bearings` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
@@ -2150,6 +2154,79 @@ task authenticates its alias interval with its historical `root.assistant`, but 
 and targets the replacement binding's canonical conversation id and current assistant. Both
 Codex-to-Claude and Claude-to-Codex reconnects therefore bypass the stale assistant rather than
 dead-lettering a valid completion or transporting to the old process.
+
+#### Coordinator succession
+
+These four machine-token-only routes automate the Clawdfather-specific sequence around an ordinary
+Handoff. They do not change Handoff: its package, canonical first line, `delivered` receipt and
+independent receiving root remain the same. Succession adds a separate version-1 receipt ledger at
+`~/.config/clawdline/coordinator-successions.json` (atomic replacement, parent `0700`, file and
+regular-file `flock` `0600`) so opening a receiver, observing pickup, closing the sender, proving the
+old binding offline and committing the existing Coordinator compare-and-swap cannot collapse into
+one optimistic action.
+
+Create with a lowercase UUID `request_id`, the current stable UUID and generation, the current
+terminal-neutral sender id, and the ordinary Handoff fields:
+
+```json
+{
+  "request_id": "3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+  "expected_coordinator_id": "e76f1e87-6de4-4f39-8cc7-c62eef96712f",
+  "expected_generation": 4,
+  "sender_session_id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
+  "handoff": {
+    "handoff_id": "7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431",
+    "project_dir": "/Users/you/code/clawdline",
+    "assistant": "codex",
+    "title": "Continue as Clawdfather"
+  }
+}
+```
+
+`POST /v1/orchestrator/coordinator/successions` first proves that UUID, generation and sender are
+the current exact online binding, durably records `accepted_at` and
+`receiver_open_requested_at`, then calls ordinary Handoff once and records the returned
+terminal-neutral receiver as `receiver_opened_at`. An identical `request_id` is idempotent even
+after the Coordinator moves; different content is `409 succession_request_conflict`. A restart
+that finds an open request without a persisted terminal receipt returns
+`409 succession_receiver_open_receipt_lost` and never risks opening a second receiver. A terminal
+start failure is durable `succession_receiver_delivery_failed`.
+
+The sender and receiver then acknowledge observations separately:
+
+```json
+{"session_id":"35D87610-E7F4-4A9A-95A0-11947CF5115C","receipt":"sender_accepted"}
+{"session_id":"8EC30E21-B00F-4806-90C1-D290FD67A87E","receipt":"receiver_picked_up"}
+{"session_id":"8EC30E21-B00F-4806-90C1-D290FD67A87E","receipt":"receiver_completed"}
+```
+
+Send those closed bodies to
+`POST /v1/orchestrator/coordinator/successions/:id/ack`. Receiver pickup first reconciles the
+ordinary Handoff row and requires its canonical first-line state to be `delivered`; opening a tab
+alone is insufficient. Only the recorded sender or receiver can write its receipt. Completion is
+accepted only after the new exact binding is currently proved online.
+
+`POST /v1/orchestrator/coordinator/successions/:id/advance` accepts only `{}`. After delivery,
+sender observation and pickup are durable, it reads a fresh closeability projection. An online
+sender advances only through a `safe` projection with an unchanged closeability version and an
+empty lost-work list; the drain proof and close request are saved before the terminal side effect.
+A refusal is typed and saved, and retry recomputes the proof. A successful close response is not
+offline proof: a later advance must see a complete timestamped SessionWatch inventory in which the
+exact old process is absent. The ledger stores that accepted-scan time and generation, then invokes
+the existing `Coordinator.rebind` with the original stable UUID and generation. It separately saves
+the rebind commit and receiver-online proof. A restart after the compare-and-swap reconciles an
+already-online exact receiver only when the prior offline proof exists; otherwise it fails
+`succession_receipt_gap` rather than inventing history.
+
+`GET /v1/orchestrator/coordinator/successions/:id` returns the safe record and every timestamped
+receipt. Typical waiting/refusal codes are `succession_package_pending`,
+`succession_waiting_for_observation`, `succession_sender_not_drained`,
+`succession_sender_close_stale`, `succession_sender_close_refused`,
+`succession_liveness_unknown`, `succession_receiver_missing`,
+`succession_receiver_ambiguous`, and `succession_generation_stale`. Store corruption or a failed
+write never falls back to memory: it is `succession_store_invalid` or
+`succession_store_failed`. A terminal failure stays visible on exact create retries and advance;
+use a new request and Handoff id after resolving it.
 
 #### `GET /v1/orchestrator/coordinator`
 

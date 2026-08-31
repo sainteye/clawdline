@@ -955,6 +955,500 @@ enum Coordinator {
     }
 }
 
+/// A durable, machine-token-only ledger for moving the one Coordinator role through an ordinary
+/// Handoff. Ordinary Handoff remains a transport envelope; this ledger records the succession
+/// receipts around it so a crash or retry cannot compress "a tab opened" into "ownership moved".
+enum CoordinatorSuccession {
+    static let recordVersion = 1
+
+    struct Draft: Equatable {
+        let requestID: String
+        let coordinatorID: String
+        let expectedGeneration: Int
+        let senderSessionID: String
+        let handoffID: String
+        let projectDir: String
+        let assistant: Assistant
+        let model: String?
+        let title: String?
+    }
+
+    struct Failure: Codable, Equatable {
+        let code: String
+        let message: String
+        let at: Double
+    }
+
+    struct Record: Codable, Equatable {
+        let version: Int
+        let requestID: String
+        let coordinatorID: String
+        let expectedGeneration: Int
+        let senderSessionID: String
+        let handoffID: String
+        let projectDir: String
+        let assistant: String
+        let model: String?
+        let title: String?
+        let createdAt: Double
+        var revision: Int
+        var state: String
+        var receiverSessionID: String?
+        var acceptedAt: Double
+        var receiverOpenRequestedAt: Double?
+        var receiverOpenedAt: Double?
+        var packageDeliveredAt: Double?
+        var senderObservedAt: Double?
+        var pickupObservedAt: Double?
+        var senderDrainProvenAt: Double?
+        var senderCloseRequestedAt: Double?
+        var oldBindingOfflineAt: Double?
+        var oldBindingOfflineGeneration: Int?
+        var rebindCommittedAt: Double?
+        var receiverOnlineAt: Double?
+        var receiverObservedAt: Double?
+        var closeabilityVersion: String?
+        var lastError: Failure?
+    }
+
+    private struct Store: Codable {
+        let version: Int
+        var successions: [Record]
+    }
+
+    enum DraftOutcome {
+        case ok(Draft)
+        case bad(String)
+    }
+
+    static var storeURLOverrideForTesting: URL?
+    static var storeSaveInterceptorForTesting: ((Data) -> Bool?)?
+    static var handoffStarterForTesting: Orchestrator.HandoffStarter?
+    static var storeURL: URL {
+        storeURLOverrideForTesting
+            ?? RemoteAuth.directory.appendingPathComponent("coordinator-successions.json")
+    }
+    private static var storeLockURL: URL { storeURL.appendingPathExtension("lock") }
+    private static let lock = NSLock()
+
+    static func forgetForTesting() {
+        // Reads intentionally have no process cache. Keeping this seam makes restart tests say
+        // what they are exercising and leaves room for a future validated cache.
+    }
+
+    static func draft(from obj: [String: Any]) -> DraftOutcome {
+        let expectedTop: Set<String> = [
+            "request_id", "expected_coordinator_id", "expected_generation",
+            "sender_session_id", "handoff",
+        ]
+        guard Set(obj.keys) == expectedTop,
+              let requestID = obj["request_id"] as? String,
+              Orchestrator.isTaskID(requestID),
+              let coordinatorID = obj["expected_coordinator_id"] as? String,
+              UUID(uuidString: coordinatorID)?.uuidString.lowercased() == coordinatorID,
+              let expectedGeneration = obj["expected_generation"] as? Int,
+              expectedGeneration > 0,
+              let senderSessionID = bounded(obj["sender_session_id"] as? String, maximum: 512),
+              let handoff = obj["handoff"] as? [String: Any] else {
+            return .bad("The closed request needs request_id, expected_coordinator_id, "
+                + "expected_generation, sender_session_id and handoff.")
+        }
+        let allowedHandoff: Set<String> = [
+            "handoff_id", "project_dir", "assistant", "model", "title",
+        ]
+        guard Set(handoff.keys).isSubset(of: allowedHandoff),
+              ["handoff_id", "project_dir", "assistant"].allSatisfy({ handoff[$0] != nil }),
+              let handoffID = handoff["handoff_id"] as? String,
+              Orchestrator.isTaskID(handoffID),
+              let projectDir = handoff["project_dir"] as? String,
+              StartPoints.usable(projectDir), StartPoints.isDirectory(projectDir),
+              let assistantName = handoff["assistant"] as? String,
+              let assistant = Assistant(rawValue: assistantName) else {
+            return .bad("handoff must contain one lowercase handoff_id, an absolute existing "
+                + "project_dir and assistant claude or codex.")
+        }
+        let model: String?
+        if let raw = handoff["model"] {
+            guard let value = raw as? String, StartPoints.modelName(value) == value else {
+                return .bad("handoff.model is not a valid model name.")
+            }
+            model = value
+        } else { model = nil }
+        let title: String?
+        if let raw = handoff["title"] {
+            guard let value = raw as? String, value.count <= 200 else {
+                return .bad("handoff.title must be at most 200 characters.")
+            }
+            title = value
+        } else { title = nil }
+        return .ok(Draft(
+            requestID: requestID, coordinatorID: coordinatorID,
+            expectedGeneration: expectedGeneration, senderSessionID: senderSessionID,
+            handoffID: handoffID, projectDir: projectDir, assistant: assistant,
+            model: model, title: title))
+    }
+
+    static func accept(_ draft: Draft, now: Date = Date()) -> Orchestrator.Reply {
+        mutate(requestID: draft.requestID) { rows in
+            if let existing = rows[draft.requestID] {
+                guard matches(existing, draft) else {
+                    return .reply(.refused(
+                        status: 409, code: "succession_request_conflict",
+                        message: "That succession request id already names different content.",
+                        extra: ["succession": publicRecord(existing)]))
+                }
+                return .reply(.ok(["ok": true, "created": false,
+                                   "succession": publicRecord(existing)]))
+            }
+            let at = now.timeIntervalSince1970
+            let record = Record(
+                version: recordVersion, requestID: draft.requestID,
+                coordinatorID: draft.coordinatorID,
+                expectedGeneration: draft.expectedGeneration,
+                senderSessionID: draft.senderSessionID, handoffID: draft.handoffID,
+                projectDir: draft.projectDir, assistant: draft.assistant.rawValue,
+                model: draft.model, title: draft.title, createdAt: at, revision: 1,
+                state: "accepted", receiverSessionID: nil, acceptedAt: at,
+                receiverOpenRequestedAt: nil, receiverOpenedAt: nil,
+                packageDeliveredAt: nil, senderObservedAt: nil, pickupObservedAt: nil,
+                senderDrainProvenAt: nil, senderCloseRequestedAt: nil,
+                oldBindingOfflineAt: nil, oldBindingOfflineGeneration: nil,
+                rebindCommittedAt: nil,
+                receiverOnlineAt: nil, receiverObservedAt: nil,
+                closeabilityVersion: nil, lastError: nil)
+            rows[draft.requestID] = record
+            return .save(.ok(["ok": true, "created": true,
+                              "succession": publicRecord(record)]))
+        }
+    }
+
+    static func markOpenRequested(_ requestID: String, now: Date = Date())
+        -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            if record.receiverOpenRequestedAt == nil {
+                record.receiverOpenRequestedAt = at
+                record.state = "receiver_open_requested"
+            }
+        }
+    }
+
+    static func markReceiverOpened(_ requestID: String, receiverSessionID: String,
+                                   now: Date = Date()) -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            if let existing = record.receiverSessionID, existing != receiverSessionID {
+                record.state = "failed"
+                record.lastError = Failure(
+                    code: "succession_receiver_identity_changed",
+                    message: "A different receiver terminal was recorded for this succession.",
+                    at: at)
+                return
+            }
+            record.receiverSessionID = receiverSessionID
+            record.receiverOpenedAt = record.receiverOpenedAt ?? at
+            record.state = "receiver_opened"
+            record.lastError = nil
+        }
+    }
+
+    static func markPackageDelivered(_ requestID: String, now: Date = Date())
+        -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            record.packageDeliveredAt = record.packageDeliveredAt ?? at
+            record.state = "package_delivered"
+            record.lastError = nil
+        }
+    }
+
+    static func acknowledge(_ requestID: String, sessionID: String, receipt: String,
+                            now: Date = Date()) -> Orchestrator.Reply {
+        mutate(requestID: requestID) { rows in
+            guard var record = rows[requestID] else {
+                return .reply(.refused(404, "succession_not_found",
+                                       "No Coordinator succession has that request id."))
+            }
+            let at = now.timeIntervalSince1970
+            switch receipt {
+            case "sender_accepted":
+                guard sessionID == record.senderSessionID else {
+                    return .reply(.refused(403, "succession_wrong_observer",
+                                           "Only the recorded sender may observe acceptance."))
+                }
+                record.senderObservedAt = record.senderObservedAt ?? at
+                record.state = "sender_observed"
+            case "receiver_picked_up":
+                guard sessionID == record.receiverSessionID else {
+                    return .reply(.refused(403, "succession_wrong_observer",
+                                           "Only the recorded receiver may acknowledge pickup."))
+                }
+                guard record.packageDeliveredAt != nil else {
+                    return .reply(.refused(409, "succession_package_not_delivered",
+                                           "The ordinary Handoff delivery is not yet proved."))
+                }
+                record.pickupObservedAt = record.pickupObservedAt ?? at
+                record.state = "pickup_observed"
+            case "receiver_completed":
+                guard sessionID == record.receiverSessionID else {
+                    return .reply(.refused(403, "succession_wrong_observer",
+                                           "Only the recorded receiver may observe completion."))
+                }
+                guard record.receiverOnlineAt != nil else {
+                    return .reply(.refused(409, "succession_receiver_not_online",
+                                           "The replacement binding is not yet proved online."))
+                }
+                record.receiverObservedAt = record.receiverObservedAt ?? at
+                record.state = "complete"
+            default:
+                return .reply(.refused(400, "bad_request",
+                    "receipt must be sender_accepted, receiver_picked_up or receiver_completed."))
+            }
+            record.revision += 1
+            rows[requestID] = record
+            return .save(.ok(["ok": true, "succession": publicRecord(record)]))
+        }
+    }
+
+    static func markDrainProven(_ requestID: String, closeabilityVersion: String,
+                                now: Date = Date()) -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            record.senderDrainProvenAt = record.senderDrainProvenAt ?? at
+            record.closeabilityVersion = closeabilityVersion
+            record.state = "sender_drain_proven"
+            record.lastError = nil
+        }
+    }
+
+    static func markCloseRequested(_ requestID: String, now: Date = Date())
+        -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            record.senderCloseRequestedAt = record.senderCloseRequestedAt ?? at
+            record.state = "sender_close_requested"
+        }
+    }
+
+    static func markOldBindingOffline(_ requestID: String, observedAt: Date,
+                                      sessionsGeneration: Int?,
+                                      now: Date = Date()) -> Orchestrator.Reply {
+        update(requestID, now: now) { record, _ in
+            record.oldBindingOfflineAt = record.oldBindingOfflineAt
+                ?? observedAt.timeIntervalSince1970
+            record.oldBindingOfflineGeneration = record.oldBindingOfflineGeneration
+                ?? sessionsGeneration
+            record.state = "old_binding_offline"
+            record.lastError = nil
+        }
+    }
+
+    static func markRebindCommitted(_ requestID: String, now: Date = Date())
+        -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            record.rebindCommittedAt = record.rebindCommittedAt ?? at
+            record.state = "rebind_committed"
+            record.lastError = nil
+        }
+    }
+
+    static func markReceiverOnline(_ requestID: String, now: Date = Date())
+        -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            record.receiverOnlineAt = record.receiverOnlineAt ?? at
+            record.state = "receiver_online"
+            record.lastError = nil
+        }
+    }
+
+    static func recordFailure(_ requestID: String, code: String, message: String,
+                              terminal: Bool, now: Date = Date()) -> Orchestrator.Reply {
+        update(requestID, now: now) { record, at in
+            record.lastError = Failure(code: code, message: message, at: at)
+            if terminal { record.state = "failed" }
+        }
+    }
+
+    static func record(requestID: String) -> Record? {
+        lock.lock(); defer { lock.unlock() }
+        return loadRows().rows?[requestID]
+    }
+
+    static func publicRecord(requestID: String) -> [String: Any]? {
+        record(requestID: requestID).map(publicRecord)
+    }
+
+    static func publicRecord(_ record: Record) -> [String: Any] {
+        var out: [String: Any] = [
+            "version": record.version, "request_id": record.requestID,
+            "coordinator_id": record.coordinatorID,
+            "expected_generation": record.expectedGeneration,
+            "sender_session_id": record.senderSessionID,
+            "handoff_id": record.handoffID, "project_dir": record.projectDir,
+            "assistant": record.assistant, "created_at": Int(record.createdAt),
+            "revision": record.revision, "state": record.state,
+        ]
+        if let value = record.model { out["model"] = value }
+        if let value = record.title { out["title"] = value }
+        if let value = record.receiverSessionID { out["receiver_session_id"] = value }
+        let dates: [(String, Double?)] = [
+            ("accepted_at", record.acceptedAt),
+            ("receiver_open_requested_at", record.receiverOpenRequestedAt),
+            ("receiver_opened_at", record.receiverOpenedAt),
+            ("package_delivered_at", record.packageDeliveredAt),
+            ("sender_observed_at", record.senderObservedAt),
+            ("pickup_observed_at", record.pickupObservedAt),
+            ("sender_drain_proven_at", record.senderDrainProvenAt),
+            ("sender_close_requested_at", record.senderCloseRequestedAt),
+            ("old_binding_offline_at", record.oldBindingOfflineAt),
+            ("rebind_committed_at", record.rebindCommittedAt),
+            ("receiver_online_at", record.receiverOnlineAt),
+            ("receiver_observed_at", record.receiverObservedAt),
+        ]
+        for (key, value) in dates { if let value { out[key] = Int(value) } }
+        if let value = record.oldBindingOfflineGeneration {
+            out["old_binding_offline_generation"] = value
+        }
+        if let value = record.closeabilityVersion { out["closeability_version"] = value }
+        if let failure = record.lastError {
+            out["last_error"] = ["code": failure.code, "message": failure.message,
+                                 "at": Int(failure.at)]
+        }
+        return out
+    }
+
+    static func handoffObject(_ record: Record) -> [String: Any] {
+        var obj: [String: Any] = [
+            "handoff_id": record.handoffID, "project_dir": record.projectDir,
+            "assistant": record.assistant, "from_session": record.senderSessionID,
+        ]
+        if let value = record.model { obj["model"] = value }
+        if let value = record.title { obj["title"] = value }
+        return obj
+    }
+
+    private enum MutationResult {
+        case reply(Orchestrator.Reply)
+        case save(Orchestrator.Reply)
+    }
+
+    private static func update(_ requestID: String, now: Date,
+                               _ body: (inout Record, Double) -> Void) -> Orchestrator.Reply {
+        mutate(requestID: requestID) { rows in
+            guard var record = rows[requestID] else {
+                return .reply(.refused(404, "succession_not_found",
+                                       "No Coordinator succession has that request id."))
+            }
+            body(&record, now.timeIntervalSince1970)
+            record.revision += 1
+            rows[requestID] = record
+            return .save(.ok(["ok": true, "succession": publicRecord(record)]))
+        }
+    }
+
+    private static func mutate(requestID: String,
+                               _ body: (inout [String: Record]) -> MutationResult)
+        -> Orchestrator.Reply {
+        _ = requestID
+        lock.lock(); defer { lock.unlock() }
+        guard let reply = withExclusiveStoreLock({ () -> Orchestrator.Reply in
+            let loaded = loadRows()
+            guard let rows = loaded.rows else {
+                return .refused(409, "succession_store_invalid",
+                                "The durable Coordinator succession ledger is unreadable.")
+            }
+            var changed = rows
+            switch body(&changed) {
+            case .reply(let reply): return reply
+            case .save(let reply):
+                guard saveRows(changed) else {
+                    return .refused(500, "succession_store_failed",
+                                    "The Coordinator succession receipt could not be persisted.")
+                }
+                return reply
+            }
+        }) else {
+            return .refused(500, "succession_store_failed",
+                            "The Coordinator succession ledger lock could not be secured.")
+        }
+        return reply
+    }
+
+    private static func matches(_ record: Record, _ draft: Draft) -> Bool {
+        record.requestID == draft.requestID && record.coordinatorID == draft.coordinatorID
+            && record.expectedGeneration == draft.expectedGeneration
+            && record.senderSessionID == draft.senderSessionID
+            && record.handoffID == draft.handoffID && record.projectDir == draft.projectDir
+            && record.assistant == draft.assistant.rawValue && record.model == draft.model
+            && record.title == draft.title
+    }
+
+    private static func bounded(_ raw: String?, maximum: Int) -> String? {
+        guard let raw else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= maximum,
+              !value.unicodeScalars.contains(where: { $0.value == 0 }) else { return nil }
+        return value
+    }
+
+    private static func loadRows() -> (rows: [String: Record]?, absent: Bool) {
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return ([:], true) }
+        guard let data = try? Data(contentsOf: storeURL),
+              let store = try? JSONDecoder().decode(Store.self, from: data),
+              store.version == recordVersion,
+              store.successions.allSatisfy(valid) else { return (nil, false) }
+        var rows: [String: Record] = [:]
+        for record in store.successions {
+            guard rows[record.requestID] == nil else { return (nil, false) }
+            rows[record.requestID] = record
+        }
+        return (rows, false)
+    }
+
+    private static func valid(_ record: Record) -> Bool {
+        record.version == recordVersion && Orchestrator.isTaskID(record.requestID)
+            && UUID(uuidString: record.coordinatorID) != nil
+            && record.expectedGeneration > 0 && !record.senderSessionID.isEmpty
+            && Orchestrator.isTaskID(record.handoffID) && StartPoints.usable(record.projectDir)
+            && Assistant(rawValue: record.assistant) != nil && record.createdAt.isFinite
+            && record.createdAt > 0 && record.acceptedAt.isFinite && record.acceptedAt > 0
+            && record.revision > 0 && !record.state.isEmpty
+            && record.oldBindingOfflineGeneration.map { $0 >= 0 } != false
+    }
+
+    private static func saveRows(_ rows: [String: Record]) -> Bool {
+        let store = Store(version: recordVersion,
+                          successions: rows.values.sorted { $0.createdAt < $1.createdAt })
+        guard let data = try? JSONEncoder.sorted.encode(store) else { return false }
+        if let intercepted = storeSaveInterceptorForTesting?(data) { return intercepted }
+        do {
+            guard secureParent(for: storeURL) else { return false }
+            try data.write(to: storeURL, options: .atomic)
+            guard chmod(storeURL.path, 0o600) == 0,
+                  let written = try? Data(contentsOf: storeURL), written == data else { return false }
+            return true
+        } catch { return false }
+    }
+
+    private static func secureParent(for url: URL) -> Bool {
+        let parent = url.deletingLastPathComponent()
+        do { try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true) }
+        catch { return false }
+        var info = stat()
+        guard lstat(parent.path, &info) == 0,
+              (info.st_mode & S_IFMT) == S_IFDIR else { return false }
+        _ = chmod(parent.path, 0o700)
+        return true
+    }
+
+    private static func withExclusiveStoreLock<T>(_ body: () -> T) -> T? {
+        guard secureParent(for: storeLockURL) else { return nil }
+        let fd = open(storeLockURL.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { return nil }
+        defer { _ = close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              fchmod(fd, 0o600) == 0, flock(fd, LOCK_EX) == 0 else { return nil }
+        defer { _ = flock(fd, LOCK_UN) }
+        return body()
+    }
+}
+
 extension RemoteServer {
     struct TerminalDrainSnapshot: Equatable {
         let outstanding: Int
