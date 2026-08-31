@@ -1367,6 +1367,44 @@ protocol Copy {
     var setupLocalRecovery: String { get }
     var setupReadOnly: String { get }
     var setupLocalDeviceName: String { get }
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String,
+                          _ status: String) -> String
+    var setupTunnelModeOff: String { get }
+    var setupTunnelModeQuick: String { get }
+    var setupTunnelModeNamed: String { get }
+    var setupTunnelQuickName: String { get }
+    var setupNone: String { get }
+    var setupControlChosen: String { get }
+    var setupTunnelMissing: String { get }
+    var setupTunnelOff: String { get }
+    var setupTunnelStarting: String { get }
+    func setupTunnelReady(_ url: String) -> String
+    func setupTunnelWaiting(_ url: String) -> String
+    func setupTunnelConnected(_ url: String) -> String
+    var setupTunnelExpected: String { get }
+    var setupTunnelRecovery: String { get }
+    var setupOpenRemoteSettings: String { get }
+    var setupCheckTunnel: String { get }
+    var setupShowPhoneQR: String { get }
+    var setupShowPhoneQRAgain: String { get }
+    var setupCloudRelayUnauthorized: String { get }
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String,
+                         _ pairing: String, _ receipt: String) -> String
+    var setupCloudExpected: String { get }
+    var setupCloudRecovery: String { get }
+    var setupOpenCloudSettings: String { get }
+    var setupPairCloudPhone: String { get }
+    var setupReviewCloudPreview: String { get }
+    var setupProofAbsent: String { get }
+    var setupProofNotProved: String { get }
+    var setupProofUnavailable: String { get }
+    func setupProofFailed(_ reason: String) -> String
+    var setupProofProved: String { get }
+    func setupCloudAccountProved(_ account: String) -> String
+    func setupCloudCredentialProved(_ machine: String) -> String
+    func setupCloudPairingProved(_ device: String) -> String
+    var setupCloudflareDeviceName: String { get }
+    var setupScanLiveTunnel: String { get }
 
     // Alerts
     func hotkeyFailedTitle(_ combo: String) -> String

@@ -776,6 +776,42 @@ struct Japanese: Copy {
     let setupLocalRecovery = "止まった場合はこのウインドウを開いたまま再確認してください。設定でサーバとポートも確認できます。"
     let setupReadOnly = "読み取り専用 · 操作はオフのまま"
     let setupLocalDeviceName = "この Mac のブラウザ"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "モード：\(mode)\nトンネル：\(tunnel)\nQR ホスト名：\(hostname)\n状態：\(status)" }
+    let setupTunnelModeOff = "オフ"
+    let setupTunnelModeQuick = "クイック"
+    let setupTunnelModeNamed = "名前付き"
+    let setupTunnelQuickName = "Cloudflare クイックトンネル"
+    let setupNone = "なし"
+    let setupControlChosen = "読み取り + 操作 · 設定で明示的に有効化済み"
+    let setupTunnelMissing = "cloudflared がインストールされていません。"
+    let setupTunnelOff = "トンネルはオフです。スマートフォン用 QR はありません。"
+    let setupTunnelStarting = "cloudflared を起動中です。QR はまだありません。"
+    func setupTunnelReady(_ url: String) -> String { "\(url) で稼働中。スマートフォンの資格情報はまだありません。" }
+    func setupTunnelWaiting(_ url: String) -> String { "QR は \(url) を指しています。このスマートフォンを待っています。" }
+    func setupTunnelConnected(_ url: String) -> String { "\(url) 経由で接続済み。このスマートフォンが lastSeen を報告しました。" }
+    let setupTunnelExpected = "稼働中のトンネル URL だけが QR に入り、その QR が作った非ローカル端末の lastSeen だけが設定を完了します。"
+    let setupTunnelRecovery = "リモート設定を開きます。cloudflared がなければインストールし、それ以外は検出された理由に従い、トンネルを保って再スキャンしてください。"
+    let setupOpenRemoteSettings = "リモート設定を開く"
+    let setupCheckTunnel = "トンネルを再確認"
+    let setupShowPhoneQR = "スマートフォン QR を表示"
+    let setupShowPhoneQRAgain = "QR をもう一度表示"
+    let setupCloudRelayUnauthorized = "Relay がこのマシンの資格情報を拒否しました。"
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String, _ pairing: String, _ receipt: String) -> String { "アカウント：\(account)\nマシン資格情報：\(credential)\nRelay 準備：\(relay)\nE2EE ペアリング：\(pairing)\nViewer 受信証明：\(receipt)" }
+    let setupCloudExpected = "Preview は、アカウント、マシン資格情報、Relay、E2EE ペアリング、この Viewer の受信が個別に証明された場合のみ完了します。"
+    let setupCloudRecovery = "Cloud 設定でサインインまたはペアリングします。Relay と Viewer 受信は Preview の証明であり、再試行で不足した証拠が生まれることはありません。"
+    let setupOpenCloudSettings = "Cloud 設定を開く"
+    let setupPairCloudPhone = "Cloud でスマートフォンをペアリング"
+    let setupReviewCloudPreview = "Preview 状態を確認"
+    let setupProofAbsent = "存在しません"
+    let setupProofNotProved = "未証明"
+    let setupProofUnavailable = "証明を取得できません"
+    func setupProofFailed(_ reason: String) -> String { "失敗 — \(reason)" }
+    let setupProofProved = "証明済み"
+    func setupCloudAccountProved(_ account: String) -> String { "\(account) でサインイン済み" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "\(machine) のキーチェーン資格情報" }
+    func setupCloudPairingProved(_ device: String) -> String { "Viewer \(device) を固定済み" }
+    let setupCloudflareDeviceName = "Cloudflare 経由のスマートフォン"
+    let setupScanLiveTunnel = "スマートフォンで稼働中のトンネルを読み取る"
 
     let menuOpen = "入力バーを開く"
     let menuReveal = "対象のタブへ移動"

@@ -778,6 +778,42 @@ struct Turkish: Copy {
     let setupLocalRecovery = "Takılırsa bu pencereyi açık tutup yeniden denetleyin. Sunucu ve bağlantı noktası Ayarlar’dadır."
     let setupReadOnly = "Salt okunur · denetim kapalı kalır"
     let setupLocalDeviceName = "Bu Mac’teki tarayıcı"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Mod: \(mode)\nTünel: \(tunnel)\nQR ana makinesi: \(hostname)\nDurum: \(status)" }
+    let setupTunnelModeOff = "Kapalı"
+    let setupTunnelModeQuick = "Hızlı"
+    let setupTunnelModeNamed = "Adlandırılmış"
+    let setupTunnelQuickName = "Cloudflare Hızlı Tüneli"
+    let setupNone = "Yok"
+    let setupControlChosen = "Okuma + kontrol · Ayarlar’da açıkça etkinleştirildi"
+    let setupTunnelMissing = "cloudflared yüklü değil."
+    let setupTunnelOff = "Tünel kapalı; telefon QR’ı kullanılamıyor."
+    let setupTunnelStarting = "cloudflared başlıyor; telefon QR’ı henüz kullanılamıyor."
+    func setupTunnelReady(_ url: String) -> String { "\(url) adresinde canlı. Henüz telefon kimliği yok." }
+    func setupTunnelWaiting(_ url: String) -> String { "QR \(url) adresini gösteriyor. Tam olarak bu telefon bekleniyor." }
+    func setupTunnelConnected(_ url: String) -> String { "\(url) üzerinden bağlı. Bu telefon lastSeen bildirdi." }
+    let setupTunnelExpected = "QR’a yalnızca canlı tünel URL’si girer; kurulumu yalnızca bu QR’ın oluşturduğu yerel olmayan cihazın lastSeen kaydı bitirir."
+    let setupTunnelRecovery = "Uzak Ayarlar’ı açın. Eksikse cloudflared kurun; değilse algılanan nedeni izleyin, tüneli açık tutup yeniden tarayın."
+    let setupOpenRemoteSettings = "Uzak Ayarlar’ı Aç"
+    let setupCheckTunnel = "Tüneli Yeniden Denetle"
+    let setupShowPhoneQR = "Telefon QR’ını Göster"
+    let setupShowPhoneQRAgain = "Telefon QR’ını Yeniden Göster"
+    let setupCloudRelayUnauthorized = "Relay bu makinenin kimliğini reddetti."
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String, _ pairing: String, _ receipt: String) -> String { "Hesap: \(account)\nMakine kimliği: \(credential)\nRelay hazır: \(relay)\nE2EE eşleştirme: \(pairing)\nViewer alındısı: \(receipt)" }
+    let setupCloudExpected = "Preview yalnızca hesap, makine kimliği, relay hazırlığı, E2EE eşleştirmesi ve bu viewer alındısı ayrı ayrı kanıtlandığında tamamlanır."
+    let setupCloudRecovery = "Oturum açmak veya eşleştirmek için Cloud Ayarları’nı kullanın. Relay ve viewer alındısı Preview kanıtlarıdır; yeniden denemek eksik kanıt yaratmaz."
+    let setupOpenCloudSettings = "Cloud Ayarları’nı Aç"
+    let setupPairCloudPhone = "Cloud’da Telefon Eşleştir"
+    let setupReviewCloudPreview = "Preview Durumunu İncele"
+    let setupProofAbsent = "yok"
+    let setupProofNotProved = "kanıtlanmadı"
+    let setupProofUnavailable = "kanıt kullanılamıyor"
+    func setupProofFailed(_ reason: String) -> String { "başarısız — \(reason)" }
+    let setupProofProved = "kanıtlandı"
+    func setupCloudAccountProved(_ account: String) -> String { "\(account) olarak oturum açıldı" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "\(machine) için Anahtar Zinciri kimliği" }
+    func setupCloudPairingProved(_ device: String) -> String { "tam viewer \(device) için sabitlendi" }
+    let setupCloudflareDeviceName = "Cloudflare üzerinden telefon"
+    let setupScanLiveTunnel = "Canlı tüneli telefonunuzla tarayın"
 
     let menuOpen = "Giriş çubuğunu aç"
     let menuReveal = "Hedef sekmeye git"

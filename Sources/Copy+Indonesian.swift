@@ -778,6 +778,42 @@ struct Indonesian: Copy {
     let setupLocalRecovery = "Jika macet, biarkan jendela ini terbuka lalu periksa lagi. Server dan port tersedia di Pengaturan."
     let setupReadOnly = "Hanya baca · kendali tetap mati"
     let setupLocalDeviceName = "Browser di Mac ini"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Mode: \(mode)\nTunnel: \(tunnel)\nHostname QR: \(hostname)\nStatus: \(status)" }
+    let setupTunnelModeOff = "Mati"
+    let setupTunnelModeQuick = "Cepat"
+    let setupTunnelModeNamed = "Bernama"
+    let setupTunnelQuickName = "Cloudflare Quick Tunnel"
+    let setupNone = "Tidak ada"
+    let setupControlChosen = "Baca + kontrol · diaktifkan secara eksplisit di Pengaturan"
+    let setupTunnelMissing = "cloudflared belum terpasang."
+    let setupTunnelOff = "Tunnel mati; QR ponsel tidak tersedia."
+    let setupTunnelStarting = "cloudflared sedang mulai; QR ponsel belum tersedia."
+    func setupTunnelReady(_ url: String) -> String { "Aktif di \(url). Kredensial ponsel belum dibuat." }
+    func setupTunnelWaiting(_ url: String) -> String { "QR menuju \(url). Menunggu ponsel ini persis." }
+    func setupTunnelConnected(_ url: String) -> String { "Terhubung melalui \(url). Ponsel ini melaporkan lastSeen." }
+    let setupTunnelExpected = "Hanya URL tunnel aktif yang masuk ke QR; hanya lastSeen perangkat nonlokal dari QR ini yang menyelesaikan penyiapan."
+    let setupTunnelRecovery = "Buka Pengaturan Jarak Jauh. Pasang cloudflared jika belum ada; selain itu ikuti alasan yang terdeteksi, pertahankan tunnel, lalu pindai lagi."
+    let setupOpenRemoteSettings = "Buka Pengaturan Jarak Jauh"
+    let setupCheckTunnel = "Periksa Tunnel Lagi"
+    let setupShowPhoneQR = "Tampilkan QR Ponsel"
+    let setupShowPhoneQRAgain = "Tampilkan Lagi QR Ponsel"
+    let setupCloudRelayUnauthorized = "Relay menolak kredensial mesin ini."
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String, _ pairing: String, _ receipt: String) -> String { "Akun: \(account)\nKredensial mesin: \(credential)\nRelay siap: \(relay)\nPemasangan E2EE: \(pairing)\nTanda terima viewer: \(receipt)" }
+    let setupCloudExpected = "Preview selesai hanya bila akun, kredensial, kesiapan relay, pemasangan E2EE, dan tanda terima viewer ini terbukti masing-masing."
+    let setupCloudRecovery = "Gunakan Pengaturan Cloud untuk masuk atau memasangkan. Kesiapan relay dan tanda terima tetap bukti Preview; mencoba lagi tidak menciptakan bukti."
+    let setupOpenCloudSettings = "Buka Pengaturan Cloud"
+    let setupPairCloudPhone = "Pasangkan Ponsel di Cloud"
+    let setupReviewCloudPreview = "Tinjau Status Preview"
+    let setupProofAbsent = "tidak ada"
+    let setupProofNotProved = "belum terbukti"
+    let setupProofUnavailable = "bukti tidak tersedia"
+    func setupProofFailed(_ reason: String) -> String { "gagal — \(reason)" }
+    let setupProofProved = "terbukti"
+    func setupCloudAccountProved(_ account: String) -> String { "masuk sebagai \(account)" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "kredensial Keychain untuk \(machine)" }
+    func setupCloudPairingProved(_ device: String) -> String { "disematkan untuk viewer tepat \(device)" }
+    let setupCloudflareDeviceName = "Ponsel melalui Cloudflare"
+    let setupScanLiveTunnel = "Pindai tunnel aktif dengan ponsel"
 
     let menuOpen = "Buka bilah masukan"
     let menuReveal = "Ke tab tujuan"

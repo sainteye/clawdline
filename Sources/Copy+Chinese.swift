@@ -777,6 +777,47 @@ struct TraditionalChinese: Copy {
     let setupLocalRecovery = "若停在這裡，請保持此視窗開啟並再次檢查。你也可在「設定」查看伺服器與連接埠。"
     let setupReadOnly = "唯讀 · 控制功能保持關閉"
     let setupLocalDeviceName = "這台 Mac 上的瀏覽器"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {
+        "模式：\(mode)\nTunnel：\(tunnel)\nQR 主機名稱：\(hostname)\n狀態：\(status)"
+    }
+    let setupTunnelModeOff = "關閉"
+    let setupTunnelModeQuick = "快速"
+    let setupTunnelModeNamed = "具名"
+    let setupTunnelQuickName = "Cloudflare Quick Tunnel"
+    let setupNone = "無"
+    let setupControlChosen = "讀取 + 控制 · 已在設定中明確開啟"
+    let setupTunnelMissing = "尚未安裝 cloudflared。"
+    let setupTunnelOff = "Tunnel 已關閉；目前沒有手機 QR。"
+    let setupTunnelStarting = "cloudflared 正在啟動；目前還沒有手機 QR。"
+    func setupTunnelReady(_ url: String) -> String { "已在 \(url) 上線；尚未建立手機憑證。" }
+    func setupTunnelWaiting(_ url: String) -> String { "QR 指向 \(url)；正在等這支手機連線。" }
+    func setupTunnelConnected(_ url: String) -> String { "已透過 \(url) 連線；這支手機已回報 lastSeen。" }
+    let setupTunnelExpected = "QR 只會放入已上線的 tunnel 網址；也只有這張 QR 建立的非本機裝置回報 lastSeen 才算完成。"
+    let setupTunnelRecovery = "開啟「遠端」設定。若缺少 cloudflared，請先安裝；否則照偵測到的具體原因處理、保持 tunnel 上線，再掃一次。"
+    let setupOpenRemoteSettings = "開啟遠端設定"
+    let setupCheckTunnel = "再次檢查 Tunnel"
+    let setupShowPhoneQR = "顯示手機 QR"
+    let setupShowPhoneQRAgain = "再次顯示手機 QR"
+    let setupCloudRelayUnauthorized = "Relay 拒絕了這台機器的憑證。"
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String,
+                         _ pairing: String, _ receipt: String) -> String {
+        "帳號：\(account)\n機器憑證：\(credential)\nRelay 就緒：\(relay)\n端對端加密配對：\(pairing)\nViewer 收件證明：\(receipt)"
+    }
+    let setupCloudExpected = "Preview 只有在帳號、機器憑證、Relay 就緒、端對端加密配對與這個 Viewer 的收件證明各自成立時才算完成。"
+    let setupCloudRecovery = "到 Cloud 設定登入或配對。Relay 就緒與 Viewer 收件仍屬 Preview 證明；重試不會把缺少的證據變成成功。"
+    let setupOpenCloudSettings = "開啟 Cloud 設定"
+    let setupPairCloudPhone = "到 Cloud 設定配對手機"
+    let setupReviewCloudPreview = "檢視 Preview 狀態"
+    let setupProofAbsent = "不存在"
+    let setupProofNotProved = "尚未證實"
+    let setupProofUnavailable = "無法取得證明"
+    func setupProofFailed(_ reason: String) -> String { "失敗 — \(reason)" }
+    let setupProofProved = "已證實"
+    func setupCloudAccountProved(_ account: String) -> String { "已登入 \(account)" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "鑰匙圈中有 \(machine) 的憑證" }
+    func setupCloudPairingProved(_ device: String) -> String { "已釘選指定 Viewer \(device)" }
+    let setupCloudflareDeviceName = "透過 Cloudflare 的手機"
+    let setupScanLiveTunnel = "用手機掃描已上線的 Tunnel"
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"
@@ -1573,6 +1614,47 @@ struct SimplifiedChinese: Copy {
     let setupLocalRecovery = "如果停在这里，请保持窗口打开并再次检查。也可在“设置”中查看服务器和端口。"
     let setupReadOnly = "只读 · 控制功能保持关闭"
     let setupLocalDeviceName = "这台 Mac 上的浏览器"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {
+        "模式：\(mode)\nTunnel：\(tunnel)\nQR 主机名：\(hostname)\n状态：\(status)"
+    }
+    let setupTunnelModeOff = "关闭"
+    let setupTunnelModeQuick = "快速"
+    let setupTunnelModeNamed = "命名"
+    let setupTunnelQuickName = "Cloudflare Quick Tunnel"
+    let setupNone = "无"
+    let setupControlChosen = "读取 + 控制 · 已在设置中明确开启"
+    let setupTunnelMissing = "尚未安装 cloudflared。"
+    let setupTunnelOff = "Tunnel 已关闭；目前没有手机 QR。"
+    let setupTunnelStarting = "cloudflared 正在启动；目前还没有手机 QR。"
+    func setupTunnelReady(_ url: String) -> String { "已在 \(url) 上线；尚未创建手机凭据。" }
+    func setupTunnelWaiting(_ url: String) -> String { "QR 指向 \(url)；正在等待这部手机连接。" }
+    func setupTunnelConnected(_ url: String) -> String { "已通过 \(url) 连接；这部手机已报告 lastSeen。" }
+    let setupTunnelExpected = "QR 只会放入已上线的 tunnel 网址；也只有这张 QR 创建的非本机设备报告 lastSeen 才算完成。"
+    let setupTunnelRecovery = "打开“远程”设置。若缺少 cloudflared，请先安装；否则按检测到的具体原因处理、保持 tunnel 上线，再扫描一次。"
+    let setupOpenRemoteSettings = "打开远程设置"
+    let setupCheckTunnel = "再次检查 Tunnel"
+    let setupShowPhoneQR = "显示手机 QR"
+    let setupShowPhoneQRAgain = "再次显示手机 QR"
+    let setupCloudRelayUnauthorized = "Relay 拒绝了这台机器的凭据。"
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String,
+                         _ pairing: String, _ receipt: String) -> String {
+        "账号：\(account)\n机器凭据：\(credential)\nRelay 就绪：\(relay)\n端到端加密配对：\(pairing)\nViewer 收件证明：\(receipt)"
+    }
+    let setupCloudExpected = "Preview 只有在账号、机器凭据、Relay 就绪、端到端加密配对与这个 Viewer 的收件证明各自成立时才算完成。"
+    let setupCloudRecovery = "到 Cloud 设置登录或配对。Relay 就绪与 Viewer 收件仍属 Preview 证明；重试不会把缺少的证据变成成功。"
+    let setupOpenCloudSettings = "打开 Cloud 设置"
+    let setupPairCloudPhone = "到 Cloud 设置配对手机"
+    let setupReviewCloudPreview = "查看 Preview 状态"
+    let setupProofAbsent = "不存在"
+    let setupProofNotProved = "尚未证实"
+    let setupProofUnavailable = "无法取得证明"
+    func setupProofFailed(_ reason: String) -> String { "失败 — \(reason)" }
+    let setupProofProved = "已证实"
+    func setupCloudAccountProved(_ account: String) -> String { "已登录 \(account)" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "钥匙串中有 \(machine) 的凭据" }
+    func setupCloudPairingProved(_ device: String) -> String { "已固定指定 Viewer \(device)" }
+    let setupCloudflareDeviceName = "通过 Cloudflare 的手机"
+    let setupScanLiveTunnel = "用手机扫描已上线的 Tunnel"
 
     let menuOpen = "打开输入框"
     let menuReveal = "跳到目标标签页"

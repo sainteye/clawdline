@@ -777,6 +777,47 @@ struct English: Copy {
     let setupLocalRecovery = "If this stalls, keep this window open and check again. You can review the server and port in Settings."
     let setupReadOnly = "Read only · control remains off"
     let setupLocalDeviceName = "Browser on this Mac"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String {
+        "Mode: \(mode)\nTunnel: \(tunnel)\nQR hostname: \(hostname)\nStatus: \(status)"
+    }
+    let setupTunnelModeOff = "Off"
+    let setupTunnelModeQuick = "Quick"
+    let setupTunnelModeNamed = "Named"
+    let setupTunnelQuickName = "Cloudflare Quick Tunnel"
+    let setupNone = "None"
+    let setupControlChosen = "Read + control · explicitly enabled in Settings"
+    let setupTunnelMissing = "cloudflared is not installed."
+    let setupTunnelOff = "The tunnel is off; no phone QR is available."
+    let setupTunnelStarting = "cloudflared is starting; no phone QR is available yet."
+    func setupTunnelReady(_ url: String) -> String { "Live at \(url). No phone credential exists yet." }
+    func setupTunnelWaiting(_ url: String) -> String { "QR points to \(url). Waiting for this exact phone." }
+    func setupTunnelConnected(_ url: String) -> String { "Connected through \(url). This exact phone reported lastSeen." }
+    let setupTunnelExpected = "Only a live tunnel URL enters the QR; only this QR’s non-local device reporting lastSeen completes setup."
+    let setupTunnelRecovery = "Open Remote Settings. Install cloudflared if it is missing; otherwise follow the exact detected reason, keep the tunnel up, and scan again."
+    let setupOpenRemoteSettings = "Open Remote Settings"
+    let setupCheckTunnel = "Check Tunnel Again"
+    let setupShowPhoneQR = "Show Phone QR"
+    let setupShowPhoneQRAgain = "Show Phone QR Again"
+    let setupCloudRelayUnauthorized = "The relay refused this machine credential."
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String,
+                         _ pairing: String, _ receipt: String) -> String {
+        "Account: \(account)\nMachine credential: \(credential)\nRelay ready: \(relay)\nE2EE pairing: \(pairing)\nViewer receipt: \(receipt)"
+    }
+    let setupCloudExpected = "Preview completes only when account, machine credential, relay readiness, E2EE pairing, and this viewer’s receipt are each proved."
+    let setupCloudRecovery = "Use Cloud Settings to sign in or pair. Relay readiness and viewer receipt remain Preview proofs; retrying does not turn missing evidence into success."
+    let setupOpenCloudSettings = "Open Cloud Settings"
+    let setupPairCloudPhone = "Pair a Phone in Cloud Settings"
+    let setupReviewCloudPreview = "Review Preview Status"
+    let setupProofAbsent = "not present"
+    let setupProofNotProved = "not proved"
+    let setupProofUnavailable = "proof unavailable"
+    func setupProofFailed(_ reason: String) -> String { "failed — \(reason)" }
+    let setupProofProved = "proved"
+    func setupCloudAccountProved(_ account: String) -> String { "signed in as \(account)" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "Keychain credential for \(machine)" }
+    func setupCloudPairingProved(_ device: String) -> String { "pinned for exact viewer \(device)" }
+    let setupCloudflareDeviceName = "Phone through Cloudflare"
+    let setupScanLiveTunnel = "Scan the live tunnel with your phone"
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"

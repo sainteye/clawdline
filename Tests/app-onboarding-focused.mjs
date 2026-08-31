@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const source = resolve(process.env.CLAWDLINE_ONBOARDING_SOURCE || "Sources/Onboarding.swift");
+const remoteQRSource = resolve(process.env.CLAWDLINE_REMOTE_QR_SOURCE || "Sources/RemoteQR.swift");
+const sourcesDirectory = resolve(process.env.CLAWDLINE_SOURCES_DIR || "Sources");
 const installer = resolve(process.env.CLAWDLINE_INSTALL_SOURCE || "install.sh");
 const work = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "clawdline-onboarding-"));
 const harness = join(work, "main.swift");
@@ -70,8 +72,70 @@ check(seen.phase == .connected && seen.action == .finish, "exact seen device com
 check(seen.succeeded && !seen.mayMintDevice, "connected is success without another credential")
 check(AppLaunchPolicy.shouldShowHome(onboardingComplete: false), "fresh launch shows Home")
 check(!AppLaunchPolicy.shouldShowHome(onboardingComplete: true), "completed launch may stay quiet")
-check(checks == 17, "expected focused check count")
-print("18 checks passed")
+
+let missingTunnel = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: false, tunnel: .off, deviceCreated: false,
+    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
+check(missingTunnel.phase == .cloudflaredMissing && missingTunnel.qrURL == nil,
+      "missing cloudflared cannot offer a QR")
+let tunnelOff = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: true, tunnel: .off, deviceCreated: false,
+    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
+check(tunnelOff.phase == .tunnelOff && tunnelOff.action == .openSettings,
+      "tunnel-off has one settings action")
+let tunnelStarting = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: true, tunnel: .starting, deviceCreated: false,
+    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
+check(tunnelStarting.phase == .starting && tunnelStarting.qrURL == nil,
+      "starting tunnel cannot offer a QR")
+let reason = "Set remote_hostname to the hostname you routed to that tunnel"
+let tunnelFailed = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: true, tunnel: .failed(reason: reason), deviceCreated: false,
+    exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
+check(tunnelFailed.phase == .failed(reason: reason), "tunnel failure preserves its exact reason")
+let live = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
+    deviceCreated: false, exactDeviceIsNonLocal: false, exactDeviceLastSeen: false)
+check(live.qrURL == "https://fresh.trycloudflare.com" && live.mayMintDevice,
+      "only live tunnel URL permits QR minting")
+let localSeen = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
+    deviceCreated: true, exactDeviceIsNonLocal: false, exactDeviceLastSeen: true)
+check(!localSeen.succeeded, "local device never completes phone setup")
+let exactUnseen = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
+    deviceCreated: true, exactDeviceIsNonLocal: true, exactDeviceLastSeen: false)
+let isAwaiting: Bool
+if case .awaitingDevice = exactUnseen.phase { isAwaiting = true } else { isAwaiting = false }
+check(isAwaiting && !exactUnseen.succeeded,
+      "minted exact phone without lastSeen remains pending")
+let exactSeen = CloudflareOnboardingPolicy.decide(
+    cloudflaredInstalled: true, tunnel: .up(url: "https://fresh.trycloudflare.com"),
+    deviceCreated: true, exactDeviceIsNonLocal: true, exactDeviceLastSeen: true)
+let isConnected: Bool
+if case .connected = exactSeen.phase { isConnected = true } else { isConnected = false }
+check(isConnected && exactSeen.succeeded,
+      "exact non-local phone lastSeen completes tunnel route")
+
+let accountOnly = CloudPreviewPolicy.decide(
+    account: .proved("account-1"), machineCredential: .proved("machine-1"),
+    relayReady: .notProved, e2eePairing: .absent, viewerReceipt: .unavailable)
+check(accountOnly.relayReady == .notProved && accountOnly.viewerReceipt == .unavailable,
+      "cloud account does not promote relay or viewer receipt")
+check(accountOnly.action == .pairPhone && !accountOnly.succeeded,
+      "credential without pairing offers exactly pairing")
+let pairedPreview = CloudPreviewPolicy.decide(
+    account: .proved("account-1"), machineCredential: .proved("machine-1"),
+    relayReady: .notProved, e2eePairing: .proved("viewer-1"), viewerReceipt: .unavailable)
+check(pairedPreview.action == .reviewPreviewStatus && !pairedPreview.succeeded,
+      "E2EE pairing cannot stand in for relay readiness or viewer receipt")
+let allCloudProofs = CloudPreviewPolicy.decide(
+    account: .proved("account-1"), machineCredential: .proved("machine-1"),
+    relayReady: .proved("ready"), e2eePairing: .proved("viewer-1"),
+    viewerReceipt: .proved("received"))
+check(allCloudProofs.succeeded, "cloud succeeds only when all five facts are proved")
+check(checks == 29, "expected focused policy check count")
+print("30 checks passed")
 `, "utf8");
 
 const compile = spawnSync("xcrun", ["swiftc", "-D", "ONBOARDING_POLICY_ONLY", source, harness, "-o", binary], {
@@ -85,9 +149,29 @@ if (compile.status !== 0) {
 const run = spawnSync(binary, [join(work, "store")], { encoding: "utf8" });
 process.stdout.write(run.stdout);
 process.stderr.write(run.stderr);
-if (run.status !== 0 || !run.stdout.includes("18 checks passed")) {
+if (run.status !== 0 || !run.stdout.includes("30 checks passed")) {
   process.exit(run.status || 2);
 }
+
+const remoteSource = readFileSync(remoteQRSource, "utf8");
+const signInFunction = remoteSource.match(/static func signInURL[\s\S]*?^    \}/m)?.[0] || "";
+if (!signInFunction.includes("guard case .up") ||
+    !signInFunction.includes('else { return "" }') || signInFunction.includes("127.0.0.1")) {
+  process.stderr.write("FAIL after 30 checks: phone QR accepts a non-up or loopback address\n");
+  process.exit(5);
+}
+console.log("✓ phone QR is gated on the live tunnel URL");
+
+const copyFiles = readdirSync(sourcesDirectory).filter((name) => /^Copy\+.*\.swift$/.test(name));
+const conformers = copyFiles.reduce((count, name) => {
+  const text = readFileSync(join(sourcesDirectory, name), "utf8");
+  return count + (text.match(/func setupCloudFacts\(/g) || []).length;
+}, 0);
+if (conformers !== 14) {
+  process.stderr.write(`FAIL after 31 checks: expected 14 localized onboarding conformers, found ${conformers}\n`);
+  process.exit(6);
+}
+console.log("✓ all 14 copy conformers carry the remote onboarding facts");
 
 const installSource = readFileSync(installer, "utf8");
 const launchFunction = installSource.match(/launch_installed_app\(\) \{[\s\S]*?^\}/m)?.[0];
@@ -108,4 +192,4 @@ if (launchProbe.status !== 0 || launchProbe.stdout !== "/tmp/Clawdline Install P
   process.exit(4);
 }
 console.log("✓ installer opens the exact installed app path");
-console.log("20 checks passed");
+console.log("34 checks passed");

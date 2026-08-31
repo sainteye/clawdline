@@ -105,6 +105,140 @@ enum LocalBrowserPolicy {
     }
 }
 
+enum CloudflareOnboardingTunnel: Equatable {
+    case off
+    case starting
+    case up(url: String)
+    case failed(reason: String)
+}
+
+enum CloudflareOnboardingPhase: Equatable {
+    case cloudflaredMissing
+    case tunnelOff
+    case starting
+    case ready(url: String)
+    case awaitingDevice(url: String)
+    case connected(url: String)
+    case failed(reason: String)
+}
+
+enum CloudflareOnboardingAction: Equatable {
+    case installCloudflared
+    case openSettings
+    case checkAgain
+    case showQR
+    case showQRAgain
+    case finish
+}
+
+struct CloudflareOnboardingDecision: Equatable {
+    let phase: CloudflareOnboardingPhase
+    let action: CloudflareOnboardingAction
+    let qrURL: String?
+    let mayMintDevice: Bool
+    let succeeded: Bool
+}
+
+/// The public-phone evidence seam. A configured mode, name or hostname never permits a QR;
+/// only the URL carried by the live `.up` state does. Success additionally requires the exact
+/// non-local device minted for this route to have reported `lastSeen`.
+enum CloudflareOnboardingPolicy {
+    static func decide(cloudflaredInstalled: Bool, tunnel: CloudflareOnboardingTunnel,
+                       deviceCreated: Bool, exactDeviceIsNonLocal: Bool,
+                       exactDeviceLastSeen: Bool) -> CloudflareOnboardingDecision {
+        guard cloudflaredInstalled else {
+            return CloudflareOnboardingDecision(
+                phase: .cloudflaredMissing, action: .installCloudflared, qrURL: nil,
+                mayMintDevice: false, succeeded: false)
+        }
+        switch tunnel {
+        case .off:
+            return CloudflareOnboardingDecision(
+                phase: .tunnelOff, action: .openSettings, qrURL: nil,
+                mayMintDevice: false, succeeded: false)
+        case .starting:
+            return CloudflareOnboardingDecision(
+                phase: .starting, action: .checkAgain, qrURL: nil,
+                mayMintDevice: false, succeeded: false)
+        case .failed(let reason):
+            return CloudflareOnboardingDecision(
+                phase: .failed(reason: reason), action: .openSettings, qrURL: nil,
+                mayMintDevice: false, succeeded: false)
+        case .up(let url):
+            guard !url.isEmpty else {
+                return CloudflareOnboardingDecision(
+                    phase: .failed(reason: "The tunnel reported no public URL."),
+                    action: .openSettings, qrURL: nil, mayMintDevice: false, succeeded: false)
+            }
+            guard deviceCreated else {
+                return CloudflareOnboardingDecision(
+                    phase: .ready(url: url), action: .showQR, qrURL: url,
+                    mayMintDevice: true, succeeded: false)
+            }
+            guard exactDeviceIsNonLocal, exactDeviceLastSeen else {
+                return CloudflareOnboardingDecision(
+                    phase: .awaitingDevice(url: url), action: .showQRAgain, qrURL: url,
+                    mayMintDevice: false, succeeded: false)
+            }
+            return CloudflareOnboardingDecision(
+                phase: .connected(url: url), action: .finish, qrURL: url,
+                mayMintDevice: false, succeeded: true)
+        }
+    }
+}
+
+enum CloudPreviewProof: Equatable {
+    case absent
+    case notProved
+    case unavailable
+    case proved(String)
+    case failed(String)
+}
+
+enum CloudPreviewAction: Equatable {
+    case openCloudSettings
+    case pairPhone
+    case reviewPreviewStatus
+}
+
+struct CloudPreviewDecision: Equatable {
+    let account: CloudPreviewProof
+    let machineCredential: CloudPreviewProof
+    let relayReady: CloudPreviewProof
+    let e2eePairing: CloudPreviewProof
+    let viewerReceipt: CloudPreviewProof
+    let action: CloudPreviewAction
+    let succeeded: Bool
+}
+
+/// Cloud's five facts remain five independent facts. In particular, a credential cannot promote
+/// relay readiness, a pinned E2EE key cannot stand in for a delivered viewer receipt, and a proof
+/// the current protocol does not expose is `.unavailable`, not a success-shaped placeholder.
+enum CloudPreviewPolicy {
+    static func decide(account: CloudPreviewProof, machineCredential: CloudPreviewProof,
+                       relayReady: CloudPreviewProof, e2eePairing: CloudPreviewProof,
+                       viewerReceipt: CloudPreviewProof) -> CloudPreviewDecision {
+        let action: CloudPreviewAction
+        if !isProved(account) || !isProved(machineCredential) {
+            action = .openCloudSettings
+        } else if !isProved(e2eePairing) {
+            action = .pairPhone
+        } else {
+            action = .reviewPreviewStatus
+        }
+        return CloudPreviewDecision(
+            account: account, machineCredential: machineCredential, relayReady: relayReady,
+            e2eePairing: e2eePairing, viewerReceipt: viewerReceipt, action: action,
+            succeeded: [account, machineCredential, relayReady, e2eePairing, viewerReceipt]
+                .allSatisfy(isProved))
+    }
+
+    private static func isProved(_ proof: CloudPreviewProof) -> Bool {
+        if case .proved = proof { return true }
+        return false
+    }
+}
+
 #if !ONBOARDING_POLICY_ONLY
 import AppKit
 
@@ -119,6 +253,17 @@ final class HomeWindow: NSObject, NSWindowDelegate {
     private var healthRequestGeneration = 0
     private var localDeviceID: String?
     private var localToken: String?
+    private var cloudflareStateValue: NSTextField?
+    private var cloudflareRecoveryValue: NSTextField?
+    private var cloudflareActionButton: NSButton?
+    private var cloudflareDeviceID: String?
+    private var cloudflareToken: String?
+    private var cloudflareQRWindow: NSWindow?
+    private var cloudStateValue: NSTextField?
+    private var cloudRecoveryValue: NSTextField?
+    private var cloudActionButton: NSButton?
+    private var cloudRouteStartedAtMilliseconds = Int64(Date().timeIntervalSince1970 * 1_000)
+    private var cloudPairedDeviceID: String?
     private var completionRecorded = false
 
     private override init() { super.init() }
@@ -146,7 +291,7 @@ final class HomeWindow: NSObject, NSWindowDelegate {
     }
 
     private func buildWindow() -> NSWindow {
-        let frame = NSRect(x: 0, y: 0, width: 760, height: 680)
+        let frame = NSRect(x: 0, y: 0, width: 760, height: 820)
         let content = NSView(frame: frame)
         content.wantsLayer = true
         content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
@@ -197,12 +342,43 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         remoteCards.alignment = .top
         remoteCards.distribution = .fillEqually
         remoteCards.spacing = 14
-        let preview = card(title: L.t.homeCloudPreviewTitle,
-                           summary: L.t.homeCloudPreviewSummary + "\n\n" + L.t.homeUnavailable)
         let cloudflare = card(title: L.t.homeCloudflareTitle,
-                              summary: L.t.homeCloudflareSummary + "\n\n" + L.t.homeUnavailable)
-        remoteCards.addArrangedSubview(preview.box)
+                              summary: L.t.homeCloudflareSummary)
+        let cloudflareState = label("", size: 12, weight: .medium)
+        let cloudflareRecovery = label("", size: 12)
+        let cloudflareAction = NSButton(title: "", target: self,
+                                        action: #selector(performCloudflareAction))
+        cloudflareAction.bezelStyle = .rounded
+        cloudflareStateValue = cloudflareState
+        cloudflareRecoveryValue = cloudflareRecovery
+        cloudflareActionButton = cloudflareAction
+        cloudflare.content.addArrangedSubview(compactRow(
+            L.t.setupDetected, value: cloudflareState))
+        cloudflare.content.addArrangedSubview(compactRow(
+            L.t.setupNextAction, value: cloudflareAction))
+        cloudflare.content.addArrangedSubview(compactRow(
+            L.t.setupExpected, value: label(L.t.setupTunnelExpected, size: 12)))
+        cloudflare.content.addArrangedSubview(compactRow(
+            L.t.setupRecovery, value: cloudflareRecovery))
+
+        let preview = card(title: L.t.homeCloudPreviewTitle,
+                           summary: L.t.homeCloudPreviewSummary)
+        let cloudState = label("", size: 12, weight: .medium)
+        let cloudRecovery = label("", size: 12)
+        let cloudAction = NSButton(title: "", target: self,
+                                   action: #selector(performCloudAction))
+        cloudAction.bezelStyle = .rounded
+        cloudStateValue = cloudState
+        cloudRecoveryValue = cloudRecovery
+        cloudActionButton = cloudAction
+        preview.content.addArrangedSubview(compactRow(L.t.setupDetected, value: cloudState))
+        preview.content.addArrangedSubview(compactRow(L.t.setupNextAction, value: cloudAction))
+        preview.content.addArrangedSubview(compactRow(
+            L.t.setupExpected, value: label(L.t.setupCloudExpected, size: 12)))
+        preview.content.addArrangedSubview(compactRow(L.t.setupRecovery, value: cloudRecovery))
+
         remoteCards.addArrangedSubview(cloudflare.box)
+        remoteCards.addArrangedSubview(preview.box)
         stack.addArrangedSubview(remoteCards)
         NSLayoutConstraint.activate([
             local.box.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -213,7 +389,7 @@ final class HomeWindow: NSObject, NSWindowDelegate {
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = L.t.homeTitle
-        window.minSize = NSSize(width: 680, height: 620)
+        window.minSize = NSSize(width: 680, height: 760)
         window.contentView = content
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -250,6 +426,18 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         return stack
     }
 
+    private func compactRow(_ name: String, value: NSView) -> NSView {
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.alignment = .top
+        stack.spacing = 8
+        let heading = label(name, size: 11, weight: .semibold, color: .secondaryLabelColor)
+        heading.widthAnchor.constraint(equalToConstant: 82).isActive = true
+        stack.addArrangedSubview(heading)
+        stack.addArrangedSubview(value)
+        return stack
+    }
+
     private func label(_ text: String, size: CGFloat,
                        weight: NSFont.Weight = .regular,
                        color: NSColor = .labelColor) -> NSTextField {
@@ -271,6 +459,85 @@ final class HomeWindow: NSObject, NSWindowDelegate {
                                          deviceLastSeen: seen)
     }
 
+    private var cloudflareDecision: CloudflareOnboardingDecision {
+        let device = cloudflareDeviceID.flatMap { id in
+            RemoteAuth.approvedDevices.first(where: { $0.id == id })
+        }
+        let tunnel: CloudflareOnboardingTunnel
+        switch RemoteTunnel.shared.state {
+        case .off: tunnel = .off
+        case .starting: tunnel = .starting
+        case .up(let url): tunnel = .up(url: url)
+        case .failed(let reason): tunnel = .failed(reason: reason)
+        }
+        return CloudflareOnboardingPolicy.decide(
+            cloudflaredInstalled: RemoteTunnel.isInstalled, tunnel: tunnel,
+            deviceCreated: device != nil, exactDeviceIsNonLocal: device?.local == false,
+            exactDeviceLastSeen: device?.lastSeen != nil)
+    }
+
+    private var cloudDecision: CloudPreviewDecision {
+        let identity: CloudMachineIdentity?
+        let account: CloudPreviewProof
+        let credential: CloudPreviewProof
+        do {
+            identity = try CloudAccountClient().restoredMachineIdentity()
+            if let identity {
+                account = .proved(identity.accountID)
+                credential = .proved(identity.machineID)
+            } else {
+                account = .absent
+                credential = .absent
+            }
+        } catch {
+            identity = nil
+            account = .notProved
+            credential = .failed(Self.message(for: error))
+        }
+
+        let relay: CloudPreviewProof
+        let lifecycle = MainActor.assumeIsolated { CloudBridgeLifecycle.shared.state }
+        switch lifecycle {
+        case .unauthorized:
+            relay = .failed(L.t.setupCloudRelayUnauthorized)
+        case .failed(let reason):
+            relay = .failed(reason)
+        case .detached, .attached:
+            // `attached` means a bridge was built. The lifecycle exposes no ready-frame fact, so
+            // it cannot be promoted to relay-ready on this card.
+            relay = .notProved
+        }
+
+        let pairing: CloudPreviewProof
+        if let identity {
+            do {
+                let devices = try CloudPairedDeviceStore().devices(accountID: identity.accountID)
+                let exact: CloudPairedDevice?
+                if let bound = cloudPairedDeviceID {
+                    exact = devices.first(where: { $0.deviceID == bound })
+                } else {
+                    exact = devices
+                        .filter({ $0.pairedAtMilliseconds >= cloudRouteStartedAtMilliseconds })
+                        .min(by: { $0.pairedAtMilliseconds < $1.pairedAtMilliseconds })
+                    cloudPairedDeviceID = exact?.deviceID
+                }
+                if let exact {
+                    pairing = .proved(exact.deviceID)
+                } else {
+                    pairing = .absent
+                }
+            } catch {
+                pairing = .failed(Self.message(for: error))
+            }
+        } else {
+            pairing = .absent
+        }
+
+        return CloudPreviewPolicy.decide(
+            account: account, machineCredential: credential, relayReady: relay,
+            e2eePairing: pairing, viewerReceipt: .unavailable)
+    }
+
     private func refresh() {
         let current = decision
         switch current.phase {
@@ -289,6 +556,126 @@ final class HomeWindow: NSObject, NSWindowDelegate {
         }
         if current.succeeded, !completionRecorded {
             completionRecorded = OnboardingCompletionStore.production.markCurrent()
+        }
+
+        refreshCloudflare()
+        refreshCloud()
+    }
+
+    private func refreshCloudflare() {
+        let current = cloudflareDecision
+        let mode = TunnelMode(configured: Config.shared.remoteTunnel)
+        let modeName: String
+        let tunnelName: String
+        switch mode {
+        case .off:
+            modeName = L.t.setupTunnelModeOff
+            tunnelName = L.t.setupNone
+        case .quick:
+            modeName = L.t.setupTunnelModeQuick
+            tunnelName = L.t.setupTunnelQuickName
+        case .named:
+            modeName = L.t.setupTunnelModeNamed
+            let configured = Config.shared.remoteTunnelName.trimmingCharacters(in: .whitespaces)
+            tunnelName = configured.isEmpty ? L.t.setupNone : configured
+        }
+        let liveURL: String?
+        switch current.phase {
+        case .ready(let url), .awaitingDevice(let url), .connected(let url): liveURL = url
+        default: liveURL = nil
+        }
+        let hostname = liveURL.flatMap { URL(string: $0)?.host }
+            ?? Config.shared.remoteHostname.trimmingCharacters(in: .whitespaces)
+        let shownHost = hostname.isEmpty ? L.t.setupNone : hostname
+        let access = Config.shared.remoteWrite ? L.t.setupControlChosen : L.t.setupReadOnly
+
+        let status: String
+        let recovery: String
+        switch current.phase {
+        case .cloudflaredMissing:
+            status = L.t.setupTunnelMissing
+            recovery = L.t.setupTunnelRecovery
+        case .tunnelOff:
+            status = L.t.setupTunnelOff
+            recovery = L.t.setupTunnelRecovery
+        case .starting:
+            status = L.t.setupTunnelStarting
+            recovery = L.t.setupTunnelRecovery
+        case .ready(let url):
+            status = L.t.setupTunnelReady(url)
+            recovery = L.t.setupTunnelRecovery
+        case .awaitingDevice(let url):
+            status = L.t.setupTunnelWaiting(url)
+            recovery = L.t.setupTunnelRecovery
+        case .connected(let url):
+            status = L.t.setupTunnelConnected(url)
+            recovery = L.t.setupTunnelRecovery
+        case .failed(let reason):
+            status = reason
+            recovery = L.t.setupTunnelRecovery
+        }
+        cloudflareStateValue?.stringValue = L.t.setupTunnelFacts(
+            modeName, tunnelName, shownHost, status + "\n" + access)
+        cloudflareRecoveryValue?.stringValue = recovery
+        switch current.action {
+        case .installCloudflared, .openSettings:
+            cloudflareActionButton?.title = L.t.setupOpenRemoteSettings
+        case .checkAgain:
+            cloudflareActionButton?.title = L.t.setupCheckTunnel
+        case .showQR:
+            cloudflareActionButton?.title = L.t.setupShowPhoneQR
+        case .showQRAgain:
+            cloudflareActionButton?.title = L.t.setupShowPhoneQRAgain
+        case .finish:
+            cloudflareActionButton?.title = L.t.setupFinish
+        }
+        if current.qrURL == nil {
+            cloudflareQRWindow?.orderOut(nil)
+            cloudflareQRWindow = nil
+        }
+        if current.succeeded, !completionRecorded {
+            completionRecorded = OnboardingCompletionStore.production.markCurrent()
+        }
+    }
+
+    private func refreshCloud() {
+        let current = cloudDecision
+        cloudStateValue?.stringValue = L.t.setupCloudFacts(
+            cloudProof(current.account, kind: .account),
+            cloudProof(current.machineCredential, kind: .credential),
+            cloudProof(current.relayReady, kind: .relay),
+            cloudProof(current.e2eePairing, kind: .pairing),
+            cloudProof(current.viewerReceipt, kind: .receipt))
+        switch current.action {
+        case .openCloudSettings:
+            cloudActionButton?.title = L.t.setupOpenCloudSettings
+        case .pairPhone:
+            cloudActionButton?.title = L.t.setupPairCloudPhone
+        case .reviewPreviewStatus:
+            cloudActionButton?.title = L.t.setupReviewCloudPreview
+        }
+        cloudRecoveryValue?.stringValue = L.t.setupCloudRecovery
+    }
+
+    private enum CloudProofKind { case account, credential, relay, pairing, receipt }
+
+    private func cloudProof(_ proof: CloudPreviewProof, kind: CloudProofKind) -> String {
+        switch proof {
+        case .absent:
+            return L.t.setupProofAbsent
+        case .notProved:
+            return L.t.setupProofNotProved
+        case .unavailable:
+            return L.t.setupProofUnavailable
+        case .failed(let reason):
+            return L.t.setupProofFailed(reason)
+        case .proved(let value):
+            switch kind {
+            case .account: return L.t.setupCloudAccountProved(value)
+            case .credential: return L.t.setupCloudCredentialProved(value)
+            case .pairing: return L.t.setupCloudPairingProved(value)
+            case .relay, .receipt: return L.t.setupProofProved
+            }
         }
     }
 
@@ -316,6 +703,74 @@ final class HomeWindow: NSObject, NSWindowDelegate {
             window?.performClose(nil)
         }
         refresh()
+    }
+
+    @objc private func performCloudflareAction() {
+        let current = cloudflareDecision
+        switch current.action {
+        case .installCloudflared, .openSettings:
+            SettingsWindow.shared.show()
+        case .checkAgain:
+            RemoteTunnel.shared.apply()
+        case .showQR:
+            guard current.mayMintDevice else { return }
+            let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite
+                ? [.read, .send] : [.read]
+            let made = RemoteAuth.addDevice(name: L.t.setupCloudflareDeviceName, caps: caps)
+            cloudflareDeviceID = made.id
+            cloudflareToken = made.token
+            showCloudflareQR()
+        case .showQRAgain:
+            showCloudflareQR()
+        case .finish:
+            window?.performClose(nil)
+        }
+        refresh()
+    }
+
+    @objc private func performCloudAction() {
+        // The existing Cloud settings control owns device-code login and E2EE key handover. Home
+        // observes their durable evidence rather than creating a second login/pairing state machine.
+        if cloudDecision.action == .pairPhone {
+            cloudPairedDeviceID = nil
+            cloudRouteStartedAtMilliseconds = Int64(Date().timeIntervalSince1970 * 1_000)
+        }
+        SettingsWindow.shared.show()
+    }
+
+    private func showCloudflareQR() {
+        guard let token = cloudflareToken else { return }
+        let url = RemoteQR.signInURL(token: token, hostname: Config.shared.remoteHostname,
+                                     tunnel: RemoteTunnel.shared.state,
+                                     port: Config.shared.remotePort)
+        guard !url.isEmpty else { return }
+        let side: CGFloat = 280
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: side + 48, height: side + 126))
+        let title = label(L.t.setupScanLiveTunnel, size: 16, weight: .semibold)
+        title.alignment = .center
+        title.frame = NSRect(x: 24, y: side + 82, width: side, height: 24)
+        content.addSubview(title)
+        let image = NSImageView(frame: NSRect(x: 24, y: 60, width: side, height: side))
+        image.image = RemoteQR.image(for: url, side: side)
+        image.imageScaling = .scaleNone
+        image.wantsLayer = true
+        image.layer?.backgroundColor = NSColor.white.cgColor
+        content.addSubview(image)
+        let address = label(url, size: 9, color: .secondaryLabelColor)
+        address.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        address.alignment = .center
+        address.isSelectable = true
+        address.frame = NSRect(x: 24, y: 14, width: side, height: 38)
+        content.addSubview(address)
+        let qr = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable],
+                          backing: .buffered, defer: false)
+        qr.title = L.t.homeCloudflareTitle
+        qr.contentView = content
+        qr.isReleasedWhenClosed = false
+        qr.center()
+        cloudflareQRWindow?.orderOut(nil)
+        cloudflareQRWindow = qr
+        qr.makeKeyAndOrderFront(nil)
     }
 
     private func openLocalBrowser() {
@@ -361,6 +816,14 @@ final class HomeWindow: NSObject, NSWindowDelegate {
                 self.refresh()
             }
         }.resume()
+    }
+
+    private static func message(for error: Error) -> String {
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription, !description.isEmpty {
+            return description
+        }
+        return error.localizedDescription
     }
 }
 #endif

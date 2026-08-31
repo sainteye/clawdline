@@ -776,6 +776,42 @@ struct Korean: Copy {
     let setupLocalRecovery = "멈추면 이 윈도우를 열어 둔 채 다시 확인하세요. 설정에서 서버와 포트도 확인할 수 있습니다."
     let setupReadOnly = "읽기 전용 · 제어는 계속 꺼짐"
     let setupLocalDeviceName = "이 Mac의 브라우저"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "모드: \(mode)\n터널: \(tunnel)\nQR 호스트 이름: \(hostname)\n상태: \(status)" }
+    let setupTunnelModeOff = "끔"
+    let setupTunnelModeQuick = "빠른"
+    let setupTunnelModeNamed = "이름 지정"
+    let setupTunnelQuickName = "Cloudflare 빠른 터널"
+    let setupNone = "없음"
+    let setupControlChosen = "읽기 + 제어 · 설정에서 명시적으로 활성화됨"
+    let setupTunnelMissing = "cloudflared가 설치되지 않았습니다."
+    let setupTunnelOff = "터널이 꺼져 있어 휴대폰 QR을 사용할 수 없습니다."
+    let setupTunnelStarting = "cloudflared가 시작 중이며 아직 QR을 사용할 수 없습니다."
+    func setupTunnelReady(_ url: String) -> String { "\(url)에서 실행 중입니다. 휴대폰 자격 증명은 아직 없습니다." }
+    func setupTunnelWaiting(_ url: String) -> String { "QR이 \(url)을 가리킵니다. 바로 이 휴대폰을 기다립니다." }
+    func setupTunnelConnected(_ url: String) -> String { "\(url)을 통해 연결되었습니다. 이 휴대폰이 lastSeen을 보고했습니다." }
+    let setupTunnelExpected = "실행 중인 터널 URL만 QR에 들어가며, 이 QR이 만든 비로컬 기기의 lastSeen만 설정을 완료합니다."
+    let setupTunnelRecovery = "원격 설정을 여세요. cloudflared가 없으면 설치하고, 아니면 감지된 이유를 따라 터널을 유지한 뒤 다시 스캔하세요."
+    let setupOpenRemoteSettings = "원격 설정 열기"
+    let setupCheckTunnel = "터널 다시 확인"
+    let setupShowPhoneQR = "휴대폰 QR 표시"
+    let setupShowPhoneQRAgain = "휴대폰 QR 다시 표시"
+    let setupCloudRelayUnauthorized = "Relay가 이 기기의 자격 증명을 거부했습니다."
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String, _ pairing: String, _ receipt: String) -> String { "계정: \(account)\n기기 자격 증명: \(credential)\nRelay 준비: \(relay)\nE2EE 페어링: \(pairing)\nViewer 수신 증명: \(receipt)" }
+    let setupCloudExpected = "Preview는 계정, 기기 자격 증명, Relay, E2EE 페어링, 이 Viewer의 수신이 각각 증명되어야 완료됩니다."
+    let setupCloudRecovery = "Cloud 설정에서 로그인하거나 페어링하세요. Relay와 Viewer 수신은 Preview 증명이며 재시도로 없는 증거가 생기지 않습니다."
+    let setupOpenCloudSettings = "Cloud 설정 열기"
+    let setupPairCloudPhone = "Cloud에서 휴대폰 페어링"
+    let setupReviewCloudPreview = "Preview 상태 검토"
+    let setupProofAbsent = "없음"
+    let setupProofNotProved = "증명되지 않음"
+    let setupProofUnavailable = "증명 사용 불가"
+    func setupProofFailed(_ reason: String) -> String { "실패 — \(reason)" }
+    let setupProofProved = "증명됨"
+    func setupCloudAccountProved(_ account: String) -> String { "\(account)(으)로 로그인됨" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "\(machine)의 키체인 자격 증명" }
+    func setupCloudPairingProved(_ device: String) -> String { "정확한 Viewer \(device)에 고정됨" }
+    let setupCloudflareDeviceName = "Cloudflare를 통한 휴대폰"
+    let setupScanLiveTunnel = "휴대폰으로 실행 중인 터널 스캔"
 
     let menuOpen = "입력창 열기"
     let menuReveal = "대상 탭으로 이동"

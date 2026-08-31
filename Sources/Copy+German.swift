@@ -778,6 +778,42 @@ struct German: Copy {
     let setupLocalRecovery = "Bei Stillstand dieses Fenster offen lassen und erneut prüfen. Server und Port stehen in den Einstellungen."
     let setupReadOnly = "Nur Lesen · Steuerung bleibt aus"
     let setupLocalDeviceName = "Browser auf diesem Mac"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "Modus: \(mode)\nTunnel: \(tunnel)\nQR-Hostname: \(hostname)\nStatus: \(status)" }
+    let setupTunnelModeOff = "Aus"
+    let setupTunnelModeQuick = "Schnell"
+    let setupTunnelModeNamed = "Benannt"
+    let setupTunnelQuickName = "Cloudflare-Schnelltunnel"
+    let setupNone = "Keiner"
+    let setupControlChosen = "Lesen + Steuern · ausdrücklich in Einstellungen aktiviert"
+    let setupTunnelMissing = "cloudflared ist nicht installiert."
+    let setupTunnelOff = "Der Tunnel ist aus; kein Telefon-QR ist verfügbar."
+    let setupTunnelStarting = "cloudflared startet; noch ist kein Telefon-QR verfügbar."
+    func setupTunnelReady(_ url: String) -> String { "Live unter \(url). Noch keine Telefon-Zugangsdaten vorhanden." }
+    func setupTunnelWaiting(_ url: String) -> String { "QR zeigt auf \(url). Warten auf genau dieses Telefon." }
+    func setupTunnelConnected(_ url: String) -> String { "Über \(url) verbunden. Genau dieses Telefon meldete lastSeen." }
+    let setupTunnelExpected = "Nur eine live Tunnel-URL kommt in den QR; nur lastSeen des durch diesen QR erzeugten nichtlokalen Geräts schließt die Einrichtung ab."
+    let setupTunnelRecovery = "Öffne Remote-Einstellungen. Installiere fehlendes cloudflared; sonst folge dem erkannten Grund, halte den Tunnel aktiv und scanne erneut."
+    let setupOpenRemoteSettings = "Remote-Einstellungen öffnen"
+    let setupCheckTunnel = "Tunnel erneut prüfen"
+    let setupShowPhoneQR = "Telefon-QR anzeigen"
+    let setupShowPhoneQRAgain = "Telefon-QR erneut anzeigen"
+    let setupCloudRelayUnauthorized = "Das Relay hat die Zugangsdaten dieses Rechners abgelehnt."
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String, _ pairing: String, _ receipt: String) -> String { "Konto: \(account)\nRechner-Zugangsdaten: \(credential)\nRelay bereit: \(relay)\nE2EE-Kopplung: \(pairing)\nViewer-Empfang: \(receipt)" }
+    let setupCloudExpected = "Preview ist erst fertig, wenn Konto, Rechner-Zugangsdaten, Relay-Bereitschaft, E2EE-Kopplung und Empfang dieses Viewers einzeln bewiesen sind."
+    let setupCloudRecovery = "Melde dich in Cloud-Einstellungen an oder kopple dort. Relay-Bereitschaft und Viewer-Empfang bleiben Preview-Beweise; Wiederholen ersetzt keinen Beweis."
+    let setupOpenCloudSettings = "Cloud-Einstellungen öffnen"
+    let setupPairCloudPhone = "Telefon in Cloud koppeln"
+    let setupReviewCloudPreview = "Preview-Status prüfen"
+    let setupProofAbsent = "nicht vorhanden"
+    let setupProofNotProved = "nicht bewiesen"
+    let setupProofUnavailable = "Beweis nicht verfügbar"
+    func setupProofFailed(_ reason: String) -> String { "fehlgeschlagen — \(reason)" }
+    let setupProofProved = "bewiesen"
+    func setupCloudAccountProved(_ account: String) -> String { "angemeldet als \(account)" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "Schlüsselbund-Zugangsdaten für \(machine)" }
+    func setupCloudPairingProved(_ device: String) -> String { "für exakten Viewer \(device) angeheftet" }
+    let setupCloudflareDeviceName = "Telefon über Cloudflare"
+    let setupScanLiveTunnel = "Live-Tunnel mit dem Telefon scannen"
 
     let menuOpen = "Eingabeleiste öffnen"
     let menuReveal = "Zum Ziel-Tab springen"

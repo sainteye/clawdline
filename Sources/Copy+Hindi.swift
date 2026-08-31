@@ -782,6 +782,42 @@ struct Hindi: Copy {
     let setupLocalRecovery = "रुकने पर यह विंडो खुली रखें और फिर जाँचें। Settings में server और port देख सकते हैं।"
     let setupReadOnly = "केवल पढ़ना · control बंद रहता है"
     let setupLocalDeviceName = "इस Mac का browser"
+    func setupTunnelFacts(_ mode: String, _ tunnel: String, _ hostname: String, _ status: String) -> String { "मोड: \(mode)\nTunnel: \(tunnel)\nQR hostname: \(hostname)\nस्थिति: \(status)" }
+    let setupTunnelModeOff = "बंद"
+    let setupTunnelModeQuick = "त्वरित"
+    let setupTunnelModeNamed = "नामित"
+    let setupTunnelQuickName = "Cloudflare Quick Tunnel"
+    let setupNone = "कोई नहीं"
+    let setupControlChosen = "पढ़ना + नियंत्रण · Settings में स्पष्ट रूप से चालू"
+    let setupTunnelMissing = "cloudflared install नहीं है।"
+    let setupTunnelOff = "Tunnel बंद है; फ़ोन QR उपलब्ध नहीं है।"
+    let setupTunnelStarting = "cloudflared शुरू हो रहा है; फ़ोन QR अभी उपलब्ध नहीं है।"
+    func setupTunnelReady(_ url: String) -> String { "\(url) पर live है। फ़ोन credential अभी नहीं है।" }
+    func setupTunnelWaiting(_ url: String) -> String { "QR \(url) की ओर है। ठीक इसी फ़ोन की प्रतीक्षा है।" }
+    func setupTunnelConnected(_ url: String) -> String { "\(url) से जुड़ा। इसी फ़ोन ने lastSeen बताया।" }
+    let setupTunnelExpected = "QR में केवल live tunnel URL जाता है; इसी QR के non-local device का lastSeen ही setup पूरा करता है।"
+    let setupTunnelRecovery = "Remote Settings खोलें। cloudflared न हो तो install करें; अन्यथा दिखे हुए कारण को ठीक करें, tunnel चालू रखें और फिर scan करें।"
+    let setupOpenRemoteSettings = "Remote Settings खोलें"
+    let setupCheckTunnel = "Tunnel फिर जाँचें"
+    let setupShowPhoneQR = "फ़ोन QR दिखाएँ"
+    let setupShowPhoneQRAgain = "फ़ोन QR फिर दिखाएँ"
+    let setupCloudRelayUnauthorized = "Relay ने इस machine का credential अस्वीकार किया।"
+    func setupCloudFacts(_ account: String, _ credential: String, _ relay: String, _ pairing: String, _ receipt: String) -> String { "Account: \(account)\nMachine credential: \(credential)\nRelay ready: \(relay)\nE2EE pairing: \(pairing)\nViewer receipt: \(receipt)" }
+    let setupCloudExpected = "Preview तभी पूरा है जब account, machine credential, relay readiness, E2EE pairing और इस viewer की receipt अलग-अलग साबित हों।"
+    let setupCloudRecovery = "Sign in या pairing के लिए Cloud Settings खोलें। Relay और viewer receipt Preview प्रमाण हैं; retry ग़ायब प्रमाण नहीं बनाता।"
+    let setupOpenCloudSettings = "Cloud Settings खोलें"
+    let setupPairCloudPhone = "Cloud में फ़ोन pair करें"
+    let setupReviewCloudPreview = "Preview स्थिति देखें"
+    let setupProofAbsent = "मौजूद नहीं"
+    let setupProofNotProved = "साबित नहीं"
+    let setupProofUnavailable = "प्रमाण उपलब्ध नहीं"
+    func setupProofFailed(_ reason: String) -> String { "विफल — \(reason)" }
+    let setupProofProved = "साबित"
+    func setupCloudAccountProved(_ account: String) -> String { "\(account) के रूप में signed in" }
+    func setupCloudCredentialProved(_ machine: String) -> String { "\(machine) का Keychain credential" }
+    func setupCloudPairingProved(_ device: String) -> String { "ठीक viewer \(device) के लिए pinned" }
+    let setupCloudflareDeviceName = "Cloudflare से फ़ोन"
+    let setupScanLiveTunnel = "फ़ोन से live tunnel scan करें"
 
     let menuOpen = "इनपुट बार खोलें"
     let menuReveal = "लक्ष्य tab पर जाएँ"

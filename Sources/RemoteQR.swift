@@ -46,13 +46,12 @@ enum RemoteQR {
     /// The public one when there is one, because **a phone cannot reach `127.0.0.1`** — a code
     /// that works beautifully on the Mac that drew it and nowhere else is the obvious mistake
     /// here, and it would only be discovered by somebody standing in a kitchen.
-    static func signInURL(token: String, hostname: String, tunnel: RemoteTunnel.State,
-                          port: Int) -> String {
-        if case .up(let url) = tunnel, !url.isEmpty {
-            return "\(url.hasSuffix("/") ? String(url.dropLast()) : url)/?t=\(token)"
-        }
-        let host = hostname.trimmingCharacters(in: .whitespaces)
-        if !host.isEmpty { return "https://\(host)/?t=\(token)" }
-        return "http://127.0.0.1:\(port)/?t=\(token)"
+    static func signInURL(token: String, hostname _: String, tunnel: RemoteTunnel.State,
+                          port _: Int) -> String {
+        // A configured hostname is intent, not evidence, and loopback is never a phone address.
+        // Keep the non-up result empty so an existing caller cannot accidentally encode either
+        // fallback; onboarding additionally gates the QR action on the same live state.
+        guard case .up(let url) = tunnel, !url.isEmpty else { return "" }
+        return "\(url.hasSuffix("/") ? String(url.dropLast()) : url)/?t=\(token)"
     }
 }
