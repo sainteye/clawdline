@@ -163,6 +163,34 @@ items:
       writable build directory puts back the cross-session interference isolation exists to stop.
     opened: 2026-08-28
 
+  - id: B-MACHINE-RESOURCE-SCHEDULER
+    title: Parallel Sessions can start enough builds to make every job and the foreground app slower
+    problem: >-
+      Build, test, signing and install entry points make their resource decision independently, so
+      several otherwise non-conflicting Sessions can launch heavy compilers at once. Path claims do
+      not describe CPU or memory, task serialize tokens cover only callers that declared them and
+      are held for the whole task, and direct build.sh or test.sh invocations bypass that queue.
+      Output isolation can keep the bytes correct while CPU, memory and I/O contention still make
+      Chat loading, terminal automation and all of the builds slower.
+    evidence: >-
+      `build.sh` and `test.sh` each invoke `swiftc` directly; only the install tail enters restart
+      maintenance. `docs/orchestrator.md` documents `serialize` as a task-lifetime machine mutex,
+      while `docs/verification-workflow.md` records that every full test currently recompiles all
+      sources and proposes a compile-once runner. The complete future design, open-source trust
+      boundary and measurement plan are in `docs/machine-resource-scheduling.md`. Recorded
+      2026-08-31 after several independent Root Sessions began overlapping feature work on one Mac.
+    severity: degrades
+    cost: weeks
+    who_hurts: user
+    trigger: >-
+      Reconsider after the zero-state install and phone-pairing acceptance line is complete, or
+      sooner if a measured concurrent build makes foreground Chat latency breach its accepted
+      budget. Start with the document's Phase 0 one-versus-many benchmark; do not choose a daemon,
+      concurrency number or cache design before that evidence. Phase 1 must make direct scripts and
+      orchestrated work share the same correctness lock, and later phases need operation-scoped
+      leases, pressure-aware fairness, restart recovery and identical-build coalescing.
+    opened: 2026-08-31
+
   - id: B-ROUND-BUDGET-RESEARCH
     title: Nothing budgets a session's rounds, and rounds are what the bill is actually made of
     problem: >-
