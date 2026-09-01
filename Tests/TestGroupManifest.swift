@@ -34,6 +34,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "hotkey specs parse",
     "iTerm session labels drop the job name and the status glyph",
     "ps output picks out real assistant processes",
+    "the process list is read in a language the parser knows",
     "assistant process scans distinguish absence from failure",
     "safe close consumes a fresh exact-tty observation and fails closed",
     "incomplete session inventories merge but complete ones replace",

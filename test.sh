@@ -30,7 +30,12 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # reading, and the serveFor edge), 21 for single-flight admission and the answer a waiter gets
 # when the read it joined was refused, 14 for moving the lane's depth to where it can only refuse
 # a request that had nothing to serve, and 9 for the trace that keeps queueing apart from cost.
-expected_swift_receipt='7441 checks passed'
+# Reading the process list in one language adds 7 unconditional checks. The fixture beside them
+# was written in English by hand, which is how a Mac running zh_TW.UTF-8 came to find none of its
+# seventeen assistants: `ps -o lstart=` renders four fields there instead of five, the parser falls
+# back to the no-lstart offset, and every row is dropped. Three of these ask the real `ps` through
+# the real helper rather than a fixture, so the guard fails on the machine that would have the bug.
+expected_swift_receipt='7448 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

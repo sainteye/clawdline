@@ -560,6 +560,27 @@ enum ITerm {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
+        // **Every output this helper collects is parsed, so none of it may be translated.**
+        //
+        // `ps -o lstart=` renders through `LC_TIME`. In English that is five fields —
+        // `Mon Aug 31 21:27:19 2026` — and ``Assistant/reading(ofPS:)`` finds the command by
+        // counting past them. Under `zh_TW.UTF-8`, the same column is four: `一  8/31 21:27:19
+        // 2026`. The weekday is one character rather than three, the month and day have merged,
+        // and the field test for a long start fails, so **every process loses its start time**.
+        //
+        // That is not a cosmetic loss. A process with no start cannot be matched against the
+        // transcript that claims it, so no session gets an identity, and with no identities
+        // ``SessionWatch`` publishes no labels either. The whole list degrades to `⌘1-1`, `⌘1-2`
+        // with no `cwd`, no `sessionId`, `work_state: "unknown"` and `attestation_missing` on
+        // every row — observed on this Mac, on all seventeen sessions at once, which is what
+        // sent somebody looking for a performance problem.
+        //
+        // It is set here rather than at the two `ps` call sites because the rule is about this
+        // helper: it exists to run a command and hand back text for a parser, and a parser reads
+        // one language. Checked against `osascript`, whose JSON carries Chinese tab titles: the
+        // output is byte-identical either way, because JXA writes UTF-8 regardless of `LC_CTYPE`.
+        p.environment = ProcessInfo.processInfo.environment
+            .merging(["LC_ALL": "C", "LANG": "C"]) { _, forced in forced }
         let out = Pipe()
         let err = Pipe()
         p.standardOutput = out

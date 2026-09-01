@@ -422,6 +422,45 @@ group("ps output picks out real assistant processes") {
            Assistant.parseProcessStart(["Wed", "Aug", "27", "12:34:56", "2026"]))
 }
 
+group("the process list is read in a language the parser knows") {
+    // **The fixture above is written in English, and that is exactly how this got missed.**
+    // `reading(ofPS:)` counts past `lstart`'s five fields to find the command, and stayed green
+    // for as long as anybody typed the fixture themselves. On a Mac running `zh_TW.UTF-8`,
+    // `ps` renders that column in four fields instead — and every session on the machine lost
+    // its identity, its label, its `cwd` and its closeability at once.
+    // **And the row is not degraded — it is dropped.** `zh_TW` writes the weekday and the date as
+    // two fields where English writes three, so the line is one field short of the long-start
+    // shape, the parser falls back to the offset for a line with no `lstart` at all, and reads
+    // `一` where the command should be. Nothing on that tty is an assistant as far as the app is
+    // concerned. Seventeen sessions, none of them found, on a Mac with seventeen assistants
+    // running on it.
+    let english = Assistant.reading(
+        ofPS: "ttys013 102 1 Wed Aug 27 12:34:56 2026 /opt/homebrew/bin/claude")
+    let localized = Assistant.reading(
+        ofPS: "ttys013 102 1 一  8/27 12:34:56 2026 /opt/homebrew/bin/claude")
+    check("the English process list finds the assistant", english["ttys013"]?.assistant == .claude)
+    check("and carries the start time identity is checked against",
+          english["ttys013"]?.processStart != nil)
+    check("the translated one finds nothing at all — the row is dropped, not degraded",
+          localized["ttys013"] == nil)
+
+    // So the helper that runs `ps` pins the locale, and this is the check that would have caught
+    // it: it asks the real system through the real code path rather than trusting a fixture.
+    let locale = ITerm.runSubprocessForTesting("/bin/sh", ["-c", "printf %s \"$LC_ALL\""],
+                                               timeout: 5)
+    check("every subprocess this app parses runs under the C locale", locale.out == "C")
+
+    // And the property the parser actually depends on, taken from `ps` itself. `launchd` is pid 1
+    // on every Mac, so this runs anywhere — including a machine whose own locale would otherwise
+    // have produced the four-field form.
+    let lstart = ITerm.runSubprocessForTesting("/bin/ps", ["-o", "lstart=", "-p", "1"], timeout: 5)
+    let fields = lstart.out.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
+    check("a real lstart column arrives as five fields", fields.count == 5, "got \(fields)")
+    check("beginning with a three-letter weekday", fields.first?.count == 3)
+    check("and it parses into a date the identity check can use",
+          Assistant.parseProcessStart(fields) != nil)
+}
+
 group("assistant process scans distinguish absence from failure") {
     let missing = ITerm.parseAssistantProcessScan("", timedOut: false)
     check("silence is an unreadable process list", !missing.isComplete)

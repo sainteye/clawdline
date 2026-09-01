@@ -198,6 +198,13 @@ enum GitChanges {
         task.currentDirectoryURL = URL(fileURLWithPath: cwd)
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_OPTIONAL_LOCKS"] = "0"
+        // Read in one language, for the reason spelled out in ``ITerm/shell(_:_:timeout:)``: this
+        // output is parsed. Git ships translations, and a Mac with them installed would rename
+        // every word these readers match on. The porcelain formats used here are already stable
+        // by contract; this makes that true of the whole invocation rather than of the flags
+        // somebody remembered to pass.
+        environment["LC_ALL"] = "C"
+        environment["LANG"] = "C"
         task.environment = environment
         let pipe = Pipe()
         task.standardInput = FileHandle.nullDevice
