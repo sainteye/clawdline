@@ -27,9 +27,10 @@ import {
 import { handlers } from "./net/handlers.js";
 import {
     captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudInstallGate,
-    showCloudPairing
+    hideCloudGate, showCloudBootError, showCloudDeviceRecovery, showCloudPairing,
+    showCloudSignIn
 } from "./input/cloud-pairing.js";
-import { cloudOnboardingMode } from "./net/cloud-onboarding.js";
+import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onboarding.js";
 import "./door/door.js";
 import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
@@ -111,7 +112,13 @@ if (transportKind === "cloud") {
         handlers.conn("locked");
         showCloudInstallGate();
     } else {
-        var cloudSession = new CloudViewerSession({ config: cloudConfig, handlers: handlers });
+        var cloudDevice = cloudViewerDeviceMetadata(window);
+        var cloudSession = new CloudViewerSession({
+            config: cloudConfig,
+            handlers: handlers,
+            deviceKind: cloudDevice.kind,
+            deviceName: cloudDevice.name
+        });
         var cloudInvitation = null;
         try {
             cloudInvitation = captureCloudPairingInvitation(window, Date.now());
@@ -122,10 +129,17 @@ if (transportKind === "cloud") {
             keepConnected(cloudSession, {
                 onState: function (update) {
                     if (update.state === "connected") {
+                        hideCloudGate();
                         useApi(update.client);
                         bindTranscriptEvents(update.client);
                     } else if (update.state === "sign_in") {
-                        location.replace(update.url);
+                        handlers.conn("locked");
+                        showCloudSignIn(update.url);
+                    } else if (update.state === "device_limit_reached") {
+                        handlers.conn("locked");
+                        showCloudDeviceRecovery(cloudSession, update, {
+                            onRecovered: startCloudViewer
+                        }).catch(function () { /* the recovery screen owns its visible error */ });
                     } else if (update.state === "pairing_required") {
                         // Signed in, but this app holds no account key yet. The installed PWA
                         // scans the Mac's QR itself so the key is born in the storage that keeps it.
@@ -138,8 +152,23 @@ if (transportKind === "cloud") {
                                 cloudInvitation = null;
                             }
                         }).then(startCloudViewer);
+                    } else if (update.state === "retrying") {
+                        handlers.conn("retrying", Math.max(1, Math.ceil(update.afterMs / 1000)));
+                        showCloudBootError(update);
+                    } else if (update.state === "terminal_error") {
+                        handlers.conn("locked");
+                        showCloudBootError(update, { onRetry: startCloudViewer });
                     } else if (update.state === "revoked") {
                         handlers.conn("locked");
+                        showCloudBootError({
+                            state: "terminal_error",
+                            error: update.error || new Error("This viewer device has been revoked. Sign in again to continue.")
+                        }, {
+                            label: "Sign in again",
+                            onRetry: function () { location.assign(cloudSession.signInURL()); }
+                        });
+                    } else if (update.state === "reconnecting") {
+                        handlers.conn("connecting");
                     }
                 }
             });

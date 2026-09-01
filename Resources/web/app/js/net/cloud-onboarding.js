@@ -31,6 +31,20 @@ export function cloudOnboardingMode(scope) {
     return isStandaloneWebApp(scope) ? "pwa" : "install";
 }
 
+/** Safe, coarse labels for recovery; never sends a user-agent string to the control plane. */
+export function cloudViewerDeviceMetadata(scope) {
+    scope = scope || {};
+    var navigator = scope.navigator || {};
+    var platform = String(navigator.platform || "");
+    var userAgent = String(navigator.userAgent || "");
+    if (/iPhone|iPod/i.test(platform)) return { kind: "ios", name: "iPhone" };
+    if (/iPad/i.test(platform) || (/Mac/i.test(platform) && Number(navigator.maxTouchPoints || 0) > 1)) {
+        return { kind: "ios", name: "iPad" };
+    }
+    if (/Android/i.test(platform + " " + userAgent)) return { kind: "android", name: "Android device" };
+    return { kind: "browser", name: "Web browser" };
+}
+
 function pairingError(code, message) {
     var error = new Error(message);
     error.code = code;

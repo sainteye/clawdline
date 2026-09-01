@@ -141,6 +141,29 @@ lives in IndexedDB; the page can sign with it and cannot read it. A cookie namin
 key this browser no longer holds is treated as not this browser's device, and a fresh one is
 registered rather than pretending.
 
+**Sign-in is an explicit gate.** A signed-out hosted console stays on a Clawdline-owned explanation
+with a **Continue with GitHub** button. The `sign_in` boot state never navigates on its own; only the
+button starts the top-level OAuth round trip. That keeps the account boundary visible before the
+PWA leaves for GitHub.
+
+**A full viewer tier has a recovery door, not a retry loop.** `409 device_limit_reached` carries the
+ordinary tier and exact limit and is terminal for connection backoff. While the short-lived login
+ticket from that fresh OAuth round trip remains valid, the PWA can read a recovery-only list of
+active viewer name, kind, creation time and last-seen time, choose one recognizable device, and
+revoke exactly that row. No public key, capability or account identity is rendered. The mutation
+requires the PWA Origin; the API bumps revocation state and audits the fresh-login recovery, so the
+old device's cookie and relay access retain the same revocation guarantees. The ticket then retries
+ordinary session creation through a per-account allocation fence—there is no concurrent extra slot
+and no tier change. Viewer kind/name is a coarse platform label rather than a transmitted user-agent,
+and authenticated boot refreshes last-seen time. If the recovery ticket expires, the screen returns
+to the explicit GitHub button instead of retrying a guaranteed 401. When session creation succeeds
+without an account key, boot continues to `pairing_required`, and an installed iPhone gets the QR
+scanner.
+
+Other terminal 4xx session conflicts also stop and show an explicit retry action. Network and 5xx
+failures remain retryable, but the Cloud door names the failure and countdown instead of leaving the
+session list's connecting skeleton as the only visible state.
+
 **Capabilities are read back, not assumed.** `GET /v1/devices` is consulted every boot, which is
 also where a revoked device finds out. Writes are enabled only if the row still carries
 `send_prompt`.

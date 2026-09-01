@@ -96,6 +96,16 @@
     text-shadow: 0 1px 4px black;
 }
 
+.cloud-devices { display: grid; gap: 10px; margin: 2px 0 4px 0; }
+.cloud-device {
+    padding: 12px; border: 1px solid var(--line); border-radius: 10px;
+    color: var(--dim); font-size: 12.5px; line-height: 1.45;
+}
+.cloud-device .cloud-device-revoke {
+    margin-top: 8px; padding: 7px 0 0 0; text-align: left; color: var(--accent);
+}
+.cloud-device .cloud-device-revoke:disabled { color: var(--faint); }
+
 /* Six boxes rather than one field: on a phone this is typed with a thumb while reading a code
    off another screen, and a target you can hit without looking is worth the extra markup. */
 .digits { display: flex; gap: 8px; margin-bottom: 16px; }

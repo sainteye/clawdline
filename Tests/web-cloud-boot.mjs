@@ -187,6 +187,69 @@ function makeSession(routes, extra) {
 }
 
 {
+    const full = makeSession({
+        "GET /v1/auth/session": response(401, { error: { code: "no_session" } }),
+        "POST /v1/auth/session": function (index) {
+            return index === 0 ? response(409, {
+                error: {
+                    code: "device_limit_reached",
+                    message: "free allows 2 viewer device(s)",
+                    details: { tier: "free", limit: 2 }
+                }
+            }) : response(201, {
+                account_id: "acct-1", device_id: "dev-new",
+                caps: ["read_sessions", "read_transcript", "send_prompt"]
+            });
+        },
+        "GET /v1/auth/recovery/devices": response(200, {
+            tier: "free", limit: 2, active: 2,
+            devices: [{
+                id: "dev-old", kind: "ios", name: "Older iPhone",
+                created_at: "2026-08-01T00:00:00.000Z",
+                last_seen_at: "2026-08-31T12:00:00.000Z"
+            }]
+        }),
+        "DELETE /v1/auth/recovery/devices/dev-old": response(200, {
+            status: "revoked", active: 1, limit: 2
+        })
+    });
+    const outcome = await full.ensureSession();
+    assert.deepEqual(outcome, {
+        state: "device_limit_reached",
+        tier: "free",
+        limit: 2,
+        message: "free allows 2 viewer device(s)"
+    }, "the exact ordinary-tier limit becomes a typed terminal boot state");
+    const recovery = await full.recoveryDevices();
+    assert.equal(recovery.devices[0].name, "Older iPhone",
+        "fresh-login recovery reads the server's safe device description");
+    await full.revokeRecoveryDevice("dev-old");
+    assert.ok(full.fetch.calls.some(function (call) {
+        return call.key === "DELETE /v1/auth/recovery/devices/dev-old";
+    }), "recovery revokes only the explicitly selected device");
+    const resumed = await full.connect();
+    assert.equal(resumed.state, "pairing_required",
+        "a recovered device-bound session without an account key continues to QR pairing");
+}
+
+{
+    const firstCallFull = makeSession({
+        "GET /v1/auth/session": response(401, { error: { code: "no_session" } }),
+        "POST /v1/auth/session": response(409, {
+            error: {
+                code: "device_limit_reached",
+                message: "free allows 2 viewer device(s)",
+                details: { tier: "free", limit: 2 }
+            }
+        })
+    });
+    const outcome = await firstCallFull.connect();
+    assert.equal(outcome.state, "device_limit_reached",
+        "connect propagates an initial capacity conflict before account-key lookup");
+    assert.equal(outcome.limit, 2);
+}
+
+{
     const registering = makeSession({
         "GET /v1/auth/session": response(401, { error: { code: "no_session" } }),
         "POST /v1/auth/session": response(201, {
@@ -411,6 +474,45 @@ function fakeClient() {
     await new Promise(function (resolve) { setTimeout(resolve, 5); });
     assert.ok(states.includes("reconnecting"), "a dropped socket reconnects");
     keeper.stop();
+}
+
+{
+    const states = [];
+    let attempts = 0;
+    const keeper = boot.keepConnected({
+        connect: function () {
+            attempts += 1;
+            return Promise.resolve({
+                state: "device_limit_reached", tier: "free", limit: 2,
+                message: "free allows 2 viewer device(s)"
+            });
+        }
+    }, {
+        sleep: function () { throw new Error("a terminal capacity conflict must not sleep"); },
+        onState: function (update) { states.push(update); }
+    });
+    await keeper.done;
+    assert.equal(attempts, 1, "a device-limit conflict is not retried");
+    assert.deepEqual(states.map(function (state) { return state.state; }), ["device_limit_reached"]);
+    assert.equal(states[0].limit, 2, "the UI receives the exact limit");
+}
+
+{
+    const states = [];
+    let attempts = 0;
+    const conflict = boot.bootError("session_conflict", "This login cannot create a session", {
+        terminal: true
+    });
+    const keeper = boot.keepConnected({
+        connect: function () { attempts += 1; return Promise.reject(conflict); }
+    }, {
+        sleep: function () { throw new Error("a terminal session conflict must not sleep"); },
+        onState: function (update) { states.push(update); }
+    });
+    await keeper.done;
+    assert.equal(attempts, 1);
+    assert.deepEqual(states.map(function (state) { return state.state; }), ["terminal_error"],
+        "other terminal session conflicts become visible without backoff");
 }
 
 {

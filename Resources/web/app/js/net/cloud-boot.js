@@ -32,9 +32,13 @@ const DEVICE_PUBLIC_KEY = "clawdline.viewer.public";
 const SEQUENCE_KEY = "clawdline.viewer.sequence";
 const SEQUENCE_BLOCK = 64;
 
-export function bootError(code, message) {
+export function bootError(code, message, options) {
+    options = options || {};
     var error = new Error(message || code);
     error.code = code;
+    error.terminal = options.terminal === true;
+    if (options.details && typeof options.details === "object") error.details = options.details;
+    if (Number.isSafeInteger(options.status)) error.status = options.status;
     return error;
 }
 
@@ -135,6 +139,19 @@ async function json(fetchImpl, url, options) {
 
 function refused(status) { return status === 401 || status === 403; }
 
+function responseError(result, fallbackCode, fallbackMessage, terminal) {
+    var api = result && result.body && result.body.error;
+    return bootError(
+        api && typeof api.code === "string" ? api.code : fallbackCode,
+        api && typeof api.message === "string" ? api.message : fallbackMessage,
+        {
+            terminal: terminal === true,
+            status: result && result.status,
+            details: api && api.details
+        }
+    );
+}
+
 /**
  * The viewer's whole boot, as one object with no DOM in it.
  *
@@ -154,6 +171,8 @@ export class CloudViewerSession {
         this.WebSocket = options.WebSocket || globalThis.WebSocket;
         this.handlers = options.handlers || null;
         this.deviceName = options.deviceName || "Browser";
+        this.deviceKind = ["browser", "ios", "android"].indexOf(options.deviceKind) >= 0
+            ? options.deviceKind : "browser";
         this.returnTo = options.returnTo || this.config.appOrigin + "/";
         this.account = null;
         this.deviceID = null;
@@ -190,6 +209,9 @@ export class CloudViewerSession {
             // A cookie naming a device whose key this browser no longer holds is not this
             // browser's device. Registering a new one is honest; reusing the cookie would
             // leave a viewer that cannot sign a relay challenge.
+        } else if (!refused(existing.status)) {
+            throw responseError(existing, "session_unavailable",
+                "Clawdline could not check this browser's session", existing.status < 500);
         }
 
         var pair = await this.crypto.subtle.generateKey(
@@ -199,13 +221,28 @@ export class CloudViewerSession {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-                kind: "browser", name: this.deviceName,
+                kind: this.deviceKind, name: this.deviceName,
                 public_key: bytesToBase64(publicKey), caps: VIEWER_CAPABILITIES
             })
         });
+        var createdError = created.body && created.body.error;
+        if (created.status === 409 && createdError && createdError.code === "device_limit_reached") {
+            var details = createdError.details || {};
+            var limit = Number.isSafeInteger(details.limit) && details.limit >= 0 ? details.limit : null;
+            var tier = typeof details.tier === "string" ? details.tier : "current plan";
+            return {
+                state: "device_limit_reached",
+                tier: tier,
+                limit: limit,
+                message: typeof createdError.message === "string"
+                    ? createdError.message : "The viewer-device limit has been reached"
+            };
+        }
         if (refused(created.status)) return { state: "sign_in", url: this.signInURL() };
         if (created.status !== 200 && created.status !== 201) {
-            throw bootError("session_failed", "the control plane refused this browser's session");
+            throw responseError(created,
+                created.status >= 500 ? "session_unavailable" : "session_failed",
+                "Clawdline could not create this browser's session", created.status < 500);
         }
         this.account = created.body.account_id;
         this.deviceID = created.body.device_id;
@@ -217,6 +254,50 @@ export class CloudViewerSession {
         // exported cannot be asked for its public key either, and pairing has to state it.
         this.storage.setItem(DEVICE_PUBLIC_KEY + ":" + this.deviceID, bytesToBase64(publicKey));
         return { state: "ready", accountID: this.account, deviceID: this.deviceID };
+    }
+
+    /** Safe metadata available only under the still-live, fresh OAuth login ticket. */
+    async recoveryDevices() {
+        var listed = await json(this.fetch,
+            this.config.apiOrigin + "/v1/auth/recovery/devices");
+        if (listed.status !== 200 || !listed.body || !Array.isArray(listed.body.devices)) {
+            throw responseError(listed, "device_recovery_failed",
+                "Clawdline could not read the viewer devices using your slots", listed.status < 500);
+        }
+        var devices = listed.body.devices.map(function (device) {
+            if (!device || typeof device.id !== "string" || typeof device.name !== "string") {
+                throw bootError("bad_recovery_response", "Clawdline returned an unusable device list", {
+                    terminal: true
+                });
+            }
+            return {
+                id: device.id,
+                name: device.name,
+                kind: typeof device.kind === "string" ? device.kind : "browser",
+                created_at: typeof device.created_at === "string" ? device.created_at : null,
+                last_seen_at: typeof device.last_seen_at === "string" ? device.last_seen_at : null
+            };
+        });
+        return {
+            tier: typeof listed.body.tier === "string" ? listed.body.tier : "current plan",
+            limit: Number.isSafeInteger(listed.body.limit) ? listed.body.limit : null,
+            active: Number.isSafeInteger(listed.body.active) ? listed.body.active : devices.length,
+            devices: devices
+        };
+    }
+
+    async revokeRecoveryDevice(deviceID) {
+        if (typeof deviceID !== "string" || !deviceID) {
+            throw bootError("bad_recovery_device", "Choose a viewer device to revoke", { terminal: true });
+        }
+        var revoked = await json(this.fetch,
+            this.config.apiOrigin + "/v1/auth/recovery/devices/" + encodeURIComponent(deviceID),
+            { method: "DELETE" });
+        if (revoked.status !== 200 || !revoked.body || revoked.body.status !== "revoked") {
+            throw responseError(revoked, "device_recovery_failed",
+                "Clawdline could not revoke that viewer device", revoked.status < 500);
+        }
+        return revoked.body;
     }
 
     async restoreDeviceKey(deviceID) {
@@ -400,7 +481,7 @@ export class CloudViewerSession {
     /** Everything above, in the one order that works, ending in a started CloudClient. */
     async connect() {
         var session = await this.ensureSession();
-        if (session.state === "sign_in") return session;
+        if (session.state !== "ready") return session;
         var master = await this.accountKey();
         if (!master) return { state: "pairing_required", accountID: this.account };
         var token = await this.deviceToken();
@@ -510,6 +591,10 @@ export function keepConnected(session, options) {
             } catch (error) {
                 if (error && error.code === "revoked") {
                     onState({ state: "revoked", error: error });
+                    return;
+                }
+                if (error && error.terminal === true) {
+                    onState({ state: "terminal_error", error: error });
                     return;
                 }
                 onState({ state: "retrying", error: error, afterMs: backoff });

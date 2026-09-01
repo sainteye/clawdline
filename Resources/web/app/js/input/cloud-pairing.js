@@ -30,6 +30,27 @@ function say(text, calm) {
     line.classList.toggle("calm", calm === true);
 }
 
+function cloudDoor() {
+    var door = byId("cloud-door");
+    if (!door) return null;
+    var mark = byId("cloud-door-mark");
+    if (mark && typeof drawIcon === "function") { try { drawIcon(mark); } catch (e) { /* cosmetic */ } }
+    door.hidden = false;
+    return door;
+}
+
+function hideCloudControls() {
+    ["cloud-door-install-steps", "cloud-door-camera-frame", "cloud-door-scan",
+        "cloud-door-offer-label", "cloud-door-offer", "cloud-door-fingerprint-line",
+        "cloud-door-confirm", "cloud-door-restart", "cloud-door-devices"].forEach(function (id) {
+        var element = byId(id); if (element) element.hidden = true;
+    });
+    var confirm = byId("cloud-door-confirm");
+    var restart = byId("cloud-door-restart");
+    if (confirm) confirm.onclick = null;
+    if (restart) restart.onclick = null;
+}
+
 /**
  * Capture the QR secret before OAuth navigation. It stays in sessionStorage and in the URL
  * fragment only; neither form is sent to app.clawdline.com or api.clawdline.com.
@@ -65,21 +86,158 @@ export function clearCloudPairingInvitation(storage) {
  * disposable Safari viewer; the PWA will own login, its signing key, and the account key.
  */
 export function showCloudInstallGate() {
-    var door = byId("cloud-door");
+    var door = cloudDoor();
     if (!door) return;
-    var mark = byId("cloud-door-mark");
-    if (mark && typeof drawIcon === "function") { try { drawIcon(mark); } catch (e) { /* cosmetic */ } }
-    door.hidden = false;
+    hideCloudControls();
     byId("cloud-door-lede").textContent = "Install Clawdline first";
     byId("cloud-door-guide").textContent = "Safari and a Home Screen app keep separate secure storage. "
         + "Install first so your end-to-end encryption keys are created in the app you will keep using.";
     byId("cloud-door-install-steps").hidden = false;
-    ["cloud-door-camera-frame", "cloud-door-scan", "cloud-door-offer-label",
-        "cloud-door-offer", "cloud-door-fingerprint-line", "cloud-door-confirm",
-        "cloud-door-restart"].forEach(function (id) {
-        var element = byId(id); if (element) element.hidden = true;
-    });
     say("Nothing has been registered yet. Continue from the Home Screen app.", true);
+}
+
+/** OAuth is always a person's explicit navigation, never a boot side effect. */
+export function showCloudSignIn(url, options) {
+    options = options || {};
+    if (!cloudDoor()) return;
+    hideCloudControls();
+    var lede = byId("cloud-door-lede");
+    var guide = byId("cloud-door-guide");
+    var confirm = byId("cloud-door-confirm");
+    if (lede) lede.textContent = "Sign in to Clawdline Cloud";
+    if (guide) guide.textContent = "GitHub confirms which Clawdline account this device belongs to. "
+        + "Clawdline will return here before creating a revocable viewer session.";
+    if (confirm) {
+        confirm.hidden = false;
+        confirm.textContent = "Continue with GitHub";
+        confirm.onclick = function () {
+            var navigate = options.navigate || function (destination) { globalThis.location.assign(destination); };
+            navigate(url);
+        };
+    }
+    say("Clawdline will not leave this screen until you continue.", true);
+}
+
+function recoveryKind(kind) {
+    return { ios: "iOS", android: "Android", browser: "Browser" }[kind] || "Browser";
+}
+
+function recoveryContext(device) {
+    var context = recoveryKind(device.kind);
+    if (device.created_at) {
+        var created = new Date(device.created_at);
+        if (!Number.isNaN(created.getTime())) context += " · added " + created.toLocaleString();
+    }
+    if (device.last_seen_at) {
+        var seen = new Date(device.last_seen_at);
+        if (!Number.isNaN(seen.getTime())) context += " · last active " + seen.toLocaleString();
+    } else {
+        context += " · last-active time unavailable";
+    }
+    return context;
+}
+
+/**
+ * A fresh login may use this screen only while the account is full. It renders the server's
+ * deliberately narrow metadata and keeps opaque ids inside each button closure.
+ */
+export function showCloudDeviceRecovery(session, problem, options) {
+    options = options || {};
+    if (!cloudDoor()) return Promise.reject(new Error("the cloud door is not in this page"));
+    hideCloudControls();
+    var lede = byId("cloud-door-lede");
+    var guide = byId("cloud-door-guide");
+    var list = byId("cloud-door-devices");
+    var restart = byId("cloud-door-restart");
+    var tier = problem && typeof problem.tier === "string" ? problem.tier : "This plan";
+    var limit = problem && Number.isSafeInteger(problem.limit) ? problem.limit : null;
+    if (lede) lede.textContent = "Viewer device limit reached";
+    if (guide) guide.textContent = (limit === null
+        ? tier + " has no free viewer-device slot."
+        : tier + " allows " + limit + " viewer devices.")
+        + " Revoke one device you recognize, then this device can sign in. Revocation stops its Cloud access.";
+    if (list) { list.hidden = false; list.replaceChildren(); }
+    say("Reading the devices using your slots…", true);
+
+    function load() {
+        if (restart) restart.hidden = true;
+        return session.recoveryDevices().then(function (recovery) {
+            if (list) list.replaceChildren();
+            recovery.devices.forEach(function (device) {
+                var row = document.createElement("div");
+                row.className = "cloud-device";
+                row.textContent = device.name + " · " + recoveryContext(device);
+                var revoke = document.createElement("button");
+                revoke.type = "button";
+                revoke.className = "alt cloud-device-revoke";
+                revoke.textContent = "Revoke and use this device";
+                revoke.onclick = function () {
+                    revoke.disabled = true;
+                    say("Revoking " + device.name + "…", true);
+                    return session.revokeRecoveryDevice(device.id).then(function () {
+                        say("Slot recovered. Creating this device's session…", true);
+                        if (typeof options.onRecovered === "function") options.onRecovered();
+                    }, function (error) {
+                        if (error && error.code === "no_login_ticket") {
+                            showCloudSignIn(session.signInURL(), { navigate: options.navigate });
+                            return;
+                        }
+                        revoke.disabled = false;
+                        say(error && error.message
+                            ? error.message : "That device could not be revoked. Try again.", false);
+                    });
+                };
+                row.appendChild(revoke);
+                if (list) list.appendChild(row);
+            });
+            say("Choose a device you recognize. Its Cloud session will stop immediately.", true);
+            return recovery;
+        }, function (error) {
+            if (error && error.code === "no_login_ticket") {
+                showCloudSignIn(session.signInURL(), { navigate: options.navigate });
+                throw error;
+            }
+            say(error && error.message
+                ? error.message : "The viewer-device list could not be loaded.", false);
+            if (restart) {
+                restart.hidden = false;
+                restart.textContent = "Try loading devices again";
+                restart.onclick = load;
+            }
+            throw error;
+        });
+    }
+    return load();
+}
+
+export function showCloudBootError(update, options) {
+    options = options || {};
+    if (!cloudDoor()) return;
+    hideCloudControls();
+    var lede = byId("cloud-door-lede");
+    var guide = byId("cloud-door-guide");
+    var restart = byId("cloud-door-restart");
+    var retrying = update && update.state === "retrying";
+    if (lede) lede.textContent = retrying ? "Cloud is temporarily unavailable" : "Clawdline could not continue";
+    if (guide) guide.textContent = retrying
+        ? "Check this device's connection. Clawdline is keeping this error visible and will retry automatically."
+        : "This response will not be retried automatically because it needs an explicit action.";
+    var message = update && update.error && update.error.message
+        ? update.error.message : "The Cloud session could not be started.";
+    if (retrying && Number.isSafeInteger(update.afterMs)) {
+        message += " Retrying in about " + Math.max(1, Math.ceil(update.afterMs / 1000)) + "s.";
+    }
+    say(message, false);
+    if (restart && typeof options.onRetry === "function") {
+        restart.hidden = false;
+        restart.textContent = options.label || "Try again";
+        restart.onclick = options.onRetry;
+    }
+}
+
+export function hideCloudGate() {
+    var door = byId("cloud-door");
+    if (door) door.hidden = true;
 }
 
 /**
@@ -107,6 +265,7 @@ export function showCloudPairing(session, options) {
     var scanButton = byId("cloud-door-scan");
     var cameraFrame = byId("cloud-door-camera-frame");
     var camera = byId("cloud-door-camera");
+    var devices = byId("cloud-door-devices");
     if (!door) return Promise.reject(new Error("the cloud door is not in this page"));
     if (mark && typeof drawIcon === "function") { try { drawIcon(mark); } catch (e) { /* cosmetic */ } }
     door.hidden = false;
@@ -185,6 +344,8 @@ export function showCloudPairing(session, options) {
     }
 
     if (installSteps) installSteps.hidden = true;
+    if (devices) devices.hidden = true;
+    if (confirm) confirm.textContent = "Pair this device";
     if (invitation) {
         showInvitationCopy();
     } else if (options.scan === true) {
