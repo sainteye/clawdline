@@ -35,7 +35,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # seventeen assistants: `ps -o lstart=` renders four fields there instead of five, the parser falls
 # back to the no-lstart offset, and every row is dropped. Three of these ask the real `ps` through
 # the real helper rather than a fixture, so the guard fails on the machine that would have the bug.
-expected_swift_receipt='7448 checks passed'
+expected_swift_receipt='7484 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
