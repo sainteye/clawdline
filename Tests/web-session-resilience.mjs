@@ -449,5 +449,179 @@ source.listeners.sessions({ data: JSON.stringify({
 }) });
 assert.equal(S.conn, "live", "a parsed sessions payload proves the feed is live");
 
+// The batched Apple-event path in iterm.js.
+//
+// `list` asks the specifier chain (`it.windows.tabs.sessions.id`) for one property of every
+// session at a time, because a JXA property access is a round trip to iTerm2's main thread and
+// asking per session pays for the handshake once per session. The mocks above have no chain at
+// all — `windows` is a plain function — so every assertion before this one has been exercising
+// the fallback walk. These cover the path the app actually takes.
+//
+// A JXA `windows` is callable *and* indexable *and* carries the chain, so the mock is a function
+// with properties hung off it. That is not a convenience: `locate` reaches for `it.windows[i]`
+// to act on a session it found by coordinate, and a mock without indexes would pass while the
+// real thing threw.
+function bulkApp(tree, options) {
+    const opts = options || {};
+    // What is there *now*. `opts.stale` is the tab that closed between the batched read and the
+    // write: the chain below still reports the old snapshot, while every specifier — the walk's
+    // and the coordinate's alike — answers with what actually took that index.
+    const now = tree.map(function (win, i) {
+        return win.map(function (tab, j) {
+            return tab.map(function (r, k) {
+                const at = i + "," + j + "," + k;
+                return opts.stale && opts.stale[at] ? opts.stale[at] : r;
+            });
+        });
+    });
+    const windows = function () {
+        return now.map(function (win) {
+            return {
+                tabs: function () {
+                    return win.map(function (tab) {
+                        return { sessions: function () { return tab.map(mockSession); } };
+                    });
+                }
+            };
+        });
+    };
+    now.forEach(function (win, i) {
+        windows[i] = {
+            tabs: Object.assign(function () { return null; }, win.map(function (tab) {
+                return { sessions: Object.assign(function () { return null; },
+                    tab.map(mockSession)) };
+            }))
+        };
+    });
+    function pick(prop) {
+        return function () {
+            if (opts.throwOn === prop) throw new Error("chain unavailable: " + prop);
+            if (opts.shapeOn === prop) return opts.shape;
+            return tree.map(function (win) {
+                return win.map(function (tab) {
+                    return tab.map(function (row) { return row[prop]; });
+                });
+            });
+        };
+    }
+    windows.tabs = { sessions: {
+        id: pick("id"), tty: pick("tty"), name: pick("name"), profileName: pick("profile"),
+        text: pick("text")
+    } };
+    return { running: function () { return true; }, windows: windows };
+}
+
+// Every screen read goes through here, so a test can count them. A screen is kilobytes and the
+// count is the difference between `tails` costing one Apple event per tab it was asked for and
+// one per tab that exists — which is the measurement that shaped it.
+const screenReads = [];
+
+function mockSession(row) {
+    return {
+        id: function () { return row.id; },
+        name: function () { return row.name; },
+        tty: function () { return row.tty; },
+        profileName: function () { return row.profile; },
+        text: function () { screenReads.push(row.id); return row.text || ""; },
+        walked: true
+    };
+}
+
+function row(id) {
+    return { id: id, name: "task " + id, tty: "/dev/ttys" + id, profile: "Default",
+             text: "screen " + id };
+}
+
+const batched = jxaList(bulkApp([[[row("A"), row("B")]], [[row("C")]]]));
+assert.equal(batched.complete, true, "a readable specifier chain is an authoritative inventory");
+assert.deepEqual(batched.sessions.map(function (s) { return s.id; }), ["A", "B", "C"],
+    "the batched read returns every session in window/tab order");
+assert.deepEqual(batched.sessions.map(function (s) { return s.tty; }),
+    ["/dev/ttysA", "/dev/ttysB", "/dev/ttysC"],
+    "each row keeps its own tty — the properties are zipped by coordinate, not by arrival");
+assert.deepEqual(batched.sessions.map(function (s) { return [s.win, s.tab]; }),
+    [[0, 0], [0, 0], [1, 0]], "batched rows carry the window and tab they were read from");
+
+// The walk and the chain must agree. If they ever stop agreeing, the app's answer depends on
+// which path iTerm2 happened to allow, and that is the bug this pair exists to make loud.
+const walked = jxaList({
+    running: function () { return true; },
+    windows: function () {
+        return [
+            { tabs: function () { return [{ sessions: function () {
+                return [row("A"), row("B")].map(mockSession); } }]; } },
+            { tabs: function () { return [{ sessions: function () {
+                return [row("C")].map(mockSession); } }]; } }
+        ];
+    }
+});
+assert.deepEqual(batched.sessions, walked.sessions,
+    "the batched inventory and the fallback walk describe the same sessions identically");
+
+// A property that came back a different shape cannot be zipped against `id`. Guessing which row
+// it belongs to would put one session's tty on another's row — a wrong tty is a message sent to
+// the wrong terminal — so the batch is refused and the walk answers instead.
+const mismatched = jxaList(bulkApp([[[row("A"), row("B")]]],
+    { shapeOn: "tty", shape: [[["/dev/ttysA"]]] }));
+assert.deepEqual(mismatched.sessions.map(function (s) { return [s.id, s.tty]; }),
+    [["A", "/dev/ttysA"], ["B", "/dev/ttysB"]],
+    "a short property array falls back to the walk rather than mis-zipping ttys onto rows");
+
+const noChain = jxaList(bulkApp([[[row("A")]]], { throwOn: "id" }));
+assert.deepEqual(noChain.sessions.map(function (s) { return s.id; }), ["A"],
+    "an unavailable specifier chain falls back to the walk instead of reporting no sessions");
+assert.equal(noChain.complete, true, "the fallback walk is still an authoritative inventory");
+
+// A row that cannot name itself is dropped and costs the inventory its confidence — the same
+// rule the walk applies, because a nameless row cannot safely refresh an old one.
+const nameless = jxaList(bulkApp([[[row("A"), { id: "", name: "?", tty: "", profile: "" }]]]));
+assert.deepEqual(nameless.sessions.map(function (s) { return s.id; }), ["A"],
+    "a row with no id or tty is dropped from the batched inventory");
+assert.equal(nameless.complete, false,
+    "dropping a row lowers the confidence of the whole batched inventory");
+assert.equal(nameless.ok, false, "an incomplete batched inventory is not a clean success");
+
+function jxaRun(app, argv) {
+    const context = { Application: function () { return app; }, args: argv, result: null };
+    vm.runInNewContext(script + "\nresult = run(args);", context);
+    return JSON.parse(context.result);
+}
+
+// `capture` finds its session by coordinate now. The mock's indexed windows are the specifier
+// `locate` reaches for; reading through them is what proves it addressed rather than walked.
+const captured = jxaRun(bulkApp([[[row("A"), row("B")]], [[row("C")]]]), ["capture", "C"]);
+assert.equal(captured.ok, true, "capture finds a session through the batched coordinate map");
+assert.equal(captured.text, "screen C", "capture reads the screen of the session it was asked for");
+
+const missing = jxaRun(bulkApp([[[row("A")]]]), ["capture", "ZZ"]);
+assert.equal(missing.ok, false, "a session that is not in the batch is still reported gone");
+
+// **The coordinate is not the identity.** A tab that closes between the batched `id` read and
+// the write leaves its index pointing at whatever slid up into it, and acting on that index
+// would put a keystroke — or a `close` — into somebody else's terminal. So the identity is read
+// back through the specifier before it is used, and a coordinate that no longer holds the
+// session that was asked for is refused rather than substituted.
+const shifted = jxaRun(
+    bulkApp([[[row("A"), row("B")]]], { stale: { "0,0,1": row("D") } }),
+    ["capture", "B"]);
+assert.equal(shifted.ok, false,
+    "a coordinate whose session changed under the batch is refused, not acted on");
+assert.notEqual(shifted.text, "screen D",
+    "a stale coordinate never reads the screen of whatever took that index");
+
+// `tails` batches identities and then reads only the screens it was asked for.
+//
+// **The screen count is the assertion, not the output.** Batching `text` through the specifier
+// chain as well returns exactly the same JSON — it was measured at 1.61 s against the walk's
+// 0.16 s and nothing about the answer said so. A `tails` that reads every screen on the Mac to
+// hand back two of them is a regression no output comparison can see, so it is counted here.
+screenReads.length = 0;
+const tailed = jxaRun(bulkApp([[[row("A"), row("B")]], [[row("C")]]]), ["tails", "A,C", "60"]);
+assert.deepEqual(Object.keys(tailed.tails).sort(), ["A", "C"],
+    "tails returns every session that was asked for and no others");
+assert.equal(tailed.tails.A, "screen A", "each tail is the screen of its own session");
+assert.deepEqual(screenReads.sort(), ["A", "C"],
+    "tails reads one screen per session asked for — never the screens it will throw away");
+
 console.log("web session resilience tests passed");
 process.exit(0);

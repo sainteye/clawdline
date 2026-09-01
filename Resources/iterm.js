@@ -60,8 +60,140 @@ function run(argv) {
     catch (e) { return dflt; }
   }
 
+  // One property of every session, in one Apple event.
+  //
+  // **This is the whole performance story of this file, and it is a story about the tail.**
+  // `eachSession` above asks each session for each property separately, and a JXA property
+  // access is one synchronous round trip to iTerm2's main thread — 17 sessions × 4 properties
+  // is 60-odd of them. A specifier chain (`it.windows.tabs.sessions.tty`) is one event for the
+  // whole nested array, so the same inventory costs 4.
+  //
+  // **On an idle Mac this barely shows**: 0.16 s against 0.11 s, and anyone measuring it on a
+  // quiet machine will conclude it was not worth doing. The reading that matters was taken with
+  // four assistants streaming into seventeen tabs — the state this app is used in — where the
+  // walk measured 1.59, 2.52, 3.56, 3.88 and 5.36 s against the chain's 0.47 to 1.04. Each of
+  // those 60 round trips can be delayed on its own, so the walk degrades with the *product* of
+  // load and session count while the chain degrades with load alone. What batching buys is not a
+  // faster median; it is a p99 that does not run away.
+  //
+  // And the wall clock here is not the point either. iTerm2 answers Apple events on the thread
+  // it also draws with, and the watcher re-reads this inventory every 1.2 s, so what is saved is
+  // mostly given back to the terminals you were trying to read in the first place.
+  //
+  // Returns a `[window][tab][session]` array, or `null` when the chain failed — every caller
+  // falls back to `eachSession`, which keeps its own failure accounting.
+  function bulk(prop) {
+    try {
+      const v = it.windows.tabs.sessions[prop]();
+      return Array.isArray(v) ? v : null;
+    } catch (e) { return null; }
+  }
+
+  // The same shape for several properties at once, with the tree checked for agreement. A
+  // property that came back a different shape than `id` cannot be zipped against it, and
+  // guessing which row it belongs to would put one session's tty on another's row — so the
+  // whole batch is refused and the caller walks instead.
+  function bulkTree(props) {
+    const first = bulk(props[0]);
+    if (!first) return null;
+    const out = {};
+    out[props[0]] = first;
+    for (let p = 1; p < props.length; p++) {
+      const v = bulk(props[p]);
+      if (!v || v.length !== first.length) return null;
+      for (let i = 0; i < first.length; i++) {
+        if (!Array.isArray(v[i]) || !Array.isArray(first[i])
+            || v[i].length !== first[i].length) return null;
+        for (let j = 0; j < first[i].length; j++) {
+          if (!Array.isArray(v[i][j]) || !Array.isArray(first[i][j])
+              || v[i][j].length !== first[i][j].length) return null;
+        }
+      }
+      out[props[p]] = v;
+    }
+    return out;
+  }
+
+  function cell(tree, prop, i, j, k) {
+    const v = tree[prop][i][j][k];
+    return v === null || v === undefined ? "" : String(v);
+  }
+
+  // Where a session lives, found from one batched `id` read instead of a walk that asks every
+  // session in front of it for its own. Returns the session specifier, or `undefined`.
+  //
+  // **The identity is re-read through the specifier before it is handed back**, so a tab that
+  // closed between the batch and the write cannot silently redirect a keystroke into whatever
+  // slid into its index. That is the same guarantee the walk gives — it compares an id too —
+  // for one round trip instead of one per session ahead of the target.
+  function locate(wantId) {
+    const ids = bulk("id");
+    if (!ids) return undefined;
+    for (let i = 0; i < ids.length; i++) {
+      if (!Array.isArray(ids[i])) continue;
+      for (let j = 0; j < ids[i].length; j++) {
+        if (!Array.isArray(ids[i][j])) continue;
+        for (let k = 0; k < ids[i][j].length; k++) {
+          const id = ids[i][j][k];
+          if (!id || String(id).toUpperCase() !== wantId) continue;
+          let s, win, tab;
+          try {
+            win = it.windows[i];
+            tab = win.tabs[j];
+            s = tab.sessions[k];
+          } catch (e) { return undefined; }
+          if (safe(function () { return s.id(); }, "").toUpperCase() !== wantId) return undefined;
+          return { session: s, win: win, tab: tab };
+        }
+      }
+    }
+    return undefined;
+  }
+
+  // Find one session and do something with it. Batched first; the walk is the fallback, and it
+  // is still the only path when the specifier chain is unavailable.
+  function withSession(wantId, fn) {
+    const found = locate(wantId);
+    if (found) return fn(found.session, found.win, found.tab);
+    return eachSession(function (s, wi, ti, win, tab) {
+      if (safe(function () { return s.id(); }, "").toUpperCase() !== wantId) return undefined;
+      return fn(s, win, tab);
+    });
+  }
+
   if (cmd === "list") {
     const out = [];
+    const props = ["id", "tty", "name", "profileName"];
+    const tree = bulkTree(props);
+    if (tree) {
+      let failures = 0;
+      for (let i = 0; i < tree.id.length; i++) {
+        for (let j = 0; j < tree.id[i].length; j++) {
+          for (let k = 0; k < tree.id[i][j].length; k++) {
+            const id = cell(tree, "id", i, j, k);
+            const tty = cell(tree, "tty", i, j, k);
+            // Same rule as the walk below: a row without both identities cannot safely refresh
+            // an old row, so it is dropped and the whole inventory loses confidence instead.
+            if (!id || !tty) { failures += 1; continue; }
+            out.push({
+              id: id,
+              name: cell(tree, "name", i, j, k),
+              tty: tty,
+              profile: cell(tree, "profileName", i, j, k),
+              win: i,
+              tab: j
+            });
+          }
+        }
+      }
+      const complete = failures === 0;
+      const result = { ok: complete, complete: complete, appRunning: true, sessions: out };
+      if (!complete) {
+        result.error = "iTerm2 session enumeration incomplete (" + failures +
+          (failures === 1 ? " failure): " : " failures): ") + "session identity unreadable";
+      }
+      return JSON.stringify(result);
+    }
     eachSession(function (s, wi, ti) {
       const id = safe(function () { return s.id(); }, "");
       const tty = safe(function () { return s.tty(); }, "");
@@ -129,8 +261,7 @@ function run(argv) {
       return lines.slice(mark).join("").replace(/\s+/g, "").indexOf(needle) >= 0;
     }
 
-    const hit = eachSession(function (s) {
-      if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
+    const hit = withSession(want, function (s) {
       // Bracketed paste, so multi-line text arrives as one paste instead of several Returns.
       // Without it, a two-line prompt submits itself after the first line.
       s.write({ text: ESC + "[200~" + text + ESC + "[201~", newline: false });
@@ -167,8 +298,7 @@ function run(argv) {
   if (cmd === "key") {
     const want = String(argv[1] || "").toUpperCase();
     const codes = argv.slice(2).map(function (raw) { return parseInt(String(raw || "0"), 10); });
-    const hit = eachSession(function (s) {
-      if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
+    const hit = withSession(want, function (s) {
       s.write({ text: String.fromCharCode.apply(String, codes), newline: false });
       return true;
     });
@@ -179,8 +309,7 @@ function run(argv) {
     // `text` is the *visible* screen only — iTerm2's AppleScript has no scrollback.
     // tmux can go further back, which is why that path passes -S.
     const want = String(argv[1] || "").toUpperCase();
-    const hit = eachSession(function (s) {
-      if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
+    const hit = withSession(want, function (s) {
       return safe(function () { return s.text(); }, "");
     });
     return JSON.stringify(hit === undefined
@@ -199,12 +328,40 @@ function run(argv) {
     const want = String(argv[1] || "").toUpperCase().split(",").filter(function (s) { return s; });
     const lines = parseInt(String(argv[2] || "60"), 10) || 60;
     const out = {};
+    function keep(id, text) {
+      if (want.indexOf(id) === -1) return;
+      const rows = text.split("\n");
+      while (rows.length && !rows[rows.length - 1].trim()) rows.pop();
+      out[id] = rows.slice(Math.max(0, rows.length - lines)).join("\n");
+    }
+    // Batch the *identities*, then read only the screens that were asked for.
+    //
+    // **Not `bulkTree(["id", "text"])`, and the measurement is why.** Batching text as well is
+    // one Apple event instead of one per tab, and it was 1.61 s against the walk's 0.16 s: a
+    // screen is kilobytes, seventeen of them are the payload rather than the handshake, and
+    // sixteen were going to be thrown away. `list` batches four *scalar* properties and wins ten
+    // times over; the rule those two readings agree on is that the handshake is what batching
+    // buys back, so batch what every row needs and address what only some rows need.
+    const ids = bulk("id");
+    if (ids) {
+      for (let i = 0; i < ids.length; i++) {
+        if (!Array.isArray(ids[i])) continue;
+        for (let j = 0; j < ids[i].length; j++) {
+          if (!Array.isArray(ids[i][j])) continue;
+          for (let k = 0; k < ids[i][j].length; k++) {
+            const id = String(ids[i][j][k] || "").toUpperCase();
+            if (!id || want.indexOf(id) === -1) continue;
+            const text = safe(function () { return it.windows[i].tabs[j].sessions[k].text(); }, "");
+            keep(id, text);
+          }
+        }
+      }
+      return JSON.stringify({ ok: true, tails: out });
+    }
     eachSession(function (s) {
       const id = safe(function () { return s.id(); }, "").toUpperCase();
       if (want.indexOf(id) === -1) return undefined;
-      const rows = safe(function () { return s.text(); }, "").split("\n");
-      while (rows.length && !rows[rows.length - 1].trim()) rows.pop();
-      out[id] = rows.slice(Math.max(0, rows.length - lines)).join("\n");
+      keep(id, safe(function () { return s.text(); }, ""));
       return undefined;   // keep walking: every session that was asked for, not the first one
     });
     return JSON.stringify({ ok: true, tails: out });
@@ -217,8 +374,7 @@ function run(argv) {
   if (cmd === "reveal") {
     const want = String(argv[1] || "").toUpperCase();
     const activate = String(argv[2] === undefined ? "1" : argv[2]) === "1";
-    const hit = eachSession(function (s, wi, ti, win, tab) {
-      if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
+    const hit = withSession(want, function (s, win, tab) {
       try { win.select(); } catch (e) {}
       try { tab.select(); } catch (e) {}
       try { s.select(); } catch (e) {}
@@ -242,8 +398,7 @@ function run(argv) {
   // behaviour somebody expects; if it was not, the split it was in survives.
   if (cmd === "close") {
     const want = String(argv[1] || "").toUpperCase();
-    const hit = eachSession(function (s) {
-      if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
+    const hit = withSession(want, function (s) {
       try { s.close(); } catch (e) { return "close failed: " + e.message; }
       return true;
     });
