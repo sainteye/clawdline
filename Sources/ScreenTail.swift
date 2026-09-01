@@ -333,6 +333,14 @@ enum ScreenTail {
         documents[sessionID] = Array(grown.suffix(retainedLines))
     }
 
+    /// Whether anything has been captured for this session yet. A reader arriving at a session
+    /// nobody has been following is the one moment worth paying for a capture inline.
+    static func hasDocument(_ sessionID: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return documents[sessionID]?.isEmpty == false
+    }
+
     /// What this session is saying that its transcript has not recorded, or nil when the screen
     /// ends in something other than speech.
     static func unsyncedProse(_ sessionID: String) -> String? {

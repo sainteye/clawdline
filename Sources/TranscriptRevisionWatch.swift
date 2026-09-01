@@ -162,7 +162,7 @@ extension RemoteServer {
         // Reading a transcript is what "somebody is looking at this session" means here. It is
         // the signal that buys the closer screen sampling ``ScreenFollow`` does, and it costs the
         // caller nothing to declare because it already declared it by asking.
-        ScreenFollow.shared.noteReader(of: session.id)
+        ScreenFollow.shared.noteReader(of: session)
         guard let record = Transcript.record(of: session) else {
             return .json(["entries": [], "signature": ""])
         }

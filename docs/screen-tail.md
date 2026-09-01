@@ -50,12 +50,23 @@ the captures taken while they were being written still hold them.
 does not open the Mac's panel. Overlap is the whole mechanism; twenty seconds of a streaming
 answer is several screens, consecutive captures share no lines, and the reconstruction correctly
 refuses to guess across the break — so the reader gets the end of an answer with its beginning
-missing. `Sources/ScreenFollow.swift` closes that: **one extra capture per second for the session
-whose transcript is actually being read**, and nothing at all when nobody is reading. Attention
-is taken from the transcript request itself, so there is no new client contract and a closed page
-stops costing anything within 25 seconds. The fleet-wide rate is untouched, which is the point —
-a rate rise for everybody would pay for nine screens nobody is looking at in order to fix the one
-somebody is.
+missing. `Sources/ScreenFollow.swift` closes that, in three parts, all of them keyed on somebody
+actually reading — with the phone closed this whole mechanism costs nothing at all:
+
+- **The first read captures inline.** Opening a session is the moment its screen is wanted, and
+  waiting for a timer's first beat hands the reader the answer from before they asked. Paid once,
+  only for a session nothing has been captured for yet.
+- **One extra capture per second** for the session being read, for 25 seconds after the last
+  request. A page that is closed stops being followed without having to say so.
+- **Four working sessions swept every other beat.** A reader arrives *after* an answer was
+  written, and what they can be shown is only what was captured while it was being written. A
+  session producing text right now is the only kind whose screen can hold words the file does
+  not, so those are the screens worth having ready when somebody opens one of them next.
+
+Attention comes from the transcript request itself, so there is no new client contract. The
+fleet-wide rate is untouched, which is the point — a rate rise for everybody would pay for nine
+screens nobody is looking at in order to fix the one somebody is. Captures go through
+`ITerm.tails` in one round trip, the same bargain `Targets.reading` strikes.
 
 **One capture is not enough, and that does not stop it.** iTerm2 exposes the visible screen and
 no more — `text` and `contents` are the same sixty rows, and there is no scrollback API. But
@@ -121,8 +132,10 @@ than labelling it: the reader wants the sentences, not a lecture about where the
   waiting screen that threw away the entire analysis above the table — nothing was offered at
   all. Only the question header and `❯` mean picker now.
 - **It starts when you start watching.** No scrollback API means nothing before the first capture
-  can ever be recovered. The division is clean and worth stating plainly: **the file is the
-  history, the screen is the present.**
+  can ever be recovered, and a screen is sixty rows — so opening a session that finished a long
+  answer an hour ago shows the last screenful of it, not all of it. The working sweep exists to
+  make that rare rather than to make it impossible. The division is clean and worth stating
+  plainly: **the file is the history, the screen is the present.**
 - **iTerm2 only.** tmux panes are captured the same way and do have scrollback
   (`Tmux.capture(scrollback:)`, currently asked for the visible pane only). Ghostty cannot be read
   at all, so none of this exists there.

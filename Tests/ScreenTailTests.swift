@@ -197,6 +197,16 @@ func runScreenTailTests() {
         follow.tickForTesting()
         check("and a beat with no readers captures nothing", captured.isEmpty)
 
+        // Opening a session is the moment its screen is wanted. Waiting for the timer's first
+        // beat hands the reader the answer from before they asked.
+        follow.noteReader(of: watched)
+        expect("the first read captures inline", captured, ["WATCHED"])
+        check("and it is there to be read at once",
+              ScreenTail.unsyncedProse("WATCHED")?.contains("from WATCHED") == true)
+        captured = []
+        follow.noteReader(of: watched)
+        check("a second read does not pay for it again", captured.isEmpty)
+
         follow.noteReader(of: "WATCHED")
         follow.tickForTesting()
         expect("only the session being read is captured", captured, ["WATCHED"])
@@ -214,5 +224,24 @@ func runScreenTailTests() {
         captured = []
         follow.tickForTesting()
         check("so the beat after it captures nothing", captured.isEmpty)
+
+        // A reader arrives after an answer was written, not during it. The only screens worth
+        // having ready are the ones producing text, and only while somebody is reading anything
+        // at all — with the phone closed this whole mechanism is pure cost.
+        ScreenFollow.workingForTesting = { ["IGNORED"] }
+        follow.forgetForTesting()
+        captured = []
+        follow.tickForTesting()
+        check("with nobody reading, a working session is still not swept", captured.isEmpty)
+
+        follow.noteReader(of: "WATCHED")
+        captured = []
+        follow.tickForTesting()
+        expect("the first beat takes only the session being read", captured, ["WATCHED"])
+        captured = []
+        follow.tickForTesting()
+        check("the sweep beat takes the working session too",
+              Set(captured) == Set(["WATCHED", "IGNORED"]), "got \(captured)")
+        ScreenFollow.workingForTesting = nil
     }
 }
