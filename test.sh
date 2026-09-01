@@ -25,11 +25,12 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # Transcript first-paint isolation adds 25 unconditional checks: three route/tier predicates and
 # twenty-two admission, completion, drain, interruption and queue-responsiveness checks.
 # Browser token adoption adds 7 unconditional checks for the 303/cookie contract and public health.
-# Stale-while-revalidate readings add 54 unconditional checks: 24 for the freshness policy
+# Stale-while-revalidate readings add 68 unconditional checks: 24 for the freshness policy
 # itself (fresh service, stale-then-refresh ordering, a refusal ageing rather than replacing a
 # reading, and the serveFor edge), 21 for single-flight admission and the answer a waiter gets
-# when the read it joined was refused, and 9 for the trace that keeps queueing apart from cost.
-expected_swift_receipt='7427 checks passed'
+# when the read it joined was refused, 14 for moving the lane's depth to where it can only refuse
+# a request that had nothing to serve, and 9 for the trace that keeps queueing apart from cost.
+expected_swift_receipt='7441 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

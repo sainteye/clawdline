@@ -3936,32 +3936,31 @@ final class RemoteServer: @unchecked Sendable {
     /// Admit on the owner queue, execute the canonical `route(request)` elsewhere, then return to
     /// the owner before draining. This preserves authentication/cache behavior without copying a
     /// route and keeps the limiter away from the worker thread.
+    /// The optional reads, answered from the last good reading while the next one is taken. The
+    /// lane's depth now refuses only a request that had nothing to serve; policy in `SlowReadings`.
     private func readSlowly(_ request: Request, on conn: NWConnection) {
         if let refusal = slowReadingRefusal(request) {
             send(withCachePolicy(refusal), on: conn)
             return
         }
-        // Not remembered anywhere, for the reason `transcribe` spells out: this refusal is about
-        // this Mac at this moment rather than about the request. These are reads, so the retry it
-        // invites has no effect to repeat and nothing needs to be held against a key.
-        guard readingLimiter.admit(request.path, depth: Self.readingDepth) else {
-            send(withCachePolicy(.error(429, "busy",
-                                        "This Mac already has \(Self.readingDepth) of these to "
-                                        + "read. Try again in a moment.")), on: conn)
-            return
-        }
-        readingQueue.async { [weak self] in
-            guard let self else { conn.cancel(); return }
-            let response = self.route(request)
-            // Back to the server's queue before the counter moves, because it belongs to that
-            // queue and this closure does not. The cache policy is already on the response —
-            // `route` applies it at its own door, which is the whole point of it being there.
-            self.queue.async {
-                self.readingLimiter.finish(request.path)
-                self.send(response, on: conn)
-            }
-        }
+        let arrived = Date()
+        let key = SlowReadings.key(for: request)
+        slowReadings.read(
+            key, policy: SlowReadings.policy(for: request.path),
+            admit: { self.readingLimiter.admit(request.path, depth: Self.readingDepth) },
+            refusal: { SlowReadings.busy(depth: Self.readingDepth) },
+            execute: { [readingQueue] work in readingQueue.async(execute: work) },
+            compute: { self.route(request) }, classify: SlowReadings.classify,
+            completeOnOwner: { [queue] work in queue.async(execute: work) },
+            release: { self.readingLimiter.finish(request.path) },
+            deliver: { [weak self] answer in
+                guard let self else { conn.cancel(); return }
+                self.send(SlowReadings.stamp(answer, arrived: arrived, lane: "reading",
+                                             key: key, trace: Self.readingTrace), on: conn)
+            })
     }
+
+    private let slowReadings = SlowReadings.Readings()
 
     /// Analytics is independently shed and independently executed. Its SQLite work is bounded,
     /// but a full analytics queue still cannot be allowed to turn `/info` into 429 or park the
@@ -4062,6 +4061,7 @@ final class RemoteServer: @unchecked Sendable {
     /// and while it does the eighth request can wait minutes. At that point rejecting the next
     /// bounded read is load shedding, not evidence that trying again immediately will work.
     static let readingDepth = 8
+    static let readingTrace = ReadingTrace()
     static let usageAnalyticsDepth = 2
     // MARK: - What the routes answer with
 

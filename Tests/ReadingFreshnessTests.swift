@@ -32,14 +32,29 @@ func runReadingFreshnessTests() {
 
     let quick = FreshReadings<FakeReading>.Policy(freshFor: 2, serveFor: 60)
 
+    /// Every read in this suite goes through here, so the admission trio is stated once and any
+    /// group that cares about backpressure can replace just that part.
+    func read(_ readings: FreshReadings<FakeReading>,
+              _ key: String = "info:A",
+              policy: FreshReadings<FakeReading>.Policy? = nil,
+              admit: @escaping () -> Bool = { true },
+              refusal: @escaping () -> FakeReading = { FakeReading(body: "429", refusal: "busy") },
+              execute: @escaping FreshReadings<FakeReading>.Executor,
+              release: @escaping () -> Void = {},
+              compute: @escaping () -> FakeReading,
+              deliver: @escaping (FreshReadings<FakeReading>.Answer) -> Void) {
+        readings.read(key, policy: policy ?? quick, admit: admit, refusal: refusal,
+                      execute: execute, compute: compute, classify: classify,
+                      completeOnOwner: onOwner, release: release, deliver: deliver)
+    }
+
     group("a warm reading is answered without asking the Mac again") {
         let readings = FreshReadings<FakeReading>()
         var reads = 0
         var answers: [FreshReadings<FakeReading>.Answer] = []
         func ask() {
-            readings.read("info:A", policy: quick, execute: inline,
+            read(readings, "info:A", execute: inline,
                           compute: { reads += 1; return FakeReading(body: "card \(reads)", refusal: nil) },
-                          classify: classify, completeOnOwner: onOwner,
                           deliver: { answers.append($0) })
         }
         ask()
@@ -62,9 +77,8 @@ func runReadingFreshnessTests() {
         var answers: [FreshReadings<FakeReading>.Answer] = []
         var deliveredBeforeRead: [Int] = []
         func ask() {
-            readings.read("info:A", policy: quick, execute: inline,
+            read(readings, "info:A", execute: inline,
                           compute: { reads += 1; return FakeReading(body: "card \(reads)", refusal: nil) },
-                          classify: classify, completeOnOwner: onOwner,
                           deliver: { answers.append($0); deliveredBeforeRead.append(reads) })
         }
         ask()
@@ -88,14 +102,10 @@ func runReadingFreshnessTests() {
         var answers: [FreshReadings<FakeReading>.Answer] = []
         var refusing = false
         func ask() {
-            readings.read("info:A", policy: quick, execute: inline,
-                          compute: {
-                              refusing
-                                  ? FakeReading(body: "502", refusal: "iterm_attention_required")
-                                  : FakeReading(body: "good card", refusal: nil)
-                          },
-                          classify: classify, completeOnOwner: onOwner,
-                          deliver: { answers.append($0) })
+            read(readings, execute: inline, compute: {
+                refusing ? FakeReading(body: "502", refusal: "iterm_attention_required")
+                         : FakeReading(body: "good card", refusal: nil)
+            }, deliver: { answers.append($0) })
         }
         ask()
         refusing = true
@@ -129,9 +139,8 @@ func runReadingFreshnessTests() {
         let parked: FreshReadings<FakeReading>.Executor = { work in release = work }
 
         for _ in 0..<8 {
-            readings.read("info:A", policy: quick, execute: parked,
+            read(readings, "info:A", execute: parked,
                           compute: { reads += 1; return FakeReading(body: "one card", refusal: nil) },
-                          classify: classify, completeOnOwner: onOwner,
                           deliver: { answers.append($0) })
         }
         check("eight cold requests park rather than answer", answers.isEmpty)
@@ -157,9 +166,8 @@ func runReadingFreshnessTests() {
         var release: (() -> Void)?
         let parked: FreshReadings<FakeReading>.Executor = { work in release = work }
         func ask(_ executor: @escaping FreshReadings<FakeReading>.Executor) {
-            readings.read("info:A", policy: quick, execute: executor,
+            read(readings, "info:A", execute: executor,
                           compute: { reads += 1; return FakeReading(body: "card \(reads)", refusal: nil) },
-                          classify: classify, completeOnOwner: onOwner,
                           deliver: { answers.append($0) })
         }
         ask(inline)
@@ -180,13 +188,10 @@ func runReadingFreshnessTests() {
         var release: (() -> Void)?
         let parked: FreshReadings<FakeReading>.Executor = { work in release = work }
         func ask(_ executor: @escaping FreshReadings<FakeReading>.Executor) {
-            readings.read("info:A", policy: quick, execute: executor,
-                          compute: {
-                              refusing ? FakeReading(body: "502", refusal: "busy")
-                                       : FakeReading(body: "good card", refusal: nil)
-                          },
-                          classify: classify, completeOnOwner: onOwner,
-                          deliver: { answers.append($0) })
+            read(readings, execute: executor, compute: {
+                refusing ? FakeReading(body: "502", refusal: "busy")
+                         : FakeReading(body: "good card", refusal: nil)
+            }, deliver: { answers.append($0) })
         }
         ask(inline)
         refusing = true
@@ -200,9 +205,8 @@ func runReadingFreshnessTests() {
 
         clock.advance(200)         // now past even the failure grace
         var late: [FreshReadings<FakeReading>.Answer] = []
-        readings.read("info:A", policy: quick, execute: inline,
+        read(readings, "info:A", execute: inline,
                       compute: { FakeReading(body: "502", refusal: "busy") },
-                      classify: classify, completeOnOwner: onOwner,
                       deliver: { late.append($0) })
         check("but a reading nobody can stand behind any more gives way to the refusal",
               late.last?.value.body == "502")
@@ -212,14 +216,90 @@ func runReadingFreshnessTests() {
         let readings = FreshReadings<FakeReading>()
         var answers: [String: FreshReadings<FakeReading>.Answer] = [:]
         for key in ["info:A", "info:B"] {
-            readings.read(key, policy: quick, execute: inline,
+            read(readings, key, execute: inline,
                           compute: { FakeReading(body: "card for \(key)", refusal: nil) },
-                          classify: classify, completeOnOwner: onOwner,
                           deliver: { answers[key] = $0 })
         }
         check("each key keeps its own reading", answers["info:A"]?.value.body == "card for info:A")
         check("and does not answer with another's", answers["info:B"]?.value.body == "card for info:B")
         check("both are stored", readings.storedKeysForTesting == ["info:A", "info:B"])
+    }
+
+    group("a full lane refuses only a request it had nothing to answer") {
+        let readings = FreshReadings<FakeReading>()
+        var answers: [FreshReadings<FakeReading>.Answer] = []
+        var reads = 0
+        var laneOpen = true
+        func ask() {
+            read(readings, admit: { laneOpen }, execute: inline,
+                 compute: { reads += 1; return FakeReading(body: "card \(reads)", refusal: nil) },
+                 deliver: { answers.append($0) })
+        }
+        ask()
+        check("a reading is taken while the lane has room", reads == 1)
+
+        // **This is the whole point of moving the admission.** The lane is full and the reading
+        // is stale: before, that combination was a 429 for a card the Mac was already holding.
+        laneOpen = false
+        clock.advance(10)
+        ask()
+        check("a full lane does not refuse a reader who could be served",
+              answers.last?.value.body == "card 1")
+        check("the stale answer goes out as a stale answer, not as a refusal",
+              answers.last?.provenance == .stale)
+        check("and the refresh it would have started is dropped rather than queued", reads == 1)
+
+        // With nothing servable, the lane's answer is the only honest one left.
+        clock.advance(100)
+        ask()
+        check("past serveFor a full lane is the one case that still refuses",
+              answers.last?.value.body == "429")
+        check("and it did not sneak a read past the closed lane", reads == 1)
+
+        laneOpen = true
+        ask()
+        check("the lane reopening is enough to get a real reading again",
+              answers.last?.value.body == "card 2")
+    }
+
+    group("an admitted read is released exactly once") {
+        let readings = FreshReadings<FakeReading>()
+        var releases = 0
+        var admissions = 0
+        var answers: [FreshReadings<FakeReading>.Answer] = []
+        var laneOpen = true
+        func ask(_ executor: @escaping FreshReadings<FakeReading>.Executor) {
+            read(readings, admit: { admissions += 1; return laneOpen }, execute: executor,
+                 release: { releases += 1 },
+                 compute: { FakeReading(body: "card", refusal: nil) },
+                 deliver: { answers.append($0) })
+        }
+        ask(inline)
+        check("one admission for one read", admissions == 1)
+        check("and one release for it", releases == 1)
+
+        clock.advance(1)
+        ask(inline)
+        check("a fresh answer asks the lane for nothing", admissions == 1)
+        check("so it releases nothing", releases == 1)
+
+        laneOpen = false
+        clock.advance(100)
+        ask(inline)
+        check("a refused admission is not released — the count would go negative", releases == 1)
+
+        // Eight waiters, one admission: a lane whose depth was spent per *request* rather than
+        // per *read* would run out on a page with eight cards on it.
+        laneOpen = true
+        readings.forgetForTesting()
+        var release: (() -> Void)?
+        let parked: FreshReadings<FakeReading>.Executor = { work in release = work }
+        let admittedBefore = admissions
+        for _ in 0..<8 { ask(parked) }
+        check("eight cold requests spend one admission between them",
+              admissions == admittedBefore + 1)
+        release?()
+        check("and return it once", releases == 2)
     }
 
     group("the trace separates waiting from working") {

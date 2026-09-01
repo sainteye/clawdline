@@ -114,13 +114,23 @@ final class FreshReadings<Value> {
 
     /// Answer `key`, taking the reading only when there is nothing servable.
     ///
-    /// `deliver` is always called exactly once, on the owner queue.
+    /// **`admit` is the lane's existing backpressure, moved to the only place it can still do
+    /// harm.** It used to be asked first, so a busy Mac refused requests it could have answered
+    /// out of a reading it already had. Now it is asked only when a read is actually about to
+    /// start, and `refusal` is reached only when there was nothing to serve *and* no room to go
+    /// and get it. A stale answer never becomes a 429 because the lane happened to be full.
+    ///
+    /// `release` balances an admitted read and is called on the owner queue once it settles.
+    /// `deliver` is always called exactly once, also on the owner queue.
     func read(_ key: String,
               policy: Policy,
+              admit: () -> Bool,
+              refusal: () -> Value,
               execute: @escaping Executor,
               compute: @escaping () -> Value,
               classify: @escaping (Value) -> Verdict,
               completeOnOwner: @escaping (@escaping () -> Void) -> Void,
+              release: @escaping () -> Void,
               deliver: @escaping (Answer) -> Void) {
         let now = Self.clock()
         if let reading = readings[key] {
@@ -132,9 +142,13 @@ final class FreshReadings<Value> {
                 deliver(Answer(value: reading.value, age: age,
                                staleReason: reading.staleReason,
                                provenance: age <= policy.freshFor ? .fresh : .stale))
+                // A refresh that cannot be admitted is simply not taken. The reader already has
+                // an answer, and the next ask will try again — dropping it is what keeps a full
+                // lane from turning into a queue of refreshes nobody is waiting for.
                 if age > policy.freshFor {
-                    revalidate(key, execute: execute, compute: compute, classify: classify,
-                               completeOnOwner: completeOnOwner)
+                    revalidate(key, admit: admit, execute: execute, compute: compute,
+                               classify: classify, completeOnOwner: completeOnOwner,
+                               release: release)
                 }
                 return
             }
@@ -143,25 +157,43 @@ final class FreshReadings<Value> {
         // eight tabs at once is eight `lsof` runs, eight `git status` and eight Apple events for
         // one answer, and the eighth of those is the one that makes the other seven slow.
         waiters[key, default: []].append(deliver)
-        revalidate(key, execute: execute, compute: compute, classify: classify,
-                   completeOnOwner: completeOnOwner)
+        guard revalidate(key, admit: admit, execute: execute, compute: compute,
+                         classify: classify, completeOnOwner: completeOnOwner,
+                         release: release) else {
+            // Nothing to serve and no room to read. This is the one path that still refuses, and
+            // it takes every waiter with it rather than leaving them parked on a read that was
+            // never started.
+            let refused = refusal()
+            for hand in waiters.removeValue(forKey: key) ?? [] {
+                hand(Answer(value: refused, age: 0, staleReason: nil, provenance: .read))
+            }
+            return
+        }
     }
 
     /// Start a read unless one is already running for this key. Waiters, if any, are settled when
     /// it lands; a refresh behind a served answer has none and simply updates the reading.
+    ///
+    /// Returns false only when there is no read running *and* the lane refused to start one.
+    @discardableResult
     private func revalidate(_ key: String,
+                            admit: () -> Bool,
                             execute: @escaping Executor,
                             compute: @escaping () -> Value,
                             classify: @escaping (Value) -> Verdict,
-                            completeOnOwner: @escaping (@escaping () -> Void) -> Void) {
-        guard !inFlight.contains(key) else { return }
+                            completeOnOwner: @escaping (@escaping () -> Void) -> Void,
+                            release: @escaping () -> Void) -> Bool {
+        guard !inFlight.contains(key) else { return true }
+        guard admit() else { return false }
         inFlight.insert(key)
         execute { [weak self] in
             let value = compute()
             completeOnOwner {
+                release()
                 self?.settle(key, value: value, verdict: classify(value))
             }
         }
+        return true
     }
 
     /// Called on the owner queue with a completed read. Never `deinit`-sensitive: a settle that
@@ -213,6 +245,105 @@ final class FreshReadings<Value> {
     func waiterCountForTesting(_ key: String) -> Int { waiters[key]?.count ?? 0 }
     func forgetForTesting() {
         readings.removeAll(); inFlight.removeAll(); waiters.removeAll()
+    }
+}
+
+/// The freshness policy for the optional reads — `/info`, `/live`, `/places`.
+///
+/// It lives here rather than in ``RemoteServer`` because that file is at its architecture
+/// boundary, and because none of this is transport: it is a set of judgements about how fast the
+/// things behind those routes actually move, which is exactly the kind of decision that should be
+/// readable in one place instead of inline at a call site.
+enum SlowReadings {
+
+    typealias Readings = FreshReadings<RemoteServer.Response>
+
+    /// **Set by how fast the thing behind the route moves, not by how often it is asked.**
+    ///
+    /// `/info` is a status card: a working tree, a token count, a permission mode. Two seconds is
+    /// shorter than a person can read the card in, and its `serveFor` is where the cost of being
+    /// wrong lands — a card that says *working* about a session that ended. Sixty seconds is long
+    /// enough to ride out a sheet in iTerm2 and short enough that nobody plans around a minute-old
+    /// reading, and the age goes out with it either way.
+    ///
+    /// `/places` is a list of directories and their start points. It changes when somebody makes a
+    /// project, which is not something that happens between two taps, so it is allowed to be much
+    /// older before anyone goes and looks again.
+    static func policy(for path: String) -> Readings.Policy {
+        path == "/v1/places"
+            ? Readings.Policy(freshFor: 20, serveFor: 600)
+            : Readings.Policy(freshFor: 2, serveFor: 60)
+    }
+
+    /// One key per distinct answer. The query is part of it because `?parts=summary` is a
+    /// genuinely different, cheaper card, and serving one where the other was asked for would be
+    /// the cache lying about which question it answered.
+    static func key(for request: RemoteServer.Request) -> String {
+        let query = request.query.keys.sorted()
+            .map { "\($0)=\(request.query[$0] ?? "")" }
+            .joined(separator: "&")
+        return query.isEmpty ? request.path : "\(request.path)?\(query)"
+    }
+
+    /// Which answers may become the reading everything is served from.
+    ///
+    /// A `5xx` or a `429` arrives as a perfectly well-formed response and means the read did not
+    /// happen — a sheet in iTerm2, a full lane, a subprocess that timed out. Storing one would
+    /// replace a usable card with a refusal and then serve that refusal for the whole of
+    /// `serveFor`. A `4xx` that is not `429` is about the request rather than the Mac, so it is
+    /// stored: asking for a session that does not exist has a stable answer.
+    static func classify(_ response: RemoteServer.Response) -> Readings.Verdict {
+        guard response.status >= 500 || response.status == 429 else { return .good }
+        return .refused(errorCode(in: response) ?? "read_failed")
+    }
+
+    private static func errorCode(in response: RemoteServer.Response) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: response.body),
+              let error = (object as? [String: Any])?["error"] as? [String: Any]
+        else { return nil }
+        return error["code"] as? String
+    }
+
+    /// Nothing to serve and no room to read — the one answer this lane still refuses with. Its
+    /// wording is the one the route gave before there was a reading to fall back on.
+    static func busy(depth: Int) -> RemoteServer.Response {
+        var response = RemoteServer.Response.error(
+            429, "busy",
+            "This Mac already has \(depth) of these to read. Try again in a moment.")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    }
+
+    /// Put the age on the wire and the timings in the trace.
+    ///
+    /// `Age` is the standard header for exactly this and needs no client change to be correct;
+    /// `X-Clawdline-Reading` is the part a client can branch on — whether it is looking at a
+    /// reading taken for it, one taken a moment ago, or one that could not be replaced and why.
+    static func stamp(_ answer: Readings.Answer,
+                      arrived: Date,
+                      lane: String,
+                      key: String,
+                      trace: ReadingTrace) -> RemoteServer.Response {
+        var response = answer.value
+        response.headers["Age"] = String(Int(answer.age.rounded()))
+        response.headers["X-Clawdline-Reading"] = answer.provenance.rawValue
+        if let reason = answer.staleReason {
+            response.headers["X-Clawdline-Stale-Reason"] = reason
+        }
+        let total = Date().timeIntervalSince(arrived)
+        // A served reading did no work, so all of its elapsed time is the queue it stood in; a
+        // read did the work, so none of it is. Splitting them at the door is the whole reason
+        // this exists — the two numbers ask for opposite fixes.
+        let served = answer.provenance == .fresh || answer.provenance == .stale
+        trace.record(ReadingTrace.Span(
+            at: arrived, lane: lane, key: key,
+            queueWaitMs: served ? Int(total * 1000) : 0,
+            executeMs: served ? 0 : Int(total * 1000),
+            provenance: answer.provenance.rawValue,
+            ageSeconds: Int(answer.age.rounded()),
+            outcome: response.status,
+            staleReason: answer.staleReason))
+        return response
     }
 }
 

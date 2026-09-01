@@ -479,6 +479,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "past serveFor a reading stops being an answer",
     "a request waiting on a refresh that fails is answered, not refused",
     "keys do not read each other's readings",
+    "a full lane refuses only a request it had nothing to answer",
+    "an admitted read is released exactly once",
     "the trace separates waiting from working",
     "percentiles answer for an empty lane instead of crashing",
 ]
