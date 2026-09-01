@@ -86,10 +86,16 @@ than labelling it: the reader wants the sentences, not a lecture about where the
 ## What it does not claim
 
 - **It is a reading of a screen.** Hard-wrapped at the terminal's width and reassembled by
-  heuristic — paragraphs are rejoined on blank lines, and a space is put back only between two
-  ASCII word characters, because a wrap ate the space between two English words and did not
-  between two CJK ones. A table that was drawn with box characters comes back as those
-  characters.
+  heuristic. Two rules do the work, and both were learned from a real screen rather than a
+  fixture. **A line is joined to the next only when it ran to the edge** — the width the screen
+  was drawn at, measured as the widest line on it, counting CJK as two columns. Without that
+  test a list of five files came back as one sentence. And **the seam gets a space only between
+  two ASCII word characters**, because a wrap between two English words ate the space that was
+  there and a wrap between two CJK characters ate nothing.
+- **A table survives as its own lines.** Box-drawing rows are stepped over rather than treated as
+  a boundary. They were briefly treated as the picker's furniture, and against the first real
+  waiting screen that threw away the entire analysis above the table — nothing was offered at
+  all. Only the question header and `❯` mean picker now.
 - **It starts when you start watching.** No scrollback API means nothing before the first capture
   can ever be recovered. The division is clean and worth stating plainly: **the file is the
   history, the screen is the present.**

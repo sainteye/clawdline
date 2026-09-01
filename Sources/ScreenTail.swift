@@ -136,14 +136,29 @@ enum ScreenTail {
 
     // MARK: - The words at the end of it
 
-    /// The picker's own furniture: the header Claude Code puts above a question, the option
-    /// rows, and the box it draws the selected option's consequences in.
+    /// The picker's own furniture: the header Claude Code puts above a question, and the option
+    /// rows under it.
+    ///
+    /// **Deliberately only those two.** Box characters were in here once and it was wrong: the
+    /// picker draws a box, but so does every bordered table an assistant prints, and a rule that
+    /// treats `\u{251C}` as the picker throws away the whole answer above a table. Measured
+    /// against a real waiting screen on 2026-09-01, that turned a complete analysis into nothing
+    /// offered at all. The picker is normally not in this text anyway — ``region(of:)`` cuts at
+    /// the rule above it — so this is the belt for the screens that draw one without a rule.
     private static func isPicker(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { return false }
-        let leaders = ["\u{2610}", "\u{276F}", "\u{250C}", "\u{2502}", "\u{2514}", "\u{251C}",
-                       "\u{2510}", "\u{2518}", "\u{2524}", "\u{2570}", "\u{2022}"]
-        return leaders.contains { trimmed.hasPrefix($0) } || isRule(line)
+        guard let first = trimmed.first else { return false }
+        return first == "\u{2610}" || first == "\u{276F}"
+    }
+
+    /// A row that is drawing something rather than saying it — a table's borders, a box the
+    /// picker puts a consequence in. Skipped without being treated as a boundary: it is neither
+    /// prose to keep nor evidence that the prose above it belongs to somebody else.
+    private static func isFrame(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard let first = trimmed.first else { return false }
+        return "\u{250C}\u{2502}\u{2514}\u{251C}\u{2510}\u{2518}\u{2524}\u{252C}\u{2534}\u{253C}\u{2570}\u{256D}\u{256E}\u{256F}".contains(first)
+            || isRule(line)
     }
 
     /// A tool call, or a line of what one returned.
@@ -158,19 +173,60 @@ enum ScreenTail {
                           options: .regularExpression) != nil
     }
 
-    /// Undo the terminal's hard wrap inside one paragraph. A break the author typed shows up as a
-    /// blank line; a break the terminal invented does not, so paragraphs join and blank lines cut.
-    /// The one judgement call is the seam: two ASCII words were split by a wrap that ate the
-    /// space, while CJK was not, so a space goes back only between two ASCII word characters.
-    private static func unwrap(_ paragraph: [String]) -> String {
+    /// How many columns a line occupies. CJK and full-width characters take two, which matters
+    /// here for one reason only: it is how you tell a line the terminal broke from a line the
+    /// author broke.
+    static func displayWidth(_ line: String) -> Int {
+        var width = 0
+        for scalar in line.unicodeScalars {
+            switch scalar.value {
+            case 0x1100...0x115F, 0x2E80...0x303E, 0x3041...0x33FF, 0x3400...0x4DBF,
+                 0x4E00...0x9FFF, 0xA000...0xA4CF, 0xAC00...0xD7A3, 0xF900...0xFAFF,
+                 0xFE30...0xFE6F, 0xFF00...0xFF60, 0xFFE0...0xFFE6,
+                 0x1F300...0x1F64F, 0x1F900...0x1F9FF, 0x20000...0x3FFFD:
+                width += 2
+            case 0x0300...0x036F:
+                break
+            default:
+                width += 1
+            }
+        }
+        return width
+    }
+
+    /// The width the screen was drawn at, taken as the widest line on it. A terminal hard-wraps
+    /// at its own width, so the longest line is at or just under it.
+    static func drawnWidth(of lines: [String]) -> Int {
+        lines.map(displayWidth).max() ?? 0
+    }
+
+    /// Undo the terminal's hard wrap inside one paragraph.
+    ///
+    /// **A line is only joined to the next when it ran to the edge.** That is the whole test, and
+    /// it is what separates a wrap the terminal invented from a break the author typed — without
+    /// it, a list of five files comes back as one sentence, which is what happened the first time
+    /// this was measured against a real screen. Blank lines still separate paragraphs.
+    ///
+    /// The remaining judgement call is the seam. A wrap between two English words ate the space
+    /// that was there; a wrap between two CJK characters ate nothing. So a space goes back only
+    /// between two ASCII word characters.
+    private static func unwrap(_ paragraph: [String], width: Int) -> String {
         var out = ""
+        var joinable = false
         for line in paragraph {
             let piece = line.trimmingCharacters(in: .whitespaces)
-            if out.isEmpty { out = piece; continue }
-            let left = out.last.map { $0.isLetter || $0.isNumber || $0 == "," || $0 == "." } ?? false
-            let right = piece.first.map { $0.isLetter || $0.isNumber } ?? false
-            let ascii = (out.last?.isASCII ?? false) && (piece.first?.isASCII ?? false)
-            out += (left && right && ascii) ? " " + piece : piece
+            let ranToTheEdge = width > 0 && displayWidth(line) >= width - 2
+            if out.isEmpty {
+                out = piece
+            } else if joinable {
+                let left = out.last.map { $0.isLetter || $0.isNumber || $0 == "," || $0 == "." } ?? false
+                let right = piece.first.map { $0.isLetter || $0.isNumber } ?? false
+                let ascii = (out.last?.isASCII ?? false) && (piece.first?.isASCII ?? false)
+                out += (left && right && ascii) ? " " + piece : piece
+            } else {
+                out += "\n" + piece
+            }
+            joinable = ranToTheEdge
         }
         return out
     }
@@ -181,7 +237,8 @@ enum ScreenTail {
     /// question itself, which the reader already has as a card and does not need twice. The walk
     /// stops at the first tool row, and **a screen whose tail is a tool row offers nothing at
     /// all**: everything above it belongs to a turn the transcript has already written down.
-    static func trailingProse(of document: [String]) -> String? {
+    static func trailingProse(of document: [String], width: Int? = nil) -> String? {
+        let columns = width ?? drawnWidth(of: document)
         var lines = document
         // Nothing before an unplaced frame can be trusted to sit where it looks like it sits.
         if let gap = lines.lastIndex(of: gapMarker) { lines = Array(lines[(gap + 1)...]) }
@@ -198,6 +255,10 @@ enum ScreenTail {
                 started = false
                 continue
             }
+            if isFrame(line) {
+                if !paragraph.isEmpty { collected.append(paragraph.reversed()); paragraph = [] }
+                continue
+            }
             if isTool(line) {
                 if !started { return nil }
                 break
@@ -211,7 +272,8 @@ enum ScreenTail {
         }
         if !paragraph.isEmpty { collected.append(paragraph.reversed()) }
         guard !collected.isEmpty else { return nil }
-        let text = collected.reversed().map(unwrap).joined(separator: "\n\n")
+        let text = collected.reversed().map { unwrap($0, width: columns) }
+            .joined(separator: "\n\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
     }
