@@ -224,7 +224,9 @@ enum ScreenTail {
                 let ascii = (out.last?.isASCII ?? false) && (piece.first?.isASCII ?? false)
                 out += (left && right && ascii) ? " " + piece : piece
             } else {
-                out += "\n" + piece
+                // Two spaces first: this break was in the author's text, and the reader's
+                // Markdown needs to be told that in the one way it understands.
+                out += "  \n" + piece
             }
             joinable = ranToTheEdge
         }

@@ -83,15 +83,26 @@ export function richText(text) {
 
         // Paragraph: gather until something else starts. Single newlines inside one are a wrapped
         // line and not a break, which is how the source was written and how the bar reads it.
+        //
+        // **Unless the line asked for a break.** Two spaces at the end of a line is Markdown's
+        // own way of saying "this one really does end here", and it is the only way a sender can
+        // keep a list of five files from arriving as one sentence — which is what a screen
+        // reading did before this existed, because a terminal's own line breaks are all it has.
         var paragraph = [trimmed];
+        var breaks = [/ {2,}$/.test(line)];
         i += 1;
         while (i < lines.length) {
             var next = lines[i].trim();
             if (!next || isBlockStart(lines[i])) break;
             paragraph.push(next);
+            breaks.push(/ {2,}$/.test(lines[i]));
             i += 1;
         }
-        out.push("<p>" + inlineMd(paragraph.join(" ")) + "</p>");
+        var joined = paragraph.reduce(function (acc, piece, index) {
+            if (!index) return piece;
+            return acc + (breaks[index - 1] ? "\n" : " ") + piece;
+        }, "");
+        out.push("<p>" + inlineMd(joined).replace(/\n/g, "<br>") + "</p>");
     }
     return out.join("");
 }

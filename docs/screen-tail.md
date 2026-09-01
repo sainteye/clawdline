@@ -39,12 +39,23 @@ and then you can read why" is not an instruction anybody can follow.
 taking, and `RemoteServer.unsyncedRow` offers them as one more entry — only while the session is
 stopped on a question, and only until the file catches up.
 
-**Sampling is free.** `Targets.reading(of:hookWaiting:)` already fetches one screen per session
-per beat — 1.2 s while the panel is open, 20 s otherwise — in a single Apple event for all of
-them. `ScreenTail.observe` is handed the capture that has already been paid for. Captures are
-taken on **every** beat, not only for waiting sessions: by the time a session is known to be
-waiting, the sentences explaining the question have already scrolled past, and only the captures
-taken while they were being written still hold them.
+**Sampling is mostly free.** `Targets.reading(of:hookWaiting:)` already fetches one screen per
+session per beat — 1.2 s while the Mac's panel is open, 20 s otherwise — in a single Apple event
+for all of them. `ScreenTail.observe` is handed the capture that has already been paid for.
+Captures are taken on **every** beat, not only for waiting sessions: by the time a session is
+known to be waiting, the sentences explaining the question have already scrolled past, and only
+the captures taken while they were being written still hold them.
+
+**But 20 s is not a cadence you can reconstruct from**, and a phone reading from another room
+does not open the Mac's panel. Overlap is the whole mechanism; twenty seconds of a streaming
+answer is several screens, consecutive captures share no lines, and the reconstruction correctly
+refuses to guess across the break — so the reader gets the end of an answer with its beginning
+missing. `Sources/ScreenFollow.swift` closes that: **one extra capture per second for the session
+whose transcript is actually being read**, and nothing at all when nobody is reading. Attention
+is taken from the transcript request itself, so there is no new client contract and a closed page
+stops costing anything within 25 seconds. The fleet-wide rate is untouched, which is the point —
+a rate rise for everybody would pay for nine screens nobody is looking at in order to fix the one
+somebody is.
 
 **One capture is not enough, and that does not stop it.** iTerm2 exposes the visible screen and
 no more — `text` and `contents` are the same sixty rows, and there is no scrollback API. But
@@ -102,9 +113,10 @@ than labelling it: the reader wants the sentences, not a lecture about where the
 - **iTerm2 only.** tmux panes are captured the same way and do have scrollback
   (`Tmux.capture(scrollback:)`, currently asked for the visible pane only). Ghostty cannot be read
   at all, so none of this exists there.
-- **Only while a question is waiting.** Every other wait is the machine's and ends by itself; a
-  reader loses nothing by seeing the file a beat late. A question is the one state where the wait
-  is the reader's.
+- **Only what the screen is actually ahead on.** The row is offered whenever the screen holds
+  words the file does not — a question's turn is the extreme case, unwritten until it is
+  answered, but a long answer being typed out is the same shape. It is never a second copy: any
+  parsed entry already containing those words suppresses it.
 
 ## Where this goes next
 
@@ -112,11 +124,9 @@ The same reconciliation is the first piece of a live mirror — a phone showing 
 screen shows, at the sampling cadence, with no transcript file involved. Three things stand
 between here and there, and none of them is the algorithm:
 
-1. **Cadence has to follow attention.** Every session cannot be sampled faster; ten sessions cost
-   about 700 ms per round trip, and `ReadingFreshness` documents the same reading measuring four
-   to ten times slower when iTerm2's main thread is busy. Only the session somebody is actually
-   looking at can be sampled harder, which is what `ReadingFreshness` and `TranscriptReadCoordinator`
-   are building the vocabulary for.
+1. **Cadence has to follow attention.** ~~Not solved.~~ `ScreenFollow` does this for one
+   session at a time, keyed on who is reading a transcript. A mirror wants the same idea with a
+   tighter beat and a second reading — the overwrite one — alongside the appended transcript.
 2. **The two readings are different products.** Overwrite is the honest mirror; append is the
    honest transcript. A live view wants the first with the second sedimenting behind it.
 3. **Nothing pushes it.** Today the provisional row changes only when a client asks again. See

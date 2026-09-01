@@ -93,7 +93,7 @@ let listing = ScreenTail.trailingProse(of: [
     "  a line long enough to be the width this screen was actually drawn at, and then some more",
 ], width: 88)
 check("short lines are not glued together",
-      listing?.contains("SessionClosePolicy.swift    118\nReadingFreshness.swift      348") == true,
+      listing?.contains("SessionClosePolicy.swift    118  \nReadingFreshness.swift      348") == true,
       "got \(listing ?? "nil")")
 
 // 8c. A table's borders do not throw away the answer above them.

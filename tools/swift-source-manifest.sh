@@ -79,6 +79,7 @@ clawdline_production_sources=(
   Sources/SessionImageArtifact.swift
   Sources/SessionImagePreview.swift
   Sources/SessionInfo.swift
+  Sources/ScreenFollow.swift
   Sources/ScreenTail.swift
   Sources/SessionRegistry.swift
   Sources/SessionState.swift

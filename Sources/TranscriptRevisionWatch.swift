@@ -159,6 +159,10 @@ extension RemoteServer {
     /// Read one stable transcript snapshot: if the file moves while its tail is being read,
     /// repeat once so the entries and the signature still describe the same bytes.
     func transcriptPayload(for session: TargetSession, limit: Int) -> Response {
+        // Reading a transcript is what "somebody is looking at this session" means here. It is
+        // the signal that buys the closer screen sampling ``ScreenFollow`` does, and it costs the
+        // caller nothing to declare because it already declared it by asking.
+        ScreenFollow.shared.noteReader(of: session.id)
         guard let record = Transcript.record(of: session) else {
             return .json(["entries": [], "signature": ""])
         }
@@ -186,10 +190,11 @@ extension RemoteServer {
     /// The words on the screen that the transcript file has not written down yet, as one more
     /// entry — or nil, which is the ordinary answer.
     ///
-    /// **Only while the session is stopped on a question.** Every other wait is the machine's and
-    /// ends by itself, so a reader loses nothing by seeing the file a beat late. A question is
-    /// the one state where the wait is *the reader's*, and where the sentences that make it
-    /// answerable are exactly the ones Claude Code has not written down — see ``ScreenTail``.
+    /// **Whenever the screen is ahead of the file**, which is not only the waiting case. Claude
+    /// Code writes an assistant message when the message is complete, so a long answer exists on
+    /// the Mac for as long as it takes to say and nowhere else; a question's turn is the extreme
+    /// of that, unwritten until it is answered. The test is the same either way — the screen has
+    /// words the file does not — and no state has to be consulted to ask it.
     ///
     /// **It steps aside the moment the file catches up.** The row is suppressed as soon as any
     /// parsed entry already contains these words, so answering the question replaces the screen's
@@ -200,8 +205,7 @@ extension RemoteServer {
     /// from a hard-wrapped terminal. `ReadingFreshness` publishes age for the same reason.
     static func unsyncedRow(for session: TargetSession,
                             entries: [[String: Any]]) -> (row: [String: Any], revision: String)? {
-        guard SessionWatch.shared.publishedInventory().states[session.id] == .waiting,
-              let prose = ScreenTail.unsyncedProse(session.id) else { return nil }
+        guard let prose = ScreenTail.unsyncedProse(session.id) else { return nil }
         let head = Self.comparableText(String(prose.prefix(60)))
         guard head.count >= 8 else { return nil }
         let known = entries.contains { entry in
