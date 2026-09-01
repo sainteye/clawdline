@@ -484,6 +484,12 @@ let expectedOrderedTestGroupTitles: [String] = [
     "an admitted read is released exactly once",
     "the trace separates waiting from working",
     "percentiles answer for an empty lane instead of crashing",
+    "a screen is stripped down to the conversation",
+    "overlapping captures become one document, and a break is recorded not guessed",
+    "the words a reader is missing, and the ones they already have",
+    "a terminal's wrap is undone and an author's own break is not",
+    "a paragraph the file already holds is not said twice",
+    "a session is sampled closely only while somebody is reading it",
 ]
 
 func validateExecutedTestGroupManifest() {

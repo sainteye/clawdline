@@ -196,31 +196,48 @@ extension RemoteServer {
     /// of that, unwritten until it is answered. The test is the same either way — the screen has
     /// words the file does not — and no state has to be consulted to ask it.
     ///
-    /// **It steps aside the moment the file catches up.** The row is suppressed as soon as any
-    /// parsed entry already contains these words, so answering the question replaces the screen's
-    /// reading with the real record rather than leaving the reader holding two copies.
+    /// **It steps aside, paragraph by paragraph, as the file catches up.** Whole-row suppression
+    /// was wrong twice over. It said nothing when the file held only the first half of what the
+    /// screen showed, and it said everything twice when the comparison missed — which it did on
+    /// the first real screen it met, because a transcript entry is Markdown (`` `zh_TW` ``,
+    /// asterisks, link syntax) and a screen is the rendered text. So the comparison keeps only
+    /// letters and digits, and it is made per paragraph: a paragraph the file already has is
+    /// dropped, whatever is left is what the reader is actually missing.
     ///
     /// `provisional` rides on the row because the difference is real and a reader is owed it: one
     /// of these is a record of what was said, the other is a reading of a screen, reassembled
     /// from a hard-wrapped terminal. `ReadingFreshness` publishes age for the same reason.
     static func unsyncedRow(for session: TargetSession,
                             entries: [[String: Any]]) -> (row: [String: Any], revision: String)? {
-        guard let prose = ScreenTail.unsyncedProse(session.id) else { return nil }
-        let head = Self.comparableText(String(prose.prefix(60)))
-        guard head.count >= 8 else { return nil }
-        let known = entries.contains { entry in
-            Self.comparableText((entry["text"] as? String) ?? "").contains(head)
-        }
-        guard !known else { return nil }
-        let row: [String: Any] = ["role": "assistant", "text": prose, "provisional": true,
+        guard let prose = ScreenTail.unsyncedProse(session.id),
+              let text = Self.unsyncedText(in: prose, alreadyIn: entries) else { return nil }
+        let row: [String: Any] = ["role": "assistant", "text": text, "provisional": true,
                                   "at": Int(Date().timeIntervalSince1970)]
-        return (row, "+p" + String(Self.fingerprint(of: prose), radix: 36))
+        return (row, "+p" + String(Self.fingerprint(of: text), radix: 36))
     }
 
-    /// Whitespace is where the terminal's hard wrap lives, so it is the one thing a comparison
-    /// between a screen reading and a file record must not depend on.
-    private static func comparableText(_ text: String) -> String {
-        text.components(separatedBy: .whitespacesAndNewlines).joined()
+    /// The paragraphs of a screen reading that no parsed entry already holds, or nil when the
+    /// file has all of them.
+    static func unsyncedText(in prose: String, alreadyIn entries: [[String: Any]]) -> String? {
+        let known = entries.compactMap { entry -> String? in
+            let text = comparableText((entry["text"] as? String) ?? "")
+            return text.isEmpty ? nil : text
+        }
+        let fresh = prose.components(separatedBy: "\n\n").filter { block in
+            let compared = comparableText(block)
+            guard !compared.isEmpty else { return false }
+            return !known.contains { $0.contains(compared) }
+        }
+        return fresh.isEmpty ? nil : fresh.joined(separator: "\n\n")
+    }
+
+    /// Letters and digits only.
+    ///
+    /// A screen shows what Markdown renders to; a transcript entry holds the Markdown itself.
+    /// Everything that differs between those two — the backticks, the asterisks, the brackets,
+    /// and the hard wrap's own whitespace — is punctuation, and none of it is the sentence.
+    static func comparableText(_ text: String) -> String {
+        String(text.filter { $0.isLetter || $0.isNumber })
     }
 
     /// FNV-1a, written out rather than borrowed from `hashValue`: this number goes into a

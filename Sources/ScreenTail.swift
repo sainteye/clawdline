@@ -56,7 +56,27 @@ enum ScreenTail {
                        "tokens)", "Running ", "Waiting…"]
         if markers.contains(where: { line.contains($0) }) { return true }
         // "· 4s…" — an elapsed counter on an otherwise ordinary row.
-        return line.range(of: "·[[:space:]]*[0-9]+[smh]…", options: .regularExpression) != nil
+        if line.range(of: "·[[:space:]]*[0-9]+[smh]…", options: .regularExpression) != nil {
+            return true
+        }
+        // "…(3s · 3 lines)" — a running tool's own preview row, rewritten once a second with a
+        // new elapsed time. Missing this shape put forty near-identical copies of one line in
+        // front of a reader, which is what a redraw looks like to anything that only appends.
+        return line.range(of: "\\([0-9]+(\\.[0-9]+)?[smh][^)]*\\)[[:space:]]*$",
+                          options: .regularExpression) != nil
+    }
+
+    /// The same line with every number replaced, used **only** to decide where two captures
+    /// overlap.
+    ///
+    /// A terminal is not an append-only log: Claude Code rewrites a running tool's row in place,
+    /// and the only thing that changes is a counter. Compared literally, every rewrite looks like
+    /// a line that has never been seen, so an appending reconciliation stacks up a copy per
+    /// second. Compared with the numbers removed, the rewrite aligns with what it replaced and
+    /// only genuinely new lines are appended. The document still keeps the original text — this
+    /// is how alignment is decided, never what is stored.
+    static func aligning(_ line: String) -> String {
+        line.replacingOccurrences(of: "[0-9]+", with: "#", options: .regularExpression)
     }
 
     /// The live line's own glyphs, which iTerm2 hands over as the first character of a row.
@@ -127,11 +147,24 @@ enum ScreenTail {
         guard !frame.isEmpty else { return document }
         guard !document.isEmpty else { return frame }
         let window = Array(document.suffix(alignmentWindow))
-        let run = longestCommonRun(window, frame)
+        let base = document.count - window.count
+        // Literally first, because that is the reading that cannot be fooled. Only when the
+        // captures share no run at all is the numbers-removed comparison tried, which is the
+        // case where the only thing that changed was a counter.
+        let literal = longestCommonRun(window, frame)
+        let run = literal.length >= 2
+            ? literal
+            : longestCommonRun(window.map(aligning), frame.map(aligning))
         // Two lines is the floor. One shared line is regularly a blank or a repeated prompt, and
         // aligning on it puts the rest of the frame in the wrong place.
         guard run.length >= 2 else { return document + [gapMarker] + frame }
-        return document + frame.dropFirst(run.b + run.length)
+        // **Where the frame starts, not where the match ends.** Taking the end of the matched run
+        // appends everything after it — including the rows the terminal rewrote in place, which
+        // are already in the document a line higher up. Placing the frame's first line in the
+        // document says exactly how much of this capture is already known.
+        let start = max(base + run.a - run.b, 0)
+        let overlap = min(max(document.count - start, 0), frame.count)
+        return document + frame.dropFirst(overlap)
     }
 
     // MARK: - The words at the end of it

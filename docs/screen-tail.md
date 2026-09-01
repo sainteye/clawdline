@@ -63,17 +63,27 @@ prose arrives by streaming, over tens of seconds, so successive captures overlap
 captures can be reconciled back into the document they are a window onto.
 
 **The live rows are the clock, not the conversation.** `Running 1 shell command · 3s…`,
-`✻ Thinking…`, the token counter — these are redrawn in place several times a second, and with
-them in, consecutive captures never match: measured, 58 of 59 frames failed to align. Dropping
-them is what makes the rest of the screen append-only, which is the property the whole
-reconciliation rests on.
+`✻ Thinking…`, the token counter, and a running tool's own preview row `…(3s · 3 lines)` — these
+are redrawn in place several times a second, and with them in, consecutive captures never match:
+measured, 58 of 59 frames failed to align. Dropping them is what makes the rest of the screen
+append-only, which is the property the whole reconciliation rests on.
+
+**And a redraw that gets through is still not new text.** Two defences, because the first one is
+a list of shapes and lists are never complete. Alignment falls back to comparing the two captures
+with every number replaced, so a row whose only change was its counter lines up with the row it
+replaced. And the frame is placed by **where it starts**, not where its matched run ends —
+appending from the end of the match re-appends exactly the rewritten rows the match stepped over.
+Missing that put forty near-identical copies of one line in front of a reader.
 
 Measured over sixty consecutive captures of a live session:
 
 | strategy | frames that failed to align | lines lost | duplicated long lines |
 | --- | --- | --- | --- |
-| append what is new after the overlap | **0** | **0** | 80 |
+| append what is new after the overlap | **0** | **0** | **0** |
 | let each capture overwrite the span it covers | 0 | 16 | 5 |
+
+(The appended reading's duplicates were 80 before the frame was placed by its origin rather than
+by the end of its matched run. Same 110 captures, same everything else.)
 
 Both place every frame. They differ in what they are *for*. Overwrite mirrors the screen exactly,
 including Claude Code folding a finished tool block down to `Read 1 file, ran 2 shell commands` —
@@ -86,10 +96,13 @@ sampler was on the 20-second cadence, or the output arrived faster than the beat
 recorded and prose is only ever taken from after the last break. Text spliced at the wrong point
 reads as perfectly ordinary and is wrong, which is worse than text that stops early.
 
-**It steps aside.** The row is suppressed as soon as any parsed entry already contains those
-words, so answering the question replaces the screen's reading with the real record instead of
-leaving the reader holding two copies. Whitespace is ignored in that comparison, because
-whitespace is exactly where the terminal's hard wrap lives.
+**It steps aside, paragraph by paragraph.** Suppressing the whole row was wrong in both
+directions: it said nothing when the file held only the first half of what the screen showed, and
+it said everything twice when the comparison missed — which it did on the first real screen it
+met, because **a transcript entry is Markdown and a screen is what Markdown renders to**. A pair
+of backticks was enough to put a whole answer on the page a second time. So the comparison keeps
+only letters and digits, and it runs per paragraph: what the file already has is dropped, what is
+left is what the reader is missing.
 
 On the wire the row carries `provisional: true`. The web pane dims it and marks its edge rather
 than labelling it: the reader wants the sentences, not a lecture about where they came from.

@@ -142,6 +142,7 @@ clawdline_test_sources=(
   Tests/SessionCloseAndQuotaTests.swift
   Tests/SessionCloseabilityTests.swift
   Tests/SessionLaunchTests.swift
+  Tests/ScreenTailTests.swift
   Tests/SessionRegistryTests.swift
   Tests/SessionWatchTests.swift
   Tests/TestGroupManifest.swift

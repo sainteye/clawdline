@@ -897,26 +897,3 @@ items:
       raise a cadence on — the concept `ReadingFreshness` and `TranscriptReadCoordinator` are
       converging on. Without it this is a fleet-wide rate rise wearing a feature's name.
     opened: 2026-09-01
-
-  - id: B-SCREEN-TAIL-TESTS-ARE-NOT-IN-THE-SUITE
-    title: The screen reconstruction's checks run from tools/ instead of the test suite
-    problem: >-
-      Nineteen behaviour checks for the screen-to-prose reconstruction exist and pass, but nothing
-      runs them on the way to a commit. They will keep passing until the day somebody changes what
-      a picker row looks like, and then they will keep passing silently because nobody ran them.
-      A check outside the suite is a check with a half-life.
-    evidence: >-
-      `tools/screen-tail-probe.sh`, added 2026-09-01, is a standalone compile-and-run of
-      `tools/screen-tail-probe/main.swift`. It was placed there because
-      `tools/check-architecture-boundaries.sh` seals the suite file count (39) and the ordered
-      group count (475) as literals, and on that day both that guard and
-      `Tests/TestGroupManifest.swift` were another session's uncommitted work — adding a suite
-      file would have turned their tree red. The probe is proved able to fail: breaking the wrap
-      test in a copy of `ScreenTail.swift` produced one failure and exit 1.
-    severity: degrades
-    cost: hours
-    who_hurts: contributor
-    trigger: >-
-      The ReadingFreshness work landing, which frees both sealed counts. Move the checks into a
-      suite file, register the group titles, and raise both literals in the same commit.
-    opened: 2026-09-01
