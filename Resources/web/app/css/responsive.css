@@ -78,8 +78,10 @@
     .row .title { font-size: 15px; }
     .row .meta { font-size: 11.5px; }
     .row .line { font-size: 12px; }
-    .row:hover { background: var(--card); }
-    .row[data-state="waiting"]:hover { background: #2f2322; }
+    /* No hover neutralisers here any more. They existed to repaint the hover in the row's own
+       colour on a phone, which still left a hover state for WebKit to spend a tap on; the rules
+       themselves are now behind `(hover: hover)` in `list.css` and never reach a touch screen.
+       `:active` is the touch feedback and stays: it is applied by the press itself. */
     .row:active { background: var(--card-hi); }
 
     /* The row itself belongs to the list's vertical reorder animation, so the horizontal gesture

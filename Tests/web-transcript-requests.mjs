@@ -125,6 +125,38 @@ equal(await failedSummary, "failed", "a stale summary failure still settles its 
 equal(facts.peek("C"), { version: "explicit-full" },
     "a stale summary failure cannot clear an explicit full upgrade");
 
+// A full answer outranks a summary while it is fresh, and for no longer than that. The status
+// line reads a summary a minute and then completes it; if a minute-old full reading could still
+// answer for that summary, the row would keep drawing the state of a session as it was when its
+// card was last opened, having gone to the network to be told so.
+let clock = 5000;
+const agingFull = [], agingSummary = [];
+const aging = createTieredSessionFacts(function () {
+    const gate = deferred(); agingFull.push(gate); return gate.promise;
+}, function () {
+    const gate = deferred(); agingSummary.push(gate); return gate.promise;
+}, { ttl: 60000, now: function () { return clock; } });
+
+const firstFull = aging.get("D"); await tick();
+agingFull[0].resolve({ info: { tier: "full", files: { branch: "main" } } });
+equal(await firstFull, { tier: "full", files: { branch: "main" } },
+    "the complete reading is what the upgrade holds");
+
+clock += 30000;
+const insideTTL = aging.getSummary("D"); await tick();
+equal(agingSummary.length, 0, "a fresh full answer serves a summary read without a request");
+equal(await insideTTL, { tier: "full", files: { branch: "main" } },
+    "and a summary cannot downgrade it while it is fresh");
+
+clock += 40000;
+const pastTTL = aging.getSummary("D"); await tick();
+equal(agingSummary.length, 1, "past the TTL the summary is actually read");
+agingSummary[0].resolve({ info: { tier: "summary" } });
+equal(await pastTTL, { tier: "summary" }, "an aged-out full no longer answers for a summary");
+equal(aging.peek("D"), { tier: "summary" }, "and is not what the row draws either");
+equal(aging.tier("D"), "summary",
+    "which is what tells the status line to ask for the rest of the reading again");
+
 function renderHarness(newestFirst, mutation) {
     const entries = Array.from({ length: 200 }, function (_, id) {
         return { id, text: "x".repeat(41944), image: "image-" + id };
@@ -230,7 +262,7 @@ equal(retryLoads[1].demand.foreground, true,
 const testScript = readFileSync(new URL("../test.sh", import.meta.url), "utf8");
 ok(/browser_contract_suites=\([\s\S]*Tests\/web-transcript-requests\.mjs[\s\S]*\)/.test(testScript),
     "the exact full-suite browser roster contains this guard");
-ok(/\$\{#browser_contract_suites\[@\]\}[^\n]*-ne 14/.test(testScript),
+ok(/\$\{#browser_contract_suites\[@\]\}[^\n]*-ne 15/.test(testScript),
     "the roster count goes red if this suite entry is deleted");
 const apiDocs = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8");
 ok(apiDocs.includes("transcript_busy") && apiDocs.includes("retry_after"),

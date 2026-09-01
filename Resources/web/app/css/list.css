@@ -23,7 +23,16 @@
        property would be a second opinion about where the row is. */
     transition: background 160ms var(--ease), border-color 160ms var(--ease);
 }
-.row:hover { background: var(--card-hi); }
+/* Hover, and only where something can hover.
+   -------------------------------------------------------------------------
+   A touch screen has no pointer to rest on a row, and WebKit's stand-in for one is not free:
+   it applies `:hover` to the tapped element first and watches what the page does about it,
+   and a tap that changes the page is spent on the hover rather than on the click. With a
+   transition on `background` above, hovering the selected row was exactly such a change, so
+   the first tap on it did nothing and the second one opened the session. `(hover: hover)`
+   asks the honest question — is there a pointer here at all — and on a phone the answer takes
+   the whole rule away rather than repainting it in the same colour further down. */
+@media (hover: hover) { .row:hover { background: var(--card-hi); } }
 .row.selected { border-color: #33333d; background: var(--card-hi); }
 .row.open { border-color: var(--accent-ed); }
 
@@ -33,10 +42,10 @@
    row lands where the placeholder stood, and a closing row does not collapse before the Mac
    has answered. */
 .row.starting-row { cursor: default; border-color: var(--line); }
-.row.starting-row:hover { background: var(--card); }
+@media (hover: hover) { .row.starting-row:hover { background: var(--card); } }
 .row.starting-row .title { color: var(--dim); }
 .row[data-closing="1"] { opacity: 0.5; cursor: default; }
-.row[data-closing="1"]:hover { background: var(--card); }
+@media (hover: hover) { .row[data-closing="1"]:hover { background: var(--card); } }
 
 /* The mark, and the title tinted with the mark's own colour. Two sessions in the same
    project read as the same project before either title has been read. */
@@ -200,7 +209,7 @@
 /* The accent wash is flattened rather than translucent: rows slide over each other while the
    list re-sorts, and a see-through row picks up whatever is passing underneath it. */
 .row[data-state="waiting"] { background: #2f2322; border-color: var(--accent-ed); }
-.row[data-state="waiting"]:hover { background: #392725; }
+@media (hover: hover) { .row[data-state="waiting"]:hover { background: #392725; } }
 .row[data-state="waiting"]::before {
     content: ""; position: absolute; left: 0; top: 14px; bottom: 14px;
     width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);

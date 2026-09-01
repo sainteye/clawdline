@@ -130,7 +130,8 @@ export function beginTranscriptLoad(request, renderLoading) {
     return result;
 }
 
-/** A generation-aware cache in which full Info always outranks the automatic summary tier. */
+/** A generation-aware cache in which a full Info answer outranks the automatic summary tier for
+ *  as long as it is fresh, and no longer than that — see the note in the summary branch. */
 export function createTieredSessionFacts(readFull, readSummary, options) {
     options = options || {};
     var now = options.now || function () { return Date.now(); };
@@ -172,10 +173,20 @@ export function createTieredSessionFacts(readFull, readSummary, options) {
                 if (tier === "full") {
                     state.full = { tier: "full", generation: generation, data: data, at: now() };
                     state.summary = null;
-                } else if (!state.full || state.full.generation !== generation) {
-                    state.summary = {
-                        tier: "summary", generation: generation, data: data, at: now()
-                    };
+                } else {
+                    // A summary never downgrades a full answer — but only while that answer is
+                    // still the better one. Past the TTL it is neither fresher nor more complete
+                    // than what has just arrived, and holding it here was how a status line that
+                    // had once opened its card stopped moving: every later summary read went out
+                    // over the network and was thrown away in favour of a minute-old reading.
+                    if (state.full && state.full.generation === generation && !fresh(state.full)) {
+                        state.full = null;
+                    }
+                    if (!state.full || state.full.generation !== generation) {
+                        state.summary = {
+                            tier: "summary", generation: generation, data: data, at: now()
+                        };
+                    }
                 }
                 return tier === "summary" && state.full ? state.full.data : data;
             }, function (error) {

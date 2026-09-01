@@ -492,8 +492,16 @@ Claude Code terminal says, for somebody who is not at that terminal.
 `permission`, `files`, `links` and `deploy`; therefore it performs no iTerm screen capture, Git
 status, or project-link/deploy discovery. Missing `parts`, `parts=full`, and every unknown value
 retain the backward-compatible full payload. A later summary must never downgrade a full payload
-already held by the client; force/drop begins a new cache generation and invalidates older
-completions.
+already held by the client **while that payload is still within its cache TTL**; past it the newer
+summary is the better answer and replaces it, or the reader would keep drawing a reading it has
+already gone back to the network to replace. Force/drop begins a new cache generation and
+invalidates older completions.
+
+The summary is the *first* automatic read, not the only one. It carries no working tree, and the
+tree is half of what a status line is read for, so a client completes the reading with the full
+form once the transcript is on screen and the page is idle — the paint keeps its priority and the
+row still ends up whole. That is one complete read per cache TTL per open session; it must not be
+issued before the summary it completes has been drawn.
 
 **This is the expensive one**, and it is answered off the queue every other request is read on:
 gathering it runs `lsof`, reads the whole transcript, asks iTerm2 for the visible screen over an

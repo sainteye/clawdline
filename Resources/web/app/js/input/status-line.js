@@ -195,6 +195,41 @@ export var StatusLine = (function () {
         drawRest(null, null);
     }
 
+    /** After the fast half is on screen, and never before it. `requestIdleCallback` has a
+     *  deadline rather than a promise, so the timeout is what guarantees the row completes. */
+    var whenIdle = typeof window !== "undefined" &&
+        typeof window.requestIdleCallback === "function"
+        ? function (work) { window.requestIdleCallback(work, { timeout: 1200 }); }
+        : function (work) { setTimeout(work, 250); };
+
+    /**
+     * The rest of the reading, once the summary has been drawn.
+     *
+     * The paint gate keeps `git status`, the iTerm screen read and the project-link walk from
+     * standing in front of a transcript's first screen. It was never meant to take the working
+     * tree *off* this row — the branch and its marks are half of what the line is read for, and
+     * away from the Mac they are the only place that reading exists. So the deferred half is
+     * asked for after the fast half is up, off the critical path, and drawn when it arrives.
+     *
+     * `SessionFacts` holds a full answer for its whole minute, so this is at most one complete
+     * read a minute per open session — the cadence the row had before the gate existed.
+     */
+    function upgrade(id, mine) {
+        if (mine !== ticket || forId !== id) return;
+        if (SessionFacts.tier(id) !== "summary") return;   // already the whole reading
+        Diagnostics.note("session.extras.info.upgrade", {});
+        SessionFacts.get(id).then(function (facts) {
+            if (mine !== ticket || forId !== id || !facts) return;
+            data = facts;
+            Diagnostics.note("session.extras.info.upgraded", { tree: !!facts.files });
+            draw();
+        }).catch(function (error) {
+            // The summary on screen is still true. The tree stays absent until the next reading
+            // or a card open, rather than taking the model and the cost down with it.
+            Diagnostics.note("session.extras.info.upgrade-failure", { code: error && error.code });
+        });
+    }
+
     function load(force) {
         if (!forId) return;
         var id = forId, mine = ++ticket;
@@ -205,6 +240,7 @@ export var StatusLine = (function () {
             data = facts;
             Diagnostics.note("session.extras.info.response", { available: !!facts });
             draw();
+            whenIdle(function () { upgrade(id, mine); });
         }).catch(function (error) {
             if (mine !== ticket || forId !== id) return;
             Diagnostics.note("session.extras.info.failure", { code: error && error.code });
