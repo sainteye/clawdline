@@ -49,8 +49,8 @@ if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.session
 fi
 
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
-[ "$remote_server_lines" -le 6385 ] \
-  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved dispatch-door split receipt (6385)"
+[ "$remote_server_lines" -le 6426 ] \
+  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved TCP close-reclamation receipt (6426)"
 
 if grep -q 'group(' Tests/main.swift; then
   architecture_guard_fail "new domain group found in Tests/main.swift"
@@ -66,8 +66,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 463 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 463"
+[ "$manifest_group_count" -eq 464 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 464"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do

@@ -580,11 +580,7 @@ final class RemoteServer: @unchecked Sendable {
         // The event stream is the one route that does not answer and close — and the one that
         // carries everything, so it is gated before it is opened rather than after.
         if request.method == "GET", request.path == "/v1/events" {
-            if let refusal = crossOriginRefusal(request) { send(refusal, on: conn); return }
-            if case .denied = permission(for: request) {
-                send(.error(401, "unauthorized", "This needs a paired device."), on: conn)
-                return
-            }
+            if let refusal = eventStreamRefusal(request) { send(refusal, on: conn); return }
             openStream(on: conn)
             return
         }
@@ -653,6 +649,16 @@ final class RemoteServer: @unchecked Sendable {
         }
         let response = route(request)
         send(response, on: conn)
+    }
+
+    /// The event stream's real admission seam, shared with the focused cookie test. Returning
+    /// `nil` means the caller may upgrade this request into the long-lived stream.
+    func eventStreamRefusal(_ request: Request) -> Response? {
+        if let refusal = crossOriginRefusal(request) { return refusal }
+        if case .denied = permission(for: request) {
+            return .error(401, "unauthorized", "This needs a paired device.")
+        }
+        return nil
     }
 
     static func isTerminalSend(_ path: String) -> Bool {
@@ -6234,8 +6240,43 @@ final class RemoteServer: @unchecked Sendable {
 
     // MARK: - Writing a response out
 
+    private static let responseCloseGraceSeconds = 30
+
     private func send(_ response: Response, on conn: NWConnection) {
-        conn.send(content: response.wire, completion: .contentProcessed { _ in conn.cancel() })
+        // `cancel()` is an abort, not HTTP's `Connection: close`. Curl accepted the complete
+        // bytes it had already read, but Chrome treated the reset that followed a token-adoption
+        // 303 as ERR_FAILED and never followed it. A complete final context asks TCP for the
+        // write-close (FIN) that the header promises. Afterwards, drain through the peer's FIN
+        // before releasing the connection; the backstop bounds a client that never closes.
+        let backstop = DispatchWorkItem { conn.cancel() }
+        queue.asyncAfter(deadline: .now() + .seconds(Self.responseCloseGraceSeconds),
+                         execute: backstop)
+        conn.send(content: response.wire,
+                  contentContext: .finalMessage,
+                  isComplete: true,
+                  completion: .contentProcessed { [weak self] error in
+                      guard error == nil, let self else {
+                          backstop.cancel()
+                          conn.cancel()
+                          return
+                      }
+                      self.awaitPeerClose(on: conn, backstop: backstop)
+                  })
+    }
+
+    private func awaitPeerClose(on conn: NWConnection, backstop: DispatchWorkItem) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
+            [weak self] _, _, done, error in
+            guard error == nil, !done, let self else {
+                backstop.cancel()
+                conn.cancel()
+                return
+            }
+            // `Connection: close` makes another request on this socket invalid, but drain any
+            // bytes already in flight so local cancellation cannot turn the completed response
+            // back into the reset Chrome rejected.
+            self.awaitPeerClose(on: conn, backstop: backstop)
+        }
     }
 }
 

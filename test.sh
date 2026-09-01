@@ -24,7 +24,8 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # final count differs.
 # Transcript first-paint isolation adds 25 unconditional checks: three route/tier predicates and
 # twenty-two admission, completion, drain, interruption and queue-responsiveness checks.
-expected_swift_receipt='7366 checks passed'
+# Browser token adoption adds 7 unconditional checks for the 303/cookie contract and public health.
+expected_swift_receipt='7373 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -125,6 +126,7 @@ node Tests/web-cloud-onboarding.mjs
 node Tests/web-app-build.mjs
 node Tests/dispatch-role-contract.mjs
 node Tests/restart-rollout-contract.mjs
+node Tests/remote-response-write-close.mjs
 node Tests/release-signing-contract.mjs
 # The onboarding policy, compiled out of Sources/Onboarding.swift without its AppKit half: that a
 # config switch is not readiness, that an allocated credential is not a connection, and that the

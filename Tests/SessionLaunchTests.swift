@@ -34,6 +34,37 @@ func remoteErrorMessage(_ response: RemoteServer.Response) -> String {
 }
 
 func runSessionLaunchTests() {
+group("a browser token is adopted before its credential leaves the address bar") {
+    let browser = RemoteAuth.addDevice(name: "browser adoption test", caps: [.read])
+    defer { RemoteAuth.revoke(id: browser.id) }
+    let adoption = RemoteServer.shared.route(remoteRequest("GET", "/?t=\(browser.token)"))
+    let setCookie = adoption.headers["Set-Cookie"] ?? ""
+    let cookie = String(setCookie.split(separator: ";", maxSplits: 1).first ?? "")
+
+    expect("token adoption redirects with See Other", adoption.status, 303)
+    expect("the redirect strips the credential from its destination",
+           adoption.headers["Location"], "/")
+    check("the credential does not remain in a redirect body", adoption.body.isEmpty)
+    check("loopback adoption sets an HttpOnly strict cookie without Secure",
+          setCookie.hasPrefix("clawdline=")
+            && setCookie.contains("; Path=/")
+            && setCookie.contains("; HttpOnly")
+            && setCookie.contains("; SameSite=Strict")
+            && !setCookie.contains("; Secure"))
+
+    let authenticated = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/projects", headers: ["Cookie": cookie]))
+    expect("the adopted cookie authenticates browser page requests", authenticated.status, 200)
+
+    let eventRequest = remoteRequest(
+        "GET", "/v1/events", headers: ["Cookie": cookie])
+    check("the event stream accepts the same cookie authentication",
+          RemoteServer.shared.eventStreamRefusal(eventRequest) == nil)
+
+    expect("plain health remains public", RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/health")).status, 200)
+}
+
 group("the expensive remote reads take exactly one bounded side door") {
     func slow(_ path: String) -> Bool { RemoteServer.isSlowReading(path) }
     func transcript(_ path: String) -> Bool { RemoteServer.isTranscriptReading(path) }

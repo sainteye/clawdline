@@ -67,7 +67,10 @@ These do not change without the number in the path changing.
 
 One thing about the wire itself, because a client author will meet it on the first connection:
 **every reply closes it.** `Connection: close`, no keep-alive, one request per socket — the event
-stream being the one that stays open, which is its whole job.
+stream being the one that stays open, which is its whole job. The server finishes an ordinary
+reply with an orderly TCP write-close (FIN), then reclaims the connection after the peer closes;
+a peer that never closes is cancelled after 30 seconds. That distinction matters on the browser's
+token-adoption `303`: an abortive reset can make Chrome reject the completed redirect.
 
 ---
 

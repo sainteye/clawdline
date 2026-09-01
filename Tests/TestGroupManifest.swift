@@ -161,6 +161,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a cache stamp has to see through a symlink",
     "telling two devices with the same name apart",
     "a top-level state from the wrong vocabulary",
+    "a browser token is adopted before its credential leaves the address bar",
     "the expensive remote reads take exactly one bounded side door",
     "the slow-reading gate agrees with dispatch",
     "the usage analytics gate accepts both documented read credentials",
