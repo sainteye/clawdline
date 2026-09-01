@@ -771,6 +771,10 @@ enum Targets {
             let gateOpen = hookWaiting.contains(session.id)
             out.states[session.id] = SessionState.read(screen, assistant: assistant,
                                                        hookWaiting: gateOpen)
+            // Every beat, not only the waiting ones: by the time a session is known to be
+            // waiting, the sentences explaining the question have already scrolled past, and
+            // only the captures taken while they were being written still hold them.
+            ScreenTail.observe(session.id, screen: screen)
             // Only when the screen says so. Opening the gate lets that same screen safely count a
             // flush-left caret as a selection; it never supplies `.waiting` in the screen's place.
             guard out.states[session.id] == .waiting, let screen else { return }
@@ -788,6 +792,7 @@ enum Targets {
         for session in sessions where session.backend == .tmux {
             note(session, Tmux.capture(session.id, scrollback: 0))
         }
+        ScreenTail.retain(Set(sessions.map(\.id)))
         return out
     }
 

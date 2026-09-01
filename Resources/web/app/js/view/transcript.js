@@ -888,7 +888,12 @@ export function entryHTML(e) {
         body += attached + '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
             esc(T.webPending) + "</span></div>";
     }
-    return '<div class="entry' + (e.pending ? ' pending' : '') + '" data-role="' + role + '">' +
+    // `provisional` is the server saying these words were read off the Mac's screen because the
+    // transcript file has not written them down yet -- see `ScreenTail`. It is dimmed rather than
+    // labelled: the reader wants the sentences, not a lecture about where they came from, and the
+    // row is replaced by the real record as soon as the file catches up.
+    return '<div class="entry' + (e.pending ? ' pending' : '') +
+        (e.provisional ? ' provisional' : '') + '" data-role="' + role + '">' +
         whoHTML(role, e.at) +
         '<div class="body">' + body + "</div></div>";
 }

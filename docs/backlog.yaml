@@ -829,3 +829,71 @@ items:
       attestation and CAS close only after stale/missing/ambiguous evidence is proved unable to
       produce safe. A durable audit runner is last, not first.
     opened: 2026-08-29
+
+  - id: B-SCREEN-TAIL-IS-NOT-PUSHED
+    title: Words read off the screen reach a reader only when the client asks again
+    problem: >-
+      The provisional entry that fills the gap while Claude Code holds an unanswered question's
+      turn unwritten is computed inside the transcript response. Nothing notices when the screen
+      itself changes, because the revision watch is a file watch and the file is exactly what has
+      not moved. A reader who opens a waiting session sees the sentences behind its question, but
+      a reader already sitting on that session watches the answer being written on the Mac and
+      nothing arriving on the phone until something else provokes a request.
+    evidence: >-
+      `Sources/TranscriptRevisionWatch.swift` derives `provisional` rows inside
+      `transcriptPayload` and folds a fingerprint of them into the returned signature, so a
+      polling client converges; `TranscriptRevisionWatch` itself subscribes to the transcript
+      file's own revisions. Measured 2026-09-01 on session `e54c45b7`: the file did not change for
+      the ten minutes the question stood, which is the entire window this feature exists for.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      A live screen mirror, or any second report of a phone sitting on a waiting session and not
+      seeing prose that is already on the Mac. Needs a screen-revision signal that is cheap enough
+      to sit beside the file watch without a second round trip per beat.
+    opened: 2026-09-01
+
+  - id: B-PROVISIONAL-ROW-IS-UNLABELLED
+    title: A screen reading is dimmed but never says it is one
+    problem: >-
+      A provisional entry is a reconstruction of a hard-wrapped terminal, not a record of what was
+      said, and the only thing separating the two on a phone is opacity and a rule down the edge.
+      A reader who notices the difference has no way to find out what it means, and a reader who
+      does not notice may quote a reassembled paragraph back as if the transcript held it.
+      `ReadingFreshness` publishes age for exactly this reason; this publishes nothing.
+    evidence: >-
+      `Resources/web/app/js/view/transcript.js` renders `provisional` as a CSS class only. The
+      string it would need has to be injected through the web copy table in
+      `Sources/RemoteServer.swift`, which was another session's uncommitted work on 2026-09-01,
+      and every one of the 13 `Sources/Copy+*.swift` files would need the translation.
+    severity: noise
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      The next edit to the web copy table for another reason — the marginal cost of one more key
+      is then near zero. Or a reader asking why a message looked faded.
+    opened: 2026-09-01
+
+  - id: B-LIVE-SCREEN-MIRROR-NEEDS-ATTENTION-CADENCE
+    title: A live view of a Mac's screen cannot be paid for at the current sampling rate
+    problem: >-
+      Reconciling successive captures into the document they are a window onto is solved, so the
+      thing between here and a phone showing what the Mac shows is cost, not algorithm. Sampling
+      every session harder is the wrong shape: readings cost what the Mac is doing rather than what
+      was asked for, so a fleet-wide rate rise pays for nine screens nobody is looking at and
+      degrades the one somebody is.
+    evidence: >-
+      `SessionWatch` measures about 700 ms per round trip with ten sessions open at a 1.2 s
+      foreground cadence; `Sources/ReadingFreshness.swift` records the same routes measuring 0.41-0.51 s
+      idle and 1.8-2.3 s under load, four to ten times slower, because iTerm2's main thread was
+      busy. Reconciliation itself was measured lossless over 60 captures on 2026-09-01 (see
+      `docs/screen-tail.md`).
+    severity: invisible
+    cost: weeks
+    who_hurts: user
+    trigger: >-
+      A per-session "somebody is watching this one" fact that is already trustworthy enough to
+      raise a cadence on — the concept `ReadingFreshness` and `TranscriptReadCoordinator` are
+      converging on. Without it this is a fleet-wide rate rise wearing a feature's name.
+    opened: 2026-09-01

@@ -172,9 +172,62 @@ extension RemoteServer {
             signature = after
             text = fresh
         }
-        let entries = Self.transcriptRows(
+        var entries = Self.transcriptRows(
             Transcript.parse(text, assistant: record.assistant, limit: limit)
         )
-        return .json(["entries": entries, "signature": signature])
+        var revision = signature
+        if let unsynced = Self.unsyncedRow(for: session, entries: entries) {
+            entries.append(unsynced.row)
+            revision += unsynced.revision
+        }
+        return .json(["entries": entries, "signature": revision])
+    }
+
+    /// The words on the screen that the transcript file has not written down yet, as one more
+    /// entry — or nil, which is the ordinary answer.
+    ///
+    /// **Only while the session is stopped on a question.** Every other wait is the machine's and
+    /// ends by itself, so a reader loses nothing by seeing the file a beat late. A question is
+    /// the one state where the wait is *the reader's*, and where the sentences that make it
+    /// answerable are exactly the ones Claude Code has not written down — see ``ScreenTail``.
+    ///
+    /// **It steps aside the moment the file catches up.** The row is suppressed as soon as any
+    /// parsed entry already contains these words, so answering the question replaces the screen's
+    /// reading with the real record rather than leaving the reader holding two copies.
+    ///
+    /// `provisional` rides on the row because the difference is real and a reader is owed it: one
+    /// of these is a record of what was said, the other is a reading of a screen, reassembled
+    /// from a hard-wrapped terminal. `ReadingFreshness` publishes age for the same reason.
+    static func unsyncedRow(for session: TargetSession,
+                            entries: [[String: Any]]) -> (row: [String: Any], revision: String)? {
+        guard SessionWatch.shared.publishedInventory().states[session.id] == .waiting,
+              let prose = ScreenTail.unsyncedProse(session.id) else { return nil }
+        let head = Self.comparableText(String(prose.prefix(60)))
+        guard head.count >= 8 else { return nil }
+        let known = entries.contains { entry in
+            Self.comparableText((entry["text"] as? String) ?? "").contains(head)
+        }
+        guard !known else { return nil }
+        let row: [String: Any] = ["role": "assistant", "text": prose, "provisional": true,
+                                  "at": Int(Date().timeIntervalSince1970)]
+        return (row, "+p" + String(Self.fingerprint(of: prose), radix: 36))
+    }
+
+    /// Whitespace is where the terminal's hard wrap lives, so it is the one thing a comparison
+    /// between a screen reading and a file record must not depend on.
+    private static func comparableText(_ text: String) -> String {
+        text.components(separatedBy: .whitespacesAndNewlines).joined()
+    }
+
+    /// FNV-1a, written out rather than borrowed from `hashValue`: this number goes into a
+    /// revision string a client compares across requests, and Swift's hashing is seeded per
+    /// process, so a restart would invent a change that did not happen.
+    private static func fingerprint(of text: String) -> UInt64 {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in text.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100000001b3
+        }
+        return hash
     }
 }
