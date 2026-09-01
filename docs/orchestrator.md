@@ -38,6 +38,15 @@ five briefing fields: objective, scope, constraints, relevant references, and ac
 task secret, timeout, result file, parent, handoff package, detached flag, or broker landing
 obligation. Closing the caller does not close it.
 
+The request cannot choose a language. When the broker accepts a new assignment, it resolves the
+Mac Clawdline interface language, stores its canonical catalog tag and rendered name on that
+durable assignment, and puts an explicit language contract in the briefing. That contract covers
+the Root's first response, commentary, questions, progress, final response and every other
+user-facing message. Initial injection, retry, restart reconciliation and transcript matching all
+rebuild the same bytes from the stored value; changing Settings afterwards cannot change the
+accepted briefing or its receipt. A legacy durable row with no language field keeps the historical
+briefing bytes so an already delivered turn remains a match and is not resent.
+
 The broker records `accepted` before opening a tab, then `terminal_opened`, `prompt_ready`,
 `briefed`, and `active`, with `blocked`, `failed`, and `inactive` as explicit alternatives. The
 request UUID plus canonical-body digest makes retries durable: identical content replays one stable

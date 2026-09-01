@@ -1654,9 +1654,7 @@ enum Orchestrator {
     // MARK: - Independent feature roots
 
     enum RootAssignmentState: String {
-        case accepted
-        case terminalOpened = "terminal_opened"
-        case promptReady = "prompt_ready"
+        case accepted, terminalOpened = "terminal_opened", promptReady = "prompt_ready"
         case blocked, briefed, active, failed, inactive
     }
 
@@ -1665,19 +1663,14 @@ enum Orchestrator {
         let assistant: Assistant
         /// `default` is deliberately a value rather than an omitted option: model selection is
         /// part of the caller's closed request even when it delegates the concrete model.
-        let model: String
-        let projectDir: String
-        let label: String
-        let objective: String
-        let scope: String
-        let constraints: String
-        let relevantReferences: String
-        let acceptance: String
+        let model, projectDir, label: String
+        let objective, scope, constraints, relevantReferences, acceptance: String
     }
 
+    /// Resolved once at acceptance; both values are stored to keep briefing bytes stable.
+    struct RootAssignmentLanguage: Equatable { let tag, name: String }
     enum RootAssignmentDraftOutcome: Equatable {
-        case ok(RootAssignmentDraft)
-        case bad(String)
+        case ok(RootAssignmentDraft), bad(String)
         var isBad: Bool { if case .bad = self { return true }; return false }
     }
 
@@ -1692,15 +1685,12 @@ enum Orchestrator {
     }
 
     enum RootAssignmentReconciliation: Equatable {
-        case wait(String)
-        case rebind(RootAssignmentIdentity)
-        case fail(String)
-        case inactive(String)
+        case wait(String), rebind(RootAssignmentIdentity)
+        case fail(String), inactive(String)
     }
 
     enum RootAssignmentTrustDecision: Equatable {
-        case none, block
-        case accept(row: Int)
+        case none, block, accept(row: Int)
     }
 
     static func rootAssignmentTrustDecision(projectApproved: Bool,
@@ -1727,10 +1717,8 @@ enum Orchestrator {
 
         init(transcriptKnown: Bool, recorded: Bool, recordedAt: Date? = nil,
              deadline: Date? = nil, retryDelayElapsed: Bool) {
-            self.transcriptKnown = transcriptKnown
-            self.recorded = recorded
-            self.recordedAt = recordedAt
-            self.deadline = deadline
+            self.transcriptKnown = transcriptKnown; self.recorded = recorded
+            self.recordedAt = recordedAt; self.deadline = deadline
             self.retryDelayElapsed = retryDelayElapsed
         }
 
@@ -1745,8 +1733,7 @@ enum Orchestrator {
     }
 
     enum RootAssignmentStepDecision: Equatable {
-        case wait, activate, block, promptReady, inspectDelivery, briefed, inject
-        case answerTrust(row: Int)
+        case wait, activate, block, promptReady, inspectDelivery, briefed, inject, answerTrust(row: Int)
         case fail(String)
     }
 
@@ -1785,39 +1772,27 @@ enum Orchestrator {
     }
 
     struct RootAssignment {
-        let id: String
-        let requestID: String
-        let requestDigest: String
+        let id, requestID, requestDigest: String
         let assistant: Assistant
-        let model: String
-        let projectDir: String
-        let label: String
-        let objective: String
-        let scope: String
-        let constraints: String
-        let relevantReferences: String
-        let acceptance: String
+        let model, projectDir, label: String
+        let objective, scope, constraints, relevantReferences, acceptance: String
         let projectApproved: Bool
         let created: Date
         var state: RootAssignmentState
+        /// `nil` keeps a legacy record's old briefing bytes and transcript receipt.
+        var language: RootAssignmentLanguage?
         var identity: RootAssignmentIdentity?
-        var terminalOpenedAt: Date?
-        var promptReadyAt: Date?
+        var terminalOpenedAt, promptReadyAt: Date?
         /// Reset only when a person clears workspace trust, so that human wait consumes none of
         /// the ordinary terminal-open-to-briefing window without falsifying terminalOpenedAt.
         var promptTimeoutStartedAt: Date?
-        var briefedAt: Date?
-        var activeAt: Date?
-        var endedAt: Date?
+        var briefedAt, activeAt, endedAt: Date?
         var injectAttempts = 0
-        var lastInjectAt: Date?
+        var lastInjectAt, missingObservedAt: Date?
         var answeredTrustMenu = false
-        var blocker: String?
-        var failure: String?
-        var reconciliation: String?
+        var blocker, failure, reconciliation: String?
         /// The durable at-most-once receipt for the last blocked/failed/inactive audit event.
         var reportedTransition: String?
-        var missingObservedAt: Date?
         var missingGeneration: Int?
         var missingEpoch: String?
     }
@@ -5592,12 +5567,23 @@ enum Orchestrator {
         return RemoteAuth.hex(SHA256.hash(data: Data(canonical.utf8)))
     }
 
-    static func rootAssignmentLine(id: String, draft: RootAssignmentDraft) -> String {
-        "You are an independently owned Clawdline Feature Root for Root Assignment \(id). "
-          + "Own this feature through implementation, verification, integration, and landing.\n\n"
-          + "OBJECTIVE\n\(draft.objective)\n\nSCOPE\n\(draft.scope)\n\n"
+    static func rootAssignmentLine(id: String, draft: RootAssignmentDraft,
+                                   language: RootAssignmentLanguage?) -> String {
+        let languageContract = language.map { "\n\nLANGUAGE CONTRACT\nThe Mac Clawdline interface language was resolved to \($0.name) when this assignment was accepted. Use \($0.name) for every commentary message, progress update, question, final response, and all other user-facing communication in this Root Session, including the very first response you send. This English broker template does not change that language." } ?? ""
+        return "You are an independently owned Clawdline Feature Root for Root Assignment \(id). "
+          + "Own this feature through implementation, verification, integration, and landing."
+          + languageContract + "\n\nOBJECTIVE\n\(draft.objective)\n\nSCOPE\n\(draft.scope)\n\n"
           + "CONSTRAINTS\n\(draft.constraints)\n\nRELEVANT REFERENCES\n"
           + "\(draft.relevantReferences)\n\nACCEPTANCE\n\(draft.acceptance)"
+    }
+
+    static func rootAssignmentLine(for assignment: RootAssignment) -> String {
+        let draft = RootAssignmentDraft(
+            requestID: assignment.requestID, assistant: assignment.assistant,
+            model: assignment.model, projectDir: assignment.projectDir, label: assignment.label,
+            objective: assignment.objective, scope: assignment.scope, constraints: assignment.constraints,
+            relevantReferences: assignment.relevantReferences, acceptance: assignment.acceptance)
+        return rootAssignmentLine(id: assignment.id, draft: draft, language: assignment.language)
     }
 
     /// What one record says about a Root Assignment's delivery: whether the exact briefing line
@@ -5752,7 +5738,7 @@ enum Orchestrator {
             label: draft.label, objective: draft.objective, scope: draft.scope,
             constraints: draft.constraints, relevantReferences: draft.relevantReferences,
             acceptance: draft.acceptance, projectApproved: projectApproved(draft.projectDir),
-            created: now, state: .accepted)
+            created: now, state: .accepted, language: rootAssignmentLanguage())
         lock.lock()
         if let existing = rootAssignments.values.first(where: { $0.requestID == draft.requestID }) {
             lock.unlock()
@@ -8969,13 +8955,7 @@ enum Orchestrator {
         case .briefed, .inject:
             return false
         }
-        let draft = RootAssignmentDraft(
-            requestID: assignment.requestID, assistant: assignment.assistant,
-            model: assignment.model, projectDir: assignment.projectDir, label: assignment.label,
-            objective: assignment.objective, scope: assignment.scope,
-            constraints: assignment.constraints,
-            relevantReferences: assignment.relevantReferences, acceptance: assignment.acceptance)
-        let line = rootAssignmentLine(id: id, draft: draft)
+        let line = rootAssignmentLine(for: assignment)
         var transcriptKnown = false
         var receipt = RootAssignmentTranscriptReceipt(recorded: false, at: nil)
         switch assignment.assistant {
@@ -11039,11 +11019,18 @@ enum Orchestrator {
 
     /// The interface language, named twice — in English for the assistant reading the briefing,
     /// and in itself for the person reading over its shoulder: "Traditional Chinese (繁體中文)".
-    static var languageName: String {
-        let tag = L.tag(of: L.t)
-        let english = Locale(identifier: "en").localizedString(forIdentifier: tag) ?? tag
+    static var languageName: String { rootAssignmentLanguage().name }
+
+    static func rootAssignmentLanguage(copy: Copy = L.t) -> RootAssignmentLanguage {
+        let tag = L.tag(of: copy)
+        let english: String
+        switch tag {
+        case "zh-Hant": english = "Traditional Chinese"; case "zh-Hans": english = "Simplified Chinese"
+        default: english = Locale(identifier: "en").localizedString(forIdentifier: tag) ?? tag
+        }
         let native = Locale(identifier: tag).localizedString(forIdentifier: tag) ?? tag
-        return english == native ? english : "\(english) (\(native))"
+        return RootAssignmentLanguage(tag: tag,
+            name: english == native ? english : "\(english) (\(native))")
     }
 
     /// How many levels of dispatch this Mac has: one. A root opens children, and a child is the
@@ -11804,6 +11791,11 @@ enum Orchestrator {
 
     static func holdRootAssignmentForTesting(_ assignment: RootAssignment) {
         lock.lock(); rootAssignments[assignment.id] = assignment; reindex(); lock.unlock()
+    }
+
+    static func rootAssignmentForTesting(_ id: String) -> RootAssignment? {
+        load(); lock.lock(); defer { lock.unlock() }
+        return rootAssignments[id]
     }
 
     /// The stored fields only — safe off the main thread, used where a route already holds the
@@ -12770,6 +12762,7 @@ enum Orchestrator {
             if let conversation = identity.conversationID { row["conversation_id"] = conversation }
             out["identity"] = row
         }
+        if let language = assignment.language { out["language"] = ["tag": language.tag, "name": language.name] }
         func put(_ key: String, _ value: Date?) {
             if let value { out[key] = value.timeIntervalSince1970 }
         }
@@ -13056,7 +13049,14 @@ enum Orchestrator {
             model: model, projectDir: projectDir, label: label, objective: objective,
             scope: scope, constraints: constraints, relevantReferences: references,
             acceptance: acceptance, projectApproved: obj["project_approved"] as? Bool ?? false,
-            created: Date(timeIntervalSince1970: created), state: state)
+            created: Date(timeIntervalSince1970: created), state: state, language: nil)
+        if let row = obj["language"] as? [String: Any],
+           let tag = row["tag"] as? String, !tag.isEmpty, tag.utf8.count <= 64,
+           let name = row["name"] as? String, !name.isEmpty, name.utf8.count <= 200,
+           !tag.contains("\0"), !name.contains("\0"),
+           L.catalog.contains(where: { $0.tag == tag }) {
+            assignment.language = RootAssignmentLanguage(tag: tag, name: name)
+        }
         if let row = obj["identity"] as? [String: Any],
            let terminal = row["terminal_id"] as? String,
            let identityAssistant = (row["assistant"] as? String).flatMap(Assistant.init(rawValue:)),

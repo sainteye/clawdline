@@ -4,6 +4,11 @@ func runRootAssignmentCoordinationTests() {
 group("root assignments are a closed durable fourth primitive") {
     Orchestrator.forget()
     let enabled = Config.shared.orchestratorEnabled
+    let configuredLanguage = Config.shared.language
+    defer {
+        Config.shared.language = configuredLanguage
+        L.reload()
+    }
     Config.shared.orchestratorEnabled = true
     let requestID = UUID().uuidString.lowercased()
     let base: [String: Any] = [
@@ -26,8 +31,11 @@ group("root assignments are a closed durable fourth primitive") {
     }
     expect("the project path is canonical", draft.projectDir, "/tmp")
     expect("default is an explicit stored model", draft.model, "default")
-    check("unknown top-level input is refused",
+    check("unknown top-level input, including a caller-supplied language, is refused",
           Orchestrator.rootAssignmentDraft(from: base.merging(["task_id": "nope"]) { _, new in new },
+              isDirectory: { _ in true }, canonicalize: { $0 }).isBad
+          && Orchestrator.rootAssignmentDraft(
+              from: base.merging(["language": "en"]) { _, new in new },
               isDirectory: { _ in true }, canonicalize: { $0 }).isBad)
     var widened = base
     var fields = widened["assignment"] as! [String: String]
@@ -44,9 +52,32 @@ group("root assignments are a closed durable fourth primitive") {
           Orchestrator.rootAssignmentDraft(from: oversized, isDirectory: { _ in true },
               canonicalize: { $0 }).isBad)
 
-    let line = Orchestrator.rootAssignmentLine(id: "assignment-1", draft: draft)
+    Config.shared.language = "zh-Hant"
+    L.reload()
+    let language = Orchestrator.rootAssignmentLanguage()
+    let line = Orchestrator.rootAssignmentLine(
+        id: "assignment-1", draft: draft, language: language)
+    var catalogLanguagesResolve = true
+    for configuredTag in L.catalog.map(\.tag) {
+        Config.shared.language = configuredTag
+        L.reload()
+        let resolved = Orchestrator.rootAssignmentLanguage()
+        let catalogLine = Orchestrator.rootAssignmentLine(
+            id: "assignment-1", draft: draft, language: resolved)
+        catalogLanguagesResolve = catalogLanguagesResolve
+            && resolved.tag == L.tag(of: L.t) && catalogLine.contains(resolved.name)
+    }
+    Config.shared.language = "zh-Hant"
+    L.reload()
     for heading in ["OBJECTIVE", "SCOPE", "CONSTRAINTS", "RELEVANT REFERENCES", "ACCEPTANCE"] {
-        check("the launch prompt carries the closed \(heading) field", line.contains(heading))
+        let languageContractIsComplete = language.tag == "zh-Hant"
+            && line.contains("Traditional Chinese (繁體中文)")
+            && line.contains("commentary") && line.contains("final response")
+            && line.contains("all other user-facing communication")
+            && line.contains("including the very first response")
+            && catalogLanguagesResolve
+        check("the launch prompt carries the closed \(heading) field and resolved language contract",
+              line.contains(heading) && languageContractIsComplete)
     }
     for forbidden in ["TASK_SECRET", "result.json", "CHILD.md", "handoff.md", "parent_task"] {
         check("the launch prompt excludes child/handoff lifecycle spelling \(forbidden)",
@@ -183,12 +214,17 @@ group("root assignments are a closed durable fourth primitive") {
     expect("acceptance opens exactly one ordinary root tab", opens, 1)
     expect("its first durable state names the opened terminal",
            firstRecord["state"] as? String, "terminal_opened")
-    _ = Orchestrator.rootAssignment(base, idempotencyKey: requestID,
+    let acceptedAssignment = Orchestrator.rootAssignmentForTesting(stableID)
+    let acceptedLine = acceptedAssignment.map { Orchestrator.rootAssignmentLine(for: $0) }
+    Config.shared.language = "en"
+    L.reload()
+    let replay = Orchestrator.rootAssignment(base, idempotencyKey: requestID,
         assistantAvailable: { _ in true }, projectApproved: { _ in true }) { _, _, _ in
             opens += 1
             return .started(id: "%duplicate", backend: .tmux)
         }
-    expect("a duplicate request replays without a second tab", opens, 1)
+    check("a later language setting cannot conflict with or reopen an accepted request",
+          { if case .ok = replay { return opens == 1 }; return false }())
     var conflict = base; conflict["label"] = "Different content under one request"
     let conflictReply = Orchestrator.rootAssignment(
         conflict, idempotencyKey: requestID, assistantAvailable: { _ in true },
@@ -215,8 +251,12 @@ group("root assignments are a closed durable fourth primitive") {
            Orchestrator.rootAssignmentRecord(id: stableID)?["state"] as? String,
            "terminal_opened")
     Orchestrator.forget(); Orchestrator.load(force: true)
-    expect("the stable assignment survives restart",
-           Orchestrator.rootAssignmentRecord(id: stableID)?["request_id"] as? String, requestID)
+    let restartedAssignment = Orchestrator.rootAssignmentForTesting(stableID)
+    check("the stable assignment and exact briefing bytes survive restart and config change",
+          Orchestrator.rootAssignmentRecord(id: stableID)?["request_id"] as? String == requestID
+          && restartedAssignment?.language?.tag == "zh-Hant"
+          && restartedAssignment?.language?.name == "Traditional Chinese (繁體中文)"
+          && restartedAssignment.map { Orchestrator.rootAssignmentLine(for: $0) } == acceptedLine)
     Orchestrator.resumeAfterRestart()
     expect("restart fails closed when no exact process tuple had reached the durable receipt",
            Orchestrator.rootAssignmentRecord(id: stableID)?["state"] as? String, "failed")
@@ -308,7 +348,8 @@ group("root assignments are a closed durable fourth primitive") {
     func assignmentFixture(id: String = UUID().uuidString.lowercased(), state: Orchestrator.RootAssignmentState = .active) -> Orchestrator.RootAssignment {
         var row = Orchestrator.RootAssignment(id: id, requestID: UUID().uuidString.lowercased(), requestDigest: String(repeating: "a", count: 64), assistant: .codex,
             model: "default", projectDir: "/tmp", label: "Exact Feature Root", objective: "objective", scope: "scope", constraints: "constraints",
-            relevantReferences: "references", acceptance: "acceptance", projectApproved: false, created: openedAt, state: state)
+            relevantReferences: "references", acceptance: "acceptance", projectApproved: false,
+            created: openedAt, state: state, language: nil)
         row.identity = exact; return row
     }
     let projected = Orchestrator.rootAssignmentSessionProjection(assignments: [assignmentFixture()], identity: .init(terminalID: exact.terminalID, assistant: .codex,
@@ -317,9 +358,28 @@ group("root assignments are a closed durable fourth primitive") {
     check("ambiguous assignment identity produces no Session projection", Orchestrator.rootAssignmentSessionProjection(assignments: [assignmentFixture(), assignmentFixture()], identity: .init(terminalID: exact.terminalID, assistant: .codex, tty: exact.tty ?? "", pid: exact.pid, processStart: exact.processStart.map(Date.init(timeIntervalSince1970:)), conversationID: exact.conversationID)) == nil)
     let cleanupRows = (0..<201).map { Orchestrator.RootAssignmentCleanupCandidate(id: "assignment-\($0)", state: .failed, created: Date(timeIntervalSince1970: Double($0))) }
     expect("cleanup retains the newest 200 terminal assignment records", Orchestrator.rootAssignmentCleanupIDs(cleanupRows), ["assignment-0"])
-    var answered = assignmentFixture(state: .blocked); answered.answeredTrustMenu = true
+    var answered = assignmentFixture(state: .blocked)
+    answered.language = Orchestrator.RootAssignmentLanguage(
+        tag: "zh-Hant", name: "Traditional Chinese (繁體中文)")
+    answered.answeredTrustMenu = true
     let roundTrip = Orchestrator.rootAssignment(from: Orchestrator.stored(answered))
-    check("the answered trust receipt survives the durable codec", roundTrip?.answeredTrustMenu == true)
+    var legacyStored = Orchestrator.stored(assignmentFixture(state: .promptReady))
+    legacyStored.removeValue(forKey: "language")
+    let legacy = Orchestrator.rootAssignment(from: legacyStored)
+    let legacyLine = legacy.map { Orchestrator.rootAssignmentLine(for: $0) } ?? ""
+    let legacyTranscript = """
+    {"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":\(String(data: try! JSONEncoder().encode(legacyLine), encoding: .utf8)!)}]}}}
+    """
+    let legacyReceipt = Orchestrator.rootAssignmentTranscriptReceipt(
+        legacyTranscript, assistant: .codex, assignmentID: legacy?.id ?? "", line: legacyLine)
+    check("durable language round-trips while a delivered legacy row keeps old bytes",
+          roundTrip?.answeredTrustMenu == true && roundTrip?.language == answered.language
+          && roundTrip.map { Orchestrator.rootAssignmentLine(for: $0) }
+              == Optional(Orchestrator.rootAssignmentLine(for: answered))
+          && legacy?.language == nil && !legacyLine.contains("LANGUAGE CONTRACT")
+          && step(.promptReady, ready: true,
+                  delivery: .init(transcriptKnown: true, recorded: legacyReceipt.recorded,
+                                  retryDelayElapsed: true), attempts: 1) == .briefed)
     var audited = assignmentFixture(state: .blocked); audited.blocker = "workspace_trust_required"
     Orchestrator.holdRootAssignmentForTesting(audited)
     var notices: [(String, [String: String])] = []
