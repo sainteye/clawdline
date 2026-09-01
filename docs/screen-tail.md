@@ -107,6 +107,22 @@ sampler was on the 20-second cadence, or the output arrived faster than the beat
 recorded and prose is only ever taken from after the last break. Text spliced at the wrong point
 reads as perfectly ordinary and is wrong, which is worse than text that stops early.
 
+**A still screen is never offered.** Claude Code writes an assistant message when the message is
+complete, so a session that has finished talking is already recorded and its screen holds nothing
+the file does not — a reading of it would be a second copy of what the reader is looking at. Two
+states are the exceptions and they are the only two: text being written now, and a question's
+turn, which stays unwritten until it is answered.
+
+**A tool's own text is not speech.** Claude Code draws prose at two columns and the continuation
+of a command's arguments and output at five. Without that test a commit message typed into a
+heredoc reached a reader as though the assistant had said it — and it matched nothing in the
+file, because a tool's input is not in the file.
+
+**Nothing is shown twice.** Adjacent identical lines are dropped in the reading itself, and a
+paragraph the reading has already offered is dropped before it is sent. Both are last resorts
+rather than the mechanism — a redraw the alignment failed to fold away looks like ordinary prose
+by then — but the plain rule holds regardless of what produced the repeat.
+
 **It steps aside, paragraph by paragraph.** Suppressing the whole row was wrong in both
 directions: it said nothing when the file held only the first half of what the screen showed, and
 it said everything twice when the comparison missed — which it did on the first real screen it
@@ -117,6 +133,14 @@ left is what the reader is missing.
 
 On the wire the row carries `provisional: true`. The web pane dims it and marks its edge rather
 than labelling it: the reader wants the sentences, not a lecture about where they came from.
+
+**And it arrives on its own.** A change to the words is announced down the same SSE line that
+carries transcript revisions (`TranscriptRevisionStream.announceScreen`), so a reader sitting on
+a session sees the answer fill in rather than having to ask again. The watch behind that stream
+is a *file* watch, and the file is precisely what has not moved — which is why this needed a door
+of its own. The revision is a token, not a signature: the client fetches once per change and does
+not verify what comes back against it, so it only has to differ when the words do. Nothing is
+announced on a beat whose words did not change, which is most beats.
 
 ## What it does not claim
 
@@ -155,5 +179,5 @@ between here and there, and none of them is the algorithm:
    tighter beat and a second reading — the overwrite one — alongside the appended transcript.
 2. **The two readings are different products.** Overwrite is the honest mirror; append is the
    honest transcript. A live view wants the first with the second sedimenting behind it.
-3. **Nothing pushes it.** Today the provisional row changes only when a client asks again. See
-   `B-SCREEN-TAIL-IS-NOT-PUSHED` in [`backlog.yaml`](backlog.yaml).
+3. **Nothing pushes it.** ~~Not solved.~~ Screen changes are announced down the SSE line, so a
+   reader watching a session sees an answer arrive as it is written.

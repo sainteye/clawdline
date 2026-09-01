@@ -110,9 +110,30 @@ final class TranscriptRevisionStream: @unchecked Sendable {
     private var generation: UInt64 = 0
     private var resolving = false
     private var pending: (targets: [TargetSession], generation: UInt64)?
+    private let changed: @Sendable (String, String) -> Void
+
+    /// The stream a running server owns, so a screen reading can announce a change without the
+    /// server growing an entry point for it. Weak, because the server's lifetime is the real one
+    /// and a screen follower must never be the reason a stopped server is kept alive.
+    private(set) nonisolated(unsafe) static weak var live: TranscriptRevisionStream?
 
     init(changed: @escaping @Sendable (String, String) -> Void) {
+        self.changed = changed
         watch = TranscriptRevisionWatch(changed: changed)
+        Self.live = self
+    }
+
+    /// A session's screen now says something its file does not.
+    ///
+    /// **Why this needs its own door.** The watch behind this stream is a file watch, and the
+    /// file is precisely what has not moved — a question's turn stays unwritten until it is
+    /// answered, and an answer being typed is not written until it ends. Without this a reader
+    /// sitting on a session watches the Mac fill up and their own page stay still.
+    ///
+    /// The revision is a token, not a signature: the client uses it to fetch once per change and
+    /// not to verify what came back, so it only has to differ when the words do.
+    func announceScreen(_ sessionID: String, revision: String) {
+        changed(sessionID, revision)
     }
 
     func sync(targets: [TargetSession], active: Bool) {
@@ -209,11 +230,27 @@ extension RemoteServer {
     /// from a hard-wrapped terminal. `ReadingFreshness` publishes age for the same reason.
     static func unsyncedRow(for session: TargetSession,
                             entries: [[String: Any]]) -> (row: [String: Any], revision: String)? {
-        guard let prose = ScreenTail.unsyncedProse(session.id),
+        guard Self.screenCanLeadTheFile(SessionWatch.shared.publishedInventory().states[session.id]),
+              let prose = ScreenTail.unsyncedProse(session.id),
               let text = Self.unsyncedText(in: prose, alreadyIn: entries) else { return nil }
         let row: [String: Any] = ["role": "assistant", "text": text, "provisional": true,
                                   "at": Int(Date().timeIntervalSince1970)]
-        return (row, "+p" + String(Self.fingerprint(of: text), radix: 36))
+        return (row, "+p" + String(ScreenTail.fingerprint(of: text), radix: 36))
+    }
+
+    /// Whether this session's screen can be ahead of its transcript at all.
+    ///
+    /// **A still screen is a written screen.** Claude Code writes an assistant message when the
+    /// message is complete, so a session that finished talking has already been recorded and its
+    /// screen holds nothing the file does not — offering a reading of it is at best a second copy
+    /// of what the reader is already looking at. Two states are exceptions and they are the only
+    /// two: text being written now, and a question's turn, which stays unwritten until it is
+    /// answered.
+    static func screenCanLeadTheFile(_ state: SessionState?) -> Bool {
+        switch state {
+        case .working, .waiting: return true
+        default: return false
+        }
     }
 
     /// The paragraphs of a screen reading that no parsed entry already holds, or nil when the
@@ -223,9 +260,16 @@ extension RemoteServer {
             let text = comparableText((entry["text"] as? String) ?? "")
             return text.isEmpty ? nil : text
         }
+        // Two things are dropped: a paragraph the file already holds, and a paragraph this
+        // reading has already offered. The second is the plain rule — **something the reader has
+        // seen once is not shown again** — and it holds whatever produced the repeat, which
+        // matters because a redraw the reconstruction failed to fold away looks exactly like an
+        // ordinary paragraph by the time it reaches here.
+        var seen = Set<String>()
         let fresh = prose.components(separatedBy: "\n\n").filter { block in
             let compared = comparableText(block)
             guard !compared.isEmpty else { return false }
+            guard seen.insert(compared).inserted else { return false }
             return !known.contains { $0.contains(compared) }
         }
         return fresh.isEmpty ? nil : fresh.joined(separator: "\n\n")
@@ -240,15 +284,4 @@ extension RemoteServer {
         String(text.filter { $0.isLetter || $0.isNumber })
     }
 
-    /// FNV-1a, written out rather than borrowed from `hashValue`: this number goes into a
-    /// revision string a client compares across requests, and Swift's hashing is seeded per
-    /// process, so a restart would invent a change that did not happen.
-    private static func fingerprint(of text: String) -> UInt64 {
-        var hash: UInt64 = 0xcbf29ce484222325
-        for byte in text.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x100000001b3
-        }
-        return hash
-    }
 }

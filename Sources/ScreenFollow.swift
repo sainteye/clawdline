@@ -56,6 +56,7 @@ final class ScreenFollow: @unchecked Sendable {
     private var readers: [String: Date] = [:]
     private var timer: DispatchSourceTimer?
     private var beat = 0
+    private var announced: [String: String] = [:]
     private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.screenfollow",
                                       qos: .utility)
 
@@ -79,7 +80,10 @@ final class ScreenFollow: @unchecked Sendable {
         readers[session.id] = Date()
         let idle = timer == nil
         lock.unlock()
-        if !ScreenTail.hasDocument(session.id) { capture([session]) }
+        if !ScreenTail.hasDocument(session.id) {
+            capture([session])
+            announce([session.id])
+        }
         if idle { start() }
     }
 
@@ -141,6 +145,7 @@ final class ScreenFollow: @unchecked Sendable {
             .filter { wanted.contains($0.id) }
         guard !targets.isEmpty else { return }
         capture(targets)
+        announce(targets.map { $0.id })
     }
 
     /// The sessions producing text right now, in a stable order.
@@ -149,6 +154,23 @@ final class ScreenFollow: @unchecked Sendable {
         return SessionWatch.shared.publishedInventory().states
             .filter { if case .working = $0.value { return true } else { return false } }
             .keys.sorted()
+    }
+
+    /// Tell whoever is streaming that these screens now say something new.
+    ///
+    /// Nothing is announced for a screen whose words have not changed, which is most beats: the
+    /// reconstruction is fed a capture a second and a person types prose rather slower than that.
+    private func announce(_ ids: [String]) {
+        for id in ids {
+            let prose = ScreenTail.unsyncedProse(id) ?? ""
+            lock.lock()
+            let changed = announced[id] != prose
+            if changed { announced[id] = prose }
+            lock.unlock()
+            guard changed, !prose.isEmpty else { continue }
+            TranscriptRevisionStream.live?.announceScreen(
+                id, revision: "screen-" + String(ScreenTail.fingerprint(of: prose), radix: 36))
+        }
     }
 
     /// **One round trip, not one per session.** Asking iTerm2 for each screen separately is a
@@ -174,6 +196,7 @@ final class ScreenFollow: @unchecked Sendable {
         lock.lock()
         readers = [:]
         beat = 0
+        announced = [:]
         let source = timer
         timer = nil
         lock.unlock()

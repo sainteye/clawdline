@@ -100,6 +100,27 @@ func runScreenTailTests() {
         check("a screen whose tail is a tool call offers nothing",
               ScreenTail.trailingProse(of: ["  said something", "\u{23FA} Bash(ls)"]) == nil)
 
+        // A command's own arguments are drawn at five columns, an assistant's prose at two. A
+        // commit message typed into a heredoc reached a reader as though it had been said —
+        // and it never matched the file, because a tool's input is not in the file.
+        let withCommand = ScreenTail.trailingProse(of: [
+            "\u{23FA} Bash(git commit)",
+            "  \u{23BF}  $ git commit -m \"$(cat <<'EOF'",
+            "     Capture on the way in, and keep the working screens ready",
+            "",
+            "     That still only answers with what is on screen.",
+            "     EOF",
+            "",
+            "  And this is what the assistant actually said afterwards.",
+        ])
+        expect("the command's own text is not offered as speech", withCommand,
+               "And this is what the assistant actually said afterwards.")
+        check("a screen ending inside a command's arguments offers nothing",
+              ScreenTail.trailingProse(of: [
+                "  \u{23BF}  $ git commit -m \"$(cat <<'EOF'",
+                "     Capture on the way in, and keep the working screens ready",
+              ]) == nil)
+
         let broken = ["  Words from before the gap.", ScreenTail.gapMarker, "  Words after it."]
         let afterGap = ScreenTail.trailingProse(of: broken)
         check("nothing before a break is offered", afterGap?.contains("before the gap") == false,
@@ -168,6 +189,27 @@ func runScreenTailTests() {
                                         alreadyIn: entries) == nil)
         check("punctuation alone is never a paragraph",
               RemoteServer.unsyncedText(in: "---", alreadyIn: entries) == nil)
+
+        // A still screen is a written screen: the assistant stopped talking, so the file already
+        // has what is on it and a reading would only be a second copy of what is on the page.
+        check("a session that is talking can lead the file",
+              RemoteServer.screenCanLeadTheFile(.working("thinking")))
+        check("so can one stopped on a question", RemoteServer.screenCanLeadTheFile(.waiting))
+        check("an idle session cannot", !RemoteServer.screenCanLeadTheFile(.idle))
+        check("nor an unreadable one", !RemoteServer.screenCanLeadTheFile(.unknown))
+        check("nor one nothing is known about", !RemoteServer.screenCanLeadTheFile(nil))
+
+        // Whatever produced a repeat, a reader has no use for the second copy.
+        let twice = RemoteServer.unsyncedText(in: "One new thought.\n\nOne new thought.",
+                                              alreadyIn: entries)
+        expect("a paragraph this reading already offered is not offered again", twice,
+               "One new thought.")
+        let repeatedLine = ScreenTail.trailingProse(of: [
+            "  the same sentence twice", "  the same sentence twice", "  and then a different one",
+        ], width: 200)
+        check("an adjacent duplicate line is dropped in the reading itself",
+              repeatedLine?.components(separatedBy: "the same sentence twice").count == 2,
+              "got \(repeatedLine ?? "nil")")
     }
 
     group("a session is sampled closely only while somebody is reading it") {
@@ -243,5 +285,39 @@ func runScreenTailTests() {
         check("the sweep beat takes the working session too",
               Set(captured) == Set(["WATCHED", "IGNORED"]), "got \(captured)")
         ScreenFollow.workingForTesting = nil
+
+        // A file watch cannot see this change: the file is exactly what has not moved. Without an
+        // announcement a reader sits on a session watching the Mac fill up and their own page
+        // stay still.
+        // A box rather than a captured var: the stream's callback is `@Sendable`, and mutating a
+        // local from it is an error under Swift 6.
+        final class Announcements: @unchecked Sendable {
+            let lock = NSLock()
+            var items: [(id: String, revision: String)] = []
+            func add(_ id: String, _ revision: String) {
+                lock.lock(); items.append((id, revision)); lock.unlock()
+            }
+            var all: [(id: String, revision: String)] {
+                lock.lock(); defer { lock.unlock() }; return items
+            }
+        }
+        let announced = Announcements()
+        let stream = TranscriptRevisionStream(changed: { id, revision in
+            announced.add(id, revision)
+        })
+        check("the live stream is the one just made", TranscriptRevisionStream.live === stream)
+        follow.forgetForTesting()
+        ScreenTail.forgetAllForTesting()
+        follow.noteReader(of: watched)
+        check("a first reading is announced", announced.all.contains { $0.id == "WATCHED" })
+        let first = announced.all.count
+        follow.tickForTesting()
+        check("a beat that changed nothing announces nothing", announced.all.count == first)
+        ScreenFollow.captureForTesting = { _ in "  something new has been said\n" }
+        follow.tickForTesting()
+        check("a beat whose words changed announces again", announced.all.count > first)
+        check("and the token changes with them",
+              announced.all.last?.revision != announced.all.first?.revision)
+        _ = stream
     }
 }

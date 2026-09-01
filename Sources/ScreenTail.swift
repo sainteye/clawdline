@@ -194,6 +194,18 @@ enum ScreenTail {
             || isRule(line)
     }
 
+    /// A row inside a tool's own block rather than a sentence.
+    ///
+    /// **Indentation is the whole test.** Claude Code draws an assistant's prose at two columns
+    /// and the continuation of a tool's arguments and output at five, which is the only thing
+    /// separating "what it said" from "the command it ran". Without this a commit message typed
+    /// into a heredoc came back to the reader as though the assistant had said it — and it never
+    /// matched anything in the file, because it is not in the file: it is a tool's input.
+    private static func isToolContinuation(_ line: String) -> Bool {
+        guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        return line.prefix(while: { $0 == " " }).count >= 4
+    }
+
     /// A tool call, or a line of what one returned.
     private static func isTool(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -294,14 +306,20 @@ enum ScreenTail {
                 if !paragraph.isEmpty { collected.append(paragraph.reversed()); paragraph = [] }
                 continue
             }
+            if isToolContinuation(line) { continue }
             if isTool(line) {
-                if !started { return nil }
+                // Whatever is touching the tool row belongs to it, not to the sentences above.
+                paragraph = []
+                if collected.isEmpty { return nil }
                 break
             }
             if trimmed.isEmpty {
                 if !paragraph.isEmpty { collected.append(paragraph.reversed()); paragraph = [] }
                 continue
             }
+            // A line identical to the one just taken is a redraw that got past every earlier
+            // defence, and a reader has no use for the second copy whatever produced it.
+            if paragraph.last == trimmed { continue }
             started = true
             paragraph.append(trimmed)
         }
@@ -331,6 +349,17 @@ enum ScreenTail {
         defer { lock.unlock() }
         let grown = reconcile(documents[sessionID] ?? [], with: frame)
         documents[sessionID] = Array(grown.suffix(retainedLines))
+    }
+
+    /// FNV-1a over the words, for a revision token a client can compare across requests.
+    /// Written out rather than borrowed from `hashValue`, whose seed changes per process.
+    static func fingerprint(of text: String) -> UInt64 {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in text.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100000001b3
+        }
+        return hash
     }
 
     /// Whether anything has been captured for this session yet. A reader arriving at a session
