@@ -68,6 +68,7 @@ clawdline_production_sources=(
   Sources/ProjectArtifact.swift
   Sources/ProjectIcon.swift
   Sources/ProjectStatus.swift
+  Sources/ReadingFreshness.swift
   Sources/RemoteAuth.swift
   Sources/RemoteIcon.swift
   Sources/RemoteQR.swift
@@ -132,6 +133,7 @@ clawdline_test_sources=(
   Tests/OrchestratorRecoveryTests.swift
   Tests/PeerMessageTests.swift
   Tests/PlannerTests.swift
+  Tests/ReadingFreshnessTests.swift
   Tests/RootAssignmentCoordinationTests.swift
   Tests/ScheduleResumeTests.swift
   Tests/ScheduledDispatchTests.swift

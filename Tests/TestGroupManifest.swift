@@ -472,6 +472,15 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a reading with live sessions in it reaches the ledger, both ways",
     "a manual session refresh has coherent evidence and bounded backpressure",
     "what a terminal's spend is filed under, and what the backfill hands over",
+    "a warm reading is answered without asking the Mac again",
+    "a stale reading goes out first and the refresh happens behind it",
+    "a refused refresh ages the reading it could not replace",
+    "one expensive read serves every request that arrived without one",
+    "past serveFor a reading stops being an answer",
+    "a request waiting on a refresh that fails is answered, not refused",
+    "keys do not read each other's readings",
+    "the trace separates waiting from working",
+    "percentiles answer for an empty lane instead of crashing",
 ]
 
 func validateExecutedTestGroupManifest() {
