@@ -1186,11 +1186,14 @@ task was in `spawning`. That last one is not a bug: once a task starts opening, 
 queued secret is gone, so the app fails closed rather than risk opening the same global operation
 twice. A serialized task that was still `queued` is recovered and pumped instead.
 
-**A `spawn_failed` task can be retried by the broker rather than by the root.** It was 16.5% of
-every dispatch on the machine this was measured on — 34 of 206, 33 of them Codex — and the answer
-used to be that the root writes the whole `task.json` out again under a fresh id, because that id
-is finished and re-sending it just returns the terminal record. That is thirty-four rewrites by
-the most context-loaded session in the tree, and every one of them is a chance to drop a field.
+**A `spawn_failed` task can be retried by the broker rather than by the root.** It was 34 of 206
+dispatches on the machine this was measured on, 2026-08-28, 33 of them Codex. That registry keeps
+200 rows, so the figure is one rolling window and not a running total: a later reading counts a
+different population rather than this one changed, and it must not be quoted as the current rate.
+The answer used to be that the root writes the whole `task.json` out again under a fresh id,
+because that id is finished and re-sending it just returns the terminal record. That is
+thirty-four rewrites by the most context-loaded session in the tree, and every one of them is a
+chance to drop a field.
 
 [`POST /v1/orchestrator/tasks/:id/respawn`](api.md#post-v1orchestratortasksidrespawn) copies the
 original `task.json` with a fresh `task_id`, mints a fresh secret unless the caller supplies one,

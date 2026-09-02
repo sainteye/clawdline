@@ -3469,9 +3469,12 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/respawn \
          "respawn_of":"3f9a21bc-…","respawn_generation":1,…}}
 ```
 
-`spawn_failed` was 34 of 206 dispatches on the machine this was measured on — 33 of them Codex —
-and until this route existed the answer was that the root writes the whole `task.json` out again
-under a fresh id, which is thirty-four rewrites by the most context-loaded session in the tree.
+`spawn_failed` was 34 of 206 dispatches on the machine this was measured on, 2026-08-28 — 33 of
+them Codex. That registry keeps 200 rows, so the figure is one rolling window and not a running
+total: a later reading counts a different population rather than this one changed, and it must not
+be quoted as the current rate. Until this route existed the answer was that the root writes the
+whole `task.json` out again under a fresh id, which is thirty-four rewrites by the most
+context-loaded session in the tree.
 The broker already holds everything the original said, so it does the copying.
 
 The new task is an **ordinary dispatch**: a fresh id, a fresh directory, and every capacity, depth,
