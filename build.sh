@@ -156,6 +156,39 @@ clawdline_lease_supervise() {
   done
 }
 
+# The first record after taking the directory directly — and the check that it was written.
+#
+# **A first write that half-fails leaves a lock nothing can clear.** `clawdline_lease_record`
+# touches the beat before it writes the record that points at it, so a `$temp` create that fails
+# where the beat's succeeded — ENOSPC on `/tmp` rather than a permission problem, which fails both
+# — leaves a directory with a `beat` and no `holder.txt`. That is the one shape `test.sh`'s escape
+# from `unknown` deliberately refuses to clear: a directory that has a beat had a record once and
+# lost it, which is a different and unexplained event. And this script runs under `set -e`, so the
+# unchecked call this replaces did not even get as far as reporting it — the build ended on the
+# failed write and left the machine's compile slot blocked with no automatic way out.
+#
+# `test.sh` has handled this since the record contract landed and the broker's `createDirectory`
+# removes the directory when its write fails; this was the third writer, and the asymmetry was
+# invisible because each was reviewed against its own file.
+clawdline_lease_first_record() {
+  local why=$1
+  CLAWDLINE_LEASE_MODE=directory
+  CLAWDLINE_SUITE_JOBS_SOURCE="unset ($why)"
+  if clawdline_lease_record analysing "$$" first; then
+    return 0
+  fi
+  echo "!! could not write $CLAWDLINE_LEASE_DIR/holder.txt — refusing to compile behind a lock that says nothing about who holds it" >&2
+  # Give the directory back, but only while it is still the record-less one this build made a
+  # moment ago. Nobody else can legitimately be in it: the only rule that hands on a directory with
+  # no record requires it to be older than a whole renewal deadline, which one created milliseconds
+  # ago is not. Written as a guard rather than an unconditional `rm -rf` so that the reasoning is
+  # visible rather than remembered — the same shape, and the same argument, as `test.sh`'s.
+  if [ ! -f "$CLAWDLINE_LEASE_DIR/holder.txt" ]; then rm -rf "$CLAWDLINE_LEASE_DIR"; fi
+  # And this build never held it, so the exit trap must not try to release it.
+  CLAWDLINE_LEASE_MODE=""
+  return 1
+}
+
 clawdline_lease_acquire() {
   CLAWDLINE_LEASE_PORT=$(clawdline_lease_port)
   CLAWDLINE_LEASE_TOKEN="$HOME/.config/clawdline/orchestrator-token"
@@ -243,9 +276,9 @@ except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
           # The broker did not answer. The directory is still the truth, so fall back to it
           # rather than proceeding without a lease.
           if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
-            CLAWDLINE_LEASE_MODE=directory
-            CLAWDLINE_SUITE_JOBS_SOURCE="unset (no broker answered, so no budget)"
-            clawdline_lease_record analysing "$$" first
+            if ! clawdline_lease_first_record "no broker answered, so no budget"; then
+              return 1
+            fi
             echo "→ heavy-compile lock taken directly; the broker did not answer"
             return 0
           fi
@@ -276,9 +309,9 @@ except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
       esac
     else
       if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
-        CLAWDLINE_LEASE_MODE=directory
-        CLAWDLINE_SUITE_JOBS_SOURCE="unset (no orchestrator token, so no budget)"
-        clawdline_lease_record analysing "$$" first
+        if ! clawdline_lease_first_record "no orchestrator token, so no budget"; then
+          return 1
+        fi
         echo "→ heavy-compile lock taken directly; this Mac has no orchestrator token"
         return 0
       fi
