@@ -175,12 +175,31 @@ enum StartPoints {
     /// Which terminal a new session goes into, or why none of them will do.
     enum Plan: Equatable {
         case iterm
+        /// A tmux server is already running, so a window can be added to it.
         case tmux
+        /// tmux is installed and no server is running, so one has to be started with nothing
+        /// attached to it. Kept apart from ``tmux`` because the two are different promises to the
+        /// person: one puts a session where they are already looking, the other puts it somewhere
+        /// they have to go and find. See ``plan(scope:running:tmux:)``.
+        case tmuxDetached
         /// A terminal this can drive, that is not open. The bundle id.
         case notRunning(app: String)
         /// The terminal Settings names is not one this can drive, and there is no tmux to reach
         /// it through. The bundle id.
         case cannotDrive(app: String)
+    }
+
+    /// How far tmux gets on this Mac. Three states rather than a `hasTmux` flag, because the two
+    /// that used to share a spelling — *installed with no server* and *not installed at all* —
+    /// are the whole of the question in ``plan(scope:running:tmux:)``: one of them can be
+    /// answered by starting a server and the other cannot be answered at all.
+    enum TmuxReach: Equatable {
+        /// No tmux this app can find. ``Tmux/binary`` says where it looked.
+        case absent
+        /// A tmux binary, and no server running on the default socket.
+        case installed
+        /// A server with panes on it, which is somewhere a window can be opened right now.
+        case running
     }
 
     static let itermBundleID = "com.googlecode.iterm2"
@@ -197,7 +216,17 @@ enum StartPoints {
     /// An empty scope means the hotkey is global, which says nothing about which terminal is in
     /// use — so it reads as *no preference*, and no preference is iTerm2 first: the same order
     /// every other terminal operation in this app has always used.
-    static func plan(scope: String, running: Set<String>, hasTmux: Bool) -> Plan {
+    ///
+    /// **Starting a tmux server is offered in one situation and withheld in the other, and the
+    /// difference is whether the person has somewhere else to be sent.** A session in a server
+    /// nobody is attached to is real, drivable and invisible: Clawdline lists it, reads it, types
+    /// into it and closes it, while at the Mac it does not appear until somebody runs
+    /// ``Tmux/attachCommand``. Where the terminal in Settings is one this cannot drive, the
+    /// alternative to that trade is a refusal telling a phone to go and run tmux on a Mac it is
+    /// not sitting at — so the server is started. Where the terminal is iTerm2 and it is merely
+    /// shut, there is a better answer than either: open iTerm2, which is one click and puts the
+    /// session where the person is already looking.
+    static func plan(scope: String, running: Set<String>, tmux: TmuxReach) -> Plan {
         let ids = scope.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -209,10 +238,11 @@ enum StartPoints {
             // iTerm2 is wanted and shut. tmux is not a fallback *to* iTerm2 — it is the other
             // real backend, and a pane in it is a session that exists whether or not anything is
             // attached to it.
-            if hasTmux { return .tmux }
+            if tmux == .running { return .tmux }
             return .notRunning(app: itermBundleID)
         }
-        if hasTmux { return .tmux }
+        if tmux == .running { return .tmux }
+        if tmux == .installed { return .tmuxDetached }
         return .cannotDrive(app: ids[0])
     }
 
@@ -250,7 +280,10 @@ enum StartPoints {
             return .refused(status: 404, code: "not_found",
                             message: "No place named that", app: nil)
         }
-        switch plan(scope: Config.shared.scopeApp, running: runningApps(), hasTmux: tmuxIsUp()) {
+        // Asked once and held: `tmuxReach()` lists panes, and asking it twice would be a second
+        // subprocess answering a question that may by then have a different answer.
+        let chosen = plan(scope: Config.shared.scopeApp, running: runningApps(), tmux: tmuxReach())
+        switch chosen {
         case .iterm:
             let opened = ITerm.newTabResult(line: itermLine(cwd: place.path,
                                                              assistant: assistant,
@@ -270,19 +303,20 @@ enum StartPoints {
             }
             return .started(id: made.id, backend: .iterm)
 
-        case .tmux:
+        case .tmux, .tmuxDetached:
             // Nothing is quoted here and nothing needs to be: tmux is given a working directory
             // and a command as separate arguments of a subprocess, so there is no line for a
             // directory name to break out of. The command reaching a shell one level down is why
             // `modelName` is a closed alphabet rather than an escaping rule — there is nothing
             // in a name it admits for that shell to read.
-            let opened = Tmux.newWindowResult(
-                cwd: place.path,
-                command: assistant.command(model: modelName(model),
-                                             reasoningEffort: reasoningEffort,
-                                             permission: permission,
-                                             addDir: extraDir(addDir),
-                                             resume: sessionName(resume)))
+            let line = assistant.command(model: modelName(model),
+                                         reasoningEffort: reasoningEffort,
+                                         permission: permission,
+                                         addDir: extraDir(addDir),
+                                         resume: sessionName(resume))
+            let opened = chosen == .tmuxDetached
+                ? Tmux.newSessionResult(cwd: place.path, command: line)
+                : Tmux.newWindowResult(cwd: place.path, command: line)
             guard case .success(let pane) = opened else {
                 let message: String
                 if case .failure(let failure) = opened { message = failure.message }
@@ -299,10 +333,15 @@ enum StartPoints {
                                    + "you. Open it on the Mac and try again.", app: name)
 
         case .cannotDrive(let app):
+            // This now means what it says: not "no tmux server" — one of those gets started —
+            // but no tmux on this Mac at all, which is a thing only somebody at the keyboard can
+            // change. Telling a phone to go and run tmux was an instruction it could not carry
+            // out; installing tmux is at least the true one.
             let name = appName(app)
             return .refused(status: 409, code: "terminal_unsupported",
                             message: "\(name) is the terminal in Settings, and a session cannot "
-                                   + "be started in it directly. Run tmux there and this works "
+                                   + "be started in it directly. There is no tmux on this Mac to "
+                                   + "reach it through — install tmux and this works "
                                    + "— see docs/remote.md.", app: name)
         }
     }
@@ -1006,7 +1045,7 @@ enum StartPoints {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// Which applications are open, so ``plan(scope:running:hasTmux:)`` can be told rather than
+    /// Which applications are open, so ``plan(scope:running:tmux:)`` can be told rather than
     /// having to ask. On the main thread, because `NSWorkspace` is.
     private static func runningApps() -> Set<String> {
         let read = { Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)) }
@@ -1024,10 +1063,18 @@ enum StartPoints {
         _ = runningApps()
     }
 
-    /// Whether there is a tmux **server** to open a window on, not merely a tmux binary. Without
-    /// a server `new-window` has nothing to add to, and a session nobody can attach to is not a
-    /// session anybody asked for.
-    private static func tmuxIsUp() -> Bool {
-        Tmux.binary != nil && !Tmux.panes().isEmpty
+    /// How far tmux gets on this Mac right now: nothing, a binary, or a server with panes on it.
+    ///
+    /// **An inventory that failed is read as a server, not as an absent one.** `panes()` comes
+    /// back empty both when there is no server and when tmux could not be asked, and only the
+    /// first of those is permission to start a second server on top of whatever is there —
+    /// ``Tmux/paneObservation()`` keeps the two apart precisely so this can tell them apart. A
+    /// `new-window` against a server that would not answer fails honestly with tmux's own words,
+    /// which is the better of the two wrong answers.
+    private static func tmuxReach() -> TmuxReach {
+        guard Tmux.binary != nil else { return .absent }
+        let observed = Tmux.paneObservation()
+        if !observed.sessions.isEmpty { return .running }
+        return observed.isComplete ? .installed : .running
     }
 }

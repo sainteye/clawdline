@@ -732,27 +732,46 @@ group("the line a new tab is given, before anything types it") {
 
 group("which terminal a session is started in, and when none of them will do") {
     let iterm = StartPoints.itermBundleID
-    func plan(_ scope: String, _ running: Set<String>, _ tmux: Bool) -> StartPoints.Plan {
-        StartPoints.plan(scope: scope, running: running, hasTmux: tmux)
+    func plan(_ scope: String, _ running: Set<String>,
+              _ tmux: StartPoints.TmuxReach) -> StartPoints.Plan {
+        StartPoints.plan(scope: scope, running: running, tmux: tmux)
     }
-    expect("iTerm2 is named and open", plan(iterm, [iterm], false), .iterm)
+    expect("iTerm2 is named and open", plan(iterm, [iterm], .absent), .iterm)
     expect("no scope at all means no preference, and that is iTerm2 first",
-           plan("", [iterm], true), .iterm)
-    expect("named among others", plan("com.apple.Terminal,\(iterm)", [iterm], false), .iterm)
+           plan("", [iterm], .running), .iterm)
+    expect("named among others", plan("com.apple.Terminal,\(iterm)", [iterm], .absent), .iterm)
     expect("iTerm2 is named and shut, and there is a tmux to go through instead",
-           plan(iterm, [], true), .tmux)
+           plan(iterm, [], .running), .tmux)
     expect("iTerm2 is named and shut and there is nothing else",
-           plan(iterm, [], false), .notRunning(app: iterm))
+           plan(iterm, [], .absent), .notRunning(app: iterm))
 
     // The refusal that matters: a terminal this cannot drive must be said out loud rather than
     // quietly handed to iTerm2, because a session that opened somewhere nobody was looking is
     // worse than a sentence saying it did not open.
-    expect("another terminal, with tmux under it", plan("com.mitchellh.ghostty", [], true), .tmux)
+    expect("another terminal, with tmux under it",
+           plan("com.mitchellh.ghostty", [], .running), .tmux)
     expect("another terminal and no tmux is refused by name",
-           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], false),
+           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], .absent),
            .cannotDrive(app: "com.mitchellh.ghostty"))
     check("and it never silently becomes iTerm2",
-          plan("com.apple.Terminal", [iterm], false) != .iterm)
+          plan("com.apple.Terminal", [iterm], .absent) != .iterm)
+
+    // **A tmux with no server running is the case this used to lose.** `hasTmux` spelled
+    // *installed* and *not installed* the same way, so a Ghostty or Terminal.app user who had
+    // closed their last tmux window was told to go and run tmux — on a Mac they were not sitting
+    // at, from a phone that had just asked for a session.
+    expect("a terminal this cannot drive, with a tmux that is merely installed, starts a server",
+           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], .installed), .tmuxDetached)
+    expect("and it is refused only when there is no tmux at all",
+           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], .absent),
+           .cannotDrive(app: "com.mitchellh.ghostty"))
+    // The other half of the judgement: iTerm2 shut is not that case. Opening iTerm2 is one click
+    // and puts the session where the person is already looking, which beats a server nobody is
+    // attached to.
+    expect("iTerm2 shut with tmux installed but no server is still asked to be opened",
+           plan(iterm, [], .installed), .notRunning(app: iterm))
+    expect("no scope at all follows the same rule", plan("", [], .installed),
+           .notRunning(app: iterm))
 }
 
 group("the list of places, tidied") {

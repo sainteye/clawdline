@@ -10,6 +10,7 @@ have gone the other way, and a decision with no reason written down is one the n
 
 - [Which session it sends to](#which-session-it-sends-to)
 - [Running under `tmux -CC`](#running-under-tmux--cc)
+- [When there is no tmux server yet](#when-there-is-no-tmux-server-yet)
 - [Which session wants you](#which-session-wants-you)
 - [Reading a session back](#reading-a-session-back)
 - [Talk instead of type](#talk-instead-of-type)
@@ -108,6 +109,49 @@ reading whatever is in `$TMUX_TMPDIR` or `/tmp/tmux-$UID` and attaching meaning 
 guess about which server is drawing your tabs is worse than a refusal that says so. `tmuxPath` in
 the config names the binary; there is deliberately no socket setting yet, and adding one is a
 decision about what Clawdline is willing to assume rather than a missing line of code.
+
+## When there is no tmux server yet
+
+If your terminal is Ghostty, Terminal.app, Warp or anything else Clawdline cannot drive directly,
+tmux is the way in — and until now that meant *a tmux server that was already running*. Close your
+last tmux window and asking for a session from a phone came back with "run tmux there", which is an
+instruction a phone cannot carry out.
+
+So Clawdline starts one. With tmux installed and no server up, a start creates the server itself,
+in a session called **`clawdline`**, with nothing attached to it:
+
+```sh
+tmux attach -t clawdline
+```
+
+**Nothing is attached, and that is the trade.** The pane is real from the moment it exists —
+Clawdline lists it, reads it, types into it and closes it, exactly like any other tmux pane,
+because `list-panes -a` counts detached sessions on purpose. What it is *not* is drawn anywhere:
+at the Mac you see nothing until you run the line above. It is offered where the alternative is a
+refusal you cannot act on, and withheld where there is something better: with iTerm2 named in
+Settings and merely shut, Clawdline still asks you to open iTerm2, because that is one click and
+puts the session where you are already looking. With no tmux at all, the refusal stands and now
+says the true thing — install tmux.
+
+**The line is typed at a login shell rather than handed to tmux as the pane's command.** A pane
+started as `new-window 'claude …'` is run by `sh -c` with the tmux *server's* environment, and a
+server Clawdline started inherits the app's — which, for anything launched from Finder, has no
+login shell behind it and so no `PATH` worth reading. Measured on macOS with tmux 3.6a: that
+spelling draws `zsh:1: command not found: claude`, and so does every later window on the same
+server. A pane created with no command at all gets an interactive login shell, which reads the
+file your `PATH` is actually set in — so Clawdline makes the pane, then types the line into it,
+the same two steps the iTerm2 backend has always taken.
+
+**Typing is not running, and Clawdline claims only the first.** tmux tells it the keystrokes were
+delivered to the pane; nothing on that path tells it your shell ran them. A startup file that
+flushes pending input — `tcsetattr(0, TCSAFLUSH, …)`, which is what some `stty` lines and a few
+framework rc files do — throws the line away while tmux reports the same success it reports for a
+line that ran. There is deliberately no check for that here: an rc that merely sleeps for three
+seconds *keeps* the line and runs it late, so inside any wait a start can afford, a swallowed line
+and a slow shell are the same silence. What you get instead is the truth a moment later — the pane
+appears in the list as the shell it actually is, and a task briefed into it ends `spawn_failed`
+rather than reporting a session that was never there. iTerm2 has always worked this way too: the
+tab is made, the line is written, and the shell is not waited for.
 
 ## Which session wants you
 

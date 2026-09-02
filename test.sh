@@ -44,13 +44,30 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # 16 for the ceiling itself and for a control-mode client having to be speaking over a pty iTerm2
 # named in the same reading, and 6 for that identity deciding activation and for the activation
 # tail leaving the caller's thread. 7488 -> 7519.
+# tmux read parity adds 56 unconditional checks in four groups, counted by running each group on
+# its own rather than by reading the source: 30 for one subprocess answering for every pane — the
+# script it sends, the marker that has no `%` for strftime to eat, the parsing of what comes back,
+# and ten panes costing one invocation with a dead one among them — 14 for a server Clawdline
+# starts detached and types its line into rather than handing to tmux as a command, 8 for the
+# screen a decision reads being the screen and not its history, and 4 more in the existing
+# terminal-plan group for tmux installed with no server being its own answer. 7542 -> 7598.
+# Correcting that slice adds 28, counted the same way — each group run on its own. 17 are a new
+# group for what a failed tmux command proves about the server behind it, which is where the
+# blocking defect was: a socket that has never existed says `error connecting to <path> (No such
+# file or directory)` rather than `no server running on <path>`, so the Mac the detached server
+# was written for was the one Mac it did not start on. 8 more in the batched-reading group, for a
+# deadline and an unreachable socket no longer reading as a tmux too old for the script, and for
+# the per-pane fallback itself, which no test had ever executed. 3 in the detached-server group,
+# for the page saying that typing a line is not the shell running it and for a pane tmux would
+# not type into being a failure. 7598 -> 7626.
 # Extracting the store codec into `OrchestratorStore` adds 399 checks and changes nothing
 # else: ten table-driven codec groups, one check per field per record, plus the legacy-shape
 # fixtures each type's preserved branch is worth. Every pre-existing count is unmoved, which
 # is what makes the relocation behaviour-neutral rather than merely green. The extraction was
-# measured against 7519 and lands on top of the reader-paced question steps, which had already
-# moved the baseline to 7542. 7542 + 399 -> 7941.
-expected_swift_receipt='7941 checks passed'
+# measured against 7519 and has been rebased twice since, each time on somebody else's landing
+# rather than on anything it changed: the reader-paced question steps moved the baseline to
+# 7542, and tmux read parity moved it to 7626. 7626 + 399 -> 8025.
+expected_swift_receipt='8025 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

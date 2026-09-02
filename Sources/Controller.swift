@@ -1399,7 +1399,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 return
             }
             guard Config.shared.outputMode != "transcript" else { return }
-            let raw = Targets.capture(target)
+            let raw = Targets.screenWithHistory(of: target)
             // Trailing blank lines are most of what a terminal screen is; dropping them puts
             // the last real line at the bottom, which is where the eye goes.
             var lines = (raw ?? "").split(separator: "\n", omittingEmptySubsequences: false)

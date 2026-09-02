@@ -89,10 +89,25 @@ Worth having in mind before optimising anything on this path:
 
 Two consequences follow from the first row, and they are the ones most likely to be forgotten.
 A reading is **one round trip to every terminal**, batched per backend on purpose — iTerm2 answers
-for all of its sessions in a single `osascript` run, and tmux is asked pane by pane only because
-`capture-pane` has no plural. And a reading in progress **suppresses the next one**, so anything
-that makes a reading slower does not queue up work; it lowers the rate at which the app perceives
-anything.
+for all of its sessions in a single `osascript` run, and tmux answers for all of its panes in a
+single `source-file`. And a reading in progress **suppresses the next one**, so anything that makes
+a reading slower does not queue up work; it lowers the rate at which the app perceives anything.
+
+tmux used to be asked pane by pane, and the reason written down here was that `capture-pane` has no
+plural. That is true and it was never the whole story: **tmux takes a whole script at once**, and
+the panes can be told apart by putting a `display-message` marker in front of each capture.
+Measured on tmux 3.6a with ten panes, 2026-09-02: one process and a median of 3.45 ms, against ten
+processes and 32.01 ms. Ten panes were ten process spawns per beat, and by the arithmetic above
+that cost did not queue — it lowered the rate at which anything was perceived.
+
+The delimiter is a marker rather than the order the answers came back in, and that is the failure
+semantics rather than a nicety. A command list handed to tmux as `;`-separated *arguments* stops
+dead at the first error, so one pane that has gone away takes every pane after it with it —
+measured. `source-file -` runs the rest and reports the failure in its exit status, so the reading
+is parsed whether tmux was happy or not, and one unanswering pane costs one `.unknown` exactly as
+it did when every pane had a subprocess of its own. A tmux too old for `source-file -` prints no
+marker at all, which is the one case that falls back to asking pane by pane: going blind on a whole
+backend is a far worse trade than the round trips this exists to save.
 
 That is the shape of the budget. The panel open asks every 1.2 seconds; away from it, every
 twenty. What fits inside 1.2 seconds is the constraint on this whole path, and the reason

@@ -436,6 +436,14 @@ the owners they belong to — the next cut to touch those owners should take the
 proved mechanically rather than asserted: reversing the boundary spelling and the six
 `private` -> internal widenings makes the moved body byte-identical to the original under `diff`.
 
+Two more pure codecs stayed and the delivery report did not say why, which independent review
+caught: `ledgerRecord(of:)` and `completionRecord(_:)` both pass the same mechanical test — no
+shared collection, no lock — but sit outside the section, against the ledger and the completion
+outbox that own them. Leaving them is right for the same reason the closure-attestation pair stayed;
+the cut that takes those owners should take these with it. A report that claims a mechanically
+re-derived list owes the reader every function the criterion selected, including the ones it then
+declined on other grounds.
+
 **Cut 2 — `OrchestratorRegistry.swift`, the owner.** One type owns the lock and the collections and
 exposes a transaction interface; the 160 bare lock sites converge on it and the 10 `…Locked()`
 contracts become methods that cannot be called outside a transaction. Migrate one collection at a
@@ -463,25 +471,36 @@ a full suite on 2026-09-02:
 
 | | this document said | observed after Cut 1 |
 |---|---:|---:|
-| ordered groups | 463 | 490 |
+| ordered groups | 463 | 494 |
 | ordered runners | 25 | 28 |
 | suite files | 38 | 41 |
-| Swift checks | — | 7,941 |
+| Swift checks | — | 8,025 |
 | `Orchestrator.swift` ceiling | 13,592 | 12,819 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,426 |
 
-**The correction itself needed correcting, twice, and both times the same way.** This section first
-said the guard held 480 ordered groups; at `13bc9a10` it held **479**, because the reading was taken
-from a working tree carrying another session's uncommitted edits rather than from HEAD. Then 479
-became 480 on `main` and the extraction added ten more, so the landed figure is 490. A count read
-from the shared working tree is a reading about that moment's union of everybody's work, not about
-the repository — and it expires in hours. Take these from HEAD, or from the exact tree being landed.
+**The correction itself needed correcting three times, always the same way, and the third time an
+independent reviewer had to catch it.** The section first said the guard held 480 ordered groups; at
+`13bc9a10` it held **479**, because the reading came from a working tree carrying another session's
+uncommitted edits rather than from HEAD. Then `main` moved to 480 and the extraction added ten, so
+the figure became 490 — correct for about an hour, until tmux read parity landed 484 and the answer
+became 494. The check receipt drifted along the same path: 7,918 computed, 7,941 observed, 8,025
+observed again after the rebase.
 
-The 7,941 is an observation and not arithmetic. The implementer computed 7,918 as 7,519 plus a
-focused run of 399 and never ran the full suite; that number was correct about its own base and
-already stale, because `main` had moved the baseline to 7,542 underneath it. This document's own
-rule applies to its own receipts: arithmetic over unconditional checks is not an observation, and
-the landing root owns the run that settles it.
+Every one of those was a true reading of a tree that had stopped existing. **The defect is not
+carelessness about arithmetic; it is that a count in prose has no owner and nothing makes it go
+red.** `tools/check-architecture-boundaries.sh` holds the same numbers and fails the build when they
+drift, which is why the guard was right three times while this table was wrong three times. The
+reviewer found the third instance by re-running `git merge-tree` and noticing that this file merges
+*cleanly* — the counts in `test.sh` and the guard conflict loudly and get fixed, and the table beside
+them updates silently and does not. So: when a landing moves a count, the guard is the record and
+this table is a copy; re-read it from the guard on the exact tree being landed, or do not write it
+down at all.
+
+The 8,025 is an observation. The implementer computed 7,918 as 7,519 plus a focused run of 399 and
+never ran a full suite after its own change; that number was already stale when it was written,
+because `main` had moved the baseline underneath it twice. This document's own rule applies to its
+own receipts: arithmetic over unconditional checks is not an observation, and the landing root owns
+the run that settles it.
 
 Any Phase gate decision taken against the stale numbers was taken against the wrong baseline.
 Replace the exception clause with a budget the guard can execute: a feature may add lines to a
