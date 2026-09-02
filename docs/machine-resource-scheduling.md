@@ -290,13 +290,28 @@ compile rather than a slot that never comes. When not even the floor can be admi
 names the deficit, which measured quantity it is short of and how that was taken, and who is holding
 the memory, so that *why am I waiting* always has an answer.
 
-**One honest caveat, because it was measured after the policy was drafted.** On this machine the
-parallelism axis turned out to be nearly empty for the case that matters: the peak came from one
-frontend processing one file, which `-j` cannot influence. So the ceiling's value here is as a
-**ceiling** — it stops a caller from multiplying the peak by eight — rather than as a floor that
-lets a starved machine still finish. The budget shape is right; the axis it was first drawn on is
-smaller than expected, and any real degradation ladder has to be built from measurements rather than
-from the assumption that a knob exists.
+**A correction, because the axis this was first drawn on turned out to be empty.** The degradation
+ladder above was written assuming a compile could be made smaller by asking for fewer jobs. On this
+machine it cannot. Measured twice against the exact `-c -o "$BIN"` invocation — 7,479 samples at
+54 ms from a walker filtering on the driver's own descendants, and 426 `ps` samples at 250 ms — the
+driver never had more than one `swift-frontend` alive without `-j`, while the same instruments read
+8 when `-j 8` was passed. **The default is one, so granting `-j 1` grants what already happens.**
+The peak lives inside a single frontend compiling a single file, which no job count can influence.
+
+So the ceiling is worth having as a **ceiling** — it stops a caller from multiplying the peak by
+eight — and is worth nothing as a floor. The shape of the idea survives: a grant that carries a
+budget is better than a yes/no, and a refusal must name its deficit. What does not survive is the
+assumption that a knob exists because a policy would like one. **Any degradation ladder has to be
+built from a measured axis, and this one had to be measured before it could be used.**
+
+There is a second thing that reading exposed, and it lands directly on `(B)`. During that compile a
+**second `swift-driver` was running that no lock governs**, spawned by `node
+Tests/keychain-rebuild-focused.mjs` — a node test inside `test.sh` itself, further down the same
+script that holds the lock. A lease that guards one `swiftc` line therefore does not guard the
+script it lives in. It also settles what `(B)` counts: **machine-wide, including compilers that are
+not yours.** That looks like a false positive and is the definition — `(B)` asks whether anything on
+this machine is burning, not whether your own work is running, so counting somebody else's compiler
+is exactly its job, and missing one you spawned yourself is the failure that matters.
 
 `test.sh` gained that injection point in `54891280`: `CLAWDLINE_SUITE_JOBS` is a positive whole
 number that becomes `-j <n>`, anything else is refused, unset adds no flag at all, and the run
@@ -356,11 +371,33 @@ help.
 ### What this means for the scheduler's own justification
 
 Stubbing that one file out of the tree — its two non-private signatures kept, the other 147 files
-compiled normally at `-j 1` — produced a peak of **0.84 GiB and 93 seconds** for the whole codegen,
-against a lower bound of 23.65 GiB with the file present: **about twenty-eight times**. That figure
-is itself a lower bound, taken by two samplers two seconds apart on a 93-second build, and the
-comparison rests on somebody else's instrument; both caveats came from the run that produced it and
-are kept here rather than rounded away.
+compiled normally at `-j 1` — produced a peak of **0.84 GiB and 93 seconds** for the whole codegen.
+A completed measurement of the file itself then replaced the lower bound it was compared against:
+**46.06 GiB and 336.3 s** for that one file, cross-checked three ways — `proc_pid_rusage`'s
+lifetime maximum, `/usr/bin/time -l`'s peak footprint, and the 46.04 GiB the JetsamEvent recorded
+for the process it killed. The whole 148-file compile completed in 426.2 s with a single-process
+peak of 46.06 GiB and the lifetime maxima of its 147 frontends summing to 59.84 GiB, of which 77%
+belongs to that one file — 49 times the next worst.
+
+The phase is downstream of everything the earlier guesses pointed at. On that file alone:
+`-typecheck` 0.070 GiB, `-emit-silgen` 0.081, `-emit-sil` 0.090, `-emit-irgen` 0.104, all inside a
+second; `-emit-ir` reached 37.87 GiB before it was stopped and `-c` completed at 46.06.
+**The jump is in the LLVM pass pipeline, after IR generation.** So the `async` lowering is not where
+the cost is spent — it is what builds the object the cost is spent on, one enormous LLVM function.
+The rule that follows is about function size, and `async` is merely how a function gets that big
+here; a reader told "async is expensive" would look in the wrong place.
+
+Splitting that function mechanically into 28 small `async` sections — statement text, order,
+assertion set and check count all unchanged — takes the file to **0.83 GiB and 2.7 s**. That split
+is also the experiment that separates the two candidate variables, because it leaves every
+unstructured `Task {}` site exactly where it was and changes only how many suspension points share
+one function. With the largest section carrying 16 of the original 143, a cost linear in
+suspension points per function would predict 11.2% and a quadratic one 1.25%; the measurement is
+1.80%, which interpolates to an exponent of about 1.8 — 2.0 depending on which denominator is used.
+**Quadratic, within the precision of a single data point.** Which also says what a coarser split
+would buy: six thematic sections, largest carrying 37, predicts 3 - 4 GiB rather than the 0.83 that
+was measured, so the thematic boundaries are worth using to decide naming and grouping and not to
+decide how many pieces there are.
 
 It is worth being honest about what that does to this page's own argument. **If one file explains
 the peak, then fixing that file removes most of the danger the lease was drawn to contain.** Two
