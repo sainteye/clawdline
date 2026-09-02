@@ -1536,6 +1536,84 @@ drives the loud row and push notification. Native and web rows draw peer waits q
 `⏳ owner · release condition`, making an idle-looking but parked session safe for a person to leave
 open. A final-line `[Clawdline waiting]` sentence is only a fallback when that UI is unavailable.
 
+### The heavy-compile slot is leased, not agreed
+
+Two force-reboots on 2026-09-03 came from four `swift-frontend` processes on a 24 GB Mac holding
+lifetime-max footprints of about 46, 45, 27 and 8 GB. Several sessions share one checkout and each
+ran `./test.sh`, whose one `swiftc` call compiles 134,863 lines. The stopgap was a gentleman's
+agreement to create `/tmp/clawdline-suite.lock` by hand; queueing is now the system's behaviour
+instead of a convention people remember.
+
+**One primitive, two front doors.** The lock directory is the truth: holding it is what `mkdir`
+says it is, atomic and kernel-backed, and still correct for a contributor who runs the scripts
+with no Clawdline at all. Inside it, `holder.txt` carries the identity as `holder=`, `pid=`,
+`started=`, `tree=`, `log=` and `note=`, plus three additive fields — `work=` (the pids compiling
+right now), `done_flag=` (a path the run creates when it has finished) and `renewed=` (the proof
+of life). The broker's durable record adds only what a directory cannot hold: who the holder is in
+Clawdline terms, the FIFO queue and its depth, the acquisition and renewal clocks, and the
+reconciliation state after a restart. **There is no second lock**, because a second independent
+authority that can disagree with the directory is a race rather than a safety net.
+
+The five routes and every refusal code are in [the API page](api.md#the-heavy-compile-lease).
+
+**Liveness is proved by renewal, not by a pid existing.** This is the rule the first
+implementation of the stopgap got wrong, in both directions from one cause: a holder recorded
+`pid=72929` and that pid was a `sleep 14400` sentinel adopted by launchd. A sentinel outlives the
+work, so under a pid-existence rule the lock becomes a four-hour roadblock nobody can clear; and
+the obvious patch — "no `swift-frontend` running means stale" — makes the lock reclaimable in the
+gaps *between* the compiles of one study, which is the collision back again. Both are the same
+cause: the liveness signal was bound to a proxy process instead of to the work.
+
+So the holder refreshes its record while it is working, and a `sleep` cannot refresh anything. **A
+clock on the work is wrong** — a four-hour compile is not stale, and a duration timeout on the
+work was withdrawn for exactly that reason — **a clock on the proof of life is right**, because a
+holder renewing every twenty seconds never trips a sixty-second renewal deadline however long the
+work runs.
+
+Admission needs both halves and the physical backstop is never waived: **(A)** the holder has
+stopped proving it is alive, **and (B)** no `swift-frontend` exists anywhere on the machine.
+(B) alone must never admit anybody, and neither must (A) — a holder that is wedged or swapped out
+and missed a heartbeat while its compile is still burning 46 GB keeps the lock. Evidence that is
+missing, stale or ambiguous reads `unknown` and blocks; it never reads "dead". **Nothing kills
+anything**: a refusal names the holder, the orphan pids and the evidence, and a person decides.
+
+**The broker's third liveness axis is why it exists on top of a file lock.** A lease whose owning
+task has reached `failure`, `timeout` or `cancelled` has stopped proving liveness no matter what
+any sentinel pid is doing, and that answers a four-hour sentinel immediately rather than waiting
+out a deadline. It is still subject to (B): a terminal task plus a live `swift-frontend` is a
+refusal naming the orphan, not a takeover.
+
+**Exclusion and admission are two questions and the record keeps them apart.** Exclusion is whose
+turn it is, and it fails closed: no lease, no compile. Admission is whether the holder may start
+now and *at what size*, and it **degrades rather than refusing** — a grant carries a parallelism
+ceiling with a floor of one, so low headroom means `-j 1` and not "wait for a slot that is never
+coming". `build.sh` passes that ceiling to `swiftc` and prints where the number came from;
+`test.sh` takes the same number from `CLAWDLINE_COMPILE_JOBS`.
+
+The reason that distinction is load-bearing is that mutual exclusion alone cannot fix this
+machine. Measured at 02:16 with nothing compiling: 10.78 GB anonymous, 3.54 GB wired, 1.24 GB
+compressor, 2.04 GB free, and `vm.swapusage` at 10,870 MB used with 1,417 MB free. There are
+states on that baseline in which no suite can run at all. Two readings that look like evidence
+are deliberately not used: summed RSS across processes double-counts every shared page — 622
+processes summed to 22.33 GB on a 24 GB machine while `memory_pressure` reported 81% free — and
+physical free percentage looks excellent right after Jetsam kills something. Swap free alone is
+not a budget either: over forty minutes with nothing compiling, `vm.swapusage` total went 9,216 →
+10,240 → 12,288 MB and free swung from 353 MB to 1,417 MB. **A fixed floor on a quantity whose
+denominator moves is a deadlock wearing a threshold's clothes**, so headroom here is free plus
+file-backed pages, and until the per-compile peak is measured the policy carries no floor at all
+and every grant is one — this build cannot refuse on a number nobody has taken. When a floor is
+measured and cannot be met, the refusal names the deficit, how it was taken, and the largest
+holders of anonymous memory for a person to read, and it has an explicit override with a named,
+audited owner: a gate with no door is the deadlock this feature exists to remove.
+
+`GET /v1/sessions` exposes the lease as a quiet `lease` overlay on exactly the coordination-wait
+precedent — `state` is `holding` or `queued`, with the position, the wait age and the hold reason
+— and it does not change the session's terminal `state`, because `waiting` means a person must
+answer and this is not that. Bearings carries `heavy_compile_lease` as four separate facts —
+`state`, `holder`, `queue_depth` and `hold_reason` — keeping `missing`, `zero`, `queued`, `held`
+and `unknown` apart, because a single spinner would collapse exactly the states this exists to
+show.
+
 ### Clawdfather Phase A1: durable identity and read-only Bearings
 
 Clawdfather is now a broker-authenticated role, not presentation fiction. Construction is explicit:

@@ -161,6 +161,11 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/cancel` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/leases` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/leases` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/leases/:id/renew` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/leases/:id/release` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/leases/:id/cancel` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/schedules` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/schedules/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/schedules` | token + key | `send` **and** the write switch |
@@ -2440,6 +2445,137 @@ host-network health probe, recording each observer domain and provenance—for e
 This is a proposed restart policy, not a current restart capability. Phase A2's narrow reconnect
 only rebinds a provably offline role to an already live exact process; it does not restart, start,
 stop, health-to-action, or execute a web command.
+
+### The heavy-compile lease
+
+One full Swift compile is the most expensive operation on this machine, and four `swift-frontend`
+processes have force-rebooted it. These five routes are the queue in front of it. All of them
+require `X-Clawdline-Orchestrator`; a paired device may not read or take a machine lease.
+
+**The lock directory is the truth and these routes are the registry in front of it.** Holding
+`/tmp/clawdline-suite.lock` is what `mkdir` says it is, so a contributor running `./test.sh` with
+no Clawdline cannot collide with a session that has it. What the durable record adds is what a
+directory cannot hold: who the holder is in Clawdline terms, the FIFO queue and its depth, the
+clocks, and what the reconciliation found after a restart. There is deliberately no second lock.
+
+The resource vocabulary is closed and currently has one member, `heavy_compile`, which `build.sh`
+and `test.sh` both take because it is the same machine capacity. One resource cannot deadlock
+against itself.
+
+#### `POST /v1/orchestrator/leases` — acquire, or join the queue
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/leases \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"request_id":"build-4242-1788370000","resource":"heavy_compile","pid":4242,
+         "process_start":1788370000,"holder":"build.sh sainteye pid 4242",
+         "reason":"building Clawdline.app","tree":"/Users/you/code/clawdline"}'
+{"ok":true,"state":"granted","budget":{"parallelism":1,"basis":"peak_not_measured"},
+ "lease":{"resource":"heavy_compile","directory":"/tmp/clawdline-suite.lock",
+   "reconciliation":"matched","renewalDeadlineSeconds":60,"queueDepth":0,"queue":[],
+   "holder":{"leaseId":"build-4242-1788370000","holder":"build.sh sainteye pid 4242","pid":4242,
+     "provenance":"broker","acquiredAt":1788370000,"renewedAt":1788370000,
+     "renewalAgeSeconds":0,"heldSeconds":0,"workPids":[],
+     "budget":{"parallelism":1,"basis":"peak_not_measured"}}}}
+```
+
+`request_id` is the caller's, and **this route is idempotent on it**: the client polls with the
+same id until it is granted, and polling neither duplicates its queue entry nor loses its place.
+It is a poll rather than a push because a grant delivered as a message can be lost, and a lost
+grant is a lease nobody holds and nobody releases.
+
+`pid` must be the process **doing the work**, never a sentinel — see the takeover rule below.
+`work_pids` (optional, refreshed at each renewal) names the compiler processes running right now,
+and `done_flag` names a path the run creates when its work has finished.
+
+A caller that is not granted is *queued*, which is not a refusal:
+
+```json
+{"ok":true,"state":"queued","position":2,"holdReason":"holder_proving","retryAfterSeconds":5,
+ "lease":{"…":"…"}}
+```
+
+`holdReason` is the whole of "why am I still waiting", and it is a closed word: `holder_proving`,
+`compiler_running`, `evidence_unknown`, `directory_unreadable` or `queued_behind_others`.
+
+**A grant carries a budget, not just a yes.** `budget.parallelism` is a ceiling the holder must
+honour — it is what `build.sh` and `test.sh` pass to `swiftc` as `-j` — with a floor of one, and
+`budget.basis` says which measured quantity produced it. Until the per-compile peak is measured
+the basis is `peak_not_measured` and every grant is that floor.
+
+#### `POST /v1/orchestrator/leases/:id/renew` — the proof of life
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/leases/$LEASE/renew \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"holder":"build.sh sainteye pid 4242","work_pids":[8101,8102]}'
+```
+
+**Liveness is proved by renewal, not by a pid existing**, and the holder must renew at least
+every 60 seconds. A renewal never extends a right and a missed one never ends one: it moves a
+clock on the *proof of life*, and the takeover rule below is what actually decides anything.
+
+#### `POST /v1/orchestrator/leases/:id/release` and `/cancel`
+
+Both take `{"holder":"…"}` plus whichever of `session_id` or `task_id` the caller acquired with.
+Release belongs to the holder; cancel removes one queued request and only its own. The lock
+directory is removed only while `holder.txt` still names that pid and start — the one rule a
+release path may never break is removing a lock somebody else owns. Releasing something nobody
+holds returns `released` rather than an error, because that is the shape a retry takes.
+
+#### `GET /v1/orchestrator/leases` — who is compiling, and how long is the queue
+
+Re-reads the directory and the machine, so the answer is what is true now rather than what the
+broker last remembered.
+
+#### The takeover rule, and the two ways it has already been got wrong
+
+A lease may be taken over only when **both** hold:
+
+* **(A)** the current holder has **stopped proving it is alive** — its `done_flag` exists, or its
+  owning task reached `failure`/`timeout`/`cancelled`, or its renewal deadline passed; **and**
+* **(B)** **no `swift-frontend` process exists anywhere on this machine.**
+
+Neither half admits anybody alone, and this is not a timer on the work: a four-hour compile that
+keeps renewing is never stale. Both halves come from the same live defect, in opposite
+directions. A holder once recorded a `sleep 14400` sentinel as its pid; under a pid-existence
+rule that sentinel outlives the work and the lock is a four-hour roadblock, which is why (A) is
+renewal. The obvious patch — "no `swift-frontend` means stale" — reclaims the lock in the gaps
+between the compiles of one study, which is the collision back again, which is why (B) can never
+admit on its own.
+
+Evidence that is missing, stale or ambiguous is `unknown`, and `unknown` **blocks**. It never
+reads as dead. **Nothing on this path ever ends a process**: an orphaned compile after its owner
+died is named in the refusal, with its pids, for a person to act on.
+
+#### Refusal codes
+
+| code | status | when |
+|---|---:|---|
+| `bad_lease` | 400 | `request_id`, `resource`, `pid`, `holder` or `reason` missing or malformed |
+| `unknown_resource` | 400 | a resource this machine does not lease; the vocabulary is closed |
+| `not_holder` | 403 | renew or release by a session that is not the recorded holder |
+| `not_requester` | 403 | cancel of a queued request by a session that did not make it |
+| `not_queued` | 404 | cancel of a request id that is not waiting |
+| `lease_lost` | 409 | renew when nothing holds the resource any more |
+| `lease_changed` | 409 | the lock directory changed between the reading and the write; ask again |
+| `takeover_failed` | 409 | the previous lock could not be removed, so it was not taken |
+| `release_failed` | 409 | the lock was not removed; the next reading reconciles |
+| `pressure_refused` | 409 | not even one compiler can be admitted; names the deficit, how it was measured, and the largest anonymous-memory holders |
+| `queue_full` | 429 | 32 requests are already waiting; something is wedged |
+
+`pressure_refused` carries `need_mb`, `have_mb`, `quantity`, `method` and `taken_at`, and a caller
+that has decided anyway repeats the request with `pressure_override` naming who decided. **The
+override is admission only.** It can never take a lease somebody else holds, and it is audited.
+
+#### What a restart does
+
+The broker rebuilds its view by reading the directory it never stopped owning, and `reconciliation`
+says what it found: `matched`, `adopted` (a `holder.txt` this broker did not write — a script, or
+this machine before the restart), `replaced` (the record and the directory named different holders
+and the directory won), `directoryMissing` (a durable grant with no directory: **the holder is
+kept**, and clears only on both halves of the takeover rule), `unreadable` (the directory exists
+and cannot be read: admission is closed) or `idle`.
 
 ### Coordination waits
 
