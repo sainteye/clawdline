@@ -244,6 +244,10 @@ CLAWDLINE_SUITE_LOCK_WAIT_SECONDS="${CLAWDLINE_SUITE_LOCK_WAIT_SECONDS:-3600}"
 CLAWDLINE_SUITE_LOCK_POLL_SECONDS="${CLAWDLINE_SUITE_LOCK_POLL_SECONDS:-5}"
 CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS="${CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS:-30}"
 CLAWDLINE_SUITE_LOCK_DONE_FLAG="${CLAWDLINE_SUITE_LOCK_DONE_FLAG:-$CLAWDLINE_SUITE_LOCK_DIR/done}"
+# The heartbeat is a file inside the lock, touched on every renewal, and the record points at it.
+# Inside the lock on purpose: when the lock directory goes, the beat goes with it, and no orphaned
+# heartbeat is left pointing at work that ended.
+CLAWDLINE_SUITE_LOCK_BEAT="${CLAWDLINE_SUITE_LOCK_BEAT:-$CLAWDLINE_SUITE_LOCK_DIR/beat}"
 # 75 is EX_TEMPFAIL from sysexits(3) — "temporary failure, the user is invited to retry", which is
 # what a busy lock is. It is distinct from every status this script already produces: 0, 1 (a guard
 # said no), 2 (usage), 125 (receipt), 126 (tee) and the suite's own, which for a signal death is
@@ -329,28 +333,111 @@ clawdline_suite_lock_working_pids() {
   printf '%s' "$(printf '%s\n' "$children" | awk -v skip="$exclude" 'NF && $1 != skip { line = line (line ? " " : "") $1 } END { print line }')"
 }
 
+clawdline_suite_lock_duration() {
+  # Seconds, and minutes beside them once there are enough of them to matter to a person waiting.
+  local seconds=$1
+  case "$seconds" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
+  if [ "$seconds" -ge 60 ]; then printf '%ss (%sm)' "$seconds" "$(( seconds / 60 ))"; else printf '%ss' "$seconds"; fi
+}
+
+clawdline_suite_lock_phase() {
+  # What the holder is doing right now, refreshed on every renewal.
+  #
+  # Renewal proves *that* somebody is there; this says *what they are doing*, and only the two
+  # together answer whether the lock is protecting anything. Without it an honest holder writing its
+  # report and a holder that finished and forgot to release look exactly the same from outside —
+  # which is what happened here at 02:45 on 2026-09-03: a lock held 36 minutes, zero compilers on
+  # the machine, no done flag, and a second line waiting with no safe way to tell the two apart.
+  #
+  # Three values, and they are the broker lease's, not this script's, because a waiter and the lease
+  # have to read the same word: `compiling` is the reason the lock exists; `analysing` is working
+  # but not compiling, which for this script is the test binary running for its several minutes; and
+  # `idle-holding` is "this run still needs the lock and nothing expensive is happening under it" —
+  # the value that has to be *seen*, because it is the one an outside reader cannot tell from a
+  # holder that finished and forgot to let go.
+  #
+  # **It is reportable, never a takeover condition.** A holder that has not compiled for an hour is
+  # something a waiter may say out loud so a person can go and ask. It is not something this script
+  # may act on: the only two conditions that hand a lock over are still that renewal stopped and
+  # that no compiler is running.
+  local phase=$1 dir="${CLAWDLINE_SUITE_LOCK_DIR}"
+  # Through a file, not only a variable: the renewal loop is a subshell and cannot see a variable
+  # set in this shell after it started.
+  printf '%s %s\n' "$phase" "$(date +%s)" > "$dir/.phase" 2>/dev/null || return 0
+  clawdline_suite_lock_write_record "$dir" "$clawdline_suite_lock_renewer" || true
+  return 0
+}
+
 clawdline_suite_lock_write_record() {
   # Rewritten whole on acquisition and on every renewal, then moved into place, so a reader sees the
   # previous complete record or the new complete one and never half of either.
   local dir=$1 exclude=${2:-} temp="$1/.holder.$$.$RANDOM"
+  local phase_line phase phase_since last_compiling working worker
+  phase_line=$(cat "$dir/.phase" 2>/dev/null) || phase_line=""
+  phase=${phase_line%% *}
+  phase_since=${phase_line##* }
+  case "$phase" in "") phase="idle-holding" ;; esac
+  case "$phase_since" in "" | *[!0-9]*) phase_since=$(date +%s) ;; esac
   clawdline_suite_lock_probe_compilers || true
+  # `pid` is the process actually doing the work, not a stand-in for it, and the work here is a
+  # sequence: the compiler driver, then the test binary. So it is whichever of this run's children
+  # is working at this heartbeat, and it falls back to the run's own shell only in the gaps between
+  # them, when there is genuinely nothing else to name. `owner_pid` is the shell itself, which is
+  # what ownership is proved against and what the renewal loop supervises — it is not a sentinel:
+  # it exists for exactly as long as the run does.
+  working=$(clawdline_suite_lock_working_pids "$exclude")
+  worker=${working%% *}
+  case "$worker" in "") worker="$clawdline_suite_lock_pid" ;; esac
+  # The beat, touched before the record that points at it, so a reader that sees the record always
+  # finds the file.
+  : > "$dir/beat" 2>/dev/null || true
+  # When it was last true that something was actually compiling. Carried forward from the previous
+  # record when it is not true now, so "36 minutes without entering compiling" is a fact a waiter
+  # can read rather than one it has to have been watching for.
+  if [ "$phase" = "compiling" ] || [ -n "$clawdline_suite_lock_compilers" ]; then
+    last_compiling=$(date +%s)
+  else
+    last_compiling=$(clawdline_suite_lock_field last_compiling "$dir/holder.txt")
+    case "$last_compiling" in "" | *[!0-9]*) last_compiling="never" ;; esac
+  fi
   {
     printf 'holder=%s\n' "$CLAWDLINE_SUITE_LOCK_HOLDER"
-    printf 'pid=%s\n' "$clawdline_suite_lock_pid"
+    printf 'pid=%s\n' "$worker"
+    printf 'phase=%s\n' "$phase"
+    printf 'heartbeat=%s\n' "$dir/beat"
     printf 'started=%s\n' "$clawdline_suite_lock_started"
     printf 'tree=%s\n' "$CLAWDLINE_SUITE_LOCK_TREE"
     printf 'log=%s\n' "$LOG"
-    printf 'token=%s\n' "$clawdline_suite_lock_token"
-    printf 'pid_started=%s\n' "$clawdline_suite_lock_pid_started"
-    printf 'heartbeat=%s\n' "$(date +%s)"
-    printf 'heartbeat_deadline=%s\n' "$CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS"
-    printf 'working=%s\n' "$(clawdline_suite_lock_working_pids "$exclude")"
-    printf 'compilers=%s\n' "${clawdline_suite_lock_compilers:-none}"
     printf 'done_flag=%s\n' "$CLAWDLINE_SUITE_LOCK_DONE_FLAG"
+    printf 'owner_pid=%s\n' "$clawdline_suite_lock_pid"
+    printf 'token=%s\n' "$clawdline_suite_lock_token"
+    printf 'owner_started=%s\n' "$clawdline_suite_lock_pid_started"
+    printf 'heartbeat_deadline=%s\n' "$CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS"
+    printf 'phase_since=%s\n' "$phase_since"
+    printf 'last_compiling=%s\n' "$last_compiling"
+    printf 'working=%s\n' "$working"
+    printf 'compilers=%s\n' "${clawdline_suite_lock_compilers:-none}"
     printf 'note=%s\n' "$CLAWDLINE_SUITE_LOCK_NOTE"
   } > "$temp" 2>/dev/null || return 1
   mv "$temp" "$dir/holder.txt" 2>/dev/null || { rm -f "$temp" 2>/dev/null; return 1; }
   return 0
+}
+
+clawdline_suite_lock_phase_since() {
+  local value
+  value=$(clawdline_suite_lock_field phase_since "$1")
+  case "$value" in "" | *[!0-9]*) date +%s ;; *) printf '%s' "$value" ;; esac
+}
+
+clawdline_suite_lock_last_compiling_phrase() {
+  # "36 minutes without entering compiling" is the sentence that was missing at 02:45. It is said,
+  # and it decides nothing.
+  local file=$1 now=$2 value
+  value=$(clawdline_suite_lock_field last_compiling "$file")
+  case "$value" in
+    "" | never | *[!0-9]*) printf 'nothing has compiled under this lock yet' ;;
+    *) printf 'last compiling %s ago' "$(clawdline_suite_lock_duration "$(( now - value ))")" ;;
+  esac
 }
 
 clawdline_suite_lock_admission() {
@@ -359,11 +446,18 @@ clawdline_suite_lock_admission() {
   # that says what was read. It sets globals rather than printing because `$(…)` would run it in a
   # subshell and throw the evidence away — and a refusal that cannot name its evidence is a refusal
   # nobody can act on.
-  local file="$1/holder.txt" heartbeat deadline now age probe_status pid pid_started identity done_flag
-  heartbeat=$(clawdline_suite_lock_field heartbeat "$file")
+  local file="$1/holder.txt" beat heartbeat deadline now age probe_status pid pid_started identity done_flag
+  # `heartbeat` in the record is the *path* of the beat file, and the evidence is that file's
+  # modification time. The holder says where its heartbeat is; the filesystem says when it last
+  # happened.
+  beat=$(clawdline_suite_lock_field heartbeat "$file")
+  heartbeat=""
+  if [ -n "$beat" ] && [ -f "$beat" ]; then
+    heartbeat=$(stat -f %m "$beat" 2>/dev/null) || heartbeat=""
+  fi
   deadline=$(clawdline_suite_lock_field heartbeat_deadline "$file")
   pid=$(clawdline_suite_lock_field pid "$file")
-  pid_started=$(clawdline_suite_lock_field pid_started "$file")
+  pid_started=$(clawdline_suite_lock_field owner_started "$file")
   done_flag=$(clawdline_suite_lock_field done_flag "$file")
   case "$deadline" in "" | *[!0-9]* | 0) deadline="$CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS" ;; esac
 
@@ -390,7 +484,7 @@ clawdline_suite_lock_admission() {
   case "$heartbeat" in
     "" | *[!0-9]*)
       clawdline_suite_lock_state="unknown"
-      clawdline_suite_lock_evidence="its record carries no readable heartbeat, so whether anyone is still there is unknown — and unknown blocks rather than reading as dead"
+      clawdline_suite_lock_evidence="its record names no heartbeat file, or the file it names is not there, so whether anyone is still there is unknown — and unknown blocks rather than reading as dead"
       return 0 ;;
   esac
   now=$(date +%s)
@@ -402,9 +496,11 @@ clawdline_suite_lock_admission() {
   fi
   if [ "$age" -le "$deadline" ]; then
     clawdline_suite_lock_state="held"
-    identity=$(clawdline_suite_lock_pid_identity "$pid")
+    identity=$(clawdline_suite_lock_pid_identity "$(clawdline_suite_lock_field owner_pid "$file")")
     if [ "$identity" = "$pid_started" ]; then
-      clawdline_suite_lock_evidence="it renewed ${age}s ago against a ${deadline}s deadline; working: $(clawdline_suite_lock_field working "$file"), compilers: $(clawdline_suite_lock_field compilers "$file")"
+      # Everything a person needs to decide whether to go and ask: who, how long, what they say they
+      # are doing, and when anything last actually compiled. None of it moves the lock.
+      clawdline_suite_lock_evidence="it renewed ${age}s ago against a ${deadline}s deadline; phase $(clawdline_suite_lock_field phase "$file") for $(clawdline_suite_lock_duration "$(( now - $(clawdline_suite_lock_phase_since "$file") ))"), $(clawdline_suite_lock_last_compiling_phrase "$file" "$now"); working: $(clawdline_suite_lock_field working "$file"), compilers: $(clawdline_suite_lock_field compilers "$file")"
     else
       # A fresh renewal outranks a pid, always. The pid is reported because it is useful to a
       # person, never because it decides anything.
@@ -486,6 +582,13 @@ clawdline_suite_lock_start_renewer() {
   # for the rest of its natural life.
   local lock=$1
   (
+    # **A supervisor, not a timer.** `while :; do touch beat; sleep 60; done` would be the same
+    # defect in new clothes: it keeps beating after the work it stood for has died, which is what a
+    # `sleep 14400` recorded as a holder did tonight. Every tick below re-checks the run it is
+    # supervising — the shell is still there, it is still the same process, the lock is still that
+    # run's — and exits the moment any of those stops being true. The heartbeat therefore says
+    # "somebody is still watching this work", not "a timer is still running on this machine".
+    #
     # A subshell inherits this script's EXIT trap — measured, not assumed — and running the release
     # from here would free the lock the moment the renewer stopped. Drop it first.
     trap - EXIT
@@ -514,6 +617,9 @@ clawdline_acquire_suite_lock() {
       clawdline_suite_lock_pid=$$
       clawdline_suite_lock_started=$(date '+%Y-%m-%d %H:%M:%S')
       clawdline_suite_lock_pid_started=$(clawdline_suite_lock_pid_identity "$$")
+      # Written before the first record rather than through `clawdline_suite_lock_phase`, which
+      # would rewrite a record that does not exist yet.
+      printf 'idle-holding %s\n' "$(date +%s)" > "$lock/.phase" 2>/dev/null || true
       if ! clawdline_suite_lock_write_record "$lock"; then
         echo "suite lock: could not write $lock/holder.txt — refusing to compile behind a lock that says nothing about who holds it" >&2
         rm -rf "$lock"
@@ -576,13 +682,18 @@ clawdline_release_suite_lock() {
   local lock="$CLAWDLINE_SUITE_LOCK_DIR" recorded_pid recorded_token
   case "$lock" in "" | "/") return 0 ;; esac
   [ -d "$lock" ] || return 0
-  recorded_pid=$(clawdline_suite_lock_field pid "$lock/holder.txt")
+  recorded_pid=$(clawdline_suite_lock_field owner_pid "$lock/holder.txt")
   recorded_token=$(clawdline_suite_lock_field token "$lock/holder.txt")
   if [ -n "$clawdline_suite_lock_token" ] &&
      [ "$recorded_pid" = "$$" ] &&
      [ "$recorded_token" = "$clawdline_suite_lock_token" ]; then
     rm -rf "$lock"
     echo "suite lock: released $lock"
+  elif [ "$recorded_pid" = "$$" ]; then
+    # The pid matches and the token does not, which is the case the token exists for: this lock is
+    # not the one this run acquired, whatever the number in it says. A pid is reused within hours on
+    # a busy machine, and the record is rewritten by whoever holds it now.
+    echo "suite lock: $lock records pid $$ but not this run's token — it has changed hands since this run took it, so it is left alone" >&2
   else
     echo "suite lock: $lock is held by pid ${recorded_pid:-unknown}, not by this shell (pid $$) — left alone" >&2
   fi
@@ -690,7 +801,11 @@ clawdline_suite_jobs_flags=()
 case "${CLAWDLINE_SUITE_JOBS:-}" in
   "")
     echo "test.sh: compile job ceiling: none set, so the swift driver picks (CLAWDLINE_SUITE_JOBS unset)" ;;
-  0 | *[!0-9]*)
+  # `0*` and not just `0`: `00` is all digits, so it slipped past `*[!0-9]*` and reached `swiftc` as
+  # `-j 00`. The contract this guard states is "a positive whole number", and `00` and `007` are not
+  # that however they behave downstream. The three patterns are: anything with a non-digit in it, a
+  # leading zero of any length, and nothing at all.
+  *[!0-9]* | 0*)
     echo "test.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
     exit 2 ;;
   *)
@@ -699,6 +814,10 @@ case "${CLAWDLINE_SUITE_JOBS:-}" in
 esac
 # <<< clawdline compile ceiling <<<
 
+# From here to the end of the test-binary run is what the lock is for, and the record says so while
+# it happens: a waiter reading `phase=compiling` knows the lock is protecting something, and one
+# reading `phase=idle-holding` knows to go and ask rather than to guess.
+clawdline_suite_lock_phase compiling
 swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
@@ -712,6 +831,7 @@ swiftc \
 # is where a lock that changed hands underneath the run has to be noticed — before the second
 # expensive thing starts.
 clawdline_confirm_suite_lock || exit $?
+clawdline_suite_lock_phase analysing
 
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
 # ends the script right there, before what it captured has been printed — so a red suite exited
@@ -773,10 +893,6 @@ pipe=("${PIPESTATUS[@]}")
 status=${pipe[0]}
 tee_status=${pipe[1]}
 set -e
-# The guarded section is over here, pass or fail: the compile and the run are both behind us and
-# only receipt checking is left. Saying so is what lets the next run in immediately instead of
-# waiting out a renewal deadline nobody is renewing against.
-clawdline_suite_lock_work_finished
 if [ "$status" -ne 0 ]; then
   echo "the suite exited $status — full output kept at $LOG" >&2
   exit "$status"
@@ -791,6 +907,15 @@ if [ "$tee_status" -ne 0 ]; then
   echo "The suite itself passed; the terminal above is the whole record." >&2
   exit 126
 fi
+
+# The guarded section is over: the compile and the run are both behind us and only receipt checking
+# is left, so the next run may come in without waiting out a renewal deadline nobody is renewing
+# against. It sits below the two `exit` branches rather than above them, because those branches
+# leave through the EXIT trap, which releases the lock properly — and because everything between
+# `set +e` and the last `fi` above is lifted out and executed by `Tests/test-sh-streaming.mjs`,
+# where this function does not exist.
+clawdline_suite_lock_phase idle-holding
+clawdline_suite_lock_work_finished
 
 # A zero process status is insufficient: removing dispatchMain() lets top-level code return before
 # either async suite or the final result path runs. Require the receipt emitted only by that path,
