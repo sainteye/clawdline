@@ -299,6 +299,14 @@ try {
           !existsSync(join(lockDir, "beat")));
     check("and the store the old second trap used to remove is still removed",
           !existsSync(join(dir, "store")));
+    // **`work=` names what is working, and a reading is not a worker.**
+    // `working=$(clawdline_suite_lock_working_pids …)` forked a subshell whose parent is the very
+    // pid the probe asks `pgrep -P` about, so the list — and `pid=`, which is its first entry —
+    // named a shell that existed only for the length of the reading. This holder forks nothing of
+    // its own, so the only honest answer is an empty list and a `pid` that falls back to the run.
+    check("a holder doing nothing records no worker rather than the shell that took the reading",
+          /^work=$/m.test(record) && new RegExp(`^pid=${/^owner_pid=(\d+)$/m.exec(record)?.[1]}$`, "m")
+            .test(record));
 
     // -----------------------------------------------------------------------------------------
     // 2. The first `nohup` mistake. An outer shell writes `trap … EXIT`, backgrounds the suite and
