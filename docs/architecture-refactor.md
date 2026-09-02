@@ -466,10 +466,12 @@ paying rent in the frozen file.
 ### Governance correction, landed with Cut 1
 
 This document had drifted from the executable guard. The guard is authoritative, and these are its
-values on the integrated tree, read out of `tools/check-architecture-boundaries.sh` and observed by
-a full suite on 2026-09-02:
+values on the tree being landed, read out of `tools/check-architecture-boundaries.sh`. **Five of the
+six rows are computed by the guard on every run. The Swift-checks row is not** — no guard can count
+checks without running them — so it is the one row that a full suite has to settle before a landing,
+and the header says which tree it belongs to rather than implying it was observed:
 
-| | this document said | observed after Cut 1 |
+| | this document said | asserted on `integrate/cut2s1` |
 |---|---:|---:|
 | ordered groups | 463 | 498 |
 | ordered runners | 25 | 29 |
@@ -478,10 +480,47 @@ a full suite on 2026-09-02:
 | `Orchestrator.swift` ceiling | 13,592 | 12,816 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,426 |
 
-That row reads 8,026 rather than the 8,025 observed after Cut 1: the multi-question picker's
-confirmation guard added one check on 2026-09-02 (`4273990a`). It is written here because the guard
-now asserts this table, which is the mechanism the paragraph below asked for — the first landing to
-move a count after that change is the one that proves it works, and this is that landing.
+The Swift-checks row read 8,025 after Cut 1, then 8,026 when the multi-question picker's
+confirmation guard added one check on 2026-09-02 (`4273990a`) — the first landing to move a count
+after this table became asserted, and therefore the one that proved the mechanism works. It now
+reads 8,061, which is 8,026 plus this stage's 35, **and that figure is arithmetic until the landing
+root's full suite observes it.**
+
+**The guard cannot catch this row being wrong, and it is worth saying why rather than pretending
+otherwise.** `compare_documented "Swift checks"` compares this table with `test.sh`'s
+`expected_swift_receipt`, and a single edit moves both — so both can be wrong together and the guard
+stays green. What closes the loop is `test.sh` itself, which compares its receipt against the run:
+table equals receipt (guard) and receipt equals run (suite) gives table equals run, but only when
+the suite has actually been run. That is the whole reason the landing rule is one exact-tree suite
+before landing, and why a stage that skipped it would be trusting a number nothing has ever
+produced.
+
+### What stage 1 proved, and what it declined to do
+
+**The bypass proof, kept here because it lived only in a task report that is not in version
+control.** Two deliberate probes were compiled against the integrated tree; both failed to build,
+which is the claim the whole boundary rests on:
+
+```
+'titlesByTerminal' is inaccessible due to 'private' protection level
+'OrchestratorRegistry.Transaction' initializer is inaccessible due to 'fileprivate' protection level
+```
+
+A third probe — legitimate use through `withTransaction` — is the control, and the full suite is
+what runs it.
+
+**"The five smallest collections" is not literally true, and the choice still stands.** `badResults`
+has 2 access sites and `batches` 5, so both are at or below the five that moved. They stayed because
+smallness was the tie-break, not the criterion: what stage 1 needed was collections whose accesses
+are *cohesive* — the four per-terminal facts are one projection rebuilt together, and
+`graphAdmissions` is one reservation with a public release. A stage assembled purely by ascending
+access count would have mixed unrelated lifetimes and taught the transaction interface nothing.
+
+**The plan asked for one collection per revertible commit; this stage moved five in one.** That is a
+deviation from a stated acceptance condition, and it went the useful direction — the five are one
+cohesive group and splitting them would have produced four commits that do not compile standing
+alone, which `docs/landing.md` forbids. Later stages carrying independent collections should hold to
+the original rule.
 
 **The correction itself needed correcting three times, always the same way, and the third time an
 independent reviewer had to catch it.** The section first said the guard held 480 ordered groups; at

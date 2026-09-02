@@ -183,9 +183,17 @@ enum OrchestratorRegistry {
     /// This is the successor of `Orchestrator`'s `…Locked()` suffix and it inherits that
     /// convention's one weakness: nothing here can ask an `NSLock` whether this thread holds it.
     /// What it does not inherit is the other half — the collections stay unreachable without the
-    /// token, so a caller that gets this wrong is unsynchronized rather than also unbounded. Every
-    /// use is inside a `lock.lock()` region in the same function or its caller, and each one is a
-    /// site a later cut converges onto ``withTransaction(_:)``.
+    /// token, so a caller that gets this wrong is unsynchronized rather than also unbounded.
+    ///
+    /// **Every production use is inside a `lock.lock()` region in the same function or its caller;
+    /// the test suite is a stated exception.** Six test call sites reach
+    /// `pruneClosedHandoffTitles` without the lock — single-threaded, and doing exactly what they
+    /// did before this refactor, when they assigned `handoffTitlesByTerminal` directly. Wrapping
+    /// them would change what they exercise. The honest reading is that this door is unchecked at
+    /// compile time and its contract holds by inspection, which is the same thing the `…Locked()`
+    /// suffix offered; what makes it a migration step rather than a rename is that the count of
+    /// these sites is ratcheted in `tools/check-architecture-boundaries.sh` and may only fall.
+    /// Each one is a site a later cut converges onto ``withTransaction(_:)``.
     static func withTransactionOnHeldLock<R>(_ body: (Transaction) -> R) -> R {
         body(Transaction())
     }

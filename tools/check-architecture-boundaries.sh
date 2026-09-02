@@ -82,6 +82,20 @@ done
 [ "$suite_count" -eq 42 ] \
   || architecture_guard_fail "suite file count is $suite_count; expected 42"
 
+# The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
+# its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
+# what this refactor exists to abolish. It is defensible only as a migration step, and only if it
+# shrinks. Nothing about Swift can check it: NSLock cannot be asked whether this thread holds it,
+# and an owner field would fire on the ~160 legitimate bare regions that never go through the
+# registry. So the check that can exist is a ratchet on the number of sites. It may fall, never
+# rise; when it reaches zero the door is deleted and this block goes with it.
+held_lock_door_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift \
+  | grep -c 'withTransactionOnHeldLock' || true)
+[ "$held_lock_door_sites" -le 12 ] \
+  || architecture_guard_fail "withTransactionOnHeldLock has $held_lock_door_sites call sites; the migration ratchet is 12 and may only fall"
+[ "$held_lock_door_sites" -gt 0 ] \
+  || architecture_guard_fail "withTransactionOnHeldLock has no call sites left; delete the door and this ratchet together"
+
 # The governance table in docs/architecture-refactor.md drifted three times — 480 when the guard
 # held 479, 7,918 when the suite observed 7,941, 490 when it observed 494 — and every time for the
 # same reason: a count written in prose has no owner and nothing makes it go red. test.sh and this
@@ -123,4 +137,4 @@ compare_documented "Swift checks" "$documented_swift_receipt"
 compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
 compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
 
-echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees"
+echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites"
