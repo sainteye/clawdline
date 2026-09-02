@@ -30,7 +30,18 @@ struct FakeTmux {
     func cleanup() { try? FileManager.default.removeItem(at: root) }
 }
 
-func makeFakeTmux(dead: [String] = []) -> FakeTmux {
+/// The four shapes a tmux that is *not* answering normally takes, because every one of them is a
+/// case this file's production code decides something from and none of them could be reached with
+/// a fake that always exits 0.
+///
+/// - `silent` is a tmux too old for `source-file -` (3.3): it swallows the script and prints
+///   nothing, which is the only signal the per-pane fallback has to go on.
+/// - `hanging` never finishes, so `run` reaps it and returns a `.timeout` — the failure that used
+///   to be read as a version floor.
+/// - `refusing` is tmux's own words on stderr with a non-zero exit, and `only` narrows that to one
+///   subcommand, which is how a pane that will not be typed into is set up.
+func makeFakeTmux(dead: [String] = [], silent: Bool = false, hanging: Bool = false,
+                  refusing: String? = nil, only refusedCommand: String? = nil) -> FakeTmux {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("clawdline-fake-tmux-\(UUID().uuidString)", isDirectory: true)
     try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -42,9 +53,22 @@ func makeFakeTmux(dead: [String] = []) -> FakeTmux {
     dir=$(dirname "$0")
     printf '%s\\n' "$*" >> "$dir/calls"
     dead="\(dead.joined(separator: " "))"
+    silent="\(silent ? "1" : "")"
+    hanging="\(hanging ? "1" : "")"
+    refusal="\(refusing ?? "")"
+    refused_command="\(refusedCommand ?? "")"
+    if [ -n "$refusal" ] && { [ -z "$refused_command" ] || [ "$1" = "$refused_command" ]; }; then
+      printf '%s\\n' "$refusal" >&2
+      exit 1
+    fi
+    if [ -n "$hanging" ]; then
+      sleep 5
+      exit 0
+    fi
     case "$1" in
       source-file)
         cat > "$dir/script"
+        if [ -n "$silent" ]; then exit 0; fi
         awk -v dead=" $dead " '
           function alive(t) { return index(dead, " " t " ") == 0 }
           { target = ""; for (i = 1; i <= NF; i++) if ($i == "-t") target = $(i + 1) }
@@ -347,6 +371,77 @@ group("revealing a tmux pane brings iTerm2 forward only when tmux says it drew i
     expect("the prompt bar walking its list hands on nothing at all", handedOn.count, 0)
 }
 
+group("a tmux failure says whether there is no server, or only that nobody could ask") {
+    // Every message here is tmux 3.6a's own, taken on this Mac on 2026-09-02 from three private
+    // `-L` sockets — one whose server had been killed, one that had never existed, and one that
+    // existed and would not open. `list-sessions`, `list-panes -a`, `list-clients` and
+    // `source-file -` were each asked, and all four answer with the same three sentences.
+    func io(_ message: String) -> TerminalFailure {
+        TerminalFailure(kind: .io, message: message)
+    }
+    let socket = "/private/tmp/tmux-501/clawdline-probe"
+    let killed = "no server running on \(socket)"
+    let neverUsed = "error connecting to \(socket) (No such file or directory)"
+    let shut = "error connecting to \(socket) (Permission denied)"
+
+    expect("a server that was killed leaves its socket behind and says so",
+           Tmux.serverAnswer(io(killed)), .noServer)
+    expect("a socket that was never made says something else entirely and means the same",
+           Tmux.serverAnswer(io(neverUsed)), .noServer)
+    expect("the spelling tmux uses while a server is starting is an answer too",
+           Tmux.serverAnswer(io("failed to connect to server")), .noServer)
+    expect("a socket that exists and will not open proves nothing",
+           Tmux.serverAnswer(io(shut)), .unreachable)
+    expect("and a tmux that never finished proves nothing either",
+           Tmux.serverAnswer(TerminalFailure(kind: .timeout,
+                                             message: "tmux did not finish within 15 seconds")),
+           .unreachable)
+    expect("a sentence about the command is not a sentence about the server",
+           Tmux.serverAnswer(io("can't find pane: %99")), .reached)
+    expect("nor is one nobody here has seen before",
+           Tmux.serverAnswer(io("unknown command: sorcery")), .reached)
+    expect("and a command that did not fail at all is a reading",
+           Tmux.serverAnswer(nil), .reached)
+
+    // **The two that have to be told apart share every word but one.** That is the whole reason
+    // this is not a third substring: `error connecting to <path> (…)` is one sentence with
+    // `strerror(errno)` inside it, and only the errno says whether anything is there.
+    let sentence = "error connecting to \(socket) ("
+    check("the socket that is missing and the socket that will not open say the same sentence",
+          neverUsed.hasPrefix(sentence) && shut.hasPrefix(sentence), "\(neverUsed) / \(shut)")
+    check("so the errno inside it is what decides, and it decides differently",
+          Tmux.serverAnswer(io(neverUsed)) != Tmux.serverAnswer(io(shut)))
+    check("read in the case tmux writes it, which is the C library's",
+          neverUsed.contains("(No such file or directory)"), neverUsed)
+
+    // **What it is for.** `StartPoints.tmuxReach()` starts a detached server only for an
+    // inventory that is *complete* and empty, so the Mac this feature was written for — tmux
+    // installed, never run, no socket file at all — has to reach it as complete. It did not:
+    // the one message it gives is the one message this did not know.
+    let fresh = makeFakeTmux(refusing: neverUsed)
+    defer {
+        fresh.cleanup()
+        Tmux.binaryForTesting = nil
+    }
+    Tmux.binaryForTesting = fresh.binary
+    let freshPanes = Tmux.paneObservation()
+    check("a Mac where tmux has never run has a complete pane inventory", freshPanes.isComplete)
+    check("holding nothing", freshPanes.sessions.isEmpty)
+    check("and a complete control-mode answer beside it",
+          Tmux.controlModeObservation().isComplete)
+
+    let unreadable = makeFakeTmux(refusing: shut)
+    defer { unreadable.cleanup() }
+    Tmux.binaryForTesting = unreadable.binary
+    let shutPanes = Tmux.paneObservation()
+    check("a socket that will not open leaves the inventory incomplete", !shutPanes.isComplete)
+    check("and keeps tmux's own words for why",
+          shutPanes.error?.message.contains("Permission denied") == true,
+          shutPanes.error?.message ?? "nothing")
+    check("with the control-mode answer holding the same doubt",
+          !Tmux.controlModeObservation().isComplete)
+}
+
 group("one tmux subprocess answers for every pane in a reading") {
     let marker = Tmux.batchedCaptureMarker
 
@@ -432,6 +527,44 @@ group("one tmux subprocess answers for every pane in a reading") {
     expect("its neighbour before it was read", reading.states["%3"], .idle)
     expect("and its neighbour after it, which the old shape would have lost",
            reading.states["%5"], .idle)
+
+    // **A deadline is not a version.** The fallback below is entered on the *absence* of the
+    // marker, and a wedged tmux is absent in exactly the same way — so the reading this group
+    // exists to make cheap would have gone from one bounded call to one per pane, on the path
+    // where a reading in progress suppresses the next one rather than queueing it.
+    let wedged = makeFakeTmux(hanging: true)
+    defer { wedged.cleanup() }
+    Tmux.binaryForTesting = wedged.binary
+    Tmux.subprocessTimeoutForTesting = 0.2
+    let timedOut = Tmux.capture(panes: (1...10).map { "%\($0)" }, scrollback: 0)
+    Tmux.subprocessTimeoutForTesting = nil
+    expect("a reading that ran out of time answers for no pane", timedOut.count, 0)
+    expect("and costs one deadline rather than one per pane", wedged.calls.count, 1)
+
+    // The same for a socket nobody could reach. Asking again pane by pane cannot answer what the
+    // batch could not, and on the Mac where tmux has never run it is one failure per pane.
+    let noSocket = makeFakeTmux(
+        refusing: "error connecting to /private/tmp/tmux-501/default (No such file or directory)")
+    defer { noSocket.cleanup() }
+    Tmux.binaryForTesting = noSocket.binary
+    expect("a socket that was never made answers for no pane",
+           Tmux.capture(panes: ["%1", "%2"], scrollback: 0).count, 0)
+    expect("and is asked exactly once", noSocket.calls.count, 1)
+
+    // **The branch that exists so an old tmux does not go blind, run at last.** `source-file -`
+    // wants tmux 3.3; an older one takes the script and prints nothing at all, and pane by pane
+    // is what keeps the whole backend readable. Nothing had ever executed it.
+    let old = makeFakeTmux(silent: true)
+    defer { old.cleanup() }
+    Tmux.binaryForTesting = old.binary
+    let oneAtATime = Tmux.capture(panes: ["%1", "%2"], scrollback: 0)
+    expect("a tmux too old for the script costs one try and then one call per pane",
+           old.calls.count, 3)
+    expect("every pane still answers", oneAtATime.count, 2)
+    expect("out of the per-pane path rather than the batched one", oneAtATime["%1"],
+           "one pane at a time: capture-pane -p -e -J -S -0 -t %1\n")
+    check("which asks for the screen this reading was told to ask for",
+          old.calls.last == "capture-pane -p -e -J -S -0 -t %2", old.calls.last ?? "nothing")
 }
 
 group("Clawdline starts a tmux server rather than telling a phone to go and run one") {
@@ -487,6 +620,34 @@ group("Clawdline starts a tmux server rather than telling a phone to go and run 
     check("and the interface note says what a detached session looks like and how to reach it",
           interface.contains(Tmux.attachCommand),
           "docs/interface.md read \(interface.count) characters")
+
+    // **Typing is not running, and only one of those is proved here.** `send-keys` reports that
+    // tmux delivered the keystrokes, never that the shell ran them: an rc that flushes pending
+    // input discards the line while both calls exit 0 — measured against a `.zshrc` calling
+    // `tcsetattr(0, TCSAFLUSH, …)`. There is deliberately no check for it on this path, because
+    // an rc that merely sleeps *keeps* the line, so within a start's deadline a swallowed line
+    // and a slow shell are the same silence. The page has to say so rather than let "the session
+    // started" carry a promise the two calls above cannot make.
+    check("the page says typing the line is not the same as the shell running it",
+          interface.contains("Typing is not running"),
+          "docs/interface.md read \(interface.count) characters")
+    check("and names the state a task really ends in when the shell swallows it",
+          interface.contains(Orchestrator.State.spawnFailed.rawValue),
+          "docs/interface.md read \(interface.count) characters")
+
+    // The half of the claim that is true, which nothing had ever exercised: a pane tmux will not
+    // type into is a failure and not a session. The fake refuses `send-keys` alone, so the pane
+    // is really made first — which is the case the sentence is about.
+    let wontType = makeFakeTmux(refusing: "can't find pane: %7", only: "send-keys")
+    defer { wontType.cleanup() }
+    Tmux.binaryForTesting = wontType.binary
+    let refusal: String
+    switch Tmux.newSessionResult(cwd: "/tmp/x", command: "claude") {
+    case .success(let id): refusal = "a pane id: \(id)"
+    case .failure(let problem): refusal = problem.message
+    }
+    check("a pane tmux would not type into comes back as a failure, in tmux's own words",
+          refusal.contains("can't find pane"), refusal)
 }
 
 group("a screen read to decide something is the screen, not its history") {

@@ -51,7 +51,16 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # starts detached and types its line into rather than handing to tmux as a command, 8 for the
 # screen a decision reads being the screen and not its history, and 4 more in the existing
 # terminal-plan group for tmux installed with no server being its own answer. 7519 -> 7575.
-expected_swift_receipt='7575 checks passed'
+# Correcting that slice adds 28, counted the same way — each group run on its own. 17 are a new
+# group for what a failed tmux command proves about the server behind it, which is where the
+# blocking defect was: a socket that has never existed says `error connecting to <path> (No such
+# file or directory)` rather than `no server running on <path>`, so the Mac the detached server
+# was written for was the one Mac it did not start on. 8 more in the batched-reading group, for a
+# deadline and an unreachable socket no longer reading as a tmux too old for the script, and for
+# the per-pane fallback itself, which no test had ever executed. 3 in the detached-server group,
+# for the page saying that typing a line is not the shell running it and for a pane tmux would
+# not type into being a failure. 7575 -> 7603.
+expected_swift_receipt='7603 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

@@ -142,6 +142,17 @@ server. A pane created with no command at all gets an interactive login shell, w
 file your `PATH` is actually set in — so Clawdline makes the pane, then types the line into it,
 the same two steps the iTerm2 backend has always taken.
 
+**Typing is not running, and Clawdline claims only the first.** tmux tells it the keystrokes were
+delivered to the pane; nothing on that path tells it your shell ran them. A startup file that
+flushes pending input — `tcsetattr(0, TCSAFLUSH, …)`, which is what some `stty` lines and a few
+framework rc files do — throws the line away while tmux reports the same success it reports for a
+line that ran. There is deliberately no check for that here: an rc that merely sleeps for three
+seconds *keeps* the line and runs it late, so inside any wait a start can afford, a swallowed line
+and a slow shell are the same silence. What you get instead is the truth a moment later — the pane
+appears in the list as the shell it actually is, and a task briefed into it ends `spawn_failed`
+rather than reporting a session that was never there. iTerm2 has always worked this way too: the
+tab is made, the line is written, and the shell is not waited for.
+
 ## Which session wants you
 
 Not looking at the terminal works for one session. With four, you are back to going round the tabs

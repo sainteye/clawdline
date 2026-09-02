@@ -119,16 +119,59 @@ enum Tmux {
         run(args, timeout: timeout)
     }
 
-    /// Whether that failure is tmux saying there is nothing to talk to, rather than tmux failing.
+    /// What a failed tmux command says about the server behind it — three answers, not a flag.
     ///
     /// The difference decides what an empty answer is worth everywhere on this path: *no server*
     /// is a complete inventory that happens to hold nothing, while a timeout or an I/O failure
     /// has no authority to prove a pane, a client or a screen absent. Three readers ask it, and
     /// they asked it as three copies of the same pair of substrings until this was pulled out.
-    static func saysNoServer(_ failure: TerminalFailure?) -> Bool {
-        let message = failure?.message.lowercased() ?? ""
-        return message.contains("no server running")
-            || message.contains("failed to connect to server")
+    ///
+    /// **The vocabulary is tmux's, so this reads tmux's distinction rather than collecting its
+    /// sentences** — which is the whole of why a pair of substrings was the wrong shape. Measured
+    /// on tmux 3.6a, 2026-09-02, and `list-sessions`, `list-panes -a`, `list-clients` and
+    /// `source-file -` all answer identically:
+    ///
+    /// | the socket | what tmux prints |
+    /// |---|---|
+    /// | a server ran and was killed — tmux leaves the file behind | `no server running on <path>` |
+    /// | no file: tmux has never run here | `error connecting to <path> (No such file or directory)` |
+    /// | the file is there and will not open | `error connecting to <path> (Permission denied)` |
+    ///
+    /// The last two are the *same sentence*, and taking it as a third substring would have made
+    /// an unreadable socket say the server is absent — the distinction ``paneObservation()``
+    /// exists to protect. What separates them is the parenthesised half, which is
+    /// `strerror(errno)` from tmux's own `connect(2)`: `ENOENT` is the strongest proof of absence
+    /// there is, because a socket file that does not exist has never had a server on it, and
+    /// every other errno is a socket this process could not get to.
+    ///
+    /// So the rule is stated once, in one place, and an unrecognised message falls to
+    /// ``ServerAnswer/reached`` — tmux answering about the command rather than about the server —
+    /// which is the reading that lets no caller claim anything it has not been told.
+    enum ServerAnswer: Equatable {
+        /// tmux got as far as the socket path and there is no server on it. A complete empty
+        /// inventory: nothing to list, and nothing a second attempt would find.
+        case noServer
+        /// tmux could not get to a server at all, and cannot say whether one is there. Not
+        /// evidence, and never a reason to go and do the same work again a slower way.
+        case unreachable
+        /// tmux was reached. Whatever went wrong is about the command that was sent.
+        case reached
+    }
+
+    static func serverAnswer(_ failure: TerminalFailure?) -> ServerAnswer {
+        guard let failure else { return .reached }
+        // A deadline is not an answer: a tmux that never finished has said nothing about a
+        // server, a pane, a client or a screen.
+        if failure.kind == .timeout { return .unreachable }
+        let message = failure.message.lowercased()
+        // tmux resolved the question itself and is reporting the conclusion.
+        if message.contains("no server running") { return .noServer }
+        if message.contains("failed to connect to server") { return .noServer }
+        // `error connecting to <path> (<strerror>)` — only the errno decides.
+        if message.contains("error connecting to") {
+            return message.contains("(no such file or directory)") ? .noServer : .unreachable
+        }
+        return .reached
     }
 
     /// Every pane in every session, whether or not a client is attached.
@@ -148,7 +191,7 @@ enum Tmux {
         if !receipt.ok {
             // No server is a complete empty inventory, not a failed one. Other failures — and
             // especially a timeout — have no authority to prove a pane absent.
-            if saysNoServer(receipt.failure) {
+            if serverAnswer(receipt.failure) == .noServer {
                 return PaneObservation(sessions: [], error: nil)
             }
             return PaneObservation(sessions: [], error: receipt.failure)
@@ -269,7 +312,7 @@ enum Tmux {
         if !receipt.ok {
             // Same rule as `paneObservation`: no server is a complete empty answer, and anything
             // else — a timeout above all — has no authority to prove a client absent.
-            if saysNoServer(receipt.failure) {
+            if serverAnswer(receipt.failure) == .noServer {
                 return ControlModeObservation(clients: [], error: nil)
             }
             return ControlModeObservation(clients: [], error: receipt.failure)
@@ -405,9 +448,28 @@ enum Tmux {
     /// instant the pane exists is safe because the pty holds what is written before the shell
     /// gets round to reading it.
     ///
-    /// A pane that was made and then would not take the line is reported as a failure. It leaves
-    /// a shell behind, which the person can close from the same list it appears in; saying a
-    /// session started when nothing is running in it would be the worse of the two.
+    /// A pane whose keystrokes tmux would not take is reported as a failure. It leaves a shell
+    /// behind, which the person can close from the same list it appears in; saying a session
+    /// started when tmux would not even type into it would be the worse of the two.
+    ///
+    /// **What comes back says the keystrokes were accepted, and that is the most it can say.**
+    /// `send-keys` reports that tmux delivered them to the pane's tty, never that the shell ran
+    /// them, and those are two different failures. An rc file that flushes pending input —
+    /// `tcsetattr(0, TCSAFLUSH, …)`, which is what `stty` and a few framework rc files do —
+    /// discards a line already sitting in the tty while both calls still exit 0. Measured on
+    /// tmux 3.6a, 2026-09-02, against a `.zshrc` doing exactly that: the pane came back holding
+    /// its prompt and nothing else.
+    ///
+    /// **There is no receipt here because none can be taken in the time this path has.** A
+    /// `.zshrc` that merely sleeps for three seconds does *not* lose the line — type-ahead
+    /// survives an ordinary slow rc, measured the same day — so inside any deadline somebody
+    /// waiting on a start can afford, a swallowed line and a slow shell are the same silence, and
+    /// a check would either wait longer than the start is worth or call a working session dead.
+    /// ``ITerm/newTabResult(line:)`` has the identical exposure, and for the identical reason.
+    /// What catches it afterwards is that the pane never reports an assistant: an orchestrator
+    /// task fails its `child.assistant == task.assistant` gate and ends `spawn_failed` rather
+    /// than claiming a session that is not there, and a session started by hand appears in the
+    /// list as the shell it actually is.
     private static func openPane(_ create: [String], cwd: String, command: String,
                                  refused: String) -> Result<String, TerminalFailure> {
         var args = create
@@ -623,10 +685,17 @@ enum Tmux {
         // A marker anywhere is proof this tmux understood the script, so an empty result is then
         // a real answer about the panes. No marker at all is a tmux that could not be asked this
         // way — `source-file -` wants 3.3 or newer — and going blind on the whole backend is a
-        // far worse trade than the round trips this exists to save. No server is neither: there
-        // is nothing to ask a second time.
+        // far worse trade than the round trips this exists to save.
         if !screens.isEmpty || receipt.out.contains(batchedCaptureMarker) { return screens }
-        if saysNoServer(receipt.failure) { return [:] }
+        // **Only a tmux that was actually reached can be too old.** The version floor is read off
+        // the *absence* of the marker, and three different things are absent in the same way: an
+        // old tmux, a server that was never reached, and a run that timed out with nothing to
+        // show for it. Asking the last two again pane by pane cannot answer anything the batch
+        // did not — and on a wedged server it turns one 15-second reading into one per pane, on
+        // the path this exists to keep fast, where a reading in progress suppresses the next one
+        // rather than queueing it (`docs/waiting.md`). So the type of the failure decides,
+        // instead of being inferred from the same silence the fallback is looking at.
+        guard serverAnswer(receipt.failure) == .reached else { return [:] }
         var out: [String: String] = [:]
         for id in paneIDs where isPaneID(id) {
             if let screen = capture(id, scrollback: scrollback) { out[id] = screen }
