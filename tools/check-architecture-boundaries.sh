@@ -71,6 +71,32 @@ manifest_group_count=$(awk '
 [ "$manifest_group_count" -eq 494 ] \
   || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 494"
 
+# One async function's suspension-point count is the sharpest cliff this repository has.
+# Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
+#
+#   runCloudAccountTests        143 await   47,163 MiB   330.0 s
+#   runCloudCommandLedgerTests  131 await      954 MiB     3.1 s
+#   runCloudTransportTests       61 await      283 MiB     1.0 s
+#
+# 143 against 131 is +9.2% suspension points, x49 peak, x106 time. No power law produces that:
+# explaining 49x would need an exponent of 44. It is not a curve, it is a cliff somewhere between
+# 131 and 143 -- and the 46 GiB frontend in tonight's two JetsamEvent crash reports is the file on
+# the far side of it. The mechanism is not "async is expensive": per-phase peaks are typecheck
+# 0.070, silgen 0.081, sil 0.090, irgen 0.104 GiB, all under a second. The blowup is in the LLVM
+# pass pipeline after IRGen, which is superlinear in function size; async lowering is merely what
+# grew one function that large. The rule is "do not let one function get that big".
+#
+# This is a ratchet at today's worst value, not a target. runCloudCommandLedgerTests sits at 131 --
+# under the cliff, cheap today at 954 MiB, and about a dozen awaits from being what crashed this
+# machine twice. It has to come down; until it does, this stops it climbing and stops anything else
+# climbing to meet it. The next largest function in the tree is 61, so nothing else is near.
+suspension_max=$(python3 tools/suspension-scan.py Sources/*.swift Tests/*.swift \
+  | head -1 | awk '{print $1}')
+[ -n "$suspension_max" ] \
+  || architecture_guard_fail "suspension-point scan produced no output; that is a broken scanner, not a clean tree"
+[ "$suspension_max" -le 131 ] \
+  || architecture_guard_fail "one function now owns $suspension_max suspension points; the ratchet is 131 and may only fall (the measured cliff is between 131 and 143)"
+
 suite_count=0
 for suite in Tests/*Tests.swift; do
   [ -e "$suite" ] || continue
@@ -123,4 +149,4 @@ compare_documented "Swift checks" "$documented_swift_receipt"
 compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
 compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
 
-echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees"
+echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, max suspension=$suspension_max"
