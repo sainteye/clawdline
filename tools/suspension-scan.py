@@ -55,9 +55,20 @@ def scan(path):
         out.append((aw, name, path))
     return out
 
+# --count reports how many function declarations this scanner actually parsed, so a caller can
+# compare it against an independent count. That comparison exists because this scanner is the one
+# guard in the tree that fails OPEN: if its regex stops recognising a declaration -- a macro-
+# generated function, a syntax Swift has not shipped yet -- the awaits inside it are silently
+# attributed elsewhere or dropped, the reported maximum falls, and the ratchet waves through a
+# function that is over the line. The other guards fail closed: renaming what they count sends
+# their number to zero, which is red. This one needed the check bolted on.
+args = [a for a in sys.argv[1:] if a != "--count"]
 rows = []
-for p in sys.argv[1:]:
+for p in args:
     rows.extend(scan(p))
+if "--count" in sys.argv:
+    print(len(rows))
+    sys.exit(0)
 rows.sort(reverse=True)
 for aw, name, path in rows[:10]:
     print("%5d  %s  (%s)" % (aw, name, pathlib.Path(path).name))

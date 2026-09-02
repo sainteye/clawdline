@@ -105,6 +105,20 @@ manifest_group_count=$(awk '
 # under the cliff, cheap today at 954 MiB, and about a dozen awaits from being what crashed this
 # machine twice. It has to come down; until it does, this stops it climbing and stops anything else
 # climbing to meet it. The next largest function in the tree is 61, so nothing else is near.
+# This scanner is the one guard here that fails OPEN. The others count something by name, so
+# renaming it sends their number to zero and that is red. This one derives a maximum: if its regex
+# stops recognising a declaration -- a macro-generated function, a syntax Swift ships next year --
+# the awaits inside it are silently attributed elsewhere, the maximum falls, and the ratchet waves
+# through a function that is over the line. Nothing about that failure is visible.
+#
+# So the parse is checked against an independent count before its answer is used. A guard whose
+# assumption can be overturned by the code it guards needs to notice when it has been.
+scanner_funcs=$(python3 tools/suspension-scan.py --count Sources/*.swift Tests/*.swift)
+grep_funcs=$(cat Sources/*.swift Tests/*.swift \
+  | grep -cE '^[[:space:]]*(private |fileprivate |public |internal |static |final )*func [A-Za-z0-9_]+')
+[ "$scanner_funcs" = "$grep_funcs" ] \
+  || architecture_guard_fail "suspension scanner parsed $scanner_funcs function declarations, an independent count found $grep_funcs; the scanner has stopped recognising some declaration form and its maximum can no longer be trusted"
+
 suspension_max=$(python3 tools/suspension-scan.py Sources/*.swift Tests/*.swift \
   | head -1 | awk '{print $1}')
 [ -n "$suspension_max" ] \
@@ -178,4 +192,4 @@ compare_documented "Swift checks" "$documented_swift_receipt"
 compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
 compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
 
-echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites, max suspension=$suspension_max"
+echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
