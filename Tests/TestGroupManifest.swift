@@ -487,6 +487,9 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a tmux control-mode client is what makes a pty-less iTerm2 row explicable",
     "an iTerm2 row with no pty is attributed rather than dropped",
     "revealing a tmux pane brings iTerm2 forward only when tmux says it drew it",
+    "one tmux subprocess answers for every pane in a reading",
+    "Clawdline starts a tmux server rather than telling a phone to go and run one",
+    "a screen read to decide something is the screen, not its history",
 ]
 
 func validateExecutedTestGroupManifest() {

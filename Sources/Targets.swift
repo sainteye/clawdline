@@ -715,11 +715,27 @@ enum Targets {
     // an id and waits for the next reading like everybody else, because returning something
     // half-filled would be a third kind of `TargetSession` that is true for about a second.
 
+    /// What that session shows **now**, which is what everything reading a screen to decide
+    /// something wants.
+    ///
+    /// **This used to carry ``Tmux/capture(_:scrollback:)``'s two hundred lines of history, and
+    /// that was the wrong default for eight of its nine callers.** Every one of them is asking a
+    /// question about the present — is this session busy, is a menu on screen, is the highlight
+    /// on the row that was asked for, has the composer appeared — and history answers a different
+    /// question with the same words. Most are protected by accident: ``SessionState/menu`` reads
+    /// the last thirty non-empty lines and ``Activity/parse`` the last twenty-five, so scrollback
+    /// is inert while the current screen fills them. ``Orchestrator/briefingInputReady(_:assistant:)``
+    /// is the one that is not — it looks for a bare `❯` anywhere in the text it is handed — so a
+    /// composer that scrolled away hours ago said "this session is ready for its briefing" while
+    /// the session in front of it was still starting up. That could only ever happen on tmux:
+    /// iTerm2 exposes the visible screen and no more, so the same code was safe on one backend
+    /// and not on the other, which is the asymmetry rather than the number being wrong.
+    ///
+    /// History is not free either — it crosses a pipe, is parsed, and reaches a phone — but that
+    /// is the smaller half of the argument. See ``screenWithHistory(of:lines:)`` for the one
+    /// caller that genuinely wants it.
     static func capture(_ session: TargetSession) -> String? {
-        switch session.backend {
-        case .iterm: return ITerm.capture(session.id)
-        case .tmux:  return Tmux.capture(session.id)
-        }
+        visibleScreen(of: session)
     }
 
     /// What is visible now, without tmux scrollback. A current mode cannot be read from history:
@@ -731,11 +747,26 @@ enum Targets {
         }
     }
 
+    /// The screen and what scrolled off the top of it, for the one thing that is showing a person
+    /// a terminal rather than deciding something from it: the panel's output view.
+    ///
+    /// It is the only caller for which the wall in `docs/screen-tail.md` is the point — iTerm2
+    /// hands over sixty rows and no more, tmux keeps history — so it is the only one that should
+    /// pay for the extra lines. On iTerm2 it is the visible screen either way; there is no
+    /// scrollback to ask for.
+    static func screenWithHistory(of session: TargetSession, lines: Int = 200) -> String? {
+        switch session.backend {
+        case .iterm: return ITerm.capture(session.id)
+        case .tmux:  return Tmux.capture(session.id, scrollback: lines)
+        }
+    }
+
     /// What each of these sessions is doing, keyed by session id.
     ///
     /// Batched per backend rather than session by session, because the cost here is round trips
-    /// and not text: iTerm2 answers for all of them in one osascript run, and tmux is asked pane
-    /// by pane only because `capture-pane` has no plural.
+    /// and not text: iTerm2 answers for all of them in one osascript run, and tmux answers for
+    /// all of them in one `source-file` — `capture-pane` has no plural, but tmux takes a whole
+    /// script at once. See ``Tmux/capture(panes:scrollback:)``.
     ///
     /// A session that could not be read comes back as `.unknown`, which is why the map is filled
     /// in for every session asked about rather than only the ones that answered — a missing key
@@ -783,10 +814,15 @@ enum Targets {
             let tails = ITerm.tails(ids: iterm.map { $0.id })
             for session in iterm { note(session, tails[session.id]) }
         }
-        // Only the visible pane: `-S -0` starts at the top of the screen rather than in the
-        // scrollback, which is both cheaper and the right question — what is on screen *now*.
-        for session in sessions where session.backend == .tmux {
-            note(session, Tmux.capture(session.id, scrollback: 0))
+        // One subprocess for all of them, the same shape as the iTerm2 branch above. Only the
+        // visible pane: `-S -0` starts at the top of the screen rather than in the scrollback,
+        // which is both cheaper and the right question — what is on screen *now*. A pane that
+        // would not answer is missing from the map and becomes `.unknown` through `note`, which
+        // is what one failing `capture-pane` cost when each pane had a subprocess of its own.
+        let tmux = sessions.filter { $0.backend == .tmux }
+        if !tmux.isEmpty {
+            let screens = Tmux.capture(panes: tmux.map(\.id), scrollback: 0)
+            for session in tmux { note(session, screens[session.id]) }
         }
         return out
     }
