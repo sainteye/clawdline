@@ -465,29 +465,59 @@ paying rent in the frozen file.
 
 ### Governance correction, landed with Cut 1
 
-This document had drifted from the executable guard. The guard is authoritative, and these are its
-values on the integrated tree, read out of `tools/check-architecture-boundaries.sh` and observed by
-a full suite on 2026-09-02:
+This document had drifted from the executable guard. The guard is authoritative, and the right-hand
+column is what it holds on the tree this section describes:
 
-| | this document said | observed after Cut 1 |
+| | this document said | what the guard holds |
 |---|---:|---:|
 | ordered groups | 463 | 494 |
 | ordered runners | 25 | 28 |
 | suite files | 38 | 41 |
-| Swift checks | — | 8,052 |
+| Swift checks | — | 8,058 |
 | `Orchestrator.swift` ceiling | 13,592 | 12,819 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,426 |
 
-That row reads 8,026 rather than the 8,025 observed after Cut 1: the multi-question picker's
-confirmation guard added one check on 2026-09-02 (`4273990a`). It is written here because the guard
-now asserts this table, which is the mechanism the paragraph below asked for — the first landing to
-move a count after that change is the one that proves it works, and this is that landing.
+**That column is a guard reading, and only one of its rows can also be an observation.** Five of the
+six `tools/check-architecture-boundaries.sh` recomputes from the tree every time it runs — it counts
+the ordered groups, the runners and the suite files, and measures the two ceilings — so those cells
+and the tree cannot disagree for longer than one run. The sixth is not that kind of number.
+`Swift checks` is read back out of `test.sh`'s `expected_swift_receipt` with `sed` and compared with
+this cell: the guard never counts a check, so its going green proves only that two *documents* agree.
+The thing that settles that row is a full `./test.sh` printing its `NNNN checks passed` line.
+
+**The heading used to say `observed after Cut 1`, and for that row it was not true when it was
+written.** At the moment 8,052 was put in this table no full suite had run on the tree it describes —
+the delivery's own paragraph four lines below said as much — so the column claimed a provenance the
+number did not have. That is this section's own defect arriving once more, in its subtlest form: not
+a wrong arithmetic under a right label, but a right number under a wrong one. **So the heading now
+names what every cell in it actually is** — what the guard holds — and where a number came from is
+said per row, in prose, rather than by one heading that would have to be true of six different
+things at once. A column heading is the smallest place in this document that can lie, because it is
+the one part nobody re-reads when a cell changes.
+
+**8,052 has since been observed, and the observation belongs here rather than in the heading.** The
+landing run of `252b016b` — the exact committed tree, not a working copy — reported
+`8052 checks passed`, the first full suite this line has had. That is recorded from root's receipt;
+this correction did not repeat the run. The 8,026 it was subtracted from is still inherited
+arithmetic — 8,025 observed after Cut 1, plus the one check the multi-question picker's confirmation
+guard added on 2026-09-02 (`4273990a`) — so an error there would travel into every number below it
+by the same amount, and only another full suite can find one.
 
 **And it worked on the next one.** Giving the terminal a setting of its own — `Config.terminal` and
-`StartPoints.TerminalChoice`, split out of the hotkey's scope — moves that row to **8,052**, 26
+`StartPoints.TerminalChoice`, split out of the hotkey's scope — moved that row to **8,052**, 26
 checks, in three groups and no new group, runner or suite file. The count was moved here in the same
 edit as `test.sh`'s `expected_swift_receipt` because the guard reads both and refuses to agree with
 one of them, and the arithmetic behind the 26 is written out beside that variable.
+
+**Closing that delivery's review moves it by six more, to 8,058.** Four are in *the page is given the
+words it draws the start sheet with* (9 → 13): a language keeping a `{app}` hole in the one sentence
+that has no name to fill it, the three pages no longer asking for a name this refusal never carries,
+what each of them actually draws rather than only what it asks, and the mock offering the shape the
+server really sends. Two are in *which terminal a session is started in, and when none of them will
+do* (34 → 36), for a hand-typed `terminal` value being named as discarded rather than silently
+replaced. No new group, runner or suite file. **8,058 is a reading of this correction's own branch
+and not a prediction about `main`**, which gains another line's 8,087 in between: the landing root
+recomputes the absolute from its own tree, and what carries across the merge is the delta of six.
 
 **How that 26 was measured, since no full suite could be run the night it landed.** One file,
 `Tests/CloudAccountTests.swift`, was measured at a ≥23.65 GiB lifetime maximum on a 24 GB Mac, so

@@ -41,16 +41,17 @@ export var ScheduleHistory = (function () {
     function why(e) {
         if (e && e.code === "write_disabled") return T.webStartOff;
         if (e && e.code === "not_found") return T.webResumeGone;
-        // Both 409s carry `app` when there is one to carry, and `terminal_unsupported` now often
-        // has none: the refusal it answers is "tmux is the terminal in Settings and there is no
-        // tmux on this Mac", which is not an application. Filling the hole with "" drew "A session
-        // cannot be started in  from here", so the sentence is only written when the name for it
-        // arrived — the same guard `start.js` and `command.js` already had.
+        // `terminal_closed` carries `app` when there is one to carry. Filling the hole with ""
+        // drew "A session cannot be started in  from here", so the sentence is only written when
+        // the name for it arrived — the same guard `start.js` and `command.js` already had.
         if (e && e.app && e.code === "terminal_closed") {
             return fill(T.webStartTerminalClosed, { app: e.app });
         }
-        if (e && e.app && e.code === "terminal_unsupported") {
-            return fill(T.webStartTerminalUnsupported, { app: e.app });
+        // `terminal_unsupported` never carries one: the refusal it answers is "tmux is the
+        // terminal in Settings and there is no tmux on this Mac", which is not an application.
+        // Its sentence is written whole, so this page shows it rather than "Request failed".
+        if (e && e.code === "terminal_unsupported") {
+            return T.webStartTerminalUnsupported;
         }
         return T.webRequestFailed;
     }

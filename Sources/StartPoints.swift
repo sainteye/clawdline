@@ -388,8 +388,15 @@ enum StartPoints {
             // **No `app`, on purpose.** The two 409s used to carry the bundle id out of the
             // hotkey scope, and the phone writes its own sentence around it — "a session cannot
             // be started in Ghostty from here". tmux is not that kind of name and there is no
-            // longer a terminal id behind this refusal to offer, so the page falls through to
-            // its plain wording rather than being handed a sentence that reads as nonsense.
+            // longer a terminal id behind this refusal to offer.
+            //
+            // **A page answering this draws `webStartTerminalUnsupported`, which has no hole in
+            // it.** The first spelling of this left the three pages guarding on `e.app` and
+            // falling through to "That could not be started." — so the sentence below was
+            // written carefully and read by nobody: the one place where somebody who changed
+            // nothing saw a worse answer than before. This is the only producer of
+            // `terminal_unsupported`, and it never carries a name, so the copy is written whole
+            // rather than around a `{app}` nothing can fill.
             return .refused(status: 409, code: "terminal_unsupported",
                             message: "tmux is the terminal for new sessions in Settings, and "
                                    + "there is no tmux on this Mac. Install tmux, or pick a "

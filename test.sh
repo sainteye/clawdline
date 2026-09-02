@@ -81,7 +81,17 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # in the screen-reading group, where `docs/interface.md`'s "200 lines of history" is now compared
 # with the depth `Targets.screenWithHistory` actually asks tmux for instead of being a transcription
 # nothing could contradict. 8026 -> 8052.
-expected_swift_receipt='8052 checks passed'
+# Closing that delivery's review adds 6, counted the same way and appended rather than folded into
+# the paragraph above, because each paragraph says how its own checks were arrived at and a reader
+# asking where the final number came from needs both halves. 4 are in the start-sheet words group:
+# a language keeping the `{app}` hole in the one refusal sentence that has no name to fill it, the
+# three pages no longer asking for a name `terminal_unsupported` never carries, what each of those
+# branches actually draws rather than only what it asks — the gap that let the whole delivery ship
+# a carefully written refusal nobody could read — and the mock answering that code in the shape the
+# server really sends. 2 are in the terminal-plan group, for a hand-typed `terminal` value being
+# named as discarded instead of silently replaced. Every one is unconditional and at the group's own
+# top level. 8052 -> 8058.
+expected_swift_receipt='8058 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

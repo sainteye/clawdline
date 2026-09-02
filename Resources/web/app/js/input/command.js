@@ -449,7 +449,9 @@ export var Command = (function () {
         if (code === "write_disabled") return T.webStartOff;
         if (code === "not_found") return T.webStartGone;
         if (e && e.app && code === "terminal_closed") return fill(T.webStartTerminalClosed, { app: e.app });
-        if (e && e.app && code === "terminal_unsupported") return fill(T.webStartTerminalUnsupported, { app: e.app });
+        // No `e.app` guard: `terminal_unsupported` never carries a name, and its sentence has no
+        // hole to fill. See `input/start.js` for why the guard was wrong here.
+        if (code === "terminal_unsupported") return T.webStartTerminalUnsupported;
         return T.webStartFailed;
     }
 

@@ -133,10 +133,15 @@ export var Start = (function () {
         if (code === "offline") return e.message;          // already this page's own sentence
         if (code === "write_disabled") return T.webStartOff;
         if (code === "not_found") return T.webStartGone;
-        // Both 409s carry `app`. Without it there is no sentence to write — a translation with
-        // `{app}` still in it is worse than the plain refusal — so that falls through.
+        // `terminal_closed` carries `app` and its sentence is written around the name; without
+        // one there is nothing to write, because a translation with `{app}` still in it is worse
+        // than the plain refusal, so that one falls through.
         if (e && e.app && code === "terminal_closed") return fill(T.webStartTerminalClosed, { app: e.app });
-        if (e && e.app && code === "terminal_unsupported") return fill(T.webStartTerminalUnsupported, { app: e.app });
+        // `terminal_unsupported` never carries a name and does not need one: it means tmux is
+        // what Settings asks for and there is no tmux on that Mac, so its sentence is written
+        // whole. Guarding it on `e.app` too is what made the one refusal with a person behind it
+        // arrive as "That could not be started."
+        if (code === "terminal_unsupported") return T.webStartTerminalUnsupported;
         return T.webStartFailed;
     }
 

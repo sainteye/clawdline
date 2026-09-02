@@ -122,11 +122,17 @@ had. Two questions, one answer, and no spelling for half the combinations.
 | --- | --- |
 | **Auto** | iTerm2 while it is open; tmux while it is not; and with neither, an ask to open iTerm2. The order every terminal operation in this app has always taken, and what a config that never said otherwise means. |
 | **iTerm2** | an iTerm2 tab, and a refusal naming iTerm2 when it is shut. Named, so a tmux server running beside it is deliberately *not* an answer — picking iTerm2 over auto asks for the tab you can see rather than a pane you cannot. |
-| **tmux** | a tmux pane, running iTerm2 or no running iTerm2. With tmux installed and no server, Clawdline starts one detached — the section below. With no tmux on this Mac at all the start is refused, `terminal_unsupported`, saying to install tmux or pick something else. |
+| **tmux** | a tmux pane, running iTerm2 or no running iTerm2. With tmux installed and no server, Clawdline starts one detached — the section below. With no tmux on this Mac at all the start is refused, `terminal_unsupported`. That refusal has no application to name — tmux is not one — so unlike `terminal_closed` the phone does not write a sentence around a name; it draws a sentence of its own saying that Settings asks for tmux, that this Mac has none, and that the answers are to install it or to choose another terminal here. |
 
 The key is `terminal` in `config.json`, and its values are `auto`, `iterm` and `tmux`. It is read
 at the moment a session starts rather than when the app launches, so the next session goes where
 this now says and nothing has to be restarted.
+
+**A value this app cannot read is treated as one that was never written**, which is what the
+migration below is for — and because the next save then writes that migrated answer over what was
+typed, the discarded value is named once in `~/Library/Logs/Clawdline.log` rather than disappearing
+without a word. Hand-editing `"terminal": "ghostty"` is not an error you will be stopped on; it is
+one you can find out about afterwards.
 
 **A `config.json` written before the key existed keeps the terminal it had.** It is filled in once,
 from the hotkey's scope, because that is the only place the old file said anything about a

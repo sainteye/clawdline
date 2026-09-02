@@ -155,6 +155,16 @@ final class Config {
     /// by ``StartPoints/TerminalChoice/inheritedFromHotkeyScope(_:)``, so nothing moves under
     /// anybody; the next save writes the answer down and the scope is never consulted again.
     var terminal: StartPoints.TerminalChoice = .auto
+    /// The `terminal` value a `config.json` held that this app could not read, kept from the
+    /// last ``load()`` and `nil` when the key was absent or legal.
+    ///
+    /// **An unreadable value and an absent one get the same answer, and they are not the same
+    /// event.** Both mean "this file never chose", so both migrate from ``scopeApp`` — but a
+    /// hand-typed `"terminal": "ghostty"` is somebody asking for something, and the next
+    /// ``save()`` writes the migrated answer over it with no trace of what was asked. Until now
+    /// nothing could tell the two apart, so nothing could say so. This is written to the log
+    /// once, at the moment it is noticed; it is never persisted and never decides anything.
+    private(set) var discardedTerminal: String?
     /// "auto" follows the system, or a tag such as "en" / "zh-Hant"
     var language = "auto"
     /// Which mascot pack to draw. Files live in ~/.config/clawdline/mascots/<name>.json
@@ -566,8 +576,19 @@ final class Config {
         // both mean "this file never chose", and both get the same answer.
         if let v = obj["terminal"] as? String, let choice = StartPoints.TerminalChoice(rawValue: v) {
             terminal = choice
+            discardedTerminal = nil
         } else {
+            // Said once, where somebody can find it. The answer is the same as it always was —
+            // the migration — but a value that was typed and thrown away used to leave nothing
+            // at all behind, and the next save overwrote the file it was typed into.
+            discardedTerminal = obj["terminal"] as? String
             terminal = StartPoints.TerminalChoice.inheritedFromHotkeyScope(scopeApp)
+            if let discarded = discardedTerminal {
+                let legal = StartPoints.TerminalChoice.allCases.map(\.rawValue)
+                    .joined(separator: ", ")
+                Log.write("config: terminal \"\(discarded)\" is not one of \(legal) — read as no "
+                        + "answer at all, and the next save writes \"\(terminal.rawValue)\" over it")
+            }
         }
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
