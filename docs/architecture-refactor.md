@@ -368,3 +368,106 @@ candidate commit tree:
 Failure of any item leaves `architecture_hold`; it is not permission to weaken a receipt or begin a
 partial production move. Later phases need the same fresh approval at their own gate. This document
 is a map, not permission to run six migrations concurrently.
+
+## Next refactor: the registry owner (measured 2026-09-02)
+
+Approved direction: **extract the state owner**. Phase 2's pure-policy list is deliberately
+skipped, and the ordering proposed before measurement is corrected below. Measurements were taken
+on `main` at `61696746` with the working tree busy; re-measure before each cut.
+
+### Why the freeze did not hold, and why pure policy would not help
+
+`Orchestrator.swift` was put under net-growth freeze on 2026-08-29 at 11,562 lines. Three days
+later it is 13,592 — **+2,030 lines, +17.6%** — through seven individually legitimate exceptions:
+
+```
+11,562 → 12,337 → 12,398 → 12,431 → 13,482 → 13,502 → 13,539 → 13,592
+```
+
+The guard's ceiling is whatever the last delivery measured, so it can prove nobody grew the file
+quietly; it cannot make the file smaller, and an exception clause is always available to the next
+feature. Meanwhile the four features that opened their own cohesive file —
+`SessionClosePolicy` (118), `CoordinatorSuccession` (519), `OrchestratorPlanning` (552),
+`TranscriptReadCoordinator` (66) — held `RemoteServer` to +41 lines over the same three days. The
+pattern works on new behavior and does nothing for work that must change the existing state
+machine, because that work has nowhere else to go.
+
+Phase 2's pure policies would not change this. This document already concedes the point for
+`RootAssignmentDeliveryPolicy`: moving value types and helpers leaves every state, terminal and
+transcript dependency behind and produces an extension-shaped split. The growth curve would be
+unchanged.
+
+### The ownership defect, measured
+
+| Fact | Measurement |
+|---|---|
+| `Orchestrator.lock` | one `NSLock`, **160** `lock.lock()` sites across the file |
+| collections it protects | **19+** `static var` dictionaries, sets and arrays |
+| additional independent locks | `ownershipLock`, `storeSaveLock`, `coordinationDeliveryLock`, `closingTasksLock` |
+| implicit in-lock contracts | **10** `…Locked()` functions callable only under the lock |
+
+There is no owner. There is one lock and a convention, and the convention is enforced by a
+function-name suffix. Every new feature that touches task state extends the convention.
+
+The "The store" section (941 lines) is **not** that owner: it is a serializer. Only `load()` and
+`save()` touch the shared collections (4 lock sites between them); the remaining ~780 lines are 21
+pure `stored(_:)` / `…(from:)` codec functions with no state and no lock.
+
+### Corrected cut order
+
+The pre-measurement proposal was to warm up on "Scheduled dispatches" and then take the store.
+Measurement reverses it: the schedule section enters the **same** `lock` in 20+ places and
+`hasActiveScheduleTaskLocked` reads the task registry inside it. Schedules cannot leave until an
+owner exists.
+
+**Cut 1 — `OrchestratorStore.swift`, the codec (~780 lines).** The 21 `stored(_:)` / `…(from:)`
+functions move as pure translation between domain values and `[String: Any]`. `load()` and
+`save()` stay in `Orchestrator` because they assign the shared collections. Zero lock sites, zero
+state, no dependency-direction change, table-driven tests per record type. Acceptance: store decode
+semantics identical for every record type including the legacy-shape branches, unchanged group and
+check counts apart from the new codec groups, `Orchestrator.swift` down ~780 lines.
+
+**Cut 2 — `OrchestratorRegistry.swift`, the owner.** One type owns the lock and the collections and
+exposes a transaction interface; the 160 bare lock sites converge on it and the 10 `…Locked()`
+contracts become methods that cannot be called outside a transaction. Migrate one collection at a
+time, each its own revertible commit, `Orchestrator` keeping its facade. Do not convert to an actor
+in the same project — synchronization semantics stay stable while ownership moves. Acceptance per
+collection: identical mutation order, restart recovery unchanged, exactly one event publication per
+committed transition, and a red mutation proving the transaction boundary is enforced.
+
+**Cut 3 — `ScheduleService.swift` (~1,119 lines).** The five schedule-only collections
+(`handledScheduleFires`, `pendingScheduleFires`, `lastMissedScheduleFires`, `dispatchingSchedules`,
+`invalidScheduleFingerprints`, plus `scheduleWriteTimes`) and the 34 schedule functions move
+together; the single crossing to `tasks` goes through a registry read port. This section already
+has its own suite, its own persistence and its own routes, so it satisfies criteria 1–4 once the
+owner from Cut 2 exists.
+
+Expected end state: `Orchestrator.swift` near 11,000 lines, and — more important than the number —
+schedules, handoffs and coordination waits each have somewhere to go, so the next feature stops
+paying rent in the frozen file.
+
+### Governance correction, to land with Cut 1
+
+This document has drifted from the executable guard. The guard is authoritative; these values are
+wrong here and are corrected when Cut 1 lands:
+
+| | this document | `check-architecture-boundaries.sh` |
+|---|---:|---:|
+| ordered groups | 463 | 480 |
+| ordered runners | 25 | 27 |
+| suite files | 38 | 40 |
+| `RemoteServer.swift` ceiling | 6,385 | 6,426 |
+
+Any Phase gate decision taken against the stale numbers was taken against the wrong baseline.
+Replace the exception clause with a budget the guard can execute: a feature may add lines to a
+frozen file only when it also names a new boundary that absorbs them, so "somewhere else to go"
+becomes a check rather than a habit.
+
+### Precondition: the tree is busy
+
+This working copy is shared. Within one 15-minute window on 2026-09-02 the uncommitted set turned
+over completely — `ReadingFreshness.swift` and `Orchestrator.swift` edits gave way to
+`QuestionSteps.swift`, `SessionState.swift` and `RemoteServer.swift` edits. A cut that rewrites
+13,592 lines is an enormous claim. Each cut therefore declares its claims at dispatch, starts only
+when `Orchestrator.swift` is clean at HEAD, and lands as whole revertible commits before the next
+cut begins.
