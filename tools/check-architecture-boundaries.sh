@@ -16,9 +16,10 @@ main_lines=$(line_count Tests/main.swift)
 [ "$main_lines" -le 500 ] \
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
+orchestrator_ceiling=12819
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
-[ "$orchestrator_lines" -le 12819 ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the store-codec extraction receipt (12819)"
+[ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the store-codec extraction receipt ($orchestrator_ceiling)"
 
 # Task JSON is built on the main queue after a SessionWatch publication lands. Root-terminal
 # projection must therefore consume that publication, not re-enter Transcript/Targets and launch
@@ -48,9 +49,10 @@ if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.session
   architecture_guard_fail "Orchestrator task records re-scan Transcript/Targets on the main queue"
 fi
 
+remote_server_ceiling=6426
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
-[ "$remote_server_lines" -le 6426 ] \
-  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved TCP close-reclamation receipt (6426)"
+[ "$remote_server_lines" -le "$remote_server_ceiling" ] \
+  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved TCP close-reclamation receipt ($remote_server_ceiling)"
 
 if grep -q 'group(' Tests/main.swift; then
   architecture_guard_fail "new domain group found in Tests/main.swift"
@@ -80,4 +82,45 @@ done
 [ "$suite_count" -eq 41 ] \
   || architecture_guard_fail "suite file count is $suite_count; expected 41"
 
-echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count"
+# The governance table in docs/architecture-refactor.md drifted three times — 480 when the guard
+# held 479, 7,918 when the suite observed 7,941, 490 when it observed 494 — and every time for the
+# same reason: a count written in prose has no owner and nothing makes it go red. test.sh and this
+# script hold the same numbers and fail the build when they drift, which is why they were right
+# each time the table was wrong. So the table is no longer a copy. It is read back here and
+# compared with the values this run just computed; a landing that moves a count must move it there
+# too, or this fails before a compiler is started.
+governance_doc=docs/architecture-refactor.md
+
+documented_value() {
+  awk -F'|' -v want="$1" '
+    { gsub(/^[ \t]+|[ \t]+$/, "", $2) }
+    $2 == want {
+      value = $4
+      gsub(/[ \t,]/, "", value)
+      print value
+      exit
+    }
+  ' "$governance_doc"
+}
+
+compare_documented() {
+  local label=$1 actual=$2 documented
+  documented=$(documented_value "$label")
+  [ -n "$documented" ] \
+    || architecture_guard_fail "governance table in $governance_doc has no row named '$label'"
+  [ "$documented" = "$actual" ] \
+    || architecture_guard_fail "governance table says $label is $documented; this run measured $actual"
+}
+
+documented_swift_receipt=$(sed -n "s/^expected_swift_receipt='\([0-9]*\) checks passed'/\1/p" test.sh)
+[ -n "$documented_swift_receipt" ] \
+  || architecture_guard_fail "could not read expected_swift_receipt from test.sh"
+
+compare_documented "ordered groups" "$manifest_group_count"
+compare_documented "ordered runners" "$runner_count"
+compare_documented "suite files" "$suite_count"
+compare_documented "Swift checks" "$documented_swift_receipt"
+compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
+compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
+
+echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees"
