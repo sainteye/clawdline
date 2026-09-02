@@ -96,6 +96,8 @@ struct Spanish: Copy {
     let settingsScope = "Se activa en"
     let settingsScopeGlobal = "En todas las apps"
     let settingsScopeHint = "Vacío significa en todas partes, así que quitar la última enciende el interruptor de arriba — y volver a apagarlo devuelve la lista. El archivo de configuración las guarda como identificadores de bundle, y una lista editada a mano sigue funcionando."
+    let settingsSessionTerminal = "Las sesiones nuevas se abren en"
+    let settingsSessionTerminalHint = "No es lo mismo que dónde funciona el atajo. Automático usa iTerm2 cuando está abierto y tmux cuando no; tmux pone la sesión en un servidor tmux aunque iTerm2 esté abierto. Se aplica a la próxima sesión, sin reiniciar nada."
     let settingsScopeAdd = "Añadir una app…"
     let settingsScopeChoose = "Elegir una app…"
     let settingsScopeRunning = "Abiertas ahora mismo"

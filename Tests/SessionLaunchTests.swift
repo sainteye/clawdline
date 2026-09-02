@@ -732,46 +732,115 @@ group("the line a new tab is given, before anything types it") {
 
 group("which terminal a session is started in, and when none of them will do") {
     let iterm = StartPoints.itermBundleID
-    func plan(_ scope: String, _ running: Set<String>,
+    let ghostty = "com.mitchellh.ghostty"
+    func plan(_ terminal: StartPoints.TerminalChoice, _ running: Set<String>,
               _ tmux: StartPoints.TmuxReach) -> StartPoints.Plan {
-        StartPoints.plan(scope: scope, running: running, tmux: tmux)
+        StartPoints.plan(terminal: terminal, running: running, tmux: tmux)
     }
-    expect("iTerm2 is named and open", plan(iterm, [iterm], .absent), .iterm)
-    expect("no scope at all means no preference, and that is iTerm2 first",
-           plan("", [iterm], .running), .iterm)
-    expect("named among others", plan("com.apple.Terminal,\(iterm)", [iterm], .absent), .iterm)
-    expect("iTerm2 is named and shut, and there is a tmux to go through instead",
-           plan(iterm, [], .running), .tmux)
-    expect("iTerm2 is named and shut and there is nothing else",
-           plan(iterm, [], .absent), .notRunning(app: iterm))
 
-    // The refusal that matters: a terminal this cannot drive must be said out loud rather than
-    // quietly handed to iTerm2, because a session that opened somewhere nobody was looking is
-    // worse than a sentence saying it did not open.
-    expect("another terminal, with tmux under it",
-           plan("com.mitchellh.ghostty", [], .running), .tmux)
-    expect("another terminal and no tmux is refused by name",
-           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], .absent),
-           .cannotDrive(app: "com.mitchellh.ghostty"))
-    check("and it never silently becomes iTerm2",
-          plan("com.apple.Terminal", [iterm], .absent) != .iterm)
+    // **No preference is iTerm2 first**, which is the order every terminal operation in this app
+    // has always used, and the reason a config that says nothing sees nothing change.
+    expect("iTerm2 is open and nothing was asked for", plan(.auto, [iterm], .absent), .iterm)
+    expect("a tmux server beside an open iTerm2 does not take the session off it",
+           plan(.auto, [iterm], .running), .iterm)
+    expect("the bundle id is matched however it is spelled",
+           plan(.auto, ["COM.GoogleCode.iTerm2"], .running), .iterm)
+    expect("iTerm2 is shut, and there is a tmux to go through instead",
+           plan(.auto, [], .running), .tmux)
+    // The other half of that judgement: iTerm2 shut is not the case a detached server is for.
+    // Opening iTerm2 is one click and puts the session where the person is already looking.
+    expect("iTerm2 shut with a tmux that is merely installed is still asked to be opened",
+           plan(.auto, [], .installed), .notRunning(app: iterm))
+    expect("iTerm2 shut with no tmux at all is the same sentence",
+           plan(.auto, [], .absent), .notRunning(app: iterm))
 
-    // **A tmux with no server running is the case this used to lose.** `hasTmux` spelled
-    // *installed* and *not installed* the same way, so a Ghostty or Terminal.app user who had
-    // closed their last tmux window was told to go and run tmux — on a Mac they were not sitting
-    // at, from a phone that had just asked for a session.
-    expect("a terminal this cannot drive, with a tmux that is merely installed, starts a server",
-           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], .installed), .tmuxDetached)
-    expect("and it is refused only when there is no tmux at all",
-           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], .absent),
-           .cannotDrive(app: "com.mitchellh.ghostty"))
-    // The other half of the judgement: iTerm2 shut is not that case. Opening iTerm2 is one click
-    // and puts the session where the person is already looking, which beats a server nobody is
-    // attached to.
-    expect("iTerm2 shut with tmux installed but no server is still asked to be opened",
-           plan(iterm, [], .installed), .notRunning(app: iterm))
-    expect("no scope at all follows the same rule", plan("", [], .installed),
-           .notRunning(app: iterm))
+    // **Named, and it means it.** Somebody who picked iTerm2 over `auto` asked for the tab they
+    // can see rather than a pane in a server nobody is attached to, so a running tmux is not an
+    // answer to them.
+    expect("iTerm2 by name, and open", plan(.iterm, [iterm, ghostty], .running), .iterm)
+    expect("iTerm2 by name and shut is a refusal, not a fallback into tmux",
+           plan(.iterm, [ghostty], .running), .notRunning(app: iterm))
+    expect("and the same refusal when there is no tmux to have fallen into",
+           plan(.iterm, [ghostty], .absent), .notRunning(app: iterm))
+
+    // **The case the old setting could not say at all.** `scope_app` was the default
+    // `com.googlecode.iterm2`, iTerm2 was running, and a live `tmux -CC` session sat beside it —
+    // so every new session went to a plain iTerm2 tab and there was no way to ask for the other.
+    expect("tmux, while iTerm2 is running", plan(.tmux, [iterm], .running), .tmux)
+    expect("tmux with no server yet starts one detached, iTerm2 or no iTerm2",
+           plan(.tmux, [iterm], .installed), .tmuxDetached)
+    expect("tmux asked for and none on this Mac is refused, and named as tmux",
+           plan(.tmux, [iterm], .absent), .noTmux)
+    check("and asking for tmux never quietly becomes iTerm2",
+          plan(.tmux, [iterm, ghostty], .running) != .iterm)
+
+    // **What a config.json written before this setting existed meant by its hotkey scope.** The
+    // scope is read once, here, and never by `plan` — without it a Ghostty or Terminal.app user
+    // whose sessions have always gone to tmux would be moved onto `auto` and told to open an
+    // iTerm2 they may not have installed.
+    func inherited(_ scope: String) -> StartPoints.TerminalChoice {
+        StartPoints.TerminalChoice.inheritedFromHotkeyScope(scope)
+    }
+    expect("the shipped default scope means no preference", inherited(iterm), .auto)
+    expect("a global hotkey said nothing about a terminal either", inherited(""), .auto)
+    expect("iTerm2 named among others still reads as iTerm2 first",
+           inherited("com.apple.Terminal,\(iterm)"), .auto)
+    expect("spelling and spacing do not change that",
+           inherited(" COM.GOOGLECODE.ITERM2 , com.apple.Terminal "), .auto)
+    expect("a scope that names another terminal has always meant tmux", inherited(ghostty), .tmux)
+    expect("and so has Terminal.app", inherited("com.apple.Terminal"), .tmux)
+
+    // The whole point of the migration, stated as the thing it protects: every triple that used
+    // to reach `plan` reaches the same answer through the derived choice.
+    expect("a Ghostty scope with a running server, as before",
+           plan(inherited(ghostty), [ghostty], .running), .tmux)
+    expect("a Ghostty scope with tmux merely installed still starts a server, as before",
+           plan(inherited(ghostty), [ghostty], .installed), .tmuxDetached)
+    expect("a Ghostty scope with no tmux is still the refusal it was",
+           plan(inherited(ghostty), [ghostty], .absent), .noTmux)
+    expect("and the default scope on a Mac running iTerm2 is still an iTerm2 tab",
+           plan(inherited(iterm), [iterm], .running), .iterm)
+
+    // The file itself: what an existing `config.json` does on the first launch after this change.
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-terminal-choice-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    func config(_ json: String) -> Config {
+        try! json.write(to: directory.appendingPathComponent("config.json"),
+                        atomically: true, encoding: .utf8)
+        return Config(directoryForTesting: directory)
+    }
+    // **The raw values are the file format**, and the Settings pop-up's values as well. Renaming
+    // a case is not a rename: `config.json` keeps the old word, the value stops parsing, and the
+    // unreadable branch below quietly migrates everybody off the answer they chose — silently,
+    // because that branch cannot tell a typo from a key that was never there.
+    expect("the three answers a config file may hold",
+           StartPoints.TerminalChoice.allCases.map(\.rawValue), ["auto", "iterm", "tmux"])
+
+    expect("a file that says nothing at all opens iTerm2 tabs", config("{}").terminal, .auto)
+    expect("a file with no such key and the shipped scope opens iTerm2 tabs",
+           config("{\"scope_app\": \"\(iterm)\"}").terminal, .auto)
+    expect("a file with no such key whose scope names another terminal keeps its tmux",
+           config("{\"scope_app\": \"\(ghostty)\"}").terminal, .tmux)
+    expect("a file that says so gets tmux while the hotkey stays on iTerm2",
+           config("{\"scope_app\": \"\(iterm)\", \"terminal\": \"tmux\"}").terminal, .tmux)
+    expect("and the hotkey scope in that same file is untouched",
+           config("{\"scope_app\": \"\(iterm)\", \"terminal\": \"tmux\"}").scopeApp, iterm)
+    expect("a value from a newer version, or a typo, is treated as no answer at all",
+           config("{\"scope_app\": \"\(ghostty)\", \"terminal\": \"kitty\"}").terminal, .tmux)
+
+    // Once, not every launch: the answer is written down, and after that the scope may say
+    // anything at all without moving it.
+    let migrating = config("{\"scope_app\": \"\(ghostty)\"}")
+    check("the derived answer is saved", migrating.save())
+    migrating.scopeApp = iterm
+    check("changing the hotkey scope afterwards saves too", migrating.save())
+    expect("the terminal it inherited is still the terminal",
+           Config(directoryForTesting: directory).terminal, .tmux)
+    expect("even though the scope now names iTerm2",
+           Config(directoryForTesting: directory).scopeApp, iterm)
 }
 
 group("the list of places, tidied") {
@@ -1074,6 +1143,36 @@ group("the page is given the words it draws the start sheet with") {
     }.map { $0.tag }.sorted()
     check("every language keeps the hole the terminal's name goes in", holeless.isEmpty,
           holeless.joined(separator: ", "))
+
+    // **And the hole has to be told when there is no name for it.** `terminal_unsupported` stopped
+    // carrying an `app` when the terminal setting became a choice of backend rather than a bundle
+    // id: the refusal is now *tmux is what Settings asks for and there is no tmux here*, which is
+    // not an application and has no name to hand the page. A site that writes the sentence anyway
+    // draws "A session cannot be started in  from here", which is the exact sentence dropping the
+    // name was meant to prevent. The condition is read rather than the line, because the guard and
+    // the call are on the same line in two of these files and on different lines in the third.
+    func refusalCondition(_ page: String, _ code: String) -> String {
+        let source = (try? String(contentsOfFile: "Resources/web/app/js/input/\(page).js",
+                                  encoding: .utf8)) ?? ""
+        guard let answered = source.range(of: "\"\(code)\""),
+              let opened = source.range(of: "if (", options: .backwards,
+                                        range: source.startIndex..<answered.lowerBound),
+              let closed = source.range(of: ")", range: answered.upperBound..<source.endIndex)
+        else { return "" }
+        return String(source[opened.upperBound..<closed.lowerBound])
+    }
+    let namedRefusals = ["start", "command", "schedule-history"].flatMap { page in
+        ["terminal_closed", "terminal_unsupported"].map { (page: page, code: $0) }
+    }
+    let unread = namedRefusals.filter { refusalCondition($0.page, $0.code).isEmpty }
+    check("every page that answers a terminal refusal was found and read", unread.isEmpty,
+          "no branch found for: " + unread.map { "\($0.page).js/\($0.code)" }
+            .joined(separator: ", "))
+    let unnamed = namedRefusals.filter { !refusalCondition($0.page, $0.code).contains("e.app") }
+    check("and each asks whether there is a name before writing the sentence that needs one",
+          unnamed.isEmpty,
+          unnamed.map { "\($0.page).js: \(refusalCondition($0.page, $0.code))" }
+            .joined(separator: " | "))
 
     // And they arrive in the language that was asked for, which is the entire reason the page
     // fetches this before it draws anything.

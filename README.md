@@ -690,6 +690,7 @@ itself.
 | --- | --- | --- |
 | `hotkey` | `option+space` | cmd / option / control / shift + one key |
 | `scope_app` | `com.googlecode.iterm2` | comma-separated; `""` makes the hotkey global |
+| `terminal` | `auto` | which terminal a new session opens in: `auto`, `iterm`, `tmux` — separate from the hotkey's scope |
 | `y_fraction` · `width` | `0.30` · `720` | where the bar sits, and how wide |
 | `language` | `auto` | or any tag: `ja`, `pt`, `zh-Hant` … |
 | `mascot` · `notch` | `clawd` · `true` | the character, and whether it lives in the notch |

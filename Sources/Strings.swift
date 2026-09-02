@@ -197,6 +197,11 @@ protocol Copy {
     var settingsScope: String { get }
     var settingsScopeGlobal: String { get }
     var settingsScopeHint: String { get }
+    /// Which terminal a new session opens in — the second job ``Config/scopeApp`` used to do,
+    /// and the reason this row sits directly above the hotkey's scope rather than anywhere else:
+    /// the two look alike and are not, so they are next to each other and named apart.
+    var settingsSessionTerminal: String { get }
+    var settingsSessionTerminalHint: String { get }
     /// The words on the settings window's app picker.
     ///
     /// It used to be a text field asking for `com.googlecode.iterm2`, which is a string with no

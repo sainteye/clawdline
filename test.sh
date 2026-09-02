@@ -67,7 +67,21 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # measured against 7519 and has been rebased twice since, each time on somebody else's landing
 # rather than on anything it changed: the reader-paced question steps moved the baseline to
 # 7542, and tmux read parity moved it to 7626. 7626 + 399 -> 8025.
-expected_swift_receipt='8026 checks passed'
+# Giving the terminal a setting of its own adds 26, counted by running the two groups on their own
+# rather than by reading the source. 19 of them are the terminal-plan group being rewritten from the
+# hotkey scope onto `StartPoints.TerminalChoice`: twelve scope-shaped cases go and thirty-one arrive
+# — six for `auto` reproducing exactly the order that shipped, six for the two answers the old
+# setting had no words for, six for what a `config.json` written before the key meant by its scope,
+# four for every triple that used to reach `plan` reaching the same answer through the derived
+# choice, and nine for the file itself, including that an unreadable value and an absent one get the
+# same answer and that the derived one is written down on the next save. 5 more are the finishing:
+# the three raw values that are the file format, a config that says nothing at all, iTerm2-by-name
+# with no tmux to have fallen into, and the two that read every page writing a terminal refusal and
+# require it to ask for a name first — `terminal_unsupported` stopped carrying one. The last 2 are
+# in the screen-reading group, where `docs/interface.md`'s "200 lines of history" is now compared
+# with the depth `Targets.screenWithHistory` actually asks tmux for instead of being a transcription
+# nothing could contradict. 8026 -> 8052.
+expected_swift_receipt='8052 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

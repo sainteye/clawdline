@@ -110,12 +110,37 @@ guess about which server is drawing your tabs is worse than a refusal that says 
 the config names the binary; there is deliberately no socket setting yet, and adding one is a
 decision about what Clawdline is willing to assume rather than a missing line of code.
 
+## Which terminal a session opens in
+
+**Settings → New sessions open in**, and it is a different question from the row above it. Until
+2026-09-02 it was the same value: `scope_app` said where <kbd>⌥</kbd><kbd>Space</kbd> is live *and*
+which backend a session was started with, so somebody who wanted the chord bound to iTerm2 had no
+way to ask for sessions in tmux, and somebody who changed it for the terminal lost the binding they
+had. Two questions, one answer, and no spelling for half the combinations.
+
+| | what a start does |
+| --- | --- |
+| **Auto** | iTerm2 while it is open; tmux while it is not; and with neither, an ask to open iTerm2. The order every terminal operation in this app has always taken, and what a config that never said otherwise means. |
+| **iTerm2** | an iTerm2 tab, and a refusal naming iTerm2 when it is shut. Named, so a tmux server running beside it is deliberately *not* an answer — picking iTerm2 over auto asks for the tab you can see rather than a pane you cannot. |
+| **tmux** | a tmux pane, running iTerm2 or no running iTerm2. With tmux installed and no server, Clawdline starts one detached — the section below. With no tmux on this Mac at all the start is refused, `terminal_unsupported`, saying to install tmux or pick something else. |
+
+The key is `terminal` in `config.json`, and its values are `auto`, `iterm` and `tmux`. It is read
+at the moment a session starts rather than when the app launches, so the next session goes where
+this now says and nothing has to be restarted.
+
+**A `config.json` written before the key existed keeps the terminal it had.** It is filled in once,
+from the hotkey's scope, because that is the only place the old file said anything about a
+terminal: a scope naming iTerm2 — or an empty one, which is a global hotkey and says nothing at all
+— reads as **auto**, and a scope naming any other terminal reads as **tmux**, which is where those
+sessions have always gone. The next save writes the answer down, and after that the scope is never
+consulted about a terminal again: move the hotkey wherever you like and the sessions stay put.
+
 ## When there is no tmux server yet
 
-If your terminal is Ghostty, Terminal.app, Warp or anything else Clawdline cannot drive directly,
-tmux is the way in — and until now that meant *a tmux server that was already running*. Close your
-last tmux window and asking for a session from a phone came back with "run tmux there", which is an
-instruction a phone cannot carry out.
+With **tmux** chosen above — which is how Ghostty, Terminal.app, Warp and everything else Clawdline
+cannot drive directly is reached — that used to mean *a tmux server that was already running*.
+Close your last tmux window and asking for a session from a phone came back with "run tmux there",
+which is an instruction a phone cannot carry out.
 
 So Clawdline starts one. With tmux installed and no server up, a start creates the server itself,
 in a session called **`clawdline`**, with nothing attached to it:

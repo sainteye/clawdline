@@ -94,6 +94,8 @@ struct Korean: Copy {
     let settingsScope = "작동하는 곳"
     let settingsScopeGlobal = "모든 앱에서"
     let settingsScopeHint = "비워 두면 어디서나 동작합니다. 그래서 마지막 하나를 빼면 위의 스위치가 켜지고, 그 스위치를 다시 끄면 목록이 돌아옵니다. 설정 파일에는 번들 ID로 남고, 손으로 고친 목록도 그대로 동작합니다."
+    let settingsSessionTerminal = "새 세션을 여는 곳"
+    let settingsSessionTerminalHint = "위의 단축키가 동작하는 곳과는 별개입니다. 자동은 iTerm2가 열려 있으면 iTerm2, 아니면 tmux를 씁니다. tmux를 고르면 iTerm2가 열려 있어도 tmux 서버 안에 들어갑니다. 다음에 여는 세션부터 적용되고, 다시 시작할 필요는 없습니다."
     let settingsScopeAdd = "앱 추가…"
     let settingsScopeChoose = "앱 고르기…"
     let settingsScopeRunning = "지금 열려 있는 앱"

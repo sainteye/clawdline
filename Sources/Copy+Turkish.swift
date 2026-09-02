@@ -96,6 +96,8 @@ struct Turkish: Copy {
     let settingsScope = "Şurada çalışır"
     let settingsScopeGlobal = "Her uygulamada"
     let settingsScopeHint = "Boşsa her yerde çalışır; yani sonuncuyu çıkarmak yukarıdaki anahtarı açar — onu tekrar kapatmak da listeyi geri getirir. Yapılandırma dosyası bunları bundle kimliği olarak tutar, elle düzenlenmiş bir liste de aynı şekilde çalışır."
+    let settingsSessionTerminal = "Yeni oturumlar şurada açılır"
+    let settingsSessionTerminalHint = "Kısayolun nerede çalıştığıyla aynı şey değil. Otomatik, iTerm2 açıksa onu, değilse tmux'u kullanır; tmux ise iTerm2 açık olsa bile oturumu bir tmux sunucusuna koyar. Bir sonraki oturumdan itibaren geçerlidir, yeniden başlatmak gerekmez."
     let settingsScopeAdd = "Uygulama ekle…"
     let settingsScopeChoose = "Uygulama seç…"
     let settingsScopeRunning = "Şu anda açık olanlar"

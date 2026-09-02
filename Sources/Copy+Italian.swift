@@ -96,6 +96,8 @@ struct Italian: Copy {
     let settingsScope = "Attiva in"
     let settingsScopeGlobal = "In ogni app"
     let settingsScopeHint = "Vuoto significa ovunque, quindi togliere l'ultima accende l'interruttore qui sopra — e rispegnerlo rimette l'elenco. Il file di configurazione le tiene come bundle id, e un elenco modificato a mano funziona lo stesso."
+    let settingsSessionTerminal = "Le nuove sessioni si aprono in"
+    let settingsSessionTerminalHint = "Non è la stessa cosa di dove funziona la scorciatoia. Auto usa iTerm2 quando è aperto e tmux quando non lo è; tmux mette la sessione in un server tmux anche con iTerm2 aperto. Vale dalla prossima sessione, senza riavviare nulla."
     let settingsScopeAdd = "Aggiungi un'app…"
     let settingsScopeChoose = "Scegli un'app…"
     let settingsScopeRunning = "Aperte in questo momento"
