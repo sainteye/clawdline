@@ -1,6 +1,30 @@
 # Machine resource scheduling
 
-Status: built, and this page was a proposal until it was. `CLAWDLINE_SUITE_JOBS` landed in
+Status: **built, and on `architecture_hold`.** Three independent reviews have read it and the third
+found the same defect class outside the correction seam, which by this repository's rule
+([`AGENTS.md`](../AGENTS.md#verifying-your-work)) stops the patch loop and sends the boundary back
+to be repaired rather than dispatching a fourth correction. **Two boundaries are named and neither
+is a bug in a line:**
+
+1. **Whoever starts a renewer refreshes the beat first.** `clawdline_confirm_suite_lock` restarts a
+   dead renewer without beating, and the restarted loop sleeps before its first tick — so for one
+   renewal interval the lock reads *stale* to every waiter while `confirm` has just returned
+   success. At the shipped numbers that is twenty seconds against a five-second poll: four chances
+   for a second run to take a held lock. The acquire path already writes the record before starting
+   the renewer; the confirm path does not, and the ordering is an invariant rather than a step, so
+   it belongs in one function both callers use. The relative check passes because its harness sets
+   the interval to one second and kills the renewer 0.2 s before confirming.
+2. **Every refusal is produced by the function that records it.** Eighteen places construct a
+   `Refusal`; one `refuse(...)` records it. `queue_full` is built outside that path and never writes
+   `lastRefusal`, so a session turned away by the queue cap is indistinguishable — in Bearings and
+   in the Session overlay both — from one that never asked. That is the class the first review named
+   as F12 and the second as F3, found a third time, outside the seam, which is what a class means.
+
+The rest of the third review's findings are inside the seam and mostly fall out of those two. The
+rule this page has been arguing all along applies to itself here: **a defect that keeps coming back
+in new places is a boundary, and patching its instances is how it keeps coming back.**
+
+This page was a proposal until it was built. `CLAWDLINE_SUITE_JOBS` landed in
 `test.sh` as `54891280`; `test.sh` takes the machine lock itself as of `10130e45`; the broker lease,
 its queue, its routes and the Bearings and Session projections landed as `2eef7bb6` and were
 corrected against an independent review in `5098c2b1`. Two reviews have returned findings against
