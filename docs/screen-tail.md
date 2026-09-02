@@ -1,183 +1,78 @@
-# The screen and the file: what a reader sees while a question waits
+# Reading a session's words off its screen: a road tried, measured, and closed
 
-Clawdline reads a session back from Claude Code's own transcript file rather than from a picture
-of a terminal. That is the right default and it is most of why the pane has real message
-boundaries, tables and folded tool runs at all. This page is about the one hour a day where the
-file is the wrong source, what is done about it, and what that fix does not claim.
+**Status: removed on 2026-09-02.** The code is gone; this page is what it cost to find out, kept
+because the next person to notice the underlying problem will have the same idea, and because the
+numbers in it are the argument for the road that replaced it.
 
-## The hole
+## The problem, which has not gone away
 
-Claude Code appends an assistant message to its `.jsonl` as soon as the message is complete. That
-is not a guess: a `Bash` call that ran for twenty-one seconds had its `tool_use` record on disk
-six seconds in, while the command was still running.
+Claude Code appends an assistant message to its `.jsonl` as soon as the message is complete — a
+`Bash` call that ran for twenty-one seconds had its `tool_use` record on disk six seconds in.
+`AskUserQuestion` is the exception: the whole turn that asks a question — the thinking, **the
+prose explaining the choice**, and the call itself — is written only after somebody answers. Every
+one of twelve questions sampled had that shape: `thinking`, `text` and `tool_use` share one
+`msg_…` id and land together once the answer is in.
 
-`AskUserQuestion` is the exception. The whole turn that asks a question — the thinking, **the
-prose explaining the choice**, and the call itself — is written only after the person has
-answered. Every one of the last twelve questions in this project's transcripts has that shape:
-`thinking`, `text` and `tool_use` share one `msg_…` id, are written as three consecutive records,
-and all three land together once the answer is in.
+Measured 2026-09-01 on session `e54c45b7`: the Mac's screen held a full analysis and a four-option
+picker at 13:28:38 while the transcript file still ended at 13:27:17, and it still did ten minutes
+later. The question card reaches a phone by another road — a hook note and the screen parse in
+`SessionState` — so the reader had the question on time and none of the reasoning that made it
+answerable. **A question you cannot see the reasoning for is a question you cannot answer.**
 
-Measured on 2026-09-01, session `e54c45b7`:
+## What was built, and what it measured
 
-| | time | what it held |
-| --- | --- | --- |
-| the Mac's screen | 13:28:38 | a full analysis — five files over the size guardrail, a correction to a stale document, a timing warning — and a four-option picker |
-| the transcript file | stopped at 13:27:17 | the seventeenth `Bash` result, and nothing after it |
-| a phone, at 13:29 | — | the seventeen tool calls, then the question card |
+Successive screen captures overlap, so they can be reconciled back into the document they are a
+window onto. That part worked, and worked well:
 
-Ten minutes later the file had still not moved. The reader had a question in front of them and
-none of the reasoning that made it answerable.
+| | result |
+| --- | --- |
+| 110 consecutive captures of a live session | every frame placed, **0 gaps** |
+| lines lost against what any capture had shown | **0** |
+| duplicated long lines, once the alignment was right | **0** (80 before) |
 
-**The question card arrives by a different road**, which is why this reads as a hole rather than
-as ordinary lag: a hook note and the screen parse in `SessionState` produce the card immediately,
-while the sentences behind it wait on a file that is deliberately not being written. "Answer it
-and then you can read why" is not an instruction anybody can follow.
+The reconciliation is not the reason this was removed. Everything else is.
 
-## What is done about it
+## Every wall it hit
 
-`Sources/ScreenTail.swift` reconstructs the missing words from the captures the app is already
-taking, and `RemoteServer.unsyncedRow` offers them as one more entry — only while the session is
-stopped on a question, and only until the file catches up.
+- **iTerm2 exposes the visible screen and no more.** `text` and `contents` are the same sixty
+  rows; there is no scrollback API. Anything printed before the app started capturing is
+  unrecoverable, so a reader opening a session that finished a long answer an hour ago sees its
+  last screenful and no more. **This is the wall the whole approach dies on**, and it is the one
+  tmux does not have (`Tmux.capture(scrollback:)`).
+- **A terminal is not an append-only log.** Claude Code rewrites a running tool's row once a
+  second (`…(3s · 3 lines)`), and an appending reconciliation stacked one copy per second — forty
+  near-identical lines reached a reader. Fixed twice over: align with the numbers removed, and
+  place each frame by where it *starts* rather than where its matched run ends.
+- **The wrap is a guess.** A hard-wrapped paragraph has to be rejoined, and the only signal is
+  whether a line ran to the width the screen was drawn at (counting CJK as two columns). Without
+  it a list of five files arrives as one sentence; with it, a paragraph that happens to fill the
+  width exactly still joins to the next.
+- **A transcript entry is Markdown; a screen is what Markdown renders to.** Suppressing what the
+  file already held needed a comparison that ignores backticks, asterisks and brackets — one pair
+  of backticks put a whole answer on the page a second time.
+- **Not everything on screen is speech.** Claude Code draws prose at two columns and a command's
+  arguments and output at five; without that test a commit message typed into a heredoc came back
+  as though the assistant had said it. Its opening banner and the release slogan under it did the
+  same on a session that had said nothing at all.
+- **And the walk had to stop at the tools.** Once a tool's own row scrolls off the top, a reading
+  that steps over the leftover output keeps going through everything above it and returns whatever
+  sits at the start of the document — which is how a reader ended up looking at the startup banner
+  underneath four turns of conversation, while the screen was updating perfectly well the whole
+  time.
 
-**Sampling is mostly free.** `Targets.reading(of:hookWaiting:)` already fetches one screen per
-session per beat — 1.2 s while the Mac's panel is open, 20 s otherwise — in a single Apple event
-for all of them. `ScreenTail.observe` is handed the capture that has already been paid for.
-Captures are taken on **every** beat, not only for waiting sessions: by the time a session is
-known to be waiting, the sentences explaining the question have already scrolled past, and only
-the captures taken while they were being written still hold them.
+Each of those was found by a person looking at a phone, not by a test. That is the real signal:
+**the shapes on a terminal are a moving target with no contract**, and every release can add
+another one. A rule that reads them is a rule that is one release away from being silently wrong.
 
-**But 20 s is not a cadence you can reconstruct from**, and a phone reading from another room
-does not open the Mac's panel. Overlap is the whole mechanism; twenty seconds of a streaming
-answer is several screens, consecutive captures share no lines, and the reconstruction correctly
-refuses to guess across the break — so the reader gets the end of an answer with its beginning
-missing. `Sources/ScreenFollow.swift` closes that, in three parts, all of them keyed on somebody
-actually reading — with the phone closed this whole mechanism costs nothing at all:
+## What replaces it
 
-- **The first read captures inline.** Opening a session is the moment its screen is wanted, and
-  waiting for a timer's first beat hands the reader the answer from before they asked. Paid once,
-  only for a session nothing has been captured for yet.
-- **One extra capture per second** for the session being read, for 25 seconds after the last
-  request. A page that is closed stops being followed without having to say so.
-- **Four working sessions swept every other beat.** A reader arrives *after* an answer was
-  written, and what they can be shown is only what was captured while it was being written. A
-  session producing text right now is the only kind whose screen can hold words the file does
-  not, so those are the screens worth having ready when somebody opens one of them next.
+tmux. `Tmux.capture(scrollback:)` already answers with history rather than with a window, which
+removes the wall this road died on and most of the guesswork with it: nothing has to be
+reconstructed from overlapping windows, so none of the redraw, alignment or boundary rules above
+need to exist at all.
 
-Attention comes from the transcript request itself, so there is no new client contract. The
-fleet-wide rate is untouched, which is the point — a rate rise for everybody would pay for nine
-screens nobody is looking at in order to fix the one somebody is. Captures go through
-`ITerm.tails` in one round trip, the same bargain `Targets.reading` strikes.
+## What was kept
 
-**One capture is not enough, and that does not stop it.** iTerm2 exposes the visible screen and
-no more — `text` and `contents` are the same sixty rows, and there is no scrollback API. But
-prose arrives by streaming, over tens of seconds, so successive captures overlap, and overlapping
-captures can be reconciled back into the document they are a window onto.
-
-**The live rows are the clock, not the conversation.** `Running 1 shell command · 3s…`,
-`✻ Thinking…`, the token counter, and a running tool's own preview row `…(3s · 3 lines)` — these
-are redrawn in place several times a second, and with them in, consecutive captures never match:
-measured, 58 of 59 frames failed to align. Dropping them is what makes the rest of the screen
-append-only, which is the property the whole reconciliation rests on.
-
-**And a redraw that gets through is still not new text.** Two defences, because the first one is
-a list of shapes and lists are never complete. Alignment falls back to comparing the two captures
-with every number replaced, so a row whose only change was its counter lines up with the row it
-replaced. And the frame is placed by **where it starts**, not where its matched run ends —
-appending from the end of the match re-appends exactly the rewritten rows the match stepped over.
-Missing that put forty near-identical copies of one line in front of a reader.
-
-Measured over sixty consecutive captures of a live session:
-
-| strategy | frames that failed to align | lines lost | duplicated long lines |
-| --- | --- | --- | --- |
-| append what is new after the overlap | **0** | **0** | **0** |
-| let each capture overwrite the span it covers | 0 | 16 | 5 |
-
-(The appended reading's duplicates were 80 before the frame was placed by its origin rather than
-by the end of its matched run. Same 110 captures, same everything else.)
-
-Both place every frame. They differ in what they are *for*. Overwrite mirrors the screen exactly,
-including Claude Code folding a finished tool block down to `Read 1 file, ran 2 shell commands` —
-which is why sixteen lines that had genuinely been on screen disappear from it. **Prose is never
-folded**, so for the one thing this is for, appending keeps everything and loses nothing. The
-duplicated lines are all tool furniture, and `trailingProse` stops at the first tool row anyway.
-
-**It will not guess across a gap.** When a capture cannot be placed against the document — the
-sampler was on the 20-second cadence, or the output arrived faster than the beat — the break is
-recorded and prose is only ever taken from after the last break. Text spliced at the wrong point
-reads as perfectly ordinary and is wrong, which is worse than text that stops early.
-
-**A still screen is never offered.** Claude Code writes an assistant message when the message is
-complete, so a session that has finished talking is already recorded and its screen holds nothing
-the file does not — a reading of it would be a second copy of what the reader is looking at. Two
-states are the exceptions and they are the only two: text being written now, and a question's
-turn, which stays unwritten until it is answered.
-
-**A tool's own text is not speech.** Claude Code draws prose at two columns and the continuation
-of a command's arguments and output at five. Without that test a commit message typed into a
-heredoc reached a reader as though the assistant had said it — and it matched nothing in the
-file, because a tool's input is not in the file.
-
-**Nothing is shown twice.** Adjacent identical lines are dropped in the reading itself, and a
-paragraph the reading has already offered is dropped before it is sent. Both are last resorts
-rather than the mechanism — a redraw the alignment failed to fold away looks like ordinary prose
-by then — but the plain rule holds regardless of what produced the repeat.
-
-**It steps aside, paragraph by paragraph.** Suppressing the whole row was wrong in both
-directions: it said nothing when the file held only the first half of what the screen showed, and
-it said everything twice when the comparison missed — which it did on the first real screen it
-met, because **a transcript entry is Markdown and a screen is what Markdown renders to**. A pair
-of backticks was enough to put a whole answer on the page a second time. So the comparison keeps
-only letters and digits, and it runs per paragraph: what the file already has is dropped, what is
-left is what the reader is missing.
-
-On the wire the row carries `provisional: true`. The web pane dims it and marks its edge rather
-than labelling it: the reader wants the sentences, not a lecture about where they came from.
-
-**And it arrives on its own.** A change to the words is announced down the same SSE line that
-carries transcript revisions (`TranscriptRevisionStream.announceScreen`), so a reader sitting on
-a session sees the answer fill in rather than having to ask again. The watch behind that stream
-is a *file* watch, and the file is precisely what has not moved — which is why this needed a door
-of its own. The revision is a token, not a signature: the client fetches once per change and does
-not verify what comes back against it, so it only has to differ when the words do. Nothing is
-announced on a beat whose words did not change, which is most beats.
-
-## What it does not claim
-
-- **It is a reading of a screen.** Hard-wrapped at the terminal's width and reassembled by
-  heuristic. Two rules do the work, and both were learned from a real screen rather than a
-  fixture. **A line is joined to the next only when it ran to the edge** — the width the screen
-  was drawn at, measured as the widest line on it, counting CJK as two columns. Without that
-  test a list of five files came back as one sentence. And **the seam gets a space only between
-  two ASCII word characters**, because a wrap between two English words ate the space that was
-  there and a wrap between two CJK characters ate nothing.
-- **A table survives as its own lines.** Box-drawing rows are stepped over rather than treated as
-  a boundary. They were briefly treated as the picker's furniture, and against the first real
-  waiting screen that threw away the entire analysis above the table — nothing was offered at
-  all. Only the question header and `❯` mean picker now.
-- **It starts when you start watching.** No scrollback API means nothing before the first capture
-  can ever be recovered, and a screen is sixty rows — so opening a session that finished a long
-  answer an hour ago shows the last screenful of it, not all of it. The working sweep exists to
-  make that rare rather than to make it impossible. The division is clean and worth stating
-  plainly: **the file is the history, the screen is the present.**
-- **iTerm2 only.** tmux panes are captured the same way and do have scrollback
-  (`Tmux.capture(scrollback:)`, currently asked for the visible pane only). Ghostty cannot be read
-  at all, so none of this exists there.
-- **Only what the screen is actually ahead on.** The row is offered whenever the screen holds
-  words the file does not — a question's turn is the extreme case, unwritten until it is
-  answered, but a long answer being typed out is the same shape. It is never a second copy: any
-  parsed entry already containing those words suppresses it.
-
-## Where this goes next
-
-The same reconciliation is the first piece of a live mirror — a phone showing what the Mac's
-screen shows, at the sampling cadence, with no transcript file involved. Three things stand
-between here and there, and none of them is the algorithm:
-
-1. **Cadence has to follow attention.** ~~Not solved.~~ `ScreenFollow` does this for one
-   session at a time, keyed on who is reading a transcript. A mirror wants the same idea with a
-   tighter beat and a second reading — the overwrite one — alongside the appended transcript.
-2. **The two readings are different products.** Overwrite is the honest mirror; append is the
-   honest transcript. A live view wants the first with the second sedimenting behind it.
-3. **Nothing pushes it.** ~~Not solved.~~ Screen changes are announced down the SSE line, so a
-   reader watching a session sees an answer arrive as it is written.
+`richText` in `Resources/web/app/js/view/markdown.js` learned Markdown's hard break — two trailing
+spaces. It was written for this feature, because a screen reading has only the terminal's own line
+breaks to work with, but it is ordinary correct Markdown and worth having on its own.

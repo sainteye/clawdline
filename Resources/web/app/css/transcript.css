@@ -70,15 +70,6 @@
     color: var(--ink);
 }
 .entry.pending { opacity: 0.7; }
-
-/* A row read from the Mac's screen while the transcript file has not caught up. Dimmed, and
-   marked down its edge, so it reads as the same conversation without claiming to be the record;
-   it is replaced by the file's own entry the moment that arrives. */
-.entry.provisional { opacity: 0.82; }
-.entry.provisional .body {
-    border-left: 2px solid var(--edge, rgba(255, 255, 255, 0.18));
-    padding-left: 9px;
-}
 .entry.pending .body {
     background: var(--card-hi);
     border-style: dashed;

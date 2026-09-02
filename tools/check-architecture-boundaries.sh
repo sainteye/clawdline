@@ -57,8 +57,8 @@ if grep -q 'group(' Tests/main.swift; then
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 27 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 27"
+[ "$runner_count" -eq 26 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 26"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -66,8 +66,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 482 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 482"
+[ "$manifest_group_count" -eq 476 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 476"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do
@@ -77,7 +77,7 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 40 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 40"
+[ "$suite_count" -eq 39 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 39"
 
 echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count"

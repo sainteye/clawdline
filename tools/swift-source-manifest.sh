@@ -79,8 +79,6 @@ clawdline_production_sources=(
   Sources/SessionImageArtifact.swift
   Sources/SessionImagePreview.swift
   Sources/SessionInfo.swift
-  Sources/ScreenFollow.swift
-  Sources/ScreenTail.swift
   Sources/SessionRegistry.swift
   Sources/SessionState.swift
   Sources/SessionWatch.swift
@@ -142,7 +140,6 @@ clawdline_test_sources=(
   Tests/SessionCloseAndQuotaTests.swift
   Tests/SessionCloseabilityTests.swift
   Tests/SessionLaunchTests.swift
-  Tests/ScreenTailTests.swift
   Tests/SessionRegistryTests.swift
   Tests/SessionWatchTests.swift
   Tests/TestGroupManifest.swift

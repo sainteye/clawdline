@@ -831,46 +831,28 @@ items:
     opened: 2026-08-29
 
 
-  - id: B-PROVISIONAL-ROW-IS-UNLABELLED
-    title: A screen reading is dimmed but never says it is one
+  - id: B-LIVE-VIEW-OF-A-MAC-SCREEN
+    title: A reader on a phone cannot see what a session is saying until its turn is written
     problem: >-
-      A provisional entry is a reconstruction of a hard-wrapped terminal, not a record of what was
-      said, and the only thing separating the two on a phone is opacity and a rule down the edge.
-      A reader who notices the difference has no way to find out what it means, and a reader who
-      does not notice may quote a reassembled paragraph back as if the transcript held it.
-      `ReadingFreshness` publishes age for exactly this reason; this publishes nothing.
+      Claude Code writes an assistant message only once it is complete, and an AskUserQuestion turn
+      not until it has been answered. Everything Clawdline shows comes from that file, so a reader
+      away from the Mac watches a question with none of the reasoning under it, and a long answer
+      arrives all at once at the end or not at all. The gap is not lag: the question card arrives
+      on time by another road, so the reader is asked to decide with the explanation missing.
     evidence: >-
-      `Resources/web/app/js/view/transcript.js` renders `provisional` as a CSS class only. The
-      string it would need has to be injected through the web copy table in
-      `Sources/RemoteServer.swift`, which was another session's uncommitted work on 2026-09-01,
-      and every one of the 13 `Sources/Copy+*.swift` files would need the translation.
-    severity: noise
-    cost: hours
+      Measured 2026-09-01 on session `e54c45b7`: the screen held the analysis and the picker at
+      13:28:38 while the file still ended at 13:27:17, and still did ten minutes later. Building it
+      out of iTerm2 screen captures was tried and removed on 2026-09-02 — the reconciliation itself
+      measured clean (110 captures, 0 gaps, 0 lines lost) but iTerm2 has no scrollback API, so
+      anything printed before the app started watching is unrecoverable, and six separate terminal
+      shapes had to be special-cased, each found by a person looking at a phone rather than by a
+      test. `docs/screen-tail.md` keeps that road's full measurements.
+    severity: degrades
+    cost: days
     who_hurts: user
     trigger: >-
-      The next edit to the web copy table for another reason — the marginal cost of one more key
-      is then near zero. Or a reader asking why a message looked faded.
-    opened: 2026-09-01
-
-  - id: B-LIVE-SCREEN-MIRROR-NEEDS-ATTENTION-CADENCE
-    title: A live view of a Mac's screen cannot be paid for at the current sampling rate
-    problem: >-
-      Reconciling successive captures into the document they are a window onto is solved, so the
-      thing between here and a phone showing what the Mac shows is cost, not algorithm. Sampling
-      every session harder is the wrong shape: readings cost what the Mac is doing rather than what
-      was asked for, so a fleet-wide rate rise pays for nine screens nobody is looking at and
-      degrades the one somebody is.
-    evidence: >-
-      `SessionWatch` measures about 700 ms per round trip with ten sessions open at a 1.2 s
-      foreground cadence; `Sources/ReadingFreshness.swift` records the same routes measuring 0.41-0.51 s
-      idle and 1.8-2.3 s under load, four to ten times slower, because iTerm2's main thread was
-      busy. Reconciliation itself was measured lossless over 60 captures on 2026-09-01 (see
-      `docs/screen-tail.md`).
-    severity: invisible
-    cost: weeks
-    who_hurts: user
-    trigger: >-
-      A per-session "somebody is watching this one" fact that is already trustworthy enough to
-      raise a cadence on — the concept `ReadingFreshness` and `TranscriptReadCoordinator` are
-      converging on. Without it this is a fleet-wide rate rise wearing a feature's name.
-    opened: 2026-09-01
+      The tmux integration landing. `Tmux.capture(scrollback:)` answers with history rather than a
+      sixty-row window, which removes the wall the first attempt died on and most of the parsing
+      guesswork with it. Do not rebuild this on iTerm2 captures without new evidence that the
+      terminal's drawn shapes have a contract.
+    opened: 2026-09-02
