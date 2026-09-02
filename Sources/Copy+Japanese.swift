@@ -94,6 +94,8 @@ struct Japanese: Copy {
     let settingsScope = "有効にするアプリ"
     let settingsScopeGlobal = "すべてのアプリ"
     let settingsScopeHint = "空ならどこでも効きます。だから最後のひとつを外すと上のスイッチが入り、それをまた切るとこの一覧が戻ります。設定ファイルにはバンドル ID として入っていて、手で書いた一覧もそのまま使えます。"
+    let settingsSessionTerminal = "新しいセッションを開く場所"
+    let settingsSessionTerminalHint = "上のホットキーが効く場所とは別の設定です。自動は iTerm2 が開いていればそちら、開いていなければ tmux。tmux を選ぶと iTerm2 が開いていても tmux サーバーの中に入ります。次に開くセッションから効き、再起動は要りません。"
     let settingsScopeAdd = "アプリを追加…"
     let settingsScopeChoose = "アプリを選ぶ…"
     let settingsScopeRunning = "いま開いているもの"

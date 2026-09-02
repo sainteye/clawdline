@@ -96,6 +96,8 @@ struct German: Copy {
     let settingsScope = "Aktiv in"
     let settingsScopeGlobal = "In jeder App"
     let settingsScopeHint = "Leer heißt überall — die letzte herauszunehmen schaltet also den Schalter darüber ein, und ihn wieder auszuschalten holt die Liste zurück. Die Konfigurationsdatei hält sie als Bundle-IDs, und eine von Hand bearbeitete Liste funktioniert weiterhin."
+    let settingsSessionTerminal = "Neue Sitzungen öffnen in"
+    let settingsSessionTerminalHint = "Etwas anderes als der Bereich, in dem das Tastenkürzel greift. Automatisch heißt iTerm2, wenn es offen ist, und sonst tmux; tmux legt die Sitzung auch dann in einen tmux-Server, wenn iTerm2 läuft. Es gilt ab der nächsten Sitzung, ohne Neustart."
     let settingsScopeAdd = "App hinzufügen …"
     let settingsScopeChoose = "App auswählen …"
     let settingsScopeRunning = "Gerade geöffnet"

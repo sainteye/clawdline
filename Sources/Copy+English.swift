@@ -95,6 +95,8 @@ struct English: Copy {
     let settingsScope = "Fires in"
     let settingsScopeGlobal = "In every app"
     let settingsScopeHint = "Empty means everywhere, so taking the last one out turns the switch above on — and turning that back off puts the list back. The config file keeps these as bundle ids, and a hand-edited list still works."
+    let settingsSessionTerminal = "New sessions open in"
+    let settingsSessionTerminalHint = "Separate from where the hotkey fires. Auto uses iTerm2 when it is open and tmux when it is not; tmux puts the session in a tmux server even while iTerm2 is running. It applies to the next session you start — nothing needs restarting."
     let settingsScopeAdd = "Add an app…"
     let settingsScopeChoose = "Choose an app…"
     let settingsScopeRunning = "Open right now"
