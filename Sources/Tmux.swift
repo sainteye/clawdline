@@ -527,7 +527,8 @@ enum Tmux {
     ///
     /// U+0001 delimits it for the same reason ``parsePanes(_:running:)`` separates fields with it:
     /// a captured screen is made of cells, and a control byte is not one, so nothing a program
-    /// can draw collides with the marker.
+    /// can draw collides with the marker. It wraps the id on **both** sides, so a marker line is
+    /// recognised by what it opens and closes with rather than by a single leading needle.
     static let batchedCaptureMarker = "\u{1}clawdline-pane\u{1}"
 
     /// Whether this is a pane id tmux handed out, and therefore a word that may be written into a
@@ -577,10 +578,14 @@ enum Tmux {
 
         var text = output
         if text.hasSuffix("\n") { text.removeLast() }
+        let width = batchedCaptureMarker.count
         for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
-            if line.hasPrefix(batchedCaptureMarker), line.hasSuffix("\u{1}") {
+            // The marker wraps the id on both sides, so the length test is what keeps a bare
+            // marker — which satisfies both ends at once — from being read as a named pane.
+            if line.count >= 2 * width,
+               line.hasPrefix(batchedCaptureMarker), line.hasSuffix(batchedCaptureMarker) {
                 close()
-                current = String(line.dropFirst(batchedCaptureMarker.count).dropLast())
+                current = String(line.dropFirst(width).dropLast(width))
             } else if current != nil {
                 lines.append(line)
             }

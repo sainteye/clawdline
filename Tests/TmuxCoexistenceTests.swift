@@ -48,9 +48,7 @@ func makeFakeTmux(dead: [String] = []) -> FakeTmux {
         awk -v dead=" $dead " '
           function alive(t) { return index(dead, " " t " ") == 0 }
           { target = ""; for (i = 1; i <= NF; i++) if ($i == "-t") target = $(i + 1) }
-          /^display-message/ {
-            printf "%cclawdline-pane%c%s%c\\n", 1, 1, (alive(target) ? target : ""), 1
-          }
+          /^display-message/ { printf "%cclawdline-pane%c%s%cclawdline-pane%c\\n", 1, 1, (alive(target) ? target : ""), 1, 1 }
           /^capture-pane/ { if (alive(target)) { printf "screen of %s\\nsecond line\\n", target } }
         ' "$dir/script"
         ;;
@@ -446,11 +444,14 @@ group("Clawdline starts a tmux server rather than telling a phone to go and run 
 
     let made = Tmux.newSessionResult(cwd: "/tmp/x", command: "env -u ANTHROPIC_API_KEY claude")
     expect("the pane the new server made comes back", try? made.get(), "%7")
-    let started = fake.calls
-    expect("a server, a line, and the Return that runs it", started.count, 3)
+    let calls = fake.calls
+    // Read by position rather than subscripted: a run where the step is missing is the run this
+    // group exists to fail, and it has to report that rather than trap on the way there.
+    func started(_ index: Int) -> String { index < calls.count ? calls[index] : "" }
+    expect("a server, a line, and the Return that runs it", calls.count, 3)
     check("the server is started detached and under a name somebody can attach to",
-          started[0].hasPrefix("new-session -d -s clawdline "), started[0])
-    check("in the directory that was asked for", started[0].hasSuffix("-c /tmp/x"), started[0])
+          started(0).hasPrefix("new-session -d -s clawdline "), started(0))
+    check("in the directory that was asked for", started(0).hasSuffix("-c /tmp/x"), started(0))
 
     // **Not `new-session -d '<assistant>'`, and this is the measurement that decided it.** A pane
     // started that way is run by `sh -c` with the *server's* environment, and a server this app
@@ -460,22 +461,23 @@ group("Clawdline starts a tmux server rather than telling a phone to go and run 
     // `new-window 'claude …'` on the same server. A pane created with no command gets an
     // interactive login shell, which reads the file the person's PATH is actually set in.
     check("the assistant is not handed to tmux as the pane's command",
-          !started[0].contains("claude"), started[0])
+          !started(0).contains("claude"), started(0))
     check("it is typed at the login shell instead",
-          started[1] == "send-keys -t %7 -l env -u ANTHROPIC_API_KEY claude", started[1])
-    check("and Return is its own keypress", started[2] == "send-keys -t %7 Enter", started[2])
+          started(1) == "send-keys -t %7 -l env -u ANTHROPIC_API_KEY claude", started(1))
+    check("and Return is its own keypress", started(2) == "send-keys -t %7 Enter", started(2))
 
     // The ordinary window path takes the same shape for the same reason: the second session
     // started on a server Clawdline made would otherwise be the one that says command not found.
     let window = Tmux.newWindowResult(cwd: "", command: "codex")
     expect("an ordinary new window answers with its pane too", try? window.get(), "%7")
-    let opened = Array(fake.calls.dropFirst(3))
-    expect("and costs the same three steps", opened.count, 3)
+    let after = Array(fake.calls.dropFirst(calls.count))
+    func opened(_ index: Int) -> String { index < after.count ? after[index] : "" }
+    expect("and costs the same three steps", after.count, 3)
     check("no working directory is passed when there is none",
-          opened[0] == "new-window -P -F #{pane_id}", opened[0])
+          opened(0) == "new-window -P -F #{pane_id}", opened(0))
     check("the assistant is not the window's command either",
-          !opened[0].contains("codex"), opened[0])
-    check("it is typed too", opened[1] == "send-keys -t %7 -l codex", opened[1])
+          !opened(0).contains("codex"), opened(0))
+    check("it is typed too", opened(1) == "send-keys -t %7 -l codex", opened(1))
 
     check("the sentence a person needs names the session they would attach to",
           Tmux.attachCommand.contains(Tmux.startedSessionName), Tmux.attachCommand)
