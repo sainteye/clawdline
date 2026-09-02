@@ -1117,6 +1117,63 @@ try {
           buildKeys.length === RECORD_CONTRACT.length
             && leaseKeys.length === RECORD_CONTRACT.length);
 
+    // **Not every refusal is an answer, and reading them all as one ended the build.** The `*)` arm
+    // was added because the refusal branch had been unreachable — every 409 arrived as an empty
+    // string and fell into the wait. Fixing that made the opposite mistake: `lease_changed` and
+    // `takeover_failed` are the broker saying *ask again* (its own messages end in those words),
+    // and returning 1 on them ends a build on a condition that resolves itself. So the arms are
+    // driven here with the shapes the broker actually sends, out of `build.sh` itself rather than a
+    // retyped copy — `return 1` rewritten to a distinct exit so the two outcomes are told apart.
+    const refusalReader = buildScript.slice(
+      buildScript.indexOf("      local state\n"),
+      buildScript.indexOf("      esac", buildScript.indexOf("      local state\n")) + "      esac".length);
+    const readRefusal = (answer) => {
+      const harness = `set -uo pipefail\nannounced=0\nanswer='${answer}'\n`
+        + refusalReader.replace(/return 1/g, "exit 9") + "\nexit 0\n";
+      return spawnSync("/bin/bash", ["-c", harness], { encoding: "utf8" }).status;
+    };
+    check("the reader was found in build.sh, so these five are not a scan of nothing",
+          refusalReader.includes("refused:") && refusalReader.includes("granted)"));
+    check("a lease that moved while this build was asking is queued, not fatal",
+          readRefusal('{"error":{"code":"lease_changed"},"message":"Ask again."}') !== 9);
+    check("and so is a takeover that could not complete",
+          readRefusal('{"error":{"code":"takeover_failed"}}') !== 9);
+    check("while a machine with no room for it still ends the build, closed",
+          readRefusal('{"error":{"code":"pressure_refused"}}') === 9);
+    check("and so does a queue that will not take it",
+          readRefusal('{"error":{"code":"queue_full"}}') === 9);
+
+    // **`process_start` is compared, not stored**, and it was the moment the build asked rather than
+    // the moment the build started. The broker matches it against a fresh `ps` reading with a
+    // two-second tolerance, and `build.sh` gets here only after the Keychain helper has run — so a
+    // queued build read as `waiter_process_gone`. The axis had no production caller until the queue
+    // gained one, which is how an approximation survived being wrong. Driven, not read: the value
+    // must not move as work elapses.
+    // **The work goes before the assignment, or this check cannot fail.** The first version put the
+    // sleep after it and passed for both the derived value and the `date +%s` it replaced — in a
+    // harness with nothing before the assignment the two are the same number, which is exactly the
+    // condition that hides the bug in the real script. `build.sh` reaches this line only after the
+    // Keychain helper has run, so the stand-in for that work belongs first, and what is asserted is
+    // that the value tracks the *shell's* start rather than the moment it was taken.
+    const preamble = [
+      'set -uo pipefail',
+      'CLAWDLINE_HARNESS_T0=$(date +%s)',
+      'sleep 3   # stands in for everything build.sh does before it asks for the slot',
+      buildScript.split("\n").filter((l) => l.includes("CLAWDLINE_LEASE_OWNER_STARTED=") || l.includes("CLAWDLINE_LEASE_STARTED=")).join("\n"),
+      'printf "%s %s" "$CLAWDLINE_LEASE_STARTED" "$CLAWDLINE_HARNESS_T0"',
+    ].join("\n");
+    const [wireStart, harnessT0] = (spawnSync("/bin/bash", ["-c", preamble], { encoding: "utf8" }).stdout || "0 0")
+      .split(" ").map(Number);
+    check("the start on the wire is the shell's, not the moment three seconds of work later",
+          wireStart > 0 && wireStart - harnessT0 <= 1);
+    // The textual half names the derivation rather than forbidding a spelling: `date +%s` is still
+    // there as the fallback for a `ps` that cannot be read or a stamp that will not parse, and
+    // forbidding the string would have made this check fail for the right code. What must hold is
+    // that the *first* assignment is the derived one.
+    check("and it is derived from the same ps reading the record uses, not taken separately",
+          /CLAWDLINE_LEASE_STARTED=\$\(LC_ALL=C date -j -f '%a %b %e %T %Y' "\$CLAWDLINE_LEASE_OWNER_STARTED"/
+            .test(buildScript));
+
     // -----------------------------------------------------------------------------------------
     // 19. `build.sh`'s own writer, run rather than read.
     //

@@ -1,8 +1,12 @@
 # Machine resource scheduling
 
-Status: design proposal, with one piece landed. The compile-job ceiling `CLAWDLINE_SUITE_JOBS`
-is in `test.sh` as of `54891280`; the lease, the queue and the projections below are not built.
-The measurements in the next section are real and were taken on one Mac on 2026-09-03.
+Status: built, and this page was a proposal until it was. `CLAWDLINE_SUITE_JOBS` landed in
+`test.sh` as `54891280`; `test.sh` takes the machine lock itself as of `10130e45`; the broker lease,
+its queue, its routes and the Bearings and Session projections landed as `2eef7bb6` and were
+corrected against an independent review in `5098c2b1`. Two reviews have returned findings against
+it and the second is not yet fully answered, so read the later sections as the design it was built
+to and not as a claim that every part of it holds. The measurements in the next section are real
+and were taken on one Mac on 2026-09-03.
 
 Clawdline can keep many assistant Sessions useful at once. Most of those Sessions spend most of
 their time reading, reasoning, editing or waiting, which is cheap to run concurrently. The trouble
@@ -17,8 +21,10 @@ open-source design: the protocol, policy and fallback must work without a hosted
 must expose what the machine is doing, and must remain useful to a contributor who runs the scripts
 directly rather than through an orchestrated task.
 
-Nothing on this page describes a feature the current build already has. The current mechanisms are
-the baseline below; later sections are a possible direction and carry unresolved decisions plainly.
+Most of this page now describes something the build has, which was not true when it was written:
+the sections from *The current boundary* onward were the proposal, and the lock, the lease, the
+queue and the projections were built from them on 2026-09-03. What has not been built is marked
+where it appears. The unresolved decisions at the end are still unresolved.
 
 ## What the 2026-09-03 reboots measured, and what they changed
 

@@ -160,12 +160,23 @@ clawdline_lease_acquire() {
   CLAWDLINE_LEASE_PORT=$(clawdline_lease_port)
   CLAWDLINE_LEASE_TOKEN="$HOME/.config/clawdline/orchestrator-token"
   CLAWDLINE_LEASE_ID="build-$$-$(date +%s)"
-  CLAWDLINE_LEASE_STARTED=$(date +%s)
   # The owner's start identity, in the one shape the record contract defines for it: a normalised
   # `LC_ALL=C ps -o lstart=` line, from one formatter, compared whole. `LC_ALL=C` because this Mac
   # runs zh_TW.UTF-8, where the same instant renders with a different field count depending on the
   # day of the month.
   CLAWDLINE_LEASE_OWNER_STARTED=$(LC_ALL=C ps -o lstart= -p $$ 2>/dev/null | awk 'NR == 1 { $1 = $1; print; exit }') || CLAWDLINE_LEASE_OWNER_STARTED=""
+  # **The wire wants the same instant, as the epoch its reader parses**, and it wants *this
+  # process's start* rather than the moment it got here. `process_start` is compared by the broker
+  # against a fresh `ps` reading with a two-second tolerance, and `build.sh` reaches this line only
+  # after the Keychain helper has run — so `date +%s` here was minutes late on a queued build and
+  # read as `waiter_process_gone`. That axis had no production caller until the queue gained one,
+  # which is why an approximation survived. Derived from the same `ps` line above rather than taken
+  # separately, so the record and the wire cannot disagree; `LC_ALL=C` on both halves for the same
+  # reason it is on the reading. If the conversion cannot be made, fall back to now and say so by
+  # being late rather than by being absent — a missing field reads as unknown, which blocks.
+  CLAWDLINE_LEASE_STARTED=$(LC_ALL=C date -j -f '%a %b %e %T %Y' "$CLAWDLINE_LEASE_OWNER_STARTED" +%s 2>/dev/null) \
+    || CLAWDLINE_LEASE_STARTED=""
+  [ -n "$CLAWDLINE_LEASE_STARTED" ] || CLAWDLINE_LEASE_STARTED=$(date +%s)
   CLAWDLINE_LEASE_DONE="${TMPDIR:-/tmp}/clawdline-build-done-$$"
   rm -f "$CLAWDLINE_LEASE_DONE"
   local deadline=$(( $(date +%s) + CLAWDLINE_LEASE_WAIT_SECONDS ))
@@ -241,6 +252,19 @@ except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
           if [ "$announced" = 0 ]; then
             echo "→ waiting for $CLAWDLINE_LEASE_DIR, held by:"
             sed 's/^/    /' "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null | head -4
+            announced=1
+          fi
+          ;;
+        refused:lease_changed | refused:takeover_failed)
+          # **Not every refusal is an answer.** These two are the broker saying *ask again*: its own
+          # messages end in "Ask again", and `perform`'s comment says the caller polls again. They
+          # mean the lock moved between the read and the write, or a takeover could not complete —
+          # transient, and the next poll may well be granted. Reading them as "no lease" ended the
+          # build on a condition that resolves itself, which is worse than the dead branch this
+          # arm was added to fix: before that repair they fell through to the wait and queued.
+          # Everything else below is a real refusal and still fails closed.
+          if [ "$announced" = 0 ]; then
+            echo "→ the lease moved while this build was asking; queueing and asking again"
             announced=1
           fi
           ;;
