@@ -709,14 +709,22 @@ func runCloudAccountTests() async throws -> Int {
                 "the lower epoch reaches the held read/compare/write seam")
     let higherEpochWrite = Task.detached { try higherEpochStore.advance(to: 9) }
     let higherOvertook = crossedDefaults.highSetOvertookLow()
-    crossedDefaults.releaseLow()
-    try await lowerEpochWrite.value
-    try await higherEpochWrite.value
-    try require(!higherOvertook,
-                "separate invalidation stores share one process-wide persistence coordinator")
-    try require(try higherEpochStore.currentEpoch() == 9,
-                "a cross-instance lower write cannot regress the durable minimum epoch")
 
+    // Section 1, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection1() async throws {
+        crossedDefaults.releaseLow()
+        try await lowerEpochWrite.value
+        try await higherEpochWrite.value
+        try require(!higherOvertook,
+                    "separate invalidation stores share one process-wide persistence coordinator")
+        try require(try higherEpochStore.currentEpoch() == 9,
+                    "a cross-instance lower write cannot regress the durable minimum epoch")
+
+    }
+    try await cloudAccountSection1()
     let reservationKey = "reservation-epoch"
     let reservationNamespace = defaultsSuite + ".reservation"
     let lowReservationStore = CloudCredentialInvalidationDefaultsStore(
@@ -725,11 +733,19 @@ func runCloudAccountTests() async throws -> Int {
     let highReservationStore = CloudCredentialInvalidationDefaultsStore(
         defaults: crossedDefaults, key: reservationKey,
         persistenceNamespace: reservationNamespace)
-    _ = lowReservationStore.reserve(atLeast: 3)
-    _ = highReservationStore.reserve(atLeast: 9)
-    try lowReservationStore.advance(to: 3)
-    try require((crossedDefaults.object(forKey: reservationKey) as? NSNumber)?.uint64Value == 9,
-                "a low advance persists the higher cross-instance process reservation")
+
+    // Section 2, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection2() async throws {
+        _ = lowReservationStore.reserve(atLeast: 3)
+        _ = highReservationStore.reserve(atLeast: 9)
+        try lowReservationStore.advance(to: 3)
+        try require((crossedDefaults.object(forKey: reservationKey) as? NSNumber)?.uint64Value == 9,
+                    "a low advance persists the higher cross-instance process reservation")
+    }
+    try await cloudAccountSection2()
     let betweenReserveCredentialStore = CloudInMemoryKeyStore(values: [
         CloudAccountClient.machineCredentialAccount: try JSONEncoder().encode(
             CloudMachineCredential(
@@ -779,10 +795,18 @@ func runCloudAccountTests() async throws -> Int {
         invalidationStore: CloudInMemoryCredentialInvalidationStore(
             epoch: failingInvalidation.durable()),
         deviceKeyLoader: { CloudDeviceKeyPair() })
-    try require(try restartBeforeRetry.restoredMachineIdentity() != nil,
-                "before retry, durable state truthfully remains restart-unsafe")
-    failingInvalidation.allowPersistence()
-    try failureClient.persistPendingLoginInvalidation(failedReservation)
+
+    // Section 3, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection3() async throws {
+        try require(try restartBeforeRetry.restoredMachineIdentity() != nil,
+                    "before retry, durable state truthfully remains restart-unsafe")
+        failingInvalidation.allowPersistence()
+        try failureClient.persistPendingLoginInvalidation(failedReservation)
+    }
+    try await cloudAccountSection3()
     let restartAfterRetry = CloudAccountClient(
         apiBaseURL: URL(string: "https://api.example.test")!,
         transport: CloudAccountFakeHTTP(),
@@ -790,15 +814,23 @@ func runCloudAccountTests() async throws -> Int {
         invalidationStore: CloudInMemoryCredentialInvalidationStore(
             epoch: failingInvalidation.durable()),
         deviceKeyLoader: { CloudDeviceKeyPair() })
-    try require(try restartAfterRetry.restoredMachineIdentity() == nil,
-                "retrying the same reservation closes the restart resurrection window")
 
-    try require(try cloudAccountCrossedLockSubprocessCompletes(),
-                "startDeviceLogin makes progress under a forced credential/key crossed-lock order")
-    try await cloudAccountRunSameMachineRevokeABAScenario()
-    try require(true,
-                "a stale revoke cannot remove replacement credentials for the same machine ID")
+    // Section 4, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection4() async throws {
+        try require(try restartAfterRetry.restoredMachineIdentity() == nil,
+                    "retrying the same reservation closes the restart resurrection window")
 
+        try require(try cloudAccountCrossedLockSubprocessCompletes(),
+                    "startDeviceLogin makes progress under a forced credential/key crossed-lock order")
+        try await cloudAccountRunSameMachineRevokeABAScenario()
+        try require(true,
+                    "a stale revoke cannot remove replacement credentials for the same machine ID")
+
+    }
+    try await cloudAccountSection4()
     let fake = CloudAccountFakeHTTP()
     let store = CloudInMemoryKeyStore()
     let key = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x31, count: 32))
@@ -826,18 +858,26 @@ func runCloudAccountTests() async throws -> Int {
     var requests = await fake.captured()
     let startRequest = try cloudAccountRequest(requests, path: "/root/v1/auth/device/start")
     let startBody = try cloudAccountBody(startRequest)
-    try require(startRequest.httpMethod == "POST", "device start uses POST")
-    try require(Set(startBody.keys) == ["name", "platform", "app_version", "public_key"],
-                "device start sends exactly the deployed fields")
-    try require(startBody["name"] as? String == "Studio Mac"
-                && startBody["platform"] as? String == "macOS"
-                && startBody["app_version"] is NSNull,
-                "device start sends machine metadata including explicit null app version")
-    try require(startBody["public_key"] as? String == key.publicKeyRaw.base64EncodedString(),
-                "device start carries the existing Ed25519 public key")
-    try require(startRequest.value(forHTTPHeaderField: "Authorization") == nil,
-                "device start is unauthenticated")
 
+    // Section 5, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection5() async throws {
+        try require(startRequest.httpMethod == "POST", "device start uses POST")
+        try require(Set(startBody.keys) == ["name", "platform", "app_version", "public_key"],
+                    "device start sends exactly the deployed fields")
+        try require(startBody["name"] as? String == "Studio Mac"
+                    && startBody["platform"] as? String == "macOS"
+                    && startBody["app_version"] is NSNull,
+                    "device start sends machine metadata including explicit null app version")
+        try require(startBody["public_key"] as? String == key.publicKeyRaw.base64EncodedString(),
+                    "device start carries the existing Ed25519 public key")
+        try require(startRequest.value(forHTTPHeaderField: "Authorization") == nil,
+                    "device start is unauthenticated")
+
+    }
+    try await cloudAccountSection5()
     let concurrentFake = CloudAccountFakeHTTP()
     let racingDeviceKeyStore = CloudAccountRacingDeviceKeyStore()
     let firstConcurrentKeys = CloudKeys(store: racingDeviceKeyStore)
@@ -860,13 +900,21 @@ func runCloudAccountTests() async throws -> Int {
      "verification_uri_complete":"https://clawdline.com/connect?user_code=CONC-0001",
      "expires_in":600,"interval":5}
     """
-    await concurrentFake.enqueue(json: concurrentStartJSON)
-    await concurrentFake.enqueue(json: concurrentStartJSON)
-    async let firstStart = firstConcurrentClient.startDeviceLogin(
-        metadata: CloudMachineMetadata(name: "First Mac", platform: "macOS"))
-    async let secondStart = secondConcurrentClient.startDeviceLogin(
-        metadata: CloudMachineMetadata(name: "Second Mac", platform: "macOS"))
-    _ = try await (firstStart, secondStart)
+
+    // Section 6, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection6() async throws {
+        await concurrentFake.enqueue(json: concurrentStartJSON)
+        await concurrentFake.enqueue(json: concurrentStartJSON)
+        async let firstStart = firstConcurrentClient.startDeviceLogin(
+            metadata: CloudMachineMetadata(name: "First Mac", platform: "macOS"))
+        async let secondStart = secondConcurrentClient.startDeviceLogin(
+            metadata: CloudMachineMetadata(name: "Second Mac", platform: "macOS"))
+        _ = try await (firstStart, secondStart)
+    }
+    try await cloudAccountSection6()
     let concurrentRequests = await concurrentFake.captured()
     let firstConcurrentBody = try cloudAccountBody(concurrentRequests[0])
     let secondConcurrentBody = try cloudAccountBody(concurrentRequests[1])
@@ -883,60 +931,76 @@ func runCloudAccountTests() async throws -> Int {
         credentialStore: blockingStore,
         deviceKeyLoader: { key }
     )
-    await serializedFake.enqueue(json: """
-    {"status":"complete","account_id":"acct-serialized","machine_id":"machine-serialized",
-     "machine_credential":"serialized-bearer-one"}
-    """)
-    _ = try await serializedClient.pollDeviceLogin(deviceCode: "serialized-one")
-    blockingStore.resetMetrics()
-    async let firstHeader = serializedClient.authorizationHeader()
-    async let secondHeader = serializedClient.authorizationHeader()
-    _ = try await (firstHeader, secondHeader)
-    try require(blockingStore.maximumConcurrentAccesses() == 1,
-                "one client serializes concurrent credential reads")
 
-    blockingStore.resetMetrics()
-    await serializedFake.enqueue(json: """
-    {"status":"complete","account_id":"acct-serialized","machine_id":"machine-replaced",
-     "machine_credential":"serialized-bearer-two"}
-    """)
-    async let replaced = serializedClient.pollDeviceLogin(deviceCode: "serialized-two")
-    async let overlappingHeader = serializedClient.authorizationHeader()
-    _ = try await (replaced, overlappingHeader)
-    try require(blockingStore.maximumConcurrentAccesses() == 1,
-                "one client serializes credential reads and replacement")
-    try require(try serializedClient.restoredMachineIdentity()?.machineID == "machine-replaced",
-                "serialized replacement leaves one coherent current identity")
+    // Section 7, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection7() async throws {
+        await serializedFake.enqueue(json: """
+        {"status":"complete","account_id":"acct-serialized","machine_id":"machine-serialized",
+         "machine_credential":"serialized-bearer-one"}
+        """)
+        _ = try await serializedClient.pollDeviceLogin(deviceCode: "serialized-one")
+        blockingStore.resetMetrics()
+        async let firstHeader = serializedClient.authorizationHeader()
+        async let secondHeader = serializedClient.authorizationHeader()
+        _ = try await (firstHeader, secondHeader)
+        try require(blockingStore.maximumConcurrentAccesses() == 1,
+                    "one client serializes concurrent credential reads")
 
-    for response in [
-        "{\"status\":\"authorization_pending\"}",
-        "{\"status\":\"slow_down\",\"retry_after_seconds\":7}",
-        "{\"status\":\"access_denied\"}",
-        "{\"status\":\"expired_token\"}",
-    ] { await fake.enqueue(json: response) }
-    try require(try await client.pollDeviceLogin(deviceCode: "one") == .authorizationPending,
-                "pending is typed")
-    try require(try await client.pollDeviceLogin(deviceCode: "two") == .slowDown(retryAfter: 7),
-                "slow_down carries its interval")
-    try require(try await client.pollDeviceLogin(deviceCode: "three") == .accessDenied,
-                "access_denied is typed")
-    try require(try await client.pollDeviceLogin(deviceCode: "four") == .expired,
-                "expired_token is typed")
+        blockingStore.resetMetrics()
+        await serializedFake.enqueue(json: """
+        {"status":"complete","account_id":"acct-serialized","machine_id":"machine-replaced",
+         "machine_credential":"serialized-bearer-two"}
+        """)
+        async let replaced = serializedClient.pollDeviceLogin(deviceCode: "serialized-two")
+        async let overlappingHeader = serializedClient.authorizationHeader()
+        _ = try await (replaced, overlappingHeader)
+        try require(blockingStore.maximumConcurrentAccesses() == 1,
+                    "one client serializes credential reads and replacement")
+        try require(try serializedClient.restoredMachineIdentity()?.machineID == "machine-replaced",
+                    "serialized replacement leaves one coherent current identity")
 
-    await fake.enqueue(json: """
-    {"status":"complete","account_id":"acct-1","machine_id":"machine-1",
-     "machine_credential":"credential-secret"}
-    """)
+        for response in [
+            "{\"status\":\"authorization_pending\"}",
+            "{\"status\":\"slow_down\",\"retry_after_seconds\":7}",
+            "{\"status\":\"access_denied\"}",
+            "{\"status\":\"expired_token\"}",
+        ] { await fake.enqueue(json: response) }
+        try require(try await client.pollDeviceLogin(deviceCode: "one") == .authorizationPending,
+                    "pending is typed")
+        try require(try await client.pollDeviceLogin(deviceCode: "two") == .slowDown(retryAfter: 7),
+                    "slow_down carries its interval")
+        try require(try await client.pollDeviceLogin(deviceCode: "three") == .accessDenied,
+                    "access_denied is typed")
+        try require(try await client.pollDeviceLogin(deviceCode: "four") == .expired,
+                    "expired_token is typed")
+
+        await fake.enqueue(json: """
+        {"status":"complete","account_id":"acct-1","machine_id":"machine-1",
+         "machine_credential":"credential-secret"}
+        """)
+    }
+    try await cloudAccountSection7()
     let completed = try await client.pollDeviceLogin(deviceCode: "five")
-    try require(completed == .complete(CloudMachineIdentity(accountID: "acct-1", machineID: "machine-1")),
-                "complete exposes only the approved account and machine identifiers")
-    try require(try client.restoredMachineIdentity()
-                    == CloudMachineIdentity(accountID: "acct-1", machineID: "machine-1"),
-                "machine identity restores from the persisted credential")
-    try require(try client.authorizationHeader() == "Bearer credential-secret",
-                "authorization closure emits the bearer shape CloudTransport consumes")
-    try require(try await client.authorizationHeaderProvider()() == "Bearer credential-secret",
-                "async authorization provider restores the persisted credential")
+
+    // Section 8, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection8() async throws {
+        try require(completed == .complete(CloudMachineIdentity(accountID: "acct-1", machineID: "machine-1")),
+                    "complete exposes only the approved account and machine identifiers")
+        try require(try client.restoredMachineIdentity()
+                        == CloudMachineIdentity(accountID: "acct-1", machineID: "machine-1"),
+                    "machine identity restores from the persisted credential")
+        try require(try client.authorizationHeader() == "Bearer credential-secret",
+                    "authorization closure emits the bearer shape CloudTransport consumes")
+        try require(try await client.authorizationHeaderProvider()() == "Bearer credential-secret",
+                    "async authorization provider restores the persisted credential")
+    }
+    try await cloudAccountSection8()
     let credentialData = try store.data(for: CloudAccountClient.machineCredentialAccount)
     try require(credentialData != nil, "credential uses its distinct Keychain account name")
     let credentialText = String(decoding: credentialData!, as: UTF8.self)
@@ -949,15 +1013,23 @@ func runCloudAccountTests() async throws -> Int {
         credentialStore: store,
         deviceKeyLoader: { key }
     )
-    try require(try restoredClient.authorizationHeader() == "Bearer credential-secret",
-                "a fresh client restores the persisted machine credential")
 
-    await fake.enqueue(json: "{\"status\":\"authorization_pending\"}")
-    await fake.enqueue(json: "{\"status\":\"slow_down\",\"retry_after_seconds\":7}")
-    await fake.enqueue(json: """
-    {"status":"complete","account_id":"acct-1","machine_id":"machine-1",
-     "machine_credential":"credential-new"}
-    """)
+    // Section 9, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection9() async throws {
+        try require(try restoredClient.authorizationHeader() == "Bearer credential-secret",
+                    "a fresh client restores the persisted machine credential")
+
+        await fake.enqueue(json: "{\"status\":\"authorization_pending\"}")
+        await fake.enqueue(json: "{\"status\":\"slow_down\",\"retry_after_seconds\":7}")
+        await fake.enqueue(json: """
+        {"status":"complete","account_id":"acct-1","machine_id":"machine-1",
+         "machine_credential":"credential-new"}
+        """)
+    }
+    try await cloudAccountSection9()
     let waited = try await client.waitForDeviceLogin(started)
     try require(waited == .complete(CloudMachineIdentity(accountID: "acct-1", machineID: "machine-1")),
                 "wait helper stops on complete")
@@ -983,12 +1055,20 @@ func runCloudAccountTests() async throws -> Int {
     """)
     let expiresFromReceipt = try await expiredClient.startDeviceLogin(
         metadata: CloudMachineMetadata(name: "Expiry Mac", platform: "macOS"))
-    testClock.advance(5)
-    await expiredFake.repeatResponse(json: "{\"status\":\"authorization_pending\"}")
-    try require(try await expiredClient.waitForDeviceLogin(expiresFromReceipt) == .expired,
-                "wait expires from the start-response receipt without another poll")
-    try require(testClock.recordedSleeps() == [4, 1],
-                "wait clamps its final sleep to the received deadline")
+
+    // Section 10, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection10() async throws {
+        testClock.advance(5)
+        await expiredFake.repeatResponse(json: "{\"status\":\"authorization_pending\"}")
+        try require(try await expiredClient.waitForDeviceLogin(expiresFromReceipt) == .expired,
+                    "wait expires from the start-response receipt without another poll")
+        try require(testClock.recordedSleeps() == [4, 1],
+                    "wait clamps its final sleep to the received deadline")
+    }
+    try await cloudAccountSection10()
     let expiryPolls = await expiredFake.captured().filter {
         $0.url?.path == "/root/v1/auth/device/poll"
     }
@@ -1007,70 +1087,78 @@ func runCloudAccountTests() async throws -> Int {
     let cancelledWait = Task {
         try await cancelledClient.waitForDeviceLogin(started)
     }
-    await controlledSleeper.waitUntilEntered()
-    cancelledWait.cancel()
-    await controlledSleeper.resume()
-    do {
-        _ = try await cancelledWait.value
-        try require(false, "wait checks cancellation when the sleeper does not cooperate")
-    } catch is CancellationError {
-        try require(true, "wait checks cancellation when the sleeper does not cooperate")
-    }
-    try require(await cancelledFake.captured().isEmpty,
-                "cancelling after a non-cooperative sleep resumes sends no poll")
 
-    await fake.enqueue(json: "{\"status\":\"authorization_pending\",\"surprise\":true}")
-    do {
-        _ = try await client.pollDeviceLogin(deviceCode: "malformed")
-        try require(false, "unknown response fields fail loudly")
-    } catch CloudAccountError.invalidResponse {
-        try require(true, "unknown response fields fail loudly")
-    }
-    await fake.enqueue(json: "{\"status\":\"slow_down\",\"retry_after_seconds\":true}")
-    do {
-        _ = try await client.pollDeviceLogin(deviceCode: "bad-number")
-        try require(false, "boolean intervals fail loudly")
-    } catch CloudAccountError.invalidResponse {
-        try require(true, "boolean intervals fail loudly")
-    }
-
-    await fake.enqueue(json:
-        "{\"status\":\"slow_down\",\"retry_after_seconds\":9223372036854775808}")
-    do {
-        _ = try await client.pollDeviceLogin(deviceCode: "oversized-slow-down")
-        try require(false, "oversized slow_down integers fail with a typed response error")
-    } catch CloudAccountError.invalidResponse {
-        try require(true, "oversized slow_down integers fail with a typed response error")
-    }
-
-    await fake.enqueue(json: "{\"machines\":[],\"active\":9223372036854775808}")
-    do {
-        _ = try await client.listMachines()
-        try require(false, "oversized active integers fail with a typed response error")
-    } catch CloudAccountError.invalidResponse {
-        try require(true, "oversized active integers fail with a typed response error")
-    }
-
-    for (name, expiresIn, interval) in [
-        ("expires_in", 18_446_744_074, 5),
-        ("interval", 600, 18_446_744_074),
-    ] {
-        await fake.enqueue(json: """
-        {"device_code":"oversized-start","user_code":"OVER-SIZE",
-         "verification_uri":"https://clawdline.com/connect",
-         "verification_uri_complete":"https://clawdline.com/connect?user_code=OVER-SIZE",
-         "expires_in":\(expiresIn),"interval":\(interval)}
-        """)
+    // Section 11, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection11() async throws {
+        await controlledSleeper.waitUntilEntered()
+        cancelledWait.cancel()
+        await controlledSleeper.resume()
         do {
-            _ = try await client.startDeviceLogin(
-                metadata: CloudMachineMetadata(name: "Oversized Mac", platform: "macOS"))
-            try require(false, "oversized start \(name) fails before scheduling")
-        } catch CloudAccountError.invalidResponse {
-            try require(true, "oversized start \(name) fails before scheduling")
+            _ = try await cancelledWait.value
+            try require(false, "wait checks cancellation when the sleeper does not cooperate")
+        } catch is CancellationError {
+            try require(true, "wait checks cancellation when the sleeper does not cooperate")
         }
-    }
+        try require(await cancelledFake.captured().isEmpty,
+                    "cancelling after a non-cooperative sleep resumes sends no poll")
 
-    await fake.enqueue(json: "{\"ok\":true,\"at\":\"2026-08-27T09:00:00.000Z\"}")
+        await fake.enqueue(json: "{\"status\":\"authorization_pending\",\"surprise\":true}")
+        do {
+            _ = try await client.pollDeviceLogin(deviceCode: "malformed")
+            try require(false, "unknown response fields fail loudly")
+        } catch CloudAccountError.invalidResponse {
+            try require(true, "unknown response fields fail loudly")
+        }
+        await fake.enqueue(json: "{\"status\":\"slow_down\",\"retry_after_seconds\":true}")
+        do {
+            _ = try await client.pollDeviceLogin(deviceCode: "bad-number")
+            try require(false, "boolean intervals fail loudly")
+        } catch CloudAccountError.invalidResponse {
+            try require(true, "boolean intervals fail loudly")
+        }
+
+        await fake.enqueue(json:
+            "{\"status\":\"slow_down\",\"retry_after_seconds\":9223372036854775808}")
+        do {
+            _ = try await client.pollDeviceLogin(deviceCode: "oversized-slow-down")
+            try require(false, "oversized slow_down integers fail with a typed response error")
+        } catch CloudAccountError.invalidResponse {
+            try require(true, "oversized slow_down integers fail with a typed response error")
+        }
+
+        await fake.enqueue(json: "{\"machines\":[],\"active\":9223372036854775808}")
+        do {
+            _ = try await client.listMachines()
+            try require(false, "oversized active integers fail with a typed response error")
+        } catch CloudAccountError.invalidResponse {
+            try require(true, "oversized active integers fail with a typed response error")
+        }
+
+        for (name, expiresIn, interval) in [
+            ("expires_in", 18_446_744_074, 5),
+            ("interval", 600, 18_446_744_074),
+        ] {
+            await fake.enqueue(json: """
+            {"device_code":"oversized-start","user_code":"OVER-SIZE",
+             "verification_uri":"https://clawdline.com/connect",
+             "verification_uri_complete":"https://clawdline.com/connect?user_code=OVER-SIZE",
+             "expires_in":\(expiresIn),"interval":\(interval)}
+            """)
+            do {
+                _ = try await client.startDeviceLogin(
+                    metadata: CloudMachineMetadata(name: "Oversized Mac", platform: "macOS"))
+                try require(false, "oversized start \(name) fails before scheduling")
+            } catch CloudAccountError.invalidResponse {
+                try require(true, "oversized start \(name) fails before scheduling")
+            }
+        }
+
+        await fake.enqueue(json: "{\"ok\":true,\"at\":\"2026-08-27T09:00:00.000Z\"}")
+    }
+    try await cloudAccountSection11()
     let heartbeat = try await client.heartbeat(appVersion: "1.4.0")
     try require(heartbeat.at == ISO8601DateFormatter().date(from: "2026-08-27T09:00:00Z"),
                 "heartbeat decodes its timestamp")
@@ -1092,21 +1180,29 @@ func runCloudAccountTests() async throws -> Int {
       "last_seen_at":null,"created_at":"2026-08-02T09:00:00.000Z","revoked_at":null}],"active":1}
     """)
     let devices = try await client.listDevices()
-    try require(devices.devices.first?.capabilities == [.readSessions, .sendPrompt],
-                "device list preserves the pinned capability vocabulary")
 
-    await fake.enqueue(json: """
-    {"revoked_at":"2026-08-27T09:01:00.000Z","routing":"stopped",
-     "content_key_rotation":"lazy","note":"Routing stops now."}
-    """)
-    _ = try await client.revokeMachine(id: "machine/with slash", browserSessionCookie: "web-cookie")
-    await fake.enqueue(json: """
-    {"revoked_at":"2026-08-27T09:02:00.000Z","routing":"stopped",
-     "content_key_rotation":"lazy"}
-    """)
-    _ = try await client.revokeDevice(id: "device-1", browserSessionCookie: "web-cookie")
+    // Section 12, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection12() async throws {
+        try require(devices.devices.first?.capabilities == [.readSessions, .sendPrompt],
+                    "device list preserves the pinned capability vocabulary")
 
-    requests = await fake.captured()
+        await fake.enqueue(json: """
+        {"revoked_at":"2026-08-27T09:01:00.000Z","routing":"stopped",
+         "content_key_rotation":"lazy","note":"Routing stops now."}
+        """)
+        _ = try await client.revokeMachine(id: "machine/with slash", browserSessionCookie: "web-cookie")
+        await fake.enqueue(json: """
+        {"revoked_at":"2026-08-27T09:02:00.000Z","routing":"stopped",
+         "content_key_rotation":"lazy"}
+        """)
+        _ = try await client.revokeDevice(id: "device-1", browserSessionCookie: "web-cookie")
+
+        requests = await fake.captured()
+    }
+    try await cloudAccountSection12()
     let heartbeatRequest = try cloudAccountRequest(requests, path: "/root/v1/machines/heartbeat")
     try require(heartbeatRequest.httpMethod == "POST"
                 && heartbeatRequest.value(forHTTPHeaderField: "Authorization") == "Bearer credential-new"
@@ -1120,28 +1216,44 @@ func runCloudAccountTests() async throws -> Int {
         $0.httpMethod == "DELETE" && $0.url?.path.contains("/v1/machines/") == true
     }!
     let revokeDeviceRequest = try cloudAccountRequest(requests, path: "/root/v1/devices/device-1")
-    try require(revokeMachineRequest.url?.absoluteString.contains("machine%2Fwith%20slash") == true
-                && revokeMachineRequest.value(forHTTPHeaderField: "Cookie") == "cl_session=web-cookie",
-                "machine revoke path-encodes its id and uses the deployed browser session seam")
-    try require(revokeDeviceRequest.httpMethod == "DELETE"
-                && revokeDeviceRequest.value(forHTTPHeaderField: "Cookie") == "cl_session=web-cookie",
-                "device revoke uses exact DELETE route and browser session seam")
 
-    await fake.enqueue(json: """
-    {"pairing_id":"pair-1","claim_nonce":"nonce-secret",
-     "expires_at":"2026-08-27T09:10:00.000Z","expires_in":300}
-    """)
+    // Section 13, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection13() async throws {
+        try require(revokeMachineRequest.url?.absoluteString.contains("machine%2Fwith%20slash") == true
+                    && revokeMachineRequest.value(forHTTPHeaderField: "Cookie") == "cl_session=web-cookie",
+                    "machine revoke path-encodes its id and uses the deployed browser session seam")
+        try require(revokeDeviceRequest.httpMethod == "DELETE"
+                    && revokeDeviceRequest.value(forHTTPHeaderField: "Cookie") == "cl_session=web-cookie",
+                    "device revoke uses exact DELETE route and browser session seam")
+
+        await fake.enqueue(json: """
+        {"pairing_id":"pair-1","claim_nonce":"nonce-secret",
+         "expires_at":"2026-08-27T09:10:00.000Z","expires_in":300}
+        """)
+    }
+    try await cloudAccountSection13()
     let pairing = try await client.startPairing(fingerprint: "AB12-CD34-EF56-7890")
     try require(pairing.pairingID == "pair-1" && pairing.claimNonce == "nonce-secret",
                 "pairing start decodes the routing handle and claim nonce")
     try require(!String(describing: pairing).contains("nonce-secret"),
                 "pairing start descriptions redact the claim nonce")
     let opaque = try CloudOpaquePairingBlob(base64: Data([0, 1, 2, 0xff]).base64EncodedString())
-    await fake.enqueue(json: "{\"status\":\"delivered\",\"fingerprint\":\"AB12-CD34-EF56-7890\"}")
-    _ = try await client.completePairing(pairingID: "pair-1", blob: opaque)
-    await fake.enqueue(status: 202, json: "{\"error\":{\"code\":\"pairing_pending\",\"message\":\"wait\"}}")
-    try require(try await client.claimPairing(pairingID: "pair-1", claimNonce: "nonce-secret") == .pending,
-                "pairing claim models the deployed 202 pending response")
+
+    // Section 14, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection14() async throws {
+        await fake.enqueue(json: "{\"status\":\"delivered\",\"fingerprint\":\"AB12-CD34-EF56-7890\"}")
+        _ = try await client.completePairing(pairingID: "pair-1", blob: opaque)
+        await fake.enqueue(status: 202, json: "{\"error\":{\"code\":\"pairing_pending\",\"message\":\"wait\"}}")
+        try require(try await client.claimPairing(pairingID: "pair-1", claimNonce: "nonce-secret") == .pending,
+                    "pairing claim models the deployed 202 pending response")
+    }
+    try await cloudAccountSection14()
     let opaqueBase64 = Data([0, 1, 2, 0xff]).base64EncodedString()
     await fake.enqueue(json: "{\"ciphertext\":\"\(opaqueBase64)\",\"sender_device_id\":\"device-1\"}")
     let claim = try await client.claimPairing(pairingID: "pair-1", claimNonce: "nonce-secret")
@@ -1156,15 +1268,23 @@ func runCloudAccountTests() async throws -> Int {
      "expires_at":"2026-08-27T09:15:00.000Z","expires_in":300}
     """)
     let invitation = try await client.startPairingInvitation(secretHash: invitationSecretHash)
-    try require(invitation.invitationID == "invite-1" && invitation.expiresIn == 300,
-                "pairing invitation start decodes its one-time routing handle")
-    await fake.enqueue(status: 202, json: "{\"status\":\"pending\"}")
-    try require(try await client.pollPairingInvitation(invitationID: "invite-1") == .pending,
-                "pairing invitation models the deployed 202 pending response")
-    await fake.enqueue(json: """
-    {"status":"ready","account_id":"acct-1","viewer_device_id":"viewer-1",
-     "machine_id":"machine-1","encrypted_offer":"AAEC/w=="}
-    """)
+
+    // Section 15, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection15() async throws {
+        try require(invitation.invitationID == "invite-1" && invitation.expiresIn == 300,
+                    "pairing invitation start decodes its one-time routing handle")
+        await fake.enqueue(status: 202, json: "{\"status\":\"pending\"}")
+        try require(try await client.pollPairingInvitation(invitationID: "invite-1") == .pending,
+                    "pairing invitation models the deployed 202 pending response")
+        await fake.enqueue(json: """
+        {"status":"ready","account_id":"acct-1","viewer_device_id":"viewer-1",
+         "machine_id":"machine-1","encrypted_offer":"AAEC/w=="}
+        """)
+    }
+    try await cloudAccountSection15()
     let invitationPoll = try await client.pollPairingInvitation(invitationID: "invite-1")
     try require(invitationPoll == .ready(
         accountID: "acct-1", viewerDeviceID: "viewer-1", machineID: "machine-1",
@@ -1184,16 +1304,24 @@ func runCloudAccountTests() async throws -> Int {
     try require((try cloudAccountBody(pairingCompleteRequest))["ciphertext"] as? String == opaqueBase64,
                 "pairing complete transports ciphertext unchanged")
     let claimBody = try cloudAccountBody(pairingClaimRequest)
-    try require(Set(claimBody.keys) == ["pairing_id", "claim_nonce"],
-                "pairing claim sends only the pinned routing values")
-    try require(
-        (try cloudAccountBody(invitationStartRequest))["secret_hash"] as? String
-            == invitationSecretHash.base64EncodedString(),
-        "pairing invitation sends only the QR secret hash with the machine bearer")
-    try require(
-        (try cloudAccountBody(invitationPollRequest))["invitation_id"] as? String == "invite-1",
-        "pairing invitation polling sends only its routing handle")
 
+    // Section 16, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection16() async throws {
+        try require(Set(claimBody.keys) == ["pairing_id", "claim_nonce"],
+                    "pairing claim sends only the pinned routing values")
+        try require(
+            (try cloudAccountBody(invitationStartRequest))["secret_hash"] as? String
+                == invitationSecretHash.base64EncodedString(),
+            "pairing invitation sends only the QR secret hash with the machine bearer")
+        try require(
+            (try cloudAccountBody(invitationPollRequest))["invitation_id"] as? String == "invite-1",
+            "pairing invitation polling sends only its routing handle")
+
+    }
+    try await cloudAccountSection16()
     let lifecycleFake = CloudAccountFakeHTTP()
     let lifecycleStore = CloudInMemoryKeyStore()
     let lifecycleClient = CloudAccountClient(
@@ -1209,85 +1337,109 @@ func runCloudAccountTests() async throws -> Int {
     _ = try await lifecycleClient.pollDeviceLogin(deviceCode: "lifecycle-one")
     let oldCredentialData = try lifecycleStore.data(
         for: CloudAccountClient.machineCredentialAccount)
-    try lifecycleClient.signOut()
-    try require(try lifecycleClient.restoredMachineIdentity() == nil
-                && (try lifecycleStore.data(for: CloudAccountClient.machineCredentialAccount)) == nil,
-                "explicit sign-out clears identity and secure storage")
-    do {
-        _ = try lifecycleClient.authorizationHeader()
-        try require(false, "explicit sign-out clears the authorization header")
-    } catch CloudAccountError.missingMachineCredential {
-        try require(true, "explicit sign-out clears the authorization header")
-    }
 
-    await lifecycleFake.enqueue(json: """
-    {"status":"complete","account_id":"acct-life","machine_id":"machine-life",
-     "machine_credential":"replacement-bearer-fixture"}
-    """)
-    _ = try await lifecycleClient.pollDeviceLogin(deviceCode: "lifecycle-two")
+    // Section 17, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection17() async throws {
+        try lifecycleClient.signOut()
+        try require(try lifecycleClient.restoredMachineIdentity() == nil
+                    && (try lifecycleStore.data(for: CloudAccountClient.machineCredentialAccount)) == nil,
+                    "explicit sign-out clears identity and secure storage")
+        do {
+            _ = try lifecycleClient.authorizationHeader()
+            try require(false, "explicit sign-out clears the authorization header")
+        } catch CloudAccountError.missingMachineCredential {
+            try require(true, "explicit sign-out clears the authorization header")
+        }
+
+        await lifecycleFake.enqueue(json: """
+        {"status":"complete","account_id":"acct-life","machine_id":"machine-life",
+         "machine_credential":"replacement-bearer-fixture"}
+        """)
+        _ = try await lifecycleClient.pollDeviceLogin(deviceCode: "lifecycle-two")
+    }
+    try await cloudAccountSection17()
     let replacementCredentialData = try lifecycleStore.data(
         for: CloudAccountClient.machineCredentialAccount)
-    try require(replacementCredentialData != oldCredentialData,
-                "re-login atomically replaces the previous credential bytes")
-    try require(replacementCredentialData?.range(of: Data("old-bearer-fixture".utf8)) == nil,
-                "re-login leaves no previous bearer bytes in secure storage")
-    await lifecycleFake.enqueue(json: """
-    {"revoked_at":"2026-08-27T09:03:00.000Z","routing":"stopped",
-     "content_key_rotation":"lazy","note":"Routing stops now."}
-    """)
-    _ = try await lifecycleClient.revokeMachine(
-        id: "another-machine", browserSessionCookie: "cookie")
-    try require(try lifecycleClient.restoredMachineIdentity()?.machineID == "machine-life",
-                "revoking another machine preserves the current credential")
-    await lifecycleFake.enqueue(json: """
-    {"revoked_at":"2026-08-27T09:04:00.000Z","routing":"stopped",
-     "content_key_rotation":"lazy","note":"Routing stops now."}
-    """)
-    _ = try await lifecycleClient.revokeMachine(
-        id: "machine-life", browserSessionCookie: "cookie")
-    try require(try lifecycleClient.restoredMachineIdentity() == nil
-                && (try lifecycleStore.data(for: CloudAccountClient.machineCredentialAccount)) == nil,
-                "successful self-revocation clears identity and secure storage")
 
-    await lifecycleFake.enqueue(json: """
-    {"status":"complete","account_id":"acct-life","machine_id":"machine-life",
-     "machine_credential":"third-bearer-fixture"}
-    """)
-    _ = try await lifecycleClient.pollDeviceLogin(deviceCode: "lifecycle-three")
-    await lifecycleFake.enqueue(
-        status: 401,
-        json: "{\"error\":{\"code\":\"account_suspended\",\"message\":\"no\"}}")
-    do {
-        _ = try await lifecycleClient.heartbeat()
-        try require(false, "an unrelated 401 is rejected")
-    } catch CloudAccountError.http(let status, let code) {
-        try require(status == 401 && code == "account_suspended",
-                    "an unrelated 401 is rejected")
+    // Section 18, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection18() async throws {
+        try require(replacementCredentialData != oldCredentialData,
+                    "re-login atomically replaces the previous credential bytes")
+        try require(replacementCredentialData?.range(of: Data("old-bearer-fixture".utf8)) == nil,
+                    "re-login leaves no previous bearer bytes in secure storage")
+        await lifecycleFake.enqueue(json: """
+        {"revoked_at":"2026-08-27T09:03:00.000Z","routing":"stopped",
+         "content_key_rotation":"lazy","note":"Routing stops now."}
+        """)
+        _ = try await lifecycleClient.revokeMachine(
+            id: "another-machine", browserSessionCookie: "cookie")
+        try require(try lifecycleClient.restoredMachineIdentity()?.machineID == "machine-life",
+                    "revoking another machine preserves the current credential")
+        await lifecycleFake.enqueue(json: """
+        {"revoked_at":"2026-08-27T09:04:00.000Z","routing":"stopped",
+         "content_key_rotation":"lazy","note":"Routing stops now."}
+        """)
+        _ = try await lifecycleClient.revokeMachine(
+            id: "machine-life", browserSessionCookie: "cookie")
+        try require(try lifecycleClient.restoredMachineIdentity() == nil
+                    && (try lifecycleStore.data(for: CloudAccountClient.machineCredentialAccount)) == nil,
+                    "successful self-revocation clears identity and secure storage")
+
+        await lifecycleFake.enqueue(json: """
+        {"status":"complete","account_id":"acct-life","machine_id":"machine-life",
+         "machine_credential":"third-bearer-fixture"}
+        """)
+        _ = try await lifecycleClient.pollDeviceLogin(deviceCode: "lifecycle-three")
+        await lifecycleFake.enqueue(
+            status: 401,
+            json: "{\"error\":{\"code\":\"account_suspended\",\"message\":\"no\"}}")
+        do {
+            _ = try await lifecycleClient.heartbeat()
+            try require(false, "an unrelated 401 is rejected")
+        } catch CloudAccountError.http(let status, let code) {
+            try require(status == 401 && code == "account_suspended",
+                        "an unrelated 401 is rejected")
+        }
+        try require(try lifecycleClient.restoredMachineIdentity()?.machineID == "machine-life",
+                    "an unrelated 401 does not invalidate the current credential")
+
+        await lifecycleFake.enqueueBlocked(
+            status: 401,
+            json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
     }
-    try require(try lifecycleClient.restoredMachineIdentity()?.machineID == "machine-life",
-                "an unrelated 401 does not invalidate the current credential")
-
-    await lifecycleFake.enqueueBlocked(
-        status: 401,
-        json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
+    try await cloudAccountSection18()
     let staleUnauthorized = Task { try await lifecycleClient.heartbeat() }
-    await lifecycleFake.waitUntilBlocked()
-    await lifecycleFake.enqueue(json: """
-    {"status":"complete","account_id":"acct-life","machine_id":"machine-replacement",
-     "machine_credential":"fourth-bearer-fixture"}
-    """)
-    _ = try await lifecycleClient.pollDeviceLogin(deviceCode: "lifecycle-four")
-    await lifecycleFake.resumeBlocked()
-    do {
-        _ = try await staleUnauthorized.value
-        try require(false, "the stale request still reports its deployed 401")
-    } catch CloudAccountError.http(let status, let code) {
-        try require(status == 401 && code == "no_machine_credential",
-                    "the stale request still reports its deployed 401")
-    }
-    try require(try lifecycleClient.restoredMachineIdentity()?.machineID == "machine-replacement",
-                "a stale 401 cannot erase an atomically replaced credential")
 
+    // Section 19, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection19() async throws {
+        await lifecycleFake.waitUntilBlocked()
+        await lifecycleFake.enqueue(json: """
+        {"status":"complete","account_id":"acct-life","machine_id":"machine-replacement",
+         "machine_credential":"fourth-bearer-fixture"}
+        """)
+        _ = try await lifecycleClient.pollDeviceLogin(deviceCode: "lifecycle-four")
+        await lifecycleFake.resumeBlocked()
+        do {
+            _ = try await staleUnauthorized.value
+            try require(false, "the stale request still reports its deployed 401")
+        } catch CloudAccountError.http(let status, let code) {
+            try require(status == 401 && code == "no_machine_credential",
+                        "the stale request still reports its deployed 401")
+        }
+        try require(try lifecycleClient.restoredMachineIdentity()?.machineID == "machine-replacement",
+                    "a stale 401 cannot erase an atomically replaced credential")
+
+    }
+    try await cloudAccountSection19()
     let crossClientStore = CloudAccountInterleavingStore()
     let oldBearerFake = CloudAccountFakeHTTP()
     let replacementBearerFake = CloudAccountFakeHTTP()
@@ -1303,49 +1455,65 @@ func runCloudAccountTests() async throws -> Int {
         credentialStore: crossClientStore,
         deviceKeyLoader: { key }
     )
-    await oldBearerFake.enqueue(json: """
-    {"status":"complete","account_id":"acct-cross","machine_id":"machine-old",
-     "machine_credential":"cross-client-old-bearer"}
-    """)
-    _ = try await oldBearerClient.pollDeviceLogin(deviceCode: "cross-client-old")
-    await oldBearerFake.enqueueBlocked(
-        status: 401,
-        json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
+
+    // Section 20, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection20() async throws {
+        await oldBearerFake.enqueue(json: """
+        {"status":"complete","account_id":"acct-cross","machine_id":"machine-old",
+         "machine_credential":"cross-client-old-bearer"}
+        """)
+        _ = try await oldBearerClient.pollDeviceLogin(deviceCode: "cross-client-old")
+        await oldBearerFake.enqueueBlocked(
+            status: 401,
+            json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
+    }
+    try await cloudAccountSection20()
     let crossClientUnauthorized = Task { try await oldBearerClient.heartbeat() }
-    await oldBearerFake.waitUntilBlocked()
-    crossClientStore.armCredentialReadBlock()
-    await oldBearerFake.resumeBlocked()
-    crossClientStore.waitUntilCredentialReadBlocked()
-    await replacementBearerFake.enqueue(json: """
-    {"status":"complete","account_id":"acct-cross","machine_id":"machine-new",
-     "machine_credential":"cross-client-new-bearer"}
-    """)
-    _ = try await replacementBearerClient.pollDeviceLogin(deviceCode: "cross-client-new")
-    crossClientStore.resumeBlockedCredentialRead()
-    do {
-        _ = try await crossClientUnauthorized.value
-        try require(false, "the cross-client stale request still reports its deployed 401")
-    } catch CloudAccountError.http(let status, let code) {
-        try require(status == 401 && code == "no_machine_credential",
-                    "the cross-client stale request still reports its deployed 401")
-    }
-    try require(try replacementBearerClient.restoredMachineIdentity()?.machineID == "machine-new",
-                "a late old-bearer 401 cannot delete another client's new bearer")
 
-    await lifecycleFake.enqueue(
-        status: 401,
-        json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
-    do {
-        _ = try await lifecycleClient.heartbeat()
-        try require(false, "the deployed missing-credential 401 is rejected")
-    } catch CloudAccountError.http(let status, let code) {
-        try require(status == 401 && code == "no_machine_credential",
-                    "the deployed missing-credential 401 is rejected")
-    }
-    try require(try lifecycleClient.restoredMachineIdentity() == nil
-                && (try lifecycleStore.data(for: CloudAccountClient.machineCredentialAccount)) == nil,
-                "the deployed missing-credential 401 invalidates local state")
+    // Section 21, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection21() async throws {
+        await oldBearerFake.waitUntilBlocked()
+        crossClientStore.armCredentialReadBlock()
+        await oldBearerFake.resumeBlocked()
+        crossClientStore.waitUntilCredentialReadBlocked()
+        await replacementBearerFake.enqueue(json: """
+        {"status":"complete","account_id":"acct-cross","machine_id":"machine-new",
+         "machine_credential":"cross-client-new-bearer"}
+        """)
+        _ = try await replacementBearerClient.pollDeviceLogin(deviceCode: "cross-client-new")
+        crossClientStore.resumeBlockedCredentialRead()
+        do {
+            _ = try await crossClientUnauthorized.value
+            try require(false, "the cross-client stale request still reports its deployed 401")
+        } catch CloudAccountError.http(let status, let code) {
+            try require(status == 401 && code == "no_machine_credential",
+                        "the cross-client stale request still reports its deployed 401")
+        }
+        try require(try replacementBearerClient.restoredMachineIdentity()?.machineID == "machine-new",
+                    "a late old-bearer 401 cannot delete another client's new bearer")
 
+        await lifecycleFake.enqueue(
+            status: 401,
+            json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
+        do {
+            _ = try await lifecycleClient.heartbeat()
+            try require(false, "the deployed missing-credential 401 is rejected")
+        } catch CloudAccountError.http(let status, let code) {
+            try require(status == 401 && code == "no_machine_credential",
+                        "the deployed missing-credential 401 is rejected")
+        }
+        try require(try lifecycleClient.restoredMachineIdentity() == nil
+                    && (try lifecycleStore.data(for: CloudAccountClient.machineCredentialAccount)) == nil,
+                    "the deployed missing-credential 401 invalidates local state")
+
+    }
+    try await cloudAccountSection21()
     let wrongStatusCases: [(String, String, () async throws -> Void)] = [
         ("device start", """
          {"device_code":"status-secret","user_code":"STAT-0001",
@@ -1393,30 +1561,38 @@ func runCloudAccountTests() async throws -> Int {
             _ = try await client.claimPairing(pairingID: "status-pair", claimNonce: "status-nonce")
         }),
     ]
-    for (name, json, operation) in wrongStatusCases {
-        await fake.enqueue(status: 201, json: json)
-        do {
-            try await operation()
-            try require(false, "\(name) rejects an unexpected 2xx status")
-        } catch CloudAccountError.http(let status, _) {
-            try require(status == 201, "\(name) rejects an unexpected 2xx status")
+
+    // Section 22, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection22() async throws {
+        for (name, json, operation) in wrongStatusCases {
+            await fake.enqueue(status: 201, json: json)
+            do {
+                try await operation()
+                try require(false, "\(name) rejects an unexpected 2xx status")
+            } catch CloudAccountError.http(let status, _) {
+                try require(status == 201, "\(name) rejects an unexpected 2xx status")
+            }
         }
+
+        await fake.enqueue(status: 401, json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
+        do {
+            _ = try await client.heartbeat()
+            try require(false, "HTTP errors retain status and safe code")
+        } catch CloudAccountError.http(let status, let code) {
+            try require(status == 401 && code == "no_machine_credential",
+                        "HTTP errors retain status and safe code")
+        }
+
+        // MARK: - A credential minted by an abandoned sign-in never reaches the store
+        //
+        // Cancelling a Task is a request the transport may ignore, so every check below lets the
+        // login *succeed* at the network and asks whether the credential still lands.
+
     }
-
-    await fake.enqueue(status: 401, json: "{\"error\":{\"code\":\"no_machine_credential\",\"message\":\"no\"}}")
-    do {
-        _ = try await client.heartbeat()
-        try require(false, "HTTP errors retain status and safe code")
-    } catch CloudAccountError.http(let status, let code) {
-        try require(status == 401 && code == "no_machine_credential",
-                    "HTTP errors retain status and safe code")
-    }
-
-    // MARK: - A credential minted by an abandoned sign-in never reaches the store
-    //
-    // Cancelling a Task is a request the transport may ignore, so every check below lets the
-    // login *succeed* at the network and asks whether the credential still lands.
-
+    try await cloudAccountSection22()
     let abandonFake = CloudAccountFakeHTTP()
     let abandonStore = CloudAccountWriteRaceStore()
     let abandonInvalidation = CloudInMemoryCredentialInvalidationStore()
@@ -1438,88 +1614,128 @@ func runCloudAccountTests() async throws -> Int {
     let signedOutDuringPoll = Task {
         try await abandonClient.pollDeviceLogin(deviceCode: "abandon-during-poll")
     }
-    await abandonFake.waitUntilBlocked()
-    try abandonClient.signOut()
-    await abandonFake.resumeBlocked()
-    do {
-        _ = try await signedOutDuringPoll.value
-        try require(false, "a credential minted after sign-out is refused at the store")
-    } catch CloudAccountError.loginAbandoned {
-        try require(true, "a credential minted after sign-out is refused at the store")
-    }
-    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
-                "sign-out during a poll leaves no credential behind")
-    // A different claim from the line above, and the one the pre-write guard exists for.
-    // Writing the secret and then deleting it would also leave nothing behind, having first
-    // put it on disk.
-    try require(abandonStore.writes() == 0,
-                "the refused credential is never written, not written and then taken back")
 
-    // 2. The window the pre-write guard cannot see: sign-out arrives *between* the guard and
-    //    the write returning. The credential is written and must be taken back.
-    abandonStore.armSetBlock()
-    await abandonFake.enqueue(json: completeLoginJSON)
+    // Section 23, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection23() async throws {
+        await abandonFake.waitUntilBlocked()
+        try abandonClient.signOut()
+        await abandonFake.resumeBlocked()
+        do {
+            _ = try await signedOutDuringPoll.value
+            try require(false, "a credential minted after sign-out is refused at the store")
+        } catch CloudAccountError.loginAbandoned {
+            try require(true, "a credential minted after sign-out is refused at the store")
+        }
+        try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                    "sign-out during a poll leaves no credential behind")
+        // A different claim from the line above, and the one the pre-write guard exists for.
+        // Writing the secret and then deleting it would also leave nothing behind, having first
+        // put it on disk.
+        try require(abandonStore.writes() == 0,
+                    "the refused credential is never written, not written and then taken back")
+
+        // 2. The window the pre-write guard cannot see: sign-out arrives *between* the guard and
+        //    the write returning. The credential is written and must be taken back.
+        abandonStore.armSetBlock()
+        await abandonFake.enqueue(json: completeLoginJSON)
+    }
+    try await cloudAccountSection23()
     let racedGeneration = abandonClient.credentialGeneration()
     let racedPoll = Task {
         try await abandonClient.pollDeviceLogin(
             deviceCode: "abandon-inside-write", startedAt: racedGeneration)
     }
-    abandonStore.waitUntilSetBlocked()
-    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) != nil,
-                "the raced credential really is in the store while the write is held open")
-    // Bumping the generation is all sign-out can do from here: its own removal is queued behind
-    // the transaction the parked write is holding.
-    try abandonClient.invalidatePendingLogins()
-    let removalsBeforeResume = abandonStore.removals()
-    abandonStore.resumeBlockedSet()
-    do {
-        _ = try await racedPoll.value
-        try require(false, "a credential abandoned inside the write window is refused")
-    } catch CloudAccountError.loginAbandoned {
-        try require(true, "a credential abandoned inside the write window is refused")
-    }
-    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
-                "the write that had already landed is taken back rather than left behind")
-    try require(abandonStore.removals() == removalsBeforeResume + 1,
-                "taking it back is one removal by the writing transaction, not a later sweep")
 
-    // 3. The set has landed, generation changes, and cleanup fails. The stale bytes remain, but
-    //    a new client sharing only the durable nonsecret epoch must still refuse them.
-    abandonStore.armSetBlock()
-    abandonStore.setRemovalFailure(true)
-    await abandonFake.enqueue(json: completeLoginJSON)
+    // Section 24, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection24() async throws {
+        abandonStore.waitUntilSetBlocked()
+        try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) != nil,
+                    "the raced credential really is in the store while the write is held open")
+        // Bumping the generation is all sign-out can do from here: its own removal is queued behind
+        // the transaction the parked write is holding.
+        try abandonClient.invalidatePendingLogins()
+    }
+    try await cloudAccountSection24()
+    let removalsBeforeResume = abandonStore.removals()
+
+    // Section 25, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection25() async throws {
+        abandonStore.resumeBlockedSet()
+        do {
+            _ = try await racedPoll.value
+            try require(false, "a credential abandoned inside the write window is refused")
+        } catch CloudAccountError.loginAbandoned {
+            try require(true, "a credential abandoned inside the write window is refused")
+        }
+        try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                    "the write that had already landed is taken back rather than left behind")
+        try require(abandonStore.removals() == removalsBeforeResume + 1,
+                    "taking it back is one removal by the writing transaction, not a later sweep")
+
+        // 3. The set has landed, generation changes, and cleanup fails. The stale bytes remain, but
+        //    a new client sharing only the durable nonsecret epoch must still refuse them.
+        abandonStore.armSetBlock()
+        abandonStore.setRemovalFailure(true)
+        await abandonFake.enqueue(json: completeLoginJSON)
+    }
+    try await cloudAccountSection25()
     let cleanupFailurePoll = Task {
         try await abandonClient.pollDeviceLogin(
             deviceCode: "abandon-cleanup-failure",
             startedAt: abandonClient.credentialGeneration())
     }
-    abandonStore.waitUntilSetBlocked()
-    try abandonClient.invalidatePendingLogins()
-    abandonStore.resumeBlockedSet()
-    do {
-        _ = try await cleanupFailurePoll.value
-        try require(false, "post-write cleanup failure is surfaced to a retry owner")
-    } catch CloudAccountError.credentialCleanupPending {
-        try require(true, "post-write cleanup failure is surfaced to a retry owner")
+
+    // Section 26, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection26() async throws {
+        abandonStore.waitUntilSetBlocked()
+        try abandonClient.invalidatePendingLogins()
+        abandonStore.resumeBlockedSet()
+        do {
+            _ = try await cleanupFailurePoll.value
+            try require(false, "post-write cleanup failure is surfaced to a retry owner")
+        } catch CloudAccountError.credentialCleanupPending {
+            try require(true, "post-write cleanup failure is surfaced to a retry owner")
+        }
+        try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) != nil,
+                    "cleanup failure injection leaves stale credential bytes behind")
     }
-    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) != nil,
-                "cleanup failure injection leaves stale credential bytes behind")
+    try await cloudAccountSection26()
     let restartedAfterCleanupFailure = CloudAccountClient(
         apiBaseURL: URL(string: "https://api.example.test/root")!,
         transport: abandonFake,
         credentialStore: abandonStore,
         invalidationStore: abandonInvalidation,
         deviceKeyLoader: { key })
-    try require(try restartedAfterCleanupFailure.restoredMachineIdentity() == nil,
-                "durable invalidation prevents stale credential resurrection after restart")
-    abandonStore.setRemovalFailure(false)
-    try restartedAfterCleanupFailure.signOut()
-    try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
-                "retry ownership can finish stale credential cleanup")
 
-    // 4. The guard is not a blanket refusal: a sign-in started *after* the sign-out persists.
-    //    Without this the two checks above would also pass if nothing could ever be stored.
-    await abandonFake.enqueue(json: completeLoginJSON)
+    // Section 27, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection27() async throws {
+        try require(try restartedAfterCleanupFailure.restoredMachineIdentity() == nil,
+                    "durable invalidation prevents stale credential resurrection after restart")
+        abandonStore.setRemovalFailure(false)
+        try restartedAfterCleanupFailure.signOut()
+        try require(try abandonStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                    "retry ownership can finish stale credential cleanup")
+
+        // 4. The guard is not a blanket refusal: a sign-in started *after* the sign-out persists.
+        //    Without this the two checks above would also pass if nothing could ever be stored.
+        await abandonFake.enqueue(json: completeLoginJSON)
+    }
+    try await cloudAccountSection27()
     let freshGeneration = abandonClient.credentialGeneration()
     _ = try await abandonClient.pollDeviceLogin(
         deviceCode: "abandon-after", startedAt: freshGeneration)
@@ -1551,17 +1767,25 @@ func runCloudAccountTests() async throws -> Int {
      "machine_credential":"flow-bearer-fixture"}
     """)
     let flowWait = Task { try await flowClient.waitForDeviceLogin(flowStart) }
-    await flowFake.waitUntilBlocked()
-    try flowClient.signOut()
-    await flowFake.resumeBlocked()
-    do {
-        _ = try await flowWait.value
-        try require(false, "the whole device-login flow refuses a credential after sign-out")
-    } catch CloudAccountError.loginAbandoned {
-        try require(true, "the whole device-login flow refuses a credential after sign-out")
-    }
-    try require(try flowStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
-                "no credential survives a sign-out taken during the device-login flow")
 
+    // Section 28, lifted out of runCloudAccountTests unchanged. One 891-line async
+    // function became one LLVM coroutine with 143 suspension points; that is what cost
+    // 46 GiB. Statement text, order and check count are identical — only the coroutine
+    // each statement belongs to changed.
+    func cloudAccountSection28() async throws {
+        await flowFake.waitUntilBlocked()
+        try flowClient.signOut()
+        await flowFake.resumeBlocked()
+        do {
+            _ = try await flowWait.value
+            try require(false, "the whole device-login flow refuses a credential after sign-out")
+        } catch CloudAccountError.loginAbandoned {
+            try require(true, "the whole device-login flow refuses a credential after sign-out")
+        }
+        try require(try flowStore.data(for: CloudAccountClient.machineCredentialAccount) == nil,
+                    "no credential survives a sign-out taken during the device-login flow")
+
+    }
+    try await cloudAccountSection28()
     return checks
 }

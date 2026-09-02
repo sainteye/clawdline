@@ -6140,15 +6140,12 @@ enum Orchestrator {
 
     /// How many retries may descend from one original dispatch.
     ///
-    /// `spawn_failed` was 34 of 206 dispatches on the machine this was measured on, 2026-08-28,
-    /// and 33 of those were Codex. That registry keeps 200 rows, so the figure is one rolling
-    /// window and not a running total: a later reading counts a different population rather than
-    /// this one changed, and it must not be quoted as the current rate. Until this route existed
-    /// the protocol's answer was that the root must write the whole `task.json` out again under a
-    /// fresh id. That is thirty-four rewrites by the most context-loaded session in the tree, and
-    /// two is enough to get
-    /// past a terminal that would not open, and few enough that a tab failing for a real reason
-    /// stops being retried instead of looping.
+    /// `spawn_failed` was 34 of 206 dispatches on 2026-08-28, 33 of them Codex — one 200-row
+    /// window, not a running total, so a later reading counts a different population and this is
+    /// not the current rate. Until this route existed the protocol's answer was that the root must
+    /// write the whole `task.json` out again under a fresh id: thirty-four rewrites by the most
+    /// context-loaded session in the tree. Two is enough to get past a terminal that would not
+    /// open, and few enough that a tab failing for a real reason stops being retried in a loop.
     static let respawnLimit = 2
 
     /// Retry a dispatch whose tab never opened, without making the root write the task out again.

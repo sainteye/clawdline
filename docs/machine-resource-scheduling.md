@@ -1,6 +1,8 @@
 # Machine resource scheduling
 
-Status: design proposal; not implemented or authorized for rollout.
+Status: design proposal, with one piece landed. The compile-job ceiling `CLAWDLINE_SUITE_JOBS`
+is in `test.sh` as of `54891280`; the lease, the queue and the projections below are not built.
+The measurements in the next section are real and were taken on one Mac on 2026-09-03.
 
 Clawdline can keep many assistant Sessions useful at once. Most of those Sessions spend most of
 their time reading, reasoning, editing or waiting, which is cheap to run concurrently. The trouble
@@ -17,6 +19,404 @@ directly rather than through an orchestrated task.
 
 Nothing on this page describes a feature the current build already has. The current mechanisms are
 the baseline below; later sections are a possible direction and carry unresolved decisions plainly.
+
+## What the 2026-09-03 reboots measured, and what they changed
+
+Two forced reboots that night, 01:24 and 01:45, moved this page from a proposal nobody had costed
+into one with numbers attached. What follows is the evidence, then the four design decisions it
+overturned. Every reading names the command that produced it, because three of the night's wrong
+turns were instrument errors rather than reasoning errors.
+
+### The incident, in the shape it actually had
+
+`/Library/Logs/DiagnosticReports/JetsamEvent-2026-09-03-014340.ips` names `swift-frontend` as
+`largestProcess`. Four of them carried `rpages` — that field is `lifetimeMax`, the peak footprint
+the process ever reached, in pages of `getconf PAGESIZE` = 16384 bytes — of 3017359, 2992845,
+1792295 and 522721: about 46, 45, 27 and 8 GB, on a machine whose `hw.memsize` is 24 GiB. The 01:21
+report has four as well.
+
+The first reading of that was *one compile's parallelism*, and it was wrong. A frontend here runs
+one primary file: the command line is
+`swift-frontend -frontend -c -filelist <every source> -primary-file <one file> … -o <one>.o`, with
+no `-enable-batch-mode` and no whole-module flag. So those four processes were **four separate
+drivers — four concurrent `./test.sh` runs** — each with a frontend of its own, at different points
+in the same work. That distinction decides the remedy: mutual exclusion between runs is exactly the
+right instrument, and capping one run's job count is not.
+
+### The instruments, and the three ways they lied
+
+**Peak and sample are different quantities and must never share a table column.** `ps`'s RSS is an
+instantaneous sample; taken early in a compile it read about 2 GB against a peak above 23 GB. What
+Jetsam prints is the lifetime maximum of `phys_footprint`, which
+`proc_pid_rusage(pid, RUSAGE_INFO_V4, …)` exposes as `ri_lifetime_max_phys_footprint`. That counter
+is **monotonic**, which is what makes polling it legitimate where polling RSS is not: a poll can
+only miss growth after the last read. `/usr/bin/time -l`'s `maximum resident set size` comes from
+`getrusage(RUSAGE_CHILDREN)` and is likewise a kernel-tracked maximum rather than a sample.
+
+**Do not sum RSS across processes to get a machine total.** Measured at 02:16 with nothing
+compiling: 622 processes summing to 22.33 GB on a 24 GiB machine, while `memory_pressure` reported
+`System-wide memory free percentage: 81%` in the same minute. Both readings are real and neither is
+the physical footprint, because summing RSS double-counts every shared page.
+
+**Free percentage misleads in the other direction**, because after Jetsam kills something the
+percentage looks excellent while swap has not recovered.
+
+What did carry the load is `vm_stat`'s anonymous pages together with the compressor and swap. At
+02:17, zero compilers running: anonymous 10.78 GB, wired 3.54 GB, occupied by compressor 1.24 GB,
+free 2.04 GB, file-backed 5.51 GB; `vm.swapusage` total 12,288 MB, used 10,870 MB, free 1,417 MB.
+**The idle baseline already carries about 11 GB swapped out.** Serialising two suites cannot help
+with a machine that is full before either of them starts.
+
+**And `swap free` is not a budget, which is the trap in the obvious fix.** The swap file is
+elastic. Sampled every 30 seconds through the night, `vm.swapusage` total moved between 9,216 and
+22,528 MB, and free swung from 353 MB to 1,417 MB in three minutes with nothing compiling. A fixed
+floor on a quantity whose denominator moves is a condition that may never become true: one line set
+`swap free >= 2500 MB` as its own admission gate, and no sample taken that night reached it. **A gate that is permanently
+unsatisfiable and has no door is a deadlock wearing a threshold's clothes.**
+
+### Three instrument errors in one night, all the same shape
+
+Two of them over-matched and one silently matched nothing, and every one of them was believed for a
+while because the answer looked like data:
+
+| what was run | what it answered | the truth |
+|---|---|---|
+| `pgrep -f swift-frontend` | 3 | 1 — the extras were a sampler and a `/usr/bin/time` wrapper whose *arguments* contain the string |
+| `grep` for `-wmo` over a process listing | present | it had matched the searcher's own shell command line |
+| `awk '$0 ~ "\\yvar\\y"'` | 0 crossing variables | macOS `awk` does not support `\y`; `grep -w` found 10 |
+| `swiftc -output-file-map <map>` with absolute keys and relative command-line paths | exit 0, and objects | the map was silently ignored and the objects went to default names in the working directory |
+| a message body built with `python3 -c "..."` in double quotes | `ok: true` from the API | backticks in the text were run as command substitution by the shell and the words vanished before the request was built |
+
+The family is one sentence: **taking something that returned success as proof that it did the thing
+you meant.** It has four faces here — text appearing in a command line read as the thing existing;
+a matcher's silence read as a true zero; a zero exit status read as the requested work having
+happened; and an accepted request read as the content having arrived as written. Count the outputs
+before believing the status, and build any body that will carry arbitrary text with a quoted
+heredoc (`<<'EOF'`, which turns off every shell expansion) rather than an interpolating string.
+
+That last one is not a footnote for this design. **A lease's state changes are exactly "arbitrary
+text assembled by a shell and posted to a broker"** — a holder identity, a phase, a log path. A
+field eaten by the shell before the request is built produces a record with different meaning, and
+the broker answers `ok`, because from its side nothing went wrong. Both have one prescription: before
+believing a count, run a positive control that must match — the third row was caught exactly that
+way, by checking a word known to be present and getting 0 from `\y` and 54 from a plain pattern.
+
+This is not a stylistic note. **A lease's physical backstop asks "is any compiler running on this
+machine".** Written with `pgrep -f`, it matches the process asking the question and therefore always
+answers yes, so the lock can never be reclaimed — the permanent roadblock this design exists to
+remove, rebuilt in a new place. Match the executable name exactly (`pgrep -x`, or compare `comm`),
+and prove it with a test that puts an unrelated process whose arguments mention `swift-frontend` on
+the machine and asserts the guard still answers *none*.
+
+### Reading a process's identity across locales
+
+Identity is `pid` plus process start time, because pids are reused. Start time comes from
+`ps -o lstart=`, which renders through `LC_TIME`, and on a machine running `zh_TW.UTF-8` that is not
+the English shape. Holding the formatter still and varying only the date, `LC_ALL=zh_TW.UTF-8 date
++%c` — the same rendering `ps` produces — gives `四  9/ 3 …`, **five** whitespace-separated tokens,
+on days 1 through 9, and `一  8/31 …`, **four**, on days 10 through 31, while `LC_ALL=C` gives five
+on every day. So a parser that counts fields is correct for nine days a month and wrong for the
+rest, which is how the same bug was measured, declared unreproducible, and measured again.
+
+Two rules follow. **Never count fields.** And pin `LC_ALL=C` on the writing side and the comparing
+side both, so the recorded string and the one it is compared against come out of one formatter; a
+writer and a reader in different locales compare unequal, the live holder reads as gone, and the
+lock is handed to a second compiler.
+
+### Liveness is proved by renewal, not by a pid existing
+
+The first stopgap recorded a holder pid and called the lock stale when that pid was gone and no
+compiler was running. A run that outlives its session is started under `nohup`, and the pid it
+recorded was a `sleep 14400` sentinel adopted by `launchd`. That single fact produces two failures
+pointing in opposite directions:
+
+- **the sentinel outlives the work**, so the lock is never stale and becomes a roadblock for as long
+  as the sentinel is scheduled to live; and
+- the note written to work around it — *treat the run as live only while a compiler is running* —
+  **makes the lock reclaimable in the gaps between the compiles of one study**, which is the
+  collision the lock exists to prevent.
+
+Both are the same cause: the liveness signal was bound to a proxy process instead of to the work.
+It is also why a `trap … EXIT` cannot carry this on its own. Written in the outer shell that
+launches `nohup … &` and returns, the trap fires immediately and releases a lock whose work is still
+running; written in the inner shell, a killed session never runs it and the lock stays for ever.
+
+The rule, therefore:
+
+1. **A holder proves it is alive by renewing.** A `sleep` cannot renew.
+2. **A clock on the work is wrong; a clock on the proof of life is right.** A four-hour compile is
+   not stale, and a duration timeout was withdrawn for saying it was. A holder renewing every twenty
+   seconds never trips a sixty-second renewal deadline however long its work runs.
+3. **Admission needs both halves and the physical backstop is never waived.** A new holder is
+   admitted only when the current holder has stopped proving it is alive **and** no compiler process
+   exists on the machine. Either half alone admits a collision: the second alone reclaims a lock
+   during a gap, and the first alone reclaims one from a holder that was merely swapped out while
+   its compile still holds twenty gigabytes.
+4. **Missing, stale or ambiguous evidence reads `unknown` and blocks.** It never reads *dead*.
+5. **A `done_flag` is a positive signal only.** A path the run creates when its work is finished
+   means the lock may be reclaimed at once without waiting on any deadline. Its **absence proves
+   nothing**, because a killed run never writes one, so absence falls back to renewal and the
+   backstop. Reading absence as *still running* rebuilds the roadblock somewhere new.
+6. **The record names the process actually working, and refreshes it on renewal.** When the work is
+   a sequence of processes — a study that runs several compiles — one static pid field cannot
+   describe it, and that gap is exactly how a sentinel came to be the holder.
+
+**This is where a broker earns its place beside a lock directory.** It knows what a file cannot: an
+owning task that has reached `failure`, `timeout` or `cancelled`, or a session positively gone, has
+stopped proving liveness whatever a sentinel pid is doing — an answer available immediately rather
+than after a deadline. It remains subject to the backstop: a task that is gone while a compiler
+still runs is a refusal that names the orphan, not a takeover.
+
+### The record, as it was settled
+
+The lock is a directory, because `mkdir` is atomic, and its path is overridable so tests can drive
+it. Inside it:
+
+```
+holder.txt
+  holder=      a readable identity carrying the terminal id, so a blocked run knows who to ask
+  pid=         the process actually doing the work, never a sentinel; when the work is a sequence
+               of processes this names the current one and is refreshed on each beat
+  phase=       compiling | analysing | idle-holding, refreshed on each beat
+  heartbeat=   path of the beat file, which lives inside the lock directory
+  started=     when this holder took the lock
+  tree=        the exact tree being verified
+  log=         where this run's output is going
+  done_flag=   a path the run creates when its work has finished
+beat           the beat file itself, so it disappears with the lock rather than outliving it
+```
+
+**Takeover requires both halves, and neither is sufficient alone.**
+
+```
+(A) the beat file has not been updated inside the threshold   the holder stopped saying it is there
+(B) and no swift-frontend process exists on the machine       the physical backstop, never waived
+```
+
+`(A)` replaces *is that pid alive*, and that is a real improvement: a pid is an operating-system
+by-product, it is reused, and a sentinel's pid outlives the work it was standing in for. A beat is
+something the holder asserts.
+
+`(B)` is not redundant. Used **alone** it is wrong, and that error has already happened here: *no
+compiler is running* reclaims the lock in the gaps between one study's compiles, which is the
+collision the lock exists to prevent. Used as a **necessary** condition it guards the other
+direction, which is the expensive one: a holder that is wedged or heavily swapped can miss a beat
+while its compile still holds tens of gigabytes, and that is exactly the machine state of the two
+reboots — load in the sixties, swap full, processes being chased by Jetsam. Taking over on an
+expired beat alone would start a second compile beside a live one, which is the recipe for the
+next reboot. On a healthy machine `(B)` passes instantly and costs nothing; it only ever blocks
+when the holder is stuck, which is the case it exists for.
+
+There is a second case `(B)` catches, and it is the residue of the correct beat loop below: if the
+**supervisor** is killed — a session boundary, a Ctrl-C reaching the group, an OOM killer picking
+it — while the compiler it spawned survives, the beats stop and the machine keeps burning. Both
+cases have the same shape, *the self-report stopped while the fact continued*, and `(B)` is the
+half that is betting on the fact.
+
+> **The beat is what the holder says. `swift-frontend` is what the machine is. A machine-level
+> resource guard fails closed on the fact, not on the self-report.**
+
+**A beat has to come from something that stops when the work stops**, or it is a sentinel wearing a
+new costume:
+
+```sh
+while true; do touch beat; sleep 60; done &     # wrong — this outlives the work exactly as a sleep does
+```
+
+What is wanted is the supervising loop that is already waiting on the compiler: the same loop that
+`wait`s on it also touches the beat, so the beats stop when the compiler exits or the supervisor is
+killed. The claim a beat makes is *somebody is still supervising this work*, not *a timer is still
+running on this machine*.
+
+```sh
+TMPDIR=... ./test.sh > "$LOG" 2>&1 &
+work=$!
+while kill -0 "$work" 2>/dev/null; do
+  touch "$LOCK/beat"
+  sleep 30
+done
+wait "$work"; rc=$?
+```
+
+The beat is conditional on `kill -0 "$work"`, so the work disappearing ends the loop on its next
+pass. The test that keeps it that way is direct: **start an independent timer touching the beat
+file, kill the supervised compile, and assert the beat stops.** A timer-driven implementation
+keeps beating and fails it, which is the point — otherwise the same defect is rediscovered in six
+months under a new name.
+
+**`phase` is observable and reportable, and is not a takeover condition.** `idle-holding` says *I
+still need this and am not running anything right now* — the third state, which nothing in the
+original record could express:
+
+```
+the holder is gone                      may be taken over
+the holder is alive and using it        must be waited for
+the holder is alive and not using it    may only be asked, never taken     <- invisible from outside
+```
+
+A query must therefore say who holds the lock, how long since it was last `compiling`, and how long
+since the last beat, so that a waiting run knows to **ask** rather than to take, and knows that
+asking is worth doing. Without those fields a queued run can only choose between waiting blindly and
+taking wrongly. On the night this was written that state cost a person one manual lookup of the
+holder's session to resolve, which does not scale — a query that answers only `held` is the picture
+that lookup existed to replace.
+
+**`done_flag` stays a positive signal.** Present means the work is over, so with `(B)` the lock may
+be reclaimed at once without waiting on the beat threshold. Absent proves nothing, because a killed
+run never writes one, so absence falls back to `(A)` and `(B)`. Missing, stale or ambiguous evidence
+is `unknown` and blocks.
+
+The tests that have to be seen failing before they are believed: a holder beating normally at
+`phase=idle-holding` with no compiler running must **not** be taken over, and the query must say so;
+an expired beat with a compiler still running must **not** be taken over, and the refusal must name
+the orphan processes; and an unrelated process whose *arguments* mention `swift-frontend` — a
+sampler, a `/usr/bin/time` wrapper — must leave the guard still answering *none*.
+
+### Nothing in this design kills or suspends anything
+
+The system may queue, may refuse, and may tell. It may not kill. On the night this was written a
+session was asked to clear a compile belonging to somebody else and correctly refused, because that
+process was producing the evidence everyone was waiting for. A refusal that names the largest
+holders of memory is **information for a person to act on, not a target list**, and no route, flag
+or code path in this work terminates a process it did not start.
+
+### Admission and exclusion are two questions, and the second one degrades
+
+Exclusion asks *whose turn is it* and fails closed: no lease, no compile. Admission asks *may this
+start now, and at what size*, and it must not be a yes/no, because on a baseline like the one
+measured above the answer would be *no* for hours at a stretch. A grant therefore carries a
+**budget** — a ceiling the holder honours, floor of one — so that low headroom means a slower
+compile rather than a slot that never comes. When not even the floor can be admitted, the refusal
+names the deficit, which measured quantity it is short of and how that was taken, and who is holding
+the memory, so that *why am I waiting* always has an answer.
+
+**A correction, because the axis this was first drawn on turned out to be empty.** The degradation
+ladder above was written assuming a compile could be made smaller by asking for fewer jobs. On this
+machine it cannot. Measured twice against the exact `-c -o "$BIN"` invocation — 7,479 samples at
+54 ms from a walker filtering on the driver's own descendants, and 426 `ps` samples at 250 ms — the
+driver never had more than one `swift-frontend` alive without `-j`, while the same instruments read
+8 when `-j 8` was passed. **The default is one, so granting `-j 1` grants what already happens.**
+The peak lives inside a single frontend compiling a single file, which no job count can influence.
+
+So the ceiling is worth having as a **ceiling** — it stops a caller from multiplying the peak by
+eight — and is worth nothing as a floor. The shape of the idea survives: a grant that carries a
+budget is better than a yes/no, and a refusal must name its deficit. What does not survive is the
+assumption that a knob exists because a policy would like one. **Any degradation ladder has to be
+built from a measured axis, and this one had to be measured before it could be used.**
+
+There is a second thing that reading exposed, and it lands directly on `(B)`. During that compile a
+**second `swift-driver` was running that no lock governs**, spawned by `node
+Tests/keychain-rebuild-focused.mjs` — a node test inside `test.sh` itself, further down the same
+script that holds the lock. A lease that guards one `swiftc` line therefore does not guard the
+script it lives in. It also settles what `(B)` counts: **machine-wide, including compilers that are
+not yours.** That looks like a false positive and is the definition — `(B)` asks whether anything on
+this machine is burning, not whether your own work is running, so counting somebody else's compiler
+is exactly its job, and missing one you spawned yourself is the failure that matters.
+
+`test.sh` gained that injection point in `54891280`: `CLAWDLINE_SUITE_JOBS` is a positive whole
+number that becomes `-j <n>`, anything else is refused, unset adds no flag at all, and the run
+prints which ceiling it used and where the number came from. Unset is deliberate — the driver's
+default here is greater than one and this script does not pretend to know it.
+
+### Where the peak actually comes from
+
+Under test as this is written, with the measurements that exist recorded honestly rather than
+rounded into a conclusion.
+
+Whole-module `-typecheck` over all sources is cheap, and that includes the expensive file: two
+independent runs measured 148 files in 59-60 s at a peak of about 250 MB, and 150 files in 65 s at
+370 MB. **Type checking is not this machine's problem, and there are two readings saying so.** The
+blow-up is therefore downstream of it, and
+`-Xfrontend -warn-long-expression-type-checking` is **exclusionary evidence rather than a locating
+tool** — an empty report from it is a result, not a failure to look.
+
+One file dominates. `Tests/CloudAccountTests.swift` reached a lifetime maximum of **at least
+23.65 GiB and was still growing** when a swap watchdog stopped the run at 133 seconds; the other
+hundred-odd files in the same run each stayed under 0.27 GiB, a figure that has not yet been
+reproduced and is quoted with that caveat. A freshly launched frontend compiling that one file
+alone reached 8 GB and climbed, which rules out any cumulative-counter artefact: a new process
+cannot inherit an earlier file's peak.
+
+Its shape, and three controls that make the variable specific:
+
+| file | largest function | `await` in it | expensive |
+|---|---|---|---|
+| `Tests/CloudAccountTests.swift` | 891 lines | 143 (and 260 `try`) | **yes** |
+| `Tests/CloudOutboundSpoolTests.swift` | 56 lines, 35 functions | 213 in the file | no |
+| `Tests/TranscriptTests.swift` | 995 lines | 0 | no |
+| `Tests/PlannerTests.swift` | 887 lines | 0 | no |
+
+Length is excluded by the last two, and sheer count of suspension points by the second, which has
+more of them than the expensive file and spreads them across small functions. What is left is
+**suspension points inside one function**: an `async` function is lowered to a state machine with a
+frame holding every variable live across a suspension, and one function with 143 of them, crossed by
+260 error-propagation edges, is a different object from thirty-five functions with a handful each.
+
+A falsifiable prediction was published before the data that could answer it: if the variable is
+suspension points per function, the second most expensive file must be
+`Tests/CloudCommandLedgerTests.swift`. An independent scan that had not seen the prediction ranked it
+second, at 640 lines and 131 `await`. **This shape appears only under `Tests/`; no function in
+`Sources/` is near the top of that ranking**, so the rule this becomes is one about how tests are
+written, not a warning to product code.
+
+What remains open is *why*, and it is worth an experiment rather than an assumption, because the rule
+that gets written down will be followed: the expensive file also holds twelve unstructured
+`Task{}`/continuation sites where the cheap control holds none, so the comparison moves two variables
+at once. Splitting the one function mechanically moves only the first, and the **size** of the drop
+separates the models — with the largest remaining half at `m` suspension points out of `n`, a
+per-function quadratic cost predicts `(m/n)²`, a per-function linear cost predicts `m/n`, and a cost
+driven by total output predicts no change at all. Only the last of those says that splitting will not
+help.
+
+### What this means for the scheduler's own justification
+
+Stubbing that one file out of the tree — its two non-private signatures kept, the other 147 files
+compiled normally at `-j 1` — produced a peak of **0.84 GiB and 93 seconds** for the whole codegen.
+A completed measurement of the file itself then replaced the lower bound it was compared against:
+**46.06 GiB and 336.3 s** for that one file, cross-checked three ways — `proc_pid_rusage`'s
+lifetime maximum, `/usr/bin/time -l`'s peak footprint, and the 46.04 GiB the JetsamEvent recorded
+for the process it killed. The whole 148-file compile completed in 426.2 s with a single-process
+peak of 46.06 GiB and the lifetime maxima of its 147 frontends summing to 59.84 GiB, of which 77%
+belongs to that one file — 49 times the next worst.
+
+The phase is downstream of everything the earlier guesses pointed at. On that file alone:
+`-typecheck` 0.070 GiB, `-emit-silgen` 0.081, `-emit-sil` 0.090, `-emit-irgen` 0.104, all inside a
+second; `-emit-ir` reached 37.87 GiB before it was stopped and `-c` completed at 46.06.
+**The jump is in the LLVM pass pipeline, after IR generation.** So the `async` lowering is not where
+the cost is spent — it is what builds the object the cost is spent on, one enormous LLVM function.
+The rule that follows is about function size, and `async` is merely how a function gets that big
+here; a reader told "async is expensive" would look in the wrong place.
+
+Splitting that function mechanically into 28 small `async` sections — statement text, order,
+assertion set and check count all unchanged — takes the file to **0.83 GiB and 2.7 s**. That split
+is also the experiment that separates the two candidate variables, because it leaves every
+unstructured `Task {}` site exactly where it was and changes only how many suspension points share
+one function. With the largest section carrying 16 of the original 143, a cost linear in
+suspension points per function would predict 11.2% and a quadratic one 1.25%; the measurement is
+1.80%, which interpolates to an exponent of about 1.8 — 2.0 depending on which denominator is used.
+**Quadratic, within the precision of a single data point.** Which also says what a coarser split
+would buy: six thematic sections, largest carrying 37, predicts 3 - 4 GiB rather than the 0.83 that
+was measured, so the thematic boundaries are worth using to decide naming and grouping and not to
+decide how many pieces there are.
+
+It is worth being honest about what that does to this page's own argument. **If one file explains
+the peak, then fixing that file removes most of the danger the lease was drawn to contain.** Two
+suites at a gigabyte each do not reboot a 24 GiB machine. What survives the fix is smaller and
+still real: fixed build outputs that collide whatever their size, CPU and I/O contention that makes
+every concurrent run slower, the promotion and restart boundaries that were always exclusive for
+correctness rather than capacity, and the next function nobody has written yet. A lease is
+insurance and a queue, and after the fix it should be described as that rather than as the only
+thing standing between this machine and a reboot.
+
+Which suggests the cheaper half of the remedy is a guard rather than a scheduler. The measured
+shape is specific — one `async` function carrying many suspension points, with the ranking dropping
+off a cliff after the top three — so a static check over the test sources can refuse a new one
+before it is ever compiled, in the same place and style as the trailing-comma check that already
+runs before `swiftc` does. It costs milliseconds, it names the file and the function, and unlike a
+lease it prevents the problem instead of scheduling around it. Its threshold has to be set from the
+ranking after the known offenders are repaired, and the number written down beside the reason,
+because a guard whose constant nobody can justify is the next thing somebody raises to make their
+build pass.
 
 ## The current boundary
 
