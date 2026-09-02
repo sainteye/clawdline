@@ -975,7 +975,7 @@ Three refusals are specific to this route and worth branching on:
 |---|---|---|
 | `not_found` | 404 | that id is not on the list — including a directory that has been deleted since you last looked |
 | `terminal_closed` | 409 | the terminal is not running, and **this will not launch it for you**. Somebody has to open it on the Mac |
-| `terminal_unsupported` | 409 | the terminal named in Settings is not one this can drive directly. iTerm2 can be driven; everything else is reached through tmux, and without a tmux server there is nothing to do. It is refused by name rather than quietly opening iTerm2 instead |
+| `terminal_unsupported` | 409 | the terminal named in Settings is not one this can drive directly, and there is **no tmux on this Mac** to reach it through. A tmux that is installed with no server running is not this refusal any more: Clawdline starts the server itself, detached, in a session called `clawdline` — see [interface.md](interface.md#when-there-is-no-tmux-server-yet). It is refused by name rather than quietly opening iTerm2 instead |
 
 Both of the `409`s carry **`app`** inside the `error` object — the terminal's name as macOS spells
 it, so a page can write its own sentence around it instead of showing the English one:

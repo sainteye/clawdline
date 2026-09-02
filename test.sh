@@ -44,7 +44,14 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # 16 for the ceiling itself and for a control-mode client having to be speaking over a pty iTerm2
 # named in the same reading, and 6 for that identity deciding activation and for the activation
 # tail leaving the caller's thread. 7488 -> 7519.
-expected_swift_receipt='7519 checks passed'
+# tmux read parity adds 56 unconditional checks in four groups, counted by running each group on
+# its own rather than by reading the source: 30 for one subprocess answering for every pane — the
+# script it sends, the marker that has no `%` for strftime to eat, the parsing of what comes back,
+# and ten panes costing one invocation with a dead one among them — 14 for a server Clawdline
+# starts detached and types its line into rather than handing to tmux as a command, 8 for the
+# screen a decision reads being the screen and not its history, and 4 more in the existing
+# terminal-plan group for tmux installed with no server being its own answer. 7519 -> 7575.
+expected_swift_receipt='7575 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
