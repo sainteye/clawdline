@@ -44,7 +44,7 @@ main_lines=$(line_count Tests/main.swift)
 orchestrator_ceiling=13085
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the receipt the registry-owner extraction and the heavy-compile lease agreed on ($orchestrator_ceiling)"
+  || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."
 
 # Task JSON is built on the main queue after a SessionWatch publication lands. Root-terminal
 # projection must therefore consume that publication, not re-enter Transcript/Targets and launch
