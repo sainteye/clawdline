@@ -172,17 +172,30 @@ function run(argv) {
           for (let k = 0; k < tree.id[i][j].length; k++) {
             const id = cell(tree, "id", i, j, k);
             const tty = cell(tree, "tty", i, j, k);
-            // Same rule as the walk below: a row without both identities cannot safely refresh
-            // an old row, so it is dropped and the whole inventory loses confidence instead.
-            if (!id || !tty) { failures += 1; continue; }
-            out.push({
+            // Same rule as the walk below, and it turns on the *id*: a row nothing can name
+            // cannot safely refresh an old row, so it is dropped and the whole inventory loses
+            // confidence instead.
+            //
+            // **An empty tty is a different fact and no longer counts as one of those.** Under
+            // iTerm2's own tmux control mode (`tmux -CC`) each tmux window is drawn as an
+            // ordinary iTerm2 tab whose pty belongs to tmux — measured here as one identified
+            // row with `tty: ""` per tmux window, while `tmux list-panes` held the real
+            // `/dev/ttys009` that iTerm2 never mentions. Dropping those rows made a single
+            // control-mode session enough to mark the whole inventory incomplete, and an
+            // incomplete inventory refuses every close on this Mac. So the row travels with a
+            // marker instead, and Swift decides — against tmux's own client list, which is a
+            // second source — whether tmux really drew it.
+            if (!id) { failures += 1; continue; }
+            const row = {
               id: id,
               name: cell(tree, "name", i, j, k),
               tty: tty,
               profile: cell(tree, "profileName", i, j, k),
               win: i,
               tab: j
-            });
+            };
+            if (!tty) { row.ptyless = true; }
+            out.push(row);
           }
         }
       }
@@ -197,22 +210,24 @@ function run(argv) {
     eachSession(function (s, wi, ti) {
       const id = safe(function () { return s.id(); }, "");
       const tty = safe(function () { return s.tty(); }, "");
-      // A row without either identity cannot safely refresh an old row and must not count as a
-      // successfully observed session. Keep the good rows beside it and lower the confidence of
-      // the whole inventory instead.
-      if (!id || !tty) {
+      // The same rule as the batched branch above, for the same reasons: no id is unreadable and
+      // lowers the confidence of the whole inventory, while no tty is a tmux control-mode window
+      // and travels with a marker for Swift to check against tmux.
+      if (!id) {
         lastWalk.failures += 1;
         if (lastWalk.examples.length < 3) lastWalk.examples.push("session identity unreadable");
         return undefined;
       }
-      out.push({
+      const row = {
         id: id,
         name: safe(function () { return s.name(); }, ""),
         tty: tty,
         profile: safe(function () { return s.profileName(); }, ""),
         win: wi,
         tab: ti
-      });
+      };
+      if (!tty) { row.ptyless = true; }
+      out.push(row);
     });
     const complete = lastWalk.failures === 0;
     const result = { ok: complete, complete: complete, appRunning: true, sessions: out };
@@ -384,6 +399,21 @@ function run(argv) {
       try { it.activate(); } catch (e) {}
     }
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
+  }
+
+  // `activate` — bring iTerm2 forward, without selecting anything inside it.
+  //
+  // The half of `reveal` that has no session id to work from. Under `tmux -CC` the selection is
+  // tmux's to make: asking tmux for a window does move iTerm2's tab, because iTerm2 is following
+  // the control-mode stream — what it does not do is bring iTerm2's *window* forward when
+  // another application is in front. There is no supported way to name that tab from outside
+  // (iTerm2's scripting dictionary exposes no tmux property at all), so this asks for the only
+  // thing that can be asked for reliably: the application.
+  if (cmd === "activate") {
+    try { it.activate(); } catch (e) {
+      return JSON.stringify({ ok: false, error: "Could not bring iTerm2 forward: " + e.message });
+    }
+    return JSON.stringify({ ok: true });
   }
 
   // close <id>

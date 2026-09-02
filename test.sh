@@ -35,7 +35,11 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # seventeen assistants: `ps -o lstart=` renders four fields there instead of five, the parser falls
 # back to the no-lstart offset, and every row is dropped. Three of these ask the real `ps` through
 # the real helper rather than a fixture, so the guard fails on the machine that would have the bug.
-expected_swift_receipt='7504 checks passed'
+# Coexisting with iTerm2's native tmux control mode adds 40 unconditional checks: 11 for reading
+# `#{client_flags}` off `list-clients`, 22 for what becomes of an iTerm2 row that has an identity
+# and no pty — including that the marker key is the same word in `iterm.js` and in Swift — and 7
+# for whether selecting a tmux pane may also bring iTerm2 forward. 7504 -> 7544.
+expected_swift_receipt='7544 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

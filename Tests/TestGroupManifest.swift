@@ -490,6 +490,9 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a terminal's wrap is undone and an author's own break is not",
     "a paragraph the file already holds is not said twice",
     "a session is sampled closely only while somebody is reading it",
+    "a tmux control-mode client is what makes a pty-less iTerm2 row explicable",
+    "an iTerm2 row with no pty is attributed rather than dropped",
+    "revealing a tmux pane brings iTerm2 forward only when tmux says it drew it",
 ]
 
 func validateExecutedTestGroupManifest() {

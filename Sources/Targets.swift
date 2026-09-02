@@ -940,13 +940,19 @@ enum Targets {
     }
 
     /// Put this session in front of you — or, with `activate: false`, merely make it the one its
-    /// terminal is showing. tmux is always the second kind: selecting a pane moves nothing to the
-    /// front, because tmux is not an application and has no front to move to.
+    /// terminal is showing.
+    ///
+    /// tmux was always the second kind, because tmux is not an application and has no front to
+    /// move to. It has one now, in one case: when tmux's own client list says a control-mode
+    /// client is attached to that pane's session, the application on the other end of that stream
+    /// is iTerm2 and can be asked to come forward. So the flag is passed on rather than dropped —
+    /// otherwise the prompt bar walking its list would haul iTerm2 in front of the box being
+    /// typed into. See ``Tmux/reveal(_:activate:)``.
     @discardableResult
     static func reveal(_ session: TargetSession, activate: Bool = true) -> TerminalFailure? {
         switch session.backend {
         case .iterm: return ITerm.reveal(session.id, activate: activate)
-        case .tmux:  return Tmux.reveal(session.id)
+        case .tmux:  return Tmux.reveal(session.id, activate: activate)
         }
     }
 }
