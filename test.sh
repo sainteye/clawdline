@@ -111,7 +111,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # server really sends. 2 are in the terminal-plan group, for a hand-typed `terminal` value being
 # named as discarded instead of silently replaced. Every one is unconditional and at the group's own
 # top level. 8277 -> 8283.
-expected_swift_receipt='8283 checks passed'
+expected_swift_receipt='8331 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

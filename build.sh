@@ -26,6 +26,7 @@ CLAWDLINE_LEASE_PHASE=""
 CLAWDLINE_LEASE_PHASE_SINCE=""
 CLAWDLINE_LEASE_LAST_COMPILING="never"
 CLAWDLINE_LEASE_OWNER_STARTED=""
+CLAWDLINE_LEASE_BEATING=1
 CLAWDLINE_SUITE_JOBS="${CLAWDLINE_SUITE_JOBS:-}"
 CLAWDLINE_SUITE_JOBS_SOURCE="unset"
 CLAWDLINE_LEASE_WAIT_SECONDS="${CLAWDLINE_LEASE_WAIT_SECONDS:-1800}"
@@ -66,10 +67,10 @@ clawdline_lease_field() {
 #   * **It returns non-zero when it did not write.** The caller needs to know.
 clawdline_lease_record() {
   local phase="${1:-analysing}" pid="${2:-$$}" first="${3:-}"
-  local dir="$CLAWDLINE_LEASE_DIR" temp now
-  [ -d "$dir" ] || return 1
+  local temp now
+  [ -d "$CLAWDLINE_LEASE_DIR" ] || return 1
   if [ -z "$first" ]; then
-    [ "$(clawdline_lease_field token "$dir/holder.txt")" = "$CLAWDLINE_LEASE_ID" ] || return 1
+    [ "$(clawdline_lease_field token "$CLAWDLINE_LEASE_DIR/holder.txt")" = "$CLAWDLINE_LEASE_ID" ] || return 1
   fi
   now=$(date +%s)
   if [ "$phase" != "$CLAWDLINE_LEASE_PHASE" ]; then
@@ -79,8 +80,8 @@ clawdline_lease_record() {
   case "$phase" in compiling) CLAWDLINE_LEASE_LAST_COMPILING="$now" ;; esac
   # The beat, touched before the record that points at it, so a reader that sees the record always
   # finds the file — and only once this run has proved the lock is still its own.
-  : > "$dir/beat" 2>/dev/null || true
-  temp="$dir/.holder.$$.$RANDOM"
+  : > "$CLAWDLINE_LEASE_DIR/beat" 2>/dev/null || true
+  temp="$CLAWDLINE_LEASE_DIR/.holder.$$.$RANDOM"
   {
     printf 'holder=%s\n' "build.sh $(id -un) pid $$"
     printf 'pid=%s\n' "$pid"
@@ -89,7 +90,7 @@ clawdline_lease_record() {
     printf 'token=%s\n' "$CLAWDLINE_LEASE_ID"
     printf 'phase=%s\n' "$phase"
     printf 'phase_since=%s\n' "$CLAWDLINE_LEASE_PHASE_SINCE"
-    printf 'heartbeat=%s\n' "$dir/beat"
+    printf 'heartbeat=%s\n' "$CLAWDLINE_LEASE_DIR/beat"
     printf 'heartbeat_deadline=%s\n' "$CLAWDLINE_LEASE_DEADLINE_SECONDS"
     printf 'started=%s\n' "$CLAWDLINE_LEASE_STARTED"
     printf 'renewed=%s\n' "$now"
@@ -103,7 +104,7 @@ clawdline_lease_record() {
     printf 'compilers=%s\n' ""
     printf 'note=%s\n' "building Clawdline.app; this lock covers the swiftc invocation only. Ask the run named above rather than removing this directory."
   } > "$temp" 2>/dev/null || return 1
-  mv "$temp" "$dir/holder.txt" 2>/dev/null || { rm -f "$temp" 2>/dev/null; return 1; }
+  mv "$temp" "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null || { rm -f "$temp" 2>/dev/null; return 1; }
   return 0
 }
 
@@ -111,9 +112,15 @@ clawdline_lease_record() {
 # heartbeat can outlive the work it stood for.
 clawdline_lease_beat() {
   local phase="${1:-analysing}" pid="${2:-$$}"
+  # Once this run is no longer the recorded holder it says so once and goes quiet, rather than
+  # repeating itself every twenty seconds for the length of a compile. The state lives here rather
+  # than in the loop below, because that loop's shape is the whole argument that a beat stops when
+  # the work does, and it is asserted line by line.
+  [ "$CLAWDLINE_LEASE_BEATING" = 1 ] || return 0
   if ! clawdline_lease_record "$phase" "$pid"; then
+    CLAWDLINE_LEASE_BEATING=0
     echo "!! $CLAWDLINE_LEASE_DIR no longer records this build's lease; not writing to it." >&2
-    return 1
+    return 0
   fi
   if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
     curl -s --max-time 5 -X POST \
@@ -140,12 +147,11 @@ clawdline_lease_supervise() {
   # A beat this run may no longer write stops the beating, not the compile. `swiftc` is already
   # running: ending it here would orphan a `swift-frontend` holding tens of gigabytes, which is
   # the exact thing this whole mechanism exists to prevent, and nothing in this file ends a
-  # process it did not start. So it says so once and goes quiet.
-  local compiler=$1 beating=1
+  # process it did not start. So `clawdline_lease_beat` says so once and goes quiet, and this loop
+  # keeps its one shape: its condition is the compiler still being alive, and its body is the beat.
+  local compiler=$1
   while kill -0 "$compiler" 2>/dev/null; do
-    if [ "$beating" = 1 ]; then
-      clawdline_lease_beat compiling "$compiler" || beating=0
-    fi
+    clawdline_lease_beat compiling "$compiler"
     sleep 20
   done
 }

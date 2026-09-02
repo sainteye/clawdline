@@ -1169,18 +1169,24 @@ enum OrchestratorLease {
                existing.pid == file.owner, sameStamp(existing.processStart, file.started) {
                 // The same holder. A shell holder refreshes only the file, so take its renewal
                 // and its work pids from there when they are newer than the record's.
-                if let renewed = file.renewed, renewed > existing.renewedAt {
-                    existing.renewedAt = renewed
-                }
+                let fileIsNewer = file.renewed.map { $0 > existing.renewedAt } ?? false
+                if fileIsNewer, let renewed = file.renewed { existing.renewedAt = renewed }
                 if !file.work.isEmpty { existing.workPIDs = file.work }
                 if let done = file.done { existing.doneFlagPath = done }
                 if let token = file.token { existing.token = token }
                 if let started = file.ownerStarted { existing.ownerStarted = started }
-                if file.phase != .unknown, file.phase != existing.phase {
+                // **The phase is a claim, and a stale snapshot of the file may not roll it back.**
+                // It follows the renewal rule directly above it rather than being unconditional:
+                // now that `file(from:)` writes the phase at all — it used to drop it, which is
+                // how a broker-mediated renewal came to rewrite a live record without the field a
+                // waiter reads — an older reading of the directory would otherwise overwrite what
+                // the holder has just told the broker it is doing, and restart the phase clock
+                // while doing it.
+                if fileIsNewer, file.phase != .unknown, file.phase != existing.phase {
                     existing.phase = file.phase
                     existing.phaseSince = file.renewed ?? now
                 }
-                if file.phase == .compiling {
+                if fileIsNewer, file.phase == .compiling {
                     existing.lastCompilingAt = file.renewed ?? now
                 }
                 out.holder = existing

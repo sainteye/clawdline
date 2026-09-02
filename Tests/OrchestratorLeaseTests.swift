@@ -102,12 +102,21 @@ group("holder.txt is the shape three programs share, and an unusable one is not 
         started: Date(timeIntervalSince1970: 1_788_365_342), tree: "/Users/x/code/clawdline",
         log: "/tmp/suite.log", note: "full swift suite", work: [81_001, 81_002],
         done: "/tmp/clawdline-suite.lock/done", renewed: leaseNow, phase: .compiling,
-        heartbeat: "/tmp/clawdline-suite.lock/beat")
+        heartbeat: "/tmp/clawdline-suite.lock/beat", ownerPID: 72_929, heartbeatDeadline: 60)
     let text = OrchestratorLease.encode(file)
     guard let parsed = OrchestratorLease.parseHolderFile(text) else {
         check("a written holder file reads back", false); return
     }
     expect("every field survives the round trip", parsed, file)
+    // Two of them are filled in rather than carried, because the contract says every record has
+    // them: a record with no `owner_pid` names the only process it knows about, and one with no
+    // deadline gets the number every reader would have used anyway.
+    let bare = OrchestratorLease.parseHolderFile(OrchestratorLease.encode(
+        OrchestratorLease.HolderFile(holder: "a shell", pid: 4_242, started: leaseNow)))
+    expect("a record written without an owner names the process it does know about",
+           bare?.ownerPID, 4_242)
+    expect("and without a deadline carries the one every reader would have assumed",
+           bare?.heartbeatDeadline, Int(OrchestratorLease.renewalDeadline))
     check("the six original fields are all present as key=value lines",
           ["holder=", "pid=", "started=", "tree=", "log=", "note="]
             .allSatisfy { text.contains("\n" + $0) || text.hasPrefix($0) })

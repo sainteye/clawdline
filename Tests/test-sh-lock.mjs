@@ -1173,8 +1173,8 @@ try {
     // other and never half of either. Every reader of this file fails closed on a partial record,
     // which turned a non-atomic rewrite every twenty seconds into a scheduled `unknown`.
     check("build.sh writes the record through a temporary file and a rename, as the other two do",
-          /temp="\$dir\/\.holder\.\$\$\.\$RANDOM"/.test(buildBlock)
-            && /mv "\$temp" "\$dir\/holder\.txt"/.test(buildBlock)
+          /temp="\$CLAWDLINE_LEASE_DIR\/\.holder\.\$\$\.\$RANDOM"/.test(buildBlock)
+            && /mv "\$temp" "\$CLAWDLINE_LEASE_DIR\/holder\.txt"/.test(buildBlock)
             && !/> "\$CLAWDLINE_LEASE_DIR\/holder\.txt"/.test(buildBlock));
 
     // -----------------------------------------------------------------------------------------
