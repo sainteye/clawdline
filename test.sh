@@ -208,9 +208,38 @@ for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
   fi
 done
 
+# >>> clawdline compile ceiling >>>
+# How many compiler jobs this run may have, and where that number came from.
+#
+# There is no injection point for this today, so a line that needs to compile with one job has to
+# edit the invocation below by hand — which is how a temporary measurement becomes a permanent
+# diff. `CLAWDLINE_SUITE_JOBS` is that injection point: a ceiling, floor of one, so low headroom
+# means a slower compile rather than a slot that never comes.
+#
+# **Unset adds no flag at all, and that is deliberate.** It would be easy to write "unset means one
+# job" and wrong: measured on this Mac at 02:12, a full compile with no `-j` had two real
+# `swift-frontend` processes alive at once (77492 and 77565, `ps -Ao rss,comm` matching the `comm`
+# column exactly). An earlier reading of "the default is 1" had been taken against `-typecheck`,
+# which is a different question. So the default is unknown and greater than one, this script does
+# not pretend to know it, and with the variable unset the command line below is byte-identical to
+# what it has always been.
+clawdline_suite_jobs_flags=()
+case "${CLAWDLINE_SUITE_JOBS:-}" in
+  "")
+    echo "test.sh: compile job ceiling: none set, so the swift driver picks (CLAWDLINE_SUITE_JOBS unset)" ;;
+  0 | *[!0-9]*)
+    echo "test.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
+    exit 2 ;;
+  *)
+    clawdline_suite_jobs_flags=(-j "$CLAWDLINE_SUITE_JOBS")
+    echo "test.sh: compile job ceiling: ${CLAWDLINE_SUITE_JOBS}, from CLAWDLINE_SUITE_JOBS" ;;
+esac
+# <<< clawdline compile ceiling <<<
+
 swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
+  ${clawdline_suite_jobs_flags[@]+"${clawdline_suite_jobs_flags[@]}"} \
   -o "$BIN" \
   "${clawdline_library_sources[@]}" \
   "${clawdline_test_sources[@]}" \
