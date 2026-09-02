@@ -1463,7 +1463,7 @@ final class RemoteServer: @unchecked Sendable {
                     openWaitCount: registry.openWaits,
                     leaseState: leaseFacts.state, leaseHolder: leaseFacts.holder,
                     leaseQueueDepth: leaseFacts.queueDepth,
-                    leaseHoldReason: leaseFacts.holdReason,
+                    leaseHoldReason: leaseFacts.holdReason, leaseObservedAt: leaseFacts.observedAt,
                     sessionsObservedAt: observation.sessionsObservedAt,
                     registryObservedAt: registry.observedAt,
                     sessionsGeneration: observation.sessionsGeneration)))
@@ -1490,7 +1490,7 @@ final class RemoteServer: @unchecked Sendable {
                     openWaitCount: registry.openWaits,
                     leaseState: leaseFacts.state, leaseHolder: leaseFacts.holder,
                     leaseQueueDepth: leaseFacts.queueDepth,
-                    leaseHoldReason: leaseFacts.holdReason,
+                    leaseHoldReason: leaseFacts.holdReason, leaseObservedAt: leaseFacts.observedAt,
                     sessionsObservedAt: observation.sessionsObservedAt,
                     registryObservedAt: registry.observedAt,
                     sessionsGeneration: observation.sessionsGeneration)))

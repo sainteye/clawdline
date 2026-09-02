@@ -44,14 +44,20 @@ enum Coordinator {
         let pendingLandingCount: Int
         let pendingLandingRows: [[String: Any]]
         let openWaitCount: Int
-        /// The heavy-compile lease, as four separate facts. `leaseState` keeps `missing`,
-        /// `zero`, `unknown`, `queued` and `held` apart on purpose: a single spinner would
-        /// collapse exactly the states this exists to show, and "no record yet" is not
-        /// "nobody is compiling".
+        /// The heavy-compile lease, as separate facts. `leaseState` keeps `missing`, `zero`,
+        /// `unknown`, `queued`, `held` and `refused` apart on purpose: a single spinner would
+        /// collapse exactly the states this exists to show, "no record yet" is not "nobody is
+        /// compiling", and a session whose acquire was refused for lack of headroom is not a
+        /// session that never asked.
         let leaseState: String
         let leaseHolder: String?
         let leaseQueueDepth: Int
         let leaseHoldReason: String?
+        /// When the lease registry last reconciled itself against the lock directory. This
+        /// projection never re-reads the filesystem, so a `held` shown here is as old as this
+        /// stamp — and a lock held by a run that died an hour ago read exactly like a live
+        /// compile while the row carried the *task* registry's clock instead of this one.
+        let leaseObservedAt: Date?
         let sessionsObservedAt: Date?
         let registryObservedAt: Date?
         let sessionsGeneration: Int?
@@ -60,7 +66,7 @@ enum Coordinator {
              pendingLandingRows: [[String: Any]] = [],
              openWaitCount: Int, leaseState: String = "missing", leaseHolder: String? = nil,
              leaseQueueDepth: Int = 0, leaseHoldReason: String? = nil,
-             sessionsObservedAt: Date? = nil,
+             leaseObservedAt: Date? = nil, sessionsObservedAt: Date? = nil,
              registryObservedAt: Date? = nil, sessionsGeneration: Int? = nil) {
             self.sessionsFresh = sessionsFresh
             self.activeTaskCount = activeTaskCount
@@ -71,6 +77,7 @@ enum Coordinator {
             self.leaseHolder = leaseHolder
             self.leaseQueueDepth = leaseQueueDepth
             self.leaseHoldReason = leaseHoldReason
+            self.leaseObservedAt = leaseObservedAt
             self.sessionsObservedAt = sessionsObservedAt
             self.registryObservedAt = registryObservedAt
             self.sessionsGeneration = sessionsGeneration
@@ -570,9 +577,13 @@ enum Coordinator {
                 // The lock directory is the truth and this projection does not re-read it: the
                 // freshness word says so, so a reader never mistakes a redraw for an observation
                 // of the filesystem.
+                // …and on the lease's *own* clock. `Record.reconciledAt` is when the registry
+                // last looked at the lock directory; the task registry's stamp said nothing about
+                // that and made an hour-old `held` read as current.
                 "leases": source("orchestrator_lease_registry",
-                                 input.leaseState == "missing" ? "missing" : "current",
-                                 input.registryObservedAt)
+                                 input.leaseState == "missing" ? "missing"
+                                     : (input.leaseObservedAt == nil ? "unknown" : "current"),
+                                 input.leaseObservedAt)
             ]
         ]
         return ["version": 1, "observed_at": observed,

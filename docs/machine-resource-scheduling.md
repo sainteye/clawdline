@@ -174,17 +174,49 @@ it. Inside it:
 
 ```
 holder.txt
-  holder=      a readable identity carrying the terminal id, so a blocked run knows who to ask
-  pid=         the process actually doing the work, never a sentinel; when the work is a sequence
-               of processes this names the current one and is refreshed on each beat
-  phase=       compiling | analysing | idle-holding, refreshed on each beat
-  heartbeat=   path of the beat file, which lives inside the lock directory
-  started=     when this holder took the lock
-  tree=        the exact tree being verified
-  log=         where this run's output is going
-  done_flag=   a path the run creates when its work has finished
-beat           the beat file itself, so it disappears with the lock rather than outliving it
+  holder=              a readable identity carrying the terminal id, so a blocked run knows who to ask
+  pid=                 the process actually doing the work, never a sentinel; when the work is a
+                       sequence of processes this names the current one and is refreshed on each beat
+  owner_pid=           the run itself — what ownership is proved against, and what the renewal loop
+                       supervises. It exists for exactly as long as the run does
+  owner_started=       owner_pid's start identity, one normalised `LC_ALL=C ps -o lstart=` line.
+                       **The one field a writer may leave empty**, meaning "not recorded by this
+                       writer"; empty is unknown to every reader and is never a mismatch
+  token=               this hold's unique identity, and the compare in every compare-and-swap
+  phase=               compiling | analysing | idle-holding, refreshed on each beat
+  phase_since=         when the current phase began, moved only when the phase itself changes
+  heartbeat=           path of the beat file, which lives inside the lock directory
+  heartbeat_deadline=  seconds without a beat after which this holder has stopped proving liveness;
+                       a reader prefers the holder's own number to its own
+  started=             when this holder took the lock
+  renewed=             this record's own last refresh
+  tree=                the exact tree being verified
+  log=                 where this run's output is going
+  done_flag=           a path the run creates when its work has finished
+  work=                comma-separated pids doing the work right now
+  last_compiling=      when anything last actually compiled under this lock, or `never`
+  compilers=           three states: empty means this writer does not probe, `none` means it probed
+                       and the machine was clear, otherwise the pids it found
+  note=                what a person about to remove this directory by hand should know
+beat                   the beat file itself, so it disappears with the lock rather than outliving it
 ```
+
+**One record, three writers, and the list above is the whole of it.** `test.sh`, `build.sh` and
+`OrchestratorLease.encode` all write this file and all three read each other's. They did not agree:
+seventeen fields, eleven and eleven, eight in common, and the four the shell's compare-and-swap
+depends on — `token`, `owner_pid`, `owner_started`, `heartbeat_deadline` — written by nobody but
+`test.sh`. Against a record either of the other two wrote, that compare was `"" = ""` and always
+true, so the re-read beside it was carrying the whole swap alone. In the other direction `test.sh`
+wrote `working=` while the Swift reader read `work=`, so each side showed an empty working list for
+the other's holder and the field the design specifies as *the record names the process actually
+working* crossed in neither direction. The contract is written out once above
+`clawdline_suite_lock_write_record` in `test.sh`, and `Tests/test-sh-lock.mjs` reads all three
+writers and fails when any of them drifts from it.
+
+**`pid` and `owner_pid` are two different questions and only the second is an identity.** A hold is
+a sequence — the compiler driver, then the test binary — so `pid` changes *during* one hold. Every
+comparison that asks "is this the same holder" uses `owner_pid`, falling back to `pid` for a record
+written before this contract existed.
 
 **Takeover requires both halves, and neither is sufficient alone.**
 
@@ -215,6 +247,42 @@ half that is betting on the fact.
 
 > **The beat is what the holder says. `swift-frontend` is what the machine is. A machine-level
 > resource guard fails closed on the fact, not on the self-report.**
+
+**And for part of the guarded region `(B)` is vacuous, which has to be said out loud rather than
+discovered.** The lock covers the compile *and* the test-binary run that follows it — deliberately,
+because that run is minutes of this machine and belongs inside — and through the whole `analysing`
+phase there is no `swift-frontend` anywhere. A waiter polling every five seconds through that window
+sees zero compilers every time, so `(B)` is permanently satisfied and **admission there rests on
+`(A)` alone**. The same holds, for shorter stretches, in the gaps between the per-file frontends of
+one `swiftc` invocation.
+
+The answer is not to narrow the region. It is that `(A)` has to be strong enough to carry it, which
+is what the renewal rule below is for: a holder that cannot read the machine keeps beating and says
+so, and only positive evidence that it no longer owns the lock stops it. An invariant nobody states
+is one nobody can check, so it is stated here and in the script's own comment: **during
+`analysing`, `(A)` is the whole of the argument.**
+
+**A holder's proof of life is not conditional on readings that can fail.** This is the same rule as
+"missing or ambiguous evidence reads `unknown` and blocks", applied to the *writer* rather than the
+reader, and it was inverted there for one landing. The renewal loop used to check four conditions
+per tick, three of them readings, each `|| exit 0` on a single unretried sample — so one `ps` broken
+for two seconds ended the beat permanently while the run went on compiling, and a deadline later a
+second run took the lock and both were inside the guarded section. Reproduced twice. Applied to a
+reader, ambiguity means *block*; applied to a holder it must not mean *conclude I am no longer the
+holder*, which is fail-open. So each probe answers three ways, the process-existence probe carries
+its own control (it asks about pid 1 in the same call, so a missing answer is distinguishable from a
+missing process), a failed record write costs a tick rather than the lock, and a loop that does stop
+says which of the four conditions ended it.
+
+**There is one way out of `unknown`, and it is positive evidence rather than an exception.**
+Acquiring is `mkdir`, then a few forks, then the first record; a run that dies in that window leaves
+a directory with no record and no beat, which blocks correctly and which nothing could ever clear —
+only `stale` reaches the takeover, and a record that will never be written can never become stale.
+One ordinary Ctrl-C therefore turned the machine's compile slot into a permanent roadblock that the
+note in the directory told the next person not to remove. A directory that has **never** held a
+record or a beat, is older than a whole renewal deadline, and sits on a machine with no compiler
+running is not absence read as death: it is the distinct, positive fact that nothing was ever
+written there. All four conditions hold or it stays `unknown`, and `(B)` is not waived here either.
 
 **A beat has to come from something that stops when the work stops**, or it is a sentinel wearing a
 new costume:
@@ -279,6 +347,56 @@ session was asked to clear a compile belonging to somebody else and correctly re
 process was producing the evidence everyone was waiting for. A refusal that names the largest
 holders of memory is **information for a person to act on, not a target list**, and no route, flag
 or code path in this work terminates a process it did not start.
+
+### The queue proves itself the same way the holder does
+
+Everything above is about the holder. The line behind it had no liveness axis at all: a waiter
+recorded a `pid` and a `process_start` that nothing read, so **a waiter whose process died at the
+head of the queue left an entry that could never be granted, never expired, and could only be
+cancelled by an owner that no longer existed** — while the lock itself was free. Everybody behind it
+was answered `queued_behind_others` for ever; the queue is persisted, so it survived an app restart;
+and thirty-two such entries turned the whole thing into `queue_full` for the machine, which is the
+same deadlock wearing a different code. `build.sh` never cancelled, so an ordinary Ctrl-C on a
+waiting build was enough to produce one.
+
+```
+(A) it asked again inside the waiter deadline     the poll clock, and it needs no probe
+(B) and its process has not provably gone         a strengthening, never a weakening
+```
+
+`POST /v1/orchestrator/leases` is idempotent on `request_id` and a waiting client re-sends it every
+few seconds, so **asking again is to a waiter what renewing is to a holder** — and it is the
+primary axis because it is a fact the broker recorded itself rather than a reading of a machine that
+may not answer. The process axis only ever makes a negative faster: a pid this machine says is gone
+stops the waiter at once instead of after the deadline, and a reading that could not be taken says
+nothing.
+
+Three consequences are written into the shape rather than left to be discovered:
+
+* **An unproven waiter is passed over, never reclaimed from.** It keeps its entry, and if it starts
+  polling again it is back at the front of the line, because order comes from when it *joined* and
+  not from when it last spoke.
+* **The depth limit counts the line, not the litter.** Entries nobody is asking for do not spend the
+  machine's queue budget, which is what turned a blocked head into a 429 for everybody.
+* **The array is still bounded.** Above a hard limit the longest-silent entries go, and never one
+  that is still asking.
+
+Deliberately asymmetric, and worth saying why: passing over a live waiter costs it one grant, while
+trusting a dead one blocks the machine until a person notices. That is why the deadline is generous
+— twenty-four missed polls at `build.sh`'s rate — rather than tight.
+
+### Refused is a state, and both projections can say it
+
+An admission refusal leaves the record otherwise untouched: no holder, no queue entry, nothing. So a
+session told *this Mac cannot admit even one compiler* was, in Bearings and in the Session overlay,
+indistinguishable from a session that had never asked. The record now keeps the last refusal —
+its code, its message, when, and who asked — and both projections have a sixth word for it. It ages
+out on the waiter's clock, because a refusal is a moment rather than a state.
+
+The freshness stamp beside it belongs to the lease. Neither projection re-reads the filesystem — a
+redraw must never start a subprocess — so what they show is as old as the last reconciliation, and
+that row used to carry the *task* registry's clock. A lock held by a run that died an hour ago read
+exactly like a live compile. `Record.reconciledAt` is the right clock and is now the one used.
 
 ### Admission and exclusion are two questions, and the second one degrades
 

@@ -350,6 +350,10 @@ enum OrchestratorStore {
                     "holder": waiter.owner.label,
                     "pid": Int(waiter.pid),
                     "requested_at": waiter.requestedAt.timeIntervalSince1970,
+                    // The waiter's proof of life. Without it a restart resurrected every queued
+                    // request as freshly asked, which is precisely the state the poll clock
+                    // exists to distinguish from a request nobody is making any more.
+                    "last_polled_at": waiter.lastPolledAt.timeIntervalSince1970,
                     "reason": waiter.reason,
                 ]
                 if let start = waiter.processStart {
@@ -436,7 +440,9 @@ enum OrchestratorStore {
                     requestID: id, owner: who, pid: Int32(pid),
                     processStart: (row["process_start"] as? Double)
                         .map(Date.init(timeIntervalSince1970:)),
-                    requestedAt: Date(timeIntervalSince1970: requested), reason: reason)
+                    requestedAt: Date(timeIntervalSince1970: requested), reason: reason,
+                    lastPolledAt: Date(timeIntervalSince1970:
+                        (row["last_polled_at"] as? Double) ?? requested))
             }
         var record = OrchestratorLease.Record(
             resource: resource, directory: directory, holder: nil, queue: queue,

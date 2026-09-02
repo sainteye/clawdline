@@ -1044,6 +1044,132 @@ try {
     check("and it signals that pid only while bash still lists it as this shell's own job",
           /jobs -p 2>\/dev\/null \| grep -qx "\$clawdline_suite_lock_renewer"/.test(block));
 
+    // -----------------------------------------------------------------------------------------
+    // 18. **One record, three writers.** The contract is declared once at the top of this file;
+    //     this reads it back out of all three programs.
+    //
+    //     They did not agree. `test.sh` wrote seventeen fields, `build.sh` and
+    //     `OrchestratorLease.encode` eleven each, eight in common — and the four the shell's
+    //     compare-and-swap depends on (`token`, `owner_pid`, `owner_started`,
+    //     `heartbeat_deadline`) were written by nobody else, so against a broker-written or
+    //     build-written record that compare was `"" = ""`, always true, with the re-read beside it
+    //     carrying the whole swap alone. In the other direction `test.sh` wrote `working=` and the
+    //     Swift reader read `work=`, so each side showed an empty working list for the other.
+    const buildKeys = [...buildScript.matchAll(/^\s*printf '([a-z_]+)=%s\\n'/gm)].map((m) => m[1]);
+    const leaseKeys = [...leaseSource.matchAll(/^\s*out \+= line\("([a-z_]+)"/gm)].map((m) => m[1]);
+    check("build.sh writes the record contract, in the contract's order",
+          buildKeys.join(",") === RECORD_CONTRACT.join(","));
+    check("and OrchestratorLease.encode writes the same list, in the same order",
+          leaseKeys.join(",") === RECORD_CONTRACT.join(","));
+    // A guard nobody has seen refuse is not a guard: the two readings above have to be able to
+    // find something, or a rename in either file would make this a clean scan of nothing.
+    check("both readings actually found a writer, rather than reporting a clean scan of nothing",
+          buildKeys.length === RECORD_CONTRACT.length
+            && leaseKeys.length === RECORD_CONTRACT.length);
+
+    // -----------------------------------------------------------------------------------------
+    // 19. `build.sh`'s own writer, run rather than read.
+    //
+    //     Three findings live here and all three are about the same twenty-second loop:
+    //     it rewrote whatever record was in the directory without checking the lock was still
+    //     this build's (so a legitimate takeover was followed by the *old* build truncating the
+    //     *new* holder's beat and renaming the record after itself, and two runs compiled); it
+    //     wrote with a `>` redirect straight onto the live file, so every reader that fails closed
+    //     on a partial record saw the lock flicker into `unknown` on a schedule; and its release
+    //     compared a `holder=build.sh <user> pid <n>` line that a reused pid can match.
+    const buildBlock = buildScript.slice(
+        buildScript.indexOf("CLAWDLINE_LEASE_DIR="),
+        buildScript.indexOf("APP=\"${CLAWDLINE_APP:"));
+    check("the build.sh lease block was found, so what follows is not testing an empty string",
+          buildBlock.length > 500 && /clawdline_lease_record\(\)/.test(buildBlock));
+    const build19 = shell("s19.sh", buildBlock, [
+        'CLAWDLINE_LEASE_STARTED=$(date +%s)',
+        'CLAWDLINE_LEASE_ID="build-test-1"',
+        'CLAWDLINE_LEASE_DONE="$LOCK_SCRATCH/done19"',
+        'mkdir -p "$CLAWDLINE_LEASE_DIR"',
+        'st=0; clawdline_lease_record analysing "$$" first || st=$?; echo "first=$st"',
+        'cp "$CLAWDLINE_LEASE_DIR/holder.txt" "$LOCK_SCRATCH/build-record.txt"',
+        'st=0; clawdline_lease_record compiling 4242 || st=$?; echo "again=$st"',
+        // Somebody else legitimately took the lock over while this build was between beats.
+        'sed "s/^token=.*/token=somebody-elses-lease/" "$CLAWDLINE_LEASE_DIR/holder.txt" > "$LOCK_SCRATCH/other.txt"',
+        'cp "$LOCK_SCRATCH/other.txt" "$CLAWDLINE_LEASE_DIR/holder.txt"',
+        'before=$(stat -f %m "$CLAWDLINE_LEASE_DIR/beat")',
+        'sleep 1.1',
+        'st=0; clawdline_lease_record compiling 4242 || st=$?; echo "stranger=$st"',
+        'after=$(stat -f %m "$CLAWDLINE_LEASE_DIR/beat")',
+        '[ "$before" = "$after" ] && echo "beat=untouched" || echo "beat=truncated"',
+        'grep -q "^token=somebody-elses-lease$" "$CLAWDLINE_LEASE_DIR/holder.txt" && echo "record=intact" || echo "record=overwritten"',
+        // And the release leaves a lock whose token is not this build's alone.
+        'CLAWDLINE_LEASE_MODE=directory',
+        'CLAWDLINE_LEASE_TOKEN="$LOCK_SCRATCH/no-such-token"',
+        'clawdline_lease_release',
+        '[ -d "$CLAWDLINE_LEASE_DIR" ] && echo "lock=left" || echo "lock=removed"',
+        'rm -rf "$CLAWDLINE_LEASE_DIR"',
+    ].join("\n"));
+    const r19 = run(build19, { CLAWDLINE_LEASE_DIR: join(dir, "build.lock") });
+    const buildRecord = readIf(join(dir, "build-record.txt"));
+    check("build.sh writes a full record on its first write and refreshes it while it holds",
+          /first=0/.test(r19.all) && /again=0/.test(r19.all));
+    check("and that record carries the four fields the shell's compare-and-swap needs",
+          ["token", "owner_pid", "owner_started", "heartbeat_deadline"]
+            .every((f) => new RegExp(`^${f}=`, "m").test(buildRecord)));
+    check("a build that no longer holds the lock refuses to write the record at all",
+          /stranger=1/.test(r19.all) && /record=intact/.test(r19.all));
+    check("and does not truncate the live holder's beat on its way past",
+          /beat=untouched/.test(r19.all));
+    check("and its release leaves a lock whose token is not its own",
+          /lock=left/.test(r19.all));
+    // The write is atomic: a temp file and a rename, so a reader sees one complete record or the
+    // other and never half of either. Every reader of this file fails closed on a partial record,
+    // which turned a non-atomic rewrite every twenty seconds into a scheduled `unknown`.
+    check("build.sh writes the record through a temporary file and a rename, as the other two do",
+          /temp="\$dir\/\.holder\.\$\$\.\$RANDOM"/.test(buildBlock)
+            && /mv "\$temp" "\$dir\/holder\.txt"/.test(buildBlock)
+            && !/> "\$CLAWDLINE_LEASE_DIR\/holder\.txt"/.test(buildBlock));
+
+    // -----------------------------------------------------------------------------------------
+    // 20. A refusal is not silence, and giving up leaves the line.
+    //
+    //     The broker answers a refusal with `{"error": {"code": …}}` and no top-level `state`, so
+    //     `pressure_refused`, `queue_full` and a 403 on a stale token all read as the empty string
+    //     and fell into the "the broker did not answer" branch — which takes the lock directory
+    //     directly and compiles, jumping a queue up to thirty-two deep. The branch that implements
+    //     "no lease means the compile does not run" was unreachable.
+    const reader = /state=\$\(printf '%s' "\$answer" \| \/usr\/bin\/python3 -c '([\s\S]*?)'\s*2>\/dev\/null\)/
+        .exec(buildScript);
+    check("build.sh's answer reader was found", reader !== null);
+    if (reader !== null) {
+        const readState = (body) => {
+            const p = join(dir, "read-state.py");
+            writeFileSync(p, reader[1]);
+            const r = spawnSync("/usr/bin/python3", [p], { input: body, encoding: "utf8" });
+            return (r.stdout ?? "").trim();
+        };
+        check("a granted answer still reads as granted",
+              readState('{"ok":true,"state":"granted","budget":{"parallelism":1}}') === "granted");
+        check("a queued answer still reads as queued",
+              readState('{"ok":true,"state":"queued","position":2}') === "queued");
+        check("a refusal reads as a refusal named by its code, not as silence",
+              readState('{"error":{"code":"pressure_refused","message":"no headroom"}}')
+                === "refused:pressure_refused");
+        check("and so does a queue that is full, and a token the broker rejected",
+              readState('{"error":{"code":"queue_full"}}') === "refused:queue_full"
+                && readState('{"error":{"code":"forbidden"}}') === "refused:forbidden");
+        check("while a broker that answered nothing at all still reads as nothing",
+              readState("") === "" && readState("<html>502</html>") === "");
+    }
+    // And the queue entry goes when the build stops waiting for it. A queued request that is never
+    // cancelled is a deadlock with a persistence layer: it survives an app restart, only its owner
+    // may remove it, and everybody behind it waits for ever while the lock is free.
+    check("build.sh remembers that it is in the broker's line",
+          /CLAWDLINE_LEASE_QUEUED="\$CLAWDLINE_LEASE_ID"/.test(buildScript));
+    check("cancels it when it gives up waiting",
+          /gave up waiting[\s\S]{0,400}clawdline_lease_cancel/.test(buildScript));
+    check("and cancels it from the release path too, which the exit trap reaches on a Ctrl-C",
+          /clawdline_lease_release\(\) \{\n  clawdline_lease_cancel/.test(buildScript));
+    check("the cancel posts to the route that removes only this request",
+          /leases\/\$CLAWDLINE_LEASE_QUEUED\/cancel/.test(buildScript));
+
     if (failures > 0) {
         console.log("    last orchestrator stderr:", JSON.stringify(r13.err.slice(0, 400)));
     }

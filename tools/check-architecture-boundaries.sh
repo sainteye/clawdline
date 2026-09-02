@@ -16,7 +16,23 @@ main_lines=$(line_count Tests/main.swift)
 [ "$main_lines" -le 500 ] \
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
-orchestrator_ceiling=13123
+# **This number has gone up as well as down, and a ceiling whose history is invisible reads as
+# monotonic when it is not.** Where it has been, most recent first:
+#
+#   13085  this round moved `leaseBearings`, `leaseSession` and `leaseOutcomeWord` — about sixty
+#          lines of pure `Record` → dictionary projection — into `Sources/OrchestratorLease.swift`,
+#          beside `OrchestratorLease.record(_:now:)`, which is the same kind of translation for the
+#          same type. What stays here is registry ownership and route surface, which is what this
+#          file is for.
+#   13123  `2eef7bb6` raised it from 12,816 for the heavy-compile lease: roughly 250 lines of
+#          registry collection, store wiring and four route wrappers, which belong here, and the
+#          sixty above, which did not. The raise was legitimate and reviewed; leaving the sixty in
+#          it would have been slack nobody asked for.
+#   12816  the registry-owner extraction's receipt.
+#
+# Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
+# to grow that nobody reviewed.
+orchestrator_ceiling=13085
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the receipt the registry-owner extraction and the heavy-compile lease agreed on ($orchestrator_ceiling)"
@@ -68,8 +84,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 509 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 509"
+[ "$manifest_group_count" -eq 510 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 510"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
