@@ -60,6 +60,7 @@ clawdline_production_sources=(
   Sources/Onboarding.swift
   Sources/Orchestrator.swift
   Sources/OrchestratorPlanning.swift
+  Sources/OrchestratorRegistry.swift
   Sources/OrchestratorStore.swift
   Sources/OwnedStorage.swift
   Sources/Panel.swift
