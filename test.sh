@@ -111,7 +111,19 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # server really sends. 2 are in the terminal-plan group, for a hand-typed `terminal` value being
 # named as discarded instead of silently replaced. Every one is unconditional and at the group's own
 # top level. 8277 -> 8283.
-expected_swift_receipt='8331 checks passed'
+# The second correction round over the compile lease adds 22, counted from the diff rather than
+# from memory and every one unconditional at its group's top level. 12 are a new group for a
+# refusal being an answer to an ask: the poll clock moving on a refusal and on an effect that
+# failed, the place in the line not moving with it, nobody else's clock moving, the later arrival
+# that must not take the slot from a waiter that has been refused all along, and the control that
+# a head which really has stopped asking is still passed over. 7 are in the store round trip,
+# which asserted "every field survives" over a codec that dropped three: the two the holder
+# carries, the refusal note, the waiter's poll clock, a refusal row with no request id, an adopted
+# holder that pins the provenance fallback, and the fixture's own control that no two of its ten
+# clocks coincide. 1 more is that same control for the `holder.txt` round trip beside it, whose
+# four clocks were all one instant. 2 are the process readings one decision takes, now that the
+# one nothing read is gone. 8331 -> 8353. The exact candidate-tree run remains authoritative.
+expected_swift_receipt='8353 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -296,6 +308,10 @@ CLAWDLINE_SUITE_LOCK_WAIT_SECONDS="${CLAWDLINE_SUITE_LOCK_WAIT_SECONDS:-3600}"
 CLAWDLINE_SUITE_LOCK_POLL_SECONDS="${CLAWDLINE_SUITE_LOCK_POLL_SECONDS:-5}"
 CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS="${CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS:-30}"
 CLAWDLINE_SUITE_LOCK_DONE_FLAG="${CLAWDLINE_SUITE_LOCK_DONE_FLAG:-$CLAWDLINE_SUITE_LOCK_DIR/done}"
+# Where the renewal loop leaves the reason it stopped, so the run it was renewing for can find out.
+# **Outside the lock directory on purpose**: two of the three reasons the loop stops are that the
+# directory has changed hands or is gone, and a note written inside it would go with it.
+CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE="${CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE:-${TMPDIR:-/tmp}/clawdline-suite-renewal-stopped.$$}"
 # The heartbeat is a file inside the lock, touched on every renewal, and the record points at it.
 # Inside the lock on purpose: when the lock directory goes, the beat goes with it, and no orphaned
 # heartbeat is left pointing at work that ended.
@@ -316,6 +332,11 @@ clawdline_suite_lock_started=""
 clawdline_suite_lock_pid_started=""
 clawdline_suite_lock_renewer=""
 clawdline_suite_lock_compilers=""
+# What the last compiler probe *answered*, kept apart from what it found: `found`, `clear` or
+# `unreadable`. Without it the writer below could not tell "I looked and the machine was clear"
+# from "I looked and the machine would not say", and wrote the first for both — the fail-open
+# direction, in the one field the record contract singles out for keeping them apart.
+clawdline_suite_lock_compilers_verdict="unreadable"
 clawdline_suite_lock_working=""
 clawdline_suite_lock_state=""
 clawdline_suite_lock_evidence=""
@@ -340,14 +361,6 @@ clawdline_suite_lock_field() {
   awk -v key="$key" 'index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }' "$file" 2>/dev/null
 }
 
-clawdline_suite_lock_pid_alive() {
-  # `ps -p` rather than `kill -0`: `kill` reports a live process owned by another user as an error
-  # that cannot be told apart from "no such process", and this lock is read by whoever is waiting.
-  local pid=$1
-  case "$pid" in "" | *[!0-9]*) return 1 ;; esac
-  ps -p "$pid" -o pid= >/dev/null 2>&1
-}
-
 clawdline_suite_lock_pid_identity() {
   # A pid's start time, as one normalised line, used to tell a recorded holder from a later process
   # that inherited its number. **Both sides of every comparison come out of this one function**,
@@ -366,12 +379,13 @@ clawdline_suite_lock_pid_identity() {
 clawdline_suite_lock_pid_verdict() {
   # `alive`, `gone` or `unknown` — and the third one is the whole point of this function.
   #
-  # `clawdline_suite_lock_pid_alive` above answers a reader's question, where a failed `ps` and a
-  # dead process both mean "do not admit anybody" and collapsing them is safe. The *holder* asks
-  # the opposite question, and there the collapse is fail-open: a renewer that reads one failed
-  # `ps` as "the run is gone" stops proving liveness while the run is still inside the guarded
-  # section, and sixty seconds later a second run walks in. That happened, reproducibly, with a
-  # `ps` broken for one tick.
+  # There used to be a two-valued `clawdline_suite_lock_pid_alive` beside this — `ps -p` with its
+  # status read as the whole answer — and the collapse it made is fail-open wherever the question
+  # is "may I act": a renewer that reads one failed `ps` as "the run is gone" stops proving
+  # liveness while the run is still inside the guarded section, and sixty seconds later a second
+  # run walks in. That happened, reproducibly, with a `ps` broken for one tick. Its last caller was
+  # the takeover gate, which had the same collapse in the other direction, so the two-valued reader
+  # is gone rather than left here to be picked up again.
   #
   # So the probe carries its own control. `ps -p <pid> -p 1` asks about the process *and* about
   # pid 1, which exists on every running macOS. If `1` comes back the tool answered, and the
@@ -434,10 +448,14 @@ clawdline_suite_lock_probe_compilers() {
   local found="" probe_status=0
   found=$(LC_ALL=C pgrep -x "$CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN" 2>/dev/null) || probe_status=$?
   clawdline_suite_lock_compilers=$(printf '%s' "$found" | tr '\n' ' ')
+  # The verdict, in a global, because the status is lost at most call sites: `|| true` is how a
+  # caller under `set -e` asks a probe that legitimately returns 1. A caller that wants the answer
+  # reads this instead of guessing from the emptiness of the pid list, which cannot tell "nothing
+  # was running" from "nothing was read".
   case "$probe_status" in
-    0) return 0 ;;
-    1) return 1 ;;
-    *) return 2 ;;
+    0) clawdline_suite_lock_compilers_verdict="found"; return 0 ;;
+    1) clawdline_suite_lock_compilers_verdict="clear"; return 1 ;;
+    *) clawdline_suite_lock_compilers_verdict="unreadable"; return 2 ;;
   esac
 }
 
@@ -536,17 +554,30 @@ clawdline_suite_lock_write_record() {
   #                       only: present means finished, absent proves nothing.
   #   work                comma-separated pids doing the work right now.
   #   last_compiling      epoch seconds, or `never`.
-  #   compilers           three states: empty means this writer did not probe; `none` means it
-  #                       probed and the machine was clear; otherwise the pids it found.
+  #   compilers           three states: empty means this writer has no answer — it did not probe,
+  #                       or its probe could not be read; `none` means it probed and the machine
+  #                       was clear; otherwise the pids it found. **Empty and `none` are not
+  #                       interchangeable**: `none` is a claim about the machine and empty is the
+  #                       absence of one, and a writer that spells an unreadable probe `none`
+  #                       fails open in the one field written to keep them apart.
   #   note                what a person about to remove this directory by hand should know.
   local dir=$1 exclude=${2:-} temp="$1/.holder.$$.$RANDOM"
-  local phase_line phase phase_since last_compiling working worker
+  local phase_line phase phase_since last_compiling working worker compilers_field
   phase_line=$(cat "$dir/.phase" 2>/dev/null) || phase_line=""
   phase=${phase_line%% *}
   phase_since=${phase_line##* }
   case "$phase" in "") phase="idle-holding" ;; esac
   case "$phase_since" in "" | *[!0-9]*) phase_since=$(date +%s) ;; esac
   clawdline_suite_lock_probe_compilers || true
+  # The three states of `compilers=`, written from the verdict rather than from the pid list. An
+  # unreadable probe leaves that list empty exactly as a clear machine does, so writing
+  # `${clawdline_suite_lock_compilers:-none}` recorded "I probed and this Mac was clear" for a
+  # `pgrep` that answered nothing at all.
+  case "$clawdline_suite_lock_compilers_verdict" in
+    found) compilers_field="$clawdline_suite_lock_compilers" ;;
+    clear) compilers_field="none" ;;
+    *) compilers_field="" ;;
+  esac
   # `pid` is the process actually doing the work, not a stand-in for it, and the work here is a
   # sequence: the compiler driver, then the test binary. So it is whichever of this run's children
   # is working at this heartbeat, and it falls back to the run's own shell only in the gaps between
@@ -586,7 +617,7 @@ clawdline_suite_lock_write_record() {
     printf 'done_flag=%s\n' "$CLAWDLINE_SUITE_LOCK_DONE_FLAG"
     printf 'work=%s\n' "$working"
     printf 'last_compiling=%s\n' "$last_compiling"
-    printf 'compilers=%s\n' "${clawdline_suite_lock_compilers:-none}"
+    printf 'compilers=%s\n' "$compilers_field"
     printf 'note=%s\n' "$CLAWDLINE_SUITE_LOCK_NOTE"
   } > "$temp" 2>/dev/null || return 1
   mv "$temp" "$dir/holder.txt" 2>/dev/null || { rm -f "$temp" 2>/dev/null; return 1; }
@@ -767,14 +798,29 @@ clawdline_suite_lock_take_over() {
   # whole swap alone. All three writers now write one, which is what the record contract above
   # `clawdline_suite_lock_write_record` is for.
   local lock=$1 judged_token=$2
-  local gate="$lock.takeover" gate_pid stale
+  local gate="$lock.takeover" gate_pid gate_verdict stale
   if ! mkdir "$gate" 2>/dev/null; then
     gate_pid=$(clawdline_suite_lock_field pid "$gate/holder.txt")
-    if ! clawdline_suite_lock_pid_alive "$gate_pid"; then
-      # Its taker died between creating the gate and removing it. Exactly one waiter may clear it,
-      # for the same reason and by the same means as above.
-      if mv "$gate" "$gate.abandoned.$$" 2>/dev/null; then rm -rf "$gate.abandoned.$$"; fi
-    fi
+    # **Three answers here too, and this was the last two-valued reading in the block.**
+    # The two-valued reader this used to call could not tell a dead process from a `ps` that
+    # would not answer, and under the machine state this lock exists for — load in the sixties, swap full —
+    # that is the reading most likely to fail. Reading a failed `ps` as "its taker died" let a
+    # second waiter clear a gate whose holder was alive and about to swap.
+    #
+    # An *empty or non-numeric* `pid` is a different fact and keeps its old answer: the gate was
+    # created and its record never written, so there is no process to ask about and nobody is
+    # holding it. Leaving that one uncleared would be a deadlock — no waiter could ever take over
+    # again — which is why it is named rather than folded into `unknown`.
+    case "$gate_pid" in
+      "" | *[!0-9]*) gate_verdict="unowned" ;;
+      *) gate_verdict=$(clawdline_suite_lock_pid_verdict "$gate_pid") ;;
+    esac
+    case "$gate_verdict" in
+      gone | unowned)
+        # Its taker died between creating the gate and removing it. Exactly one waiter may clear
+        # it, for the same reason and by the same means as above.
+        if mv "$gate" "$gate.abandoned.$$" 2>/dev/null; then rm -rf "$gate.abandoned.$$"; fi ;;
+    esac
     return 1
   fi
   printf 'pid=%s\n' "$$" > "$gate/holder.txt"
@@ -862,6 +908,11 @@ clawdline_suite_lock_start_renewer() {
       fi
       if [ -n "$stop_reason" ]; then
         echo "suite lock: renewal stopped — $stop_reason" >&2
+        # And leave it where the run can find it. Saying it on stderr is not telling the run: the
+        # run is inside `swiftc` or the test binary and reads nothing, and the one ownership
+        # confirmation it makes is between the two. A note it can pick up there is the difference
+        # between a proof of life that stopped and a proof of life that stopped unnoticed.
+        printf '%s\n' "$stop_reason" > "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" 2>/dev/null || true
         exit 0
       fi
       # Its own pid comes from the file the shell below writes, because bash 3.2 has no `BASHPID`
@@ -941,13 +992,40 @@ clawdline_acquire_suite_lock() {
 clawdline_confirm_suite_lock() {
   # Called once between the compile and the run. The compile is the long unattended stretch, and a
   # run that lost the lock during it must not start a second expensive thing under somebody else's.
-  local lock="$CLAWDLINE_SUITE_LOCK_DIR"
-  if [ -n "$clawdline_suite_lock_token" ] &&
-     [ "$(clawdline_suite_lock_field token "$lock/holder.txt")" = "$clawdline_suite_lock_token" ]; then
+  #
+  # **It confirms two things, not one.** "The record still carries this run's token" is the lock
+  # not having changed hands. It is not the same as this run still *proving* it holds it: the
+  # renewer is one background subshell, and if it stops — killed with the process group, or ended
+  # by a stop condition — the token sits there unchanged while the beat goes still. The run then
+  # spends the whole test binary inside the guarded section with nothing renewing, and after one
+  # deadline another run may legitimately judge this lock stale and take it. That is the same two
+  # runs in the guarded section the renewer's own three-answer rule was written to prevent,
+  # arrived at from the other end, so this is the second thing it asks.
+  local lock="$CLAWDLINE_SUITE_LOCK_DIR" stopped renewer_pid
+  if [ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ]; then
+    stopped=$(cat "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" 2>/dev/null) || stopped=""
+    echo "suite lock: the renewal loop stopped during the guarded section — ${stopped:-no reason recorded}" >&2
+    rm -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" 2>/dev/null || true
+  fi
+  if [ -z "$clawdline_suite_lock_token" ] ||
+     [ "$(clawdline_suite_lock_field token "$lock/holder.txt")" != "$clawdline_suite_lock_token" ]; then
+    echo "suite lock: $lock is no longer this run's — refusing to start the test binary under somebody else's lock." >&2
+    return "$CLAWDLINE_SUITE_LOCK_BUSY"
+  fi
+  # Still this run's lock. Now: is anything still saying so? `jobs -p` rather than `ps`, for the
+  # same reason the exit trap uses it — a renewer that exited is reaped and its number is reusable,
+  # so asking the machine about the number answers about whoever has it now.
+  if [ -n "$clawdline_suite_lock_renewer" ] &&
+     jobs -p 2>/dev/null | grep -qx "$clawdline_suite_lock_renewer"; then
     return 0
   fi
-  echo "suite lock: $lock is no longer this run's — refusing to start the test binary under somebody else's lock." >&2
-  return "$CLAWDLINE_SUITE_LOCK_BUSY"
+  # The lock is this run's and nothing is renewing it. Nothing is killed and nothing is given up:
+  # a fresh renewer is started, because the alternative — throwing away a compile that has already
+  # been paid for — is worse than resuming the beat under a lock this run demonstrably still holds.
+  renewer_pid="${clawdline_suite_lock_renewer:-none}"
+  echo "suite lock: $lock is still this run's but its renewer (${renewer_pid}) is gone — restarting the proof of life before the test binary starts." >&2
+  clawdline_suite_lock_start_renewer "$lock"
+  return 0
 }
 
 clawdline_suite_lock_work_finished() {
@@ -1004,6 +1082,7 @@ clawdline_suite_exit_cleanup() {
     fi
     clawdline_suite_lock_renewer=""
   fi
+  rm -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" 2>/dev/null || true
   clawdline_release_suite_lock
   # Bash keeps exactly one EXIT trap, so a second `trap … EXIT` further down would silently replace
   # this one and leave the lock behind on every run. The `$STORE` cleanup that used to have a trap

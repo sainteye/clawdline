@@ -517,6 +517,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a holder that is not compiling is reported, and is still not reclaimable",
     "a heartbeat that outlives its work is a sentinel, and only the loop shape stops it",
     "the projections keep six states apart, and a refusal is one of them",
+    "a refusal is an answer to an ask, and the ask is what a waiter proves itself with",
     "the lease record survives a store round trip",
 ]
 

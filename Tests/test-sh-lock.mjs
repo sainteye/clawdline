@@ -1277,6 +1277,235 @@ try {
     check("the cancel posts to the route that removes only this request",
           /leases\/\$CLAWDLINE_LEASE_QUEUED\/cancel/.test(buildScript));
 
+
+    // -----------------------------------------------------------------------------------------
+    // 21. **`compilers=` has three states, and the writer has to be able to write all three.**
+    //
+    //     The record contract singles this field out: empty means the writer has no answer,
+    //     `none` means it probed and the machine was clear, and anything else is the pids it
+    //     found. The Swift reader is pinned for the distinction; the writer was not, and it wrote
+    //     `${clawdline_suite_lock_compilers:-none}` — a probe that could not answer leaves that
+    //     list empty exactly as a clear machine does, so an unreadable `pgrep` was recorded as "I
+    //     looked and this Mac was clear". Fail-open, in the one field written to keep those two
+    //     apart, in a round whose whole subject is two states sharing one spelling.
+    rmSync(lockDir, { recursive: true, force: true });
+    const pgrepShim = join(dir, "shim-pgrep");
+    mkdirSync(pgrepShim, { recursive: true });
+    writeFileSync(join(pgrepShim, "pgrep"), [
+        "#!/bin/bash",
+        // 2 is what `pgrep` exits when it could not answer at all — a syntax error, a resource it
+        // could not reach — as against 1, which is the fact that nothing matched.
+        'if [ -f "$LOCK_SCRATCH/pgrep-unreadable" ]; then exit 2; fi',
+        'if [ -f "$LOCK_SCRATCH/pgrep-clear" ]; then exit 1; fi',
+        'exec /usr/bin/pgrep "$@"',
+        "",
+    ].join("\n"));
+    chmodSync(join(pgrepShim, "pgrep"), 0o755);
+    const record21 = shell("s21.sh", [functionsOnly, PRELUDE].join("\n"), [
+        'mkdir -p "$CLAWDLINE_SUITE_LOCK_DIR"',
+        'clawdline_suite_lock_pid=$$',
+        'clawdline_suite_lock_token=token-21',
+        'clawdline_suite_lock_started=$(date "+%Y-%m-%d %H:%M:%S")',
+        'clawdline_suite_lock_pid_started=$(clawdline_suite_lock_pid_identity "$$")',
+        'say() { echo "$1=[$(clawdline_suite_lock_field compilers "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt")]"; }',
+        // (a) the probe cannot answer.
+        'touch "$LOCK_SCRATCH/pgrep-unreadable"',
+        'clawdline_suite_lock_write_record "$CLAWDLINE_SUITE_LOCK_DIR" || true',
+        'say unreadable',
+        'rm -f "$LOCK_SCRATCH/pgrep-unreadable"',
+        // (b) the probe answers, and the machine is clear.
+        'touch "$LOCK_SCRATCH/pgrep-clear"',
+        'clawdline_suite_lock_write_record "$CLAWDLINE_SUITE_LOCK_DIR" || true',
+        'say clear',
+        'rm -f "$LOCK_SCRATCH/pgrep-clear"',
+        // (c) the probe answers and finds one — the control, so (a) and (b) are not both simply
+        //     "this writer never records anything".
+        'compiler=$(fake_compiler 30)',
+        'sleep 0.3',
+        'clawdline_suite_lock_write_record "$CLAWDLINE_SUITE_LOCK_DIR" || true',
+        'say found',
+        'echo "compiler_was=$compiler"',
+        'kill "$compiler" 2>/dev/null || true; wait "$compiler" 2>/dev/null || true',
+        'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR"',
+    ].join("\n"));
+    const r21 = run(record21, { PATH: `${pgrepShim}:${process.env.PATH}` });
+    const found21 = /compiler_was=(\d+)/.exec(r21.all);
+    check("a compiler probe that could not answer writes no claim about the machine at all",
+          /unreadable=\[\]/.test(r21.all));
+    check("a probe that answered and found nothing writes `none`, which is a claim",
+          /clear=\[none\]/.test(r21.all));
+    check("and a probe that found one writes the pid, so the two above are not one silent writer",
+          found21 !== null && new RegExp(`found=\\[[^\\]]*${found21[1]}`).test(r21.all));
+
+    // -----------------------------------------------------------------------------------------
+    // 22. **The takeover gate reads three answers too.**
+    //
+    //     It was the one probe left in the block that had two: a `ps` that would not answer and a
+    //     process that is gone were the same result, and under the machine state this lock exists
+    //     for — load in the sixties, swap full — that reading is least reliable exactly when it
+    //     matters. A second waiter could clear a gate whose holder was alive and about to swap.
+    //     An *unrecorded* pid keeps its old answer and is checked here too, because folding that
+    //     one into `unknown` would be a deadlock: no waiter could ever clear an abandoned gate.
+    rmSync(lockDir, { recursive: true, force: true });
+    const gateShim = join(dir, "shim-gate");
+    mkdirSync(gateShim, { recursive: true });
+    writeFileSync(join(gateShim, "ps"), [
+        "#!/bin/bash",
+        'if [ -f "$LOCK_SCRATCH/gate-ps-broken" ]; then exit 1; fi',
+        'exec /bin/ps "$@"',
+        "",
+    ].join("\n"));
+    chmodSync(join(gateShim, "ps"), 0o755);
+    const gate22 = shell("s22.sh", [functionsOnly, PRELUDE].join("\n"), [
+        'gate="$CLAWDLINE_SUITE_LOCK_DIR.takeover"',
+        'stale_lock() { craft_lock "$CLAWDLINE_SUITE_LOCK_DIR" "$(dead_pid)" "$(( $(date +%s) - 600 ))" "$1" 2; }',
+        'try() { local st=0; clawdline_suite_lock_take_over "$CLAWDLINE_SUITE_LOCK_DIR" "$2" > /dev/null 2>&1 || st=$?; echo "$1=$st"; }',
+        // (a) A live gate holder, and a `ps` that will not answer about it. The gate stays.
+        'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR" "$gate"; stale_lock token-22',
+        'sleep 300 & gate_holder=$!',
+        'mkdir "$gate"',
+        'printf \'pid=%s\\n\' "$gate_holder" > "$gate/holder.txt"',
+        'touch "$LOCK_SCRATCH/gate-ps-broken"',
+        'try unreadable token-22',
+        'rm -f "$LOCK_SCRATCH/gate-ps-broken"',
+        '[ -d "$gate" ] && echo "after_unreadable=present" || echo "after_unreadable=cleared"',
+        'kill "$gate_holder" 2>/dev/null || true; wait "$gate_holder" 2>/dev/null || true',
+        // (b) The control: the same shape, a pid this machine says is gone, and `ps` answering.
+        //     It is cleared — so (a) is the reading and not a gate that never goes. The gate is
+        //     rebuilt rather than reused, so this case cannot be decided by what (a) did.
+        'rm -rf "$gate"; mkdir "$gate"',
+        'printf \'pid=%s\\n\' "$(dead_pid)" > "$gate/holder.txt"',
+        'try dead token-22',
+        '[ -d "$gate" ] && echo "after_dead=present" || echo "after_dead=cleared"',
+        // (c) And a gate whose record was never written has nobody to ask about, so it is cleared
+        //     rather than left to block every takeover this machine will ever attempt.
+        'rm -rf "$gate"; mkdir "$gate"',
+        'try unowned token-22',
+        '[ -d "$gate" ] && echo "after_unowned=present" || echo "after_unowned=cleared"',
+        'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR" "$gate"',
+    ].join("\n"));
+    const r22 = run(gate22, { PATH: `${gateShim}:${process.env.PATH}` });
+    check("a gate whose holder could not be read about is left alone, not cleared as abandoned",
+          /unreadable=1/.test(r22.all) && /after_unreadable=present/.test(r22.all));
+    check("while a gate whose holder this machine says is gone is still cleared",
+          /after_dead=cleared/.test(r22.all));
+    check("and a gate that never recorded a holder is cleared too, so no takeover deadlocks on it",
+          /after_unowned=cleared/.test(r22.all));
+
+    // -----------------------------------------------------------------------------------------
+    // 23. **The run finds out when its proof of life has stopped.**
+    //
+    //     The renewer says why it stopped on stderr and exits, and nothing raised that to the run:
+    //     the run is inside `swiftc` or the test binary and reads nothing. A renewer killed with
+    //     the lock still recorded as this run's left the token unchanged and the beat still, and
+    //     the run spent the whole test binary in the guarded section proving nothing — after which
+    //     another run may legitimately judge the lock stale. Same two runs inside, arrived at from
+    //     the other end. So the one confirmation between the two halves asks both questions.
+    rmSync(lockDir, { recursive: true, force: true });
+    const confirm23 = holderScript("s23.sh", [
+        'first="$clawdline_suite_lock_renewer"',
+        'echo "first_renewer=$first"',
+        // The renewer, and only the renewer: this shell's own background job, by the number it
+        // recorded for itself, and only while bash still lists it as this shell's job.
+        'if jobs -p 2>/dev/null | grep -qx "$first"; then kill "$first" 2>/dev/null || true; fi',
+        'wait "$first" 2>/dev/null || true',
+        'sleep 0.2',
+        'beat_before=$(stat -f %m "$CLAWDLINE_SUITE_LOCK_DIR/beat")',
+        'st=0; clawdline_confirm_suite_lock || st=$?; echo "confirm=$st"',
+        'echo "second_renewer=$clawdline_suite_lock_renewer"',
+        'sleep 2.2',
+        'beat_after=$(stat -f %m "$CLAWDLINE_SUITE_LOCK_DIR/beat")',
+        '[ "$beat_after" -gt "$beat_before" ] && echo "beat=moving" || echo "beat=still"',
+    ].join("\n"));
+    const r23 = run(confirm23);
+    const first23 = /first_renewer=(\d+)/.exec(r23.all);
+    const second23 = /second_renewer=(\d+)/.exec(r23.all);
+    check("a run whose renewer died still holds its lock, and is not made to throw the compile away",
+          /confirm=0/.test(r23.all));
+    check("it says so rather than going on in silence",
+          /renewer .* is gone/.test(r23.all));
+    check("and the proof of life is running again before the second expensive thing starts",
+          first23 !== null && second23 !== null && first23[1] !== second23[1]
+            && /beat=moving/.test(r23.all));
+    // And the reason the loop stopped reaches the run, rather than only its stderr. The note is
+    // written outside the lock directory on purpose: two of the three stop conditions are that the
+    // directory changed hands or is gone.
+    rmSync(lockDir, { recursive: true, force: true });
+    const note23 = holderScript("s23b.sh", [
+        // Somebody else's token, which is one of the conditions that legitimately stops the loop.
+        'sed "s/^token=.*/token=somebody-elses-token/" "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt" > "$LOCK_SCRATCH/r23.txt"',
+        'mv "$LOCK_SCRATCH/r23.txt" "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt"',
+        'sleep 2.2',
+        '[ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ] && echo "note=written" || echo "note=missing"',
+        'st=0; clawdline_confirm_suite_lock || st=$?; echo "confirm=$st"',
+        '[ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ] && echo "note_after=kept" || echo "note_after=read"',
+        'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR"',
+    ].join("\n"));
+    const r23b = run(note23);
+    check("a renewal loop that stops for a good reason leaves that reason where the run can read it",
+          /note=written/.test(r23b.all));
+    check("the confirmation repeats it to the run and refuses the second expensive thing",
+          /confirm=75/.test(r23b.all)
+            && /renewal loop stopped during the guarded section — .*changed hands/.test(r23b.all));
+    check("and the note is consumed, so a later run cannot inherit somebody else's stop reason",
+          /note_after=read/.test(r23b.all));
+    check("the note lives outside the lock, which is the directory two of the stop reasons are about",
+          /CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE:-\$\{TMPDIR:-\/tmp\}\//.test(block));
+
+    // -----------------------------------------------------------------------------------------
+    // 24. **`build.sh`'s first write is checked, and a lock it could not write is given back.**
+    //
+    //     `clawdline_lease_record` touches the beat before the record that points at it, so a
+    //     first write whose `$temp` create fails where the beat's succeeded leaves a directory
+    //     with a `beat` and no `holder.txt`. That is the one shape `test.sh`'s escape from
+    //     `unknown` deliberately refuses to clear — a directory that has a beat had a record once
+    //     — so it is the machine's compile slot blocked with no automatic way out. And the call
+    //     was unchecked under `set -e`, so the build died on the failed write without saying so.
+    //     `test.sh` has handled this since the record contract landed and the broker's
+    //     `createDirectory` removes the directory when its write fails; this was the third writer.
+    const build24 = shell("s24.sh", buildBlock, [
+        'CLAWDLINE_LEASE_STARTED=$(date +%s)',
+        'CLAWDLINE_LEASE_ID="build-test-24"',
+        'CLAWDLINE_LEASE_DONE="$LOCK_SCRATCH/done24"',
+        'mkdir -p "$CLAWDLINE_LEASE_DIR"',
+        // **The half-failure, reproduced rather than approximated.** The beat has to succeed and
+        // the record has to fail, which is what ENOSPC does and what an unwritable directory does
+        // not — that one fails both, leaves no beat, and is therefore clearable. So the beat is
+        // left to work and the record's temporary file is blocked on its own: `$RANDOM` is
+        // deterministic after an assignment, so the exact path the writer is about to use is
+        // predicted here and a directory is put in its way.
+        'RANDOM=4242; blocked="$CLAWDLINE_LEASE_DIR/.holder.$$.$RANDOM"',
+        'mkdir -p "$blocked"',
+        'RANDOM=4242',
+        'st=0; clawdline_lease_first_record "a test" || st=$?; echo "first=$st"',
+        '[ -d "$CLAWDLINE_LEASE_DIR" ] && echo "lock=left" || echo "lock=given_back"',
+        'echo "mode=[${CLAWDLINE_LEASE_MODE}]"',
+        'rm -rf "$CLAWDLINE_LEASE_DIR"',
+        // The control: the same call against a writable directory takes the lock and says so.
+        'mkdir -p "$CLAWDLINE_LEASE_DIR"',
+        'st=0; clawdline_lease_first_record "a test" || st=$?; echo "good=$st"',
+        'grep -q "^token=build-test-24$" "$CLAWDLINE_LEASE_DIR/holder.txt" && echo "record=written"',
+        'echo "good_mode=[${CLAWDLINE_LEASE_MODE}]"',
+        'rm -rf "$CLAWDLINE_LEASE_DIR"',
+    ].join("\n"));
+    const r24 = run(build24, { CLAWDLINE_LEASE_DIR: join(dir, "build24.lock") });
+    check("a build whose first record could not be written refuses rather than compiling",
+          /first=1/.test(r24.all) && /refusing to compile behind a lock/.test(r24.all));
+    check("and gives the directory back, so no unclearable lock is left on the machine",
+          /lock=given_back/.test(r24.all));
+    check("and does not leave itself holding a lease it never took",
+          /mode=\[\]/.test(r24.all));
+    check("while the same call against a writable directory takes the lock and records it",
+          /good=0/.test(r24.all) && /record=written/.test(r24.all)
+            && /good_mode=\[directory\]/.test(r24.all));
+    // The call sites, in build.sh itself: both direct acquisitions go through the checked write.
+    // A function nobody calls and a call to a function that does nothing are the same silence.
+    const directTakes = [...buildScript.matchAll(/mkdir "\$CLAWDLINE_LEASE_DIR" 2>\/dev\/null; then\n([\s\S]{0,200}?)\n\s*echo "→ heavy-compile lock taken directly/g)];
+    check("both of build.sh's direct acquisitions write their first record through the checked path",
+          directTakes.length === 2
+            && directTakes.every((m) => /clawdline_lease_first_record/.test(m[1])
+                                        && !/clawdline_lease_record analysing/.test(m[1])));
+
     if (failures > 0) {
         console.log("    last orchestrator stderr:", JSON.stringify(r13.err.slice(0, 400)));
     }

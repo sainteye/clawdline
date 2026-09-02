@@ -132,11 +132,18 @@ group("holder.txt is the shape three programs share, and an unusable one is not 
                     "done_flag", "work", "last_compiling", "compilers", "note"]
     let written = text.split(separator: "\n").map { String($0.prefix(while: { $0 != "=" })) }
     expect("this writer emits the contract, in the contract's order", written, contract)
+    // Four different instants for the four clocks, for the same reason the store round trip below
+    // now has ten: with `started`, `renewed`, `phase_since` and `last_compiling` all set to
+    // `leaseNow`, this round trip could not have told two of them apart if the writer had swapped
+    // them.
     let full = OrchestratorLease.HolderFile(
-        holder: "build.sh", pid: 81_001, started: leaseNow, work: [81_001],
-        renewed: leaseNow, phase: .compiling, heartbeat: "/tmp/l/beat",
+        holder: "build.sh", pid: 81_001, started: leaseNow.addingTimeInterval(-1_200),
+        work: [81_001], renewed: leaseNow, phase: .compiling, heartbeat: "/tmp/l/beat",
         ownerPID: 4_242, ownerStarted: "Thu Sep  3 02:18:04 2026", token: "build-4242-17",
-        heartbeatDeadline: 60, phaseSince: leaseNow, lastCompiling: leaseNow, compilers: "none")
+        heartbeatDeadline: 60, phaseSince: leaseNow.addingTimeInterval(-800),
+        lastCompiling: leaseNow.addingTimeInterval(-400), compilers: "none")
+    expect("no two clocks in this record carry the same instant either",
+           Set([full.started!, full.renewed!, full.phaseSince!, full.lastCompiling!]).count, 4)
     expect("and the four the compare-and-swap needs survive a round trip",
            OrchestratorLease.parseHolderFile(OrchestratorLease.encode(full)), full)
     check("a token is what identity means here: pid alone is reused within hours",
@@ -402,8 +409,8 @@ group("the physical backstop is never waived, and neither half admits anybody al
           OrchestratorLease.parseCompilerScan("", status: 2, timedOut: false) != .none)
 
     // **(B) is read again immediately before the directory goes.** The decision is made against a
-    // reading taken before four bounded subprocesses, so the compiler count it rests on can be
-    // many seconds old by the time anything is removed, and the identity compare inside
+    // reading taken before the rest of the turn's bounded probes, so the compiler count it rests
+    // on can be many seconds old by the time anything is removed, and the identity compare inside
     // `removeDirectory` cannot see a holder that came back to life. `test.sh` re-runs its whole
     // admission immediately before its rename; this is the broker doing at least as much.
     let departing = leaseHolder("lease-old", label: "old", renewedAt: leaseNow, session: "s0")
@@ -435,6 +442,26 @@ group("the physical backstop is never waived, and neither half admits anybody al
     expect("still removing nothing", removals, 0)
     check("and a timed-out scan is unknown too",
           OrchestratorLease.parseCompilerScan("", status: nil, timedOut: true) != .none)
+
+    // **And one process reading per decision, not two.** There was a second, `holderProcess`, and
+    // nothing anywhere read it: one bounded subprocess spent on every single decision, on the
+    // machine whose subprocess and memory budget is the whole point of this feature, and counted
+    // in the apology above for what a reading costs. The holder has no process axis by design — a
+    // pid is a proxy and proxies outlive the work, which is how a `sleep 14400` came to be
+    // recorded as a holder — so a field that looked like an axis and was not is gone rather than
+    // left for somebody to wire up on the assumption it was meant to decide something.
+    var counted = leaseStubProbes()
+    var readingsTaken: [Int32] = []
+    counted.processStart = { pid in readingsTaken.append(pid); return .unknown("stub") }
+    let withLine = heldRecord(departing,
+                              queue: [leaseWaiter("req-w", label: "waiting", pid: 5_150)])
+    _ = OrchestratorLease.observe(record: withLine, probes: counted, ownerState: { _ in .live })
+    expect("a decision takes one process reading, and it is the head of the line's",
+           readingsTaken, [5_150])
+    readingsTaken = []
+    _ = OrchestratorLease.observe(record: heldRecord(departing), probes: counted,
+                                  ownerState: { _ in .live })
+    expect("and with nobody in the line it takes none at all", readingsTaken, [])
 }
 
 group("a recycled pid reads as gone, and an unpinned locale reads as unknown rather than dead") {
@@ -1249,29 +1276,204 @@ group("the projections keep six states apart, and a refusal is one of them") {
            ["released", "queued:holder_proving", "queue_full"])
 }
 
+group("a refusal is an answer to an ask, and the ask is what a waiter proves itself with") {
+    // The ratified rule, in the design's own words: `POST /v1/orchestrator/leases` is idempotent
+    // on `request_id` and a waiting client re-sends it every few seconds, so **asking again is to
+    // a waiter what renewing is to a holder**. The clock moved in `enqueue` and nowhere else, so
+    // the two answers that are not `queued` did not count as asking — a refusal, and a decision
+    // whose effect failed. A head of the line polling every five seconds exactly as the contract
+    // asks was therefore recorded as having gone quiet, passed over after `waiterDeadline`, and
+    // droppable by the hard-limit trim whose comment promises "never a waiter that is still
+    // asking". Latent today only because `leasePolicy` carries no floor; the next node in this
+    // feature's own plan is the one that measures the number that arms it.
+    let tight = OrchestratorLease.Pressure(
+        physicalMB: 24_576, freeMB: 100, anonymousMB: 20_000, fileBackedMB: 100,
+        compressorMB: 1_270, swapUsedMB: 10_870, swapFreeMB: 40, swapTotalMB: 12_288,
+        observedAt: leaseNow)
+    let floored = OrchestratorLease.Policy(perCompileMB: 3_000, floorRequirementMB: 4_000)
+    let joined = leaseNow.addingTimeInterval(-100)
+    var waiting = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
+                                           directory: leaseDirectory)
+    waiting.queue = [leaseWaiter("req-head", label: "head", session: "s1",
+                                 requestedAt: joined, lastPolledAt: joined),
+                     leaseWaiter("req-behind", label: "behind", session: "s2",
+                                 requestedAt: joined.addingTimeInterval(1),
+                                 lastPolledAt: joined.addingTimeInterval(1))]
+    let refused = OrchestratorLease.acquire(
+        record: waiting, request: leaseRequest("req-head", label: "head", session: "s1"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent,
+                                             pressure: tight),
+        policy: floored, topAnonymous: [], now: leaseNow)
+    expect("the head of the line is refused when this Mac cannot admit even one compiler",
+           leaseRefusal(refused.outcome)?.code, "pressure_refused")
+    expect("and its poll clock moves, because it asked", refused.record.queue.first?.lastPolledAt,
+           leaseNow)
+    expect("its place in the line is untouched — re-asking must never cost it",
+           refused.record.queue.first?.requestedAt, joined)
+    expect("and nobody else's clock moves with it",
+           refused.record.queue.last?.lastPolledAt, joined.addingTimeInterval(1))
+
+    // The consequence, which is the defect rather than the bookkeeping: a waiter refused for the
+    // length of the pressure is still asking, and a later arrival must not take the slot from it.
+    let soonAfter = leaseNow.addingTimeInterval(OrchestratorLease.waiterDeadline - 10)
+    let jumper = OrchestratorLease.acquire(
+        record: refused.record, request: leaseRequest("req-late", label: "late", session: "s9"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: soonAfter)
+    expect("so a waiter that has been refused all along still holds the head of the line",
+           leaseQueued(jumper.outcome)?.holdReason, "queued_behind_others")
+    // The control, so the check above is measuring the clock and not a queue that never moves:
+    // the same arrival, against the same queue, once the head really has stopped asking.
+    let muchLater = leaseNow.addingTimeInterval(OrchestratorLease.waiterDeadline * 2)
+    let inherits = OrchestratorLease.acquire(
+        record: refused.record, request: leaseRequest("req-late", label: "late", session: "s9"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: muchLater)
+    check("while a head that has genuinely stopped asking is passed over as it always was",
+          leaseGrant(inherits.outcome) != nil, "\(inherits.outcome)")
+
+    // **The same rule for the answer the decision did not even make.** `lease_changed` and
+    // `takeover_failed` return the record *unchanged*, which is right for everything the effect
+    // would have done and wrong for the one thing that happened before it was attempted. These
+    // two are produced by exactly the race this feature exists for — `test.sh` takes the lock
+    // directory with `mkdir` and tells nobody — so on a contended machine a waiter could be
+    // declared silent by the very contention it was waiting out.
+    var racing = leaseStubProbes()
+    racing.createDirectory = { _, _ in "somebody took the directory first" }
+    let granting = OrchestratorLease.acquire(
+        record: waiting, request: leaseRequest("req-head", label: "head", session: "s1"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: leaseNow)
+    check("with no floor in the policy that same head is granted, so an effect is attempted",
+          leaseGrant(granting.outcome) != nil, "\(granting.outcome)")
+    let applied = OrchestratorLease.perform(granting, on: waiting, probes: racing)
+    expect("a lock that changed hands mid-decision answers `lease_changed`, which means ask again",
+           leaseRefusal(applied.outcome)?.code, "lease_changed")
+    expect("the queue entry comes back, because the grant did not happen",
+           applied.record.queue.map { $0.requestID }, ["req-head", "req-behind"])
+    expect("and the poll it made on the way through is still counted",
+           applied.record.queue.first?.lastPolledAt, leaseNow)
+
+    // And nothing that is not a request for the slot moves anybody's clock. A renewal is the
+    // holder's proof of life, not a waiter's.
+    let holding = leaseHolder("lease-r", label: "holding", renewedAt: leaseNow, session: "sh")
+    let held = heldRecord(holding, queue: waiting.queue)
+    let renewed = OrchestratorLease.renew(
+        record: held, leaseID: "lease-r", owner: leaseOwner("holding", session: "sh"),
+        workPIDs: [7], directory: heldDirectory(holding),
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: leaseNow.addingTimeInterval(20))
+    expect("renewing a hold moves no waiter's poll clock, because it is not an ask",
+           renewed.record.queue.first?.lastPolledAt, joined)
+
+    // A refusal has to still be readable at the moment its asker is declared silent. The two
+    // clocks used to expire together, so a person opening Bearings at exactly that moment saw
+    // neither the request nor the reason it had been given.
+    check("a refusal outlives the waiter deadline it is shown beside",
+          OrchestratorLease.refusalVisibleFor > OrchestratorLease.waiterDeadline)
+}
+
 group("the lease record survives a store round trip") {
-    var holder = leaseHolder("lease-1", label: "root af1b83ba", pid: 72_929,
-                             renewedAt: leaseNow.addingTimeInterval(30), session: "s1",
-                             work: [8_101, 8_102])
-    holder.doneFlagPath = "/tmp/clawdline-suite.lock/done"
-    holder.budget = OrchestratorLease.Budget(parallelism: 2, basis: "headroom_mb/3000mb_per_compile",
-                                             headroomMB: 7_732, swapFreeMB: 1_417)
-    holder.phase = .idleHolding
-    holder.phaseSince = leaseNow.addingTimeInterval(-2_160)
-    holder.lastCompilingAt = leaseNow.addingTimeInterval(-2_160)
-    holder.owner.taskID = "23e78454"
-    holder.owner.rootSessionID = "af1b83ba"
-    let waiter = leaseWaiter("req-2", label: "second", session: "s2",
-                             reason: "queued for the suite")
+    // **Every value in this fixture is distinct, and that is the assertion.** The group said
+    // "every field survives" over a codec that dropped three of them, and it was green: the
+    // fixture never set `Holder.token`, `Holder.ownerStarted` or `Record.lastRefusal`, so
+    // nothing was there to lose. The round's one new store field was worse — `last_polled_at`
+    // could be deleted from `stored()` with this group still green, because the waiter's poll
+    // clock equalled its `requestedAt` and the loader falls back to exactly that. A fixture whose
+    // values coincide cannot tell two fields apart, and a check that cannot fail is worse than no
+    // check, because it is counted.
+    let holder = OrchestratorLease.Holder(
+        leaseID: "lease-1",
+        owner: OrchestratorLease.Owner(sessionID: "s1", taskID: "23e78454",
+                                       rootSessionID: "af1b83ba", label: "root af1b83ba"),
+        pid: 72_929,
+        processStart: leaseNow.addingTimeInterval(-900),
+        acquiredAt: leaseNow.addingTimeInterval(-600),
+        renewedAt: leaseNow.addingTimeInterval(30),
+        workPIDs: [8_101, 8_102],
+        doneFlagPath: "/tmp/clawdline-suite.lock/done",
+        tree: "/tmp/tree", log: "/tmp/log", note: "the full swift suite",
+        budget: OrchestratorLease.Budget(parallelism: 2,
+                                         basis: "headroom_mb/3000mb_per_compile",
+                                         headroomMB: 7_732, swapFreeMB: 1_417),
+        provenance: .broker,
+        phase: .idleHolding,
+        phaseSince: leaseNow.addingTimeInterval(-300),
+        lastCompilingAt: leaseNow.addingTimeInterval(-450),
+        heartbeatPath: "/tmp/clawdline-suite.lock/beat",
+        // The two the codec dropped. Neither is minted by the broker: they are what the record in
+        // the lock directory carries, and the token is the field the *other* two writers compare
+        // against — a rewrite that lost it tells a live shell holder its lock changed hands.
+        token: "build-72929-1788369400",
+        ownerStarted: "Thu Sep  3 02:18:04 2026")
+    let waiter = OrchestratorLease.Waiter(
+        requestID: "req-2",
+        owner: OrchestratorLease.Owner(sessionID: "s2", taskID: "7c19aa30",
+                                       rootSessionID: "af1b83ba", label: "second"),
+        pid: 9_314,
+        processStart: leaseNow.addingTimeInterval(-120),
+        requestedAt: leaseNow.addingTimeInterval(-60),
+        reason: "queued for the suite",
+        // Deliberately not `requestedAt`: this waiter joined the line a minute ago and asked
+        // again five seconds ago, which is the only shape in which the poll clock is a fact
+        // rather than a copy of another field.
+        lastPolledAt: leaseNow.addingTimeInterval(-5))
+    let refusal = OrchestratorLease.RefusalNote(
+        code: "pressure_refused",
+        message: "This Mac cannot admit even one compiler: headroom_mb is 812 MB against 3000 MB",
+        at: leaseNow.addingTimeInterval(-15), requestID: "req-3", sessionID: "s3",
+        taskID: "aa11bb22")
     let record = OrchestratorLease.Record(
         resource: OrchestratorLease.heavyCompile, directory: leaseDirectory, holder: holder,
         queue: [waiter], reconciliation: .matched, reconciledAt: leaseNow,
-        holdReason: nil, livenessReason: "proving")
+        holdReason: nil, livenessReason: "proving", lastRefusal: refusal)
+    // The fixture's own control, so this group cannot quietly go back to being unable to fail:
+    // ten clocks, ten different instants. Any two that coincide are two fields a dropped line
+    // could swap without this group noticing.
+    let stamps: [Date] = [holder.processStart!, holder.acquiredAt, holder.renewedAt,
+                          holder.phaseSince, holder.lastCompilingAt!,
+                          waiter.processStart!, waiter.requestedAt, waiter.lastPolledAt,
+                          refusal.at, record.reconciledAt!]
+    expect("no two clocks in this fixture carry the same instant, or it could not tell them apart",
+           Set(stamps).count, stamps.count)
     let stored = OrchestratorStore.stored(record)
     guard let back = OrchestratorStore.lease(from: stored) else {
         check("a stored lease reads back", false); return
     }
     expect("every field survives", back, record)
+    // Named one at a time as well as compared whole, so a red says which line of the codec went
+    // rather than printing two records for somebody to diff by eye.
+    expect("the holder's token survives, which is what the other two writers compare against",
+           back.holder?.token, holder.token)
+    expect("and the start identity the shell writers compare beside it",
+           back.holder?.ownerStarted, holder.ownerStarted)
+    expect("the waiter's poll clock survives, so a restart does not resurrect the line as freshly asked",
+           back.queue.first?.lastPolledAt, waiter.lastPolledAt)
+    expect("and the refusal, so `asked and was told no` is not `never asked` after a restart",
+           back.lastRefusal, refusal)
+    // A refusal row that lost the id it is about belongs to nobody — both projections match it
+    // against a request — so it is dropped rather than half-resurrected.
+    var truncated = stored
+    var refusalRow = truncated["last_refusal"] as? [String: Any] ?? [:]
+    refusalRow.removeValue(forKey: "request_id")
+    truncated["last_refusal"] = refusalRow
+    expect("a refusal row with no request id is dropped rather than half-resurrected",
+           OrchestratorStore.lease(from: truncated)?.lastRefusal == nil, true)
+    // Provenance has a fallback of `.broker`, so only a record that is *not* a broker grant can
+    // pin it. An adopted holder is that record, and it is a real state: a `holder.txt` this
+    // broker did not write, read back after a restart.
+    var adopted = holder
+    adopted.provenance = .directory
+    adopted.budget = nil
+    let adoptedRecord = OrchestratorLease.Record(
+        resource: OrchestratorLease.heavyCompile, directory: leaseDirectory, holder: adopted,
+        queue: [], reconciliation: .adopted, reconciledAt: leaseNow)
+    expect("a holder adopted from the directory reads back as adopted, not as a broker grant",
+           OrchestratorStore.lease(from: OrchestratorStore.stored(adoptedRecord)), adoptedRecord)
 
     let minimal = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile)
     guard let minimalBack = OrchestratorStore.lease(from: OrchestratorStore.stored(minimal))

@@ -368,6 +368,18 @@ enum OrchestratorStore {
         if let at = lease.reconciledAt { out["reconciled_at"] = at.timeIntervalSince1970 }
         if let reason = lease.holdReason { out["hold_reason"] = reason }
         if let reason = lease.livenessReason { out["liveness_reason"] = reason }
+        // "Asked and was told no" is not the same as "never asked", and a restart used to lose the
+        // difference: the refusal note is the only record that a session wanted the slot and did
+        // not get it, and it is what both projections show.
+        if let refusal = lease.lastRefusal {
+            var refusalRow: [String: Any] = [
+                "code": refusal.code, "message": refusal.message,
+                "at": refusal.at.timeIntervalSince1970, "request_id": refusal.requestID,
+            ]
+            if let session = refusal.sessionID { refusalRow["session_id"] = session }
+            if let task = refusal.taskID { refusalRow["task_id"] = task }
+            out["last_refusal"] = refusalRow
+        }
         guard let holder = lease.holder else { return out }
         var row: [String: Any] = [
             "lease_id": holder.leaseID,
@@ -384,6 +396,14 @@ enum OrchestratorStore {
             row["last_compiling_at"] = compiling.timeIntervalSince1970
         }
         if let start = holder.processStart { row["process_start"] = start.timeIntervalSince1970 }
+        // **The token, and the start identity the shell writers compare against.** Neither is
+        // minted here: they are what the record in the lock directory carries, and a restart that
+        // dropped them handed the next `refreshHolderFile` a record with no token — which is what
+        // a live shell holder's renewal loop reads as "my lock has changed hands". It is healed
+        // today by `reconcile` re-reading the directory before every effect, and that invariant is
+        // stated in exactly one place and checked in none; carrying the fields is the cheaper half.
+        if let token = holder.token { row["token"] = token }
+        if let started = holder.ownerStarted { row["owner_started"] = started }
         if let session = holder.owner.sessionID { row["session_id"] = session }
         if let task = holder.owner.taskID { row["task_id"] = task }
         if let root = holder.owner.rootSessionID { row["root_session_id"] = root }
@@ -425,6 +445,27 @@ enum OrchestratorStore {
                                                         limit: OrchestratorLease.labelLimit),
                 label: label)
         }
+        // A refusal note back off disk. A row missing any of the four fields that make it a note
+        // about a particular asker is dropped rather than half-resurrected: a refusal with no
+        // request id belongs to nobody, and both projections match it against one.
+        func refusal(from row: [String: Any]?) -> OrchestratorLease.RefusalNote? {
+            guard let row,
+                  let code = OrchestratorLease.bounded(row["code"] as? String,
+                                                       limit: OrchestratorLease.labelLimit),
+                  let message = OrchestratorLease.bounded(row["message"] as? String,
+                                                          limit: OrchestratorLease.reasonLimit),
+                  let at = row["at"] as? Double,
+                  let requestID = OrchestratorLease.bounded(row["request_id"] as? String,
+                                                            limit: OrchestratorLease.labelLimit)
+            else { return nil }
+            return OrchestratorLease.RefusalNote(
+                code: code, message: message, at: Date(timeIntervalSince1970: at),
+                requestID: requestID,
+                sessionID: OrchestratorLease.bounded(row["session_id"] as? String,
+                                                    limit: OrchestratorLease.labelLimit),
+                taskID: OrchestratorLease.bounded(row["task_id"] as? String,
+                                                 limit: OrchestratorLease.labelLimit))
+        }
         var seen = Set<String>()
         let queue: [OrchestratorLease.Waiter] = (obj["queue"] as? [[String: Any]] ?? [])
             .compactMap { row in
@@ -453,7 +494,8 @@ enum OrchestratorStore {
             holdReason: OrchestratorLease.bounded(obj["hold_reason"] as? String,
                                                   limit: OrchestratorLease.labelLimit),
             livenessReason: OrchestratorLease.bounded(obj["liveness_reason"] as? String,
-                                                      limit: OrchestratorLease.labelLimit))
+                                                      limit: OrchestratorLease.labelLimit),
+            lastRefusal: refusal(from: obj["last_refusal"] as? [String: Any]))
         guard let row = obj["holder"] as? [String: Any],
               let leaseID = OrchestratorLease.bounded(row["lease_id"] as? String,
                                                       limit: OrchestratorLease.labelLimit),
@@ -494,7 +536,11 @@ enum OrchestratorStore {
             lastCompilingAt: (row["last_compiling_at"] as? Double)
                 .map(Date.init(timeIntervalSince1970:)),
             heartbeatPath: OrchestratorLease.bounded(row["heartbeat"] as? String,
-                                                     limit: OrchestratorLease.pathLimit))
+                                                     limit: OrchestratorLease.pathLimit),
+            token: OrchestratorLease.bounded(row["token"] as? String,
+                                             limit: OrchestratorLease.labelLimit),
+            ownerStarted: OrchestratorLease.bounded(row["owner_started"] as? String,
+                                                    limit: OrchestratorLease.labelLimit))
         return record
     }
 

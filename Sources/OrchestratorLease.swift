@@ -620,10 +620,17 @@ enum OrchestratorLease {
     /// Every observation a decision needs, gathered once so a decision is made against one
     /// reading of the machine rather than several taken a second apart.
     struct Evidence: Equatable {
-        var holderProcess: ProcessObservation
         /// The front of the queue, read once per decision. `.unknown` when there is no queue, or
-        /// when the reading could not be taken — which says nothing either way, exactly as it does
-        /// for the holder.
+        /// when the reading could not be taken — which says nothing either way.
+        ///
+        /// **There used to be a `holderProcess` beside this and nothing read it.** It cost one
+        /// bounded subprocess on every single decision, on the machine whose subprocess and memory
+        /// budget is the whole point of this feature, and `perform`'s own apology for the cost of
+        /// a reading counted it. The holder does not have a process axis by design: a pid is a
+        /// proxy and proxies outlive the work — a `sleep 14400` recorded as a holder is what
+        /// started this — so liveness there is renewal and only renewal. A field that looks like
+        /// an axis and is not is worse than no field, so it is gone rather than left to be wired
+        /// up by somebody who assumes it was meant to decide something.
         var headWaiterProcess: ProcessObservation = .unknown("not probed")
         var compilers: CompilerObservation
         var owner: OwnerState
@@ -634,12 +641,10 @@ enum OrchestratorLease {
         var beat: Date?
         var pressure: Pressure?
 
-        init(holderProcess: ProcessObservation = .unknown("not observed"),
-             headWaiterProcess: ProcessObservation = .unknown("not probed"),
+        init(headWaiterProcess: ProcessObservation = .unknown("not probed"),
              compilers: CompilerObservation = .unknown("not observed"),
              owner: OwnerState = .unknown, doneFlag: DoneFlag = .unknown,
              beat: Date? = nil, pressure: Pressure? = nil) {
-            self.holderProcess = holderProcess
             self.headWaiterProcess = headWaiterProcess
             self.compilers = compilers
             self.owner = owner
@@ -1058,10 +1063,28 @@ enum OrchestratorLease {
         case refused(Refusal)
     }
 
+    /// One request asking for the slot, at one moment.
+    ///
+    /// **Asking is a fact, and no answer takes it back.** A waiter proves it is alive by asking
+    /// again — the route is idempotent on `request_id` and a waiting client re-sends it every few
+    /// seconds — so the poll clock has to move for *every* answer that request gets, not only for
+    /// the answer that happens to be `queued`. It did not: `lastPolledAt` was moved in `enqueue`
+    /// alone, so a head waiter refused for pressure, or told `lease_changed` because the lock moved
+    /// between the reading and the write, polled exactly as the contract asks and was recorded as
+    /// having gone quiet — passed over after ``waiterDeadline`` and droppable by the hard-limit
+    /// trim, while a later arrival that asked at the right moment took the slot.
+    struct Ask: Equatable {
+        var requestID: String
+        var at: Date
+    }
+
     struct Decision: Equatable {
         var record: Record
         var effect: SideEffect
         var outcome: Outcome
+        /// The ask this decision is an answer to, when there is one. `nil` for renew, release and
+        /// cancel, which are not requests for the slot.
+        var ask: Ask? = nil
     }
 
     // MARK: - Validation
@@ -1259,6 +1282,36 @@ enum OrchestratorLease {
     static func acquire(record: Record, request: Request, directory: DirectoryState,
                         evidence: Evidence, policy: Policy = Policy(),
                         topAnonymous: [MemoryHolder] = [], now: Date) -> Decision {
+        // Every route through the body below is an answer to one ask, so the ask is stamped once
+        // here rather than at each of the eight places that return. ``perform`` applies it to
+        // whichever record survives the effect, which is the half that matters when the effect
+        // fails: `lease_changed` and `takeover_failed` discard the decision's record entirely, and
+        // with it the poll this caller had just made.
+        var decision = decideAcquire(record: record, request: request, directory: directory,
+                                     evidence: evidence, policy: policy,
+                                     topAnonymous: topAnonymous, now: now)
+        decision.ask = Ask(requestID: request.requestID, at: now)
+        return decision
+    }
+
+    /// Written down where a projection can find it: this request asked, whatever it was told.
+    ///
+    /// Order in the queue is untouched — that comes from ``Waiter/requestedAt`` — and a request
+    /// that is not in the queue has nothing to move, which is the ordinary case for a caller
+    /// refused before it ever joined the line.
+    static func asked(_ record: Record, _ ask: Ask) -> Record {
+        guard let index = record.queue.firstIndex(where: { $0.requestID == ask.requestID }),
+              record.queue[index].lastPolledAt < ask.at
+        else { return record }
+        var out = record
+        out.queue[index].lastPolledAt = ask.at
+        return out
+    }
+
+    private static func decideAcquire(record: Record, request: Request,
+                                      directory: DirectoryState, evidence: Evidence,
+                                      policy: Policy, topAnonymous: [MemoryHolder],
+                                      now: Date) -> Decision {
         var out = reconcile(record: record, directory: directory, evidence: evidence, now: now)
 
         // Already the holder — the answer to a repeated poll after the grant landed.
@@ -1317,9 +1370,17 @@ enum OrchestratorLease {
     }
 
     /// A refusal, written down where a projection can find it.
+    ///
+    /// It moves the poll clock too, and that is not bookkeeping: **a refusal is an answer to an
+    /// ask, and the ask is what a waiter's liveness is made of.** A head of the line refused for
+    /// pressure keeps polling every five seconds exactly as the contract asks; with the clock
+    /// frozen it read `waiter_stopped_asking` two minutes later, was passed over, and could be
+    /// dropped by the hard-limit trim — while it was the one request on this machine that had
+    /// never stopped asking. Latent only because `leasePolicy` carries no floor yet, and the next
+    /// node in this feature's own plan is the one that measures the number for it.
     private static func refuse(_ record: Record, request: Request, with refusal: Refusal,
                                now: Date) -> Decision {
-        var out = record
+        var out = asked(record, Ask(requestID: request.requestID, at: now))
         out.lastRefusal = RefusalNote(code: refusal.code, message: refusal.message, at: now,
                                       requestID: request.requestID,
                                       sessionID: request.owner.sessionID,
@@ -1710,8 +1771,14 @@ enum OrchestratorLease {
     }
 
     /// How recent a refusal has to be to still be worth showing. A refusal is a moment, not a
-    /// state, so it ages out on the same clock a waiter proves itself on rather than lingering.
-    static let refusalVisibleFor: TimeInterval = waiterDeadline
+    /// state, so it ages out rather than lingering — but it has to outlive the waiter it is about.
+    ///
+    /// It was exactly ``waiterDeadline``, and the two clocks then expired together: the moment a
+    /// waiter was declared to have stopped asking was the moment its refusal stopped being shown,
+    /// so a person opening Bearings at that instant saw neither fact — not the request, and not
+    /// the reason it had been given. One whole deadline of overlap, so the answer is still on
+    /// screen after the asker has been declared silent.
+    static let refusalVisibleFor: TimeInterval = waiterDeadline * 2
 
     static func bearings(_ record: Record?, now: Date) -> Bearings {
         guard let record else { return Bearings(holder: nil, queueDepth: 0, holdReason: nil,
@@ -2061,7 +2128,6 @@ enum OrchestratorLease {
             evidence.headWaiterProcess = probes.processStart(head.pid)
         }
         if let holder = holderForEvidence {
-            evidence.holderProcess = probes.processStart(holder.pid)
             evidence.owner = ownerState(holder)
             evidence.doneFlag = holder.doneFlagPath
                 .map { probes.fileExists($0) ? DoneFlag.present : .absent } ?? .absent
@@ -2078,6 +2144,19 @@ enum OrchestratorLease {
     /// so the caller is told `lease_changed` and polls again rather than being handed a grant
     /// the filesystem did not agree to.
     static func perform(_ decision: Decision, on previous: Record, probes: Probes) -> Applied {
+        var applied = performEffect(decision, on: previous, probes: probes)
+        // **The one thing a failed effect does not take back.** Everything else in the decision is
+        // a consequence of the effect and is rightly discarded with it; the caller having asked is
+        // not — it happened before the effect was attempted and no `mkdir` losing a race can undo
+        // it. Without this, the two refusals whose own text says *ask again* were the two that
+        // stopped the asking from counting, so a waiter on a contended machine could be declared
+        // silent by the very contention it was waiting out.
+        if let ask = decision.ask { applied.record = asked(applied.record, ask) }
+        return applied
+    }
+
+    private static func performEffect(_ decision: Decision, on previous: Record,
+                                      probes: Probes) -> Applied {
         switch decision.effect {
         case .none:
             return Applied(record: decision.record, outcome: decision.outcome)
@@ -2092,8 +2171,10 @@ enum OrchestratorLease {
         case .takeOverDirectory(let expecting, let granting):
             // **(B) again, immediately before the directory goes.**
             //
-            // The decision above was made against a reading taken before four subprocesses, each
-            // bounded at five seconds, so the compiler count it rests on can be many seconds old
+            // The decision above was made against a reading taken before the rest of the turn's
+            // probes — `pressure` is three subprocesses on its own, and the head waiter's start
+            // and the anonymous-memory scan are one each, all bounded at five seconds — so the
+            // compiler count it rests on can be many seconds old
             // by the time anything is removed — and the identity compare inside `removeDirectory`
             // cannot see a holder that came back to life, only one whose pid changed. `test.sh`
             // re-runs its whole admission immediately before its rename and the broker should do
