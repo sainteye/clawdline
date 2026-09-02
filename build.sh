@@ -6,6 +6,162 @@ cd "$(dirname "$0")"
 . tools/swift-source-manifest.sh
 verify_swift_source_manifest production
 
+
+# --- The machine-level heavy-compile lease -------------------------------------------------
+#
+# One full Swift compile is the most expensive thing that happens on this Mac, and four
+# `swift-frontend` processes have force-rebooted it. `/tmp/clawdline-suite.lock` is the truth:
+# holding it is what `mkdir` says it is, which keeps a contributor with no Clawdline running
+# from colliding with one that has it. The broker is the registry and the queue in front of that
+# directory, so `curl` failing costs the queue and the visibility, never the exclusion.
+#
+# **Fail closed.** No lease means the compile does not run. There is no proceed-anyway, and
+# nothing here ever ends anybody else's process.
+CLAWDLINE_LEASE_DIR="${CLAWDLINE_LEASE_DIR:-/tmp/clawdline-suite.lock}"
+CLAWDLINE_LEASE_ID=""
+CLAWDLINE_LEASE_MODE=""
+CLAWDLINE_LEASE_RENEWER=""
+CLAWDLINE_COMPILE_JOBS="${CLAWDLINE_COMPILE_JOBS:-}"
+CLAWDLINE_COMPILE_JOBS_SOURCE="unset"
+CLAWDLINE_LEASE_WAIT_SECONDS="${CLAWDLINE_LEASE_WAIT_SECONDS:-1800}"
+
+clawdline_lease_port() {
+  /usr/bin/python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717
+}
+
+clawdline_lease_holder_file() {
+  # The six fields two sessions evolved, plus the three the sentinel defect asked for. `pid` is
+  # the process doing the work, never a sentinel; `renewed` is the proof of life.
+  printf 'holder=%s\npid=%s\nstarted=%s\ntree=%s\nlog=%s\nnote=%s\nwork=\ndone_flag=\nrenewed=%s\n' \
+    "build.sh $(id -un) pid $$" "$$" "$CLAWDLINE_LEASE_STARTED" "$(pwd)" "" \
+    "building Clawdline.app" "$(date +%s)" > "$CLAWDLINE_LEASE_DIR/holder.txt"
+}
+
+# The proof of life, in the background, well inside the broker's renewal deadline. It refreshes
+# the record and the file; it never extends a right and its absence never ends one.
+clawdline_lease_renew_forever() {
+  while [ -d "$CLAWDLINE_LEASE_DIR" ]; do
+    sleep 20
+    [ -d "$CLAWDLINE_LEASE_DIR" ] || break
+    clawdline_lease_holder_file 2>/dev/null || true
+    if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
+      curl -s --max-time 5 -X POST \
+        "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_ID/renew" \
+        -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
+        -H 'Content-Type: application/json' \
+        -d "{\"holder\":\"build.sh $(id -un) pid $$\"}" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+clawdline_lease_acquire() {
+  CLAWDLINE_LEASE_PORT=$(clawdline_lease_port)
+  CLAWDLINE_LEASE_TOKEN="$HOME/.config/clawdline/orchestrator-token"
+  CLAWDLINE_LEASE_ID="build-$$-$(date +%s)"
+  CLAWDLINE_LEASE_STARTED=$(date +%s)
+  local deadline=$(( $(date +%s) + CLAWDLINE_LEASE_WAIT_SECONDS ))
+  local announced=0
+  while :; do
+    if [ -r "$CLAWDLINE_LEASE_TOKEN" ] && command -v curl >/dev/null 2>&1; then
+      local answer
+      answer=$(curl -s --max-time 10 -X POST \
+        "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases" \
+        -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
+        -H 'Content-Type: application/json' \
+        -d "{\"request_id\":\"$CLAWDLINE_LEASE_ID\",\"resource\":\"heavy_compile\",
+             \"pid\":$$,\"process_start\":$CLAWDLINE_LEASE_STARTED,
+             \"holder\":\"build.sh $(id -un) pid $$\",
+             \"reason\":\"building Clawdline.app\",\"tree\":\"$(pwd)\"}" 2>/dev/null) || answer=
+      local state
+      state=$(printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("state",""))
+except Exception: print("")' 2>/dev/null)
+      case "$state" in
+        granted)
+          CLAWDLINE_LEASE_MODE=broker
+          CLAWDLINE_COMPILE_JOBS=$(printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("budget",{}).get("parallelism",""))
+except Exception: print("")' 2>/dev/null)
+          CLAWDLINE_COMPILE_JOBS_SOURCE="the broker lease budget"
+          echo "→ heavy-compile lease granted by the broker ($CLAWDLINE_LEASE_ID)"
+          clawdline_lease_holder_file 2>/dev/null || true
+          return 0
+          ;;
+        queued)
+          if [ "$announced" = 0 ]; then
+            printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
+try:
+    a = json.load(sys.stdin)
+    h = (a.get("lease") or {}).get("holder") or {}
+    print("→ waiting for the heavy-compile slot: position %s, %s; held by %s" % (
+        a.get("position"), a.get("holdReason"), h.get("holder", "nobody recorded")))
+except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
+            announced=1
+          fi
+          ;;
+        "")
+          # The broker did not answer. The directory is still the truth, so fall back to it
+          # rather than proceeding without a lease.
+          if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
+            CLAWDLINE_LEASE_MODE=directory
+            CLAWDLINE_COMPILE_JOBS_SOURCE="unset (no broker answered, so no budget)"
+            clawdline_lease_holder_file
+            echo "→ heavy-compile lock taken directly; the broker did not answer"
+            return 0
+          fi
+          if [ "$announced" = 0 ]; then
+            echo "→ waiting for $CLAWDLINE_LEASE_DIR, held by:"
+            sed 's/^/    /' "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null | head -4
+            announced=1
+          fi
+          ;;
+        *)
+          echo "!! the heavy-compile lease was refused, and this build will not compile without it:" >&2
+          printf '%s\n' "$answer" >&2
+          return 1
+          ;;
+      esac
+    else
+      if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
+        CLAWDLINE_LEASE_MODE=directory
+        CLAWDLINE_COMPILE_JOBS_SOURCE="unset (no orchestrator token, so no budget)"
+        clawdline_lease_holder_file
+        echo "→ heavy-compile lock taken directly; this Mac has no orchestrator token"
+        return 0
+      fi
+    fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "!! gave up waiting ${CLAWDLINE_LEASE_WAIT_SECONDS}s for the heavy-compile slot." >&2
+      echo "   Nothing was killed and nothing was compiled. Look at $CLAWDLINE_LEASE_DIR/holder.txt." >&2
+      return 1
+    fi
+    sleep 5
+  done
+}
+
+# Release is idempotent and removes the directory only while it still names this process — the
+# one rule a release path may never break is removing a lock somebody else owns.
+clawdline_lease_release() {
+  [ -n "$CLAWDLINE_LEASE_MODE" ] || return 0
+  if [ -n "$CLAWDLINE_LEASE_RENEWER" ]; then
+    # Our own background renewer, and nothing else. No other process is ever signalled here.
+    kill "$CLAWDLINE_LEASE_RENEWER" 2>/dev/null || true
+    CLAWDLINE_LEASE_RENEWER=""
+  fi
+  if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
+    curl -s --max-time 5 -X POST \
+      "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_ID/release" \
+      -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
+      -H 'Content-Type: application/json' \
+      -d "{\"holder\":\"build.sh $(id -un) pid $$\"}" >/dev/null 2>&1 || true
+  fi
+  if [ -r "$CLAWDLINE_LEASE_DIR/holder.txt" ] \
+      && grep -qx "pid=$$" "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null; then
+    rm -rf "$CLAWDLINE_LEASE_DIR"
+  fi
+  CLAWDLINE_LEASE_MODE=""
+}
+
 APP="${CLAWDLINE_APP:-$HOME/Applications/Clawdline.app}"
 APP_PARENT="$(dirname "$APP")"
 APP_NAME="$(basename "$APP")"
@@ -161,6 +317,7 @@ cleanup_build() {
       -H 'Content-Type: application/json' \
       -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}" >/dev/null 2>&1 || true
   fi
+  clawdline_lease_release
   rm -rf "$STAGE_ROOT"
 }
 trap cleanup_build EXIT
@@ -168,13 +325,33 @@ trap cleanup_build EXIT
 echo "→ building staged app for $APP"
 mkdir -p "$(dirname "$BIN")" "$RES"
 
+clawdline_lease_acquire || exit 1
+clawdline_lease_renew_forever &
+CLAWDLINE_LEASE_RENEWER=$!
+
+# Say which ceiling was used and where the number came from, so a slow build is explained rather
+# than mysterious. `-j` is what decides how many `swift-frontend` processes exist at once, which
+# is the quantity that reboots this Mac.
+compile_jobs=()
+if [ -n "$CLAWDLINE_COMPILE_JOBS" ]; then
+  compile_jobs=(-j "$CLAWDLINE_COMPILE_JOBS")
+  echo "→ compiling with -j $CLAWDLINE_COMPILE_JOBS, from $CLAWDLINE_COMPILE_JOBS_SOURCE"
+else
+  echo "→ compiling with swiftc's own default parallelism ($CLAWDLINE_COMPILE_JOBS_SOURCE)"
+fi
+
 swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
   -O \
+  "${compile_jobs[@]}" \
   -o "$BIN" \
   "${clawdline_production_sources[@]}" \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
+
+# The slot is given back the moment the compiler exits, not at the end of the script: packaging,
+# signing and installing are not what this lease is protecting.
+clawdline_lease_release
 
 cp Resources/iterm.js "$RES/"
 cp Resources/Clawdline.icns "$RES/"
