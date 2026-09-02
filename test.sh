@@ -1001,7 +1001,7 @@ clawdline_confirm_suite_lock() {
   # deadline another run may legitimately judge this lock stale and take it. That is the same two
   # runs in the guarded section the renewer's own three-answer rule was written to prevent,
   # arrived at from the other end, so this is the second thing it asks.
-  local lock="$CLAWDLINE_SUITE_LOCK_DIR" stopped verdict
+  local lock="$CLAWDLINE_SUITE_LOCK_DIR" stopped renewer_pid
   if [ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ]; then
     stopped=$(cat "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" 2>/dev/null) || stopped=""
     echo "suite lock: the renewal loop stopped during the guarded section — ${stopped:-no reason recorded}" >&2
@@ -1022,8 +1022,8 @@ clawdline_confirm_suite_lock() {
   # The lock is this run's and nothing is renewing it. Nothing is killed and nothing is given up:
   # a fresh renewer is started, because the alternative — throwing away a compile that has already
   # been paid for — is worse than resuming the beat under a lock this run demonstrably still holds.
-  verdict="${clawdline_suite_lock_renewer:-none}"
-  echo "suite lock: $lock is still this run's but its renewer (${verdict}) is gone — restarting the proof of life before the test binary starts." >&2
+  renewer_pid="${clawdline_suite_lock_renewer:-none}"
+  echo "suite lock: $lock is still this run's but its renewer (${renewer_pid}) is gone — restarting the proof of life before the test binary starts." >&2
   clawdline_suite_lock_start_renewer "$lock"
   return 0
 }
