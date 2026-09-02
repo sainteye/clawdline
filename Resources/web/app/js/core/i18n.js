@@ -383,7 +383,7 @@ export var T = {
     webStartFailed: "That could not be started.",
     webStartGone: "That project is not on the Mac any more.",
     webStartTerminalClosed: "{app} is not running on the Mac. Open it there and try again.",
-    webStartTerminalUnsupported: "A session cannot be started in {app} from here. Run tmux in it and this works.",
+    webStartTerminalUnsupported: "Settings starts new sessions in tmux, and this Mac has no tmux. Install it there, or pick another terminal in Settings.",
     webStartOff: "Starting a session is switched off. Settings → Remote on the Mac turns it on.",
     webResumeWith: "Pick up an earlier one",
     webResumePick: "Which conversation?",

@@ -967,6 +967,11 @@ protocol Copy {
     var webStartGone: String { get }
     /// `{app}` is the terminal's macOS display name, substituted by the page.
     var webStartTerminalClosed: String { get }
+    /// **No `{app}`, and that is the whole of it.** `terminal_unsupported` has one producer —
+    /// ``StartPoints/Plan/noTmux`` — and it carries no application name, because the refusal is
+    /// *tmux is what Settings asks for and there is no tmux on this Mac*, and tmux is not an
+    /// application. So this sentence is written whole rather than around a hole, and it says the
+    /// two things somebody can do about it: install tmux, or choose another terminal in Settings.
     var webStartTerminalUnsupported: String { get }
     var webStartOff: String { get }
 

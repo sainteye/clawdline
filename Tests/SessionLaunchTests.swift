@@ -830,6 +830,15 @@ group("which terminal a session is started in, and when none of them will do") {
            config("{\"scope_app\": \"\(iterm)\", \"terminal\": \"tmux\"}").scopeApp, iterm)
     expect("a value from a newer version, or a typo, is treated as no answer at all",
            config("{\"scope_app\": \"\(ghostty)\", \"terminal\": \"kitty\"}").terminal, .tmux)
+    // **Treated the same and recorded apart.** The answer is identical either way — that is the
+    // migration and it does not change — but a value somebody typed is not a key nobody wrote,
+    // and until this the branch could not tell them apart, so nothing could say that the next
+    // save was about to write over what they had asked for.
+    expect("and the typo it threw away is said out loud",
+           config("{\"scope_app\": \"\(ghostty)\", \"terminal\": \"kitty\"}").discardedTerminal,
+           "kitty")
+    expect("while a key that was never there discards nothing",
+           config("{\"scope_app\": \"\(ghostty)\"}").discardedTerminal, nil)
 
     // Once, not every launch: the answer is written down, and after that the scope may say
     // anything at all without moving it.
@@ -1139,18 +1148,24 @@ group("the page is given the words it draws the start sheet with") {
     // saying that something unnamed is not running.
     let holeless = L.catalog.filter {
         !$0.copy.webStartTerminalClosed.contains("{app}")
-            || !$0.copy.webStartTerminalUnsupported.contains("{app}")
     }.map { $0.tag }.sorted()
     check("every language keeps the hole the terminal's name goes in", holeless.isEmpty,
           holeless.joined(separator: ", "))
 
-    // **And the hole has to be told when there is no name for it.** `terminal_unsupported` stopped
+    // **And the other one must not have that hole at all.** `terminal_unsupported` stopped
     // carrying an `app` when the terminal setting became a choice of backend rather than a bundle
-    // id: the refusal is now *tmux is what Settings asks for and there is no tmux here*, which is
-    // not an application and has no name to hand the page. A site that writes the sentence anyway
-    // draws "A session cannot be started in  from here", which is the exact sentence dropping the
-    // name was meant to prevent. The condition is read rather than the line, because the guard and
-    // the call are on the same line in two of these files and on different lines in the third.
+    // id: its one producer is `StartPoints.Plan.noTmux`, whose refusal is *tmux is what Settings
+    // asks for and there is no tmux here* — not an application, and no name to hand the page. A
+    // translation that keeps `{app}` in it draws a literal `{app}` on a phone, because nothing
+    // fills this one.
+    let holed = L.catalog.filter {
+        $0.copy.webStartTerminalUnsupported.contains("{app}")
+    }.map { $0.tag }.sorted()
+    check("and no language leaves a hole in the sentence that has no name to fill it",
+          holed.isEmpty, holed.joined(separator: ", "))
+
+    // The condition is read rather than the line, because the guard and the call are on the same
+    // line in two of these files and on different lines in the third.
     func refusalCondition(_ page: String, _ code: String) -> String {
         let source = (try? String(contentsOfFile: "Resources/web/app/js/input/\(page).js",
                                   encoding: .utf8)) ?? ""
@@ -1161,18 +1176,55 @@ group("the page is given the words it draws the start sheet with") {
         else { return "" }
         return String(source[opened.upperBound..<closed.lowerBound])
     }
-    let namedRefusals = ["start", "command", "schedule-history"].flatMap { page in
+    // **And what the branch draws, not only what it asks.** The condition check above passed
+    // while every one of these pages answered `terminal_unsupported` with "That could not be
+    // started." — it guarded the question and never read the answer, which is how a refusal
+    // written for one person went a whole delivery without reaching them.
+    func refusalAnswer(_ page: String, _ code: String) -> String {
+        let source = (try? String(contentsOfFile: "Resources/web/app/js/input/\(page).js",
+                                  encoding: .utf8)) ?? ""
+        guard let answered = source.range(of: "\"\(code)\""),
+              let returned = source.range(of: "return",
+                                          range: answered.upperBound..<source.endIndex),
+              let ended = source.range(of: ";", range: returned.upperBound..<source.endIndex)
+        else { return "" }
+        return String(source[returned.upperBound..<ended.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    let pages = ["start", "command", "schedule-history"]
+    let namedRefusals = pages.flatMap { page in
         ["terminal_closed", "terminal_unsupported"].map { (page: page, code: $0) }
     }
     let unread = namedRefusals.filter { refusalCondition($0.page, $0.code).isEmpty }
     check("every page that answers a terminal refusal was found and read", unread.isEmpty,
           "no branch found for: " + unread.map { "\($0.page).js/\($0.code)" }
             .joined(separator: ", "))
-    let unnamed = namedRefusals.filter { !refusalCondition($0.page, $0.code).contains("e.app") }
+    let unnamed = pages.filter { !refusalCondition($0, "terminal_closed").contains("e.app") }
     check("and each asks whether there is a name before writing the sentence that needs one",
           unnamed.isEmpty,
-          unnamed.map { "\($0.page).js: \(refusalCondition($0.page, $0.code))" }
+          unnamed.map { "\($0).js: \(refusalCondition($0, "terminal_closed"))" }
             .joined(separator: " | "))
+    let stillAsking = pages.filter { refusalCondition($0, "terminal_unsupported").contains("e.app") }
+    check("and none of them asks for a name that this refusal never carries",
+          stillAsking.isEmpty,
+          stillAsking.map { "\($0).js: \(refusalCondition($0, "terminal_unsupported"))" }
+            .joined(separator: " | "))
+    let generic = pages.filter {
+        !refusalAnswer($0, "terminal_unsupported").contains("webStartTerminalUnsupported")
+    }
+    check("and each draws the sentence written for it rather than its own dead end",
+          generic.isEmpty,
+          generic.map { "\($0).js drew: \(refusalAnswer($0, "terminal_unsupported"))" }
+            .joined(separator: " | "))
+
+    // The mock is the only place this refusal can be looked at without uninstalling tmux, and it
+    // was answering the shape the server had stopped sending — an `app` on a code that has one
+    // producer and never carries one. `?mock=1&start=unsupported` could draw every path but this.
+    let mockSource = (try? String(contentsOfFile: "Resources/web/app/js/net/mock.js",
+                                  encoding: .utf8)) ?? ""
+    check("the mock offers that refusal in the shape the server actually sends",
+          mockSource.contains("{ code: \"terminal_unsupported\" }"),
+          mockSource.contains("terminal_unsupported") ? "still carrying an app" : "not found")
 
     // And they arrive in the language that was asked for, which is the entire reason the page
     // fetches this before it draws anything.

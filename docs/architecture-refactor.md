@@ -503,15 +503,14 @@ paying rent in the frozen file.
 This document had drifted from the executable guard. The guard is authoritative, and these are its
 values on the tree being landed, read out of `tools/check-architecture-boundaries.sh`. **Five of the
 six rows are computed by the guard on every run. The Swift-checks row is not** — no guard can count
-checks without running them — so it is the one row that a full suite has to settle before a landing,
-and the header says which tree it belongs to rather than implying it was observed:
+checks without running them — so it is the one row that a full suite has to settle before a landing:
 
-| | this document said | asserted on `integrate/cut2s1` |
+| | this document said | what the guard holds |
 |---|---:|---:|
 | ordered groups | 463 | 509 |
 | ordered runners | 25 | 30 |
 | suite files | 38 | 43 |
-| Swift checks | — | 8,277 |
+| Swift checks | — | 8,283 |
 | `Orchestrator.swift` ceiling | 13,592 | 13,123 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,463 |
 
@@ -557,11 +556,35 @@ cohesive group and splitting them would have produced four commits that do not c
 alone, which `docs/landing.md` forbids. Later stages carrying independent collections should hold to
 the original rule.
 
+**The heading used to carry a provenance, and that is the shape this section keeps re-learning.**
+It said `observed after Cut 1`, and for the Swift-checks row that was not true when it was written:
+no full suite had run on the tree it described. Not a wrong arithmetic under a right label — a right
+number under a wrong one. So the heading now names what every cell in it actually is, and where a
+number came from is said per row, in prose, rather than by one heading that would have to be true of
+six different things at once. **A column heading is the smallest place in this document that can
+lie, because it is the one part nobody re-reads when a cell changes.**
+
+**Two of the Swift-checks numbers below have since been observed rather than derived.** The landing
+run of `252b016b` — the exact committed tree, not a working copy — reported `8052 checks passed`,
+and the landing run of this correction reported `8283` on its own exact tree. The `8,025` those were
+built on is still inherited arithmetic, so an error there would travel into every number after it by
+the same amount, and only another full suite can find one.
+
 **And it worked on the next one.** Giving the terminal a setting of its own — `Config.terminal` and
-`StartPoints.TerminalChoice`, split out of the hotkey's scope — moves that row to **8,052**, 26
+`StartPoints.TerminalChoice`, split out of the hotkey's scope — moved that row to **8,052**, 26
 checks, in three groups and no new group, runner or suite file. The count was moved here in the same
 edit as `test.sh`'s `expected_swift_receipt` because the guard reads both and refuses to agree with
 one of them, and the arithmetic behind the 26 is written out beside that variable.
+
+**Closing that delivery's review moves it by six more, to 8,058.** Four are in *the page is given the
+words it draws the start sheet with* (9 → 13): a language keeping a `{app}` hole in the one sentence
+that has no name to fill it, the three pages no longer asking for a name this refusal never carries,
+what each of them actually draws rather than only what it asks, and the mock offering the shape the
+server really sends. Two are in *which terminal a session is started in, and when none of them will
+do* (34 → 36), for a hand-typed `terminal` value being named as discarded rather than silently
+replaced. No new group, runner or suite file. **8,058 is a reading of this correction's own branch
+and not a prediction about `main`**, which gains another line's 8,087 in between: the landing root
+recomputes the absolute from its own tree, and what carries across the merge is the delta of six.
 
 **How that 26 was measured, since no full suite could be run the night it landed.** One file,
 `Tests/CloudAccountTests.swift`, was measured at a ≥23.65 GiB lifetime maximum on a 24 GB Mac, so

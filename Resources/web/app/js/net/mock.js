@@ -1250,9 +1250,13 @@ export var Mock = (function () {
                                            { code: "terminal_closed", app: "Ghostty" }));
                         return;
                     }
+                    // No `app`, because the server has none to send: `terminal_unsupported` has
+                    // one producer and it is "tmux is what Settings asks for and there is no tmux
+                    // on this Mac". Carrying "Ghostty" here made `?mock=1` unable to draw the only
+                    // shape this refusal actually arrives in.
                     if (MOCK_START === "unsupported") {
-                        fail(Object.assign(new Error("A session cannot be started in that terminal from here."),
-                                           { code: "terminal_unsupported", app: "Ghostty" }));
+                        fail(Object.assign(new Error("tmux is the terminal for new sessions in Settings, and there is no tmux on this Mac."),
+                                           { code: "terminal_unsupported" }));
                         return;
                     }
                     var made = "N" + Math.floor(Math.random() * 9000 + 1000) + "-" + Math.floor(Math.random() * 90 + 10);
