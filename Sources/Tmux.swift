@@ -119,6 +119,61 @@ enum Tmux {
         run(args, timeout: timeout)
     }
 
+    /// What a failed tmux command says about the server behind it — three answers, not a flag.
+    ///
+    /// The difference decides what an empty answer is worth everywhere on this path: *no server*
+    /// is a complete inventory that happens to hold nothing, while a timeout or an I/O failure
+    /// has no authority to prove a pane, a client or a screen absent. Three readers ask it, and
+    /// they asked it as three copies of the same pair of substrings until this was pulled out.
+    ///
+    /// **The vocabulary is tmux's, so this reads tmux's distinction rather than collecting its
+    /// sentences** — which is the whole of why a pair of substrings was the wrong shape. Measured
+    /// on tmux 3.6a, 2026-09-02, and `list-sessions`, `list-panes -a`, `list-clients` and
+    /// `source-file -` all answer identically:
+    ///
+    /// | the socket | what tmux prints |
+    /// |---|---|
+    /// | a server ran and was killed — tmux leaves the file behind | `no server running on <path>` |
+    /// | no file: tmux has never run here | `error connecting to <path> (No such file or directory)` |
+    /// | the file is there and will not open | `error connecting to <path> (Permission denied)` |
+    ///
+    /// The last two are the *same sentence*, and taking it as a third substring would have made
+    /// an unreadable socket say the server is absent — the distinction ``paneObservation()``
+    /// exists to protect. What separates them is the parenthesised half, which is
+    /// `strerror(errno)` from tmux's own `connect(2)`: `ENOENT` is the strongest proof of absence
+    /// there is, because a socket file that does not exist has never had a server on it, and
+    /// every other errno is a socket this process could not get to.
+    ///
+    /// So the rule is stated once, in one place, and an unrecognised message falls to
+    /// ``ServerAnswer/reached`` — tmux answering about the command rather than about the server —
+    /// which is the reading that lets no caller claim anything it has not been told.
+    enum ServerAnswer: Equatable {
+        /// tmux got as far as the socket path and there is no server on it. A complete empty
+        /// inventory: nothing to list, and nothing a second attempt would find.
+        case noServer
+        /// tmux could not get to a server at all, and cannot say whether one is there. Not
+        /// evidence, and never a reason to go and do the same work again a slower way.
+        case unreachable
+        /// tmux was reached. Whatever went wrong is about the command that was sent.
+        case reached
+    }
+
+    static func serverAnswer(_ failure: TerminalFailure?) -> ServerAnswer {
+        guard let failure else { return .reached }
+        // A deadline is not an answer: a tmux that never finished has said nothing about a
+        // server, a pane, a client or a screen.
+        if failure.kind == .timeout { return .unreachable }
+        let message = failure.message.lowercased()
+        // tmux resolved the question itself and is reporting the conclusion.
+        if message.contains("no server running") { return .noServer }
+        if message.contains("failed to connect to server") { return .noServer }
+        // `error connecting to <path> (<strerror>)` — only the errno decides.
+        if message.contains("error connecting to") {
+            return message.contains("(no such file or directory)") ? .noServer : .unreachable
+        }
+        return .reached
+    }
+
     /// Every pane in every session, whether or not a client is attached.
     /// `-a` matters: a detached session is still somewhere text can usefully go.
     struct PaneObservation {
@@ -136,8 +191,7 @@ enum Tmux {
         if !receipt.ok {
             // No server is a complete empty inventory, not a failed one. Other failures — and
             // especially a timeout — have no authority to prove a pane absent.
-            let message = receipt.failure?.message.lowercased() ?? ""
-            if message.contains("no server running") || message.contains("failed to connect to server") {
+            if serverAnswer(receipt.failure) == .noServer {
                 return PaneObservation(sessions: [], error: nil)
             }
             return PaneObservation(sessions: [], error: receipt.failure)
@@ -258,8 +312,7 @@ enum Tmux {
         if !receipt.ok {
             // Same rule as `paneObservation`: no server is a complete empty answer, and anything
             // else — a timeout above all — has no authority to prove a client absent.
-            let message = receipt.failure?.message.lowercased() ?? ""
-            if message.contains("no server running") || message.contains("failed to connect to server") {
+            if serverAnswer(receipt.failure) == .noServer {
                 return ControlModeObservation(clients: [], error: nil)
             }
             return ControlModeObservation(clients: [], error: receipt.failure)
@@ -339,30 +392,120 @@ enum Tmux {
     /// not silently turns every newline back into a Return — which was measurable: two lines
     /// pasted into a shell ran as two commands. Sending the bytes outright makes tmux behave
     /// exactly like the iTerm2 path instead of almost like it.
+    /// The tmux session a server Clawdline started for itself is given, so that a person who was
+    /// not at the Mac when it happened has a name to attach to rather than a numbered stranger.
+    static let startedSessionName = "clawdline"
+
+    /// What somebody at the Mac types to see a session Clawdline started for them. One string
+    /// rather than a sentence spelled out wherever it is needed, because the session name and the
+    /// instruction have to stay the same fact.
+    static var attachCommand: String { "tmux attach -t \(startedSessionName)" }
+
     /// A new window in the first session tmux has, running something.
     ///
     /// `-P -F '#{pane_id}'` so the pane it made comes back rather than having to be guessed at by
     /// listing everything again and looking for what is new — which would be a race against
     /// anybody else's window opening at the same moment.
     static func newWindowResult(cwd: String, command: String) -> Result<String, TerminalFailure> {
-        var args = ["new-window", "-P", "-F", "#{pane_id}"]
+        openPane(["new-window", "-P", "-F", "#{pane_id}"], cwd: cwd, command: command,
+                 refused: "tmux would not open a window.")
+    }
+
+    static func newWindow(cwd: String, command: String) -> String? {
+        try? newWindowResult(cwd: cwd, command: command).get()
+    }
+
+    /// Start a tmux **server** and open the first window on it, with nothing attached.
+    ///
+    /// The pane is real, reachable and drivable the moment it exists — ``paneObservation()`` asks
+    /// `list-panes -a` precisely so a detached session counts — so it reaches the panel and the
+    /// phone as an ordinary row. What it is not is *drawn* anywhere: nobody at the Mac sees it
+    /// until they type ``attachCommand``. That trade is the point, and it is only worth making
+    /// where the alternative is a refusal the person cannot act on; see ``StartPoints/plan``.
+    static func newSessionResult(cwd: String, command: String) -> Result<String, TerminalFailure> {
+        openPane(["new-session", "-d", "-s", startedSessionName, "-P", "-F", "#{pane_id}"],
+                 cwd: cwd, command: command,
+                 refused: "tmux would not start a server.")
+    }
+
+    /// Make a pane and start the assistant in it, in that order and never in one step.
+    ///
+    /// **The command is typed into a login shell rather than handed to tmux as the pane's
+    /// command, and that is not a style choice.** A pane started as `new-window <command>` is run
+    /// by `sh -c` with the *server's* environment, and a server started by this app inherits the
+    /// app's — an app launched from Finder has no login shell behind it and therefore no `PATH`
+    /// worth reading, which ``Assistant/isInstalled`` already says out loud. Measured on this Mac,
+    /// 2026-09-02, starting tmux with a Finder-shaped environment: `new-session -d 'claude …'`
+    /// draws `zsh:1: command not found: claude`, `show-environment -g PATH` reads back the app's
+    /// four system directories, and every later `new-window 'claude …'` on that server fails the
+    /// same way. Wrapping it as `zsh -lc` does not save it either — a login shell that is not
+    /// interactive never reads `.zshrc`, which is where the person's `PATH` is actually set.
+    ///
+    /// What does work, measured in the same run, is tmux's own default: a pane created with no
+    /// command at all gets an interactive login shell, which reads that file and finds `claude`.
+    /// So the line is typed at it, which is exactly what the iTerm2 backend has always done —
+    /// ``ITerm/newTabResult(line:)`` opens a tab and types one line into it — and typing it the
+    /// instant the pane exists is safe because the pty holds what is written before the shell
+    /// gets round to reading it.
+    ///
+    /// A pane whose keystrokes tmux would not take is reported as a failure. It leaves a shell
+    /// behind, which the person can close from the same list it appears in; saying a session
+    /// started when tmux would not even type into it would be the worse of the two.
+    ///
+    /// **What comes back says the keystrokes were accepted, and that is the most it can say.**
+    /// `send-keys` reports that tmux delivered them to the pane's tty, never that the shell ran
+    /// them, and those are two different failures. An rc file that flushes pending input —
+    /// `tcsetattr(0, TCSAFLUSH, …)`, which is what `stty` and a few framework rc files do —
+    /// discards a line already sitting in the tty while both calls still exit 0. Measured on
+    /// tmux 3.6a, 2026-09-02, against a `.zshrc` doing exactly that: the pane came back holding
+    /// its prompt and nothing else.
+    ///
+    /// **There is no receipt here because none can be taken in the time this path has.** A
+    /// `.zshrc` that merely sleeps for three seconds does *not* lose the line — type-ahead
+    /// survives an ordinary slow rc, measured the same day — so inside any deadline somebody
+    /// waiting on a start can afford, a swallowed line and a slow shell are the same silence, and
+    /// a check would either wait longer than the start is worth or call a working session dead.
+    /// ``ITerm/newTabResult(line:)`` has the identical exposure, and for the identical reason.
+    /// What catches it afterwards is that the pane never reports an assistant: an orchestrator
+    /// task fails its `child.assistant == task.assistant` gate and ends `spawn_failed` rather
+    /// than claiming a session that is not there, and a session started by hand appears in the
+    /// list as the shell it actually is.
+    private static func openPane(_ create: [String], cwd: String, command: String,
+                                 refused: String) -> Result<String, TerminalFailure> {
+        var args = create
         if !cwd.isEmpty { args += ["-c", cwd] }
-        args.append(command.isEmpty ? Assistant.claude.command : command)
         let result = run(args)
         guard result.ok else {
-            return .failure(result.failure ?? TerminalFailure(
-                kind: .io, message: "tmux would not open a window."))
+            return .failure(result.failure ?? TerminalFailure(kind: .io, message: refused))
         }
         let id = result.out.trimmingCharacters(in: .whitespacesAndNewlines)
         guard id.hasPrefix("%") else {
             return .failure(TerminalFailure(kind: .io,
                                             message: "tmux returned no new pane id."))
         }
+        if let failure = typeLine(command.isEmpty ? Assistant.claude.command : command, into: id) {
+            return .failure(failure)
+        }
         return .success(id)
     }
 
-    static func newWindow(cwd: String, command: String) -> String? {
-        try? newWindowResult(cwd: cwd, command: command).get()
+    /// Type one line at a pane's shell and run it.
+    ///
+    /// `-l` sends the string literally, so tmux looks for no key names inside it; the line is one
+    /// argument of a subprocess either way, so nothing here is a quoting boundary the way a shell
+    /// line would be. Enter is its own keypress for the same reason it is in ``send(_:to:submit:)``.
+    private static func typeLine(_ line: String, into paneID: String) -> TerminalFailure? {
+        let typed = run(["send-keys", "-t", paneID, "-l", line])
+        guard typed.ok else {
+            return typed.failure ?? TerminalFailure(
+                kind: .io, message: "tmux would not type into the pane it just made.")
+        }
+        let entered = run(["send-keys", "-t", paneID, "Enter"])
+        guard entered.ok else {
+            return entered.failure ?? TerminalFailure(
+                kind: .io, message: "tmux typed the line but Enter did not land.")
+        }
+        return nil
     }
 
     static func send(_ text: String, to paneID: String,
@@ -421,9 +564,143 @@ enum Tmux {
     /// AppleScript will not hand over, so this path can offer more than the visible screen.
     static func capture(_ paneID: String, scrollback: Int = 200) -> String? {
         guard binary != nil else { return nil }
-        // -e keeps the escape sequences, which is the only way any of this arrives with colour.
-        let receipt = run(["capture-pane", "-p", "-e", "-J", "-S", "-\(scrollback)", "-t", paneID])
+        let receipt = run(captureArguments(paneID, scrollback: scrollback))
         return receipt.ok ? receipt.out : nil
+    }
+
+    /// One pane's capture, as arguments. `-e` keeps the escape sequences, which is the only way
+    /// any of this arrives with colour; ``Activity/parse(_:tailLines:)`` strips them again and
+    /// says why it has to.
+    private static func captureArguments(_ paneID: String, scrollback: Int) -> [String] {
+        ["capture-pane", "-p", "-e", "-J", "-S", "-\(scrollback)", "-t", paneID]
+    }
+
+    // MARK: - One subprocess per reading
+
+    /// The line a batched reading prints before each pane's screen, so the answers can be told
+    /// apart afterwards.
+    ///
+    /// **The pane id comes from `#{pane_id}` and never from the id being written out.**
+    /// `display-message` runs its argument through `strftime`, so a marker built by hand out of
+    /// `%0` arrives as `0` with the `%` eaten — measured on tmux 3.6a, 2026-09-02. Asking tmux to
+    /// resolve `-t` itself also answers the harder question for free: a target it cannot find
+    /// prints an **empty** id rather than the current pane's, so a dead pane cannot quietly take
+    /// a live one's screen.
+    ///
+    /// U+0001 delimits it for the same reason ``parsePanes(_:running:)`` separates fields with it:
+    /// a captured screen is made of cells, and a control byte is not one, so nothing a program
+    /// can draw collides with the marker. It wraps the id on **both** sides, so a marker line is
+    /// recognised by what it opens and closes with rather than by a single leading needle.
+    static let batchedCaptureMarker = "\u{1}clawdline-pane\u{1}"
+
+    /// Whether this is a pane id tmux handed out, and therefore a word that may be written into a
+    /// command script. Closed on purpose, like ``StartPoints/sessionName(_:)``: everything asked
+    /// about here came back out of `list-panes` seconds earlier, so there is no shape to be
+    /// generous about, and a batched reading is one place where a stray argument would be read as
+    /// a command rather than as a target.
+    static func isPaneID(_ id: String) -> Bool {
+        guard id.hasPrefix("%") else { return false }
+        let digits = id.dropFirst()
+        return !digits.isEmpty && digits.allSatisfy { ("0"..."9").contains($0) }
+    }
+
+    /// The commands one batched reading sends to tmux, one pane at a time down a single script.
+    ///
+    /// Split out from ``capture(panes:scrollback:)`` for the reason every other parser here is:
+    /// it can be read, and proved, with no tmux server running.
+    static func batchedCaptureScript(_ paneIDs: [String], scrollback: Int) -> String {
+        let lines = paneIDs.filter(isPaneID).flatMap { id in
+            ["display-message -p -t \(id) \"\(batchedCaptureMarker)#{pane_id}\(batchedCaptureMarker)\"",
+             captureArguments(id, scrollback: scrollback).joined(separator: " ")]
+        }
+        guard !lines.isEmpty else { return "" }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// One batched reading's output, split back into a screen per pane.
+    ///
+    /// **A section with no id is dropped, and an empty one is no answer.** Those are the two
+    /// shapes a pane that would not answer leaves behind: tmux prints the marker with an empty
+    /// `#{pane_id}` and then prints nothing at all for the capture. A live pane always prints its
+    /// full height — trailing blank rows included, measured — so "the marker is there and nothing
+    /// follows it" is a failure and never a blank screen.
+    ///
+    /// The first section wins when an id appears twice, so a marker that somehow resolved onto a
+    /// pane already read cannot overwrite that pane's real screen with an empty one.
+    static func parseBatchedCapture(_ output: String) -> [String: String] {
+        var screens: [String: String] = [:]
+        var current: String?
+        var lines: [String] = []
+
+        func close() {
+            defer { current = nil; lines = [] }
+            guard let id = current, !id.isEmpty, !lines.isEmpty, screens[id] == nil else { return }
+            screens[id] = lines.joined(separator: "\n") + "\n"
+        }
+
+        var text = output
+        if text.hasSuffix("\n") { text.removeLast() }
+        let width = batchedCaptureMarker.count
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            // The marker wraps the id on both sides, so the length test is what keeps a bare
+            // marker — which satisfies both ends at once — from being read as a named pane.
+            if line.count >= 2 * width,
+               line.hasPrefix(batchedCaptureMarker), line.hasSuffix(batchedCaptureMarker) {
+                close()
+                current = String(line.dropFirst(width).dropLast(width))
+            } else if current != nil {
+                lines.append(line)
+            }
+        }
+        close()
+        return screens
+    }
+
+    /// What several panes show, keyed by pane id, in **one** tmux invocation rather than one per
+    /// pane. Panes that would not answer are simply absent.
+    ///
+    /// A reading is one round trip to every terminal, it runs every 1.2 s while the panel is
+    /// open, and a reading in progress suppresses the next one — so this cost does not queue up,
+    /// it lowers the rate at which the app perceives anything (`docs/waiting.md`). iTerm2 has
+    /// answered for all of its sessions in one `osascript` run since the beginning; tmux was
+    /// asked pane by pane because `capture-pane` has no plural, which is true and was never the
+    /// whole story: tmux takes a whole script at once. Measured on tmux 3.6a with ten panes,
+    /// 2026-09-02: one process, median 3.45 ms, against ten processes and 32.01 ms.
+    ///
+    /// **`source-file -` rather than a `;`-separated argument list, and that is the whole of the
+    /// failure semantics.** A command list given as arguments stops dead at the first error — a
+    /// single pane that has gone away takes every pane after it with it, measured — while
+    /// `source-file` runs the rest and reports the failure in its exit status. So one unanswering
+    /// pane costs one missing key, exactly as it did when each pane had its own subprocess.
+    ///
+    /// The receipt's status is therefore *not* the gate: a batch that half-worked is still the
+    /// answer for the panes that did work, and the output is parsed whether tmux was happy or
+    /// not.
+    static func capture(panes paneIDs: [String], scrollback: Int = 0) -> [String: String] {
+        guard binary != nil else { return [:] }
+        let script = batchedCaptureScript(paneIDs, scrollback: scrollback)
+        guard !script.isEmpty else { return [:] }
+        let receipt = run(["source-file", "-"], stdin: script)
+        let screens = parseBatchedCapture(receipt.out)
+        // A marker anywhere is proof this tmux understood the script, so an empty result is then
+        // a real answer about the panes. No marker at all is a tmux that could not be asked this
+        // way — `source-file -` wants 3.3 or newer — and going blind on the whole backend is a
+        // far worse trade than the round trips this exists to save.
+        if !screens.isEmpty || receipt.out.contains(batchedCaptureMarker) { return screens }
+        // **Only a tmux that was actually reached can be too old.** The version floor is read off
+        // the *absence* of the marker, and three different things are absent in the same way: an
+        // old tmux, a server that was never reached, and a run that timed out with nothing to
+        // show for it. Asking the last two again pane by pane cannot answer anything the batch
+        // did not — and on a wedged server it turns one 15-second reading into one per pane, on
+        // the path this exists to keep fast, where a reading in progress suppresses the next one
+        // rather than queueing it (`docs/waiting.md`). So the type of the failure decides,
+        // instead of being inferred from the same silence the fallback is looking at.
+        guard serverAnswer(receipt.failure) == .reached else { return [:] }
+        var out: [String: String] = [:]
+        for id in paneIDs where isPaneID(id) {
+            if let screen = capture(id, scrollback: scrollback) { out[id] = screen }
+        }
+        return out
     }
 
     /// Bring a pane to the front within tmux. Whether the terminal window itself comes
