@@ -2515,9 +2515,12 @@ the holder is not compiling, the query also carries `phase`, `phaseAgeSeconds`,
 because "held" alone is the blank picture this field exists to remove.
 
 **A grant carries a budget, not just a yes.** `budget.parallelism` is a ceiling the holder must
-honour — it is what `build.sh` and `test.sh` pass to `swiftc` as `-j` — with a floor of one, and
+honour — it is what `build.sh` passes to `swiftc` as `-j` — with a floor of one, and
 `budget.basis` says which measured quantity produced it. Until the per-compile peak is measured
-the basis is `peak_not_measured` and every grant is that floor.
+the basis is `peak_not_measured` and every grant is that floor. **It is a ceiling, not a
+throttle**: it can only lower the number of concurrent frontends, and granting the floor is not a
+promise that a compile will fit. The evidence behind the policy is in
+[`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md).
 
 #### `POST /v1/orchestrator/leases/:id/renew` — the heartbeat
 

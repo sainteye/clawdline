@@ -23,11 +23,20 @@ import Foundation
 /// how a threshold becomes a deadlock:
 ///
 ///   1. **Exclusion** — whose turn is it. Fail closed: no lease, no compile.
-///   2. **Admission** — may the holder start *now*, and **at what size**. This one *degrades*
-///      rather than refusing: a grant carries a parallelism ceiling with a floor of one, so low
-///      headroom means `-j 1` and not "wait for a slot that is never coming".
+///   2. **Admission** — may the holder start *now*, and **at what size**. A grant carries a
+///      parallelism ceiling with a floor of one, and refusal is the last resort rather than the
+///      first answer.
 ///
-/// # Liveness is proved by renewal, not by a pid existing
+/// **The ceiling is a ceiling, not a throttle.** Its job is to stop somebody passing `-j 8` and
+/// multiplying the peak by eight; it is not a mechanism for making a compile that will not fit
+/// fit. On this Mac `swiftc` with no `-j` was measured to run one frontend already, so granting
+/// `-j 1` grants nothing — and a second reading on the same machine saw two concurrent frontends
+/// during a full compile, reconcilable with the first only if one of them was the stray driver
+/// that `node Tests/keychain-rebuild-focused.mjs` starts outside `test.sh`'s own `swiftc` line.
+/// Neither reading is this file's to settle. What the ceiling is relied on for is the direction
+/// that is certain: it can only lower the number of concurrent frontends, never raise it.
+///
+/// # Liveness is proved by heartbeat, not by a pid existing
 ///
 /// This is the correction that this design is actually built around, and it came from a live
 /// defect: a holder recorded `pid=72929`, and that pid was a `sleep 14400` sentinel adopted by
@@ -410,6 +419,13 @@ enum OrchestratorLease {
 
     /// Whether any `swift-frontend` is running on this machine, and which. This is backstop (B),
     /// and it is never waived.
+    ///
+    /// **It counts globally, including compilers nobody in this queue started.** That looks like
+    /// a false positive and is in fact the definition: the question is "is anything on this
+    /// machine burning right now", not "is the holder's own compiler running". `test.sh` itself
+    /// produces a driver outside its own `swiftc` line — `node Tests/keychain-rebuild-focused.mjs`
+    /// starts one — so a scan narrowed to the holder's process tree would miss exactly the
+    /// compiler a takeover would land on top of.
     enum CompilerObservation: Equatable {
         case none
         case present([Int32])
@@ -720,6 +736,8 @@ enum OrchestratorLease {
                 method: "vm_stat page counts and sysctl vm.swapusage",
                 topAnonymous: topAnonymous))
         }
+        // A ceiling, not a throttle: this can only lower the number of concurrent frontends,
+        // and granting the floor is not a promise that the compile will fit.
         guard let per = policy.perCompileMB, per > 0 else {
             return .granted(Budget(parallelism: 1, basis: "peak_not_measured",
                                    headroomMB: pressure.headroomMB,

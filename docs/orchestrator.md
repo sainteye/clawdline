@@ -1616,6 +1616,9 @@ a beat *while still burning 46 GB* — which is precisely what this machine was 
 machine (B) passes instantly at no cost; it blocks only when the holder is stuck, which is the one
 case it exists for. The scan matches the executable's own name, `pgrep -x` semantics rather than
 `pgrep -f`, so a sampler or a `/usr/bin/time swift-frontend …` wrapper is correctly not a compiler.
+It counts **globally**, including compilers nobody in the queue started: the question is whether
+anything on this machine is burning, not whether the holder's own compiler is running, and
+`test.sh` demonstrably produces a driver outside its own `swiftc` line.
 
 Evidence that is missing, stale or ambiguous reads `unknown` and blocks; it never reads "dead".
 **Nothing kills or suspends anything**: a refusal names the holder, the orphan pids and the
@@ -1637,10 +1640,16 @@ refusal naming the orphan, not a takeover.
 
 **Exclusion and admission are two questions and the record keeps them apart.** Exclusion is whose
 turn it is, and it fails closed: no lease, no compile. Admission is whether the holder may start
-now and *at what size*, and it **degrades rather than refusing** — a grant carries a parallelism
-ceiling with a floor of one, so low headroom means `-j 1` and not "wait for a slot that is never
-coming". `build.sh` passes that ceiling to `swiftc` and prints where the number came from;
-`test.sh` takes the same number from `CLAWDLINE_SUITE_JOBS`.
+now and *at what size*, and it refuses only as a last resort — a grant carries a parallelism
+ceiling with a floor of one. **The ceiling is a ceiling, not a throttle**: its job is to stop
+somebody passing `-j 8` and multiplying the peak by eight, not to make a compile that will not fit
+fit. `swiftc` with no `-j` was measured on this Mac to run one frontend already, so granting `-j 1`
+grants nothing; a second reading saw two concurrent frontends during a full compile, reconcilable
+with the first only if one was the stray driver `node Tests/keychain-rebuild-focused.mjs` starts
+outside `test.sh`'s own `swiftc` line. What the ceiling is relied on for is the direction that is
+certain: it can only lower the number of concurrent frontends, never raise it. `build.sh` passes it
+to `swiftc` and prints where the number came from; `test.sh` reads the same number from
+`CLAWDLINE_SUITE_JOBS`, which landed separately on `main`.
 
 The evidence behind the policy, and the failure list it has to survive, are in
 [`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md) rather than repeated here.
