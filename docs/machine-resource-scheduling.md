@@ -4,8 +4,10 @@ Status: built, and this page was a proposal until it was. `CLAWDLINE_SUITE_JOBS`
 `test.sh` as `54891280`; `test.sh` takes the machine lock itself as of `10130e45`; the broker lease,
 its queue, its routes and the Bearings and Session projections landed as `2eef7bb6` and were
 corrected against an independent review in `5098c2b1`. Two reviews have returned findings against
-it and the second is not yet fully answered, so read the later sections as the design it was built
-to and not as a claim that every part of it holds. The measurements in the next section are real
+it; the second review's ten are answered across `5de913dd` and the correction round after it, and
+where a finding was disproved rather than fixed this page says so beside the rule it is about. Read
+the later sections as the design it was built to, and treat any sentence with no code behind it as
+the thing to check first. The measurements in the next section are real
 and were taken on one Mac on 2026-09-03.
 
 Clawdline can keep many assistant Sessions useful at once. Most of those Sessions spend most of
@@ -201,8 +203,12 @@ holder.txt
   done_flag=           a path the run creates when its work has finished
   work=                comma-separated pids doing the work right now
   last_compiling=      when anything last actually compiled under this lock, or `never`
-  compilers=           three states: empty means this writer does not probe, `none` means it probed
-                       and the machine was clear, otherwise the pids it found
+  compilers=           three states: empty means this writer has no answer — it did not probe, or
+                       its probe could not be read — `none` means it probed and the machine was
+                       clear, otherwise the pids it found. Empty and `none` are not
+                       interchangeable: `none` is a claim about the machine and empty is the
+                       absence of one, so a writer that spells an unreadable probe `none` is
+                       failing open in the one field written to keep them apart
   note=                what a person about to remove this directory by hand should know
 beat                   the beat file itself, so it disappears with the lock rather than outliving it
 ```
@@ -386,6 +392,18 @@ Three consequences are written into the shape rather than left to be discovered:
   machine's queue budget, which is what turned a blocked head into a 429 for everybody.
 * **The array is still bounded.** Above a hard limit the longest-silent entries go, and never one
   that is still asking.
+
+**And every answer counts as an ask, not only `queued`.** The poll clock moved when a request
+joined or re-joined the line and nowhere else, so the two answers that are not `queued` did not
+count as having asked: a refusal, and a decision whose effect failed. A head of the line refused for
+pressure, or told `lease_changed` because the lock moved between the reading and the write, was
+polling every five seconds exactly as the contract asks and was recorded as silent — passed over
+after the deadline, and droppable by the trim above, by the very contention it was waiting out. So
+the ask is stamped once on the decision and applied to whichever record survives the effect: a
+failed effect returns the record unchanged in everything the effect would have done, and the caller
+having asked is not one of those things. A refusal also stays visible for twice the waiter deadline
+rather than exactly one, because the two clocks expiring together left a person looking at Bearings
+at that moment with neither the request nor the reason it had been given.
 
 Deliberately asymmetric, and worth saying why: passing over a live waiter costs it one grant, while
 trusting a dead one blocks the machine until a person notices. That is why the deadline is generous

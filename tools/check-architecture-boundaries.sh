@@ -93,8 +93,11 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 510 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 510"
+# 510 until the compile lease's second correction round, which adds the group for a refusal
+# counting as a waiter's ask. A number that only ever rises silently is not a ratchet, so raises
+# are named here the way the `Orchestrator.swift` ceiling's are.
+[ "$manifest_group_count" -eq 511 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 511"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

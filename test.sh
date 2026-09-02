@@ -111,7 +111,19 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # server really sends. 2 are in the terminal-plan group, for a hand-typed `terminal` value being
 # named as discarded instead of silently replaced. Every one is unconditional and at the group's own
 # top level. 8277 -> 8283.
-expected_swift_receipt='8331 checks passed'
+# The second correction round over the compile lease adds 22, counted from the diff rather than
+# from memory and every one unconditional at its group's top level. 12 are a new group for a
+# refusal being an answer to an ask: the poll clock moving on a refusal and on an effect that
+# failed, the place in the line not moving with it, nobody else's clock moving, the later arrival
+# that must not take the slot from a waiter that has been refused all along, and the control that
+# a head which really has stopped asking is still passed over. 7 are in the store round trip,
+# which asserted "every field survives" over a codec that dropped three: the two the holder
+# carries, the refusal note, the waiter's poll clock, a refusal row with no request id, an adopted
+# holder that pins the provenance fallback, and the fixture's own control that no two of its ten
+# clocks coincide. 1 more is that same control for the `holder.txt` round trip beside it, whose
+# four clocks were all one instant. 2 are the process readings one decision takes, now that the
+# one nothing read is gone. 8331 -> 8353. The exact candidate-tree run remains authoritative.
+expected_swift_receipt='8353 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
