@@ -450,8 +450,8 @@ enum Tmux {
         // **The selection is what was asked for; coming forward is a courtesy, and it leaves
         // this thread.** Three of the four callers are on the main thread —
         // ``NotchIsland`` `jump(_:)` and `reveal()`, and `main.swift`'s `revealTarget()` through
-        // ``Controller/revealCurrentTarget()`` — and the tail below is up to three round trips
-        // with a deadline each: `list-clients`, `display-message`, and an Apple Event. Waiting
+        // ``Controller/revealCurrentTarget()`` — and the tail below is up to four round trips
+        // with a deadline each: `list-clients`, `display-message`, and two Apple Events. Waiting
         // for them on main is what ``Controller/follow(_:)`` refuses to do "because this is an
         // osascript round trip", and what `/focus` in ``RemoteServer`` refuses because "a modal
         // must not freeze SessionWatch, the orchestrator beat, SSE, or health responses".
