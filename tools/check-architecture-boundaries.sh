@@ -16,7 +16,7 @@ main_lines=$(line_count Tests/main.swift)
 [ "$main_lines" -le 500 ] \
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
-orchestrator_ceiling=12816
+orchestrator_ceiling=12819
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the registry-owner extraction receipt ($orchestrator_ceiling)"

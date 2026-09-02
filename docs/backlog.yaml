@@ -882,3 +882,32 @@ items:
       workaround and over going straight to tmux-by-default. It waits on the tmux read-parity
       slice dispatched the same day as task `920276a6`, which holds `Sources/StartPoints.swift`.
     opened: 2026-09-02
+
+  - id: B-CANNOT-REVISIT-AN-ANSWERED-QUESTION
+    title: A reader answering a set of questions from a phone cannot go back to one
+    problem: >-
+      Claude Code presents an `AskUserQuestion` set one question at a time and draws arrows on
+      either side of its tab bar, so at the Mac a person can walk back to a question they have
+      already answered and change it. From a phone there is no way to move the picker at all: the
+      only thing that can be sent is a digit, which answers whichever question is currently up.
+      A wrong tap is therefore discovered at the review screen and cannot be corrected there —
+      review offers Submit or Cancel, and Cancel discards the whole set, including the answers
+      that were right.
+    evidence: >-
+      Measured 2026-09-02 against a real two-question call: the bar draws
+      `←  ☒ 城市  ☒ 運動  ✔ Submit  →` and the screen's own hint reads
+      `Enter to select · Tab/Arrow keys to navigate · Esc to cancel`. `Targets.answer` accepts
+      `1`–`9`, Tab and back-tab and nothing else — deliberately, because its doc comment records
+      that the danger is not answering the wrong question but that a byte channel into a tty is an
+      escape-sequence channel into a tty. Left and right are `ESC [ D` / `ESC [ C`, which is
+      exactly the shape that allowlist exists to exclude.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      Somebody mistapping a question in a set and having to finish it at the keyboard. The fix is
+      not "allow arrows": it is deciding whether the picker's own navigation deserves a named
+      operation the way `submit` got one — `POST /key` already takes the word `submit` for a
+      keystroke that has no digit, and `previous`/`next` would be the same shape, keeping the
+      allowlist closed while giving the phone the movement the bar advertises.
+    opened: 2026-09-03
