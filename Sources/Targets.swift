@@ -345,7 +345,7 @@ enum Targets {
         // nothing — toggled by the digit and toggled straight back by the confirmation. Its rows
         // are sent by the button under them, and that is ``submitMenu(on:)``'s job.
         if seen?.submit != nil { return nil }
-        return confirmSelection(want, on: session)
+        return confirmSelection(want, on: session, asked: seen)
     }
 
     /// Answer a picker that does not take digits, by moving its highlight onto the row and
@@ -368,7 +368,7 @@ enum Targets {
         for _ in 0..<move.times {
             if let failure = keystroke([move.key], to: session) { return failure }
         }
-        return confirmSelection(want, on: session)
+        return confirmSelection(want, on: session, asked: menu)
     }
 
     /// The keystroke that walks a highlight from one row to another, and how many of them.
@@ -438,7 +438,8 @@ enum Targets {
     ///
     /// Two reads, because a terminal repaints on its own schedule and the first can arrive before
     /// the redraw. Both are cheap next to the round trip that has already happened.
-    private static func confirmSelection(_ want: Int, on session: TargetSession) -> String? {
+    private static func confirmSelection(_ want: Int, on session: TargetSession,
+                                         asked: SessionState.Menu?) -> String? {
         for attempt in 0..<2 {
             Thread.sleep(forTimeInterval: attempt == 0 ? 0.12 : 0.25)
             guard let screen = capture(session) else { continue }
@@ -447,9 +448,39 @@ enum Targets {
             // guards against calling a screen a menu unprompted, which is not this.
             guard let menu = SessionState.menu(screen, assistant: session.assistant ?? .claude,
                                                hookWaiting: true) else { continue }
-            if menu.selected == want { return keystroke(13, to: session) }
+            switch confirmation(want: want, asked: asked, now: menu) {
+            case .send: return keystroke(13, to: session)
+            case .movedOn: return nil
+            case .notYet: continue
+            }
         }
         return nil
+    }
+
+    /// What to do with the screen a moment after a digit was typed at a picker.
+    enum Confirmation: Equatable {
+        /// The same question, with the wanted row highlighted: Return commits it.
+        case send
+        /// A different question is up. **The digit already answered, and the picker moved on.**
+        case movedOn
+        /// The same question, not there yet — look again.
+        case notYet
+    }
+
+    /// **Why a moved-on picker must not be confirmed.** `AskUserQuestion` can ask a set at once,
+    /// and a digit both answers the current question and puts the next one up. A confirming Return
+    /// then lands on a question nobody has read, and lands on its *default* row — which for row 1
+    /// is exactly the row `menu.selected == want` was checking for, so the guard that was supposed
+    /// to make this safe agreed with it.
+    ///
+    /// Measured 2026-09-02 against a real two-question call: one tap on the first option answered
+    /// both questions and went straight to the review screen. The second answer was never chosen
+    /// by anybody, and the reader never saw the question. Answering with any other digit hid it —
+    /// the highlight did not match, so no Return was sent and the picker looked like it worked.
+    static func confirmation(want: Int, asked: SessionState.Menu?,
+                             now: SessionState.Menu) -> Confirmation {
+        if let asked, now.question != asked.question { return .movedOn }
+        return now.selected == want ? .send : .notYet
     }
 
     /// Whether this session is showing a menu right now, which changes what typing into it means.

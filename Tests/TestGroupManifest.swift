@@ -199,6 +199,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a numbered list somebody typed is not a menu",
     "rows with the session's own output under them are scrollback, not a dialog",
     "a menu read as options a finger can hit",
+    "a picker's tab bar says which of its questions are answered",
     "a picker drawn without numbers",
     "an unnumbered picker is answered by walking the highlight, not by typing a digit",
     "a multi-select's button is walked to with Tab, because its last row eats anything else",

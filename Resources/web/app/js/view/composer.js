@@ -40,6 +40,31 @@ var plaintextOnly = (function () {
     return probe.contentEditable === "plaintext-only";
 })();
 
+/**
+ * The picker's own progress, as the terminal draws it: every question in the call, answered ones
+ * ticked. **The current one is the first unanswered one** — Claude Code walks the set in order,
+ * and the tab bar marks focus by drawing it differently rather than with a character, which does
+ * not survive having the styling taken off. Naming it is worth more than being right about the
+ * rare case where somebody has walked backwards through the set on the Mac.
+ */
+function stepsHTML(steps) {
+    var current = -1;
+    for (var i = 0; i < steps.length; i += 1) {
+        if (!steps[i].done) { current = i; break; }
+    }
+    var cells = steps.map(function (step, index) {
+        var cls = step.done ? "step done" : (index === current ? "step now" : "step");
+        // The chosen answer, once the picker's review screen names it. That screen is the one
+        // moment somebody can check what they actually picked before it is sent — without it the
+        // page shows two unlabelled buttons under "Ready to submit your answers?".
+        var picked = step.answer
+            ? '<span class="pick">' + esc(String(step.answer)) + "</span>" : "";
+        return '<span class="' + cls + '">' + (step.done ? "\u2713 " : "") +
+            esc(String(step.label || "")) + picked + "</span>";
+    }).join("");
+    return '<div class="steps">' + cells + "</div>";
+}
+
 export function renderComposer() {
     var on = S.write && !!S.openId && closingID !== S.openId;
     var session = S.openId ? byId(S.openId) : null;
@@ -194,6 +219,10 @@ export function renderWaiting() {
     var rows = menu && menu.options && menu.options.length ? menu.options : null;
     var submit = menu && menu.submit && menu.submit.label ? menu.submit : null;
     var question = menu && typeof menu.question === "string" ? menu.question : "";
+    // Several questions asked in one call. Claude Code shows them one at a time, so without this
+    // row a reader answers, watches a different question take its place, and cannot tell how many
+    // are left or whether the last answer landed.
+    var steps = menu && Array.isArray(menu.steps) && menu.steps.length ? menu.steps : null;
     if (!question.trim()) question = "";
     // Given up after ten seconds: if the session is still waiting by then this was not the
     // answer's own gap, and the honest fallback is better than a dead menu nobody can use.
@@ -231,6 +260,7 @@ export function renderWaiting() {
         rows = answeredMenu.rows;
         submit = answeredMenu.submit || null;
         question = answeredMenu.question || "";
+        steps = answeredMenu.steps || null;
     }
     // **Folded, the card is one line and the conversation is readable underneath.** Everything
     // below the title is dropped rather than hidden with CSS, so a folded card costs no height at
@@ -245,6 +275,7 @@ export function renderWaiting() {
         + esc(T.webClose) + '">\u00d7</button>' + "</div>" +
         (folded ? "" :
         '<div class="body">' +
+        (steps ? stepsHTML(steps) : "") +
         (question ? '<div class="question">' + esc(question) + "</div>" : "") +
         (rows
             ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"

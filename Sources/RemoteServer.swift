@@ -4826,13 +4826,13 @@ final class RemoteServer: @unchecked Sendable {
             // `menu`. Waiting rows never display `line`, so this stable value is only a revision:
             // when the transcript-backed picker arrives after the waiting notification, the page
             // refetches immediately instead of waiting until the answer changes the state.
-            out["line"] = menuRevision(menu)
+            out["line"] = Self.menuRevision(menu)
         }
         // The question itself, so a phone can answer it instead of being told to go and find a
         // Mac. Only ever present on a waiting session, and absent when the menu could not be
         // read — which the page has to handle anyway, because that is the old behaviour and it
         // is still what happens when a dialog is drawn in a shape this does not recognise.
-        if let menu { out["menu"] = json(of: menu) }
+        if let menu { out["menu"] = Self.menuObject(menu) }
         let agents = publication.agents[session.id] ?? []
         if !agents.isEmpty { out["agents"] = agents.map { json(of: $0) } }
         // The commands it left running, which are the reason an idle row is not a finished one.
@@ -4855,45 +4855,6 @@ final class RemoteServer: @unchecked Sendable {
         case .idle:    return "idle"
         case .unknown: return "unknown"
         }
-    }
-
-    /// A menu as rows a finger can hit.
-    ///
-    /// **`n` is the keystroke and not the position**, which is the only part of this worth being
-    /// careful about: the page sends that number straight to `/key`, and renumbering the rows
-    /// here to make them tidy would produce buttons that answer a different question than the one
-    /// they are labelled with. `can` is false for a row no keystroke reaches — it is drawn, and it
-    /// is not offered, because a button that cannot work is worse than a line of text.
-    private func json(of menu: SessionState.Menu) -> [String: Any] {
-        var out: [String: Any] = [
-            "options": menu.options.map { option -> [String: Any] in
-                var row: [String: Any] = ["n": option.number, "label": option.label,
-                                          "selected": option.selected, "can": option.answerable]
-                if let detail = option.detail { row["detail"] = detail }
-                // Only on a multi-select, where a row is a thing that ticks rather than a thing
-                // that answers. Absent everywhere else, so a client can tell the two apart.
-                if let checked = option.checked { row["checked"] = checked }
-                return row
-            },
-        ]
-        if let selected = menu.selected { out["selected"] = selected }
-        if let question = menu.question { out["question"] = question }
-        // The button under a multi-select's rows, which is a different act from picking one of
-        // them: the rows toggle, and only this sends. It carries no `n` because it has none on
-        // screen — `POST /key` takes the word `submit` for it.
-        if let submit = menu.submit {
-            out["submit"] = ["label": submit.label, "selected": submit.selected]
-        }
-        return out
-    }
-
-    /// Stable content for the legacy session revision field. Separators prevent different
-    /// question/option boundaries from collapsing to the same string.
-    private func menuRevision(_ menu: SessionState.Menu) -> String {
-        ([menu.question ?? "", menu.submit.map { "\($0.label)\u{1f}\($0.selected ? 1 : 0)" } ?? ""]
-         + menu.options.map {
-            "\($0.number)\u{1f}\($0.label)\u{1f}\($0.selected ? 1 : 0)"
-        }).joined(separator: "\u{1e}")
     }
 
     /// One background agent.

@@ -228,7 +228,10 @@ enum SessionState: Equatable {
                   + (submit.map { " ⏐ [\($0.label)]" } ?? ""))
         return Menu(question: menuQuestion, options: options,
                     selected: options.first(where: \.selected)?.number,
-                    submit: submit.map { Menu.Submit(label: $0.label, selected: $0.selected) })
+                    submit: submit.map { Menu.Submit(label: $0.label, selected: $0.selected) },
+                    steps: firstOptionLine.map {
+                        QuestionSteps.steps(inLines: lines, above: $0)
+                    } ?? [])
     }
 
     /// The same dialog with its numbers taken off.
@@ -583,6 +586,25 @@ enum SessionState: Equatable {
             let selected: Bool
         }
         var submit: Submit? = nil
+
+        /// One question of several, as the picker's own tab bar names it.
+        ///
+        /// `AskUserQuestion` can ask a set at once and Claude Code presents them one at a time,
+        /// so without this a reader answers, watches a different question take its place, and has
+        /// no way to tell how many there are or whether the last answer landed. The terminal draws
+        /// the whole set above the options — `←  ☒ scope  ☐ parity  ✔ Submit  →` — and this is
+        /// that row, read rather than skipped. See ``QuestionSteps``.
+        struct Step: Equatable {
+            let label: String
+            let answered: Bool
+            /// What was chosen, once the picker's own review screen says so. Absent until then:
+            /// the tab bar carries whether a question is answered, never with what.
+            var answer: String? = nil
+        }
+
+        /// Empty for a lone question, so "one question" stays distinguishable from "the first of
+        /// four" without a client having to infer it from a count of one.
+        var steps: [Step] = []
     }
 
     /// The carets a terminal menu marks its current row with. Deliberately not `>`: a markdown

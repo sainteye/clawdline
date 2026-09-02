@@ -44,7 +44,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # 16 for the ceiling itself and for a control-mode client having to be speaking over a pty iTerm2
 # named in the same reading, and 6 for that identity deciding activation and for the activation
 # tail leaving the caller's thread. 7488 -> 7519.
-expected_swift_receipt='7519 checks passed'
+expected_swift_receipt='7542 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

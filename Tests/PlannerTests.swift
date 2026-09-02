@@ -1106,6 +1106,131 @@ group("a menu read as options a finger can hit") {
     check("and the old question is the same question", SessionState.isChoosing(screen))
 }
 
+group("a picker's tab bar says which of its questions are answered") {
+    // **What a reader could not see.** `AskUserQuestion` can ask a set at once and Claude Code
+    // shows them one at a time, so answering on a phone meant watching a different question take
+    // the last one's place with nothing saying how many there were or whether the answer landed.
+    // The terminal draws the whole set above the options; it was being read as a boundary and
+    // thrown away.
+    let bar = "\u{2190}  \u{2612} scope  \u{2612} parity  \u{2610} shape  \u{2610} audit  \u{2714} Submit  \u{2192}"
+    let steps = QuestionSteps.steps(in: bar)
+    expect("every question in the call is named", steps.count, 4)
+    expect("in the order the bar draws them", steps.map(\.label),
+           ["scope", "parity", "shape", "audit"])
+    expect("answered ones are marked", steps.map(\.answered), [true, true, false, false])
+
+    // A lone question draws its own label the same way. There is no progress to report through a
+    // set of one, and saying "1 of 1" where the terminal says nothing would be inventing a state.
+    check("a single question's label is not a progress bar",
+          QuestionSteps.steps(in: "\u{2610} build").isEmpty)
+    check("and neither is prose that happens to contain a box",
+          QuestionSteps.steps(in: "the \u{2610} glyph is drawn like this").isEmpty)
+
+    // Read off a whole screen, where the bar sits between the prose and the options.
+    let screen = """
+      Some prose the assistant printed before asking.
+
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+    \u{2190}  \u{2612} scope  \u{2610} shape  \u{2714} Submit  \u{2192}
+
+    How free should the skeleton be?
+
+    \u{276F} 1. A fixed shape
+         Every table is one multiplication.
+      2. Free rows
+         More expressive, and it has to handle reference cycles.
+    """
+    let menu = SessionState.menu(screen, assistant: .claude, hookWaiting: true)
+    expect("the options still read", menu?.options.count, 2)
+    expect("the question is the one under the bar", menu?.question, "How free should the skeleton be?")
+    expect("and the set comes with it", menu?.steps.map(\.label), ["scope", "shape"])
+    expect("with the first one done", menu?.steps.map(\.answered), [true, false])
+
+    // The wire carries it only when there is a set, so a client can tell one question from the
+    // first of four without inferring it from a count.
+    let projected = RemoteServer.menuObject(menu!)
+    check("the steps reach the page", (projected["steps"] as? [[String: Any]])?.count == 2)
+    let lone = SessionState.Menu(question: "Only one thing to decide?",
+                                 options: menu!.options, selected: 1)
+    check("a lone question sends no steps at all",
+          RemoteServer.menuObject(lone)["steps"] == nil)
+
+    // **The review screen**, captured from a real two-question call on 2026-09-02. After the last
+    // question Claude Code does not submit — it lists what was chosen and asks. On a phone that
+    // was arriving as two unlabelled buttons under "Ready to submit your answers?", which is a
+    // confirmation with nothing to confirm.
+    let review = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+    \u{2190}  \u{2612} 城市  \u{2612} 運動  \u{2714} Submit  \u{2192}
+
+    Review your answers
+
+     \u{25CF} 最想去哪一個城市旅行？
+       \u{2192} 京都
+     \u{25CF} 平常想做哪一種運動?
+       \u{2192} 游泳
+
+    Ready to submit your answers?
+
+    \u{276F} 1. Submit answers
+      2. Cancel
+    """
+    let reviewMenu = SessionState.menu(review, assistant: .claude, hookWaiting: true)
+    expect("the confirmation's own two options read", reviewMenu?.options.count, 2)
+    expect("both questions show as answered", reviewMenu?.steps.map(\.answered), [true, true])
+    expect("and each carries what was chosen", reviewMenu?.steps.map(\.answer),
+           ["京都", "游泳"])
+    // The bar draws its own `→` at the end of a line; an answer's is at the start of one.
+    check("the tab bar's arrow is not read as an answer",
+          QuestionSteps.answers(inLines: ["\u{2190}  \u{2612} 城市  \u{2714} Submit  \u{2192}"]).isEmpty)
+    // Pairing is by position, so a count that does not line up is a screen this does not
+    // understand — and saying nothing beats pairing an answer to the wrong question.
+    let mismatched = QuestionSteps.steps(inLines: [
+        "\u{2190}  \u{2612} one  \u{2612} two  \u{2612} three  \u{2714} Submit",
+        " \u{25CF} only one question was listed",
+        "   \u{2192} an answer",
+        "\u{276F} 1. Submit answers",
+    ], above: 3)
+    expect("three steps still read", mismatched.count, 3)
+    check("but none is given an answer it cannot be sure of",
+          mismatched.allSatisfy { $0.answer == nil })
+
+    // **The bug this whole group exists because of.** A digit at a multi-question picker both
+    // answers the current question and puts the next one up. The confirming Return that follows
+    // every other answer then lands on a question nobody has read — and lands on its default row,
+    // which for row 1 is precisely what `selected == want` was checking for, so the safety check
+    // agreed with it. Measured 2026-09-02: one tap on the first option answered both questions
+    // and went straight to the review. The reader never saw the second question, and its answer
+    // was chosen by nobody.
+    let asked = SessionState.Menu(question: "早餐想吃哪一種？", options: [], selected: 1)
+    let movedOn = SessionState.Menu(question: "工作時想聽哪一種音樂？", options: [], selected: 1)
+    expect("a picker that moved to the next question is not confirmed",
+           Targets.confirmation(want: 1, asked: asked, now: movedOn), .movedOn)
+    expect("the same question with the wanted row lit is confirmed",
+           Targets.confirmation(want: 1, asked: asked, now: asked), .send)
+    let notThereYet = SessionState.Menu(question: "早餐想吃哪一種？", options: [], selected: 1)
+    expect("the same question with another row lit is looked at again",
+           Targets.confirmation(want: 2, asked: asked, now: notThereYet), .notYet)
+    // The review screen is a different question too, so the Return that would have picked
+    // "Submit answers" for somebody is not sent either.
+    let reviewPrompt = SessionState.Menu(question: "Ready to submit your answers?",
+                                        options: [], selected: 1)
+    expect("and neither is the review screen",
+           Targets.confirmation(want: 1, asked: asked, now: reviewPrompt), .movedOn)
+    // A single question still confirms the way it always did: nothing to compare against means
+    // nothing has moved.
+    expect("a lone picker with no earlier reading still confirms",
+           Targets.confirmation(want: 1, asked: nil, now: asked), .send)
+
+    // Answering one question of several changes the bar and nothing else on screen. Without the
+    // steps in the revision, a client that trusts it never learns the answer landed.
+    var answered = menu!
+    answered.steps = [.init(label: "scope", answered: true), .init(label: "shape", answered: true)]
+    check("the revision moves when a question is answered",
+          RemoteServer.menuRevision(answered) != RemoteServer.menuRevision(menu!))
+}
+
+
 group("a picker drawn without numbers") {
     // Claude Code has more than one shape of picker. Most are numbered — `1. Yes` — and the
     // number is both the evidence that a row is an option and the keystroke that answers it.

@@ -69,6 +69,7 @@ clawdline_production_sources=(
   Sources/ProjectIcon.swift
   Sources/ProjectStatus.swift
   Sources/ReadingFreshness.swift
+  Sources/QuestionSteps.swift
   Sources/RemoteAuth.swift
   Sources/RemoteIcon.swift
   Sources/RemoteQR.swift
