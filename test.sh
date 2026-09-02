@@ -67,7 +67,16 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # measured against 7519 and has been rebased twice since, each time on somebody else's landing
 # rather than on anything it changed: the reader-paced question steps moved the baseline to
 # 7542, and tmux read parity moved it to 7626. 7626 + 399 -> 8025.
-expected_swift_receipt='8026 checks passed'
+# Cut 2 stage 1 gives the five smallest collections an owner and adds 35 unconditional checks in
+# four groups: 15 for a transaction reading back its own writes across all five collections and the
+# next transaction still seeing them, 4 for `Orchestrator.lock` being the registry's own instance
+# and a reader waiting out the whole of a writer's transaction, 11 for the per-terminal facts
+# keeping the replace-whole/merge-one semantics the projection had before, and 5 for a graph
+# admission being one reservation whose public release takes the lock for itself. No pre-existing
+# count moves, which is what makes the relocation behaviour-neutral rather than merely green.
+# The stage was measured against 8025; the multi-question confirmation guard landed one more
+# check in the meantime, so it lands on 8026. 8026 + 35 -> 8061.
+expected_swift_receipt='8061 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

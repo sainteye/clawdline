@@ -314,20 +314,23 @@ extension Orchestrator {
     }
 
     static func releaseGraphAdmission(_ key: String) {
-        lock.lock(); graphAdmissions.removeValue(forKey: key); lock.unlock()
+        OrchestratorRegistry.withTransaction { $0.releaseGraphAdmission(key) }
     }
 
     static func graphAdmissionRefusal(_ graph: PlanningGraph, taskID: String,
                                       reserve: Bool = false) -> Reply? {
         lock.lock(); defer { lock.unlock() }
         let key = graphAdmissionKey(graph)
-        if let holder = graphAdmissions[key] {
+        if let holder = OrchestratorRegistry
+            .withTransactionOnHeldLock({ $0.graphAdmission(forKey: key) }) {
             return .refused(status: 409, code: "graph_node_active",
                             message: "Another dispatch is already admitting this graph node.",
                             extra: ["graph_id": graph.id, "node_id": graph.currentNode,
                                     "task_id": holder.taskID])
         }
-        for pending in graphAdmissions.values where pending.graph.id == graph.id {
+        let pendingAdmissions = OrchestratorRegistry
+            .withTransactionOnHeldLock { $0.graphAdmissions() }
+        for pending in pendingAdmissions where pending.graph.id == graph.id {
             guard pending.graph.hasSameDefinition(as: graph) else {
                 return .refused(409, "graph_definition_conflict",
                                 "Another dispatch is admitting a different definition for this graph id.")
@@ -375,7 +378,11 @@ extension Orchestrator {
             blockers.append(blocker)
         }
         guard !blockers.isEmpty else {
-            if reserve { graphAdmissions[key] = (taskID, graph) }
+            if reserve {
+                OrchestratorRegistry.withTransactionOnHeldLock {
+                    $0.reserveGraphAdmission(key, taskID: taskID, graph: graph)
+                }
+            }
             return nil
         }
         let code = failed ? "graph_dependency_failed" : "graph_frontier_blocked"

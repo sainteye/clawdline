@@ -2221,7 +2221,12 @@ enum Orchestrator {
         RemoteAuth.directory.appendingPathComponent("orchestrator-archive-key")
     }
 
-    static let lock = NSLock()
+    /// The registry lock, which ``OrchestratorRegistry`` now declares. This is that exact
+    /// instance rather than a second one: the collections that have moved and the ones still
+    /// below are behind the same `NSLock`, held for exactly as long as before. The name stays
+    /// here because the bare lock-acquisition regions in this file have not been converged onto
+    /// ``OrchestratorRegistry/withTransaction(_:)`` yet, and converging them is a later cut.
+    static let lock = OrchestratorRegistry.lock
     /// Opening a terminal is bounded, not cheap: iTerm automation alone may wait 15 seconds.
     /// Pumps arrive from main-thread finalization and startup as well as the remote server, so
     /// they get the same off-main serial shape as ordinary dispatch without competing pumps.
@@ -2246,7 +2251,6 @@ enum Orchestrator {
     static let legacyCompletionBatchLimit = 25
     private static var loaded = false
     static var tasks: [String: Task] = [:]
-    static var graphAdmissions: [String: (taskID: String, graph: PlanningGraph)] = [:]
     static var restartReceipt: RestartReceipt?
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
@@ -2313,18 +2317,6 @@ enum Orchestrator {
     /// Test seam for the final display sentence; production always enters WebPush below.
     static var agentPushForTesting:
         ((String, String, String, String?, String?) -> WebPush.Delivery)?
-    /// Child terminal id → task title, rebuilt whenever the tasks change. Read on every redraw
-    /// of every session row, which is why it is a dictionary and not a walk over the tasks.
-    private static var titlesByTerminal: [String: String] = [:]
-    /// Handoff tabs are roots, not task roles, but still keep the protocol's requested label.
-    private static var handoffTitlesByTerminal: [String: String] = [:]
-    /// A closed assignment tab may leave a durable live row while two-scan loss confirmation is
-    /// pending. Suppress only that assignment's label so a reused terminal id is never renamed.
-    private static var suppressedRootAssignmentLabels: Set<String> = []
-
-    /// Terminal id → where that tab sits in the tree. Rebuilt beside ``titlesByTerminal``.
-    private static var rolesByTerminal: [String: Role] = [:]
-
     /// Where a session sits in the tree, for anything that has to decide who to tell.
     ///
     /// **Nil is the definition of a root.** A session this app did not open for a task is one a
@@ -3775,8 +3767,7 @@ enum Orchestrator {
     /// was made for. It costs a flag check after the first call.
     static func title(forTerminal id: String) -> String? {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return titlesByTerminal[id]
+        return OrchestratorRegistry.withTransaction { $0.title(forTerminal: id) }
     }
 
     /// Where that terminal sits in the tree. Nil for every session a person opened themselves.
@@ -3785,8 +3776,7 @@ enum Orchestrator {
     /// which is the one wrong answer this whole arrangement exists to avoid.
     static func role(forTerminal id: String) -> Role? {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return rolesByTerminal[id]
+        return OrchestratorRegistry.withTransaction { $0.role(forTerminal: id) }
     }
 
     /// The task record a terminal's spend should be filed under, for ``UsageLedger``. Nil for a
@@ -3835,44 +3825,45 @@ enum Orchestrator {
 
     /// Under the lock.
     private static func reindex() {
-        var found = handoffTitlesByTerminal
-        var roles: [String: Role] = [:]
-        // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
-        // putting an assignment in it would make a fourth primitive a disguised task.
-        for assignment in rootAssignments.values {
-            guard let terminal = assignment.identity?.terminalID,
-                  ![.failed, .inactive].contains(assignment.state),
-                  !suppressedRootAssignmentLabels.contains(assignment.id) else { continue }
-            found[terminal] = assignment.label
-        }
-        for task in tasks.values {
-            guard let terminal = task.childTerminalId else { continue }
-            let role = Role(taskID: task.id, depth: task.depth, title: task.title,
-                            deadline: task.briefedAt?
-                                .addingTimeInterval(Double(task.timeoutMinutes) * 60),
-                            live: !task.state.isTerminal,
-                            taskRootAccess: task.childTaskRootAccess)
-            // An attached task is a guest in a session somebody else owns. It may say that the
-            // session is busy with broker work while it is running, and that is all: it never
-            // renames the session, and it leaves nothing behind when it ends. A tab this app
-            // opened is that task's for the record's whole life; a standing session wearing a
-            // finished task's name and a `live: false` role is the one shape it must not have,
-            // because "standing" is the whole reason it exists.
-            if task.attachSessionId != nil {
-                guard role.live else { continue }
-                if let existing = roles[terminal], existing.live { continue }
-                roles[terminal] = role
-                continue
+        OrchestratorRegistry.withTransactionOnHeldLock { registry in
+            var found = registry.handoffTitles()
+            var roles: [String: Role] = [:]
+            // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
+            // putting an assignment in it would make a fourth primitive a disguised task.
+            for assignment in rootAssignments.values {
+                guard let terminal = assignment.identity?.terminalID,
+                      ![.failed, .inactive].contains(assignment.state),
+                      !registry.isRootAssignmentLabelSuppressed(assignment.id) else { continue }
+                found[terminal] = assignment.label
             }
-            found[terminal] = task.title
-            // A tab is normally one task's for its whole life. When two records name the same
-            // one — a terminal id reused after a tab closed and another opened in its place —
-            // the live task is the one anything asking this question means.
-            if let existing = roles[terminal], existing.live, !role.live { continue }
-            roles[terminal] = role
+            for task in tasks.values {
+                guard let terminal = task.childTerminalId else { continue }
+                let role = Role(taskID: task.id, depth: task.depth, title: task.title,
+                                deadline: task.briefedAt?
+                                    .addingTimeInterval(Double(task.timeoutMinutes) * 60),
+                                live: !task.state.isTerminal,
+                                taskRootAccess: task.childTaskRootAccess)
+                // An attached task is a guest in a session somebody else owns. It may say that the
+                // session is busy with broker work while it is running, and that is all: it never
+                // renames the session, and it leaves nothing behind when it ends. A tab this app
+                // opened is that task's for the record's whole life; a standing session wearing a
+                // finished task's name and a `live: false` role is the one shape it must not have,
+                // because "standing" is the whole reason it exists.
+                if task.attachSessionId != nil {
+                    guard role.live else { continue }
+                    if let existing = roles[terminal], existing.live { continue }
+                    roles[terminal] = role
+                    continue
+                }
+                found[terminal] = task.title
+                // A tab is normally one task's for its whole life. When two records name the same
+                // one — a terminal id reused after a tab closed and another opened in its place —
+                // the live task is the one anything asking this question means.
+                if let existing = roles[terminal], existing.live, !role.live { continue }
+                roles[terminal] = role
+            }
+            registry.setTerminalProjection(titles: found, roles: roles)
         }
-        titlesByTerminal = found
-        rolesByTerminal = roles
     }
 
     /// Handoff labels are transient UI state. Keep one while its tab is visible or its first line
@@ -3881,19 +3872,21 @@ enum Orchestrator {
     static func pruneClosedHandoffTitles(visible: Set<String>,
                                          identities: [SessionWorkIdentity]? = nil) {
         let delivering = Set(handoffDeliveries.values.map(\.terminalID))
-        handoffTitlesByTerminal = handoffTitlesByTerminal.filter {
-            visible.contains($0.key) || delivering.contains($0.key)
-        }
-        if let identities {
-            for assignment in rootAssignments.values
-                where ![.failed, .inactive].contains(assignment.state) {
-                guard let stored = assignment.identity else { continue }
-                if identities.contains(where: {
-                    rootAssignmentIdentityMatches(stored, observed: $0)
-                }) {
-                    suppressedRootAssignmentLabels.remove(assignment.id)
-                } else {
-                    suppressedRootAssignmentLabels.insert(assignment.id)
+        OrchestratorRegistry.withTransactionOnHeldLock { registry in
+            registry.setHandoffTitles(registry.handoffTitles().filter {
+                visible.contains($0.key) || delivering.contains($0.key)
+            })
+            if let identities {
+                for assignment in rootAssignments.values
+                    where ![.failed, .inactive].contains(assignment.state) {
+                    guard let stored = assignment.identity else { continue }
+                    if identities.contains(where: {
+                        rootAssignmentIdentityMatches(stored, observed: $0)
+                    }) {
+                        registry.unsuppressRootAssignmentLabel(assignment.id)
+                    } else {
+                        registry.suppressRootAssignmentLabel(assignment.id)
+                    }
                 }
             }
         }
@@ -5483,7 +5476,9 @@ enum Orchestrator {
                                            backend: backend, spawnedAt: Date())
             lock.lock()
             handoffDeliveries[id] = delivery
-            handoffTitlesByTerminal[terminalID] = place.label
+            OrchestratorRegistry.withTransactionOnHeldLock {
+                $0.setHandoffTitle(place.label, forTerminal: terminalID)
+            }
             reindex()
             lock.unlock()
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
@@ -5816,7 +5811,7 @@ enum Orchestrator {
         }
         lock.lock()
         let live = Array(tasks.values)
-        let roles = rolesByTerminal
+        let roles = OrchestratorRegistry.withTransactionOnHeldLock { $0.roles() }
         lock.unlock()
         return attachmentDecision(sessionID: sessionID, assistant: assistant,
                                   sessions: inventory.0, states: inventory.1,
@@ -12734,7 +12729,7 @@ enum Orchestrator {
     static func forget() {
         lock.lock()
         tasks = [:]
-        graphAdmissions = [:]
+        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllGraphAdmissions() }
         restartReceipt = nil
         handoffs = [:]
         handoffDeliveries = [:]
@@ -12747,7 +12742,7 @@ enum Orchestrator {
         sessionActivityClasses = [:]
         obligationGeneration = 0
         obligationFingerprint = ""
-        handoffTitlesByTerminal = [:]
+        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllHandoffTitles() }
         secrets = [:]
         dispatchTimes = []
         notifyTimes = []
@@ -12774,9 +12769,11 @@ enum Orchestrator {
         attachmentInventoryForTesting = nil
         taskStarterForTesting = nil
         agentPushForTesting = nil
-        titlesByTerminal = [:]
-        suppressedRootAssignmentLabels = []
-        rolesByTerminal = [:]
+        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllTerminalTitles() }
+        OrchestratorRegistry.withTransactionOnHeldLock {
+            $0.removeAllSuppressedRootAssignmentLabels()
+        }
+        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllRoles() }
         loaded = false
         lock.unlock()
         RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
