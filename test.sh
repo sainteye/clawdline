@@ -216,17 +216,28 @@ done
 # diff. `CLAWDLINE_SUITE_JOBS` is that injection point: a ceiling, floor of one, so low headroom
 # means a slower compile rather than a slot that never comes.
 #
-# **Unset adds no flag at all, and that is deliberate.** It would be easy to write "unset means one
-# job" and wrong: measured on this Mac at 02:12, a full compile with no `-j` had two real
-# `swift-frontend` processes alive at once (77492 and 77565, `ps -Ao rss,comm` matching the `comm`
-# column exactly). An earlier reading of "the default is 1" had been taken against `-typecheck`,
-# which is a different question. So the default is unknown and greater than one, this script does
-# not pretend to know it, and with the variable unset the command line below is byte-identical to
-# what it has always been.
+# **Unset adds no flag at all, and that is deliberate** — but not because the default is unknown.
+# It is known, and it is one. Measured twice on this Mac (swift-driver 1.127.15 / Swift 6.2.4,
+# 14 logical cores, `ProcessInfo.activeProcessorCount` 14) against this exact invocation —
+# `-c -o "$BIN"` over this file list, not `-typecheck` — the driver never had more than one
+# `swift-frontend` alive: 7,479 samples at 54 ms from a `proc_listpids` walker filtering on the
+# driver's own descendants, and 426 independent `ps -Ao pid=,ppid=,ucomm=` samples at 250 ms.
+# The same instruments read 8 when `-j 8` was passed, so they can count above one.
+#
+# Two-wide readings taken from outside a run are real and mean something else: a second
+# `swift-driver` runs on this machine that this ceiling does not govern at all, spawned by
+# `node Tests/keychain-rebuild-focused.mjs` further down this very script. Its pid was 94224,
+# parent 93172, observed alongside the measured compile at 02:38. Counting `swift-frontend`
+# machine-wide therefore counts other people's compilers; counting the descendants of *this*
+# driver is the only reading that answers "how parallel is this compile".
+#
+# So the flag is still omitted when unset, and the command line stays byte-identical to what it
+# has always been — but a reader deciding a parallelism budget should know that granting `-j 1`
+# grants what already happens, and that raising it is the only direction this knob moves.
 clawdline_suite_jobs_flags=()
 case "${CLAWDLINE_SUITE_JOBS:-}" in
   "")
-    echo "test.sh: compile job ceiling: none set, so the swift driver picks (CLAWDLINE_SUITE_JOBS unset)" ;;
+    echo "test.sh: compile job ceiling: none set (CLAWDLINE_SUITE_JOBS unset); the driver's own default, measured on this Mac, is one job" ;;
   0 | *[!0-9]*)
     echo "test.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
     exit 2 ;;
