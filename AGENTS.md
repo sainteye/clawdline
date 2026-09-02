@@ -215,6 +215,31 @@ runs.
   until that reclaim has landed, delete it yourself before writing `result.json`. Anything worth
   keeping is copied into `artifacts/` first.
 
+**`./test.sh` takes a machine-wide lock, and that is not politeness.** On 2026-09-03 this Mac was
+force-rebooted twice inside half an hour because several sessions each started the suite: four
+`swift-frontend` processes, peaks of 46, 45, 27 and 8 GB on a 24 GiB machine. The script now
+acquires `/tmp/clawdline-suite.lock` itself before it compiles and gives it back after the binary
+has run, so forgetting is no longer possible. What that means for you:
+
+- **A run that waits is queueing, not stuck.** The wait names who holds the lock, both pids, what
+  phase they are in and how long since anything actually compiled, so *why am I waiting* always has
+  an answer you can go and ask rather than a spinner.
+- **Nothing is ever killed.** A lock may be waited for, refused, or reported. It is taken over only
+  when the holder has stopped renewing **and** no compiler is running anywhere on the machine —
+  both, because either alone admits a collision: no-compiler-alone reclaims the lock in the gaps
+  between one study's compiles, and stopped-renewing-alone reclaims it from a holder that was
+  merely swapped out while its compile still holds twenty gigabytes. Missing or ambiguous evidence
+  blocks; it never reads as *dead*.
+- **Do not compile around a wait.** Compiling outside the lock is the thing that rebooted the
+  machine. `CLAWDLINE_SUITE_JOBS=<n>` is the supported way to ask for fewer compiler jobs; unset
+  adds no flag and the command line stays what it always was. If your work genuinely cannot be
+  verified without going around the queue, report that instead of doing it.
+- **An isolated worktree is a separate checkout, not a second Mac.** The lock is machine-wide on
+  purpose, and `build.sh` takes the same slot because it is the same capacity.
+
+`docs/machine-resource-scheduling.md` carries the measurements, the instruments that lied on the
+way, and the design that came out of them.
+
 **One feature normally pays for one final full suite, and the landing root owns it.** Implementation,
 review and correction answer named questions with compile/typecheck, focused tests and mutations;
 they do not each buy another complete `./test.sh` run. The temporary implementer exception above
