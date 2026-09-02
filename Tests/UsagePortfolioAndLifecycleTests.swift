@@ -721,13 +721,13 @@ group("the ledger agrees with the registry and the route, row by row on one task
     // Three surfaces, one fixed task id. Comparing totals, or comparing "the first row with
     // usage" from two places, is how both the disk-versus-HTTP mechanism and its correction were
     // got wrong in one afternoon: an unaligned comparison looks like an experiment and is not one.
-    let onDisk = Orchestrator.stored(task)["usage"] as? [String: Any] ?? [:]
+    let onDisk = OrchestratorStore.stored(task)["usage"] as? [String: Any] ?? [:]
     let overHTTP = Orchestrator.recordForTesting(task)["usage"] as? [String: Any] ?? [:]
     check("the two surfaces really do spell this differently",
           onDisk["cache_read"] != nil && overHTTP["cacheRead"] != nil
             && onDisk["cacheRead"] == nil && overHTTP["cache_read"] == nil)
 
-    expect("the record imports", UsageLedger.shared.importTaskRecord(Orchestrator.stored(task)),
+    expect("the record imports", UsageLedger.shared.importTaskRecord(OrchestratorStore.stored(task)),
            true)
     let rows = UsageLedger.shared.rows(taskID: id)
     expect("as exactly one row", rows.count, 1)

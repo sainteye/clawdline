@@ -16,7 +16,7 @@ group("loading an unavailable stored transcript preserves an unrefuted identity"
         "secret_hash": String(repeating: "0", count: 64), "artifacts": [],
         "child_session": childSession, "transcript": missing,
     ]
-    let loaded = Orchestrator.task(from: row)
+    let loaded = OrchestratorStore.task(from: row)
     expect("loading preserves the session id it could not disprove",
            loaded?.childSessionId, childSession)
     expect("and preserves the unavailable path for the same reason",
@@ -496,10 +496,10 @@ group("a linger survives the restart that lands in the middle of it") {
     expect("the deadline is still the one the last process set",
            Orchestrator.closeAtForTesting(id)?.timeIntervalSince1970, soon.timeIntervalSince1970)
     expect("and a deadline this process sets is written down for the next one",
-           Orchestrator.stored(Orchestrator.task(from: row)!)["close_at"] as? Double,
+           OrchestratorStore.stored(OrchestratorStore.task(from: row)!)["close_at"] as? Double,
            soon.timeIntervalSince1970)
-    let storedIntervention = Orchestrator.stored(
-        Orchestrator.task(from: row)!
+    let storedIntervention = OrchestratorStore.stored(
+        OrchestratorStore.task(from: row)!
     )["terminal_intervention"] as? [String: Any]
     expect("terminal intervention kind survives its stored-row round trip",
            storedIntervention?["kind"] as? String, "iterm_modal")
@@ -517,7 +517,7 @@ group("a linger survives the restart that lands in the middle of it") {
         "message": "The assistant is still running; the pane was left open.",
     ]
     let tmuxIntervention = (Orchestrator.recordForTesting(
-        Orchestrator.task(from: tmuxRow)!
+        OrchestratorStore.task(from: tmuxRow)!
     )["terminal_intervention"]) as! [String: Any]
     expect("a tmux safe-close failure never names an iTerm dialog",
            tmuxIntervention["code"] as? String, "terminal_intervention_required")
@@ -567,7 +567,7 @@ group("a linger survives the restart that lands in the middle of it") {
 
     // And the tab is still only closed on what *this* process can see: the record carries the
     // deadline across, never the belief that the tab is still there.
-    let task = Orchestrator.task(from: staleRow)!
+    let task = OrchestratorStore.task(from: staleRow)!
     expect("the restored deadline still waits on a reading",
            Orchestrator.closeStep(now: Date(), closeAt: Date().addingTimeInterval(-1),
                                   inventoryComplete: false, automationReady: true, child: nil,

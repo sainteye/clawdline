@@ -362,10 +362,10 @@ group("root assignments are a closed durable fourth primitive") {
     answered.language = Orchestrator.RootAssignmentLanguage(
         tag: "zh-Hant", name: "Traditional Chinese (繁體中文)")
     answered.answeredTrustMenu = true
-    let roundTrip = Orchestrator.rootAssignment(from: Orchestrator.stored(answered))
-    var legacyStored = Orchestrator.stored(assignmentFixture(state: .promptReady))
+    let roundTrip = OrchestratorStore.rootAssignment(from: OrchestratorStore.stored(answered))
+    var legacyStored = OrchestratorStore.stored(assignmentFixture(state: .promptReady))
     legacyStored.removeValue(forKey: "language")
-    let legacy = Orchestrator.rootAssignment(from: legacyStored)
+    let legacy = OrchestratorStore.rootAssignment(from: legacyStored)
     let legacyLine = legacy.map { Orchestrator.rootAssignmentLine(for: $0) } ?? ""
     let legacyTranscript = """
     {"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":\(String(data: try! JSONEncoder().encode(legacyLine), encoding: .utf8)!)}]}}}

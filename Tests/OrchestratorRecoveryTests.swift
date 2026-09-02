@@ -417,13 +417,13 @@ group("a tab that never opened is retried from its own task file, twice and no f
         secretHash: String(repeating: "0", count: 64))
     carried.respawnOf = originalID
     carried.respawnGeneration = 2
-    let carriedBack = Orchestrator.task(from: Orchestrator.stored(carried))
+    let carriedBack = OrchestratorStore.task(from: OrchestratorStore.stored(carried))
     check("the chain survives being written down and read back",
           carriedBack?.respawnOf == originalID && carriedBack?.respawnGeneration == 2)
-    var orphan = Orchestrator.stored(carried)
+    var orphan = OrchestratorStore.stored(carried)
     orphan["respawn_of"] = nil
     check("and a generation with no task to descend from counts as no chain at all",
-          Orchestrator.task(from: orphan)?.respawnGeneration == 0)
+          OrchestratorStore.task(from: orphan)?.respawnGeneration == 0)
 
     let secondReply = Orchestrator.respawn(taskID: firstID)
     let secondRecord = record(payload(secondReply))
