@@ -9,6 +9,7 @@ Nothing here needs reading to use the app. It is here because most of it is a de
 have gone the other way, and a decision with no reason written down is one the next person deletes.
 
 - [Which session it sends to](#which-session-it-sends-to)
+- [Running under `tmux -CC`](#running-under-tmux--cc)
 - [Which session wants you](#which-session-wants-you)
 - [Reading a session back](#reading-a-session-back)
 - [Talk instead of type](#talk-instead-of-type)
@@ -42,6 +43,71 @@ can write; [project-status.md](project-status.md) is the format. Without them th
 less to say — the branch and the uncommitted count still come from one
 `git status --porcelain=v2 --branch`, and the colour is derived from the path, which is stable from
 one launch to the next.
+
+## Running under `tmux -CC`
+
+iTerm2 can speak tmux's control-mode protocol, and then a tmux window is not something inside a
+tab — it *is* a tab, drawn natively, with its own title bar and its own ⌘-number. It is a nice way
+to work and it used to break this app completely.
+
+What Clawdline sees is the reason. Ask iTerm2 for its sessions and one row comes back per tmux
+window with an identity, a name, and **no tty at all**, because the pty belongs to tmux; `tmux
+list-panes` holds the real `/dev/ttys009` that iTerm2 never mentions. A row with no tty cannot be
+matched against `ps`, cannot be checked for identity before a keystroke, and cannot safely refresh
+an older row — so it used to be counted as a session that could not be read, which cost the whole
+inventory its confidence. **And an inventory without confidence closes nothing**: one tmux window
+open, anywhere, and no session on the Mac could be closed at all, with nothing on screen saying
+why.
+
+Those rows belong to the tmux backend, which already lists them properly — with the pty tmux
+really has, the pane's own title, and everything else the pane can answer for. So they are
+attributed rather than dropped, and the iTerm2 half of the list stops claiming them.
+
+**The attribution needs a second source, and tmux is it.** A row that says nothing about itself
+cannot also be the evidence for what it is, so a pty-less row is only read as a tmux window when
+tmux independently agrees — when `tmux list-clients` reports a client whose flags carry
+`control-mode`. Nothing else is taken as agreement: a tmux that is not installed, cannot be found
+on this Mac, has no server, or does not answer in time has not agreed, and a pty-less row with
+nothing to explain it is still exactly the unreadable row this guard was written for. It still
+lowers the inventory's confidence, and now it says which of those happened.
+
+**Agreement is not a headcount, and the flag is not a name.** `control-mode` says a protocol is
+being spoken over a pty; anything can speak it, and `tmux -C attach` from a script carries the
+identical flag. So two more things have to hold before a row is attributed to tmux, and both come
+out of the same `list-clients` reading:
+
+- **The client has to be iTerm2's.** Its `#{client_tty}` — the gateway pty — has to be the tty of
+  a row in the very same iTerm2 listing. A client with no tty at all matches nothing rather than
+  everything.
+- **It can only account for what it draws.** A control-mode client draws one tab per window of the
+  session it is attached to, so `#{session_windows}` is the ceiling; two clients watching one
+  session are watching the same windows and are counted once. Pty-less rows beyond that ceiling
+  are unexplained, and say so.
+
+One thing it deliberately does not do is claim to know *which* iTerm2 tab holds which tmux pane.
+iTerm2's scripting dictionary exposes no tmux property at all, so there is no supported mapping to
+check; the attribution is the coarse, true statement — tmux is drawing windows here — rather than
+a per-row guess made from tab names. The practical effect shows up when you jump to a pane:
+asking tmux for a window does move iTerm2's tab, because iTerm2 is following the control-mode
+stream, and Clawdline brings iTerm2 forward behind it when tmux's client list says that pane's
+session is the one being drawn. Which tab it lands on is tmux's decision, not a guess of ours.
+
+The tmux gateway — the session you typed `tmux -CC` into, usually named something like
+`Default (tmux)` — is an ordinary iTerm2 row with a real tty and behaves exactly as it always did.
+It is also what makes the attribution work at all: the client tmux reports is speaking over that
+row's pty, which is how Clawdline knows the emulator on the other end is iTerm2 and not something
+else that speaks the same protocol.
+
+**Clawdline only ever asks tmux's default socket.** Every `tmux` it runs is invoked with no `-L`
+and no `-S`, so a control-mode session started as `tmux -L work -CC` or with `TMUX_TMPDIR` set to
+somewhere else is invisible here: `list-clients` answers "no server running", which is a complete
+and honest *no*, and the pty-less rows that session draws stay unexplained. The inventory is then
+incomplete, and an incomplete inventory refuses every close — the same silence this section is
+about, for a case that is not fixed. Nothing here guesses at other sockets: enumerating them means
+reading whatever is in `$TMUX_TMPDIR` or `/tmp/tmux-$UID` and attaching meaning to it, and a wrong
+guess about which server is drawing your tabs is worse than a refusal that says so. `tmuxPath` in
+the config names the binary; there is deliberately no socket setting yet, and adding one is a
+decision about what Clawdline is willing to assume rather than a missing line of code.
 
 ## Which session wants you
 

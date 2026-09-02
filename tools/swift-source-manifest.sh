@@ -146,6 +146,7 @@ clawdline_test_sources=(
   Tests/TestHarness.swift
   Tests/TestIsolation.swift
   Tests/TestProcessProbes.swift
+  Tests/TmuxCoexistenceTests.swift
   Tests/TranscriptTests.swift
   Tests/UsageLedgerTests.swift
   Tests/UsagePortfolioAndLifecycleTests.swift

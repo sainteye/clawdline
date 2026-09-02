@@ -484,6 +484,9 @@ let expectedOrderedTestGroupTitles: [String] = [
     "an admitted read is released exactly once",
     "the trace separates waiting from working",
     "percentiles answer for an empty lane instead of crashing",
+    "a tmux control-mode client is what makes a pty-less iTerm2 row explicable",
+    "an iTerm2 row with no pty is attributed rather than dropped",
+    "revealing a tmux pane brings iTerm2 forward only when tmux says it drew it",
 ]
 
 func validateExecutedTestGroupManifest() {

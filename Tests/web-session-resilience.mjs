@@ -576,10 +576,90 @@ assert.equal(noChain.complete, true, "the fallback walk is still an authoritativ
 // rule the walk applies, because a nameless row cannot safely refresh an old one.
 const nameless = jxaList(bulkApp([[[row("A"), { id: "", name: "?", tty: "", profile: "" }]]]));
 assert.deepEqual(nameless.sessions.map(function (s) { return s.id; }), ["A"],
-    "a row with no id or tty is dropped from the batched inventory");
+    "a row with no id is dropped from the batched inventory");
 assert.equal(nameless.complete, false,
     "dropping a row lowers the confidence of the whole batched inventory");
 assert.equal(nameless.ok, false, "an incomplete batched inventory is not a clean success");
+
+// **A row with an identity and no tty is a different fact, and used to be counted as the one
+// above.** Under `tmux -CC` iTerm2 draws every tmux window as one of its own tabs while tmux
+// keeps the pty, so each of those tabs answers `id` and answers `tty` with nothing. Measured on
+// this Mac against tmux 3.6a: one control-mode session produced exactly one such row, two
+// windows produced two, and killing the tmux server returned the list to complete. Dropping them
+// made one tmux window enough to mark the inventory incomplete — and an incomplete inventory
+// refuses every session close the app can perform. So the row is reported with a marker, and
+// Swift decides against tmux's own client list whether tmux really drew it.
+const ptylessRow = { id: "T", name: "Sean-MacBook-Pro.local (-zsh)", tty: "", profile: "Default" };
+const controlMode = jxaList(bulkApp([[[row("A"), ptylessRow]]]));
+assert.deepEqual(controlMode.sessions.map(function (s) { return s.id; }), ["A", "T"],
+    "a row with an id and no tty is reported rather than dropped");
+assert.equal(controlMode.complete, true,
+    "a tmux control-mode window no longer costs the whole inventory its confidence");
+assert.equal(controlMode.ok, true, "and the batched list is a clean success again");
+assert.equal(controlMode.error, undefined, "a complete inventory explains nothing");
+assert.equal(controlMode.sessions[1].ptyless, true,
+    "the pty-less row carries the marker Swift attributes it by");
+assert.equal(controlMode.sessions[1].tty, "",
+    "and keeps its empty tty rather than being given somebody else's");
+assert.equal(controlMode.sessions[0].ptyless, undefined,
+    "an ordinary row is not marked, so the marker means exactly one thing");
+
+// The walk applies the identical rule. It is the only path when the specifier chain is
+// unavailable, and a fallback that still dropped these rows would make the defect reappear
+// exactly when iTerm2 is already having trouble answering.
+const walkedControlMode = jxaList({
+    running: function () { return true; },
+    windows: function () {
+        return [{ tabs: function () { return [{ sessions: function () {
+            return [row("A"), ptylessRow].map(mockSession); } }]; } }];
+    }
+});
+assert.deepEqual(walkedControlMode.sessions, controlMode.sessions,
+    "the fallback walk reports pty-less rows exactly as the batched read does");
+assert.equal(walkedControlMode.complete, true,
+    "and the walk is an authoritative inventory with one of them in it");
+
+// The two halves of the old guard, now separate: two tmux windows and one genuinely unreadable
+// row in the same scan leave the unreadable one — and only it — costing the confidence.
+const mixedRows = jxaList(bulkApp([[[
+    row("A"),
+    ptylessRow,
+    { id: "U", name: "second tmux window", tty: "", profile: "Default" },
+    { id: "", name: "?", tty: "/dev/ttysZ", profile: "" }
+]]]));
+assert.deepEqual(mixedRows.sessions.map(function (s) { return s.id; }), ["A", "T", "U"],
+    "both tmux windows survive beside a row that really is unreadable");
+assert.equal(mixedRows.complete, false,
+    "the unreadable row still lowers the inventory's confidence on its own");
+assert.match(mixedRows.error, /1 failure/,
+    "and it is counted once — the tmux windows are not failures any more");
+
+// **A tty that could not be read is not a tty that is empty**, and on the walk the difference is
+// visible: the property throws instead of answering. Both used to come back as `""` through
+// `safe()`, which handed Swift a row shaped exactly like a tmux window — and with any
+// control-mode client on the Mac, Swift would have attributed it to tmux and said nothing. The
+// row that threw goes back to being what it always was: unreadable, and the inventory says so.
+const throwsOnTTY = {
+    id: function () { return "X"; },
+    name: function () { return "a session that went away mid-walk"; },
+    tty: function () { throw new Error("session is gone"); },
+    profileName: function () { return "Default"; }
+};
+const unreadableTTY = jxaList({
+    running: function () { return true; },
+    windows: function () {
+        return [{ tabs: function () { return [{ sessions: function () {
+            return [mockSession(row("A")), throwsOnTTY, mockSession(ptylessRow)]; } }]; } }];
+    }
+});
+assert.deepEqual(unreadableTTY.sessions.map(function (s) { return s.id; }), ["A", "T"],
+    "a row whose tty read threw is dropped rather than marked pty-less");
+assert.equal(unreadableTTY.complete, false,
+    "and it costs the inventory its confidence, as an unreadable row always did");
+assert.match(unreadableTTY.error, /session pty unreadable/,
+    "the reason says which half of the identity could not be read");
+assert.equal(unreadableTTY.sessions[1].ptyless, true,
+    "while the genuinely empty tty beside it still carries the marker");
 
 function jxaRun(app, argv) {
     const context = { Application: function () { return app; }, args: argv, result: null };
