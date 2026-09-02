@@ -189,29 +189,6 @@ node Resources/web/app/js/net/client.test.mjs
 node Tests/test-sh-streaming.mjs
 node Tests/test-sh-lock.mjs
 
-BIN="${TMPDIR:-/tmp}/clawdline-tests"
-
-required_cloud_test_files=(
-  Tests/CloudEnvelopeTests.swift
-  Tests/CloudAccountTests.swift
-  Tests/CloudTransportTests.swift
-  Tests/CloudAppBridgeTests.swift
-  Tests/CloudSettingsTests.swift
-  Tests/ScheduleResumeTests.swift
-  Tests/CloudClockTests.swift
-  Tests/CloudCanonicalJSONTests.swift
-  Tests/CloudCommandLedgerTests.swift
-  Tests/CloudOutboundSpoolTests.swift
-  Tests/CloudPairingTests.swift
-  Tests/CloudLifecycleTests.swift
-)
-for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
-  if ! test -f "$required_cloud_test_file"; then
-    echo "required Cloud test suite is missing: $required_cloud_test_file" >&2
-    exit 1
-  fi
-done
-
 # >>> clawdline suite lock >>>
 # One machine, one suite run — and this block is the whole of that promise. It is bounded by the two
 # marker comments so `Tests/test-sh-lock.mjs` can lift it out and drive it against cheap stand-ins,
@@ -661,33 +638,42 @@ clawdline_suite_lock_tree() {
 
 CLAWDLINE_SUITE_LOCK_HOLDER="${CLAWDLINE_SUITE_LOCK_HOLDER:-$(clawdline_suite_lock_default_holder)}"
 CLAWDLINE_SUITE_LOCK_TREE="${CLAWDLINE_SUITE_LOCK_TREE:-$(clawdline_suite_lock_tree)}"
-CLAWDLINE_SUITE_LOCK_NOTE="${CLAWDLINE_SUITE_LOCK_NOTE:-running ./test.sh; output is going to $LOG. This lock is handed on only when its heartbeat has expired AND no $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN is running anywhere.}"
+# The note says out loud the thing the mechanism above already enforces, because whoever reads this
+# file is usually reading it at the moment they are tempted to remove the lock by hand. A gap with
+# no compiler running does **not** mean nobody holds it: one run is a sequence of expensive steps
+# and the gaps between them are part of the hold.
+CLAWDLINE_SUITE_LOCK_NOTE="${CLAWDLINE_SUITE_LOCK_NOTE:-running ./test.sh; output is going to $LOG. This lock covers a whole sequence of expensive steps, so a moment with no $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN running does not mean it is free. It is handed on only when the heartbeat above has expired, or when $CLAWDLINE_SUITE_LOCK_DONE_FLAG exists, and in both cases only while no $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN is running anywhere. If you think it is stuck, ask the run named above rather than removing this directory.}"
 
 trap clawdline_suite_exit_cleanup EXIT
 clawdline_acquire_suite_lock || exit $?
-
-# The compile's parallelism ceiling, and where the number came from. Unset, the command line below
-# is byte-identical to what it has always been and the swift driver picks its own job count — which
-# is what spawned four `swift-frontend` processes at once. The broker's machine lease will set this;
-# until it exists, a person or a measurement run sets it by hand. Floor of one: low headroom means a
-# slower compile, never a slot that never comes.
-clawdline_suite_jobs_flags=()
-case "${CLAWDLINE_SUITE_JOBS:-}" in
-  "")
-    echo "test.sh: compile parallelism ceiling: the swift driver's default (CLAWDLINE_SUITE_JOBS unset)" ;;
-  0 | *[!0-9]*)
-    echo "test.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
-    exit 2 ;;
-  *)
-    clawdline_suite_jobs_flags=(-j "$CLAWDLINE_SUITE_JOBS")
-    echo "test.sh: compile parallelism ceiling: ${CLAWDLINE_SUITE_JOBS} job(s), from CLAWDLINE_SUITE_JOBS" ;;
-esac
 # <<< clawdline suite lock <<<
+
+BIN="${TMPDIR:-/tmp}/clawdline-tests"
+
+required_cloud_test_files=(
+  Tests/CloudEnvelopeTests.swift
+  Tests/CloudAccountTests.swift
+  Tests/CloudTransportTests.swift
+  Tests/CloudAppBridgeTests.swift
+  Tests/CloudSettingsTests.swift
+  Tests/ScheduleResumeTests.swift
+  Tests/CloudClockTests.swift
+  Tests/CloudCanonicalJSONTests.swift
+  Tests/CloudCommandLedgerTests.swift
+  Tests/CloudOutboundSpoolTests.swift
+  Tests/CloudPairingTests.swift
+  Tests/CloudLifecycleTests.swift
+)
+for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
+  if ! test -f "$required_cloud_test_file"; then
+    echo "required Cloud test suite is missing: $required_cloud_test_file" >&2
+    exit 1
+  fi
+done
 
 swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
-  ${clawdline_suite_jobs_flags[@]+"${clawdline_suite_jobs_flags[@]}"} \
   -o "$BIN" \
   "${clawdline_library_sources[@]}" \
   "${clawdline_test_sources[@]}" \
