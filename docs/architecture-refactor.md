@@ -511,7 +511,7 @@ and the header says which tree it belongs to rather than implying it was observe
 | ordered groups | 463 | 498 |
 | ordered runners | 25 | 29 |
 | suite files | 38 | 42 |
-| Swift checks | — | 8,061 |
+| Swift checks | — | 8,087 |
 | `Orchestrator.swift` ceiling | 13,592 | 12,819 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,426 |
 
@@ -556,6 +556,30 @@ deviation from a stated acceptance condition, and it went the useful direction �
 cohesive group and splitting them would have produced four commits that do not compile standing
 alone, which `docs/landing.md` forbids. Later stages carrying independent collections should hold to
 the original rule.
+
+**And it worked on the next one.** Giving the terminal a setting of its own — `Config.terminal` and
+`StartPoints.TerminalChoice`, split out of the hotkey's scope — moves that row to **8,052**, 26
+checks, in three groups and no new group, runner or suite file. The count was moved here in the same
+edit as `test.sh`'s `expected_swift_receipt` because the guard reads both and refuses to agree with
+one of them, and the arithmetic behind the 26 is written out beside that variable.
+
+**How that 26 was measured, since no full suite could be run the night it landed.** One file,
+`Tests/CloudAccountTests.swift`, was measured at a ≥23.65 GiB lifetime maximum on a 24 GB Mac, so
+whole-tree codegen was refused machine-wide. Each of the three groups was instead run **on its own**
+through `CLAWDLINE_TEST_GROUPS`, twice — once as delivered and once with this slice's additions
+patched back out — against a binary whose only difference from the shipped one is that expensive
+file, stubbed to its two signatures:
+
+| group | on `main` | after `47925577` | delivered |
+|---|---:|---:|---:|
+| which terminal a session is started in… | 12 | 31 | **34** |
+| the page is given the words it draws the start sheet with | 7 | 7 | **9** |
+| a screen read to decide something is the screen… | 8 | 8 | **10** |
+
+`8,026 − 12 + 34 + 2 + 2 = 8,052`. The middle column is measured; the `main` column for the first
+row is a static count of `git show 47925577^`, whose twelve calls are all unconditional and outside
+any loop. **The first full suite to run this tree is still the authority** — if it disagrees, the
+arithmetic above is what was wrong, not the code, and both places move together.
 
 **The correction itself needed correcting three times, always the same way, and the third time an
 independent reviewer had to catch it.** The section first said the guard held 480 ordered groups; at

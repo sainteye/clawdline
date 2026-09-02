@@ -139,7 +139,22 @@ final class Config {
     /// run under any terminal — an iTerm2-only scope would leave those users without a key.
     /// Done in-app rather than handed to a hotkey utility: registering globally takes ⌥Space away
     /// from every other app, while registering per-frontmost leaves them exactly as they were.
+    ///
+    /// **This is the hotkey and nothing else.** It used to decide which terminal a new session
+    /// opened in as well, which meant somebody who wanted the chord bound to iTerm2 could not
+    /// ask for sessions in tmux, and somebody who changed it for the terminal lost the binding
+    /// they had. That job is ``terminal``'s now.
     var scopeApp = "com.googlecode.iterm2"
+    /// Which terminal a new session is opened in.
+    ///
+    /// Split out of ``scopeApp`` on 2026-09-02, because one value cannot answer two questions —
+    /// see ``StartPoints/TerminalChoice``. Read at the moment a session is started rather than at
+    /// launch, so changing it in Settings takes effect on the next start with no restart.
+    ///
+    /// A `config.json` written before this key existed has it filled in once from ``scopeApp``,
+    /// by ``StartPoints/TerminalChoice/inheritedFromHotkeyScope(_:)``, so nothing moves under
+    /// anybody; the next save writes the answer down and the scope is never consulted again.
+    var terminal: StartPoints.TerminalChoice = .auto
     /// "auto" follows the system, or a tag such as "en" / "zh-Hant"
     var language = "auto"
     /// Which mascot pack to draw. Files live in ~/.config/clawdline/mascots/<name>.json
@@ -546,6 +561,14 @@ final class Config {
         if let v = obj["width"] as? Double, v >= 360, v <= 1400 { width = CGFloat(v) }
         if let v = obj["hotkey"] as? String, !v.isEmpty { hotKey = v }
         if let v = obj["scope_app"] as? String { scopeApp = v }
+        // After `scope_app`, because a file from before this key existed says what it meant by
+        // its hotkey scope and nothing else. An unreadable value is treated as an absent one:
+        // both mean "this file never chose", and both get the same answer.
+        if let v = obj["terminal"] as? String, let choice = StartPoints.TerminalChoice(rawValue: v) {
+            terminal = choice
+        } else {
+            terminal = StartPoints.TerminalChoice.inheritedFromHotkeyScope(scopeApp)
+        }
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
         if let v = obj["hooks"] as? Bool { hooks = v }
@@ -640,6 +663,7 @@ final class Config {
             "width": Double(width),
             "hotkey": hotKey,
             "scope_app": scopeApp,
+            "terminal": terminal.rawValue,
             "language": language,
             "mascot": mascot,
             "hooks": hooks,

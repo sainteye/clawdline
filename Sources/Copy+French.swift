@@ -96,6 +96,8 @@ struct French: Copy {
     let settingsScope = "Actif dans"
     let settingsScopeGlobal = "Dans toutes les apps"
     let settingsScopeHint = "Vide veut dire partout, donc retirer la dernière allume l'interrupteur du dessus — et le rééteindre remet la liste. Le fichier de configuration les garde sous forme d'identifiants de bundle, et une liste modifiée à la main marche toujours."
+    let settingsSessionTerminal = "Les nouvelles sessions s'ouvrent dans"
+    let settingsSessionTerminalHint = "Rien à voir avec l'endroit où le raccourci fonctionne. Auto prend iTerm2 quand il est ouvert et tmux sinon ; tmux met la session dans un serveur tmux même si iTerm2 tourne. Cela vaut pour la prochaine session, sans redémarrage."
     let settingsScopeAdd = "Ajouter une app…"
     let settingsScopeChoose = "Choisir une app…"
     let settingsScopeRunning = "Ouvertes en ce moment"

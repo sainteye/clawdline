@@ -100,6 +100,8 @@ struct Hindi: Copy {
     let settingsScope = "कहाँ चले"
     let settingsScopeGlobal = "हर ऐप में"
     let settingsScopeHint = "खाली मतलब हर जगह, इसलिए आख़िरी वाला हटाते ही ऊपर वाला switch चालू हो जाता है — और उसे फिर से बंद करने पर सूची लौट आती है। config फ़ाइल इन्हें bundle id की तरह रखती है, और हाथ से लिखी सूची भी उतनी ही चलती है।"
+    let settingsSessionTerminal = "नई session यहाँ खुलती है"
+    let settingsSessionTerminalHint = "यह वह नहीं है कि hotkey कहाँ चलती है। स्वचालित का मतलब है iTerm2 खुला हो तो वही, वरना tmux; tmux चुनने पर iTerm2 चलता रहने पर भी session tmux server में जाती है। अगली session से लागू होता है, कुछ भी दोबारा चालू करने की ज़रूरत नहीं।"
     let settingsScopeAdd = "ऐप जोड़ें…"
     let settingsScopeChoose = "ऐप चुनें…"
     let settingsScopeRunning = "अभी खुले हुए"

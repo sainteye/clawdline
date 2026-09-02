@@ -180,18 +180,19 @@ enum StartPoints {
         /// tmux is installed and no server is running, so one has to be started with nothing
         /// attached to it. Kept apart from ``tmux`` because the two are different promises to the
         /// person: one puts a session where they are already looking, the other puts it somewhere
-        /// they have to go and find. See ``plan(scope:running:tmux:)``.
+        /// they have to go and find. See ``plan(terminal:running:tmux:)``.
         case tmuxDetached
         /// A terminal this can drive, that is not open. The bundle id.
         case notRunning(app: String)
-        /// The terminal Settings names is not one this can drive, and there is no tmux to reach
-        /// it through. The bundle id.
-        case cannotDrive(app: String)
+        /// tmux is the terminal Settings asks for and there is no tmux on this Mac. It carries
+        /// no name because the setting no longer holds one: the choice is *tmux*, not a bundle
+        /// id it has to be reached through.
+        case noTmux
     }
 
     /// How far tmux gets on this Mac. Three states rather than a `hasTmux` flag, because the two
     /// that used to share a spelling — *installed with no server* and *not installed at all* —
-    /// are the whole of the question in ``plan(scope:running:tmux:)``: one of them can be
+    /// are the whole of the question in ``plan(terminal:running:tmux:)``: one of them can be
     /// answered by starting a server and the other cannot be answered at all.
     enum TmuxReach: Equatable {
         /// No tmux this app can find. ``Tmux/binary`` says where it looked.
@@ -204,46 +205,91 @@ enum StartPoints {
 
     static let itermBundleID = "com.googlecode.iterm2"
 
-    /// Read off the app list in Settings, which is the only place this app is told which terminal
-    /// somebody uses.
+    /// Which backend a new session is opened with — a setting of its own, and the whole of what
+    /// ``plan(terminal:running:tmux:)`` is told.
+    ///
+    /// **It used to be read off the hotkey scope, and that was one setting doing two jobs.**
+    /// ``Config/scopeApp`` says where ⌥Space is live; it was also the only place this app was
+    /// told which terminal somebody uses, so the two could not be set apart. Somebody who wanted
+    /// the chord bound to iTerm2 had no way to ask for sessions in tmux — measured on
+    /// 2026-09-02, with iTerm2 running and a live `tmux -CC` session beside it, every new session
+    /// still went to a plain iTerm2 tab and Settings had no word for the other answer.
     ///
     /// Two paths exist and only two: **iTerm2**, which has an AppleScript surface that can open a
     /// tab and write into it, and **tmux**, which is how every other terminal works here — see
-    /// ``Tmux``. Anything else is refused by name rather than quietly handed to iTerm2, because a
-    /// session that opened somewhere the person was not looking is worse than a sentence saying
-    /// it did not open.
+    /// ``Tmux``. So this is three values rather than a list of bundle ids: the two backends, and
+    /// *no preference*.
+    enum TerminalChoice: String, Equatable, CaseIterable {
+        /// No preference: iTerm2 when it is open, and tmux when it is not. The order every
+        /// terminal operation in this app has always used, and what an unset config means.
+        case auto
+        /// iTerm2, and a refusal naming it when it is shut. Chosen by somebody who does not want
+        /// a session appearing in a tmux server they are not attached to.
+        case iterm
+        /// tmux, whether or not iTerm2 is running. This is the answer that had no way of being
+        /// said before.
+        case tmux
+
+        /// What a `config.json` written before this setting existed meant by its hotkey scope.
+        ///
+        /// **A migration, and the only place the scope is still allowed to say anything about a
+        /// terminal.** ``plan(terminal:running:tmux:)`` no longer sees it. Without this a Ghostty
+        /// or Terminal.app user — whose scope named their terminal, so whose sessions have always
+        /// gone to tmux — would silently be moved onto ``auto`` and told to open an iTerm2 they
+        /// may not have installed. It runs once, when ``Config`` finds no `terminal` key, and the
+        /// next save writes the answer down so it never runs again.
+        static func inheritedFromHotkeyScope(_ scope: String) -> TerminalChoice {
+            let ids = scope.split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            // An empty scope means the hotkey is global, which says nothing about which terminal
+            // is in use — so it reads as no preference, exactly as it did inside `plan`.
+            if ids.isEmpty { return .auto }
+            let namesITerm = ids.contains {
+                $0.caseInsensitiveCompare(itermBundleID) == .orderedSame
+            }
+            return namesITerm ? .auto : .tmux
+        }
+    }
+
+    /// Which terminal a new session goes into, given the choice in Settings and what is actually
+    /// on this Mac.
     ///
-    /// An empty scope means the hotkey is global, which says nothing about which terminal is in
-    /// use — so it reads as *no preference*, and no preference is iTerm2 first: the same order
-    /// every other terminal operation in this app has always used.
+    /// **Pure, and it reads nothing.** Everything it decides from is an argument, which is what
+    /// lets the whole table below be a test with no terminal anywhere near it.
     ///
     /// **Starting a tmux server is offered in one situation and withheld in the other, and the
     /// difference is whether the person has somewhere else to be sent.** A session in a server
     /// nobody is attached to is real, drivable and invisible: Clawdline lists it, reads it, types
     /// into it and closes it, while at the Mac it does not appear until somebody runs
-    /// ``Tmux/attachCommand``. Where the terminal in Settings is one this cannot drive, the
-    /// alternative to that trade is a refusal telling a phone to go and run tmux on a Mac it is
-    /// not sitting at — so the server is started. Where the terminal is iTerm2 and it is merely
-    /// shut, there is a better answer than either: open iTerm2, which is one click and puts the
-    /// session where the person is already looking.
-    static func plan(scope: String, running: Set<String>, tmux: TmuxReach) -> Plan {
-        let ids = scope.split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        func isITerm(_ id: String) -> Bool {
-            id.caseInsensitiveCompare(itermBundleID) == .orderedSame
+    /// ``Tmux/attachCommand``. Where tmux is what Settings asks for, the alternative to that
+    /// trade is a refusal telling a phone to go and run tmux on a Mac it is not sitting at — so
+    /// the server is started. Where the terminal is iTerm2 and it is merely shut, there is a
+    /// better answer than either: open iTerm2, which is one click and puts the session where the
+    /// person is already looking.
+    static func plan(terminal: TerminalChoice, running: Set<String>, tmux: TmuxReach) -> Plan {
+        func itermIsOpen() -> Bool {
+            running.contains { $0.caseInsensitiveCompare(itermBundleID) == .orderedSame }
         }
-        if ids.isEmpty || ids.contains(where: isITerm) {
-            if running.contains(where: isITerm) { return .iterm }
-            // iTerm2 is wanted and shut. tmux is not a fallback *to* iTerm2 — it is the other
-            // real backend, and a pane in it is a session that exists whether or not anything is
-            // attached to it.
+        switch terminal {
+        case .auto:
+            if itermIsOpen() { return .iterm }
+            // iTerm2 is shut and nothing was asked for by name. tmux is not a fallback *to*
+            // iTerm2 — it is the other real backend, and a pane in it is a session that exists
+            // whether or not anything is attached to it.
             if tmux == .running { return .tmux }
             return .notRunning(app: itermBundleID)
+        case .iterm:
+            // Named, so a running tmux server is not an answer to it: somebody who picked iTerm2
+            // over `auto` asked for the tab they can see rather than the pane they cannot.
+            return itermIsOpen() ? .iterm : .notRunning(app: itermBundleID)
+        case .tmux:
+            switch tmux {
+            case .running: return .tmux
+            case .installed: return .tmuxDetached
+            case .absent: return .noTmux
+            }
         }
-        if tmux == .running { return .tmux }
-        if tmux == .installed { return .tmuxDetached }
-        return .cannotDrive(app: ids[0])
     }
 
     /// An application's name as a person would say it, for a sentence they are going to read.
@@ -282,7 +328,8 @@ enum StartPoints {
         }
         // Asked once and held: `tmuxReach()` lists panes, and asking it twice would be a second
         // subprocess answering a question that may by then have a different answer.
-        let chosen = plan(scope: Config.shared.scopeApp, running: runningApps(), tmux: tmuxReach())
+        let chosen = plan(terminal: Config.shared.terminal, running: runningApps(),
+                          tmux: tmuxReach())
         switch chosen {
         case .iterm:
             let opened = ITerm.newTabResult(line: itermLine(cwd: place.path,
@@ -332,17 +379,22 @@ enum StartPoints {
                             message: "\(name) is not running, and this will not launch it for "
                                    + "you. Open it on the Mac and try again.", app: name)
 
-        case .cannotDrive(let app):
-            // This now means what it says: not "no tmux server" — one of those gets started —
-            // but no tmux on this Mac at all, which is a thing only somebody at the keyboard can
-            // change. Telling a phone to go and run tmux was an instruction it could not carry
-            // out; installing tmux is at least the true one.
-            let name = appName(app)
+        case .noTmux:
+            // This means what it says: not "no tmux server" — one of those gets started — but no
+            // tmux on this Mac at all, which is a thing only somebody at the keyboard can change.
+            // Telling a phone to go and run tmux was an instruction it could not carry out;
+            // installing tmux is at least the true one.
+            //
+            // **No `app`, on purpose.** The two 409s used to carry the bundle id out of the
+            // hotkey scope, and the phone writes its own sentence around it — "a session cannot
+            // be started in Ghostty from here". tmux is not that kind of name and there is no
+            // longer a terminal id behind this refusal to offer, so the page falls through to
+            // its plain wording rather than being handed a sentence that reads as nonsense.
             return .refused(status: 409, code: "terminal_unsupported",
-                            message: "\(name) is the terminal in Settings, and a session cannot "
-                                   + "be started in it directly. There is no tmux on this Mac to "
-                                   + "reach it through — install tmux and this works "
-                                   + "— see docs/remote.md.", app: name)
+                            message: "tmux is the terminal for new sessions in Settings, and "
+                                   + "there is no tmux on this Mac. Install tmux, or pick a "
+                                   + "different terminal in Settings — see docs/remote.md.",
+                            app: nil)
         }
     }
 
@@ -1045,7 +1097,7 @@ enum StartPoints {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// Which applications are open, so ``plan(scope:running:tmux:)`` can be told rather than
+    /// Which applications are open, so ``plan(terminal:running:tmux:)`` can be told rather than
     /// having to ask. On the main thread, because `NSWorkspace` is.
     private static func runningApps() -> Set<String> {
         let read = { Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)) }

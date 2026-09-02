@@ -96,6 +96,8 @@ struct Indonesian: Copy {
     let settingsScope = "Aktif di"
     let settingsScopeGlobal = "Di semua aplikasi"
     let settingsScopeHint = "Kosong berarti di mana saja, jadi mengeluarkan yang terakhir akan menyalakan sakelar di atas — dan mematikannya lagi mengembalikan daftarnya. Berkas konfigurasi menyimpannya sebagai bundle id, dan daftar yang disunting tangan tetap jalan."
+    let settingsSessionTerminal = "Sesi baru dibuka di"
+    let settingsSessionTerminalHint = "Bukan hal yang sama dengan di mana pintasan berlaku. Otomatis memakai iTerm2 kalau sedang terbuka dan tmux kalau tidak; tmux menaruh sesi di server tmux meski iTerm2 sedang jalan. Berlaku untuk sesi berikutnya, tanpa perlu memulai ulang."
     let settingsScopeAdd = "Tambah aplikasi…"
     let settingsScopeChoose = "Pilih aplikasi…"
     let settingsScopeRunning = "Terbuka sekarang"

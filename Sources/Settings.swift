@@ -423,6 +423,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
         pane.left.row(L.t.settingsLanguage, languagePopUp())
         pane.left.row(L.t.menuMascot, mascotPopUp())
+        // Directly above the scope controls, because the two questions look alike and are not:
+        // one says where ⌥Space is live, this one says where a session opens. They were the same
+        // value until 2026-09-02, and the person who found that out had to ask.
+        pane.left.row(L.t.settingsSessionTerminal, terminalPopUp(),
+                      hint: L.t.settingsSessionTerminalHint)
         // The tallest thing on the tab, so it goes at the foot of the column it is in rather than
         // in the middle of it — a list that grows as you add to it should push nothing around.
         pane.left.row(L.t.settingsScopeGlobal, global)
@@ -1386,6 +1391,23 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             self?.fitMark(mark)
             self?.strip?.needsLayout = true
             mark.needsDisplay = true
+        }
+    }
+
+    /// **Product names, not translated, and no "off".** The two values that are not `auto` are
+    /// the two backends this app has — see ``StartPoints/TerminalChoice`` — and a person picking
+    /// between them is picking between two programs they already have names for.
+    ///
+    /// Nothing here needs a restart, and it does not say so because there is nothing to say:
+    /// ``StartPoints/start(_:assistant:model:reasoningEffort:permission:addDir:resume:)`` reads
+    /// the setting when it starts a session rather than at launch, so the next one goes where
+    /// this now says.
+    private func terminalPopUp() -> NSView {
+        popUp([(L.t.settingsAuto, StartPoints.TerminalChoice.auto.rawValue),
+               ("iTerm2", StartPoints.TerminalChoice.iterm.rawValue),
+               ("tmux", StartPoints.TerminalChoice.tmux.rawValue)],
+              current: Config.shared.terminal.rawValue) {
+            Config.shared.terminal = StartPoints.TerminalChoice(rawValue: $0) ?? .auto
         }
     }
 

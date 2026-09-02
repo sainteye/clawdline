@@ -96,6 +96,8 @@ struct Russian: Copy {
     let settingsScope = "Работает в"
     let settingsScopeGlobal = "Во всех приложениях"
     let settingsScopeHint = "Пусто — значит везде, поэтому если убрать последнее, включится переключатель выше, а если выключить его обратно, список вернётся. В файле настроек это bundle id, и список, поправленный вручную, тоже работает."
+    let settingsSessionTerminal = "Новые сессии открываются в"
+    let settingsSessionTerminalHint = "Это не то же самое, где срабатывает сочетание клавиш. «Авто» — iTerm2, когда он открыт, и tmux, когда нет; tmux кладёт сессию в сервер tmux, даже если iTerm2 запущен. Действует со следующей сессии, перезапуск не нужен."
     let settingsScopeAdd = "Добавить приложение…"
     let settingsScopeChoose = "Выбрать приложение…"
     let settingsScopeRunning = "Открыты прямо сейчас"

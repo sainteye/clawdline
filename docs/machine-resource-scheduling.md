@@ -394,10 +394,41 @@ unstructured `Task {}` site exactly where it was and changes only how many suspe
 one function. With the largest section carrying 16 of the original 143, a cost linear in
 suspension points per function would predict 11.2% and a quadratic one 1.25%; the measurement is
 1.80%, which interpolates to an exponent of about 1.8 — 2.0 depending on which denominator is used.
-**Quadratic, within the precision of a single data point.** Which also says what a coarser split
-would buy: six thematic sections, largest carrying 37, predicts 3 - 4 GiB rather than the 0.83 that
-was measured, so the thematic boundaries are worth using to decide naming and grouping and not to
-decide how many pieces there are.
+**Quadratic, within the precision of a single data point — and an interpolation between two points on
+one file, which is not a licence to extrapolate.** The same study's cross-file table says why:
+
+| file | suspension points in its largest function | peak | alive |
+|---|---:|---:|---:|
+| `CloudAccountTests.swift` | 143 | 47,163 MiB | 330.0 s |
+| `CloudCommandLedgerTests.swift` | 131 | 954 MiB | 3.1 s |
+| `CloudTransportTests.swift` | 61 | 283 MiB | 1.0 s |
+
+**Nine per cent more suspension points, forty-nine times the peak and a hundred times the time.** No
+power law produces that; a quadratic would have put the 131 row near 39 GiB and it is under one. So
+what the data shows is **a cliff somewhere between 131 and 143**, and the exponent measured inside
+one file describes the fall on one side of it rather than a curve anybody may extend. The choice
+between a 28-section split and a coarser one therefore rests on something simpler than a prediction:
+**the 28-section patch is written, measured at 0.83 GiB and applies cleanly, and a coarser one is
+not measured at all.**
+
+That cliff matters more than the peak did. **`CloudCommandLedgerTests` sits just under it.** It costs
+954 MiB today, so nothing marks it as a problem, and it is perhaps a dozen `await`s away from the
+compile that rebooted this machine twice — a file nobody is worried about, one ordinary test addition
+from 47 GiB, with no warning in between.
+
+Which is what gives the static guard both its purpose and its constant. A ceiling of **100 suspension
+points in one function** stops that file today at 131 and clears everything else by a wide margin,
+because the next largest is 61. The number goes in with its reason — cliff observed between 131 and
+143, threshold set at 100 for roughly thirty per cent of headroom, next largest 61 — precisely so
+that the next person who wants to raise it to make a build pass has to argue with the measurement
+rather than with a bare constant.
+
+What is *not* known is which variable the cliff belongs to. The two functions differ in `try` count
+as well, 260 against 179, and in closure shape. **The cliff is the data; its cause is not.** The
+cheap experiment, for anyone who wants it, is to add no-op suspension points to the 131-point
+function until it jumps: that locates the cliff and settles whether the variable is the await count
+at all, for the price of one single-file compile under a watchdog. Until then the threshold is
+conservative on purpose.
 
 It is worth being honest about what that does to this page's own argument. **If one file explains
 the peak, then fixing that file removes most of the danger the lease was drawn to contain.** Two
