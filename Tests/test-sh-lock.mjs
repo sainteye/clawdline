@@ -386,6 +386,8 @@ try {
     const orphanPid = /^orphan_pid=(\d+)$/m.exec(r4.all);
     check("a dead holder with a live compiler is not stale, and the run refuses rather than proceeding",
           /waiter=75/.test(w4) && !/ENTERED/.test(w4) && /lock=present/.test(r4.all));
+    check("the refusal names both the run to ask and what it has working right now",
+          /run pid \d+, working pid/.test(w4));
     check("the refusal names the orphan by pid, so a person can deal with it",
           orphanPid !== null && w4.includes(orphanPid[1]));
     check("and nothing was killed to make room",

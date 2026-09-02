@@ -208,6 +208,14 @@ node Tests/test-sh-lock.mjs
 # Release is on EXIT rather than on a line after the run, because every failure between here and the
 # end of the script leaves through `exit`, and EXIT is the one path all of them share.
 #
+# **And what it does not cover, which somebody should decide about rather than discover.**
+# `Tests/app-onboarding-focused.mjs` and `Tests/keychain-rebuild-focused.mjs` run above this line and
+# each invoke `swiftc` on a file or two of their own. Those compiles are seconds rather than the
+# whole of `Sources/`, so they are outside this boundary as the protocol defines it — but they are
+# real compiles happening without the lock, and a machine-wide probe will see them. Moving the lock
+# above them would close that at the cost of holding it through a dozen unrelated node suites, which
+# every queued run then waits out.
+#
 # **Liveness is proved by renewal, not by a pid existing.** A pid is a proxy and proxies outlive the
 # work: a holder on this machine recorded a `sleep 14400` sentinel, the work it stood for died,
 # launchd adopted the sleep, and under a pid-existence rule that lock would have blocked every other
@@ -311,6 +319,12 @@ clawdline_suite_lock_pid_identity() {
 }
 
 clawdline_suite_lock_probe_compilers() {
+  # **A global count, on purpose, and it includes other people's compilers.** The question this asks is
+  # "is anything on this machine burning", not "is my own work running": counting only descendants of
+  # this script's own driver would miss the compiler `node Tests/keychain-rebuild-focused.mjs`
+  # spawns, which is not under that driver and is still real memory. The reasoning is in
+  # docs/machine-resource-scheduling.md, commit 4d98f190.
+  #
   # 0 = at least one compiler is running, 1 = none anywhere, 2 = the probe could not answer. `pgrep`
   # exits 1 when nothing matched, so a `||` here would read "no compiler" as a failure and a failure
   # as "no compiler"; the status is read explicitly instead, and only an explicit 1 is ever allowed
@@ -608,7 +622,7 @@ clawdline_suite_lock_start_renewer() {
 
 clawdline_acquire_suite_lock() {
   local lock="$CLAWDLINE_SUITE_LOCK_DIR"
-  local started_at now waited next_notice holder_name holder_pid holder_started judged_token
+  local started_at now waited next_notice holder_name holder_pid holder_worker holder_started judged_token
   started_at=$(date +%s)
   next_notice=0
   while :; do
@@ -632,7 +646,10 @@ clawdline_acquire_suite_lock() {
     now=$(date +%s)
     waited=$(( now - started_at ))
     holder_name=$(clawdline_suite_lock_field holder "$lock/holder.txt")
-    holder_pid=$(clawdline_suite_lock_field pid "$lock/holder.txt")
+    # Both numbers, because they answer different questions: `owner_pid` is the run, which is who to
+    # go and ask, and `pid` is whatever of its processes is working at this heartbeat.
+    holder_pid=$(clawdline_suite_lock_field owner_pid "$lock/holder.txt")
+    holder_worker=$(clawdline_suite_lock_field pid "$lock/holder.txt")
     holder_started=$(clawdline_suite_lock_field started "$lock/holder.txt")
     judged_token=$(clawdline_suite_lock_field token "$lock/holder.txt")
     clawdline_suite_lock_admission "$lock"
@@ -642,12 +659,12 @@ clawdline_acquire_suite_lock() {
       fi
     fi
     if [ "$waited" -ge "$CLAWDLINE_SUITE_LOCK_WAIT_SECONDS" ]; then
-      echo "suite lock: gave up after ${waited}s. $lock is held by ${holder_name:-an unnamed run} (pid ${holder_pid:-unknown}, started ${holder_started:-unknown}) — $clawdline_suite_lock_evidence." >&2
+      echo "suite lock: gave up after ${waited}s. $lock is held by ${holder_name:-an unnamed run} (run pid ${holder_pid:-unknown}, working pid ${holder_worker:-none}, started ${holder_started:-unknown}) — $clawdline_suite_lock_evidence." >&2
       echo "suite lock: nothing was compiled and nothing was killed. Read $lock/holder.txt and ask that run." >&2
       return "$CLAWDLINE_SUITE_LOCK_BUSY"
     fi
     if [ "$waited" -ge "$next_notice" ]; then
-      echo "suite lock: waiting ${waited}s for ${holder_name:-an unnamed run} (pid ${holder_pid:-unknown}, started ${holder_started:-unknown}) — $clawdline_suite_lock_evidence"
+      echo "suite lock: waiting ${waited}s for ${holder_name:-an unnamed run} (run pid ${holder_pid:-unknown}, working pid ${holder_worker:-none}, started ${holder_started:-unknown}) — $clawdline_suite_lock_evidence"
       next_notice=$(( waited + CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS ))
     fi
     sleep "$CLAWDLINE_SUITE_LOCK_POLL_SECONDS"
@@ -790,13 +807,16 @@ done
 # diff. `CLAWDLINE_SUITE_JOBS` is that injection point: a ceiling, floor of one, so low headroom
 # means a slower compile rather than a slot that never comes.
 #
-# **Unset adds no flag at all, and that is deliberate.** It would be easy to write "unset means one
-# job" and wrong: measured on this Mac at 02:12, a full compile with no `-j` had two real
-# `swift-frontend` processes alive at once (77492 and 77565, `ps -Ao rss,comm` matching the `comm`
-# column exactly). An earlier reading of "the default is 1" had been taken against `-typecheck`,
-# which is a different question. So the default is unknown and greater than one, this script does
-# not pretend to know it, and with the variable unset the command line below is byte-identical to
-# what it has always been.
+# **Unset adds no flag at all.** Not because the default is unknown — it is 1, measured on this Mac
+# with two instruments, and `main`'s `f2d5abf8` carries the authoritative wording for this paragraph
+# — but because a script that names a number it did not choose is a script that will be wrong the
+# day the driver changes its mind. With the variable unset the command line below is byte-identical
+# to what it has always been, which is the property worth keeping.
+#
+# The reading that briefly suggested otherwise is worth keeping too, as a warning: two compilers were
+# seen alive at once during a no-`-j` compile, and the second belonged to
+# `node Tests/keychain-rebuild-focused.mjs`, which `test.sh` runs itself. The measurement was right
+# and the explanation was wrong.
 clawdline_suite_jobs_flags=()
 case "${CLAWDLINE_SUITE_JOBS:-}" in
   "")
