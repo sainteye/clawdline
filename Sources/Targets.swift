@@ -479,6 +479,12 @@ enum Targets {
     /// the highlight did not match, so no Return was sent and the picker looked like it worked.
     static func confirmation(want: Int, asked: SessionState.Menu?,
                              now: SessionState.Menu) -> Confirmation {
+        // **A set of questions never needs confirming at all.** Its digit both answers and moves
+        // on, so there is nothing left on this screen to commit — and unlike the comparison
+        // below, this holds even when the reading taken before the keystroke failed and there is
+        // no earlier question to compare against. The two are ordered this way deliberately: a
+        // missing `asked` must not be the thing that lets a Return through.
+        if !now.steps.isEmpty { return .movedOn }
         if let asked, now.question != asked.question { return .movedOn }
         return now.selected == want ? .send : .notYet
     }

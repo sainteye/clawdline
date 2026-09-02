@@ -67,7 +67,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # measured against 7519 and has been rebased twice since, each time on somebody else's landing
 # rather than on anything it changed: the reader-paced question steps moved the baseline to
 # 7542, and tmux read parity moved it to 7626. 7626 + 399 -> 8025.
-expected_swift_receipt='8025 checks passed'
+expected_swift_receipt='8026 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

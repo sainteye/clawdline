@@ -1221,6 +1221,13 @@ group("a picker's tab bar says which of its questions are answered") {
     // nothing has moved.
     expect("a lone picker with no earlier reading still confirms",
            Targets.confirmation(want: 1, asked: nil, now: asked), .send)
+    // And the set is refused on its own evidence. The reading taken before the keystroke can
+    // fail — a busy terminal, a capture that came back empty — and a missing `asked` must not be
+    // the thing that lets a Return through onto a question nobody has read.
+    var withBar = movedOn
+    withBar.steps = [.init(label: "早餐", answered: true), .init(label: "音樂", answered: false)]
+    expect("a picker that is one of a set is never confirmed, even with no earlier reading",
+           Targets.confirmation(want: 1, asked: nil, now: withBar), .movedOn)
 
     // Answering one question of several changes the bar and nothing else on screen. Without the
     // steps in the revision, a client that trusts it never learns the answer landed.
