@@ -427,6 +427,15 @@ state, no dependency-direction change, table-driven tests per record type. Accep
 semantics identical for every record type including the legacy-shape branches, unchanged group and
 check counts apart from the new codec groups, `Orchestrator.swift` down ~780 lines.
 
+**Landed 2026-09-02 (`integrate/cut1`).** Twenty functions moved, not the twenty-one counted
+above. The fog-of-war unknown is answered: no codec function reaches shared state through a helper,
+and all twenty-three helpers they call were read. `Orchestrator.swift` is 13,592 -> 12,819 lines and
+the guard ceiling drops with it. `load()` and `save()` stayed. So did the pure closure-attestation
+and restart/executor codecs, which pass the same mechanical test but sit outside the section beside
+the owners they belong to — the next cut to touch those owners should take them. Neutrality is
+proved mechanically rather than asserted: reversing the boundary spelling and the six
+`private` -> internal widenings makes the moved body byte-identical to the original under `diff`.
+
 **Cut 2 — `OrchestratorRegistry.swift`, the owner.** One type owns the lock and the collections and
 exposes a transaction interface; the 160 bare lock sites converge on it and the 10 `…Locked()`
 contracts become methods that cannot be called outside a transaction. Migrate one collection at a
@@ -446,17 +455,33 @@ Expected end state: `Orchestrator.swift` near 11,000 lines, and — more importa
 schedules, handoffs and coordination waits each have somewhere to go, so the next feature stops
 paying rent in the frozen file.
 
-### Governance correction, to land with Cut 1
+### Governance correction, landed with Cut 1
 
-This document has drifted from the executable guard. The guard is authoritative; these values are
-wrong here and are corrected when Cut 1 lands:
+This document had drifted from the executable guard. The guard is authoritative, and these are its
+values on the integrated tree, read out of `tools/check-architecture-boundaries.sh` and observed by
+a full suite on 2026-09-02:
 
-| | this document | `check-architecture-boundaries.sh` |
+| | this document said | observed after Cut 1 |
 |---|---:|---:|
-| ordered groups | 463 | 480 |
-| ordered runners | 25 | 27 |
-| suite files | 38 | 40 |
+| ordered groups | 463 | 490 |
+| ordered runners | 25 | 28 |
+| suite files | 38 | 41 |
+| Swift checks | — | 7,941 |
+| `Orchestrator.swift` ceiling | 13,592 | 12,819 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,426 |
+
+**The correction itself needed correcting, twice, and both times the same way.** This section first
+said the guard held 480 ordered groups; at `13bc9a10` it held **479**, because the reading was taken
+from a working tree carrying another session's uncommitted edits rather than from HEAD. Then 479
+became 480 on `main` and the extraction added ten more, so the landed figure is 490. A count read
+from the shared working tree is a reading about that moment's union of everybody's work, not about
+the repository — and it expires in hours. Take these from HEAD, or from the exact tree being landed.
+
+The 7,941 is an observation and not arithmetic. The implementer computed 7,918 as 7,519 plus a
+focused run of 399 and never ran the full suite; that number was correct about its own base and
+already stale, because `main` had moved the baseline to 7,542 underneath it. This document's own
+rule applies to its own receipts: arithmetic over unconditional checks is not an observation, and
+the landing root owns the run that settles it.
 
 Any Phase gate decision taken against the stale numbers was taken against the wrong baseline.
 Replace the exception clause with a budget the guard can execute: a feature may add lines to a

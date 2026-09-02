@@ -488,6 +488,16 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a tmux control-mode client is what makes a pty-less iTerm2 row explicable",
     "an iTerm2 row with no pty is attributed rather than dropped",
     "revealing a tmux pane brings iTerm2 forward only when tmux says it drew it",
+    "the landing codec keeps every field, and its verification stays fail-closed",
+    "the progress codec keeps its bound and re-applies the kept cap on the way in",
+    "the completion delivery codec keeps every clock and its legacy flag",
+    "the handoff envelope codec keeps its two optional halves",
+    "the root assignment codec keeps every field a legacy row may not have",
+    "the coordination wait codec keeps its canonical paths and waiter receipts",
+    "the session delivery codec keeps the exact process it is bound to",
+    "the session self-state codec keeps both halves and refuses a third claim",
+    "the task codec keeps every field across a full and a minimal record",
+    "the task codec still reads the shapes older builds wrote",
 ]
 
 func validateExecutedTestGroupManifest() {

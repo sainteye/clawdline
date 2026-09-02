@@ -176,8 +176,8 @@ group("task completion ingress and delivery are durable protocol facts") {
         noticeID: noticeID, created: Date(timeIntervalSince1970: 100),
         state: .pending, attempts: 0,
         nextRetryAt: Date(timeIntervalSince1970: 100))
-    let stored = Orchestrator.stored(made)
-    let roundTrip = Orchestrator.completionDelivery(from: stored)
+    let stored = OrchestratorStore.stored(made)
+    let roundTrip = OrchestratorStore.completionDelivery(from: stored)
     expect("a pending completion outbox survives a persisted round trip", roundTrip, made)
 
     let noticeTask = Orchestrator.Task(
@@ -759,10 +759,12 @@ group("the protocol page carries the durable completion contract") {
     // authority is `docs/clawdline-protocol.html` now, so the substance is asserted there and the
     // moment-in-time metadata is gone rather than maintained.
     let page = try! String(contentsOfFile: "docs/clawdline-protocol.html", encoding: .utf8)
-    let orchestratorSource = try! String(
-        contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8)
-    let completionStorageBody = orchestratorSource
-        .components(separatedBy: "static func stored(_ delivery: CompletionDelivery)")
+    // The codec moved to its own namespace; the guard follows the bytes it reads rather than
+    // the file it used to be in.
+    let storeSource = try! String(
+        contentsOfFile: "Sources/OrchestratorStore.swift", encoding: .utf8)
+    let completionStorageBody = storeSource
+        .components(separatedBy: "static func stored(_ delivery: Orchestrator.CompletionDelivery)")
         .dropFirst().first?.components(separatedBy: "static func completionDelivery(from").first
         ?? ""
     let completionFieldPattern = try! NSRegularExpression(

@@ -828,7 +828,7 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
     var durableGrant = existing
     durableGrant.childTaskRootAccess = true
     check("the launch-time task-root grant survives a registry round trip",
-          Orchestrator.task(from: Orchestrator.stored(durableGrant))?.childTaskRootAccess == true)
+          OrchestratorStore.task(from: OrchestratorStore.stored(durableGrant))?.childTaskRootAccess == true)
 
     func refusal(_ decision: Orchestrator.AttachmentDecision) -> (Int, String)? {
         guard case .refused(let status, let code, _) = decision else { return nil }

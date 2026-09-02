@@ -112,7 +112,7 @@ group("a serialized waiter survives a store round trip without a plaintext secre
                                  created: Date(), serialize: ["build"],
                                  secretHash: Orchestrator.hash(ofSecret: secret))
     task.queuedSecret = sealed
-    let loaded = Orchestrator.task(from: Orchestrator.stored(task))
+    let loaded = OrchestratorStore.task(from: OrchestratorStore.stored(task))
     check("restart state keeps the tokens and recoverable secret until the pump starts it",
           loaded?.serialize == ["build"] && loaded?.queuedSecret == sealed
               && loaded?.spawnedAt == nil && loaded?.briefedAt == nil)
@@ -218,8 +218,8 @@ group("a queued task scans and types workspace warnings only when promoted") {
     }
     check("the queued waiter has no dispatch-time workspace warning",
           Orchestrator.workspaceOverlaps(
-            for: Orchestrator.task(from: rows[2])!,
-            among: [Orchestrator.task(from: rows[1])!]
+            for: OrchestratorStore.task(from: rows[2])!,
+            among: [OrchestratorStore.task(from: rows[1])!]
           ).isEmpty)
 
     Orchestrator.finalize(holderID, as: .success, summary: "release")
@@ -352,7 +352,7 @@ group("every terminal outcome really pumps the next serialized waiter") {
             as! [String: Any]
         let savedWaiter = (saved["tasks"] as! [[String: Any]])
             .first { $0["id"] as? String == waiterID }
-            .flatMap(Orchestrator.task(from:))!
+            .flatMap(OrchestratorStore.task(from:))!
         let retry = Orchestrator.Task(
             id: taskID, state: .queued, kind: "custom", title: "retry",
             assistant: .claude, projectDir: savedWaiter.projectDir, timeoutMinutes: 30,
@@ -481,8 +481,8 @@ group("an orchestrated Claude child keeps its process identity") {
     task.childPID = 100
     task.childProcStart = started
 
-    let stored = Orchestrator.stored(task)
-    let loaded = Orchestrator.task(from: stored)
+    let stored = OrchestratorStore.stored(task)
+    let loaded = OrchestratorStore.task(from: stored)
     check("the recorded process pair survives a store round trip",
           loaded?.childPID == 100 && loaded?.childProcStart == started)
 

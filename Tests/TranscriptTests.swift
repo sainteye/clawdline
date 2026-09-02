@@ -1873,7 +1873,7 @@ group("transcript ownership repairs only identities it disproves") {
     malformedBeforeRestart.childProcStart = processStart
     malformedBeforeRestart.childSessionId = "restored-session"
     malformedBeforeRestart.transcriptProven = true
-    var restarted = Orchestrator.task(from: Orchestrator.stored(malformedBeforeRestart))!
+    var restarted = OrchestratorStore.task(from: OrchestratorStore.stored(malformedBeforeRestart))!
     let matchingProcessWithoutRegistry = Orchestrator.ChildObservation(
         pid: 100, procStart: processStart
     )

@@ -1132,7 +1132,7 @@ group("cleanup documentation describes the API and runtime contract, not registr
     task.workCleanupAt = Date(timeIntervalSince1970: 100)
     task.buildCleanupAt = Date(timeIntervalSince1970: 200)
     let publicRecord = Orchestrator.recordForTesting(task)
-    let registryRecord = Orchestrator.stored(task)
+    let registryRecord = OrchestratorStore.stored(task)
     let api = try! String(contentsOfFile: "docs/api.md", encoding: .utf8)
     let guide = try! String(contentsOfFile: "docs/orchestrator.md", encoding: .utf8)
     let implementation = try! String(contentsOfFile: "Sources/Orchestrator.swift",

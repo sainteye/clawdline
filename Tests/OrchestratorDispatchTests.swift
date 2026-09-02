@@ -443,12 +443,12 @@ group("a task.json is read before a terminal is opened for it") {
     verificationTask.verification = Orchestrator.Verification(
         runs: 1, seconds: 2, last: .pass, scope: "focused planning graph proof")
     Orchestrator.holdScheduleTaskForTesting(verificationTask)
-    let restoredReview = Orchestrator.task(from: Orchestrator.stored(reviewTask))
-    var damagedReview = Orchestrator.stored(reviewTask)
+    let restoredReview = OrchestratorStore.task(from: OrchestratorStore.stored(reviewTask))
+    var damagedReview = OrchestratorStore.stored(reviewTask)
     var damagedGraph = damagedReview["graph"] as? [String: Any] ?? [:]
     damagedGraph["future_field"] = true
     damagedReview["graph"] = damagedGraph
-    let restoredWithoutGraph = Orchestrator.task(from: damagedReview)
+    let restoredWithoutGraph = OrchestratorStore.task(from: damagedReview)
     check("review and verification receipts advance their exact successor onto the frontier",
           Orchestrator.graphAdmissionRefusal(graph("land"), taskID: landingTaskID) == nil
               && reviewAdvances && missingProofCode == "graph_dependency_failed"
@@ -797,9 +797,9 @@ group("a child row resolves only to its current parent session") {
                candidate.id == codex.id ? wanted : nil
            }), wanted)
 
-    let stored = Orchestrator.stored(task())
+    let stored = OrchestratorStore.stored(task())
     expect("the root assistant survives the durable registry",
-           Orchestrator.task(from: stored)?.rootAssistant, .codex)
+           OrchestratorStore.task(from: stored)?.rootAssistant, .codex)
     let publicRoot = Orchestrator.recordForTesting(task())["root"] as? [String: Any]
     expect("the public record says which assistant owns its root id",
            publicRoot?["assistant"] as? String, "codex")
@@ -845,11 +845,11 @@ group("a task keeps its per-dispatch Codex reasoning effort") {
                                  assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
                                  created: Date(), secretHash: String(repeating: "0", count: 64))
     task.reasoningEffort = .xhigh
-    let stored = Orchestrator.stored(task)
+    let stored = OrchestratorStore.stored(task)
     expect("the durable row names reasoning effort",
            stored["reasoning_effort"] as? String, "xhigh")
     expect("reasoning effort survives a registry reload",
-           Orchestrator.task(from: stored)?.reasoningEffort, .xhigh)
+           OrchestratorStore.task(from: stored)?.reasoningEffort, .xhigh)
     expect("the public task record exposes reasoning effort",
            Orchestrator.recordForTesting(task)["reasoning_effort"] as? String, "xhigh")
 
@@ -870,7 +870,7 @@ group("a task keeps its per-dispatch Codex reasoning effort") {
     var inherited = task
     inherited.reasoningEffort = nil
     check("an inherited default writes no durable or public field",
-          Orchestrator.stored(inherited)["reasoning_effort"] == nil
+          OrchestratorStore.stored(inherited)["reasoning_effort"] == nil
             && Orchestrator.recordForTesting(inherited)["reasoning_effort"] == nil)
 }
 
@@ -1054,7 +1054,7 @@ group("worktree task records, briefings and shared-tree coordination stay distin
           queuedRecord["isolation"] as? String == "worktree"
               && queuedRecord["worktree"] == nil)
 
-    let restored = Orchestrator.task(from: Orchestrator.stored(isolated))
+    let restored = OrchestratorStore.task(from: OrchestratorStore.stored(isolated))
     check("the registry round-trips all worktree identity and observed facts",
           restored?.isolation == .worktree && restored?.worktree?.path == isolated.worktree?.path
               && restored?.worktree?.branch == isolated.worktree?.branch
@@ -1079,17 +1079,17 @@ group("worktree task records, briefings and shared-tree coordination stay distin
     tmpTask.worktree = Orchestrator.Worktree(
         path: tmpPath, branch: "clawdline/task/\(taskID)",
         base: String(repeating: "b", count: 40), repository: canonicalTmpRepository, cwd: tmpPath)
-    let restoredTmp = Orchestrator.task(from: Orchestrator.stored(tmpTask))
+    let restoredTmp = OrchestratorStore.task(from: OrchestratorStore.stored(tmpTask))
     check("a symlinked /tmp repository task survives a registry restart with one canonical slug",
           fixtureReady && restoredTmp?.id == tmpTask.id
               && restoredTmp?.worktree?.repository == canonicalTmpRepository
               && restoredTmp?.worktree?.path == tmpTask.worktree?.path)
-    var legacy = Orchestrator.stored(shared)
+    var legacy = OrchestratorStore.stored(shared)
     legacy.removeValue(forKey: "isolation")
     legacy.removeValue(forKey: "worktree")
     check("a registry row from before isolation remains a shared-tree task",
-          Orchestrator.task(from: legacy)?.isolation == Orchestrator.Isolation.none
-              && Orchestrator.task(from: legacy)?.worktree == nil)
+          OrchestratorStore.task(from: legacy)?.isolation == Orchestrator.Isolation.none
+              && OrchestratorStore.task(from: legacy)?.worktree == nil)
 
     let sharedBrief = Orchestrator.childBrief(for: shared)
     let isolatedBrief = Orchestrator.childBrief(for: isolated)
@@ -1528,10 +1528,10 @@ group("declared write claims are reserved across dispatch trees") {
     check("a read-only task holds no lease keys while retaining its declaration",
           readOnly.claimsDeclared && readOnly.claimKeys.isEmpty)
 
-    let roundTrip = Orchestrator.task(from: Orchestrator.stored(exact))
+    let roundTrip = OrchestratorStore.task(from: OrchestratorStore.stored(exact))
     check("claims and their frozen comparison keys survive the registry",
           roundTrip?.claims == ["Sources"] && roundTrip?.claimKeys == ["/repo/Sources"])
-    let readOnlyRoundTrip = Orchestrator.task(from: Orchestrator.stored(readOnly))
+    let readOnlyRoundTrip = OrchestratorStore.task(from: OrchestratorStore.stored(readOnly))
     var absent = Orchestrator.Task(id: "abababab-cdcd-efef-0101-232323232323",
                                    state: .briefed, kind: "custom", title: "unknown scope",
                                    assistant: .claude, projectDir: "/repo", timeoutMinutes: 30,
@@ -1539,13 +1539,13 @@ group("declared write claims are reserved across dispatch trees") {
                                    rootSessionId: firstRoot,
                                    secretHash: String(repeating: "0", count: 64))
     absent.claims = []
-    let absentRoundTrip = Orchestrator.task(from: Orchestrator.stored(absent))
+    let absentRoundTrip = OrchestratorStore.task(from: OrchestratorStore.stored(absent))
     check("the registry round-trip preserves empty versus absent claims",
           readOnlyRoundTrip?.claimsDeclared == true && readOnlyRoundTrip?.claims == []
               && absentRoundTrip?.claimsDeclared == false && absentRoundTrip?.claims == [])
-    var damagedRecord = Orchestrator.stored(exact)
+    var damagedRecord = OrchestratorStore.stored(exact)
     damagedRecord["claims"] = ["/invalid-absolute-claim"]
-    let damagedRoundTrip = Orchestrator.task(from: damagedRecord)
+    let damagedRoundTrip = OrchestratorStore.task(from: damagedRecord)
     check("a stored declaration filtered down to nothing becomes unknown, not read-only",
           damagedRoundTrip?.claims == [] && damagedRoundTrip?.claimsDeclared == false)
     let readOnlyRecord = Orchestrator.recordForTesting(readOnly)
@@ -1606,7 +1606,7 @@ group("a released claim key no longer counts as held") {
     var withUntouched = partiallyReleased
     withUntouched.state = .success
     withUntouched.untouchedClaims = ["Sources/B.swift"]
-    let roundTrip = Orchestrator.task(from: Orchestrator.stored(withUntouched))
+    let roundTrip = OrchestratorStore.task(from: OrchestratorStore.stored(withUntouched))
     expect("released claims — path and when — survive a store/load round trip",
            roundTrip?.releasedClaims, withUntouched.releasedClaims)
     expect("untouched claims survive a store/load round trip",

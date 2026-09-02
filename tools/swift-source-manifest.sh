@@ -60,6 +60,7 @@ clawdline_production_sources=(
   Sources/Onboarding.swift
   Sources/Orchestrator.swift
   Sources/OrchestratorPlanning.swift
+  Sources/OrchestratorStore.swift
   Sources/OwnedStorage.swift
   Sources/Panel.swift
   Sources/Paths.swift
@@ -132,6 +133,7 @@ clawdline_test_sources=(
   Tests/OrchestratorLandingTests.swift
   Tests/OrchestratorLifecycleTests.swift
   Tests/OrchestratorRecoveryTests.swift
+  Tests/OrchestratorStoreTests.swift
   Tests/PeerMessageTests.swift
   Tests/PlannerTests.swift
   Tests/ReadingFreshnessTests.swift

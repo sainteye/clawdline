@@ -202,12 +202,12 @@ group("catch-up, active-task and close-tab policies are explicit") {
         "artifacts": [], "schedule_id": scheduleID, "schedule_close_tab": "always",
         "schedule_notify_failure": false,
     ]
-    let restored = Orchestrator.task(from: row)!
+    let restored = OrchestratorStore.task(from: row)!
     expect("the optional schedule id survives registry loading", restored.scheduleID, scheduleID)
     expect("and appears in the public task record",
            Orchestrator.recordForTesting(restored)["schedule_id"] as? String, scheduleID)
     expect("the originating close policy survives registry storage",
-           Orchestrator.stored(restored)["schedule_close_tab"] as? String, "always")
+           OrchestratorStore.stored(restored)["schedule_close_tab"] as? String, "always")
 }
 
 group("no occurrence from before a schedule was made is an occurrence it missed") {
