@@ -361,7 +361,7 @@ swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
   -O \
-  "${compile_jobs[@]}" \
+  ${compile_jobs[@]+"${compile_jobs[@]}"} \
   -o "$BIN" \
   "${clawdline_production_sources[@]}" \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network &
