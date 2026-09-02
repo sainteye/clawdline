@@ -108,7 +108,25 @@ enum OrchestratorLease {
     static let startMatchTolerance: TimeInterval = 2
 
     /// A bounded queue, so a wedged machine refuses instead of growing a list nobody reads.
+    ///
+    /// The limit counts *proving* waiters. An entry whose owner has stopped asking is passed over
+    /// rather than reclaimed from — it keeps its place, in case it comes back — but it must not
+    /// spend the machine's queue budget on somebody who is no longer waiting, which is how a
+    /// blocked head of queue turned into a 429 for everybody.
     static let queueDepthLimit = 32
+
+    /// How long a waiter may go without asking again before it has stopped proving it is waiting.
+    ///
+    /// `build.sh` polls every five seconds, so two minutes is twenty-four missed polls: long
+    /// enough that a wedged machine or a slow answer never costs anybody their place, short enough
+    /// that a Ctrl-C does not block the line for the rest of the day. The cost of being wrong is
+    /// asymmetric and that is why the number is generous: passing over a live waiter delays it by
+    /// one grant, while trusting a dead one blocks the machine until somebody notices.
+    static let waiterDeadline: TimeInterval = 120
+
+    /// Above this the list itself is trimmed of its longest-silent entries, so a machine nobody is
+    /// watching cannot grow an unbounded array of requests nobody will ever make again.
+    static let queueHardLimit = 64
 
     static let labelLimit = 200
     static let reasonLimit = 500
@@ -227,9 +245,56 @@ enum OrchestratorLease {
     /// sequence of processes — a study that runs several compiles — `work` carries the current
     /// ones and is refreshed at each renewal. A single pid field cannot describe a sequence, and
     /// that gap is precisely how a `sleep 14400` came to be a holder.
+    /// `holder.txt`, and **the contract is the whole of it**.
+    ///
+    /// Three programs write this file — `test.sh`, `build.sh` and ``encode(_:)`` below — and all
+    /// three read each other's. They used to write three different subsets: seventeen fields,
+    /// eleven and eleven, eight in common. The four the shell's compare-and-swap depends on —
+    /// `token`, `owner_pid`, `owner_started`, `heartbeat_deadline` — were written by nobody but
+    /// `test.sh`, so against a record this file or `build.sh` wrote, its compare was `"" = ""` and
+    /// always true; the re-read beside it was carrying the whole swap alone. In the other
+    /// direction `test.sh` wrote `working=` while this file has always read `work=`, so each side
+    /// showed an empty working list for the other's holder, and the field the design specifies as
+    /// "the record names the process actually working" crossed in neither direction.
+    ///
+    /// The full list, in the order it is written, is in `test.sh` above
+    /// `clawdline_suite_lock_write_record`, which is where a person editing any of the three will
+    /// look. Two of its clauses matter here:
+    ///
+    ///   * **`pid` is the process working right now; `owner_pid` is the run.** A hold is a
+    ///     sequence — the compiler driver, then the test binary — so `pid` changes during it and
+    ///     is no use as an identity. Every comparison that asks "is this the same holder" uses
+    ///     ``owner``, which prefers `owner_pid` and falls back to `pid` for a record written
+    ///     before the contract existed.
+    ///   * **`owner_started` is the one field a writer may leave empty.** It is a normalised
+    ///     `LC_ALL=C ps -o lstart=` line, which a shell can read and a broker holding only epoch
+    ///     seconds cannot; empty means "this writer did not record it" and is unknown to every
+    ///     reader, never a mismatch. `started` carries the same fact in the form this file
+    ///     compares.
     struct HolderFile: Equatable {
         var holder: String
         var pid: Int32
+        /// The run itself, which is what ownership is proved against. Absent in a record written
+        /// before the contract, where `pid` was the only number there was.
+        var ownerPID: Int32?
+        /// `owner_pid`'s start identity, as one normalised `LC_ALL=C ps -o lstart=` line. May be
+        /// empty; see the note above.
+        var ownerStarted: String?
+        /// This hold's unique identity, and the compare in every compare-and-swap. A pid is
+        /// reused within hours on a busy machine; a token is not.
+        var token: String?
+        /// Seconds without a beat after which this holder has stopped proving it is alive. A
+        /// reader prefers the holder's own number to its own.
+        var heartbeatDeadline: Int?
+        /// When the current `phase` began. Moved only when the phase itself changes, so a reader
+        /// gets "36 minutes in `analysing`" rather than "renewed 4 seconds ago".
+        var phaseSince: Date?
+        /// When it was last true that something was compiling under this lock. `nil` is `never`.
+        var lastCompiling: Date?
+        /// Three states: `nil` means this writer does not probe for compilers, `"none"` means it
+        /// probed and the machine was clear, anything else is the pids it found. The first two are
+        /// different claims and collapsing them is how a backstop stops being one.
+        var compilers: String?
         /// When `pid` started, whole seconds. Written as epoch seconds; an ISO-8601 UTC stamp is
         /// also accepted on the way in, because a shell that has `date -u` and no `%s` habit
         /// writes that instead and losing its identity would be the whole bug again.
@@ -255,10 +320,17 @@ enum OrchestratorLease {
         /// directory. Named in the file so a reader never has to assume the convention.
         var heartbeat: String?
 
+        /// Who this record belongs to, for every comparison that asks whether the holder changed.
+        /// `pid` alone cannot answer it: it names whatever is working at this beat and moves
+        /// between the compiler and the test binary within one hold.
+        var owner: Int32 { ownerPID ?? pid }
+
         init(holder: String, pid: Int32, started: Date?, tree: String? = nil,
              log: String? = nil, note: String? = nil, work: [Int32] = [],
              done: String? = nil, renewed: Date? = nil, phase: Phase = .unknown,
-             heartbeat: String? = nil) {
+             heartbeat: String? = nil, ownerPID: Int32? = nil, ownerStarted: String? = nil,
+             token: String? = nil, heartbeatDeadline: Int? = nil, phaseSince: Date? = nil,
+             lastCompiling: Date? = nil, compilers: String? = nil) {
             self.holder = holder
             self.pid = pid
             self.started = started
@@ -270,6 +342,13 @@ enum OrchestratorLease {
             self.renewed = renewed
             self.phase = phase
             self.heartbeat = heartbeat
+            self.ownerPID = ownerPID
+            self.ownerStarted = ownerStarted
+            self.token = token
+            self.heartbeatDeadline = heartbeatDeadline
+            self.phaseSince = phaseSince
+            self.lastCompiling = lastCompiling
+            self.compilers = compilers
         }
     }
 
@@ -282,18 +361,32 @@ enum OrchestratorLease {
                 .replacingOccurrences(of: "\r", with: " ")
             return "\(key)=\(flat)\n"
         }
+        func epoch(_ date: Date?) -> String {
+            date.map { "\(Int($0.timeIntervalSince1970))" } ?? ""
+        }
+        // The contract's order, which is part of the contract: a person diffing two records by
+        // eye should not have to sort them first.
         var out = ""
         out += line("holder", file.holder)
         out += line("pid", "\(file.pid)")
-        out += line("started", file.started.map { "\(Int($0.timeIntervalSince1970))" } ?? "")
+        out += line("owner_pid", "\(file.owner)")
+        out += line("owner_started", file.ownerStarted)
+        out += line("token", file.token)
+        out += line("phase", file.phase == .unknown ? "" : file.phase.rawValue)
+        out += line("phase_since", epoch(file.phaseSince))
+        out += line("heartbeat", file.heartbeat)
+        out += line("heartbeat_deadline",
+                    "\(file.heartbeatDeadline ?? Int(renewalDeadline))")
+        out += line("started", epoch(file.started))
+        out += line("renewed", epoch(file.renewed))
         out += line("tree", file.tree)
         out += line("log", file.log)
-        out += line("note", file.note)
-        out += line("work", file.work.map { "\($0)" }.joined(separator: ","))
         out += line("done_flag", file.done)
-        out += line("renewed", file.renewed.map { "\(Int($0.timeIntervalSince1970))" } ?? "")
-        out += line("phase", file.phase == .unknown ? "" : file.phase.rawValue)
-        out += line("heartbeat", file.heartbeat)
+        out += line("work", file.work.map { "\($0)" }.joined(separator: ","))
+        out += line("last_compiling", file.lastCompiling.map { "\(Int($0.timeIntervalSince1970))" }
+                        ?? "never")
+        out += line("compilers", file.compilers)
+        out += line("note", file.note)
         return out
     }
 
@@ -321,14 +414,29 @@ enum OrchestratorLease {
         let work = (fields["work"] ?? "").split(separator: ",")
             .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
             .filter { $0 > 0 }
+        // `working=` as well as `work=`: the shell holder wrote the other spelling, space
+        // separated, for as long as this parser has existed, and a reader that understands only
+        // its own spelling is half of what F10 was.
+        let working = (fields["work"] ?? fields["working"] ?? "")
+            .split(whereSeparator: { $0 == "," || $0 == " " })
+            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+            .filter { $0 > 0 }
         return HolderFile(holder: present("holder") ?? "unnamed", pid: pid,
                           started: fields["started"].flatMap(parseStamp),
                           tree: present("tree"), log: present("log"), note: present("note"),
-                          work: Array(work.prefix(workPIDLimit)),
+                          work: Array((work.isEmpty ? working : work).prefix(workPIDLimit)),
                           done: present("done_flag") ?? present("done"),
                           renewed: fields["renewed"].flatMap(parseStamp),
                           phase: present("phase").flatMap(Phase.decode) ?? .unknown,
-                          heartbeat: present("heartbeat"))
+                          heartbeat: present("heartbeat"),
+                          ownerPID: present("owner_pid").flatMap(Int32.init).flatMap { $0 > 0 ? $0 : nil },
+                          ownerStarted: present("owner_started"),
+                          token: present("token"),
+                          heartbeatDeadline: present("heartbeat_deadline").flatMap(Int.init)
+                              .flatMap { $0 > 0 ? $0 : nil },
+                          phaseSince: fields["phase_since"].flatMap(parseStamp),
+                          lastCompiling: fields["last_compiling"].flatMap(parseStamp),
+                          compilers: present("compilers"))
     }
 
     /// A time in any of the three shapes a `holder.txt` on this machine has actually carried.
@@ -513,6 +621,10 @@ enum OrchestratorLease {
     /// reading of the machine rather than several taken a second apart.
     struct Evidence: Equatable {
         var holderProcess: ProcessObservation
+        /// The front of the queue, read once per decision. `.unknown` when there is no queue, or
+        /// when the reading could not be taken — which says nothing either way, exactly as it does
+        /// for the holder.
+        var headWaiterProcess: ProcessObservation = .unknown("not probed")
         var compilers: CompilerObservation
         var owner: OwnerState
         var doneFlag: DoneFlag
@@ -523,10 +635,12 @@ enum OrchestratorLease {
         var pressure: Pressure?
 
         init(holderProcess: ProcessObservation = .unknown("not observed"),
+             headWaiterProcess: ProcessObservation = .unknown("not probed"),
              compilers: CompilerObservation = .unknown("not observed"),
              owner: OwnerState = .unknown, doneFlag: DoneFlag = .unknown,
              beat: Date? = nil, pressure: Pressure? = nil) {
             self.holderProcess = holderProcess
+            self.headWaiterProcess = headWaiterProcess
             self.compilers = compilers
             self.owner = owner
             self.doneFlag = doneFlag
@@ -783,8 +897,31 @@ enum OrchestratorLease {
         var lastCompilingAt: Date?
         /// The beat file this holder touches. Nil falls back to `beat` inside the directory.
         var heartbeatPath: String?
+        /// This hold's token, as it appears in `holder.txt`. For a lease this broker granted it
+        /// is the request id; for one it adopted from the directory it is whatever the shell that
+        /// took the lock minted. Carried so that a rewrite preserves the field the *other* two
+        /// writers compare against — dropping it would tell a live shell holder's renewal loop
+        /// that its lock had changed hands.
+        var token: String? = nil
+        /// The owner's start identity as the shell writers record it, when the record carried
+        /// one. This broker never mints it; it only passes it through.
+        var ownerStarted: String? = nil
     }
 
+    /// One request in the line.
+    ///
+    /// **A waiter proves it is alive the same way a holder does.** It had no liveness axis at all:
+    /// `pid` and `processStart` were recorded and read by nothing, so a waiter whose process died
+    /// at the head of the queue left an entry that could never be granted, never expired, and
+    /// could only be cancelled by an owner that no longer existed — while the lock itself was
+    /// free. Every later acquirer was answered `queued_behind_others` for ever, the queue is
+    /// persisted, so it survived an app restart, and after thirty-two such entries the state
+    /// became `queue_full` for everybody: the same deadlock with a different code.
+    ///
+    /// The proof is the poll. `POST /v1/orchestrator/leases` is idempotent on `request_id` and a
+    /// waiting client re-sends it every few seconds, so *asking again* is exactly what renewing is
+    /// for a holder — and it needs no probe, because it is a fact this broker recorded itself
+    /// rather than a reading of a machine that may not answer. ``lastPolledAt`` is that clock.
     struct Waiter: Equatable {
         var requestID: String
         var owner: Owner
@@ -792,6 +929,10 @@ enum OrchestratorLease {
         var processStart: Date?
         var requestedAt: Date
         var reason: String
+        /// The last time this request was asked for. Set to ``requestedAt`` when the entry is
+        /// created, and moved forward by every poll. FIFO order still comes from ``requestedAt``,
+        /// so a waiter that goes quiet and comes back does not lose its place in the line.
+        var lastPolledAt: Date
     }
 
     /// What the last reconciliation found. Stored rather than derived, so "the record and the
@@ -819,11 +960,20 @@ enum OrchestratorLease {
         /// proving it is alive" and "a compiler is running" are different facts and a reader
         /// acts on them differently.
         var livenessReason: String?
+        /// The last admission refusal, kept so that **"asked and was told no" is not
+        /// indistinguishable from "never asked"**.
+        ///
+        /// A refusal leaves the record otherwise untouched — no holder, no queue entry, nothing —
+        /// so without this a session refused for lack of headroom looked exactly like a session
+        /// that had never wanted the slot, in Bearings and in the Session overlay both. It is a
+        /// note about the *asker*, not about the lease, which is why it sits beside the two
+        /// verdicts rather than in the state word.
+        var lastRefusal: RefusalNote?
 
         init(resource: String, directory: String = OrchestratorLease.defaultDirectory,
              holder: Holder? = nil, queue: [Waiter] = [], reconciliation: Reconciliation = .idle,
              reconciledAt: Date? = nil, holdReason: String? = nil,
-             livenessReason: String? = nil) {
+             livenessReason: String? = nil, lastRefusal: RefusalNote? = nil) {
             self.resource = resource
             self.directory = directory
             self.holder = holder
@@ -832,7 +982,18 @@ enum OrchestratorLease {
             self.reconciledAt = reconciledAt
             self.holdReason = holdReason
             self.livenessReason = livenessReason
+            self.lastRefusal = lastRefusal
         }
+    }
+
+    /// One refusal, as much of it as a projection may show.
+    struct RefusalNote: Equatable {
+        var code: String
+        var message: String
+        var at: Date
+        var requestID: String
+        var sessionID: String?
+        var taskID: String?
     }
 
     // MARK: - Requests, refusals and decisions
@@ -1001,20 +1162,31 @@ enum OrchestratorLease {
             out.holdReason = "directory_unreadable"
             return out
         case .held(let file):
+            // `file.owner`, not `file.pid`: a hold is a sequence — the compiler driver, then
+            // the test binary — so the working pid changes *during* one hold, and comparing
+            // against it made every shell holder look like a new holder halfway through.
             if var existing = out.holder,
-               existing.pid == file.pid, sameStamp(existing.processStart, file.started) {
+               existing.pid == file.owner, sameStamp(existing.processStart, file.started) {
                 // The same holder. A shell holder refreshes only the file, so take its renewal
                 // and its work pids from there when they are newer than the record's.
-                if let renewed = file.renewed, renewed > existing.renewedAt {
-                    existing.renewedAt = renewed
-                }
+                let fileIsNewer = file.renewed.map { $0 > existing.renewedAt } ?? false
+                if fileIsNewer, let renewed = file.renewed { existing.renewedAt = renewed }
                 if !file.work.isEmpty { existing.workPIDs = file.work }
                 if let done = file.done { existing.doneFlagPath = done }
-                if file.phase != .unknown, file.phase != existing.phase {
+                if let token = file.token { existing.token = token }
+                if let started = file.ownerStarted { existing.ownerStarted = started }
+                // **The phase is a claim, and a stale snapshot of the file may not roll it back.**
+                // It follows the renewal rule directly above it rather than being unconditional:
+                // now that `file(from:)` writes the phase at all — it used to drop it, which is
+                // how a broker-mediated renewal came to rewrite a live record without the field a
+                // waiter reads — an older reading of the directory would otherwise overwrite what
+                // the holder has just told the broker it is doing, and restart the phase clock
+                // while doing it.
+                if fileIsNewer, file.phase != .unknown, file.phase != existing.phase {
                     existing.phase = file.phase
                     existing.phaseSince = file.renewed ?? now
                 }
-                if file.phase == .compiling {
+                if fileIsNewer, file.phase == .compiling {
                     existing.lastCompilingAt = file.renewed ?? now
                 }
                 out.holder = existing
@@ -1024,12 +1196,15 @@ enum OrchestratorLease {
             }
             let adopted = Holder(
                 leaseID: adoptedLeaseID(for: file), owner: Owner(label: file.holder),
-                pid: file.pid, processStart: file.started,
+                pid: file.owner, processStart: file.started,
                 acquiredAt: file.started ?? now, renewedAt: file.renewed ?? now,
                 workPIDs: file.work, doneFlagPath: file.done, tree: file.tree, log: file.log,
                 note: file.note, budget: nil, provenance: .directory, phase: file.phase,
-                phaseSince: file.renewed ?? now, lastCompilingAt: file.phase == .compiling
-                    ? (file.renewed ?? now) : nil, heartbeatPath: file.heartbeat)
+                phaseSince: file.phaseSince ?? file.renewed ?? now,
+                lastCompilingAt: file.lastCompiling
+                    ?? (file.phase == .compiling ? (file.renewed ?? now) : nil),
+                heartbeatPath: file.heartbeat, token: file.token,
+                ownerStarted: file.ownerStarted)
             out.reconciliation = out.holder == nil ? .adopted : .replaced
             out.holder = adopted
             out.holdReason = nil
@@ -1060,7 +1235,12 @@ enum OrchestratorLease {
     /// A stable id for a holder this broker did not grant, so two readings of the same
     /// unregistered holder do not look like two different leases.
     static func adoptedLeaseID(for file: HolderFile) -> String {
-        "directory-\(file.pid)-\(file.started.map { Int($0.timeIntervalSince1970) } ?? 0)"
+        // The token when the record carries one, because that is the id its writer chose and the
+        // one every other program compares against. The composed form is the fallback for a
+        // record written before the contract, and it is built from the *run*, not from whatever
+        // was working at that beat — otherwise one hold produced a new lease id per compile.
+        if let token = file.token, !token.isEmpty { return token }
+        return "directory-\(file.owner)-\(file.started.map { Int($0.timeIntervalSince1970) } ?? 0)"
     }
 
     static func sameStamp(_ left: Date?, _ right: Date?) -> Bool {
@@ -1094,16 +1274,17 @@ enum OrchestratorLease {
                                  doneFlag: evidence.doneFlag, beat: evidence.beat, now: now)
             out.livenessReason = alive.code
             let verdict = takeover(liveness: alive, compilers: evidence.compilers)
-            guard case .eligible = verdict, isHeadOfQueue(out, request: request) else {
+            guard case .eligible = verdict,
+                  isHeadOfQueue(out, request: request, evidence: evidence, now: now) else {
                 var reason = verdict.code
                 if case .eligible = verdict { reason = "queued_behind_others" }
-                return enqueue(out, request: request, holdReason: reason, now: now)
+                return enqueue(out, request: request, holdReason: reason, evidence: evidence,
+                               now: now)
             }
             switch admit(pressure: evidence.pressure, policy: policy,
                          topAnonymous: topAnonymous, now: now) {
             case .refused(let deficit) where request.pressureOverride == nil:
-                return Decision(record: out, effect: .none,
-                                outcome: .refused(refusal(for: deficit)))
+                return refuse(out, request: request, with: refusal(for: deficit), now: now)
             case .refused(let deficit):
                 return grant(out, request: request, taking: holder,
                              budget: overrideBudget(deficit, by: request.pressureOverride),
@@ -1114,17 +1295,19 @@ enum OrchestratorLease {
         }
 
         if case .unreadable = directory {
-            return enqueue(out, request: request, holdReason: "directory_unreadable", now: now)
+            return enqueue(out, request: request, holdReason: "directory_unreadable",
+                           evidence: evidence, now: now)
         }
 
         // Free, and this caller is at the head of the line.
-        guard isHeadOfQueue(out, request: request) else {
-            return enqueue(out, request: request, holdReason: "queued_behind_others", now: now)
+        guard isHeadOfQueue(out, request: request, evidence: evidence, now: now) else {
+            return enqueue(out, request: request, holdReason: "queued_behind_others",
+                           evidence: evidence, now: now)
         }
         switch admit(pressure: evidence.pressure, policy: policy, topAnonymous: topAnonymous,
                      now: now) {
         case .refused(let deficit) where request.pressureOverride == nil:
-            return Decision(record: out, effect: .none, outcome: .refused(refusal(for: deficit)))
+            return refuse(out, request: request, with: refusal(for: deficit), now: now)
         case .refused(let deficit):
             return grant(out, request: request, taking: nil,
                          budget: overrideBudget(deficit, by: request.pressureOverride), now: now)
@@ -1133,11 +1316,25 @@ enum OrchestratorLease {
         }
     }
 
+    /// A refusal, written down where a projection can find it.
+    private static func refuse(_ record: Record, request: Request, with refusal: Refusal,
+                               now: Date) -> Decision {
+        var out = record
+        out.lastRefusal = RefusalNote(code: refusal.code, message: refusal.message, at: now,
+                                      requestID: request.requestID,
+                                      sessionID: request.owner.sessionID,
+                                      taskID: request.owner.taskID)
+        return Decision(record: out, effect: .none, outcome: .refused(refusal))
+    }
+
     private static func grant(_ record: Record, request: Request, taking previous: Holder?,
                               budget: Budget, now: Date) -> Decision {
         var out = record
+        // Served: the refusal this caller was carrying is answered and must stop being shown.
+        if out.lastRefusal?.requestID == request.requestID { out.lastRefusal = nil }
         var fresh = holder(from: request, now: now)
         fresh.budget = budget
+        fresh.token = request.requestID
         out.holder = fresh
         out.queue.removeAll { $0.requestID == request.requestID }
         out.reconciliation = .matched
@@ -1176,22 +1373,77 @@ enum OrchestratorLease {
                     "taken_at": "\(Int(deficit.takenAt.timeIntervalSince1970))"])
     }
 
+    /// Whether a waiter is still proving it is waiting, and why not when it is not.
+    ///
+    /// Two axes, the same shape as the holder's, and in the same order of authority:
+    ///
+    ///   * **The poll clock.** A request not asked for within ``waiterDeadline`` has stopped
+    ///     proving. This axis needs no subprocess and cannot be broken by a machine that will not
+    ///     answer, which is why it is the primary one.
+    ///   * **The process.** Only ever a *strengthening*: a pid this machine says is gone, or is a
+    ///     different process now, stops the waiter at once instead of after two minutes. A reading
+    ///     that could not be taken says nothing and leaves the clock to decide — the same rule the
+    ///     holder side follows, applied here.
+    ///
+    /// It never removes anybody. An unproven waiter keeps its place and is passed over; if it
+    /// starts polling again it is at the front of the line again, because order comes from
+    /// ``Waiter/requestedAt`` and not from when it last spoke.
+    static func waiterLiveness(_ waiter: Waiter, process: ProcessObservation,
+                               now: Date) -> Liveness {
+        // `identity` already folds "no such process" and "a different process has that number"
+        // into `gone`, and everything it could not read into `unknown`.
+        if case .gone = identity(recordedStart: waiter.processStart, observed: process) {
+            return .stopped("waiter_process_gone")
+        }
+        if now.timeIntervalSince(waiter.lastPolledAt) > waiterDeadline {
+            return .stopped("waiter_stopped_asking")
+        }
+        return .proving
+    }
+
+    /// The first waiter still proving it is waiting, or `nil` when nobody is.
+    ///
+    /// The process axis is applied to the front of the line only, and that is deliberate rather
+    /// than lazy: probing every entry would run up to thirty-two `ps` calls inside one decision,
+    /// and it is the head that blocks the machine. Everything behind it is decided by the poll
+    /// clock, which costs nothing.
+    static func headOfQueue(_ record: Record, evidence: Evidence, now: Date) -> Waiter? {
+        for (index, waiter) in record.queue.enumerated() {
+            let process: ProcessObservation = index == 0 ? evidence.headWaiterProcess : .unknown("not probed")
+            if case .proving = waiterLiveness(waiter, process: process, now: now) {
+                return waiter
+            }
+        }
+        return nil
+    }
+
     /// FIFO with one exception that is not an exception: a caller not yet in the queue is at the
-    /// head only when the queue is empty. Joining does not jump.
-    private static func isHeadOfQueue(_ record: Record, request: Request) -> Bool {
-        guard let first = record.queue.first else { return true }
-        return first.requestID == request.requestID
+    /// head only when nobody ahead of it is still asking. Joining does not jump.
+    private static func isHeadOfQueue(_ record: Record, request: Request, evidence: Evidence,
+                                     now: Date) -> Bool {
+        guard let head = headOfQueue(record, evidence: evidence, now: now) else { return true }
+        return head.requestID == request.requestID
     }
 
     private static func enqueue(_ record: Record, request: Request, holdReason: String,
-                                now: Date) -> Decision {
+                                evidence: Evidence, now: Date) -> Decision {
         var out = record
         out.holdReason = holdReason
+        // Asking again *is* the proof of life, so a repeat poll moves the clock. `requestedAt` is
+        // untouched: that is the place in the line, and re-asking must not cost it.
         if let index = out.queue.firstIndex(where: { $0.requestID == request.requestID }) {
+            out.queue[index].lastPolledAt = now
             return Decision(record: out, effect: .none,
                             outcome: .queued(position: index + 1, holdReason: holdReason))
         }
-        guard out.queue.count < queueDepthLimit else {
+        // The depth limit counts the line, not the litter. Thirty-two entries whose owners have
+        // all stopped asking used to answer 429 to everybody for ever.
+        let proving = out.queue.enumerated().filter { index, waiter in
+            let process: ProcessObservation = index == 0 ? evidence.headWaiterProcess : .unknown("not probed")
+            if case .proving = waiterLiveness(waiter, process: process, now: now) { return true }
+            return false
+        }.count
+        guard proving < queueDepthLimit else {
             return Decision(record: out, effect: .none, outcome: .refused(Refusal(
                 status: 429, code: "queue_full",
                 message: "\(queueDepthLimit) requests are already waiting for "
@@ -1200,9 +1452,22 @@ enum OrchestratorLease {
         }
         out.queue.append(Waiter(requestID: request.requestID, owner: request.owner,
                                 pid: request.pid, processStart: request.processStart,
-                                requestedAt: now, reason: request.reason))
+                                requestedAt: now, reason: request.reason, lastPolledAt: now))
+        // And the array itself stays bounded. Passing an unproven waiter over keeps its place for
+        // it; keeping every one of them for ever would grow a list nobody will ever read. Above
+        // the hard limit the longest-silent entries go, and never a waiter that is still asking.
+        if out.queue.count > queueHardLimit {
+            let quiet = out.queue.enumerated()
+                .filter { $0.element.requestID != request.requestID
+                    && now.timeIntervalSince($0.element.lastPolledAt) > waiterDeadline }
+                .sorted { $0.element.lastPolledAt < $1.element.lastPolledAt }
+                .prefix(out.queue.count - queueHardLimit)
+                .map { $0.offset }
+            for index in quiet.sorted(by: >) { out.queue.remove(at: index) }
+        }
+        let position = (out.queue.firstIndex { $0.requestID == request.requestID } ?? 0) + 1
         return Decision(record: out, effect: .none,
-                        outcome: .queued(position: out.queue.count, holdReason: holdReason))
+                        outcome: .queued(position: position, holdReason: holdReason))
     }
 
     /// Renew: the proof of life, and the only thing that keeps a lease.
@@ -1310,17 +1575,31 @@ enum OrchestratorLease {
     }
 
     static func holderFile(for request: Request, now: Date) -> HolderFile {
-        HolderFile(holder: request.owner.label, pid: request.pid,
+        HolderFile(holder: request.owner.label,
+                   pid: request.workPIDs.first ?? request.pid,
                    started: request.processStart ?? now, tree: request.tree, log: request.log,
                    note: request.note, work: request.workPIDs, done: request.doneFlagPath,
                    renewed: now, phase: request.phase,
-                   heartbeat: request.heartbeatPath ?? beatPath(inside: defaultDirectory))
+                   heartbeat: request.heartbeatPath ?? beatPath(inside: defaultDirectory),
+                   ownerPID: request.pid, ownerStarted: nil, token: request.requestID,
+                   heartbeatDeadline: Int(renewalDeadline), phaseSince: now,
+                   lastCompiling: request.phase == .compiling ? now : nil, compilers: nil)
     }
 
+    /// A holder as the record spells it. **It used to drop `phase` and `heartbeat`**, so every
+    /// broker-mediated renewal rewrote a live record without the two fields a waiter reads to tell
+    /// "compiling" from "finished and forgot to let go" — the exact ambiguity the phase field was
+    /// added to remove — and without the path of the beat that proves the holder is there.
     static func file(from holder: Holder) -> HolderFile {
-        HolderFile(holder: holder.owner.label, pid: holder.pid, started: holder.processStart,
+        HolderFile(holder: holder.owner.label,
+                   pid: holder.workPIDs.first ?? holder.pid,
+                   started: holder.processStart,
                    tree: holder.tree, log: holder.log, note: holder.note, work: holder.workPIDs,
-                   done: holder.doneFlagPath, renewed: holder.renewedAt)
+                   done: holder.doneFlagPath, renewed: holder.renewedAt, phase: holder.phase,
+                   heartbeat: holder.heartbeatPath, ownerPID: holder.pid,
+                   ownerStarted: holder.ownerStarted, token: holder.token ?? holder.leaseID,
+                   heartbeatDeadline: Int(renewalDeadline), phaseSince: holder.phaseSince,
+                   lastCompiling: holder.lastCompilingAt, compilers: nil)
     }
 
     // MARK: - The wire
@@ -1413,6 +1692,113 @@ enum OrchestratorLease {
     }
 
     // MARK: - Probes and the filesystem, the only impure things in this file
+
+    // MARK: - The projections
+
+    /// What Bearings shows. **No probes**: Bearings is a projection that runs on a redraw, and a
+    /// redraw must never start a subprocess. The freshness stamp is how a reader knows that —
+    /// ``observedAt`` is when the registry last reconciled against the lock directory, not now.
+    struct Bearings: Equatable {
+        var holder: String?
+        var queueDepth: Int
+        var holdReason: String?
+        /// `missing`, `unknown`, `zero`, `queued`, `held` or `refused`. Six words that a single
+        /// spinner would collapse: "no record yet" is not "nobody is compiling", and "asked and
+        /// was told no" is not "never asked".
+        var state: String
+        var observedAt: Date?
+    }
+
+    /// How recent a refusal has to be to still be worth showing. A refusal is a moment, not a
+    /// state, so it ages out on the same clock a waiter proves itself on rather than lingering.
+    static let refusalVisibleFor: TimeInterval = waiterDeadline
+
+    static func bearings(_ record: Record?, now: Date) -> Bearings {
+        guard let record else { return Bearings(holder: nil, queueDepth: 0, holdReason: nil,
+                                                state: "missing", observedAt: nil) }
+        if record.reconciliation == .unreadable {
+            return Bearings(holder: nil, queueDepth: record.queue.count,
+                            holdReason: record.holdReason, state: "unknown",
+                            observedAt: record.reconciledAt)
+        }
+        guard let holder = record.holder else {
+            // Nobody holds it and nobody is waiting — but somebody may have asked and been told
+            // no, and that is a third thing.
+            if record.queue.isEmpty, let refusal = record.lastRefusal,
+               now.timeIntervalSince(refusal.at) <= refusalVisibleFor {
+                return Bearings(holder: nil, queueDepth: 0, holdReason: refusal.code,
+                                state: "refused", observedAt: record.reconciledAt)
+            }
+            return Bearings(holder: nil, queueDepth: record.queue.count,
+                            holdReason: record.holdReason,
+                            state: record.queue.isEmpty ? "zero" : "queued",
+                            observedAt: record.reconciledAt)
+        }
+        return Bearings(holder: holder.owner.label, queueDepth: record.queue.count,
+                        holdReason: record.holdReason, state: "held",
+                        observedAt: record.reconciledAt)
+    }
+
+    /// The quiet Session overlay. It follows the coordination-wait precedent exactly:
+    /// `SessionState.waiting` means *a person must answer* and this is not that, so a session
+    /// holding, queued for, or refused the compile slot keeps whatever terminal state it had.
+    static func sessionRow(_ record: Record?, forSession id: String, now: Date) -> [String: Any]? {
+        guard let record else { return nil }
+        if let holder = record.holder, holder.owner.sessionID == id {
+            var row: [String: Any] = [
+                "state": "holding", "resource": record.resource, "leaseId": holder.leaseID,
+                "heldSeconds": max(0, Int(now.timeIntervalSince(holder.acquiredAt))),
+                "renewalAgeSeconds": max(0, Int(now.timeIntervalSince(holder.renewedAt))),
+                "queueDepth": record.queue.count,
+            ]
+            if let budget = holder.budget { row["parallelism"] = budget.parallelism }
+            row["phase"] = holder.phase.rawValue
+            return row
+        }
+        if let index = record.queue.firstIndex(where: { $0.owner.sessionID == id }) {
+            let waiter = record.queue[index]
+            var row: [String: Any] = [
+                "state": "queued", "resource": record.resource, "position": index + 1,
+                "requestId": waiter.requestID,
+                "waitedSeconds": max(0, Int(now.timeIntervalSince(waiter.requestedAt))),
+                "holdReason": record.holdReason ?? "unknown",
+                "queueDepth": record.queue.count,
+            ]
+            // The waiter's own proof of life, said out loud: a queue entry that has stopped
+            // asking is passed over for admission, and a person looking at this row should be
+            // able to see that rather than wonder why the line is not moving.
+            if case .stopped(let why) = waiterLiveness(waiter, process: .unknown("not probed"),
+                                                       now: now) {
+                row["liveness"] = why
+            } else {
+                row["liveness"] = Liveness.proving.code
+            }
+            return row
+        }
+        // Refused, and still recent enough to mean something. Without this a session told "this
+        // Mac cannot admit even one compiler" is indistinguishable from one that never asked.
+        if let refusal = record.lastRefusal, refusal.sessionID == id,
+           now.timeIntervalSince(refusal.at) <= refusalVisibleFor {
+            return ["state": "refused", "resource": record.resource,
+                    "requestId": refusal.requestID, "reason": refusal.code,
+                    "message": refusal.message,
+                    "refusedSecondsAgo": max(0, Int(now.timeIntervalSince(refusal.at))),
+                    "queueDepth": record.queue.count]
+        }
+        return nil
+    }
+
+    /// One word for an audit line.
+    static func outcomeWord(_ outcome: Outcome) -> String {
+        switch outcome {
+        case .granted: return "granted"
+        case .queued(_, let reason): return "queued:" + reason
+        case .released: return "released"
+        case .renewed: return "renewed"
+        case .cancelled: return "cancelled"
+        case .refused(let refusal): return refusal.code
+        }
+    }
 
     /// Every observation and every filesystem operation, injectable as a whole. Production uses
     /// ``live``; a test supplies closures and drives every branch without starting a process or
@@ -1596,8 +1982,13 @@ enum OrchestratorLease {
         case .unreadable(let why):
             return "refusing to rewrite a holder file that cannot be read: \(why)"
         case .held(let file):
-            guard file.pid == holder.pid, sameStamp(file.started, holder.started) else {
-                return "refusing to rewrite a lock held by pid \(file.pid), not \(holder.pid)"
+            guard file.owner == holder.owner, sameStamp(file.started, holder.started) else {
+                return "refusing to rewrite a lock held by pid \(file.owner), not \(holder.owner)"
+            }
+            // The token is the identity a pid cannot give: pids are reused within hours here, so
+            // a record whose number matches and whose token does not is not this holder's.
+            if let mine = holder.token, let theirs = file.token, mine != theirs {
+                return "refusing to rewrite a lock whose token is \(theirs), not \(mine)"
             }
             let holderPath = (path as NSString).appendingPathComponent("holder.txt")
             do {
@@ -1617,8 +2008,11 @@ enum OrchestratorLease {
         case .unreadable(let why):
             return "refusing to remove a lock whose holder cannot be read: \(why)"
         case .held(let file):
-            guard file.pid == expecting.pid, sameStamp(file.started, expecting.started) else {
-                return "refusing to remove a lock held by pid \(file.pid), not \(expecting.pid)"
+            guard file.owner == expecting.owner, sameStamp(file.started, expecting.started) else {
+                return "refusing to remove a lock held by pid \(file.owner), not \(expecting.owner)"
+            }
+            if let mine = expecting.token, let theirs = file.token, mine != theirs {
+                return "refusing to remove a lock whose token is \(theirs), not \(mine)"
             }
             do {
                 try FileManager.default.removeItem(atPath: path)
@@ -1647,17 +2041,25 @@ enum OrchestratorLease {
         let directory = probes.readDirectory(record.directory)
         var holderForEvidence = record.holder
         if case .held(let file) = directory,
-           holderForEvidence == nil || holderForEvidence?.pid != file.pid {
+           holderForEvidence == nil || holderForEvidence?.pid != file.owner {
             holderForEvidence = Holder(
                 leaseID: adoptedLeaseID(for: file), owner: Owner(label: file.holder),
-                pid: file.pid, processStart: file.started, acquiredAt: file.started ?? Date(),
+                pid: file.owner, processStart: file.started, acquiredAt: file.started ?? Date(),
                 renewedAt: file.renewed ?? Date(), workPIDs: file.work, doneFlagPath: file.done,
                 tree: file.tree, log: file.log, note: file.note, budget: nil,
-                provenance: .directory, phase: file.phase, phaseSince: file.renewed ?? Date(),
-                lastCompilingAt: file.phase == .compiling ? file.renewed : nil,
-                heartbeatPath: file.heartbeat)
+                provenance: .directory, phase: file.phase,
+                phaseSince: file.phaseSince ?? file.renewed ?? Date(),
+                lastCompilingAt: file.lastCompiling
+                    ?? (file.phase == .compiling ? file.renewed : nil),
+                heartbeatPath: file.heartbeat, token: file.token,
+                ownerStarted: file.ownerStarted)
         }
         var evidence = Evidence(compilers: probes.compilers(), pressure: probes.pressure())
+        // The front of the line, and only the front: probing thirty-two entries would run
+        // thirty-two subprocesses inside one decision, and it is the head that blocks the machine.
+        if let head = record.queue.first {
+            evidence.headWaiterProcess = probes.processStart(head.pid)
+        }
         if let holder = holderForEvidence {
             evidence.holderProcess = probes.processStart(holder.pid)
             evidence.owner = ownerState(holder)
@@ -1688,6 +2090,31 @@ enum OrchestratorLease {
             }
             return Applied(record: decision.record, outcome: decision.outcome)
         case .takeOverDirectory(let expecting, let granting):
+            // **(B) again, immediately before the directory goes.**
+            //
+            // The decision above was made against a reading taken before four subprocesses, each
+            // bounded at five seconds, so the compiler count it rests on can be many seconds old
+            // by the time anything is removed — and the identity compare inside `removeDirectory`
+            // cannot see a holder that came back to life, only one whose pid changed. `test.sh`
+            // re-runs its whole admission immediately before its rename and the broker should do
+            // at least as much. It is the physical half that is re-read because it is the half
+            // that is about the machine rather than about the record: a compiler that started in
+            // the interval is memory being spent now.
+            switch probes.compilers() {
+            case .present(let pids):
+                return Applied(record: previous, outcome: .refused(Refusal(
+                    status: 409, code: "takeover_failed",
+                    message: "A compiler started while this takeover was being decided: pid(s) "
+                        + pids.map { "\($0)" }.joined(separator: ", ")
+                        + ". Nothing here will end them; ask again once they are done.")))
+            case .unknown(let why):
+                return Applied(record: previous, outcome: .refused(Refusal(
+                    status: 409, code: "takeover_failed",
+                    message: "Whether a compiler is running could not be read at the moment of "
+                        + "the takeover (" + why + "), and unknown blocks. Ask again.")))
+            case .none:
+                break
+            }
             if let problem = probes.removeDirectory(previous.directory, expecting) {
                 return Applied(record: previous, outcome: .refused(Refusal(
                     status: 409, code: "takeover_failed",

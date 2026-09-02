@@ -507,12 +507,18 @@ checks without running them — so it is the one row that a full suite has to se
 
 | | this document said | what the guard holds |
 |---|---:|---:|
-| ordered groups | 463 | 509 |
+| ordered groups | 463 | 510 |
 | ordered runners | 25 | 30 |
 | suite files | 38 | 43 |
-| Swift checks | — | 8,283 |
-| `Orchestrator.swift` ceiling | 13,592 | 13,123 |
+| Swift checks | — | 8,331 |
+| `Orchestrator.swift` ceiling | 13,592 | 13,085 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,463 |
+
+The `Orchestrator.swift` ceiling has moved in both directions and the guard now carries that
+history beside the number: 12,816 before the heavy-compile lease, 13,123 when `2eef7bb6` landed it,
+13,085 once about sixty lines of pure projection moved to `Sources/OrchestratorLease.swift` where
+the type they project already lives. A ratchet that reads as "this only falls" is worth less than
+one whose raises are visible.
 
 The Swift-checks row read 8,025 after Cut 1, then 8,026 when the multi-question picker's
 confirmation guard added one check on 2026-09-02 (`4273990a`) — the first landing to move a count

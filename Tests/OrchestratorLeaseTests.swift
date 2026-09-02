@@ -37,6 +37,17 @@ private func leaseHolder(_ id: String, label: String, pid: Int32 = 4_242,
         lastCompilingAt: lastCompilingAt)
 }
 
+/// A waiter, with its poll clock defaulting to when it joined — which is what a freshly created
+/// entry looks like, and what a restart's `last_polled_at` falls back to.
+private func leaseWaiter(_ id: String, label: String, session: String? = nil, pid: Int32 = 9,
+                         processStart: Date? = leaseNow, requestedAt: Date = leaseNow,
+                         lastPolledAt: Date? = nil, reason: String = "waiting")
+    -> OrchestratorLease.Waiter {
+    OrchestratorLease.Waiter(requestID: id, owner: leaseOwner(label, session: session), pid: pid,
+                             processStart: processStart, requestedAt: requestedAt,
+                             reason: reason, lastPolledAt: lastPolledAt ?? requestedAt)
+}
+
 private func heldRecord(_ holder: OrchestratorLease.Holder,
                         queue: [OrchestratorLease.Waiter] = []) -> OrchestratorLease.Record {
     OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
@@ -47,6 +58,23 @@ private func heldRecord(_ holder: OrchestratorLease.Holder,
 private func heldDirectory(_ holder: OrchestratorLease.Holder)
     -> OrchestratorLease.DirectoryState {
     .held(OrchestratorLease.file(from: holder))
+}
+
+/// Probes that answer nothing, so a test can replace exactly the one it is about. `perform` had
+/// no test of any kind, which is how the takeover path came to act on a compiler reading taken
+/// before four bounded subprocesses without anybody noticing.
+private func leaseStubProbes() -> OrchestratorLease.Probes {
+    OrchestratorLease.Probes(
+        processStart: { _ in .unknown("stub") },
+        compilers: { .none },
+        pressure: { nil },
+        topAnonymous: { [] },
+        readDirectory: { _ in .absent },
+        fileExists: { _ in false },
+        beat: { _ in nil },
+        createDirectory: { _, _ in nil },
+        refreshHolderFile: { _, _ in nil },
+        removeDirectory: { _, _ in nil })
 }
 
 /// A grant, unwrapped, or a named failure. Used everywhere a test needs the budget it produced.
@@ -74,18 +102,73 @@ group("holder.txt is the shape three programs share, and an unusable one is not 
         started: Date(timeIntervalSince1970: 1_788_365_342), tree: "/Users/x/code/clawdline",
         log: "/tmp/suite.log", note: "full swift suite", work: [81_001, 81_002],
         done: "/tmp/clawdline-suite.lock/done", renewed: leaseNow, phase: .compiling,
-        heartbeat: "/tmp/clawdline-suite.lock/beat")
+        heartbeat: "/tmp/clawdline-suite.lock/beat", ownerPID: 72_929, heartbeatDeadline: 60)
     let text = OrchestratorLease.encode(file)
     guard let parsed = OrchestratorLease.parseHolderFile(text) else {
         check("a written holder file reads back", false); return
     }
     expect("every field survives the round trip", parsed, file)
+    // Two of them are filled in rather than carried, because the contract says every record has
+    // them: a record with no `owner_pid` names the only process it knows about, and one with no
+    // deadline gets the number every reader would have used anyway.
+    let bare = OrchestratorLease.parseHolderFile(OrchestratorLease.encode(
+        OrchestratorLease.HolderFile(holder: "a shell", pid: 4_242, started: leaseNow)))
+    expect("a record written without an owner names the process it does know about",
+           bare?.ownerPID, 4_242)
+    expect("and without a deadline carries the one every reader would have assumed",
+           bare?.heartbeatDeadline, Int(OrchestratorLease.renewalDeadline))
     check("the six original fields are all present as key=value lines",
           ["holder=", "pid=", "started=", "tree=", "log=", "note="]
             .allSatisfy { text.contains("\n" + $0) || text.hasPrefix($0) })
     check("and the three additive ones are written under the keys the lock really uses",
           ["work=", "done_flag=", "renewed=", "phase=", "heartbeat="]
             .allSatisfy { text.contains("\n" + $0) })
+
+    // **One record, three writers, and the whole list.** This writer used to emit eleven of the
+    // eighteen fields, and none of the four the shell's compare-and-swap depends on, so against a
+    // record it wrote that compare was `"" = ""` and always true.
+    let contract = ["holder", "pid", "owner_pid", "owner_started", "token", "phase", "phase_since",
+                    "heartbeat", "heartbeat_deadline", "started", "renewed", "tree", "log",
+                    "done_flag", "work", "last_compiling", "compilers", "note"]
+    let written = text.split(separator: "\n").map { String($0.prefix(while: { $0 != "=" })) }
+    expect("this writer emits the contract, in the contract's order", written, contract)
+    let full = OrchestratorLease.HolderFile(
+        holder: "build.sh", pid: 81_001, started: leaseNow, work: [81_001],
+        renewed: leaseNow, phase: .compiling, heartbeat: "/tmp/l/beat",
+        ownerPID: 4_242, ownerStarted: "Thu Sep  3 02:18:04 2026", token: "build-4242-17",
+        heartbeatDeadline: 60, phaseSince: leaseNow, lastCompiling: leaseNow, compilers: "none")
+    expect("and the four the compare-and-swap needs survive a round trip",
+           OrchestratorLease.parseHolderFile(OrchestratorLease.encode(full)), full)
+    check("a token is what identity means here: pid alone is reused within hours",
+          OrchestratorLease.parseHolderFile(OrchestratorLease.encode(full))?.token
+            == "build-4242-17")
+    // `owner_pid` is the run; `pid` is whatever is working at this beat and moves during one hold.
+    expect("ownership reads the run, not the process that happens to be working",
+           OrchestratorLease.parseHolderFile(OrchestratorLease.encode(full))?.owner, 4_242)
+    expect("and a record written before the contract falls back to the only number it has",
+           OrchestratorLease.parseHolderFile("pid=77\n")?.owner, 77)
+    // The other half of the mismatch: the shell wrote `working=`, space separated, and this
+    // parser read `work=` — so each side showed an empty working list for the other's holder.
+    expect("the shell's older `working=` spelling is still read rather than dropped",
+           OrchestratorLease.parseHolderFile("pid=5\nworking=11 12 13\n")?.work,
+           [11, 12, 13])
+    expect("`compilers` keeps `did not probe` apart from `probed and found nothing`",
+           [OrchestratorLease.parseHolderFile("pid=5\ncompilers=\n")?.compilers,
+            OrchestratorLease.parseHolderFile("pid=5\ncompilers=none\n")?.compilers],
+           [nil, "none"])
+    // A rewrite that dropped fields is how a live holder's record loses the two things a waiter
+    // reads: what it is doing, and where its beat is.
+    let holderRow = leaseHolder("lease-9", label: "root", renewedAt: leaseNow, work: [900],
+                                phase: .compiling)
+    var stamped = holderRow
+    stamped.heartbeatPath = "/tmp/l/beat"
+    stamped.token = "lease-9"
+    let rewritten = OrchestratorLease.file(from: stamped)
+    expect("a rewrite keeps the phase a waiter reads", rewritten.phase, .compiling)
+    expect("and the beat it points at", rewritten.heartbeat, "/tmp/l/beat")
+    expect("and the token the other two writers compare against", rewritten.token, "lease-9")
+    expect("and names the working process as `pid` while ownership stays the run",
+           [rewritten.pid, rewritten.owner], [900, 4_242])
 
     // A shell holder that writes only the original six is still a holder. The additive fields
     // are optional by construction, which is what lets test.sh land before or after this.
@@ -317,6 +400,39 @@ group("the physical backstop is never waived, and neither half admits anybody al
            .none)
     check("a non-zero scan is unknown rather than empty",
           OrchestratorLease.parseCompilerScan("", status: 2, timedOut: false) != .none)
+
+    // **(B) is read again immediately before the directory goes.** The decision is made against a
+    // reading taken before four bounded subprocesses, so the compiler count it rests on can be
+    // many seconds old by the time anything is removed, and the identity compare inside
+    // `removeDirectory` cannot see a holder that came back to life. `test.sh` re-runs its whole
+    // admission immediately before its rename; this is the broker doing at least as much.
+    let departing = leaseHolder("lease-old", label: "old", renewedAt: leaseNow, session: "s0")
+    let arriving = leaseRequest("req-new", label: "new", session: "s1")
+    let takeover = OrchestratorLease.acquire(
+        record: heldRecord(departing),
+        request: arriving, directory: heldDirectory(departing),
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .gone("task failure"),
+                                             doneFlag: .absent),
+        now: leaseNow.addingTimeInterval(600))
+    check("a lapsed holder with a clear machine is eligible to be taken over",
+          leaseGrant(takeover.outcome) != nil, "\(takeover.outcome)")
+    var removals = 0
+    var lateProbes = leaseStubProbes()
+    lateProbes.compilers = { .present([9_001]) }
+    lateProbes.removeDirectory = { _, _ in removals += 1; return nil }
+    let late = OrchestratorLease.perform(takeover, on: heldRecord(departing), probes: lateProbes)
+    expect("a compiler that started while the takeover was being decided refuses it",
+           leaseRefusal(late.outcome)?.code, "takeover_failed")
+    expect("and nothing was removed", removals, 0)
+    check("the refusal names the compiler rather than leaving a person to find it",
+          leaseRefusal(late.outcome)?.message.contains("9001") == true)
+    var blindProbes = leaseStubProbes()
+    blindProbes.compilers = { .unknown("ps timed out") }
+    blindProbes.removeDirectory = { _, _ in removals += 1; return nil }
+    let blind = OrchestratorLease.perform(takeover, on: heldRecord(departing), probes: blindProbes)
+    expect("and a machine that will not answer blocks the takeover too",
+           leaseRefusal(blind.outcome)?.code, "takeover_failed")
+    expect("still removing nothing", removals, 0)
     check("and a timed-out scan is unknown too",
           OrchestratorLease.parseCompilerScan("", status: nil, timedOut: true) != .none)
 }
@@ -452,8 +568,7 @@ group("the queue is FIFO, observable, and joining it does not jump it") {
 
     var crowded = free
     crowded.queue = (0..<OrchestratorLease.queueDepthLimit).map {
-        OrchestratorLease.Waiter(requestID: "w\($0)", owner: leaseOwner("w\($0)"), pid: 1,
-                                 processStart: leaseNow, requestedAt: leaseNow, reason: "r")
+        leaseWaiter("w\($0)", label: "w\($0)", pid: 1, reason: "r")
     }
     let overflow = OrchestratorLease.acquire(
         record: crowded, request: leaseRequest("req-x", label: "late", session: "sx"),
@@ -463,6 +578,87 @@ group("the queue is FIFO, observable, and joining it does not jump it") {
         now: leaseNow)
     expect("a full queue refuses rather than growing a list nobody reads",
            leaseRefusal(overflow.outcome)?.code, "queue_full")
+
+    // **A waiter proves it is alive the same way a holder does, and it had no way to.**
+    //
+    // `pid` and `processStart` were recorded and read by nothing, so a waiter whose process died
+    // at the head of the queue left an entry that could never be granted, never expired, and
+    // could only be cancelled by an owner that no longer existed — while the lock itself was
+    // free. Everybody behind it was answered `queued_behind_others` for ever, the queue is
+    // persisted so it survived a restart, and thirty-two of them turned it into `queue_full` for
+    // the whole machine: the same deadlock with a different code.
+    let later = leaseNow.addingTimeInterval(OrchestratorLease.waiterDeadline + 30)
+    var abandoned = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
+                                             directory: leaseDirectory)
+    abandoned.queue = [leaseWaiter("dead", label: "gave up", session: "sd"),
+                       leaseWaiter("alive", label: "still here", session: "sa",
+                                   requestedAt: leaseNow.addingTimeInterval(1),
+                                   lastPolledAt: later)]
+    let past = OrchestratorLease.acquire(
+        record: abandoned, request: leaseRequest("alive", label: "still here", session: "sa"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: later)
+    check("a waiter that stopped asking is passed over, not left blocking the line",
+          leaseGrant(past.outcome) != nil, "\(past.outcome)")
+    expect("and it keeps its place rather than being reclaimed from",
+           past.record.queue.map { $0.requestID }, ["dead"])
+    // The other direction, which is what makes the first one safe rather than merely convenient.
+    let stillWaiting = OrchestratorLease.acquire(
+        record: abandoned, request: leaseRequest("late", label: "third", session: "s3"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: leaseNow.addingTimeInterval(5))
+    expect("a waiter that is still asking blocks the ones behind it, exactly as before",
+           leaseQueued(stillWaiting.outcome)?.holdReason, "queued_behind_others")
+    // Asking again is the proof, and it must not cost a place in the line.
+    let reasking = OrchestratorLease.acquire(
+        record: abandoned, request: leaseRequest("dead", label: "gave up", session: "sd"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: later)
+    expect("a waiter that starts asking again is proving itself again", reasking.record.queue.count, 2)
+    expect("and its place in the line is where it always was",
+           reasking.record.queue.first?.requestID, "dead")
+    check("the poll moved its clock without moving its position",
+          reasking.record.queue.first?.lastPolledAt == later
+            && reasking.record.queue.first?.requestedAt == leaseNow)
+    // The process axis, applied to the head of the line only, strengthens the clock and never
+    // weakens it: a reading that could not be taken says nothing.
+    let headGone = OrchestratorLease.Evidence(headWaiterProcess: .absent, compilers: .none,
+                                              owner: .live, doneFlag: .absent)
+    var fresh = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
+                                         directory: leaseDirectory)
+    fresh.queue = [leaseWaiter("gone", label: "dead process", session: "sg"),
+                   leaseWaiter("second", label: "behind it", session: "sb",
+                               requestedAt: leaseNow.addingTimeInterval(1))]
+    let overtaken = OrchestratorLease.acquire(
+        record: fresh, request: leaseRequest("second", label: "behind it", session: "sb"),
+        directory: .absent, evidence: headGone, now: leaseNow.addingTimeInterval(5))
+    check("a head waiter whose process is gone is passed over at once, not after two minutes",
+          leaseGrant(overtaken.outcome) != nil, "\(overtaken.outcome)")
+    let unreadable = OrchestratorLease.acquire(
+        record: fresh, request: leaseRequest("second", label: "behind it", session: "sb"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(headWaiterProcess: .unknown("ps failed"),
+                                             compilers: .none,
+                                             owner: .live, doneFlag: .absent),
+        now: leaseNow.addingTimeInterval(5))
+    expect("but a reading that could not be taken leaves the clock to decide",
+           leaseQueued(unreadable.outcome)?.holdReason, "queued_behind_others")
+    // And the depth limit counts the line, not the litter.
+    var litter = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
+                                          directory: leaseDirectory)
+    litter.queue = (0..<OrchestratorLease.queueDepthLimit).map {
+        leaseWaiter("q\($0)", label: "q\($0)", pid: 1, reason: "r")
+    }
+    let admitted = OrchestratorLease.acquire(
+        record: litter, request: leaseRequest("req-y", label: "late", session: "sy"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: later)
+    check("thirty-two entries nobody is asking for no longer answer 429 to everybody",
+          leaseRefusal(admitted.outcome)?.code != "queue_full", "\(admitted.outcome)")
 
     let wire = OrchestratorLease.record(third.record, now: leaseNow.addingTimeInterval(30))
     expect("the queue is observable: who, in what order, since when",
@@ -474,10 +670,7 @@ group("the queue is FIFO, observable, and joining it does not jump it") {
 
 group("release and cancel belong to the sessions that own them") {
     let holder = leaseHolder("lease-1", label: "first", renewedAt: leaseNow, session: "s1")
-    let waiter = OrchestratorLease.Waiter(requestID: "req-2", owner: leaseOwner("second",
-                                                                               session: "s2"),
-                                          pid: 9, processStart: leaseNow, requestedAt: leaseNow,
-                                          reason: "waiting")
+    let waiter = leaseWaiter("req-2", label: "second", session: "s2")
     let record = heldRecord(holder, queue: [waiter])
     let evidence = OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent)
 
@@ -967,6 +1160,95 @@ group("a heartbeat that outlives its work is a sentinel, and only the loop shape
           build.contains("\"$CLAWDLINE_LEASE_DIR/beat\""))
 }
 
+group("the projections keep six states apart, and a refusal is one of them") {
+    // Nothing tested `leaseBearings` or `leaseSession` at all — they were sixty lines of pure
+    // projection sitting in `Sources/Orchestrator.swift`, executed by no check, which is how
+    // `refused` came to be a state neither of them could express: an admission refusal leaves the
+    // record otherwise untouched, so a session told "this Mac cannot admit even one compiler"
+    // looked exactly like a session that had never asked.
+    let holder = leaseHolder("lease-1", label: "root af1b83ba", renewedAt: leaseNow,
+                             session: "s1", phase: .compiling)
+    expect("no record at all is `missing`, which is not `nobody is compiling`",
+           OrchestratorLease.bearings(nil, now: leaseNow).state, "missing")
+    var idle = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
+                                        directory: leaseDirectory, reconciledAt: leaseNow)
+    expect("a record with nobody in it is `zero`",
+           OrchestratorLease.bearings(idle, now: leaseNow).state, "zero")
+    idle.reconciliation = .unreadable
+    expect("a lock that cannot be read is `unknown`",
+           OrchestratorLease.bearings(idle, now: leaseNow).state, "unknown")
+    var queued = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
+                                          directory: leaseDirectory, reconciledAt: leaseNow)
+    queued.queue = [leaseWaiter("w1", label: "waiting", session: "s2")]
+    expect("a line with nobody holding is `queued`",
+           OrchestratorLease.bearings(queued, now: leaseNow).state, "queued")
+    var held = heldRecord(holder)
+    held.reconciledAt = leaseNow
+    expect("and a holder is `held`", OrchestratorLease.bearings(held, now: leaseNow).state, "held")
+
+    var refused = OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile,
+                                           directory: leaseDirectory, reconciledAt: leaseNow)
+    refused.lastRefusal = OrchestratorLease.RefusalNote(
+        code: "pressure_refused", message: "This Mac cannot admit even one compiler",
+        at: leaseNow, requestID: "req-1", sessionID: "s9", taskID: nil)
+    expect("a session that asked and was told no is `refused`, not `zero`",
+           OrchestratorLease.bearings(refused, now: leaseNow).state, "refused")
+    expect("with the reason beside it",
+           OrchestratorLease.bearings(refused, now: leaseNow).holdReason, "pressure_refused")
+    expect("and a refusal ages out, because it is a moment rather than a state",
+           OrchestratorLease.bearings(refused,
+               now: leaseNow.addingTimeInterval(OrchestratorLease.refusalVisibleFor + 1)).state,
+           "zero")
+
+    // The freshness clock. This projection never re-reads the filesystem, so what it shows is as
+    // old as the last reconciliation — and the Bearings row used to be stamped with the *task*
+    // registry's clock, which made a lock held by a run that died an hour ago read as current.
+    expect("the lease carries its own observation time, not another registry's",
+           OrchestratorLease.bearings(held, now: leaseNow).observedAt, leaseNow)
+    check("and a record that has never been reconciled says so rather than claiming currency",
+          OrchestratorLease.bearings(
+              OrchestratorLease.Record(resource: OrchestratorLease.heavyCompile),
+              now: leaseNow).observedAt == nil)
+
+    // The Session overlay, which is the same three answers for one terminal.
+    let holdingRow = OrchestratorLease.sessionRow(held, forSession: "s1", now: leaseNow)
+    expect("the session holding the slot is shown holding it",
+           holdingRow?["state"] as? String, "holding")
+    expect("with what it is doing", holdingRow?["phase"] as? String, "compiling")
+    let queuedRow = OrchestratorLease.sessionRow(queued, forSession: "s2", now: leaseNow)
+    expect("a queued session is shown its place", queuedRow?["position"] as? Int, 1)
+    expect("and whether it is still proving it is waiting",
+           queuedRow?["liveness"] as? String, "proving")
+    let lapsedRow = OrchestratorLease.sessionRow(
+        queued, forSession: "s2",
+        now: leaseNow.addingTimeInterval(OrchestratorLease.waiterDeadline + 1))
+    expect("a queue entry that stopped asking says so rather than looking like a live wait",
+           lapsedRow?["liveness"] as? String, "waiter_stopped_asking")
+    let refusedRow = OrchestratorLease.sessionRow(refused, forSession: "s9", now: leaseNow)
+    expect("and the refused session gets a row of its own",
+           refusedRow?["state"] as? String, "refused")
+    expect("naming the refusal it can act on",
+           refusedRow?["reason"] as? String, "pressure_refused")
+    check("a session that never asked still gets nothing",
+          OrchestratorLease.sessionRow(refused, forSession: "s-nobody", now: leaseNow) == nil)
+    // A refusal that has been answered stops being shown.
+    let served = OrchestratorLease.acquire(
+        record: refused, request: leaseRequest("req-1", label: "asker", session: "s9"),
+        directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent),
+        now: leaseNow)
+    check("once the same asker is granted, its refusal is cleared rather than kept on screen",
+          leaseGrant(served.outcome) != nil && served.record.lastRefusal == nil,
+          "\(served.outcome)")
+
+    expect("and one audit word per outcome, from the file that owns the vocabulary",
+           [OrchestratorLease.outcomeWord(.released),
+            OrchestratorLease.outcomeWord(.queued(position: 2, holdReason: "holder_proving")),
+            OrchestratorLease.outcomeWord(.refused(OrchestratorLease.Refusal(
+                status: 429, code: "queue_full", message: "full")))],
+           ["released", "queued:holder_proving", "queue_full"])
+}
+
 group("the lease record survives a store round trip") {
     var holder = leaseHolder("lease-1", label: "root af1b83ba", pid: 72_929,
                              renewedAt: leaseNow.addingTimeInterval(30), session: "s1",
@@ -979,10 +1261,8 @@ group("the lease record survives a store round trip") {
     holder.lastCompilingAt = leaseNow.addingTimeInterval(-2_160)
     holder.owner.taskID = "23e78454"
     holder.owner.rootSessionID = "af1b83ba"
-    let waiter = OrchestratorLease.Waiter(requestID: "req-2",
-                                          owner: leaseOwner("second", session: "s2"), pid: 9,
-                                          processStart: leaseNow, requestedAt: leaseNow,
-                                          reason: "queued for the suite")
+    let waiter = leaseWaiter("req-2", label: "second", session: "s2",
+                             reason: "queued for the suite")
     let record = OrchestratorLease.Record(
         resource: OrchestratorLease.heavyCompile, directory: leaseDirectory, holder: holder,
         queue: [waiter], reconciliation: .matched, reconciledAt: leaseNow,

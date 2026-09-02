@@ -17,8 +17,8 @@ main_lines=$(line_count Tests/main.swift)
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
 # This ceiling is a ratchet that has been released, and the history is kept here because the
-# current value cannot show that. A number on its own reads as monotone; three of these four
-# movements were not.
+# current value cannot show that. A number on its own reads as monotone; most of these movements
+# were not.
 #
 #   13,592  before Cut 1
 #   12,819  after the store codec left           (a97fb176-era extraction, -773)
@@ -26,17 +26,22 @@ main_lines=$(line_count Tests/main.swift)
 #   12,819  reconciled at integration
 #   12,816  after the registry owner left        (Cut 2 stage 1, -3)
 #   13,123  the broker lease moved in            (2eef7bb6 / 15924b14, +307)
+#   13,085  the lease's projection moved out     (correction round, -38)
 #
-# So this file is larger now than when the extraction work finished, and the ratchet was raised to
-# let that land. That was the right call — the lease is a green, reviewed feature and its code has
-# to live somewhere — but the guard's meaning changed with it. It no longer promises "this file
-# only shrinks". It promises "every growth is stated by somebody, in a diff, on purpose". Those are
-# different guarantees and the second one is still worth having; a reader who assumes the first
-# will misread every number above.
+# The raise to 13,123 was legitimate and reviewed — the lease is a landed, green feature and its
+# code has to live somewhere — but of those 307 lines, roughly 250 are registry ownership, store
+# wiring and route surface, which is what this file is for, and about sixty were pure
+# `Record` -> dictionary projection. Those sixty now sit in `Sources/OrchestratorLease.swift`
+# beside `OrchestratorLease.record(_:now:)`, which is the same translation for the same type.
 #
-# Anyone raising it again: add the line, the commit and the reason. A ceiling whose movements are
-# invisible is a ceiling that tells a flattering story about whoever last touched it.
-orchestrator_ceiling=13123
+# **The guard's meaning changed when the ratchet was released, and both halves matter.** It no
+# longer promises "this file only shrinks". It promises "every growth is stated by somebody, in a
+# diff, on purpose" — a different guarantee, still worth having, and one a reader who assumes the
+# first will misread every number above.
+#
+# Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
+# to grow that nobody reviewed. Anyone raising it again adds the line, the commit and the reason.
+orchestrator_ceiling=13085
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the receipt the registry-owner extraction and the heavy-compile lease agreed on ($orchestrator_ceiling)"
@@ -88,8 +93,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 509 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 509"
+[ "$manifest_group_count" -eq 510 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 510"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

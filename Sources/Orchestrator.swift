@@ -12335,7 +12335,7 @@ enum Orchestrator {
         }
         RemoteAuth.audit("orchestrator.lease.acquire", [
             "resource": request.resource, "request": requestID, "holder": request.owner.label,
-            "result": leaseOutcomeWord(applied.outcome),
+            "result": OrchestratorLease.outcomeWord(applied.outcome),
         ])
         return leaseReply(applied, now: now)
     }
@@ -12382,7 +12382,7 @@ enum Orchestrator {
                                       directory: directory, evidence: evidence, now: now)
         }
         RemoteAuth.audit("orchestrator.lease.release", [
-            "resource": resource, "lease": id, "result": leaseOutcomeWord(applied.outcome),
+            "resource": resource, "lease": id, "result": OrchestratorLease.outcomeWord(applied.outcome),
         ])
         return leaseReply(applied, now: now)
     }
@@ -12430,17 +12430,6 @@ enum Orchestrator {
             label: label)
     }
 
-    private static func leaseOutcomeWord(_ outcome: OrchestratorLease.Outcome) -> String {
-        switch outcome {
-        case .granted: return "granted"
-        case .queued(_, let reason): return "queued:" + reason
-        case .released: return "released"
-        case .renewed: return "renewed"
-        case .cancelled: return "cancelled"
-        case .refused(let refusal): return refusal.code
-        }
-    }
-
     /// The query. It re-reads the machine, so "who is compiling and how long is the queue" is
     /// answered from the directory rather than from what the broker last remembered.
     static func leaseRecords(now: Date = Date()) -> [[String: Any]] {
@@ -12458,52 +12447,25 @@ enum Orchestrator {
         return out
     }
 
-    /// The Bearings counts, from the stored record only. Deliberately no probes: Bearings is a
-    /// projection that runs on a redraw, and a redraw must never start a subprocess.
-    static func leaseBearings(now: Date = Date())
-        -> (holder: String?, queueDepth: Int, holdReason: String?, state: String) {
+    /// The Bearings counts and the quiet Session overlay, both from the stored record only.
+    ///
+    /// **The projections themselves live in `OrchestratorLease`**, next to the type whose wire
+    /// vocabulary they speak and beside `OrchestratorLease.record(_:now:)`, which is the same kind
+    /// of `Record` → dictionary translation. What stays here is the registry lookup: the
+    /// collection, its lock, and `load()`. That division is the file's whole job — this one owns
+    /// registries and route surface, and sixty lines of pure projection were the part of the
+    /// lease's arrival that did not belong in it.
+    static func leaseBearings(now: Date = Date()) -> OrchestratorLease.Bearings {
         load()
         lock.lock(); defer { lock.unlock() }
-        guard let record = leases[OrchestratorLease.heavyCompile] else {
-            return (nil, 0, nil, "missing")
-        }
-        if record.reconciliation == .unreadable {
-            return (nil, record.queue.count, record.holdReason, "unknown")
-        }
-        guard let holder = record.holder else {
-            return (nil, record.queue.count, record.holdReason,
-                    record.queue.isEmpty ? "zero" : "queued")
-        }
-        return (holder.owner.label, record.queue.count, record.holdReason, "held")
+        return OrchestratorLease.bearings(leases[OrchestratorLease.heavyCompile], now: now)
     }
 
-    /// The quiet Session overlay. It follows the coordination-wait precedent exactly:
-    /// `SessionState.waiting` means *a person must answer* and this is not that, so a session
-    /// holding or queued for the compile slot keeps whatever terminal state it had.
     static func leaseSession(forTerminal id: String, now: Date = Date()) -> [String: Any]? {
         load()
         lock.lock(); defer { lock.unlock() }
-        guard let record = leases[OrchestratorLease.heavyCompile] else { return nil }
-        if let holder = record.holder, holder.owner.sessionID == id {
-            var row: [String: Any] = [
-                "state": "holding", "resource": record.resource, "leaseId": holder.leaseID,
-                "heldSeconds": max(0, Int(now.timeIntervalSince(holder.acquiredAt))),
-                "renewalAgeSeconds": max(0, Int(now.timeIntervalSince(holder.renewedAt))),
-                "queueDepth": record.queue.count,
-            ]
-            if let budget = holder.budget { row["parallelism"] = budget.parallelism }
-            row["phase"] = holder.phase.rawValue
-            return row
-        }
-        guard let index = record.queue.firstIndex(where: { $0.owner.sessionID == id }) else {
-            return nil
-        }
-        let waiter = record.queue[index]
-        return ["state": "queued", "resource": record.resource, "position": index + 1,
-                "requestId": waiter.requestID,
-                "waitedSeconds": max(0, Int(now.timeIntervalSince(waiter.requestedAt))),
-                "holdReason": record.holdReason ?? "unknown",
-                "queueDepth": record.queue.count]
+        return OrchestratorLease.sessionRow(leases[OrchestratorLease.heavyCompile],
+                                            forSession: id, now: now)
     }
 
     static func coordinationWaitRecords() -> [[String: Any]] {
