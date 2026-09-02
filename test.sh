@@ -39,7 +39,12 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `#{client_flags}` off `list-clients`, 22 for what becomes of an iTerm2 row that has an identity
 # and no pty — including that the marker key is the same word in `iterm.js` and in Swift — and 7
 # for whether selecting a tmux pane may also bring iTerm2 forward. 7504 -> 7544.
-expected_swift_receipt='7544 checks passed'
+# Correcting that attribution adds 31 more, in the same three groups: 9 for the window count that
+# gives it a ceiling and for a tmux this app cannot find being a question that was never asked,
+# 16 for the ceiling itself and for a control-mode client having to be speaking over a pty iTerm2
+# named in the same reading, and 6 for that identity deciding activation and for the activation
+# tail leaving the caller's thread. 7544 -> 7575.
+expected_swift_receipt='7575 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

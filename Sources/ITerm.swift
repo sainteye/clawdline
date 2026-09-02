@@ -460,7 +460,12 @@ enum ITerm {
     /// cannot answer has not agreed — but a person reading the error deserves to know which one
     /// happened, and a single spelling for both is the collapse this repository keeps finding.
     enum PtylessSecondSource: Equatable {
-        case tmux(controlModeClients: Int)
+        /// tmux answered, and these are the clients it named. **The clients rather than how many
+        /// of them there are**: a count can only ever say *somebody is speaking control mode
+        /// somewhere*, and what has to be decided here is whether *iTerm2* drew *these rows*.
+        /// That takes a tty to match and a window count to be bounded by, both of which live on
+        /// the client and neither of which survives being counted.
+        case tmux(controlModeClients: [Tmux.ControlModeClient])
         case unavailable(String)
     }
 
@@ -494,30 +499,126 @@ enum ITerm {
     /// repository requires one: see the note above ``SessionNaming``, where a value a person
     /// depends on may not rest on a single source that can be emptied without saying so.
     ///
-    /// The attribution is deliberately coarse — *tmux is drawing windows here*, not *this row is
-    /// that pane*. iTerm2 publishes no tmux property in its scripting dictionary, so no exact
-    /// mapping is available to be checked, and a mapping guessed from window names would be one
-    /// more single source that fails silently.
-    static func ptylessRowAttribution(rows: Int,
+    /// The attribution is deliberately coarse *per row* — no row is claimed to be a particular
+    /// pane, because iTerm2 publishes no tmux property in its scripting dictionary and a mapping
+    /// guessed from window names would be one more single source that fails silently. **But
+    /// coarse is not unbounded, and it is not anonymous.** Two things keep it honest, and both
+    /// come from the same `list-clients` read:
+    ///
+    /// - **Identity.** A client counts only if its `#{client_tty}` is the tty of a row in this
+    ///   same iTerm2 `list` — the `-CC` gateway, which is an ordinary iTerm2 session with a real
+    ///   pty. `control-mode` on its own is not a name: `tmux -C attach` from a script carries it
+    ///   too. See ``controlModeClientsDrawnByITerm2(_:rowTTYs:)``.
+    /// - **A ceiling.** A client is drawing one tab per window of the session it is attached to,
+    ///   so `#{session_windows}` is how many rows it can account for. See
+    ///   ``drawnWindowCeiling(_:)``.
+    ///
+    /// Whatever is left over is unexplained, and the promise above is kept where it matters:
+    /// this function only runs when there is a pty-less row, so *a row with no pty and no
+    /// explanation still counts as one* has to be true in exactly that situation or not at all.
+    static func ptylessRowAttribution(rows: [[String: Any]],
                                       secondSource: PtylessSecondSource) -> PtylessRowAttribution {
-        guard rows > 0 else {
+        let ptyless = ptylessRowCount(rows)
+        guard ptyless > 0 else {
             return PtylessRowAttribution(attributedToTmux: 0, unexplained: 0, error: nil)
         }
-        let sessions = rows == 1 ? "session" : "sessions"
-        switch secondSource {
-        case .tmux(let clients) where clients > 0:
-            return PtylessRowAttribution(attributedToTmux: rows, unexplained: 0, error: nil)
-        case .tmux:
+        func unattributed(_ count: Int, _ because: String) -> PtylessRowAttribution {
+            let sessions = count == 1 ? "session" : "sessions"
             return PtylessRowAttribution(
-                attributedToTmux: 0, unexplained: rows,
-                error: "\(rows) iTerm2 \(sessions) had no pty and tmux reports no control-mode "
-                    + "client that would explain it")
-        case .unavailable(let reason):
-            return PtylessRowAttribution(
-                attributedToTmux: 0, unexplained: rows,
-                error: "\(rows) iTerm2 \(sessions) had no pty and tmux could not be asked whether "
-                    + "it drew them: \(reason)")
+                attributedToTmux: ptyless - count, unexplained: count,
+                error: "\(count) iTerm2 \(sessions) had no pty and \(because)")
         }
+        switch secondSource {
+        case .unavailable(let reason):
+            return unattributed(ptyless, "tmux could not be asked whether it drew them: \(reason)")
+        case .tmux(let clients):
+            let drawn = controlModeClientsDrawnByITerm2(clients, rowTTYs: rowTTYs(rows))
+            guard !drawn.isEmpty else {
+                guard !clients.isEmpty else {
+                    return unattributed(
+                        ptyless, "tmux reports no control-mode client that would explain it")
+                }
+                let plural = clients.count == 1 ? "client is" : "clients are"
+                return unattributed(
+                    ptyless, "none of tmux's \(clients.count) control-mode \(plural) speaking to "
+                        + "a pty iTerm2 named in the same reading")
+            }
+            let ceiling = drawnWindowCeiling(drawn)
+            guard ptyless > ceiling else {
+                return PtylessRowAttribution(attributedToTmux: ptyless, unexplained: 0, error: nil)
+            }
+            let windows = ceiling == 1 ? "window" : "windows"
+            return unattributed(
+                ptyless - ceiling, "tmux says the control-mode clients drawing here hold "
+                    + "\(ceiling) \(windows) between them")
+        }
+    }
+
+    /// The control-mode clients this same `list` read can vouch for as iTerm2's.
+    ///
+    /// **`control-mode` is a protocol, not a name.** A client made with `tmux -C attach` — one
+    /// line, measured on tmux 3.6a — reports the identical flag, and taking it as agreement
+    /// would attribute rows to a tmux nothing is drawing in iTerm2 and, worse, bring iTerm2
+    /// forward over whatever somebody was typing into. What is particular to iTerm2 is the pty
+    /// the protocol is spoken over: the gateway is an ordinary iTerm2 session with a real
+    /// `/dev/ttys006`, and it is in the very list being attributed.
+    ///
+    /// An empty `#{client_tty}` is no match rather than a wildcard — also measured: a client
+    /// attached through a fifo has no tty at all, and an empty string matching everything is the
+    /// shape that makes a guard say yes to the thing it was written to refuse.
+    static func controlModeClientsDrawnByITerm2(_ clients: [Tmux.ControlModeClient],
+                                                rowTTYs: Set<String>) -> [Tmux.ControlModeClient] {
+        clients.filter { client in
+            let tty = bareTTY(client.tty)
+            return !tty.isEmpty && rowTTYs.contains(tty)
+        }
+    }
+
+    /// How many iTerm2 tabs the control-mode clients tmux named can account for.
+    ///
+    /// One client attached to a session with two windows is drawing two tabs, which is why
+    /// `#{session_windows}` is asked for in the same `list-clients` read rather than costing
+    /// another subprocess. Two clients attached to the *same* session are drawing the same
+    /// windows, so a session is counted once however many clients are looking at it.
+    ///
+    /// A client tmux would not size is worth one window rather than an unlimited number: a
+    /// ceiling that any single answer can lift is not a ceiling, and that was the defect.
+    static func drawnWindowCeiling(_ clients: [Tmux.ControlModeClient]) -> Int {
+        var windowsPerSession: [String: Int] = [:]
+        for client in clients {
+            // A client tmux reported without a session name cannot be deduplicated against
+            // another one, so it is kept apart by the tty it is speaking over.
+            let key = client.session.isEmpty ? "tty\u{1}\(client.tty)" : "session\u{1}\(client.session)"
+            windowsPerSession[key] = max(windowsPerSession[key] ?? 0, client.sessionWindows ?? 1)
+        }
+        return windowsPerSession.values.reduce(0, +)
+    }
+
+    /// The ptys one `list` read says iTerm2 is holding, bare (`ttys006`) and without the empty
+    /// ones, which are the pty-less rows this is used to explain.
+    static func rowTTYs(_ rows: [[String: Any]]) -> Set<String> {
+        Set(rows.compactMap { row -> String? in
+            let tty = bareTTY(row["tty"] as? String ?? "")
+            return tty.isEmpty ? nil : tty
+        })
+    }
+
+    /// `/dev/ttys006` and `ttys006` are the same pty written two ways; tmux says one and iTerm2
+    /// says the other depending on where you ask.
+    static func bareTTY(_ tty: String) -> String {
+        tty.hasPrefix("/dev/") ? String(tty.dropFirst("/dev/".count)) : tty
+    }
+
+    /// What one control-mode reading means to ``ptylessRowAttribution(rows:secondSource:)``.
+    ///
+    /// Its own function because the mapping is where the two facts could collapse back into one:
+    /// a reading that failed is `unavailable`, and only a reading that *succeeded* may be read as
+    /// tmux answering — including the reading that failed because there was no tmux to ask.
+    static func ptylessSecondSource(_ observation: Tmux.ControlModeObservation)
+        -> PtylessSecondSource {
+        observation.isComplete
+            ? .tmux(controlModeClients: observation.clients)
+            : .unavailable(observation.error?.message ?? "tmux did not answer")
     }
 
     /// The `list` rows that become iterm-backend sessions.
@@ -1229,14 +1330,10 @@ enum ITerm {
         // Rows iTerm2 named but does not own the pty for. Nothing is asked of tmux unless one of
         // them is actually there, so the ordinary scan — this runs every 1.2 s while the bar is
         // up — costs exactly what it did before.
-        let ptyless = ptylessRowCount(rows)
-        if ptyless > 0 {
-            let observation = Tmux.controlModeObservation()
+        if ptylessRowCount(rows) > 0 {
             let attribution = ptylessRowAttribution(
-                rows: ptyless,
-                secondSource: observation.isComplete
-                    ? .tmux(controlModeClients: observation.clients.count)
-                    : .unavailable(observation.error?.message ?? "tmux did not answer"))
+                rows: rows,
+                secondSource: ptylessSecondSource(Tmux.controlModeObservation()))
             if attribution.lowersConfidence, let reason = attribution.error {
                 snap.isComplete = false
                 // Added to whatever already lowered this scan rather than written over it. A
@@ -1382,5 +1479,22 @@ enum ITerm {
             return terminalFailure(res, fallback: "iTerm2 would not come forward.")
         }
         return nil
+    }
+
+    /// The ptys iTerm2 says it is holding right now, or nothing when it would not say.
+    ///
+    /// A `list` of its own rather than the one ``snapshot(processScan:)`` took, because the two
+    /// questions are asked at different moments: the snapshot's is a reading, and this one is on
+    /// the far side of somebody pressing a key. It deliberately does not clear the automation
+    /// circuit the way the snapshot does — recovery is the inventory's job to declare, not a
+    /// courtesy activation's.
+    ///
+    /// `nil` is *iTerm2 did not answer*, and a caller must read it as "not proved" rather than
+    /// as an empty set of ttys: ``Tmux/activateITerm2(forPane:)`` stops there instead of
+    /// bringing an application forward it could not confirm.
+    static func listedRowTTYs() -> Set<String>? {
+        let listed = osa(["list"])
+        guard let rows = listed["sessions"] as? [[String: Any]] else { return nil }
+        return rowTTYs(rows)
     }
 }

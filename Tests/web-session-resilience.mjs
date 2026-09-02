@@ -634,6 +634,33 @@ assert.equal(mixedRows.complete, false,
 assert.match(mixedRows.error, /1 failure/,
     "and it is counted once — the tmux windows are not failures any more");
 
+// **A tty that could not be read is not a tty that is empty**, and on the walk the difference is
+// visible: the property throws instead of answering. Both used to come back as `""` through
+// `safe()`, which handed Swift a row shaped exactly like a tmux window — and with any
+// control-mode client on the Mac, Swift would have attributed it to tmux and said nothing. The
+// row that threw goes back to being what it always was: unreadable, and the inventory says so.
+const throwsOnTTY = {
+    id: function () { return "X"; },
+    name: function () { return "a session that went away mid-walk"; },
+    tty: function () { throw new Error("session is gone"); },
+    profileName: function () { return "Default"; }
+};
+const unreadableTTY = jxaList({
+    running: function () { return true; },
+    windows: function () {
+        return [{ tabs: function () { return [{ sessions: function () {
+            return [mockSession(row("A")), throwsOnTTY, mockSession(ptylessRow)]; } }]; } }];
+    }
+});
+assert.deepEqual(unreadableTTY.sessions.map(function (s) { return s.id; }), ["A", "T"],
+    "a row whose tty read threw is dropped rather than marked pty-less");
+assert.equal(unreadableTTY.complete, false,
+    "and it costs the inventory its confidence, as an unreadable row always did");
+assert.match(unreadableTTY.error, /session pty unreadable/,
+    "the reason says which half of the identity could not be read");
+assert.equal(unreadableTTY.sessions[1].ptyless, true,
+    "while the genuinely empty tty beside it still carries the marker");
+
 function jxaRun(app, argv) {
     const context = { Application: function () { return app; }, args: argv, result: null };
     vm.runInNewContext(script + "\nresult = run(args);", context);

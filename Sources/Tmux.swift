@@ -201,6 +201,10 @@ enum Tmux {
         /// The tmux session this client is attached to. What makes a per-pane answer possible in
         /// ``shouldActivateITerm(paneSession:controlModeClients:)`` instead of a machine-wide one.
         let session: String
+        /// How many windows that session holds — the number of tabs this client is drawing, and
+        /// so the ceiling on how many pty-less iTerm2 rows it can account for. `nil` when tmux
+        /// did not say; see ``ITerm/drawnWindowCeiling(_:)`` for what an unsized client is worth.
+        let sessionWindows: Int?
     }
 
     /// Whether tmux agrees that something on this Mac is drawing its windows through control
@@ -219,14 +223,38 @@ enum Tmux {
         var isComplete: Bool { error == nil }
     }
 
+    /// What ``controlModeObservation()`` answers when there is no tmux binary to ask.
+    ///
+    /// **Not an empty answer.** ``binary`` is `Config.shared.tmuxPath` plus four fixed install
+    /// paths, so `nil` means *this app cannot find a tmux*, which is not the same fact as *this
+    /// Mac has no tmux*: a `-CC` session starts from whatever tmux is on the person's PATH, and
+    /// a checkout in `~/bin` is invisible here. Spelling that as `clients: [], error: nil` made
+    /// the panel say "tmux reports no control-mode client that would explain it" about a tmux
+    /// that was never asked, and sent whoever read it to look at tmux instead of at `tmuxPath`.
+    /// The classification is unchanged — an unaskable source has not agreed, so the row is still
+    /// unexplained — and the difference is the sentence a person gets.
+    ///
+    /// ``paneObservation()`` deliberately keeps the other convention: no tmux binary there is a
+    /// complete empty pane list, because every Mac without tmux would otherwise carry a
+    /// permanently incomplete inventory, which is the close-refusing defect this line exists to
+    /// remove. This one is only consulted when there is already a pty-less row to explain.
+    static func controlModeObservationWithoutBinary() -> ControlModeObservation {
+        ControlModeObservation(
+            clients: [],
+            error: TerminalFailure(
+                kind: .io,
+                message: "no tmux found at Config's tmuxPath or the usual install paths"))
+    }
+
     static func controlModeObservation() -> ControlModeObservation {
-        guard binary != nil else {
-            // No tmux on this Mac is a firm answer rather than a failure: nothing here is drawing
-            // anybody's tmux windows, so a pty-less iTerm2 row is genuinely unexplained.
-            return ControlModeObservation(clients: [], error: nil)
-        }
-        let fmt = "#{client_tty}\u{1}#{client_flags}\u{1}#{client_session}"
-        let receipt = run(["list-clients", "-F", fmt])
+        guard binary != nil else { return controlModeObservationWithoutBinary() }
+        let fmt = "#{client_tty}\u{1}#{client_flags}\u{1}#{client_session}\u{1}#{session_windows}"
+        // A deadline of its own, well under the 15 s every other tmux call gets. This question is
+        // asked *inside* ``ITerm/snapshot(processScan:)``, which is itself inside a reading that
+        // runs every 1.2 s and suppresses the next one while it is in flight; a wedged server
+        // would otherwise add its whole 15 s to the 15 s ``paneObservation()`` can already spend.
+        // Measured healthy cost on tmux 3.6a: `real 0.00`, five times out of five.
+        let receipt = run(["list-clients", "-F", fmt], timeout: subprocessTimeoutForTesting ?? 5)
         if !receipt.ok {
             // Same rule as `paneObservation`: no server is a complete empty answer, and anything
             // else — a timeout above all — has no authority to prove a client absent.
@@ -248,6 +276,12 @@ enum Tmux {
     /// commas and compared whole rather than searched as a substring: `#{client_flags}` is an
     /// open vocabulary that tmux adds to between releases, and a future flag that merely
     /// *contains* these letters must not be read as this one.
+    ///
+    /// `#{session_windows}` rides along in the same read — measured
+    /// `flags=attached,focused,control-mode,UTF-8 session=work windows=2` — because a client that
+    /// says how many windows it is drawing is the only thing on this path that can put a ceiling
+    /// on how many pty-less rows it is allowed to explain. A tmux old enough not to answer it
+    /// leaves the field absent rather than the row unusable.
     static func parseControlModeClients(_ output: String) -> [ControlModeClient] {
         output.split(separator: "\n").compactMap { line in
             let f = line.components(separatedBy: "\u{1}")
@@ -256,8 +290,12 @@ enum Tmux {
                 $0.trimmingCharacters(in: .whitespaces)
             }
             guard flags.contains("control-mode") else { return nil }
-            return ControlModeClient(tty: f[0].trimmingCharacters(in: .whitespaces),
-                                     session: f.count > 2 ? f[2] : "")
+            return ControlModeClient(
+                tty: f[0].trimmingCharacters(in: .whitespaces),
+                session: f.count > 2 ? f[2] : "",
+                sessionWindows: f.count > 3
+                    ? Int(f[3].trimmingCharacters(in: .whitespaces))
+                    : nil)
         }
     }
 
@@ -409,15 +447,56 @@ enum Tmux {
         let window = run(["select-window", "-t", paneID])
         guard window.ok else { return window.failure }
         guard activate else { return nil }
-        // Cheapest question first: with no control-mode client anywhere this costs one
-        // `list-clients` on a keypress and stops, and the pane's own session is never asked for.
-        let clients = controlModeObservation().clients
-        guard !clients.isEmpty else { return nil }
-        guard shouldActivateITerm(paneSession: sessionName(ofPane: paneID),
-                                  controlModeClients: clients) else { return nil }
-        // The selection already happened and is the part that was asked for. An application that
-        // will not come forward is worth no failure of its own.
-        _ = ITerm.activate()
+        // **The selection is what was asked for; coming forward is a courtesy, and it leaves
+        // this thread.** Three of the four callers are on the main thread —
+        // ``NotchIsland`` `jump(_:)` and `reveal()`, and `main.swift`'s `revealTarget()` through
+        // ``Controller/revealCurrentTarget()`` — and the tail below is up to three round trips
+        // with a deadline each: `list-clients`, `display-message`, and an Apple Event. Waiting
+        // for them on main is what ``Controller/follow(_:)`` refuses to do "because this is an
+        // osascript round trip", and what `/focus` in ``RemoteServer`` refuses because "a modal
+        // must not freeze SessionWatch, the orchestrator beat, SSE, or health responses".
+        // Nothing is lost by not waiting: the tail's only outcome is discarded either way.
+        let tail = { activateITerm2(forPane: paneID) }
+        if let dispatch = revealActivationDispatchForTesting {
+            dispatch(tail)
+        } else {
+            DispatchQueue.global(qos: .utility).async(execute: tail)
+        }
         return nil
+    }
+
+    /// Where ``reveal(_:activate:)`` hands its activation tail. Production is a background queue;
+    /// a test holds the block instead of running it, because what has to be proved is that
+    /// `reveal` hands it on rather than waiting for it.
+    static var revealActivationDispatchForTesting: ((@escaping () -> Void) -> Void)?
+
+    /// Bring iTerm2 forward for a pane, if iTerm2 is really the thing drawing it.
+    ///
+    /// **Two questions, and the second one is the one that was missing.** tmux's client list
+    /// says that *something* is speaking control mode over a pty; it does not say that something
+    /// is iTerm2. `tmux -C attach` from a script, an editor plugin, or anything else carries the
+    /// identical `control-mode` flag — measured on tmux 3.6a from a client attached through a
+    /// fifo. Activating iTerm2 for one of those would take somebody's keyboard away from what
+    /// they were typing into, which is the failure this whole app exists not to commit.
+    ///
+    /// What is particular to iTerm2 is the *gateway pty*: the session `tmux -CC` was typed into
+    /// is an ordinary iTerm2 row with a real tty, and it comes back in iTerm2's own `list`. So
+    /// the client has to be found there before anything comes forward, and an unreadable list is
+    /// not a yes.
+    ///
+    /// The cheap question is asked first so the Apple Event is only spent on a pane whose
+    /// session tmux already says is being drawn.
+    static func activateITerm2(forPane paneID: String) {
+        let clients = controlModeObservation().clients
+        guard !clients.isEmpty else { return }
+        let session = sessionName(ofPane: paneID)
+        guard shouldActivateITerm(paneSession: session, controlModeClients: clients) else { return }
+        guard let ttys = ITerm.listedRowTTYs() else { return }
+        guard shouldActivateITerm(
+            paneSession: session,
+            controlModeClients: ITerm.controlModeClientsDrawnByITerm2(clients, rowTTYs: ttys))
+        else { return }
+        // An application that will not come forward is worth no failure of its own.
+        _ = ITerm.activate()
     }
 }

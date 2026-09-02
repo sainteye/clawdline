@@ -209,13 +209,31 @@ function run(argv) {
     }
     eachSession(function (s, wi, ti) {
       const id = safe(function () { return s.id(); }, "");
-      const tty = safe(function () { return s.tty(); }, "");
+      // **A question that threw and a question answered "none" are two different facts.**
+      // `safe()` spells both `""`, which is right everywhere else in this file and wrong here:
+      // it put an iTerm2 session whose tty could not be read into exactly the shape of a tmux
+      // control-mode window, and with any control-mode client on the Mac, Swift would then
+      // attribute that row to tmux and say nothing about it. So the throw is caught on its own
+      // and counted like an unreadable id, while `null`, `undefined` and `""` all stay the empty
+      // answer the marker is for — the same reading `cell()` gives the batched branch above,
+      // which cannot tell those three apart and must not be made to disagree with this one.
+      let tty = "";
+      let ttyUnreadable = false;
+      try {
+        const value = s.tty();
+        tty = value === null || value === undefined ? "" : String(value);
+      } catch (e) { ttyUnreadable = true; }
       // The same rule as the batched branch above, for the same reasons: no id is unreadable and
       // lowers the confidence of the whole inventory, while no tty is a tmux control-mode window
       // and travels with a marker for Swift to check against tmux.
       if (!id) {
         lastWalk.failures += 1;
         if (lastWalk.examples.length < 3) lastWalk.examples.push("session identity unreadable");
+        return undefined;
+      }
+      if (ttyUnreadable) {
+        lastWalk.failures += 1;
+        if (lastWalk.examples.length < 3) lastWalk.examples.push("session pty unreadable");
         return undefined;
       }
       const row = {
