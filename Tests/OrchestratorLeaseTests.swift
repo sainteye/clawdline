@@ -881,6 +881,92 @@ group("a holder that is not compiling is reported, and is still not reclaimable"
            silent.record.holder?.phase, .compiling)
 }
 
+group("a heartbeat that outlives its work is a sentinel, and only the loop shape stops it") {
+    // The defect, executed rather than described. Two shells beat into two files; both have a
+    // one-second "work" process. One loop's condition is that work still being alive, the other
+    // is a timer. When the work ends, exactly one of them stops — and the one that does not is
+    // `sleep 14400` wearing a heartbeat.
+    let root = (NSTemporaryDirectory() as NSString)
+        .appendingPathComponent("clawdline-beat-\(UUID().uuidString.prefix(8))")
+    try? FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: root) }
+    let supervised = (root as NSString).appendingPathComponent("supervised")
+    let detached = (root as NSString).appendingPathComponent("detached")
+
+    func shell(_ script: String) -> Process {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", script]
+        try? process.run()
+        return process
+    }
+    // The right shape: the loop that waits on the work is the loop that beats.
+    let right = shell("sleep 1 & w=$!; while kill -0 $w 2>/dev/null; "
+                      + "do : > \(supervised); sleep 0.2; done")
+    // The wrong shape: a timer with no idea what it stands for. Bounded so it ends by itself —
+    // nothing in this suite signals a process to make a point.
+    let wrong = shell("sleep 1 & i=0; while [ $i -lt 40 ]; "
+                      + "do : > \(detached); sleep 0.2; i=$((i+1)); done")
+    right.waitUntilExit()
+
+    func modified(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+    guard let supervisedStop = modified(supervised), let detachedFirst = modified(detached) else {
+        check("both loops produced a beat", false)
+        wrong.terminate(); wrong.waitUntilExit(); return
+    }
+    check("both loops produced a beat", true)
+    Thread.sleep(forTimeInterval: 1.0)
+    let supervisedAfter = modified(supervised)
+    let detachedAfter = modified(detached)
+    wrong.terminate()
+    wrong.waitUntilExit()
+
+    expect("the supervised beat stopped when its work did", supervisedAfter, supervisedStop)
+    guard let detachedAfter, let supervisedAfter else {
+        check("the detached beat is still going", false); return
+    }
+    check("while the detached timer beat on for a work that had already ended",
+          detachedAfter > detachedFirst,
+          "\(detachedAfter) vs \(detachedFirst)")
+    check("so the two are distinguishable by exactly one second of not beating",
+          detachedAfter.timeIntervalSince(supervisedAfter) > 0.5,
+          "\(detachedAfter.timeIntervalSince(supervisedAfter))")
+
+    // And the shipped script has to be the first shape. This reads build.sh off disk the way
+    // `appVersion()` does, because a rule that lives only in a comment is a rule that drifts.
+    let build = (try? String(contentsOfFile: "build.sh", encoding: .utf8)) ?? ""
+    check("build.sh has a heartbeat at all", build.contains("clawdline_lease_beat"))
+    check("emitted by a loop whose condition is the compiler still being alive",
+          build.contains("while kill -0 \"$compiler\" 2>/dev/null; do"))
+    check("which then waits on that same process",
+          build.contains("wait \"$CLAWDLINE_COMPILER\""))
+    // Not "the file contains no `while true`" — it has a queue-wait loop and a commented
+    // counter-example, and a check that fails on those is a check somebody deletes. What must
+    // hold is narrower and is the actual rule: every unbounded loop in the file is a comment,
+    // and the only loop that beats is the one supervising the compiler.
+    let unbounded = build.split(separator: "\n").filter {
+        $0.contains("while true") && !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#")
+    }
+    check("no live unbounded loop exists at all", unbounded.isEmpty, "\(unbounded)")
+    check("and the wrong shape survives only as the counter-example it is named as",
+          build.contains("# a sentinel"), "the commented counter-example went missing")
+    let beatingLines = build.split(separator: "\n").enumerated().filter {
+        $0.element.contains("clawdline_lease_beat ") && !$0.element.contains("()")
+            && !$0.element.trimmingCharacters(in: .whitespaces).hasPrefix("#")
+    }
+    check("the beat is called from exactly one place", beatingLines.count == 1,
+          "\(beatingLines.map(\.element))")
+    if let beating = beatingLines.first {
+        let previous = build.split(separator: "\n")[max(0, beating.offset - 1)]
+        check("and that place is the loop waiting on the compiler",
+              previous.contains("while kill -0 \"$compiler\""), String(previous))
+    }
+    check("the beat lives inside the lock directory, so rmdir takes it too",
+          build.contains("\"$CLAWDLINE_LEASE_DIR/beat\""))
+}
+
 group("the lease record survives a store round trip") {
     var holder = leaseHolder("lease-1", label: "root af1b83ba", pid: 72_929,
                              renewedAt: leaseNow.addingTimeInterval(30), session: "s1",

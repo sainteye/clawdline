@@ -511,6 +511,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a restart reconciles from the directory it never stopped owning",
     "admission degrades to one compiler rather than refusing, and the gate has a named door",
     "a holder that is not compiling is reported, and is still not reclaimable",
+    "a heartbeat that outlives its work is a sentinel, and only the loop shape stops it",
     "the lease record survives a store round trip",
 ]
 

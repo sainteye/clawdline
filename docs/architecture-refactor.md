@@ -471,7 +471,7 @@ a full suite on 2026-09-02:
 
 | | this document said | observed after Cut 1 |
 |---|---:|---:|
-| ordered groups | 463 | 504 |
+| ordered groups | 463 | 505 |
 | ordered runners | 25 | 29 |
 | suite files | 38 | 42 |
 | Swift checks | — | 8,026 |

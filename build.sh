@@ -60,7 +60,7 @@ clawdline_lease_beat() {
 # This is the whole difference between a heartbeat and the `sleep 14400` this design exists to
 # fix. A detached timer —
 #
-#     while true; do : > beat; sleep 60; done &
+#     while true; do : > beat; sleep 60; done &      # a sentinel
 #
 # — keeps beating after the work it claims to represent has died, which is a sentinel in a new
 # coat. Here the loop's own condition is the compiler still being alive, so when `swiftc` exits,
