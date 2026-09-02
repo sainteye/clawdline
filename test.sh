@@ -182,8 +182,12 @@ node Tests/keychain-rebuild-focused.mjs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
 node Resources/web/app/js/net/client.test.mjs
-# This one is about this script rather than the app: that a crashed run still leaves its output.
+# These two are about this script rather than the app: that a crashed run still leaves its output,
+# and that the machine-wide suite lock below serialises the expensive half. Both run before the
+# lock is taken, so a machine that is already busy still gets told what is wrong with this checkout
+# before it starts queueing.
 node Tests/test-sh-streaming.mjs
+node Tests/test-sh-lock.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 
@@ -208,13 +212,491 @@ for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
   fi
 done
 
+# >>> clawdline suite lock >>>
+# One machine, one suite run — and this block is the whole of that promise. It is bounded by the two
+# marker comments so `Tests/test-sh-lock.mjs` can lift it out and drive it against cheap stand-ins,
+# the way `Tests/test-sh-streaming.mjs` lifts out the pipeline. Rename a marker and that guard fails
+# loudly rather than quietly scanning nothing.
+#
+# **Why it exists.** The `swiftc` below compiles every file in `Sources/` together with the files in
+# `Tests/` in one invocation, and spawns one `swift-frontend` per job. On 2026-09-03 four of them
+# held 46 / 45 / 27 / 8 GB at once on a 24 GB Mac and Jetsam force-rebooted it twice, at 01:24 and
+# at 01:45 — see /Library/Logs/DiagnosticReports/JetsamEvent-2026-09-03-014340.ips. Several sessions
+# share this checkout, and until now the mitigation was a gentleman's agreement that whoever ran the
+# suite would `mkdir /tmp/clawdline-suite.lock` first. Forgetting cost the whole machine, so the
+# script holds the lock itself.
+#
+# **What the lock covers**: the `swiftc` invocation *and* the test-binary run that follows it. The
+# compile is the memory, the run is minutes of CPU, and the agreement this replaces covered both.
+# Release is on EXIT rather than on a line after the run, because every failure between here and the
+# end of the script leaves through `exit`, and EXIT is the one path all of them share.
+#
+# **Liveness is proved by renewal, not by a pid existing.** A pid is a proxy and proxies outlive the
+# work: a holder on this machine recorded a `sleep 14400` sentinel, the work it stood for died,
+# launchd adopted the sleep, and under a pid-existence rule that lock would have blocked every other
+# session until the sentinel's own four-hour timeout. So the holder refreshes `holder.txt` while it
+# works, and a holder that stops refreshing stops proving it is there. The distinction is the whole
+# of the rule and is worth saying plainly: **a clock on the work is wrong** — a four-hour compile is
+# not stale, and a duration timeout is exactly the draft that was withdrawn here — **a clock on the
+# proof of life is right**, because a holder renewing every 20s never trips a 60s renewal deadline
+# however long its work runs.
+#
+# **Admission is fail-closed and the physical backstop is never waived.** The lock is handed on only
+# when BOTH (A) the holder has stopped proving it is alive AND (B) no compiler process exists
+# anywhere on this machine. (B) on its own would hand the lock to a second run in the gaps *between*
+# one study's compiles; (A) on its own would hand it over while an orphaned compile is still
+# spending the 46 GB this lock exists to ration. Evidence that is missing, stale or ambiguous reads
+# `unknown` and **blocks**; it never reads "dead".
+#
+# **Nothing here kills anything** except the renewal loop this script starts for itself. Not the
+# holder, not an orphaned compiler, not a process group. It queues, it refuses, and it names who to
+# ask.
+
+# Everything the tests must vary is an environment variable, so `Tests/test-sh-lock.mjs` can drive
+# this block without ever going near the real lock or the real compiler.
+CLAWDLINE_SUITE_LOCK_DIR="${CLAWDLINE_SUITE_LOCK_DIR:-/tmp/clawdline-suite.lock}"
+# `pgrep -x` matches the executable's own name. Measured against a live compile here rather than
+# assumed: a running `swiftc` shows up as `swift-frontend` under `pgrep -x`, while `ps -A -o comm=`
+# prints the whole toolchain path and matches no bare name at all.
+CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN="${CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN:-swift-frontend}"
+CLAWDLINE_SUITE_LOCK_RENEW_SECONDS="${CLAWDLINE_SUITE_LOCK_RENEW_SECONDS:-20}"
+# Three renewals of slack. A reader prefers the deadline the holder recorded in its own record, so a
+# holder that renews more slowly than this reader expects is never declared dead by that reader.
+CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS="${CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS:-60}"
+CLAWDLINE_SUITE_LOCK_WAIT_SECONDS="${CLAWDLINE_SUITE_LOCK_WAIT_SECONDS:-3600}"
+CLAWDLINE_SUITE_LOCK_POLL_SECONDS="${CLAWDLINE_SUITE_LOCK_POLL_SECONDS:-5}"
+CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS="${CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS:-30}"
+CLAWDLINE_SUITE_LOCK_DONE_FLAG="${CLAWDLINE_SUITE_LOCK_DONE_FLAG:-$CLAWDLINE_SUITE_LOCK_DIR/done}"
+# 75 is EX_TEMPFAIL from sysexits(3) — "temporary failure, the user is invited to retry", which is
+# what a busy lock is. It is distinct from every status this script already produces: 0, 1 (a guard
+# said no), 2 (usage), 125 (receipt), 126 (tee) and the suite's own, which for a signal death is
+# 128+N. Nothing else here returns 75.
+CLAWDLINE_SUITE_LOCK_BUSY=75
+
+# Where this run's output goes. Defined here rather than beside the pipeline further down, because
+# the lock records it: a blocked run can then watch the run it is waiting for instead of guessing.
+LOG="${LOG:-${TMPDIR:-/tmp}/clawdline-tests-$$.log}"
+
+clawdline_suite_lock_token=""
+clawdline_suite_lock_pid=""
+clawdline_suite_lock_started=""
+clawdline_suite_lock_pid_started=""
+clawdline_suite_lock_renewer=""
+clawdline_suite_lock_compilers=""
+clawdline_suite_lock_state=""
+clawdline_suite_lock_evidence=""
+
+clawdline_suite_lock_new_token() {
+  local minted
+  minted=$(od -An -tx1 -N16 /dev/urandom 2>/dev/null | tr -d ' \n') || minted=""
+  # `od | tr` succeeds and prints an empty string when /dev/urandom cannot be read, and an empty
+  # token would match every lock on release. Fall back to something still unique to this run.
+  case "$minted" in
+    ????????????????*) : ;;
+    *) minted="pid$$-$(date +%s)-${RANDOM}${RANDOM}" ;;
+  esac
+  printf '%s' "$minted"
+}
+
+clawdline_suite_lock_field() {
+  # The value of one `key=` line, or nothing. Nothing is a real answer here — a record that has not
+  # been written yet — so callers test the value rather than this function's status.
+  local key=$1 file=$2
+  [ -f "$file" ] || return 0
+  awk -v key="$key" 'index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }' "$file" 2>/dev/null
+}
+
+clawdline_suite_lock_pid_alive() {
+  # `ps -p` rather than `kill -0`: `kill` reports a live process owned by another user as an error
+  # that cannot be told apart from "no such process", and this lock is read by whoever is waiting.
+  local pid=$1
+  case "$pid" in "" | *[!0-9]*) return 1 ;; esac
+  ps -p "$pid" -o pid= >/dev/null 2>&1
+}
+
+clawdline_suite_lock_pid_identity() {
+  # A pid's start time, as one normalised line, used to tell a recorded holder from a later process
+  # that inherited its number. **Both sides of every comparison come out of this one function**,
+  # which is why `LC_ALL=C` is pinned here and not at the call sites. Measured on this Mac: the same
+  # process reads `Thu Sep  3 02:18:04 2026` under `LC_ALL=C` and `四  9/ 3 02:18:04 2026` under the
+  # machine's own `zh_TW.UTF-8`. Nor is the difference only in the bytes — holding the formatter
+  # still and varying the day, `zh_TW` renders five whitespace-separated tokens on 2026-09-03 and
+  # four on 2026-08-31, while `LC_ALL=C` renders five on both. So nothing here counts fields; the
+  # whole line is normalised and compared as a string, from one formatter on both sides.
+  local pid=$1 line
+  case "$pid" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
+  line=$(LC_ALL=C ps -o lstart= -p "$pid" 2>/dev/null | awk 'NR == 1 { $1 = $1; print; exit }') || line=""
+  printf '%s' "${line:-unknown}"
+}
+
+clawdline_suite_lock_probe_compilers() {
+  # 0 = at least one compiler is running, 1 = none anywhere, 2 = the probe could not answer. `pgrep`
+  # exits 1 when nothing matched, so a `||` here would read "no compiler" as a failure and a failure
+  # as "no compiler"; the status is read explicitly instead, and only an explicit 1 is ever allowed
+  # to mean the machine is clear.
+  local found="" probe_status=0
+  found=$(LC_ALL=C pgrep -x "$CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN" 2>/dev/null) || probe_status=$?
+  clawdline_suite_lock_compilers=$(printf '%s' "$found" | tr '\n' ' ')
+  case "$probe_status" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+clawdline_suite_lock_working_pids() {
+  # What is actually doing the work right now, refreshed on every renewal. A single pid cannot
+  # describe a sequence of compiles, and that gap is precisely how a `sleep` came to be a holder.
+  local exclude=$1 children=""
+  children=$(LC_ALL=C pgrep -P "$clawdline_suite_lock_pid" 2>/dev/null) || children=""
+  printf '%s' "$(printf '%s\n' "$children" | awk -v skip="$exclude" 'NF && $1 != skip { line = line (line ? " " : "") $1 } END { print line }')"
+}
+
+clawdline_suite_lock_write_record() {
+  # Rewritten whole on acquisition and on every renewal, then moved into place, so a reader sees the
+  # previous complete record or the new complete one and never half of either.
+  local dir=$1 exclude=${2:-} temp="$1/.holder.$$.$RANDOM"
+  clawdline_suite_lock_probe_compilers || true
+  {
+    printf 'holder=%s\n' "$CLAWDLINE_SUITE_LOCK_HOLDER"
+    printf 'pid=%s\n' "$clawdline_suite_lock_pid"
+    printf 'started=%s\n' "$clawdline_suite_lock_started"
+    printf 'tree=%s\n' "$CLAWDLINE_SUITE_LOCK_TREE"
+    printf 'log=%s\n' "$LOG"
+    printf 'token=%s\n' "$clawdline_suite_lock_token"
+    printf 'pid_started=%s\n' "$clawdline_suite_lock_pid_started"
+    printf 'heartbeat=%s\n' "$(date +%s)"
+    printf 'heartbeat_deadline=%s\n' "$CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS"
+    printf 'working=%s\n' "$(clawdline_suite_lock_working_pids "$exclude")"
+    printf 'compilers=%s\n' "${clawdline_suite_lock_compilers:-none}"
+    printf 'done_flag=%s\n' "$CLAWDLINE_SUITE_LOCK_DONE_FLAG"
+    printf 'note=%s\n' "$CLAWDLINE_SUITE_LOCK_NOTE"
+  } > "$temp" 2>/dev/null || return 1
+  mv "$temp" "$dir/holder.txt" 2>/dev/null || { rm -f "$temp" 2>/dev/null; return 1; }
+  return 0
+}
+
+clawdline_suite_lock_admission() {
+  # Reads somebody else's record and leaves two globals: `clawdline_suite_lock_state`, one of
+  # `held` / `unknown` / `orphaned` / `stale`, and `clawdline_suite_lock_evidence`, the sentence
+  # that says what was read. It sets globals rather than printing because `$(…)` would run it in a
+  # subshell and throw the evidence away — and a refusal that cannot name its evidence is a refusal
+  # nobody can act on.
+  local file="$1/holder.txt" heartbeat deadline now age probe_status pid pid_started identity done_flag
+  heartbeat=$(clawdline_suite_lock_field heartbeat "$file")
+  deadline=$(clawdline_suite_lock_field heartbeat_deadline "$file")
+  pid=$(clawdline_suite_lock_field pid "$file")
+  pid_started=$(clawdline_suite_lock_field pid_started "$file")
+  done_flag=$(clawdline_suite_lock_field done_flag "$file")
+  case "$deadline" in "" | *[!0-9]* | 0) deadline="$CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS" ;; esac
+
+  # The done flag is a **positive** signal only. Present means the guarded work is over, so with the
+  # backstop still satisfied the lock may be handed on at once rather than after a renewal deadline
+  # nobody is waiting for. Absent proves nothing — a run killed with SIGKILL never writes one — so
+  # absence simply falls through to renewal below. Reading absence as "still running" would rebuild
+  # the permanent roadblock somewhere new.
+  if [ -n "$done_flag" ] && [ -f "$done_flag" ]; then
+    clawdline_suite_lock_probe_compilers; probe_status=$?
+    case "$probe_status" in
+      1) clawdline_suite_lock_state="stale"
+         clawdline_suite_lock_evidence="the holder marked its work finished at $done_flag and no $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN is running anywhere"
+         return 0 ;;
+      0) clawdline_suite_lock_state="orphaned"
+         clawdline_suite_lock_evidence="the holder marked its work finished, but $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN is still running as pid(s) ${clawdline_suite_lock_compilers}— the memory is still being spent, so nobody is admitted and nothing here will kill them"
+         return 0 ;;
+      *) clawdline_suite_lock_state="unknown"
+         clawdline_suite_lock_evidence="the holder marked its work finished, but the $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN probe could not answer — unknown blocks"
+         return 0 ;;
+    esac
+  fi
+
+  case "$heartbeat" in
+    "" | *[!0-9]*)
+      clawdline_suite_lock_state="unknown"
+      clawdline_suite_lock_evidence="its record carries no readable heartbeat, so whether anyone is still there is unknown — and unknown blocks rather than reading as dead"
+      return 0 ;;
+  esac
+  now=$(date +%s)
+  age=$(( now - heartbeat ))
+  if [ "$age" -lt 0 ]; then
+    clawdline_suite_lock_state="unknown"
+    clawdline_suite_lock_evidence="its heartbeat is ${age#-}s in the future, so the two clocks disagree and the evidence is ambiguous — ambiguous blocks"
+    return 0
+  fi
+  if [ "$age" -le "$deadline" ]; then
+    clawdline_suite_lock_state="held"
+    identity=$(clawdline_suite_lock_pid_identity "$pid")
+    if [ "$identity" = "$pid_started" ]; then
+      clawdline_suite_lock_evidence="it renewed ${age}s ago against a ${deadline}s deadline; working: $(clawdline_suite_lock_field working "$file"), compilers: $(clawdline_suite_lock_field compilers "$file")"
+    else
+      # A fresh renewal outranks a pid, always. The pid is reported because it is useful to a
+      # person, never because it decides anything.
+      clawdline_suite_lock_evidence="it renewed ${age}s ago against a ${deadline}s deadline, so something is still proving it is there, though pid $pid no longer looks like the process that took the lock"
+    fi
+    return 0
+  fi
+  # The holder has stopped proving it is alive. That admits nobody on its own: the backstop is
+  # physical, and it is never waived.
+  clawdline_suite_lock_probe_compilers; probe_status=$?
+  case "$probe_status" in
+    1) clawdline_suite_lock_state="stale"
+       clawdline_suite_lock_evidence="its last renewal was ${age}s ago, past its own ${deadline}s deadline, and no $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN is running anywhere on this machine" ;;
+    0) clawdline_suite_lock_state="orphaned"
+       clawdline_suite_lock_evidence="its last renewal was ${age}s ago, past its own ${deadline}s deadline, but $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN is still running as pid(s) ${clawdline_suite_lock_compilers}— an orphaned compile is still spending the memory this lock rations, so nobody is admitted and nothing here will kill them" ;;
+    *) clawdline_suite_lock_state="unknown"
+       clawdline_suite_lock_evidence="its last renewal was ${age}s ago, but the $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN probe could not answer, so whether a compile is running is unknown — and unknown blocks" ;;
+  esac
+  return 0
+}
+
+clawdline_suite_lock_release_gate() {
+  local gate=$1
+  if [ "$(clawdline_suite_lock_field pid "$gate/holder.txt")" = "$$" ]; then
+    rm -rf "$gate"
+  fi
+}
+
+clawdline_suite_lock_take_over() {
+  # The compare and the swap.
+  #
+  # `rename(2)` decides which of several waiters that judged the *same* lock stale gets to remove it:
+  # exactly one `mv` can succeed and the losers fail with ENOENT. That alone is not enough, because a
+  # waiter's judgement can be older than a whole takeover — B reads a stale record; A takes over,
+  # acquires and starts compiling; B then renames A's *fresh* lock away and both are inside. So the
+  # judgement is made again here, under a gate directory only one waiter can hold. While the lock
+  # directory exists no `mkdir` can create it, and the only thing that removes it is this function,
+  # so holding the gate across the re-read means no new holder can appear between the compare and
+  # the swap. The token is the compare: the swap happens only if the record is still the one judged.
+  local lock=$1 judged_token=$2
+  local gate="$lock.takeover" gate_pid stale
+  if ! mkdir "$gate" 2>/dev/null; then
+    gate_pid=$(clawdline_suite_lock_field pid "$gate/holder.txt")
+    if ! clawdline_suite_lock_pid_alive "$gate_pid"; then
+      # Its taker died between creating the gate and removing it. Exactly one waiter may clear it,
+      # for the same reason and by the same means as above.
+      if mv "$gate" "$gate.abandoned.$$" 2>/dev/null; then rm -rf "$gate.abandoned.$$"; fi
+    fi
+    return 1
+  fi
+  printf 'pid=%s\n' "$$" > "$gate/holder.txt"
+  # And confirm the gate is still this waiter's before acting on it: if another waiter cleared it as
+  # abandoned in the window just above, two could be holding it, and whichever no longer reads its
+  # own pid backs out rather than swapping.
+  gate_pid=$(clawdline_suite_lock_field pid "$gate/holder.txt")
+  if [ "$gate_pid" != "$$" ]; then
+    return 1
+  fi
+  clawdline_suite_lock_admission "$lock"
+  if [ "$clawdline_suite_lock_state" = "stale" ] &&
+     [ "$(clawdline_suite_lock_field token "$lock/holder.txt")" = "$judged_token" ]; then
+    stale="$lock.stale.$$"
+    if mv "$lock" "$stale" 2>/dev/null; then
+      rm -rf "$stale"
+      echo "suite lock: took over $lock — $clawdline_suite_lock_evidence"
+      clawdline_suite_lock_release_gate "$gate"
+      return 0
+    fi
+  fi
+  clawdline_suite_lock_release_gate "$gate"
+  return 1
+}
+
+clawdline_suite_lock_start_renewer() {
+  # The proof of life, and it is bound to the work rather than to itself: on every tick it checks
+  # that the run's own shell is still there and is still the same process, and that the lock is
+  # still this run's, before it refreshes anything. That is what stops the renewer from becoming the
+  # next sentinel — orphan it and it stops renewing on its first tick instead of holding the machine
+  # for the rest of its natural life.
+  local lock=$1
+  (
+    # A subshell inherits this script's EXIT trap — measured, not assumed — and running the release
+    # from here would free the lock the moment the renewer stopped. Drop it first.
+    trap - EXIT
+    while :; do
+      sleep "$CLAWDLINE_SUITE_LOCK_RENEW_SECONDS"
+      clawdline_suite_lock_pid_alive "$clawdline_suite_lock_pid" || exit 0
+      [ "$(clawdline_suite_lock_pid_identity "$clawdline_suite_lock_pid")" = "$clawdline_suite_lock_pid_started" ] || exit 0
+      [ "$(clawdline_suite_lock_field token "$lock/holder.txt")" = "$clawdline_suite_lock_token" ] || exit 0
+      # Its own pid comes from the file the shell below writes, because bash 3.2 has no `BASHPID`
+      # and every way of asking for it from in here forks something whose pid is not this one.
+      clawdline_suite_lock_write_record "$lock" "$(cat "$lock/.renewer" 2>/dev/null || true)" || exit 0
+    done
+  ) &
+  clawdline_suite_lock_renewer=$!
+  printf '%s' "$clawdline_suite_lock_renewer" > "$lock/.renewer" 2>/dev/null || true
+}
+
+clawdline_acquire_suite_lock() {
+  local lock="$CLAWDLINE_SUITE_LOCK_DIR"
+  local started_at now waited next_notice holder_name holder_pid holder_started judged_token
+  started_at=$(date +%s)
+  next_notice=0
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      clawdline_suite_lock_token=$(clawdline_suite_lock_new_token)
+      clawdline_suite_lock_pid=$$
+      clawdline_suite_lock_started=$(date '+%Y-%m-%d %H:%M:%S')
+      clawdline_suite_lock_pid_started=$(clawdline_suite_lock_pid_identity "$$")
+      if ! clawdline_suite_lock_write_record "$lock"; then
+        echo "suite lock: could not write $lock/holder.txt — refusing to compile behind a lock that says nothing about who holds it" >&2
+        rm -rf "$lock"
+        return "$CLAWDLINE_SUITE_LOCK_BUSY"
+      fi
+      clawdline_suite_lock_start_renewer "$lock"
+      echo "suite lock: $lock is this run's (pid $$), renewed every ${CLAWDLINE_SUITE_LOCK_RENEW_SECONDS}s against a ${CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS}s deadline"
+      return 0
+    fi
+    now=$(date +%s)
+    waited=$(( now - started_at ))
+    holder_name=$(clawdline_suite_lock_field holder "$lock/holder.txt")
+    holder_pid=$(clawdline_suite_lock_field pid "$lock/holder.txt")
+    holder_started=$(clawdline_suite_lock_field started "$lock/holder.txt")
+    judged_token=$(clawdline_suite_lock_field token "$lock/holder.txt")
+    clawdline_suite_lock_admission "$lock"
+    if [ "$clawdline_suite_lock_state" = "stale" ]; then
+      if clawdline_suite_lock_take_over "$lock" "$judged_token"; then
+        continue
+      fi
+    fi
+    if [ "$waited" -ge "$CLAWDLINE_SUITE_LOCK_WAIT_SECONDS" ]; then
+      echo "suite lock: gave up after ${waited}s. $lock is held by ${holder_name:-an unnamed run} (pid ${holder_pid:-unknown}, started ${holder_started:-unknown}) — $clawdline_suite_lock_evidence." >&2
+      echo "suite lock: nothing was compiled and nothing was killed. Read $lock/holder.txt and ask that run." >&2
+      return "$CLAWDLINE_SUITE_LOCK_BUSY"
+    fi
+    if [ "$waited" -ge "$next_notice" ]; then
+      echo "suite lock: waiting ${waited}s for ${holder_name:-an unnamed run} (pid ${holder_pid:-unknown}, started ${holder_started:-unknown}) — $clawdline_suite_lock_evidence"
+      next_notice=$(( waited + CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS ))
+    fi
+    sleep "$CLAWDLINE_SUITE_LOCK_POLL_SECONDS"
+  done
+}
+
+clawdline_confirm_suite_lock() {
+  # Called once between the compile and the run. The compile is the long unattended stretch, and a
+  # run that lost the lock during it must not start a second expensive thing under somebody else's.
+  local lock="$CLAWDLINE_SUITE_LOCK_DIR"
+  if [ -n "$clawdline_suite_lock_token" ] &&
+     [ "$(clawdline_suite_lock_field token "$lock/holder.txt")" = "$clawdline_suite_lock_token" ]; then
+    return 0
+  fi
+  echo "suite lock: $lock is no longer this run's — refusing to start the test binary under somebody else's lock." >&2
+  return "$CLAWDLINE_SUITE_LOCK_BUSY"
+}
+
+clawdline_suite_lock_work_finished() {
+  # The positive half of the protocol: the guarded work is over, said in a way a waiter can read
+  # even if this shell never reaches its release. Best effort by construction — a run killed with
+  # SIGKILL writes nothing, and the readers know that absence proves nothing.
+  : > "$CLAWDLINE_SUITE_LOCK_DONE_FLAG" 2>/dev/null || true
+}
+
+clawdline_release_suite_lock() {
+  # Ownership-checked, and this is the answer to the first of the two `nohup` mistakes: an outer
+  # shell that writes `trap 'rmdir "$LOCK"' EXIT`, backgrounds the suite and returns fires that trap
+  # immediately, while the run it started is still compiling. Its pid is not the pid in the record
+  # and it never held the token, so its release is a no-op that says so instead of freeing a lock
+  # somebody is working behind.
+  local lock="$CLAWDLINE_SUITE_LOCK_DIR" recorded_pid recorded_token
+  case "$lock" in "" | "/") return 0 ;; esac
+  [ -d "$lock" ] || return 0
+  recorded_pid=$(clawdline_suite_lock_field pid "$lock/holder.txt")
+  recorded_token=$(clawdline_suite_lock_field token "$lock/holder.txt")
+  if [ -n "$clawdline_suite_lock_token" ] &&
+     [ "$recorded_pid" = "$$" ] &&
+     [ "$recorded_token" = "$clawdline_suite_lock_token" ]; then
+    rm -rf "$lock"
+    echo "suite lock: released $lock"
+  else
+    echo "suite lock: $lock is held by pid ${recorded_pid:-unknown}, not by this shell (pid $$) — left alone" >&2
+  fi
+  # Always 0. This runs from the EXIT trap under `set -e`, where a non-zero return would replace the
+  # status the run was actually exiting with.
+  return 0
+}
+
+clawdline_suite_exit_cleanup() {
+  local status=$?
+  # The only process this script ever signals is the renewal loop it started for itself. The lock
+  # signals nobody else's, ever.
+  # `wait` as well as `kill`, and not for tidiness: without it bash reports the job asynchronously
+  # as `Terminated: 15` on stderr of every single run, and waiting also guarantees the renewer is
+  # reaped before the release below rather than possibly writing a record after it.
+  if [ -n "$clawdline_suite_lock_renewer" ]; then
+    kill "$clawdline_suite_lock_renewer" 2>/dev/null || true
+    wait "$clawdline_suite_lock_renewer" 2>/dev/null || true
+    clawdline_suite_lock_renewer=""
+  fi
+  clawdline_release_suite_lock
+  # Bash keeps exactly one EXIT trap, so a second `trap … EXIT` further down would silently replace
+  # this one and leave the lock behind on every run. The `$STORE` cleanup that used to have a trap
+  # of its own is composed here instead. `${STORE:-}` because the store is created after this trap
+  # is installed: a run that dies in the compile has none to remove.
+  if [ -n "${STORE:-}" ]; then rm -rf "$STORE"; fi
+  return "$status"
+}
+
+clawdline_suite_lock_default_holder() {
+  # Who to ask, not just what to blame. A terminal identity is worth more here than a username.
+  local who where
+  who="${USER:-$(id -un 2>/dev/null || echo unknown)}"
+  where=$(tty 2>/dev/null) || where=""
+  case "$where" in "" | "not a tty") where="no tty" ;; esac
+  if [ -n "${ITERM_SESSION_ID:-}" ]; then
+    where="iTerm2 ${ITERM_SESSION_ID#*:}"
+  elif [ -n "${TMUX_PANE:-}" ]; then
+    where="tmux pane ${TMUX_PANE}"
+  fi
+  printf '%s running ./test.sh (%s)' "$who" "$where"
+}
+
+clawdline_suite_lock_tree() {
+  # The exact tree being verified. `--no-optional-locks` because this checkout is shared with other
+  # sessions and an ordinary `git status` refreshes the index they are also using.
+  local tree dirty
+  tree=$(git rev-parse 'HEAD^{tree}' 2>/dev/null) || tree=""
+  if [ -z "$tree" ]; then printf 'unknown (not a git checkout)'; return 0; fi
+  dirty=$(git --no-optional-locks status --porcelain 2>/dev/null | head -1) || dirty=""
+  if [ -n "$dirty" ]; then printf '%s (working tree dirty)' "$tree"; else printf '%s' "$tree"; fi
+}
+
+CLAWDLINE_SUITE_LOCK_HOLDER="${CLAWDLINE_SUITE_LOCK_HOLDER:-$(clawdline_suite_lock_default_holder)}"
+CLAWDLINE_SUITE_LOCK_TREE="${CLAWDLINE_SUITE_LOCK_TREE:-$(clawdline_suite_lock_tree)}"
+CLAWDLINE_SUITE_LOCK_NOTE="${CLAWDLINE_SUITE_LOCK_NOTE:-running ./test.sh; output is going to $LOG. This lock is handed on only when its heartbeat has expired AND no $CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN is running anywhere.}"
+
+trap clawdline_suite_exit_cleanup EXIT
+clawdline_acquire_suite_lock || exit $?
+
+# The compile's parallelism ceiling, and where the number came from. Unset, the command line below
+# is byte-identical to what it has always been and the swift driver picks its own job count — which
+# is what spawned four `swift-frontend` processes at once. The broker's machine lease will set this;
+# until it exists, a person or a measurement run sets it by hand. Floor of one: low headroom means a
+# slower compile, never a slot that never comes.
+clawdline_suite_jobs_flags=()
+case "${CLAWDLINE_SUITE_JOBS:-}" in
+  "")
+    echo "test.sh: compile parallelism ceiling: the swift driver's default (CLAWDLINE_SUITE_JOBS unset)" ;;
+  0 | *[!0-9]*)
+    echo "test.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
+    exit 2 ;;
+  *)
+    clawdline_suite_jobs_flags=(-j "$CLAWDLINE_SUITE_JOBS")
+    echo "test.sh: compile parallelism ceiling: ${CLAWDLINE_SUITE_JOBS} job(s), from CLAWDLINE_SUITE_JOBS" ;;
+esac
+# <<< clawdline suite lock <<<
+
 swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
+  ${clawdline_suite_jobs_flags[@]+"${clawdline_suite_jobs_flags[@]}"} \
   -o "$BIN" \
   "${clawdline_library_sources[@]}" \
   "${clawdline_test_sources[@]}" \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
+
+# Between the two halves of the guarded section. The compile is the long unattended stretch, so this
+# is where a lock that changed hands underneath the run has to be noticed — before the second
+# expensive thing starts.
+clawdline_confirm_suite_lock || exit $?
 
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
 # ends the script right there, before what it captured has been printed — so a red suite exited
@@ -223,7 +705,11 @@ swiftc \
 # writes into whoever's real ~/.config/clawdline is on the machine — see RemoteAuth.directory.
 STORE="${TMPDIR:-/tmp}/clawdline-test-store-$$"
 mkdir -p "$STORE"
-trap 'rm -rf "$STORE"' EXIT
+# No `trap 'rm -rf "$STORE"' EXIT` here any more, and that is not an omission. Bash keeps exactly
+# one EXIT trap, so this line silently replaced the suite lock's — installing it left the machine
+# lock behind on every single run. The removal is composed into `clawdline_suite_exit_cleanup`
+# above instead, which reads `${STORE:-}` and so does the right thing whether or not this line has
+# been reached.
 # The drop cache goes inside it, and that is the same problem with teeth: the suite writes real
 # image files through `Drop.store`, and every write prunes the oldest entries away. Unisolated,
 # running the tests deletes pictures the person dropped into the bar — see Drop.directory. Spelled
@@ -260,7 +746,8 @@ trap 'rm -rf "$STORE"' EXIT
 # member, so both are read and neither is inferred. `set +e` around the pipeline rather than an
 # `if`, because `PIPESTATUS` must be read from the pipeline itself and any command in between,
 # `if` included, is a chance to have replaced it.
-LOG="${TMPDIR:-/tmp}/clawdline-tests-$$.log"
+# `$LOG` is set with the suite lock above, which records the path so a blocked run can watch this
+# one; there is one definition and it is that one.
 set +e
 CLAWDLINE_REMOTE_DIR="$STORE" CLAWDLINE_DROPS_DIR="$STORE/drops" "$BIN" Resources/mascots 2>&1 | tee "$LOG"
 # Copied whole, in one assignment. Reading the members one at a time does not work and does not
@@ -271,6 +758,10 @@ pipe=("${PIPESTATUS[@]}")
 status=${pipe[0]}
 tee_status=${pipe[1]}
 set -e
+# The guarded section is over here, pass or fail: the compile and the run are both behind us and
+# only receipt checking is left. Saying so is what lets the next run in immediately instead of
+# waiting out a renewal deadline nobody is renewing against.
+clawdline_suite_lock_work_finished
 if [ "$status" -ne 0 ]; then
   echo "the suite exited $status — full output kept at $LOG" >&2
   exit "$status"
