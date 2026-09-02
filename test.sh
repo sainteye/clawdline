@@ -378,10 +378,13 @@ clawdline_suite_lock_pid_verdict() {
   # absence of `<pid>` is then a fact rather than a silence; if `1` does not come back the reading
   # is `unknown` and the caller must not act on it. One fork, not two, because this runs every
   # twenty seconds for the length of a compile.
-  local pid=$1 out="" control=0 target=0 n
+  # `seen` rather than `out`: `Tests/test-sh-streaming.mjs` forbids `out=$(` anywhere live in this
+  # file, because capturing the suite's whole run into a variable is the shape it exists to keep
+  # out, and a guard that is a little over-broad in that direction is the right way round.
+  local pid=$1 seen="" control=0 target=0 n
   case "$pid" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
-  out=$(ps -p "$pid" -p 1 -o pid= 2>/dev/null) || out=""
-  for n in $out; do
+  seen=$(ps -p "$pid" -p 1 -o pid= 2>/dev/null) || seen=""
+  for n in $seen; do
     if [ "$n" = "1" ]; then control=1; fi
     if [ "$n" = "$pid" ]; then target=1; fi
   done
@@ -743,10 +746,26 @@ clawdline_suite_lock_take_over() {
   # exactly one `mv` can succeed and the losers fail with ENOENT. That alone is not enough, because a
   # waiter's judgement can be older than a whole takeover — B reads a stale record; A takes over,
   # acquires and starts compiling; B then renames A's *fresh* lock away and both are inside. So the
-  # judgement is made again here, under a gate directory only one waiter can hold. While the lock
-  # directory exists no `mkdir` can create it, and the only thing that removes it is this function,
-  # so holding the gate across the re-read means no new holder can appear between the compare and
-  # the swap. The token is the compare: the swap happens only if the record is still the one judged.
+  # judgement is made again here, under a gate directory only one waiter can hold.
+  #
+  # **What the gate does and does not do, corrected.** It used to say here that no new holder can
+  # appear between the compare and the swap, because the only thing that removes the lock directory
+  # is this function. That is false and the next person to edit this would have trusted it:
+  # `clawdline_release_suite_lock` also removes it, and the `mkdir` in `clawdline_acquire_suite_lock`
+  # is gated by nothing — so while a waiter holds the gate, the judged holder can release, a fresh
+  # run can acquire and write its own record, and this `mv` can rename that fresh lock away.
+  #
+  # What actually closes it is the pair of lines the gate wraps: the re-read, which requires the
+  # record to still be `stale` and so cannot be satisfied by a holder that is beating, and the token
+  # compare, which requires it to still be the *same* record. Between reading the token and the `mv`
+  # there is a residual window no shell construct can remove; it is milliseconds wide and needs a
+  # release plus a whole acquisition inside it. The gate's real job is narrower and still worth
+  # having: it stops several waiters running the re-read and the swap over each other.
+  #
+  # The token compare is only a compare when both sides have a token. Against a record written by
+  # the broker or by `build.sh` it used to be `"" = ""` — always true, with the re-read carrying the
+  # whole swap alone. All three writers now write one, which is what the record contract above
+  # `clawdline_suite_lock_write_record` is for.
   local lock=$1 judged_token=$2
   local gate="$lock.takeover" gate_pid stale
   if ! mkdir "$gate" 2>/dev/null; then

@@ -517,6 +517,48 @@ try {
     check("a heartbeat from the future is ambiguous, and ambiguous blocks too",
           /b=75/.test(w7b) && !/ENTERED/.test(w7b) && /clocks disagree/.test(w7b));
 
+    // 7c. And the one way out of `unknown`, which is positive evidence rather than an exception.
+    //     Acquiring is `mkdir`, then a few forks, then the first record; a run killed in that
+    //     window leaves a directory with no record and no beat. `unknown` blocked on it correctly
+    //     and *nothing could ever clear it* — only `stale` reaches the takeover, and a record that
+    //     will never be written can never become stale — so one ordinary Ctrl-C turned the
+    //     machine's compile slot into a permanent roadblock that the note inside it told the next
+    //     person not to remove. All four conditions have to hold: never a record, never a beat,
+    //     older than a whole deadline, and no compiler anywhere.
+    rmSync(lockDir, { recursive: true, force: true });
+    const waiter7c = holderScript("s7c-waiter.sh", 'echo "ENTERED"');
+    const orch7c = shell("s7c.sh", PRELUDE, [
+        'mkdir -p "$CLAWDLINE_SUITE_LOCK_DIR"',
+        // Aged past its own 2s deadline, which one being acquired right now cannot be.
+        'sleep 2.5',
+        // With a compiler running it is still nobody's to take.
+        'c=$(fake_compiler 20); sleep 0.3',
+        `capture "$LOCK_SCRATCH/w7c-busy.log" busy env CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=1 "${waiter7c}"`,
+        'kill "$c" 2>/dev/null || true; wait "$c" 2>/dev/null || true',
+        'sleep 0.3',
+        `capture "$LOCK_SCRATCH/w7c.log" clear env CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=2 "${waiter7c}"`,
+        // And a directory that has a beat had a record once and something removed it, which is a
+        // different and unexplained event. That still blocks.
+        'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR"; mkdir -p "$CLAWDLINE_SUITE_LOCK_DIR"',
+        'touch "$CLAWDLINE_SUITE_LOCK_DIR/beat"',
+        'touch -t "$(date -r "$(( $(date +%s) - 600 ))" +%Y%m%d%H%M.%S)" "$CLAWDLINE_SUITE_LOCK_DIR/beat"',
+        'sleep 2.5',
+        `capture "$LOCK_SCRATCH/w7d.log" beaten env CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=1 "${waiter7c}"`,
+        'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR"',
+    ].join("\n"));
+    run(orch7c);
+    const w7cBusy = readIf(join(dir, "w7c-busy.log"));
+    const w7c = readIf(join(dir, "w7c.log"));
+    const w7d = readIf(join(dir, "w7d.log"));
+    check("a directory that has never held a record, once it is older than a whole deadline and "
+          + "nothing is compiling, is an abandoned acquisition and is reclaimable",
+          /clear=0/.test(w7c) && /took over/.test(w7c) && /ENTERED/.test(w7c)
+            && /never held a record/.test(w7c));
+    check("but the physical backstop is not waived for it either",
+          /busy=75/.test(w7cBusy) && !/ENTERED/.test(w7cBusy));
+    check("and a directory that has a beat but no record had one once, which stays unknown",
+          /beaten=75/.test(w7d) && !/ENTERED/.test(w7d) && /unknown/.test(w7d));
+
     // -----------------------------------------------------------------------------------------
     // 8. The done flag: a positive signal, read only in that direction. Present means the work is
     //    over, so with the backstop still satisfied the next run does not wait out a deadline
