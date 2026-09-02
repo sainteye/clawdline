@@ -502,6 +502,10 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the session self-state codec keeps both halves and refuses a third claim",
     "the task codec keeps every field across a full and a minimal record",
     "the task codec still reads the shapes older builds wrote",
+    "a registry transaction reads back what it wrote, and the next one still sees it",
+    "one lock, and a reader waits for the whole of a writer's transaction",
+    "the per-terminal facts keep the semantics the projection had before",
+    "a graph admission is one reservation, and its release is a transaction of its own",
 ]
 
 func validateExecutedTestGroupManifest() {

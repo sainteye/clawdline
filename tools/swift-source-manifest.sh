@@ -134,6 +134,7 @@ clawdline_test_sources=(
   Tests/OrchestratorLandingTests.swift
   Tests/OrchestratorLifecycleTests.swift
   Tests/OrchestratorRecoveryTests.swift
+  Tests/OrchestratorRegistryTests.swift
   Tests/OrchestratorStoreTests.swift
   Tests/PeerMessageTests.swift
   Tests/PlannerTests.swift
