@@ -452,6 +452,41 @@ in the same project — synchronization semantics stay stable while ownership mo
 collection: identical mutation order, restart recovery unchanged, exactly one event publication per
 committed transition, and a red mutation proving the transaction boundary is enforced.
 
+#### Cut 2's remaining stages, and the number that says whether it worked
+
+Ordered by measured access count, because that is what decides how much of the file each stage
+rewrites. Counts are identifier occurrences in `Sources/Orchestrator.swift` at the time of writing.
+
+| Stage | Collections | Accesses | Why here |
+|---|---|---:|---|
+| 1 (landed) | graphAdmissions, titlesByTerminal, handoffTitlesByTerminal, suppressedRootAssignmentLabels, rolesByTerminal | ~28 | cohesive and cheap; the transaction interface has to be designed somewhere it can be wrong safely |
+| 2 | the four rate windows | 27 | not a relocation: one abstraction written four times |
+| 3 | secrets, sessionDeliveries, handoffDeliveries, sessionSelfStates | 48 | one shape — a per-session record keyed by id |
+| 4 | coordinationWaits, handoffs | 53 | two features, one lifetime: created, delivered, released |
+| 5 | rootAssignments | 49 | its own feature, and the newest, so its call sites are the least settled |
+| 6 | tasks | 167 | last, alone, and only once the door has survived five stages |
+| 7 | close the second door | — | the ratchet reaches zero, or Cut 2 did not happen |
+
+**Stage 2 is the one that is not a relocation.** `dispatchTimes`, `notifyTimes`,
+`notifyCredentialFailureTimes` and `scheduleWriteTimes` are four `[Date]` arrays carrying the same
+five operations verbatim — expire by window, check room, take one, give one back (two of the four),
+clear on cleanup — differing only in `window` and `limit`. `notifyTimes` carries the
+filter/guard/append triple **twice**, at two separate call sites, which is what four copies of an
+abstraction cost. One `RateWindow` with `take()` and `giveBack(_:)` replaces all of it, and "give
+back" acquires a name for the first time. It changes call sites in a way the pure moves do not, so
+it needs red-before-green tests per window rather than one shared test.
+
+**Stage 7 is the acceptance test for the whole cut, and it is now mechanical.** Stage 1 opened a
+second door, `withTransactionOnHeldLock`, which does not acquire the lock and therefore trusts its
+caller exactly the way the `…Locked()` suffix did. That is defensible as a migration step and
+indefensible as a destination. The guard now ratchets its call-site count: 12, may only fall, and
+**fails when it reaches zero** so that the door and the ratchet are deleted in the same commit.
+
+So the honest measure of Cut 2 is not how many lines left `Orchestrator.swift`. **It is whether
+`withTransactionOnHeldLock` still exists.** A cut that stalls with both doors open has renamed the
+convention rather than removed it, and left the file worse than it found it: two ways to reach the
+same state where there was one.
+
 **Cut 3 — `ScheduleService.swift` (~1,119 lines).** The five schedule-only collections
 (`handledScheduleFires`, `pendingScheduleFires`, `lastMissedScheduleFires`, `dispatchingSchedules`,
 `invalidScheduleFingerprints`, plus `scheduleWriteTimes`) and the 34 schedule functions move
