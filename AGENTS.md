@@ -224,6 +224,11 @@ has run, so forgetting is no longer possible. What that means for you:
 - **A run that waits is queueing, not stuck.** The wait names who holds the lock, both pids, what
   phase they are in and how long since anything actually compiled, so *why am I waiting* always has
   an answer you can go and ask rather than a spinner.
+- **`exit 75` means the machine was busy, not that the tests failed.** A run that cannot get the
+  lock waits up to an hour (`CLAWDLINE_SUITE_LOCK_WAIT_SECONDS`) and then gives up with 75, which
+  is `EX_TEMPFAIL` — *temporary failure, the caller is invited to retry*. Nothing else in the script
+  returns it. Report it as a blocked verification and say who was holding the lock; reporting it as
+  a red suite sends somebody hunting a defect that is not there.
 - **Nothing is ever killed.** A lock may be waited for, refused, or reported. It is taken over only
   when the holder has stopped renewing **and** no compiler is running anywhere on the machine —
   both, because either alone admits a collision: no-compiler-alone reclaims the lock in the gaps
