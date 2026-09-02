@@ -16,6 +16,26 @@ main_lines=$(line_count Tests/main.swift)
 [ "$main_lines" -le 500 ] \
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
+# This ceiling is a ratchet that has been released, and the history is kept here because the
+# current value cannot show that. A number on its own reads as monotone; three of these four
+# movements were not.
+#
+#   13,592  before Cut 1
+#   12,819  after the store codec left           (a97fb176-era extraction, -773)
+#   12,822  a dated /// comment landed           (+3, and main was briefly red for it)
+#   12,819  reconciled at integration
+#   12,816  after the registry owner left        (Cut 2 stage 1, -3)
+#   13,123  the broker lease moved in            (2eef7bb6 / 15924b14, +307)
+#
+# So this file is larger now than when the extraction work finished, and the ratchet was raised to
+# let that land. That was the right call — the lease is a green, reviewed feature and its code has
+# to live somewhere — but the guard's meaning changed with it. It no longer promises "this file
+# only shrinks". It promises "every growth is stated by somebody, in a diff, on purpose". Those are
+# different guarantees and the second one is still worth having; a reader who assumes the first
+# will misread every number above.
+#
+# Anyone raising it again: add the line, the commit and the reason. A ceiling whose movements are
+# invisible is a ceiling that tells a flattering story about whoever last touched it.
 orchestrator_ceiling=13123
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
