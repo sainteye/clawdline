@@ -1186,8 +1186,21 @@ group("file-wait and handoff deliveries type only the versioned envelope") {
     let registerRoute = serverSource
         .components(separatedBy: #"case ("POST", "/v1/orchestrator/waits"):"#)
         .dropFirst().first?.components(separatedBy: "\n        case (").first ?? ""
+    // Anchored on the waits prefix, not on the `/release` suffix alone. The suffix stopped being
+    // unique the moment the heavy-compile lease added `/v1/orchestrator/leases/<id>/release`: the
+    // split then had two matches, `dropFirst().first` took the lease's route, and three checks in
+    // this group failed while pointing at the wait routes. A locator that reads a file by text has
+    // to name the thing it is looking for, not a fragment somebody else may legitimately share.
+    // Both halves of the pattern, because neither is unique on its own: the prefix also opens the
+    // wait *cancel* route directly below, and the suffix is shared with
+    // `/v1/orchestrator/leases/<id>/release`. Matching one of them picks a route by where it
+    // happens to sit in the file, which is how this locator failed — it took the lease's route and
+    // reported that the wait routes had lost a check they still had.
     let releaseRoute = serverSource
-        .components(separatedBy: #"&& path.hasSuffix("/release"):"#)
+        .components(separatedBy: """
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/waits/")
+            && path.hasSuffix("/release"):
+""")
         .dropFirst().first?.components(separatedBy: "\n        case (").first ?? ""
     check("the real wait routes and picker-readiness implementation were located",
           registerRoute.contains("Orchestrator.registerCoordinationWait(")

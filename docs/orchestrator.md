@@ -1539,6 +1539,150 @@ drives the loud row and push notification. Native and web rows draw peer waits q
 `⏳ owner · release condition`, making an idle-looking but parked session safe for a person to leave
 open. A final-line `[Clawdline waiting]` sentence is only a fallback when that UI is unavailable.
 
+### The heavy-compile slot is leased, not agreed
+
+Two force-reboots on 2026-09-03 came from four `swift-frontend` processes on a 24 GB Mac holding
+lifetime-max footprints of about 46, 45, 27 and 8 GB. Several sessions share one checkout and each
+ran `./test.sh`, whose one `swiftc` call compiles 134,863 lines. The stopgap was a gentleman's
+agreement to create `/tmp/clawdline-suite.lock` by hand; queueing is now the system's behaviour
+instead of a convention people remember.
+
+**One primitive, two front doors.** The lock directory is the truth: holding it is what `mkdir`
+says it is, atomic and kernel-backed, and still correct for a contributor who runs the scripts
+with no Clawdline at all. Inside it:
+
+```text
+/tmp/clawdline-suite.lock/          (path overridable)
+  holder.txt
+    holder=      a readable identity carrying a terminal id, so a blocked session knows who to ask
+    pid=         the process doing the work, never a sentinel; refreshed at each beat when the
+                 work is a sequence of processes
+    phase=       compiling | analysing | idle-holding, refreshed at each beat
+    heartbeat=   the beat file's path
+    started=     when it began
+    tree=        the commit
+    log=         where its output goes
+    done_flag=   a path the run creates when its work has finished
+  beat           the heartbeat file itself, inside the lock so `rmdir` takes it too
+```
+
+`note=` and `work=` are additive and optional. The broker's durable record adds only what a
+directory cannot hold: who the holder is in
+Clawdline terms, the FIFO queue and its depth, the acquisition and renewal clocks, and the
+reconciliation state after a restart. **There is no second lock**, because a second independent
+authority that can disagree with the directory is a race rather than a safety net.
+
+The five routes and every refusal code are in [the API page](api.md#the-heavy-compile-lease).
+
+**Liveness is proved by heartbeat, not by a pid existing.** This is the rule the first
+implementation of the stopgap got wrong, in both directions from one cause: a holder recorded
+`pid=72929` and that pid was a `sleep 14400` sentinel adopted by launchd. A sentinel outlives the
+work, so under a pid-existence rule the lock becomes a four-hour roadblock nobody can clear; and
+the obvious patch — "no `swift-frontend` running means stale" — makes the lock reclaimable in the
+gaps *between* the compiles of one study, which is the collision back again. Both are the same
+cause: the liveness signal was bound to a proxy process instead of to the work.
+
+So the holder beats while it is working, and a `sleep` cannot beat. **A clock on the work is
+wrong** — a four-hour compile is not stale, and a duration timeout on the work was withdrawn for
+exactly that reason — **a clock on the proof of life is right**, because a holder beating every
+twenty seconds never trips a sixty-second threshold however long the work runs. Measured on this
+machine, a 30-second sampler drifted at most 1 second over 56 samples in an hour, including a
+sample taken with 0.06 GB free and a compiler running; that sample came from a small-footprint
+shell path rather than from a 20 GB compile's supervisor, so it is why the threshold is 60 seconds
+and not 90, not a proof that a supervisor never stalls.
+
+**The heartbeat must come from something that stops when the work stops**, or it is the same bug
+in a new coat:
+
+```bash
+while true; do : > beat; sleep 60; done &     # a sentinel — it beats after the work has died
+
+swiftc … & compiler=$!                        # a supervisor loop — the beat stops with the work
+while kill -0 "$compiler" 2>/dev/null; do : > beat; sleep 20; done
+wait "$compiler"
+```
+
+What is being proved is that somebody is still supervising this work, not that a timer is still
+running on this machine. `build.sh` is written that way, and the child briefing hands out that
+shape rather than the other one. `kill -0` sends no signal; nothing in this delivery signals a
+process it did not start.
+
+Admission needs both halves and the physical backstop is never waived: **(A)** the holder's
+heartbeat has lapsed, **and (B)** no `swift-frontend` exists anywhere on the machine.
+
+**heartbeat is what the holder says; `swift-frontend` is what the machine is doing. A
+machine-level resource guard fails closed on the fact, not on the self-report.** (B) is a
+necessary condition, never a sufficient one. Used alone it collides in the gaps between the
+compiles of one study; dropped altogether, a holder that is wedged or heavily swapped out can miss
+a beat *while still burning 46 GB* — which is precisely what this machine was doing at 01:24 and
+01:45 — and taking over on a lapsed heartbeat alone starts a second driver beside it. On a healthy
+machine (B) passes instantly at no cost; it blocks only when the holder is stuck, which is the one
+case it exists for. The scan matches the executable's own name, `pgrep -x` semantics rather than
+`pgrep -f`, so a sampler or a `/usr/bin/time swift-frontend …` wrapper is correctly not a compiler.
+It counts **globally**, including compilers nobody in the queue started: the question is whether
+anything on this machine is burning, not whether the holder's own compiler is running, and
+`test.sh` demonstrably produces a driver outside its own `swiftc` line.
+
+Evidence that is missing, stale or ambiguous reads `unknown` and blocks; it never reads "dead".
+**Nothing kills or suspends anything**: a refusal names the holder, the orphan pids and the
+evidence, and a person decides.
+
+**`phase` is observable and reportable, and is never a takeover condition.** `idle-holding` means
+"I still need the slot and nothing is running right now", which from outside is the same picture
+as a holder that finished and forgot to let go. At 02:45 that picture — held 36 minutes, zero
+compilers, no `done_flag`, sentinel pid alive, holder actually alive and writing a report — had to
+be resolved by a person reading a `work_state` by hand, because the query could not say it. So the
+query now says who holds it, how long since it was last `compiling`, and how old the heartbeat is,
+and it still refuses to decide: the waiter learns **who to ask**, not what to seize.
+
+**The broker's third liveness axis is why it exists on top of a file lock.** A lease whose owning
+task has reached `failure`, `timeout` or `cancelled` has stopped proving liveness no matter what
+any sentinel pid is doing, and that answers a four-hour sentinel immediately rather than waiting
+out a deadline. It is still subject to (B): a terminal task plus a live `swift-frontend` is a
+refusal naming the orphan, not a takeover.
+
+**Exclusion and admission are two questions and the record keeps them apart.** Exclusion is whose
+turn it is, and it fails closed: no lease, no compile. Admission is whether the holder may start
+now and *at what size*, and it refuses only as a last resort — a grant carries a parallelism
+ceiling with a floor of one. **The ceiling is a ceiling, not a throttle**: its job is to stop
+somebody passing `-j 8` and multiplying the peak by eight, not to make a compile that will not fit
+fit. `swiftc` with no `-j` was measured on this Mac to run one frontend already, so granting `-j 1`
+grants nothing; a second reading saw two concurrent frontends during a full compile, reconcilable
+with the first only if one was the stray driver `node Tests/keychain-rebuild-focused.mjs` starts
+outside `test.sh`'s own `swiftc` line. What the ceiling is relied on for is the direction that is
+certain: it can only lower the number of concurrent frontends, never raise it. `build.sh` passes it
+to `swiftc` and prints where the number came from; `test.sh` reads the same number from
+`CLAWDLINE_SUITE_JOBS`, which landed separately on `main`.
+
+The evidence behind the policy, and the failure list it has to survive, are in
+[`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md) rather than repeated here.
+The reason the distinction is load-bearing is that mutual exclusion alone cannot fix this
+machine. Measured at 02:16 with nothing compiling: 10.78 GB anonymous, 3.54 GB wired, 1.24 GB
+compressor, 2.04 GB free, and `vm.swapusage` at 10,870 MB used with 1,417 MB free. There are
+states on that baseline in which no suite can run at all. Two readings that look like evidence
+are deliberately not used: summed RSS across processes double-counts every shared page — 622
+processes summed to 22.33 GB on a 24 GB machine while `memory_pressure` reported 81% free — and
+physical free percentage looks excellent right after Jetsam kills something. Swap free alone is
+not a budget either: over forty minutes with nothing compiling, `vm.swapusage` total went 9,216 →
+10,240 → 12,288 MB and free swung from 353 MB to 1,417 MB. **A fixed floor on a quantity whose
+denominator moves is a deadlock wearing a threshold's clothes**, so headroom here is free plus
+file-backed pages, and until the per-compile peak is measured the policy carries no floor at all
+and every grant is one — this build cannot refuse on a number nobody has taken. When a floor is
+measured and cannot be met, the refusal names the deficit, how it was taken, and the largest
+holders of anonymous memory for a person to read, and it has an explicit override with a named,
+audited owner: a gate with no door is the deadlock this feature exists to remove.
+
+`GET /v1/sessions` exposes the lease as a quiet `lease` overlay on exactly the coordination-wait
+precedent — `state` is `holding` or `queued`, with the position, the wait age and the hold reason
+— and it does not change the session's terminal `state`, because `waiting` means a person must
+answer and this is not that. Bearings carries `heavy_compile_lease` as four separate facts —
+`state`, `holder`, `queue_depth` and `hold_reason` — keeping `missing`, `zero`, `queued`, `held`
+and `unknown` apart, because a single spinner would collapse exactly the states this exists to
+show. A paired device gets three of the four: `holder` is free text a script wrote, and on this
+machine that text carries a username and a pid, which Bearings excludes from a device by
+construction. Whether the slot is busy and how long the queue is are things a phone can act on;
+who is holding it is a Mac-side answer.
+
 ### Clawdfather Phase A1: durable identity and read-only Bearings
 
 Clawdfather is now a broker-authenticated role, not presentation fiction. Construction is explicit:

@@ -209,7 +209,7 @@
   <p class="lede">Clawdline lets an assistant session hand a piece of work to a second session running on the same machine — in its own terminal tab, with its own instructions, reporting back through a file. This page is the whole contract: the files, the routes, the guarantees, the refusals, and where each guarantee stops. <strong>Read it once and you can dispatch correctly, and say what every answer you get back is worth.</strong></p>
 
   <ul class="chips">
-    <li>dispatch</li><li>claims</li><li>serialize</li><li>worktree delivery</li><li>landing</li>
+    <li>dispatch</li><li>claims</li><li>serialize</li><li>the compile lease</li><li>worktree delivery</li><li>landing</li>
     <li>attached follow-ups</li><li>coordination waits</li><li>handoff</li><li>typed errors</li>
   </ul>
 
@@ -691,6 +691,7 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <li><strong>Do run one verification that actually proves the change</strong>: compile, the tests covering what was touched, and one red-before-green run for each test added. A test born green proves nothing — break the thing once, watch the test catch it, then fix it. Iterating until something first compiles and passes is ordinary work and is not what the budget is about.</li>
     <li><strong>The budget is one third of <code>timeout_minutes</code>.</strong> Until a focused Swift runner ships, an implementer whose behavior cannot be exercised more narrowly may use one full-suite run and label it <code>focused_runner_unavailable</code>; reviewers do not repeat it. At the time limit the child stops and reports the state reached.</li>
     <li><strong>Do not</strong> re-run a full suite after every small edit, run a suite unrelated to the paths claimed, repeat a green run to see whether it was flaky, or treat restarting the application and looking at it as acceptance.</li>
+    <li><strong>An expensive compile goes through the machine lease</strong>, and there is exactly one slot. <code>./test.sh</code> and <code>./build.sh</code> take it themselves; a child starting <code>swiftc</code> by hand takes it first, renews it while it works and releases it when the compiler exits. See <a href="#compile-lease">section 10</a>.</li>
   </ul>
 
   <p>The receipt is an optional object in <code>result.json</code>:</p>
@@ -786,6 +787,23 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
   </ul>
 
   <p>Do not reach for worktree isolation to evade a serialize token. Isolation changes the checkout; it does not create a second machine.</p>
+
+  <h3 id="compile-lease">The heavy-compile slot is a lease, not a token</h3>
+
+  <p><code>serialize</code> is a correctness mutex: it asks whether two operations would corrupt the same shared state. The compile slot is a <strong>capacity</strong> question — can this machine run both at once — and it is a different primitive because the answers differ in every dimension. A serialize token is held for a task's whole queued, spawning and briefed lifetime; the compile slot is held for the few minutes actually spent in <code>swiftc</code>. A serialize token only binds a dispatched task that declared it; the compile slot binds a contributor's plain shell too, because it is a directory.</p>
+
+  <p><strong>The lock directory is the truth and the broker is the registry in front of it.</strong> Holding <code>/tmp/clawdline-suite.lock</code> is what <code>mkdir</code> says it is, so a shell running <code>./test.sh</code> with no Clawdline cannot collide with a session that has it. Inside it, <code>holder.txt</code> carries <code>holder=</code>, <code>pid=</code>, <code>started=</code>, <code>tree=</code>, <code>log=</code>, <code>note=</code>, plus <code>work=</code>, <code>done_flag=</code> and <code>renewed=</code>. The broker adds what a directory cannot hold — the Clawdline identity, the FIFO queue and its depth, the clocks, and what reconciliation found after a restart — and nothing else. There is no second lock, because a second authority that can disagree with the directory is a race rather than a safety net.</p>
+
+  <ul>
+    <li><strong>Fail closed.</strong> No lease means the compile does not run. There is no proceed-anyway.</li>
+    <li><strong>Liveness is proved by heartbeat, not by a pid existing.</strong> The holder touches <code>beat</code> inside the lock directory at least every sixty seconds while it works; a sentinel cannot beat. A clock on the work would be wrong — a four-hour compile is not stale — and a clock on the proof of life is right. <strong>The beat must come from the loop that supervises the compiler</strong>, not from a timer of its own: <code>while true; do : &gt; beat; sleep 60; done &amp;</code> is the same defect in a new coat, because it keeps beating after the work has died.</li>
+    <li><strong>Takeover needs both halves.</strong> The holder's heartbeat must have lapsed <em>and</em> no <code>swift-frontend</code> may exist anywhere on the machine. Neither half admits anybody alone. <strong>heartbeat is what the holder says; <code>swift-frontend</code> is what the machine is doing, and a machine-level guard fails closed on the fact rather than on the self-report.</strong> Missing, stale or ambiguous evidence is <code>unknown</code>, and <code>unknown</code> blocks — it never reads as dead.</li>
+    <li><strong><code>phase</code> is reported and never decides.</strong> <code>compiling</code>, <code>analysing</code> or <code>idle-holding</code>, refreshed at each beat. A query says who holds the slot, how long since it was last compiling and how old the heartbeat is, so a waiter learns who to ask rather than what to seize.</li>
+    <li><strong>Nothing kills anything.</strong> An orphaned compile after its owner died is named in the refusal, with its pids, for a person to act on.</li>
+    <li><strong>A grant carries a budget.</strong> Admission degrades rather than refusing: <code>budget.parallelism</code> is a ceiling with a floor of one, which the scripts pass to <code>swiftc</code> as <code>-j</code>. A refusal names the deficit and how it was measured, and has an explicit override with a named owner, because a gate with no door is a deadlock.</li>
+  </ul>
+
+  <p>The five routes, the refusal codes and what each reconciliation state means are in <a href="api.md#the-heavy-compile-lease">the API page</a>.</p>
 
   <!-- 11 -->
   <h2 id="worktree"><span class="n">11</span>Isolation: a branch, not a diff</h2>

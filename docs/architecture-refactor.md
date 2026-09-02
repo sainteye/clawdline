@@ -508,12 +508,12 @@ and the header says which tree it belongs to rather than implying it was observe
 
 | | this document said | asserted on `integrate/cut2s1` |
 |---|---:|---:|
-| ordered groups | 463 | 498 |
-| ordered runners | 25 | 29 |
-| suite files | 38 | 42 |
-| Swift checks | — | 8,087 |
-| `Orchestrator.swift` ceiling | 13,592 | 12,819 |
-| `RemoteServer.swift` ceiling | 6,385 | 6,426 |
+| ordered groups | 463 | 509 |
+| ordered runners | 25 | 30 |
+| suite files | 38 | 43 |
+| Swift checks | — | 8,277 |
+| `Orchestrator.swift` ceiling | 13,592 | 13,123 |
+| `RemoteServer.swift` ceiling | 6,385 | 6,463 |
 
 The Swift-checks row read 8,025 after Cut 1, then 8,026 when the multi-question picker's
 confirmation guard added one check on 2026-09-02 (`4273990a`) — the first landing to move a count

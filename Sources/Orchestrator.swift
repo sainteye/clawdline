@@ -2256,6 +2256,16 @@ enum Orchestrator {
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     private static var rootAssignments: [String: RootAssignment] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
+    /// The machine-level leases, keyed by resource. The lock directory is the truth; this is
+    /// the registry in front of it. See `Sources/OrchestratorLease.swift`.
+    private static var leases: [String: OrchestratorLease.Record] = [:]
+    /// One turn of the lease crank at a time. Separate from `lock` because a turn runs `ps`,
+    /// and the registry lock must never be held across a subprocess.
+    private static let leaseLock = NSLock()
+    static var leaseProbesForTesting: OrchestratorLease.Probes?
+    /// Nil per-compile peak until the measurement lands, which is what makes every grant the
+    /// floor of one rather than a refusal on a number nobody has taken.
+    static var leasePolicy = OrchestratorLease.Policy()
     /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
     /// this receipt is consumed when the same tab begins another observed turn.
     private static var sessionDeliveries: [String: SessionDelivery] = [:]
@@ -11293,7 +11303,22 @@ enum Orchestrator {
         until the change first compiles and passes is ordinary work. Until the repository ships a
         focused Swift runner, an implementer whose behavior cannot be exercised more narrowly may
         use one full-suite run and record `focused_runner_unavailable`; a reviewer does not repeat
-        it. Verification stops after one third of this task's timeout
+        it.
+
+        **An expensive compile goes through the machine lease, and there is exactly one slot.**
+        Four `swift-frontend` processes have force-rebooted this Mac. `./test.sh` and `./build.sh`
+        take the slot for themselves, so ordinarily you do nothing but run them: a run that waits
+        is queueing, not stuck, and it prints who holds the slot and for how long.
+
+        **Do not start `swiftc` by hand and do not work around a wait.** Compiling outside the slot
+        is the thing that rebooted the machine. If your task genuinely cannot be verified any other
+        way, say so in `result.json` rather than compiling around the queue — a blocked verification
+        reported honestly costs this machine nothing, and a second compiler costs it everything.
+        `CLAWDLINE_SUITE_JOBS=<n>` is the supported way to ask `./test.sh` for fewer compiler jobs.
+
+        Nothing in this system will ever end somebody else's compile, and neither may you.
+
+        Verification stops after one third of this task's timeout
         (\(verificationMinutes) minutes). At the limit, stop and report the state reached in `result.json`. Point
         verification's private `TMPDIR` at `\(dir)/work/tmp`; the repository's
         snapshot recipe remains unchanged, and its test binary is then reclaimed with the task.
@@ -12211,6 +12236,276 @@ enum Orchestrator {
         return .ok(["ok": true, "id": id])
     }
 
+    // MARK: - The heavy-compile lease
+
+    /// The registry half of the machine-level lease. The decision logic, the takeover rule and
+    /// every refusal live in ``OrchestratorLease``; this owns the collection, the durable store
+    /// and the one thing that file cannot know — whether the task holding a lease is still
+    /// running.
+    ///
+    /// `leaseLock` rather than `lock`: one turn of this crank runs `ps` twice and `vm_stat`
+    /// once, and the registry lock must never be held across a subprocess.
+    private static func leaseStep(
+        resource: String, now: Date,
+        decide: (OrchestratorLease.Record, OrchestratorLease.DirectoryState,
+                 OrchestratorLease.Evidence, [OrchestratorLease.MemoryHolder])
+            -> OrchestratorLease.Decision
+    ) -> OrchestratorLease.Applied {
+        load()
+        leaseLock.lock(); defer { leaseLock.unlock() }
+        lock.lock()
+        let current = leases[resource]
+            ?? OrchestratorLease.Record(resource: resource,
+                                        directory: OrchestratorLease.defaultDirectory)
+        lock.unlock()
+        let probes = leaseProbesForTesting ?? OrchestratorLease.live
+        let (directory, evidence) = OrchestratorLease.observe(
+            record: current, probes: probes, ownerState: leaseOwnerState)
+        var top: [OrchestratorLease.MemoryHolder] = []
+        if evidence.pressure != nil { top = probes.topAnonymous() }
+        let decision = decide(current, directory, evidence, top)
+        let applied = OrchestratorLease.perform(decision, on: current, probes: probes)
+        lock.lock()
+        leases[resource] = applied.record
+        lock.unlock()
+        save()
+        return applied
+    }
+
+    /// The third liveness axis, and the broker's whole reason to sit on top of a file lock: a
+    /// lease whose owning task reached `failure`, `timeout` or `cancelled` has stopped proving
+    /// it is alive however healthy any sentinel pid looks. It is still subject to the physical
+    /// backstop — a terminal task plus a live `swift-frontend` is a refusal naming the orphan.
+    private static func leaseOwnerState(_ holder: OrchestratorLease.Holder)
+        -> OrchestratorLease.OwnerState {
+        guard let taskID = holder.owner.taskID else { return .unknown }
+        lock.lock(); defer { lock.unlock() }
+        guard let task = tasks[taskID] else { return .unknown }
+        return task.state.isTerminal ? .gone("task \(task.state.rawValue)") : .live
+    }
+
+    private static func leaseReply(_ applied: OrchestratorLease.Applied, now: Date) -> Reply {
+        let record = OrchestratorLease.record(applied.record, now: now)
+        switch applied.outcome {
+        case .granted(let budget):
+            var out: [String: Any] = ["ok": true, "state": "granted", "lease": record]
+            let budgetRow: [String: Any] = ["parallelism": budget.parallelism,
+                                            "basis": budget.basis]
+            out["budget"] = budgetRow
+            return .ok(out)
+        case .queued(let position, let reason):
+            return .ok(["ok": true, "state": "queued", "position": position,
+                        "holdReason": reason, "lease": record,
+                        "retryAfterSeconds": 5])
+        case .released:
+            return .ok(["ok": true, "state": "released", "lease": record])
+        case .renewed:
+            return .ok(["ok": true, "state": "renewed", "lease": record])
+        case .cancelled:
+            return .ok(["ok": true, "state": "cancelled", "lease": record])
+        case .refused(let refusal):
+            var extra: [String: Any] = ["lease": record]
+            for (key, value) in refusal.extra { extra[key] = value }
+            return .refused(status: refusal.status, code: refusal.code,
+                            message: refusal.message, extra: extra)
+        }
+    }
+
+    /// Acquire, or join the queue. Idempotent on `request_id`: this is polled until granted.
+    static func acquireLease(_ raw: [String: Any], now: Date = Date()) -> Reply {
+        guard let requestID = OrchestratorLease.bounded(raw["request_id"] as? String,
+                                                        limit: OrchestratorLease.labelLimit)
+        else {
+            return .refused(400, "bad_lease",
+                            "request_id is required, and the same one is used for every poll "
+                            + "of this request.")
+        }
+        let parsed = OrchestratorLease.request(from: raw, requestID: requestID)
+        guard case .success(let request) = parsed else {
+            guard case .failure(let refusal) = parsed else {
+                return .refused(400, "bad_lease", "The lease request is not valid.")
+            }
+            return .refused(refusal.status, refusal.code, refusal.message)
+        }
+        let applied = leaseStep(resource: request.resource, now: now) {
+            record, directory, evidence, top in
+            OrchestratorLease.acquire(record: record, request: request, directory: directory,
+                                      evidence: evidence, policy: leasePolicy,
+                                      topAnonymous: top, now: now)
+        }
+        RemoteAuth.audit("orchestrator.lease.acquire", [
+            "resource": request.resource, "request": requestID, "holder": request.owner.label,
+            "result": leaseOutcomeWord(applied.outcome),
+        ])
+        return leaseReply(applied, now: now)
+    }
+
+    /// Renew: the proof of life, and what is working right now.
+    static func renewLease(id: String, _ raw: [String: Any], now: Date = Date()) -> Reply {
+        guard let owner = leaseOwner(from: raw) else {
+            return .refused(400, "bad_lease", "holder is required.")
+        }
+        let resource = OrchestratorLease.bounded(raw["resource"] as? String,
+                                                 limit: OrchestratorLease.labelLimit)
+            ?? OrchestratorLease.heavyCompile
+        guard OrchestratorLease.resources.contains(resource) else {
+            return .refused(400, "unknown_resource", "This machine does not lease \(resource).")
+        }
+        let workPIDs = OrchestratorLease.pids(from: raw["work_pids"])
+        // A renewal carries what the holder is doing as well as the fact that it is there. An
+        // absent or unrecognised `phase` leaves the recorded one alone rather than resetting it.
+        let phase = (raw["phase"] as? String)
+            .flatMap(OrchestratorLease.Phase.decode) ?? .unknown
+        let applied = leaseStep(resource: resource, now: now) {
+            record, directory, evidence, _ in
+            OrchestratorLease.renew(record: record, leaseID: id, owner: owner,
+                                    workPIDs: workPIDs, phase: phase, directory: directory,
+                                    evidence: evidence, now: now)
+        }
+        return leaseReply(applied, now: now)
+    }
+
+    /// Release. Only the holder may, and only when the directory still names them.
+    static func releaseLease(id: String, _ raw: [String: Any], now: Date = Date()) -> Reply {
+        guard let owner = leaseOwner(from: raw) else {
+            return .refused(400, "bad_lease", "holder is required.")
+        }
+        let resource = OrchestratorLease.bounded(raw["resource"] as? String,
+                                                 limit: OrchestratorLease.labelLimit)
+            ?? OrchestratorLease.heavyCompile
+        guard OrchestratorLease.resources.contains(resource) else {
+            return .refused(400, "unknown_resource", "This machine does not lease \(resource).")
+        }
+        let applied = leaseStep(resource: resource, now: now) {
+            record, directory, evidence, _ in
+            OrchestratorLease.release(record: record, leaseID: id, owner: owner,
+                                      directory: directory, evidence: evidence, now: now)
+        }
+        RemoteAuth.audit("orchestrator.lease.release", [
+            "resource": resource, "lease": id, "result": leaseOutcomeWord(applied.outcome),
+        ])
+        return leaseReply(applied, now: now)
+    }
+
+    /// A queued caller that gave up removes only itself. No probes: nothing about the machine
+    /// can change whether a request belongs to the session that made it.
+    static func cancelLeaseRequest(id: String, _ raw: [String: Any],
+                                   now: Date = Date()) -> Reply {
+        guard let owner = leaseOwner(from: raw) else {
+            return .refused(400, "bad_lease", "holder is required.")
+        }
+        let resource = OrchestratorLease.bounded(raw["resource"] as? String,
+                                                 limit: OrchestratorLease.labelLimit)
+            ?? OrchestratorLease.heavyCompile
+        guard OrchestratorLease.resources.contains(resource) else {
+            return .refused(400, "unknown_resource", "This machine does not lease \(resource).")
+        }
+        load()
+        leaseLock.lock(); defer { leaseLock.unlock() }
+        lock.lock()
+        let current = leases[resource]
+            ?? OrchestratorLease.Record(resource: resource,
+                                        directory: OrchestratorLease.defaultDirectory)
+        lock.unlock()
+        let decision = OrchestratorLease.cancel(record: current, requestID: id, owner: owner)
+        lock.lock()
+        leases[resource] = decision.record
+        lock.unlock()
+        save()
+        return leaseReply(OrchestratorLease.Applied(record: decision.record,
+                                                    outcome: decision.outcome), now: now)
+    }
+
+    private static func leaseOwner(from raw: [String: Any]) -> OrchestratorLease.Owner? {
+        guard let label = OrchestratorLease.bounded(raw["holder"] as? String,
+                                                    limit: OrchestratorLease.labelLimit)
+        else { return nil }
+        return OrchestratorLease.Owner(
+            sessionID: OrchestratorLease.bounded(raw["session_id"] as? String,
+                                                 limit: OrchestratorLease.labelLimit),
+            taskID: OrchestratorLease.bounded(raw["task_id"] as? String,
+                                              limit: OrchestratorLease.labelLimit),
+            rootSessionID: OrchestratorLease.bounded(raw["root_session_id"] as? String,
+                                                     limit: OrchestratorLease.labelLimit),
+            label: label)
+    }
+
+    private static func leaseOutcomeWord(_ outcome: OrchestratorLease.Outcome) -> String {
+        switch outcome {
+        case .granted: return "granted"
+        case .queued(_, let reason): return "queued:" + reason
+        case .released: return "released"
+        case .renewed: return "renewed"
+        case .cancelled: return "cancelled"
+        case .refused(let refusal): return refusal.code
+        }
+    }
+
+    /// The query. It re-reads the machine, so "who is compiling and how long is the queue" is
+    /// answered from the directory rather than from what the broker last remembered.
+    static func leaseRecords(now: Date = Date()) -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        for resource in OrchestratorLease.resources.sorted() {
+            let applied = leaseStep(resource: resource, now: now) {
+                record, directory, evidence, _ in
+                OrchestratorLease.Decision(
+                    record: OrchestratorLease.reconcile(record: record, directory: directory,
+                                                        evidence: evidence, now: now),
+                    effect: .none, outcome: .renewed)
+            }
+            out.append(OrchestratorLease.record(applied.record, now: now))
+        }
+        return out
+    }
+
+    /// The Bearings counts, from the stored record only. Deliberately no probes: Bearings is a
+    /// projection that runs on a redraw, and a redraw must never start a subprocess.
+    static func leaseBearings(now: Date = Date())
+        -> (holder: String?, queueDepth: Int, holdReason: String?, state: String) {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        guard let record = leases[OrchestratorLease.heavyCompile] else {
+            return (nil, 0, nil, "missing")
+        }
+        if record.reconciliation == .unreadable {
+            return (nil, record.queue.count, record.holdReason, "unknown")
+        }
+        guard let holder = record.holder else {
+            return (nil, record.queue.count, record.holdReason,
+                    record.queue.isEmpty ? "zero" : "queued")
+        }
+        return (holder.owner.label, record.queue.count, record.holdReason, "held")
+    }
+
+    /// The quiet Session overlay. It follows the coordination-wait precedent exactly:
+    /// `SessionState.waiting` means *a person must answer* and this is not that, so a session
+    /// holding or queued for the compile slot keeps whatever terminal state it had.
+    static func leaseSession(forTerminal id: String, now: Date = Date()) -> [String: Any]? {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        guard let record = leases[OrchestratorLease.heavyCompile] else { return nil }
+        if let holder = record.holder, holder.owner.sessionID == id {
+            var row: [String: Any] = [
+                "state": "holding", "resource": record.resource, "leaseId": holder.leaseID,
+                "heldSeconds": max(0, Int(now.timeIntervalSince(holder.acquiredAt))),
+                "renewalAgeSeconds": max(0, Int(now.timeIntervalSince(holder.renewedAt))),
+                "queueDepth": record.queue.count,
+            ]
+            if let budget = holder.budget { row["parallelism"] = budget.parallelism }
+            row["phase"] = holder.phase.rawValue
+            return row
+        }
+        guard let index = record.queue.firstIndex(where: { $0.owner.sessionID == id }) else {
+            return nil
+        }
+        let waiter = record.queue[index]
+        return ["state": "queued", "resource": record.resource, "position": index + 1,
+                "requestId": waiter.requestID,
+                "waitedSeconds": max(0, Int(now.timeIntervalSince(waiter.requestedAt))),
+                "holdReason": record.holdReason ?? "unknown",
+                "queueDepth": record.queue.count]
+    }
+
     static func coordinationWaitRecords() -> [[String: Any]] {
         load()
         lock.lock(); defer { lock.unlock() }
@@ -12357,6 +12652,11 @@ enum Orchestrator {
             guard let wait = OrchestratorStore.coordinationWait(from: row) else { continue }
             foundWaits[wait.id] = wait
         }
+        var foundLeases: [String: OrchestratorLease.Record] = [:]
+        for row in obj["leases"] as? [[String: Any]] ?? [] {
+            guard let lease = OrchestratorStore.lease(from: row) else { continue }
+            foundLeases[lease.resource] = lease
+        }
         var foundSessionDeliveries: [String: SessionDelivery] = [:]
         for row in obj["session_deliveries"] as? [[String: Any]] ?? [] {
             guard let delivery = OrchestratorStore.sessionDelivery(from: row) else { continue }
@@ -12399,6 +12699,7 @@ enum Orchestrator {
         handoffs = foundHandoffs
         rootAssignments = foundRootAssignments
         coordinationWaits = foundWaits
+        leases = foundLeases
         sessionDeliveries = foundSessionDeliveries
         sessionSelfStates = foundSelfStates
         closureAttestations = foundAttestations
@@ -12439,6 +12740,8 @@ enum Orchestrator {
             .map { OrchestratorStore.stored($0) }
         let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
             .map { OrchestratorStore.stored($0) }
+        let leaseRows = leases.values.sorted { $0.resource < $1.resource }
+            .map { OrchestratorStore.stored($0) }
         let sessionDeliveryRows = sessionDeliveries.values
             .sorted { $0.reportedAt < $1.reportedAt }.map { OrchestratorStore.stored($0) }
         let sessionSelfStateRows = sessionSelfStates.values
@@ -12458,6 +12761,7 @@ enum Orchestrator {
         var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
                                   "root_assignments": rootAssignmentRows,
                                   "coordination_waits": waitRows,
+                                  "leases": leaseRows,
                                   "session_deliveries": sessionDeliveryRows,
                                   "session_self_states": sessionSelfStateRows,
                                   "closure_attestations": closureRows,
@@ -12735,6 +13039,9 @@ enum Orchestrator {
         handoffDeliveries = [:]
         rootAssignments = [:]
         coordinationWaits = [:]
+        leases = [:]
+        leaseProbesForTesting = nil
+        leasePolicy = OrchestratorLease.Policy()
         sessionDeliveries = [:]
         sessionSelfStates = [:]
         closureAttestations = [:]

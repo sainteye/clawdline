@@ -91,7 +91,17 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # The stage was measured against 8025 and has been rebased three times since, each onto
 # somebody else's landing rather than anything it changed: 8026 after the reader-paced question
 # steps, 8052 after the terminal-choice setting. 8052 + 35 -> 8087.
-expected_swift_receipt='8087 checks passed'
+# The heavy-compile lease adds 190 checks, and the number is the one the suite reported rather
+# than one read off the source: 8087 -> 8277, measured on the exact staged tree 90c137d5 in the run
+# that this line now guards. Eleven groups: the record three programs share, renewal as the proof of
+# life, the backstop that is necessary and never sufficient, pid recycling and the unpinned locale,
+# the FIFO queue, release and cancel ownership, restart reconciliation, admission degrading to the
+# floor rather than refusing, a holder that is not compiling being reported and still not
+# reclaimable, a heartbeat that outlives its work, and the store round trip. The run before it was
+# red at 4 of 8277 — a briefing that carried a loopback recipe a codex child cannot use, and a
+# route locator that stopped being unique when a second `/release` route existed — so this number
+# is from the repair, not from the delivery.
+expected_swift_receipt='8277 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

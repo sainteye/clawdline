@@ -334,6 +334,164 @@ enum OrchestratorStore {
         ]
     }
 
+    /// The heavy-compile lease, beside the coordination wait it is modelled on.
+    ///
+    /// Only the registry half is stored: the lock directory is the truth and is re-read on every
+    /// decision, so what has to survive a restart is who the broker thought held it, who is
+    /// queued and in what order, and the clocks — never a substitute for the directory itself.
+    static func stored(_ lease: OrchestratorLease.Record) -> [String: Any] {
+        var out: [String: Any] = [
+            "resource": lease.resource,
+            "directory": lease.directory,
+            "reconciliation": lease.reconciliation.rawValue,
+            "queue": lease.queue.map { waiter -> [String: Any] in
+                var row: [String: Any] = [
+                    "request_id": waiter.requestID,
+                    "holder": waiter.owner.label,
+                    "pid": Int(waiter.pid),
+                    "requested_at": waiter.requestedAt.timeIntervalSince1970,
+                    "reason": waiter.reason,
+                ]
+                if let start = waiter.processStart {
+                    row["process_start"] = start.timeIntervalSince1970
+                }
+                if let session = waiter.owner.sessionID { row["session_id"] = session }
+                if let task = waiter.owner.taskID { row["task_id"] = task }
+                if let root = waiter.owner.rootSessionID { row["root_session_id"] = root }
+                return row
+            },
+        ]
+        if let at = lease.reconciledAt { out["reconciled_at"] = at.timeIntervalSince1970 }
+        if let reason = lease.holdReason { out["hold_reason"] = reason }
+        if let reason = lease.livenessReason { out["liveness_reason"] = reason }
+        guard let holder = lease.holder else { return out }
+        var row: [String: Any] = [
+            "lease_id": holder.leaseID,
+            "holder": holder.owner.label,
+            "pid": Int(holder.pid),
+            "acquired_at": holder.acquiredAt.timeIntervalSince1970,
+            "renewed_at": holder.renewedAt.timeIntervalSince1970,
+            "provenance": holder.provenance.rawValue,
+            "work_pids": holder.workPIDs.map(Int.init),
+            "phase": holder.phase.rawValue,
+            "phase_since": holder.phaseSince.timeIntervalSince1970,
+        ]
+        if let compiling = holder.lastCompilingAt {
+            row["last_compiling_at"] = compiling.timeIntervalSince1970
+        }
+        if let start = holder.processStart { row["process_start"] = start.timeIntervalSince1970 }
+        if let session = holder.owner.sessionID { row["session_id"] = session }
+        if let task = holder.owner.taskID { row["task_id"] = task }
+        if let root = holder.owner.rootSessionID { row["root_session_id"] = root }
+        if let tree = holder.tree { row["tree"] = tree }
+        if let log = holder.log { row["log"] = log }
+        if let note = holder.note { row["note"] = note }
+        if let done = holder.doneFlagPath { row["done_flag"] = done }
+        if let beat = holder.heartbeatPath { row["heartbeat"] = beat }
+        if let budget = holder.budget {
+            var budgetRow: [String: Any] = ["parallelism": budget.parallelism,
+                                            "basis": budget.basis]
+            if let headroom = budget.headroomMB { budgetRow["headroom_mb"] = headroom }
+            if let swap = budget.swapFreeMB { budgetRow["swap_free_mb"] = swap }
+            row["budget"] = budgetRow
+        }
+        out["holder"] = row
+        return out
+    }
+
+    /// A stored lease back off disk. A row naming a resource this build does not lease is
+    /// dropped rather than resurrected: the vocabulary is closed, and an unknown one would be a
+    /// lease nothing can ever release.
+    static func lease(from obj: [String: Any]) -> OrchestratorLease.Record? {
+        guard let resource = obj["resource"] as? String,
+              OrchestratorLease.resources.contains(resource),
+              let directory = OrchestratorLease.bounded(obj["directory"] as? String,
+                                                        limit: OrchestratorLease.pathLimit)
+        else { return nil }
+        func owner(_ row: [String: Any]) -> OrchestratorLease.Owner? {
+            guard let label = OrchestratorLease.bounded(row["holder"] as? String,
+                                                        limit: OrchestratorLease.labelLimit)
+            else { return nil }
+            return OrchestratorLease.Owner(
+                sessionID: OrchestratorLease.bounded(row["session_id"] as? String,
+                                                     limit: OrchestratorLease.labelLimit),
+                taskID: OrchestratorLease.bounded(row["task_id"] as? String,
+                                                  limit: OrchestratorLease.labelLimit),
+                rootSessionID: OrchestratorLease.bounded(row["root_session_id"] as? String,
+                                                        limit: OrchestratorLease.labelLimit),
+                label: label)
+        }
+        var seen = Set<String>()
+        let queue: [OrchestratorLease.Waiter] = (obj["queue"] as? [[String: Any]] ?? [])
+            .compactMap { row in
+                guard let id = OrchestratorLease.bounded(row["request_id"] as? String,
+                                                         limit: OrchestratorLease.labelLimit),
+                      seen.insert(id).inserted, let who = owner(row),
+                      let pid = row["pid"] as? Int, pid > 0,
+                      let requested = row["requested_at"] as? Double,
+                      let reason = OrchestratorLease.bounded(row["reason"] as? String,
+                                                             limit: OrchestratorLease.reasonLimit)
+                else { return nil }
+                return OrchestratorLease.Waiter(
+                    requestID: id, owner: who, pid: Int32(pid),
+                    processStart: (row["process_start"] as? Double)
+                        .map(Date.init(timeIntervalSince1970:)),
+                    requestedAt: Date(timeIntervalSince1970: requested), reason: reason)
+            }
+        var record = OrchestratorLease.Record(
+            resource: resource, directory: directory, holder: nil, queue: queue,
+            reconciliation: (obj["reconciliation"] as? String)
+                .flatMap(OrchestratorLease.Reconciliation.init(rawValue:)) ?? .idle,
+            reconciledAt: (obj["reconciled_at"] as? Double)
+                .map(Date.init(timeIntervalSince1970:)),
+            holdReason: OrchestratorLease.bounded(obj["hold_reason"] as? String,
+                                                  limit: OrchestratorLease.labelLimit),
+            livenessReason: OrchestratorLease.bounded(obj["liveness_reason"] as? String,
+                                                      limit: OrchestratorLease.labelLimit))
+        guard let row = obj["holder"] as? [String: Any],
+              let leaseID = OrchestratorLease.bounded(row["lease_id"] as? String,
+                                                      limit: OrchestratorLease.labelLimit),
+              let who = owner(row), let pid = row["pid"] as? Int, pid > 0,
+              let acquired = row["acquired_at"] as? Double,
+              let renewed = row["renewed_at"] as? Double else { return record }
+        var budget: OrchestratorLease.Budget?
+        if let budgetRow = row["budget"] as? [String: Any],
+           let parallelism = budgetRow["parallelism"] as? Int, parallelism > 0,
+           let basis = OrchestratorLease.bounded(budgetRow["basis"] as? String,
+                                                 limit: OrchestratorLease.reasonLimit) {
+            budget = OrchestratorLease.Budget(parallelism: parallelism, basis: basis,
+                                              headroomMB: budgetRow["headroom_mb"] as? Int,
+                                              swapFreeMB: budgetRow["swap_free_mb"] as? Int)
+        }
+        record.holder = OrchestratorLease.Holder(
+            leaseID: leaseID, owner: who, pid: Int32(pid),
+            processStart: (row["process_start"] as? Double)
+                .map(Date.init(timeIntervalSince1970:)),
+            acquiredAt: Date(timeIntervalSince1970: acquired),
+            renewedAt: Date(timeIntervalSince1970: renewed),
+            workPIDs: OrchestratorLease.pids(from: row["work_pids"]),
+            doneFlagPath: OrchestratorLease.bounded(row["done_flag"] as? String,
+                                                    limit: OrchestratorLease.pathLimit),
+            tree: OrchestratorLease.bounded(row["tree"] as? String,
+                                            limit: OrchestratorLease.pathLimit),
+            log: OrchestratorLease.bounded(row["log"] as? String,
+                                           limit: OrchestratorLease.pathLimit),
+            note: OrchestratorLease.bounded(row["note"] as? String,
+                                            limit: OrchestratorLease.reasonLimit),
+            budget: budget,
+            provenance: (row["provenance"] as? String)
+                .flatMap(OrchestratorLease.Provenance.init(rawValue:)) ?? .broker,
+            phase: (row["phase"] as? String)
+                .flatMap(OrchestratorLease.Phase.decode) ?? .unknown,
+            phaseSince: (row["phase_since"] as? Double)
+                .map(Date.init(timeIntervalSince1970:)) ?? Date(timeIntervalSince1970: renewed),
+            lastCompilingAt: (row["last_compiling_at"] as? Double)
+                .map(Date.init(timeIntervalSince1970:)),
+            heartbeatPath: OrchestratorLease.bounded(row["heartbeat"] as? String,
+                                                     limit: OrchestratorLease.pathLimit))
+        return record
+    }
+
     static func stored(_ delivery: Orchestrator.SessionDelivery) -> [String: Any] {
         var out: [String: Any] = [
             "terminal_id": delivery.identity.terminalID,
