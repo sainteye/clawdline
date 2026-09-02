@@ -17,8 +17,8 @@ main_lines=$(line_count Tests/main.swift)
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
-[ "$orchestrator_lines" -le 13592 ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond approved Root Assignment delivery receipt (13592)"
+[ "$orchestrator_lines" -le 12819 ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the store-codec extraction receipt (12819)"
 
 # Task JSON is built on the main queue after a SessionWatch publication lands. Root-terminal
 # projection must therefore consume that publication, not re-enter Transcript/Targets and launch
@@ -57,8 +57,8 @@ if grep -q 'group(' Tests/main.swift; then
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 27 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 27"
+[ "$runner_count" -eq 28 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 28"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -66,8 +66,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 479 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 479"
+[ "$manifest_group_count" -eq 489 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 489"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do
@@ -77,7 +77,7 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 40 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 40"
+[ "$suite_count" -eq 41 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 41"
 
 echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count"

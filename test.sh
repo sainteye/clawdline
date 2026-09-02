@@ -44,7 +44,11 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # 16 for the ceiling itself and for a control-mode client having to be speaking over a pty iTerm2
 # named in the same reading, and 6 for that identity deciding activation and for the activation
 # tail leaving the caller's thread. 7488 -> 7519.
-expected_swift_receipt='7519 checks passed'
+# Extracting the store codec into `OrchestratorStore` adds 399 checks and changes nothing
+# else: ten table-driven codec groups, one check per field per record, plus the legacy-shape
+# fixtures each type's preserved branch is worth. Every pre-existing count is unmoved, which
+# is what makes the relocation behaviour-neutral rather than merely green. 7519 -> 7918.
+expected_swift_receipt='7918 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
