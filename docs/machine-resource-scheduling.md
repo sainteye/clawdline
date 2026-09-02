@@ -84,9 +84,20 @@ while because the answer looked like data:
 | `pgrep -f swift-frontend` | 3 | 1 — the extras were a sampler and a `/usr/bin/time` wrapper whose *arguments* contain the string |
 | `grep` for `-wmo` over a process listing | present | it had matched the searcher's own shell command line |
 | `awk '$0 ~ "\\yvar\\y"'` | 0 crossing variables | macOS `awk` does not support `\y`; `grep -w` found 10 |
+| `swiftc -output-file-map <map>` with absolute keys and relative command-line paths | exit 0, and objects | the map was silently ignored and the objects went to default names in the working directory |
+| a message body built with `python3 -c "..."` in double quotes | `ok: true` from the API | backticks in the text were run as command substitution by the shell and the words vanished before the request was built |
 
-The family is **treating "this text appears in a command line" as "this thing exists"**, and its
-mirror, **treating a matcher's silence as a true zero**. Both have one prescription: before
+The family is one sentence: **taking something that returned success as proof that it did the thing
+you meant.** It has four faces here — text appearing in a command line read as the thing existing;
+a matcher's silence read as a true zero; a zero exit status read as the requested work having
+happened; and an accepted request read as the content having arrived as written. Count the outputs
+before believing the status, and build any body that will carry arbitrary text with a quoted
+heredoc (`<<'EOF'`, which turns off every shell expansion) rather than an interpolating string.
+
+That last one is not a footnote for this design. **A lease's state changes are exactly "arbitrary
+text assembled by a shell and posted to a broker"** — a holder identity, a phase, a log path. A
+field eaten by the shell before the request is built produces a record with different meaning, and
+the broker answers `ok`, because from its side nothing went wrong. Both have one prescription: before
 believing a count, run a positive control that must match — the third row was caught exactly that
 way, by checking a word known to be present and getting 0 from `\y` and 54 from a plain pattern.
 
@@ -155,6 +166,111 @@ owning task that has reached `failure`, `timeout` or `cancelled`, or a session p
 stopped proving liveness whatever a sentinel pid is doing — an answer available immediately rather
 than after a deadline. It remains subject to the backstop: a task that is gone while a compiler
 still runs is a refusal that names the orphan, not a takeover.
+
+### The record, as it was settled
+
+The lock is a directory, because `mkdir` is atomic, and its path is overridable so tests can drive
+it. Inside it:
+
+```
+holder.txt
+  holder=      a readable identity carrying the terminal id, so a blocked run knows who to ask
+  pid=         the process actually doing the work, never a sentinel; when the work is a sequence
+               of processes this names the current one and is refreshed on each beat
+  phase=       compiling | analysing | idle-holding, refreshed on each beat
+  heartbeat=   path of the beat file, which lives inside the lock directory
+  started=     when this holder took the lock
+  tree=        the exact tree being verified
+  log=         where this run's output is going
+  done_flag=   a path the run creates when its work has finished
+beat           the beat file itself, so it disappears with the lock rather than outliving it
+```
+
+**Takeover requires both halves, and neither is sufficient alone.**
+
+```
+(A) the beat file has not been updated inside the threshold   the holder stopped saying it is there
+(B) and no swift-frontend process exists on the machine       the physical backstop, never waived
+```
+
+`(A)` replaces *is that pid alive*, and that is a real improvement: a pid is an operating-system
+by-product, it is reused, and a sentinel's pid outlives the work it was standing in for. A beat is
+something the holder asserts.
+
+`(B)` is not redundant. Used **alone** it is wrong, and that error has already happened here: *no
+compiler is running* reclaims the lock in the gaps between one study's compiles, which is the
+collision the lock exists to prevent. Used as a **necessary** condition it guards the other
+direction, which is the expensive one: a holder that is wedged or heavily swapped can miss a beat
+while its compile still holds tens of gigabytes, and that is exactly the machine state of the two
+reboots — load in the sixties, swap full, processes being chased by Jetsam. Taking over on an
+expired beat alone would start a second compile beside a live one, which is the recipe for the
+next reboot. On a healthy machine `(B)` passes instantly and costs nothing; it only ever blocks
+when the holder is stuck, which is the case it exists for.
+
+There is a second case `(B)` catches, and it is the residue of the correct beat loop below: if the
+**supervisor** is killed — a session boundary, a Ctrl-C reaching the group, an OOM killer picking
+it — while the compiler it spawned survives, the beats stop and the machine keeps burning. Both
+cases have the same shape, *the self-report stopped while the fact continued*, and `(B)` is the
+half that is betting on the fact.
+
+> **The beat is what the holder says. `swift-frontend` is what the machine is. A machine-level
+> resource guard fails closed on the fact, not on the self-report.**
+
+**A beat has to come from something that stops when the work stops**, or it is a sentinel wearing a
+new costume:
+
+```sh
+while true; do touch beat; sleep 60; done &     # wrong — this outlives the work exactly as a sleep does
+```
+
+What is wanted is the supervising loop that is already waiting on the compiler: the same loop that
+`wait`s on it also touches the beat, so the beats stop when the compiler exits or the supervisor is
+killed. The claim a beat makes is *somebody is still supervising this work*, not *a timer is still
+running on this machine*.
+
+```sh
+TMPDIR=... ./test.sh > "$LOG" 2>&1 &
+work=$!
+while kill -0 "$work" 2>/dev/null; do
+  touch "$LOCK/beat"
+  sleep 30
+done
+wait "$work"; rc=$?
+```
+
+The beat is conditional on `kill -0 "$work"`, so the work disappearing ends the loop on its next
+pass. The test that keeps it that way is direct: **start an independent timer touching the beat
+file, kill the supervised compile, and assert the beat stops.** A timer-driven implementation
+keeps beating and fails it, which is the point — otherwise the same defect is rediscovered in six
+months under a new name.
+
+**`phase` is observable and reportable, and is not a takeover condition.** `idle-holding` says *I
+still need this and am not running anything right now* — the third state, which nothing in the
+original record could express:
+
+```
+the holder is gone                      may be taken over
+the holder is alive and using it        must be waited for
+the holder is alive and not using it    may only be asked, never taken     <- invisible from outside
+```
+
+A query must therefore say who holds the lock, how long since it was last `compiling`, and how long
+since the last beat, so that a waiting run knows to **ask** rather than to take, and knows that
+asking is worth doing. Without those fields a queued run can only choose between waiting blindly and
+taking wrongly. On the night this was written that state cost a person one manual lookup of the
+holder's session to resolve, which does not scale — a query that answers only `held` is the picture
+that lookup existed to replace.
+
+**`done_flag` stays a positive signal.** Present means the work is over, so with `(B)` the lock may
+be reclaimed at once without waiting on the beat threshold. Absent proves nothing, because a killed
+run never writes one, so absence falls back to `(A)` and `(B)`. Missing, stale or ambiguous evidence
+is `unknown` and blocks.
+
+The tests that have to be seen failing before they are believed: a holder beating normally at
+`phase=idle-holding` with no compiler running must **not** be taken over, and the query must say so;
+an expired beat with a compiler still running must **not** be taken over, and the refusal must name
+the orphan processes; and an unrelated process whose *arguments* mention `swift-frontend` — a
+sampler, a `/usr/bin/time` wrapper — must leave the guard still answering *none*.
 
 ### Nothing in this design kills or suspends anything
 
@@ -236,6 +352,34 @@ separates the models — with the largest remaining half at `m` suspension point
 per-function quadratic cost predicts `(m/n)²`, a per-function linear cost predicts `m/n`, and a cost
 driven by total output predicts no change at all. Only the last of those says that splitting will not
 help.
+
+### What this means for the scheduler's own justification
+
+Stubbing that one file out of the tree — its two non-private signatures kept, the other 147 files
+compiled normally at `-j 1` — produced a peak of **0.84 GiB and 93 seconds** for the whole codegen,
+against a lower bound of 23.65 GiB with the file present: **about twenty-eight times**. That figure
+is itself a lower bound, taken by two samplers two seconds apart on a 93-second build, and the
+comparison rests on somebody else's instrument; both caveats came from the run that produced it and
+are kept here rather than rounded away.
+
+It is worth being honest about what that does to this page's own argument. **If one file explains
+the peak, then fixing that file removes most of the danger the lease was drawn to contain.** Two
+suites at a gigabyte each do not reboot a 24 GiB machine. What survives the fix is smaller and
+still real: fixed build outputs that collide whatever their size, CPU and I/O contention that makes
+every concurrent run slower, the promotion and restart boundaries that were always exclusive for
+correctness rather than capacity, and the next function nobody has written yet. A lease is
+insurance and a queue, and after the fix it should be described as that rather than as the only
+thing standing between this machine and a reboot.
+
+Which suggests the cheaper half of the remedy is a guard rather than a scheduler. The measured
+shape is specific — one `async` function carrying many suspension points, with the ranking dropping
+off a cliff after the top three — so a static check over the test sources can refuse a new one
+before it is ever compiled, in the same place and style as the trailing-comma check that already
+runs before `swiftc` does. It costs milliseconds, it names the file and the function, and unlike a
+lease it prevents the problem instead of scheduling around it. Its threshold has to be set from the
+ranking after the known offenders are repaired, and the number written down beside the reason,
+because a guard whose constant nobody can justify is the next thing somebody raises to make their
+build pass.
 
 ## The current boundary
 
