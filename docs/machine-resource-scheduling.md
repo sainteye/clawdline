@@ -24,6 +24,50 @@ The rest of the third review's findings are inside the seam and mostly fall out 
 rule this page has been arguing all along applies to itself here: **a defect that keeps coming back
 in new places is a boundary, and patching its instances is how it keeps coming back.**
 
+### The two boundary repairs, written out so the decision is one sentence
+
+Nothing here needs the machine and nothing here is urgent. It is written down now so that whoever
+decides can decide rather than re-derive.
+
+**Boundary 1 — whoever starts a renewer refreshes the beat first.**
+
+*The invariant, not the fix:* a lock is never observable as unbeaten while a run holds it. Today the
+acquire path satisfies that by accident of ordering — it writes the record before starting the
+renewer — and the confirm path does not, because restarting a dead renewer is written as a separate
+step and the restarted loop sleeps before its first tick.
+
+*The structural answer:* one function that beats and then starts the renewer, used by both callers,
+so the ordering cannot be got wrong by writing the two lines in the other order. That removes the
+whole class rather than this instance: any future third caller inherits it.
+
+*What it excludes:* the twenty-second window in which `confirm` has returned success and every
+waiter reads the lock as stale.
+
+**Boundary 2 — a refusal cannot be produced without being recorded.**
+
+*The invariant:* every refusal a caller can see is also a refusal the projections can see. Today
+**eighteen places construct a `Refusal`, and the one function that records it is reached from two of
+them**; `queue_full` builds one inline inside its `Decision` and never writes `lastRefusal`, so a
+session turned away by the queue cap is indistinguishable, in Bearings and the Session overlay both,
+from one that never asked.
+
+*The structural answer:* make the unrecorded construction impossible rather than discouraged — a
+single entry point that returns the `Decision`, or a type that cannot be built outside it. Sixteen
+of the eighteen are correct today by care alone.
+
+*What it excludes:* the class this repository has now named three times — the first review's F12,
+the second's F3, the third's F2.
+
+**What it costs to leave both.** The first is a window of one renewal interval, twenty seconds
+against a five-second poll: four chances for a second run to enter a section somebody holds. It
+needs a renewer to have died *and* a second run to be waiting, which is to say it needs the
+concurrency this feature exists for; it has not been observed. The second costs no correctness at
+all — it costs a person looking at a stalled queue the ability to tell *refused* from *never asked*,
+which is the distinction the projections were built to keep.
+
+**After the repair, the review reads the two boundaries** — not a fourth round of patches over the
+same seam. That is what taking the hold is for.
+
 This page was a proposal until it was built. `CLAWDLINE_SUITE_JOBS` landed in
 `test.sh` as `54891280`; `test.sh` takes the machine lock itself as of `10130e45`; the broker lease,
 its queue, its routes and the Bearings and Session projections landed as `2eef7bb6` and were
