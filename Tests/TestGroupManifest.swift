@@ -502,6 +502,15 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the session self-state codec keeps both halves and refuses a third claim",
     "the task codec keeps every field across a full and a minimal record",
     "the task codec still reads the shapes older builds wrote",
+    "holder.txt is the shape three programs share, and an unusable one is not an empty lock",
+    "liveness is proved by renewal, so a sentinel pid cannot hold a lock open",
+    "the physical backstop is never waived, and neither half admits anybody alone",
+    "a recycled pid reads as gone, and an unpinned locale reads as unknown rather than dead",
+    "the queue is FIFO, observable, and joining it does not jump it",
+    "release and cancel belong to the sessions that own them",
+    "a restart reconciles from the directory it never stopped owning",
+    "admission degrades to one compiler rather than refusing, and the gate has a named door",
+    "the lease record survives a store round trip",
 ]
 
 func validateExecutedTestGroupManifest() {

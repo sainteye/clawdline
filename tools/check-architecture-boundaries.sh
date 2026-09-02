@@ -16,10 +16,10 @@ main_lines=$(line_count Tests/main.swift)
 [ "$main_lines" -le 500 ] \
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
-orchestrator_ceiling=12819
+orchestrator_ceiling=13127
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
-  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the store-codec extraction receipt ($orchestrator_ceiling)"
+  || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the heavy-compile lease receipt ($orchestrator_ceiling)"
 
 # Task JSON is built on the main queue after a SessionWatch publication lands. Root-terminal
 # projection must therefore consume that publication, not re-enter Transcript/Targets and launch
@@ -49,18 +49,18 @@ if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.session
   architecture_guard_fail "Orchestrator task records re-scan Transcript/Targets on the main queue"
 fi
 
-remote_server_ceiling=6426
+remote_server_ceiling=6463
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ "$remote_server_lines" -le "$remote_server_ceiling" ] \
-  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond approved TCP close-reclamation receipt ($remote_server_ceiling)"
+  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond the heavy-compile lease receipt ($remote_server_ceiling)"
 
 if grep -q 'group(' Tests/main.swift; then
   architecture_guard_fail "new domain group found in Tests/main.swift"
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 28 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 28"
+[ "$runner_count" -eq 29 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 29"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -68,8 +68,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 494 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 494"
+[ "$manifest_group_count" -eq 503 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 503"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do
@@ -79,8 +79,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 41 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 41"
+[ "$suite_count" -eq 42 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 42"
 
 # The governance table in docs/architecture-refactor.md drifted three times — 480 when the guard
 # held 479, 7,918 when the suite observed 7,941, 490 when it observed 494 — and every time for the

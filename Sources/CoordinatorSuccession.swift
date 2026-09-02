@@ -448,6 +448,7 @@ enum CoordinatorSuccessionHTTP {
 extension RemoteServer {
     func coordinatorInspection(_ observation: CoordinatorObservation) -> [String: Any] {
         let registry = observation.registry
+        let leaseFacts = Orchestrator.leaseBearings()
         return Coordinator.inspection(
             liveSessions: observation.sessions,
             bearings: .init(
@@ -456,6 +457,9 @@ extension RemoteServer {
                 pendingLandingCount: registry.pendingLandings,
                 pendingLandingRows: registry.pendingLandingRows,
                 openWaitCount: registry.openWaits,
+                leaseState: leaseFacts.state, leaseHolder: leaseFacts.holder,
+                leaseQueueDepth: leaseFacts.queueDepth,
+                leaseHoldReason: leaseFacts.holdReason,
                 sessionsObservedAt: observation.sessionsObservedAt,
                 registryObservedAt: registry.observedAt,
                 sessionsGeneration: observation.sessionsGeneration))

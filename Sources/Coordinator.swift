@@ -44,19 +44,33 @@ enum Coordinator {
         let pendingLandingCount: Int
         let pendingLandingRows: [[String: Any]]
         let openWaitCount: Int
+        /// The heavy-compile lease, as four separate facts. `leaseState` keeps `missing`,
+        /// `zero`, `unknown`, `queued` and `held` apart on purpose: a single spinner would
+        /// collapse exactly the states this exists to show, and "no record yet" is not
+        /// "nobody is compiling".
+        let leaseState: String
+        let leaseHolder: String?
+        let leaseQueueDepth: Int
+        let leaseHoldReason: String?
         let sessionsObservedAt: Date?
         let registryObservedAt: Date?
         let sessionsGeneration: Int?
 
         init(sessionsFresh: Bool, activeTaskCount: Int, pendingLandingCount: Int,
              pendingLandingRows: [[String: Any]] = [],
-             openWaitCount: Int, sessionsObservedAt: Date? = nil,
+             openWaitCount: Int, leaseState: String = "missing", leaseHolder: String? = nil,
+             leaseQueueDepth: Int = 0, leaseHoldReason: String? = nil,
+             sessionsObservedAt: Date? = nil,
              registryObservedAt: Date? = nil, sessionsGeneration: Int? = nil) {
             self.sessionsFresh = sessionsFresh
             self.activeTaskCount = activeTaskCount
             self.pendingLandingCount = pendingLandingCount
             self.pendingLandingRows = pendingLandingRows
             self.openWaitCount = openWaitCount
+            self.leaseState = leaseState
+            self.leaseHolder = leaseHolder
+            self.leaseQueueDepth = leaseQueueDepth
+            self.leaseHoldReason = leaseHoldReason
             self.sessionsObservedAt = sessionsObservedAt
             self.registryObservedAt = registryObservedAt
             self.sessionsGeneration = sessionsGeneration
@@ -539,6 +553,9 @@ enum Coordinator {
             "pending_landing_count": max(0, input.pendingLandingCount),
             "pending_landings": input.pendingLandingRows,
             "open_wait_count": max(0, input.openWaitCount),
+            // Four fields rather than one word, so a reader can tell "nobody has ever taken it"
+            // from "nobody holds it now" from "the lock exists and cannot be read".
+            "heavy_compile_lease": leaseFacts(input),
             "unknown": unknown,
             "waiting": waiting,
             "blocking": blocking,
@@ -549,7 +566,13 @@ enum Coordinator {
                 "landings": source("orchestrator_landing_registry", "current",
                                    input.registryObservedAt),
                 "waits": source("orchestrator_coordination_wait_registry", "current",
-                                input.registryObservedAt)
+                                input.registryObservedAt),
+                // The lock directory is the truth and this projection does not re-read it: the
+                // freshness word says so, so a reader never mistakes a redraw for an observation
+                // of the filesystem.
+                "leases": source("orchestrator_lease_registry",
+                                 input.leaseState == "missing" ? "missing" : "current",
+                                 input.registryObservedAt)
             ]
         ]
         return ["version": 1, "observed_at": observed,
@@ -654,7 +677,7 @@ enum Coordinator {
         var bearings: [String: Any] = [:]
         if let record = full["bearings"] as? [String: Any] {
             for key in ["observed_at", "coordinator_lifecycle", "work_state_counts",
-                    "closeability_counts",
+                    "closeability_counts", "heavy_compile_lease",
                         "active_task_count", "pending_landing_count", "open_wait_count"] {
                 if let value = record[key] { bearings[key] = value }
             }
@@ -680,6 +703,15 @@ enum Coordinator {
                 "observed_at": full["observed_at"] ?? Int(now.timeIntervalSince1970),
                 "registration": ["state": registrationState],
                 "coordinator": coordinator, "bearings": bearings]
+    }
+
+    /// The lease facts, kept as separate keys rather than folded into one status word.
+    static func leaseFacts(_ input: BearingsInput) -> [String: Any] {
+        var out: [String: Any] = ["state": input.leaseState,
+                                  "queue_depth": max(0, input.leaseQueueDepth)]
+        out["holder"] = input.leaseHolder ?? NSNull()
+        if let reason = input.leaseHoldReason { out["hold_reason"] = reason }
+        return out
     }
 
     private static func allowedSession(_ row: [String: Any]) -> [String: Any] {
