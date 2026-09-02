@@ -1237,9 +1237,13 @@ enum ITerm {
                 secondSource: observation.isComplete
                     ? .tmux(controlModeClients: observation.clients.count)
                     : .unavailable(observation.error?.message ?? "tmux did not answer"))
-            if attribution.lowersConfidence {
+            if attribution.lowersConfidence, let reason = attribution.error {
                 snap.isComplete = false
-                snap.error = attribution.error ?? snap.error
+                // Added to whatever already lowered this scan rather than written over it. A
+                // failed process scan and an unattributed pty-less row are two different things
+                // to have gone wrong, and `error` is one slot: the reader who needs the second
+                // one is exactly the reader for whom the first was not the whole story.
+                snap.error = [snap.error, reason].compactMap { $0 }.joined(separator: "; ")
             }
         }
 

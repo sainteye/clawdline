@@ -69,7 +69,9 @@ group("an iTerm2 row with no pty is attributed rather than dropped") {
            ITerm.attributableRows(rows).compactMap { $0["id"] as? String }, ["A", "C"])
     check("the tmux gateway keeps its own row",
           ITerm.attributableRows(rows).contains { $0["tty"] as? String == "/dev/ttys006" })
-    expect("a scan with no such row asks nothing of tmux",
+    // Zero is the answer the ordinary scan gets, and it is what keeps `snapshot` from asking
+    // tmux anything at all on a Mac with no control-mode session open.
+    expect("an ordinary scan counts none of them",
            ITerm.ptylessRowCount([row("A", tty: "/dev/ttys006")]), 0)
 
     // The marker is one string key shared across two languages. If either side renames it the
