@@ -856,3 +856,29 @@ items:
       guesswork with it. Do not rebuild this on iTerm2 captures without new evidence that the
       terminal's drawn shapes have a contract.
     opened: 2026-09-02
+
+  - id: B-ONE-SETTING-DECIDES-TWO-THINGS
+    title: The hotkey's scope also decides which terminal a new session opens in
+    problem: >-
+      `Config.scopeApp` was written to say where ⌥Space is live, and
+      `StartPoints.plan(scope:running:hasTmux:)` reads the same value to choose a backend. So the
+      two cannot be set apart: somebody who wants the hotkey to stay bound to iTerm2 has no way to
+      ask for new sessions in tmux, and somebody who changes it for the terminal loses the hotkey
+      binding they had. The order inside `plan` makes it sharper than a naming problem — iTerm2
+      running short-circuits to `.iterm` before tmux is considered at all, so a person who has
+      turned on iTerm2's own tmux control mode still gets plain iTerm2 tabs and no explanation.
+    evidence: >-
+      Read on 2026-09-02 against `03616237`. `Config.swift:142` defaults `scopeApp` to
+      `com.googlecode.iterm2` with a doc comment about the hotkey; `StartPoints.swift:200` is the
+      only other reader and uses it to pick the backend. On this Mac `scope_app` is that default
+      and iTerm2 was running, so `plan` returned `.iterm` while a live `tmux -CC` session sat
+      beside it. The user asked "does a new session use tmux, or do I have to do something first"
+      and neither answer was reachable from Settings.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      The user chose an independent default-terminal setting on 2026-09-02, over the manual
+      workaround and over going straight to tmux-by-default. It waits on the tmux read-parity
+      slice dispatched the same day as task `920276a6`, which holds `Sources/StartPoints.swift`.
+    opened: 2026-09-02
