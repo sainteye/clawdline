@@ -86,6 +86,21 @@ manifest_group_count=$(awk '
 # pass pipeline after IRGen, which is superlinear in function size; async lowering is merely what
 # grew one function that large. The rule is "do not let one function get that big".
 #
+# Correction to 0ae16887's commit message, which said a later run "was sampled at 3.44 GB and
+# finished without approaching 46 GiB" and offered that as an open question about the world. Both
+# halves are wrong, and the error is the one this repository keeps making: comparing two different
+# instruments. 3.44 GB was a sampled RSS; 46.06 GiB is ri_lifetime_max_phys_footprint. RSS counts
+# only resident, uncompressed pages, so a process whose pages the compressor has eaten reads low
+# and harmless. That run also never finished -- its log ends in `signal 15`, and it never reached
+# the file at all. What the machine did while it ran: swap file grown 10,240 -> 21,504 MB in four
+# minutes, compressor 0.86 -> 12.36 GB, free pages pinned at 0.07 GB, and within thirty seconds of
+# the kill: compressor -10.9 GB, swap used -9.7 GB, free +13 GB. A 3.44 GB process cannot do that.
+# The honest open item is narrower: 46.06 GiB has been observed once, in one completed isolated
+# compile; the second run that would have tested it was aborted, so there is no second reading.
+# Recording it as "the same file only reached 3.44 GB elsewhere" would send the next person hunting
+# a condition that does not exist -- the gap between those two numbers is the instrument, not the
+# world.
+#
 # This is a ratchet at today's worst value, not a target. runCloudCommandLedgerTests sits at 131 --
 # under the cliff, cheap today at 954 MiB, and about a dozen awaits from being what crashed this
 # machine twice. It has to come down; until it does, this stops it climbing and stops anything else

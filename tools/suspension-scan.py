@@ -10,6 +10,24 @@
 # runCloudAccountTests at line 1358 instead of 1567, under-reporting 143 awaits as 87. A validated
 # simple counter beats an unvalidated clever one -- and the validation is the point: this script is
 # checked against three independently known values before anything trusts it.
+#
+# The control set, kept here so the next person to change this scanner has one ready to re-run
+# rather than having to trust that somebody once validated it:
+#
+#   Tests/CloudAccountTests.swift        runCloudAccountTests        143   (before the split)
+#   Tests/CloudCommandLedgerTests.swift  runCloudCommandLedgerTests  131
+#   Tests/CloudTransportTests.swift      runCloudTransportTests       61
+#
+# Those three came from independent per-file peak measurements on 2026-09-03, not from this
+# script. Two earlier versions of it failed that control set: one special-cased multi-line string
+# literals and reported 143 as 87; another counted nested functions into their parent and reported
+# the split file as 171 instead of 15.
+#
+# The second failure is the dangerous one and is why the nesting rule is not an optimisation. A
+# nested function is its own coroutine, so counting its awaits into the parent makes a correctly
+# split file look untouched -- the guard would say "you did not fix it" at the exact moment
+# somebody had. A guard that only ever over-reports is worse than no guard, because the first
+# person it blocks raises the threshold to get past it.
 import re, sys, pathlib
 
 FUNC = re.compile(r"^(\s*)(?:private |fileprivate |public |internal |static |final )*func\s+([A-Za-z0-9_]+)")
