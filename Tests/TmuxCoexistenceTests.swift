@@ -535,11 +535,29 @@ group("one tmux subprocess answers for every pane in a reading") {
     let wedged = makeFakeTmux(hanging: true)
     defer { wedged.cleanup() }
     Tmux.binaryForTesting = wedged.binary
-    Tmux.subprocessTimeoutForTesting = 0.2
+    // **The deadline has to outlast starting a shell, not just outlast the hang.** The fake
+    // records the call on its third line and only then sleeps, so a deadline that fires before
+    // `/bin/sh` gets that far kills it with nothing written — and the check below then reads 0
+    // and reports the fallback defect, which did not happen. That is a false red, and a check
+    // that can go falsely red costs exactly what one that cannot go red costs: it makes "it went
+    // red" mean nothing. Reported from a full-suite run on 2026-09-03 while the machine was
+    // compiling continuously; three focused runs of the same group were green.
+    //
+    // Measured on this Mac the same day, spawn to recorded line: 21-29 ms idle, 27-38 ms under
+    // eight busy cores. Two seconds is fifty times the worst of those and still well inside the
+    // fake's five-second sleep, so the deadline is what fires and the timeout path is still what
+    // is being exercised. The suite pays that two seconds once.
+    Tmux.subprocessTimeoutForTesting = 2.0
     let timedOut = Tmux.capture(panes: (1...10).map { "%\($0)" }, scrollback: 0)
     Tmux.subprocessTimeoutForTesting = nil
     expect("a reading that ran out of time answers for no pane", timedOut.count, 0)
-    expect("and costs one deadline rather than one per pane", wedged.calls.count, 1)
+    // Said as three cases rather than one, so the next person to see this red is told which of
+    // them happened instead of going to look for a product defect that is not there.
+    check("and costs one deadline rather than one per pane", wedged.calls.count == 1,
+          wedged.calls.count == 0
+            ? "the fake tmux recorded nothing: the deadline fired before the shell could start, "
+              + "so this says nothing about the fallback — the fixture was starved, not the code"
+            : "\(wedged.calls.count) invocations: the batch fell back to reading pane by pane")
 
     // The same for a socket nobody could reach. Asking again pane by pane cannot answer what the
     // batch could not, and on the Mac where tmux has never run it is one failure per pane.
