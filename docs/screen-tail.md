@@ -66,10 +66,17 @@ another one. A rule that reads them is a rule that is one release away from bein
 
 ## What replaces it
 
-tmux. `Tmux.capture(scrollback:)` already answers with history rather than with a window, which
-removes the wall this road died on and most of the guesswork with it: nothing has to be
-reconstructed from overlapping windows, so none of the redraw, alignment or boundary rules above
-need to exist at all.
+tmux. `Tmux.capture(scrollback:)` answers with history rather than with a window, which removes
+the wall this road died on: nothing has to be reconstructed from overlapping captures, so the
+redraw and alignment rules stop needing to exist.
+
+**It does not remove the rest, and that is worth saying plainly.** Scrollback answers *can I get
+the text*. It says nothing about *which of these lines is somebody speaking*. A tmux history still
+holds the startup banner and its slogan, tool arguments drawn at five columns, the picker's own
+question, and Markdown rendered rather than written — so the last four walls above are still
+walls, and they are precisely the ones that were found by a person looking at a phone rather than
+by a test. What changes is that they can be met with the whole conversation in hand instead of
+sixty rows of it.
 
 ## What was kept
 
