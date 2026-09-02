@@ -760,6 +760,8 @@ group("which terminal a session is started in, and when none of them will do") {
     expect("iTerm2 by name, and open", plan(.iterm, [iterm, ghostty], .running), .iterm)
     expect("iTerm2 by name and shut is a refusal, not a fallback into tmux",
            plan(.iterm, [ghostty], .running), .notRunning(app: iterm))
+    expect("and the same refusal when there is no tmux to have fallen into",
+           plan(.iterm, [ghostty], .absent), .notRunning(app: iterm))
 
     // **The case the old setting could not say at all.** `scope_app` was the default
     // `com.googlecode.iterm2`, iTerm2 was running, and a live `tmux -CC` session sat beside it —
@@ -810,6 +812,14 @@ group("which terminal a session is started in, and when none of them will do") {
                         atomically: true, encoding: .utf8)
         return Config(directoryForTesting: directory)
     }
+    // **The raw values are the file format**, and the Settings pop-up's values as well. Renaming
+    // a case is not a rename: `config.json` keeps the old word, the value stops parsing, and the
+    // unreadable branch below quietly migrates everybody off the answer they chose — silently,
+    // because that branch cannot tell a typo from a key that was never there.
+    expect("the three answers a config file may hold",
+           StartPoints.TerminalChoice.allCases.map(\.rawValue), ["auto", "iterm", "tmux"])
+
+    expect("a file that says nothing at all opens iTerm2 tabs", config("{}").terminal, .auto)
     expect("a file with no such key and the shipped scope opens iTerm2 tabs",
            config("{\"scope_app\": \"\(iterm)\"}").terminal, .auto)
     expect("a file with no such key whose scope names another terminal keeps its tmux",
@@ -1133,6 +1143,36 @@ group("the page is given the words it draws the start sheet with") {
     }.map { $0.tag }.sorted()
     check("every language keeps the hole the terminal's name goes in", holeless.isEmpty,
           holeless.joined(separator: ", "))
+
+    // **And the hole has to be told when there is no name for it.** `terminal_unsupported` stopped
+    // carrying an `app` when the terminal setting became a choice of backend rather than a bundle
+    // id: the refusal is now *tmux is what Settings asks for and there is no tmux here*, which is
+    // not an application and has no name to hand the page. A site that writes the sentence anyway
+    // draws "A session cannot be started in  from here", which is the exact sentence dropping the
+    // name was meant to prevent. The condition is read rather than the line, because the guard and
+    // the call are on the same line in two of these files and on different lines in the third.
+    func refusalCondition(_ page: String, _ code: String) -> String {
+        let source = (try? String(contentsOfFile: "Resources/web/app/js/input/\(page).js",
+                                  encoding: .utf8)) ?? ""
+        guard let answered = source.range(of: "\"\(code)\""),
+              let opened = source.range(of: "if (", options: .backwards,
+                                        range: source.startIndex..<answered.lowerBound),
+              let closed = source.range(of: ")", range: answered.upperBound..<source.endIndex)
+        else { return "" }
+        return String(source[opened.upperBound..<closed.lowerBound])
+    }
+    let namedRefusals = ["start", "command", "schedule-history"].flatMap { page in
+        ["terminal_closed", "terminal_unsupported"].map { (page: page, code: $0) }
+    }
+    let unread = namedRefusals.filter { refusalCondition($0.page, $0.code).isEmpty }
+    check("every page that answers a terminal refusal was found and read", unread.isEmpty,
+          "no branch found for: " + unread.map { "\($0.page).js/\($0.code)" }
+            .joined(separator: ", "))
+    let unnamed = namedRefusals.filter { !refusalCondition($0.page, $0.code).contains("e.app") }
+    check("and each asks whether there is a name before writing the sentence that needs one",
+          unnamed.isEmpty,
+          unnamed.map { "\($0.page).js: \(refusalCondition($0.page, $0.code))" }
+            .joined(separator: " | "))
 
     // And they arrive in the language that was asked for, which is the entire reason the page
     // fetches this before it draws anything.

@@ -595,6 +595,7 @@ claude
 | --- | --- | --- |
 | `hotkey` | `option+space` | cmd / option / control / shift ＋ 一個鍵 |
 | `scope_app` | `com.googlecode.iterm2` | 逗號分隔多個；`""` ＝ 全域生效 |
+| `terminal` | `auto` | 新 session 開在哪個終端機：`auto`、`iterm`、`tmux`——和熱鍵的生效範圍是兩回事 |
 | `y_fraction` · `width` | `0.30` · `720` | 輸入條落在哪、有多寬 |
 | `language` | `auto` | 或任一個標籤：`ja`、`pt`、`zh-Hant`⋯ |
 | `mascot` · `notch` | `clawd` · `true` | 角色，以及要不要住在瀏海裡 |

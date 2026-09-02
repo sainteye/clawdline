@@ -672,6 +672,25 @@ group("a screen read to decide something is the screen, not its history") {
     check("a caller may say how much of it it wants",
           (Targets.screenWithHistory(of: pane, lines: 40) ?? "").contains("-S -40"))
 
+    // **`docs/interface.md` names that depth in prose, and nothing connected the two.** The
+    // sentence is true today, and a slice two days ago came within one edit of making it a lie:
+    // the number lives in a default argument nobody reading the page would think to look at. So
+    // the page is compared with what the default actually asks tmux for, the same way this file
+    // already compares it with `Tmux.attachCommand` rather than with a transcribed string.
+    let arguments = shown.split(separator: " ").map(String.init)
+    let depth = arguments.firstIndex(of: "-S").flatMap { flag -> String? in
+        let value = arguments.index(after: flag)
+        // `-S -200` counts backwards from the bottom of the screen; the page says how many lines
+        // that is, so the sign goes.
+        return value < arguments.endIndex ? String(arguments[value].dropFirst()) : nil
+    } ?? ""
+    check("the default history depth is readable out of what the capture asked for",
+          Int(depth) != nil, "asked: \(shown)")
+    let interfaceNote = (try? String(contentsOfFile: "docs/interface.md", encoding: .utf8)) ?? ""
+    check("and docs/interface.md names that depth rather than one of its own",
+          !depth.isEmpty && interfaceNote.contains("plus \(depth) lines of history"),
+          "asked for \(depth) lines; docs/interface.md read \(interfaceNote.count) characters")
+
     // **Why it matters, in the one place a tail window does not save it.** `SessionState.menu`
     // reads the last thirty non-empty lines and `Activity.parse` the last twenty-five, so history
     // is inert for them. `briefingInputReady` looks for a bare composer *anywhere* in the text it

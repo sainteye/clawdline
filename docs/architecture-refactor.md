@@ -474,7 +474,7 @@ a full suite on 2026-09-02:
 | ordered groups | 463 | 494 |
 | ordered runners | 25 | 28 |
 | suite files | 38 | 41 |
-| Swift checks | — | 8,026 |
+| Swift checks | — | 8,052 |
 | `Orchestrator.swift` ceiling | 13,592 | 12,819 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,426 |
 
@@ -482,6 +482,13 @@ That row reads 8,026 rather than the 8,025 observed after Cut 1: the multi-quest
 confirmation guard added one check on 2026-09-02 (`4273990a`). It is written here because the guard
 now asserts this table, which is the mechanism the paragraph below asked for — the first landing to
 move a count after that change is the one that proves it works, and this is that landing.
+
+**And it worked on the next one.** Giving the terminal a setting of its own — `Config.terminal` and
+`StartPoints.TerminalChoice`, split out of the hotkey's scope — moves that row to **8,052**, 26
+checks, in two groups and no new group, runner or suite file. The count was moved here in the same
+edit as `test.sh`'s `expected_swift_receipt` because the guard reads both and refuses to agree with
+one of them; the arithmetic behind the 26 is written out beside that variable, and the number in
+both places is the one a full suite observed rather than the one the arithmetic predicted.
 
 **The correction itself needed correcting three times, always the same way, and the third time an
 independent reviewer had to catch it.** The section first said the guard held 480 ordered groups; at
