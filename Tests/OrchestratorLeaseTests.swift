@@ -20,17 +20,21 @@ private func leaseRequest(_ id: String, label: String, pid: Int32 = 4_242,
         requestID: id, resource: OrchestratorLease.heavyCompile,
         owner: leaseOwner(label, session: session, task: task), pid: pid, processStart: start,
         reason: "compiling the suite", tree: "/tmp/tree", log: "/tmp/log", note: nil,
-        workPIDs: [], doneFlagPath: nil, pressureOverride: override)
+        workPIDs: [], doneFlagPath: nil, phase: .analysing, pressureOverride: override)
 }
 
 private func leaseHolder(_ id: String, label: String, pid: Int32 = 4_242,
                          renewedAt: Date, session: String? = nil,
-                         work: [Int32] = []) -> OrchestratorLease.Holder {
+                         work: [Int32] = [],
+                         phase: OrchestratorLease.Phase = .compiling,
+                         phaseSince: Date = leaseNow,
+                         lastCompilingAt: Date? = leaseNow) -> OrchestratorLease.Holder {
     OrchestratorLease.Holder(
         leaseID: id, owner: leaseOwner(label, session: session), pid: pid,
         processStart: leaseNow, acquiredAt: leaseNow, renewedAt: renewedAt, workPIDs: work,
         doneFlagPath: nil, tree: "/tmp/tree", log: "/tmp/log", note: nil, budget: nil,
-        provenance: .broker)
+        provenance: .broker, phase: phase, phaseSince: phaseSince,
+        lastCompilingAt: lastCompilingAt)
 }
 
 private func heldRecord(_ holder: OrchestratorLease.Holder,
@@ -66,10 +70,11 @@ func runOrchestratorLeaseTests() {
 
 group("holder.txt is the shape three programs share, and an unusable one is not an empty lock") {
     let file = OrchestratorLease.HolderFile(
-        holder: "root af1b83ba", pid: 72_929,
+        holder: "root af1b83ba terminal 7E3C25BF", pid: 72_929,
         started: Date(timeIntervalSince1970: 1_788_365_342), tree: "/Users/x/code/clawdline",
         log: "/tmp/suite.log", note: "full swift suite", work: [81_001, 81_002],
-        done: "/tmp/clawdline-suite.lock/done", renewed: leaseNow)
+        done: "/tmp/clawdline-suite.lock/done", renewed: leaseNow, phase: .compiling,
+        heartbeat: "/tmp/clawdline-suite.lock/beat")
     let text = OrchestratorLease.encode(file)
     guard let parsed = OrchestratorLease.parseHolderFile(text) else {
         check("a written holder file reads back", false); return
@@ -78,8 +83,9 @@ group("holder.txt is the shape three programs share, and an unusable one is not 
     check("the six original fields are all present as key=value lines",
           ["holder=", "pid=", "started=", "tree=", "log=", "note="]
             .allSatisfy { text.contains("\n" + $0) || text.hasPrefix($0) })
-    check("and the three additive ones are too",
-          ["work=", "done=", "renewed="].allSatisfy { text.contains("\n" + $0) })
+    check("and the three additive ones are written under the keys the lock really uses",
+          ["work=", "done_flag=", "renewed=", "phase=", "heartbeat="]
+            .allSatisfy { text.contains("\n" + $0) })
 
     // A shell holder that writes only the original six is still a holder. The additive fields
     // are optional by construction, which is what lets test.sh land before or after this.
@@ -98,6 +104,7 @@ group("holder.txt is the shape three programs share, and an unusable one is not 
     expect("an empty note is absent rather than empty", shell.note, nil)
     expect("no work pids is an empty list, not a guess", shell.work, [])
     expect("and no renewal stamp is nil", shell.renewed, nil)
+    expect("a holder that records no phase is `unknown`, not a guess", shell.phase, .unknown)
 
     // The bytes of the lock that was actually held on this Mac at 02:20 on 2026-09-03, copied
     // rather than invented. A hand-written fixture would have agreed with the parser and hidden
@@ -157,7 +164,7 @@ group("liveness is proved by renewal, so a sentinel pid cannot hold a lock open"
     let liveness = OrchestratorLease.liveness(
         renewedAt: lapsed, owner: .unknown, doneFlag: .absent, now: leaseNow)
     expect("a holder that stopped refreshing has stopped proving it is alive",
-           liveness, .stopped("renewal_lapsed"))
+           liveness, .stopped("heartbeat_lapsed"))
     expect("and its sentinel process being alive changes nothing",
            OrchestratorLease.identity(recordedStart: leaseNow, observed: sentinelStillAlive),
            .alive)
@@ -178,7 +185,7 @@ group("liveness is proved by renewal, so a sentinel pid cannot hold a lock open"
            OrchestratorLease.liveness(renewedAt: leaseNow.addingTimeInterval(-20),
                                       owner: .live, doneFlag: .absent,
                                       now: leaseNow.addingTimeInterval(14_400)),
-           .stopped("renewal_lapsed"))
+           .stopped("heartbeat_lapsed"))
     expect("while a four-hour compile that keeps renewing is alive, because the clock is on "
            + "the proof of life and never on the work",
            OrchestratorLease.liveness(renewedAt: leaseNow.addingTimeInterval(14_380),
@@ -217,7 +224,7 @@ group("liveness is proved by renewal, so a sentinel pid cannot hold a lock open"
 }
 
 group("the physical backstop is never waived, and neither half admits anybody alone") {
-    let stopped = OrchestratorLease.Liveness.stopped("renewal_lapsed")
+    let stopped = OrchestratorLease.Liveness.stopped("heartbeat_lapsed")
     let proving = OrchestratorLease.Liveness.proving
 
     expect("(A) alone does not admit: a lapsed holder whose compile still burns keeps the lock",
@@ -233,6 +240,54 @@ group("the physical backstop is never waived, and neither half admits anybody al
     expect("and it blocks even when the holder is plainly proving",
            OrchestratorLease.takeover(liveness: proving, compilers: .unknown("ps timed out")),
            .evidenceUnknown("ps timed out"))
+
+    // ROOT'S SECOND REQUIRED RED, in full. A holder whose heartbeat lapsed while a compiler is
+    // still running keeps the lock, and the refusal names the orphan pids. A build with (B)
+    // removed lets this through and starts a second driver beside a compile that is still
+    // burning 46 GB — which is the 01:24 and 01:45 reboots.
+    let lapsed = OrchestratorLease.liveness(
+        renewedAt: leaseNow.addingTimeInterval(-3_600), owner: .unknown, doneFlag: .absent,
+        beat: leaseNow.addingTimeInterval(-3_600), now: leaseNow)
+    expect("a heartbeat an hour old has stopped proving", lapsed, .stopped("heartbeat_lapsed"))
+    let refused = OrchestratorLease.takeover(liveness: lapsed, compilers: .present([9_101, 9_102]))
+    expect("and it is still not reclaimable, because a compiler is running",
+           refused, .compilersRunning([9_101, 9_102]))
+    if case .compilersRunning(let orphans) = refused {
+        expect("the refusal names the orphans, for a person, never as a target list",
+               orphans, [9_101, 9_102])
+    } else {
+        check("the refusal names the orphans", false)
+    }
+    expect("with the code a waiter branches on", refused.code, "compiler_running")
+
+    // ROOT'S THIRD REQUIRED RED. `pgrep -f` matches arguments, so a sampler or a
+    // `/usr/bin/time swift-frontend …` wrapper reads as a running compiler and the guard answers
+    // the opposite of the truth. This scan matches the executable's own basename and nothing
+    // else, so every decoy below is correctly not a compiler.
+    let decoys = """
+      601 /usr/bin/time
+      602 /Users/x/bin/swift-frontend-sampler
+      603 /bin/sh
+      604 swift-frontendish
+      605 /Users/x/swift-frontend.old
+    """
+    expect("a process merely mentioning swift-frontend is not a compiler",
+           OrchestratorLease.parseCompilerScan(decoys, status: 0, timedOut: false), .none)
+
+    // And against the real `ps` on this machine, with a real decoy this test starts: a process
+    // whose *arguments* contain the word and whose executable does not.
+    let decoy = Process()
+    decoy.executableURL = URL(fileURLWithPath: "/bin/sh")
+    decoy.arguments = ["-c", "sleep 2", "swift-frontend"]
+    try? decoy.run()
+    let scanned = OrchestratorLease.liveCompilers()
+    if case .present(let pids) = scanned {
+        check("the real scan does not count a decoy naming swift-frontend in its arguments",
+              !pids.contains(decoy.processIdentifier), "\(pids)")
+    } else {
+        check("the real scan does not count a decoy naming swift-frontend in its arguments", true)
+    }
+    decoy.waitUntilExit()
 
     // The refusal has to name the orphans, because nothing here may end them.
     if case .compilersRunning(let pids) = OrchestratorLease.takeover(
@@ -362,7 +417,8 @@ group("the queue is FIFO, observable, and joining it does not jump it") {
     }
     check("a second acquirer is queued rather than granted", true)
     expect("at position one", queued.position, 1)
-    expect("and it is told why, in a word it can branch on", queued.holdReason, "holder_proving")
+    expect("and it is told why, in a word it can branch on", queued.holdReason,
+           "holder_proving")
     expect("queueing performs no filesystem work at all", second.effect, .none)
 
     let third = OrchestratorLease.acquire(
@@ -379,7 +435,9 @@ group("the queue is FIFO, observable, and joining it does not jump it") {
 
     // FIFO: the holder goes, and only the head may take it.
     let lapsedHolder = leaseHolder("req-1", label: "first",
-                                   renewedAt: leaseNow.addingTimeInterval(-600), session: "s1")
+                                   renewedAt: leaseNow.addingTimeInterval(-600), session: "s1",
+                                   phase: .compiling, phaseSince: leaseNow,
+                                   lastCompilingAt: leaseNow)
     let stale = heldRecord(lapsedHolder, queue: polled.record.queue)
     let jumper = OrchestratorLease.acquire(
         record: stale, request: leaseRequest("req-3", label: "third", session: "s3"),
@@ -512,7 +570,8 @@ group("a restart reconciles from the directory it never stopped owning") {
     let script = OrchestratorLease.HolderFile(
         holder: "test.sh on tty003", pid: 51, started: leaseNow.addingTimeInterval(-100),
         tree: "/tmp/tree", log: "/tmp/x.log", note: nil, work: [900], done: nil,
-        renewed: leaseNow.addingTimeInterval(-10))
+        renewed: leaseNow.addingTimeInterval(-10), phase: .compiling,
+        heartbeat: "/tmp/clawdline-lease-tests.lock/beat")
     let adopted = OrchestratorLease.reconcile(record: empty, directory: .held(script),
                                               evidence: evidence, now: leaseNow)
     expect("a directory the broker did not write is adopted", adopted.reconciliation, .adopted)
@@ -563,7 +622,45 @@ group("a restart reconciles from the directory it never stopped owning") {
     check("it clears only on both halves", cleared.holder == nil)
     expect("and then the slot is idle", cleared.reconciliation, .idle)
 
-    // An unreadable directory closes admission and is never taken over.
+    // The beat file is the shell holder's proof of life, and it is the *only* one it has: a
+    // script that took the directory with `mkdir` has no broker record for a restarted broker to
+    // read. So the record's own clock and the beat are both consulted, and the later one wins —
+    // otherwise a lock taken before the app started reads as an hour stale the moment it is
+    // adopted, and gets handed to a second compiler.
+    let adoptedHolder = adopted.holder!
+    expect("an adopted holder whose beat is five seconds old is proving it is alive",
+           OrchestratorLease.liveness(renewedAt: leaseNow.addingTimeInterval(-3_600),
+                                      owner: .unknown, doneFlag: .absent,
+                                      beat: leaseNow.addingTimeInterval(-5), now: leaseNow),
+           .proving)
+    expect("and the same holder with a ten-minute-old beat has stopped",
+           OrchestratorLease.liveness(renewedAt: leaseNow.addingTimeInterval(-3_600),
+                                      owner: .unknown, doneFlag: .absent,
+                                      beat: leaseNow.addingTimeInterval(-600), now: leaseNow),
+           .stopped("heartbeat_lapsed"))
+    expect("a beat older than the record does not age the record",
+           OrchestratorLease.liveness(renewedAt: leaseNow, owner: .unknown, doneFlag: .absent,
+                                      beat: leaseNow.addingTimeInterval(-3_600), now: leaseNow),
+           .proving)
+    expect("no beat at all falls back to the record's own clock",
+           OrchestratorLease.liveness(renewedAt: leaseNow.addingTimeInterval(-3_600),
+                                      owner: .unknown, doneFlag: .absent, beat: nil,
+                                      now: leaseNow),
+           .stopped("heartbeat_lapsed"))
+    expect("the adopted holder names the beat file it touches, so nobody has to assume it",
+           adoptedHolder.heartbeatPath, "/tmp/clawdline-lease-tests.lock/beat")
+    let beatKept = OrchestratorLease.reconcile(
+        record: heldRecord(adoptedHolder), directory: .absent,
+        evidence: OrchestratorLease.Evidence(compilers: .none, owner: .unknown,
+                                             doneFlag: .absent,
+                                             beat: leaseNow.addingTimeInterval(-5)),
+        now: leaseNow)
+    check("and a live beat keeps a lease whose directory went missing",
+          beatKept.holder != nil)
+    expect("with the heartbeat named as the reason it is still held",
+           beatKept.livenessReason, "proving")
+
+        // An unreadable directory closes admission and is never taken over.
     let unreadable = OrchestratorLease.acquire(
         record: empty, request: leaseRequest("req-u", label: "hopeful", session: "su"),
         directory: .unreadable("holder.txt is missing"), evidence: evidence, now: leaseNow)
@@ -687,6 +784,103 @@ group("admission degrades to one compiler rather than refusing, and the gate has
     expect("and physical memory comes from hw.memsize", pressure.physicalMB, 24_576)
 }
 
+group("a holder that is not compiling is reported, and is still not reclaimable") {
+    // 02:45 on 2026-09-03: the lock had been held 36 minutes, holder.txt was last written at
+    // 02:20, there were zero swift-frontend processes on the machine, no done_flag had appeared,
+    // and the sentinel pid was alive. From outside, "between compiles" and "finished and forgot
+    // to let go" were the same picture, and another line had been waiting five minutes with no
+    // safe way to tell them apart. `phase` is that difference, and it is a sentence rather than
+    // a verdict: it may say, it may not decide.
+    let writing = leaseHolder("lease-1", label: "child a77d9908", renewedAt: leaseNow,
+                              session: "s1", phase: .idleHolding,
+                              phaseSince: leaseNow.addingTimeInterval(-2_160),
+                              lastCompilingAt: leaseNow.addingTimeInterval(-2_160))
+    let record = heldRecord(writing)
+    let idle = OrchestratorLease.Evidence(compilers: .none, owner: .live, doneFlag: .absent)
+
+    // (1) It is renewing, so it is alive, however long it has been writing its report.
+    expect("a holder renewing while it writes its report is proving it is alive",
+           OrchestratorLease.liveness(renewedAt: writing.renewedAt, owner: .live,
+                                      doneFlag: .absent, now: leaseNow),
+           .proving)
+    expect("and is NOT reclaimable, with zero compilers on the machine and 36 minutes of it",
+           OrchestratorLease.takeover(
+                liveness: OrchestratorLease.liveness(renewedAt: writing.renewedAt, owner: .live,
+                                                     doneFlag: .absent, now: leaseNow),
+                compilers: .none),
+           .holderProving)
+    let waiter = OrchestratorLease.acquire(
+        record: record, request: leaseRequest("req-2", label: "another", session: "s2"),
+        directory: heldDirectory(writing), evidence: idle, now: leaseNow)
+    expect("so a second acquirer is queued, not granted",
+           leaseQueued(waiter.outcome)?.holdReason, "holder_proving")
+
+    // (2) And the query has to say what that picture is, or it is the same blank as tonight's.
+    let wire = OrchestratorLease.record(record, now: leaseNow)
+    guard let row = wire["holder"] as? [String: Any] else {
+        check("the query answers with a holder", false); return
+    }
+    expect("the query says who", row["holder"] as? String, "child a77d9908")
+    expect("what it is doing", row["phase"] as? String, "idle-holding")
+    expect("for how long", row["phaseAgeSeconds"] as? Int, 2_160)
+    expect("how long since it last compiled", row["notCompilingForSeconds"] as? Int, 2_160)
+    expect("and how fresh its proof of life is", row["renewalAgeSeconds"] as? Int, 0)
+    expect("named as a heartbeat, which is the word the file uses",
+           row["heartbeatAgeSeconds"] as? Int, 0)
+    guard let attention = row["attention"] as? String else {
+        check("a holder 36 minutes outside `compiling` is called out", false); return
+    }
+    check("a holder 36 minutes outside `compiling` is called out", true)
+    check("naming who to ask", attention.contains("child a77d9908"))
+    check("and saying plainly that nothing will reclaim it for that",
+          attention.contains("nothing here will reclaim the lock for that reason"))
+
+    // A compiling holder is not called out at all — the sentence exists for the other picture.
+    let busy = OrchestratorLease.record(
+        heldRecord(leaseHolder("lease-2", label: "busy", renewedAt: leaseNow)), now: leaseNow)
+    let busyRow = busy["holder"] as? [String: Any]
+    expect("a compiling holder is simply compiling", busyRow?["phase"] as? String, "compiling")
+    check("with nothing to call out", busyRow?["attention"] == nil)
+    check("and no not-compiling clock at all", busyRow?["notCompilingForSeconds"] == nil)
+
+    // The phase never reaches the takeover rule, whatever it says.
+    for phase in OrchestratorLease.Phase.allCases {
+        let holder = leaseHolder("lease-3", label: "whatever", renewedAt: leaseNow,
+                                 phase: phase, phaseSince: leaseNow.addingTimeInterval(-9_999),
+                                 lastCompilingAt: nil)
+        expect("phase \(phase.rawValue) does not make a renewing holder reclaimable",
+               OrchestratorLease.takeover(
+                    liveness: OrchestratorLease.liveness(renewedAt: holder.renewedAt,
+                                                         owner: .live, doneFlag: .absent,
+                                                         now: leaseNow),
+                    compilers: .none),
+               .holderProving)
+    }
+
+    // Renewal is what carries it, and `phaseSince` moves only when the phase itself changes.
+    let renewed = OrchestratorLease.renew(
+        record: record, leaseID: "lease-1", owner: leaseOwner("child a77d9908", session: "s1"),
+        workPIDs: [], phase: .compiling, directory: heldDirectory(writing), evidence: idle,
+        now: leaseNow.addingTimeInterval(20))
+    expect("a renewal that changes the phase records it",
+           renewed.record.holder?.phase, .compiling)
+    expect("and restarts its clock", renewed.record.holder?.phaseSince,
+           leaseNow.addingTimeInterval(20))
+    let again = OrchestratorLease.renew(
+        record: renewed.record, leaseID: "lease-1",
+        owner: leaseOwner("child a77d9908", session: "s1"), workPIDs: [], phase: .compiling,
+        directory: heldDirectory(writing), evidence: idle,
+        now: leaseNow.addingTimeInterval(40))
+    expect("a renewal that does not change it leaves the clock alone",
+           again.record.holder?.phaseSince, leaseNow.addingTimeInterval(20))
+    let silent = OrchestratorLease.renew(
+        record: renewed.record, leaseID: "lease-1",
+        owner: leaseOwner("child a77d9908", session: "s1"), workPIDs: [],
+        directory: heldDirectory(writing), evidence: idle, now: leaseNow.addingTimeInterval(60))
+    expect("and a renewal that says nothing leaves the phase alone rather than resetting it",
+           silent.record.holder?.phase, .compiling)
+}
+
 group("the lease record survives a store round trip") {
     var holder = leaseHolder("lease-1", label: "root af1b83ba", pid: 72_929,
                              renewedAt: leaseNow.addingTimeInterval(30), session: "s1",
@@ -694,6 +888,9 @@ group("the lease record survives a store round trip") {
     holder.doneFlagPath = "/tmp/clawdline-suite.lock/done"
     holder.budget = OrchestratorLease.Budget(parallelism: 2, basis: "headroom_mb/3000mb_per_compile",
                                              headroomMB: 7_732, swapFreeMB: 1_417)
+    holder.phase = .idleHolding
+    holder.phaseSince = leaseNow.addingTimeInterval(-2_160)
+    holder.lastCompilingAt = leaseNow.addingTimeInterval(-2_160)
     holder.owner.taskID = "23e78454"
     holder.owner.rootSessionID = "af1b83ba"
     let waiter = OrchestratorLease.Waiter(requestID: "req-2",

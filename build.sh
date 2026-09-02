@@ -20,37 +20,57 @@ verify_swift_source_manifest production
 CLAWDLINE_LEASE_DIR="${CLAWDLINE_LEASE_DIR:-/tmp/clawdline-suite.lock}"
 CLAWDLINE_LEASE_ID=""
 CLAWDLINE_LEASE_MODE=""
-CLAWDLINE_LEASE_RENEWER=""
-CLAWDLINE_COMPILE_JOBS="${CLAWDLINE_COMPILE_JOBS:-}"
-CLAWDLINE_COMPILE_JOBS_SOURCE="unset"
+CLAWDLINE_LEASE_DONE=""
+CLAWDLINE_SUITE_JOBS="${CLAWDLINE_SUITE_JOBS:-}"
+CLAWDLINE_SUITE_JOBS_SOURCE="unset"
 CLAWDLINE_LEASE_WAIT_SECONDS="${CLAWDLINE_LEASE_WAIT_SECONDS:-1800}"
 
 clawdline_lease_port() {
   /usr/bin/python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717
 }
 
+# `pid` is the process doing the work, never a sentinel. `phase` and `heartbeat` are refreshed
+# by the supervisor loop below.
 clawdline_lease_holder_file() {
-  # The six fields two sessions evolved, plus the three the sentinel defect asked for. `pid` is
-  # the process doing the work, never a sentinel; `renewed` is the proof of life.
-  printf 'holder=%s\npid=%s\nstarted=%s\ntree=%s\nlog=%s\nnote=%s\nwork=\ndone_flag=\nrenewed=%s\n' \
-    "build.sh $(id -un) pid $$" "$$" "$CLAWDLINE_LEASE_STARTED" "$(pwd)" "" \
-    "building Clawdline.app" "$(date +%s)" > "$CLAWDLINE_LEASE_DIR/holder.txt"
+  local phase="${1:-analysing}" pid="${2:-$$}"
+  printf 'holder=%s\npid=%s\nphase=%s\nheartbeat=%s\nstarted=%s\ntree=%s\nlog=%s\nnote=%s\nwork=%s\ndone_flag=%s\nrenewed=%s\n' \
+    "build.sh $(id -un) pid $$" "$pid" "$phase" "$CLAWDLINE_LEASE_DIR/beat" \
+    "$CLAWDLINE_LEASE_STARTED" "$(pwd)" "" "building Clawdline.app" "$pid" \
+    "$CLAWDLINE_LEASE_DONE" "$(date +%s)" > "$CLAWDLINE_LEASE_DIR/holder.txt"
 }
 
-# The proof of life, in the background, well inside the broker's renewal deadline. It refreshes
-# the record and the file; it never extends a right and its absence never ends one.
-clawdline_lease_renew_forever() {
-  while [ -d "$CLAWDLINE_LEASE_DIR" ]; do
+# One beat. It lives inside the lock directory, so `rmdir` takes it with the lock and no orphan
+# heartbeat can outlive the work it stood for.
+clawdline_lease_beat() {
+  local phase="${1:-analysing}" pid="${2:-$$}"
+  : > "$CLAWDLINE_LEASE_DIR/beat" 2>/dev/null || true
+  clawdline_lease_holder_file "$phase" "$pid" 2>/dev/null || true
+  if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
+    curl -s --max-time 5 -X POST \
+      "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_ID/renew" \
+      -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
+      -H 'Content-Type: application/json' \
+      -d "{\"holder\":\"build.sh $(id -un) pid $$\",\"phase\":\"$phase\",\"work_pids\":\"$pid\"}" \
+      >/dev/null 2>&1 || true
+  fi
+}
+
+# **The heartbeat is emitted by the loop that supervises the compiler, and by nothing else.**
+#
+# This is the whole difference between a heartbeat and the `sleep 14400` this design exists to
+# fix. A detached timer —
+#
+#     while true; do : > beat; sleep 60; done &
+#
+# — keeps beating after the work it claims to represent has died, which is a sentinel in a new
+# coat. Here the loop's own condition is the compiler still being alive, so when `swiftc` exits,
+# or when this shell is killed, the beat stops with it. `kill -0` sends no signal; it asks
+# whether the process exists, and nothing in this file ever signals a process it did not start.
+clawdline_lease_supervise() {
+  local compiler=$1
+  while kill -0 "$compiler" 2>/dev/null; do
+    clawdline_lease_beat compiling "$compiler"
     sleep 20
-    [ -d "$CLAWDLINE_LEASE_DIR" ] || break
-    clawdline_lease_holder_file 2>/dev/null || true
-    if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
-      curl -s --max-time 5 -X POST \
-        "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_ID/renew" \
-        -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
-        -H 'Content-Type: application/json' \
-        -d "{\"holder\":\"build.sh $(id -un) pid $$\"}" >/dev/null 2>&1 || true
-    fi
   done
 }
 
@@ -59,6 +79,8 @@ clawdline_lease_acquire() {
   CLAWDLINE_LEASE_TOKEN="$HOME/.config/clawdline/orchestrator-token"
   CLAWDLINE_LEASE_ID="build-$$-$(date +%s)"
   CLAWDLINE_LEASE_STARTED=$(date +%s)
+  CLAWDLINE_LEASE_DONE="${TMPDIR:-/tmp}/clawdline-build-done-$$"
+  rm -f "$CLAWDLINE_LEASE_DONE"
   local deadline=$(( $(date +%s) + CLAWDLINE_LEASE_WAIT_SECONDS ))
   local announced=0
   while :; do
@@ -70,7 +92,9 @@ clawdline_lease_acquire() {
         -H 'Content-Type: application/json' \
         -d "{\"request_id\":\"$CLAWDLINE_LEASE_ID\",\"resource\":\"heavy_compile\",
              \"pid\":$$,\"process_start\":$CLAWDLINE_LEASE_STARTED,
-             \"holder\":\"build.sh $(id -un) pid $$\",
+             \"holder\":\"build.sh $(id -un) pid $$\",\"phase\":\"analysing\",
+             \"heartbeat\":\"$CLAWDLINE_LEASE_DIR/beat\",
+             \"done_flag\":\"$CLAWDLINE_LEASE_DONE\",
              \"reason\":\"building Clawdline.app\",\"tree\":\"$(pwd)\"}" 2>/dev/null) || answer=
       local state
       state=$(printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
@@ -79,10 +103,10 @@ except Exception: print("")' 2>/dev/null)
       case "$state" in
         granted)
           CLAWDLINE_LEASE_MODE=broker
-          CLAWDLINE_COMPILE_JOBS=$(printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
+          CLAWDLINE_SUITE_JOBS=$(printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("budget",{}).get("parallelism",""))
 except Exception: print("")' 2>/dev/null)
-          CLAWDLINE_COMPILE_JOBS_SOURCE="the broker lease budget"
+          CLAWDLINE_SUITE_JOBS_SOURCE="the broker lease budget"
           echo "→ heavy-compile lease granted by the broker ($CLAWDLINE_LEASE_ID)"
           clawdline_lease_holder_file 2>/dev/null || true
           return 0
@@ -104,7 +128,7 @@ except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
           # rather than proceeding without a lease.
           if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
             CLAWDLINE_LEASE_MODE=directory
-            CLAWDLINE_COMPILE_JOBS_SOURCE="unset (no broker answered, so no budget)"
+            CLAWDLINE_SUITE_JOBS_SOURCE="unset (no broker answered, so no budget)"
             clawdline_lease_holder_file
             echo "→ heavy-compile lock taken directly; the broker did not answer"
             return 0
@@ -124,7 +148,7 @@ except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
     else
       if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
         CLAWDLINE_LEASE_MODE=directory
-        CLAWDLINE_COMPILE_JOBS_SOURCE="unset (no orchestrator token, so no budget)"
+        CLAWDLINE_SUITE_JOBS_SOURCE="unset (no orchestrator token, so no budget)"
         clawdline_lease_holder_file
         echo "→ heavy-compile lock taken directly; this Mac has no orchestrator token"
         return 0
@@ -143,11 +167,6 @@ except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
 # one rule a release path may never break is removing a lock somebody else owns.
 clawdline_lease_release() {
   [ -n "$CLAWDLINE_LEASE_MODE" ] || return 0
-  if [ -n "$CLAWDLINE_LEASE_RENEWER" ]; then
-    # Our own background renewer, and nothing else. No other process is ever signalled here.
-    kill "$CLAWDLINE_LEASE_RENEWER" 2>/dev/null || true
-    CLAWDLINE_LEASE_RENEWER=""
-  fi
   if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
     curl -s --max-time 5 -X POST \
       "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_ID/release" \
@@ -156,7 +175,7 @@ clawdline_lease_release() {
       -d "{\"holder\":\"build.sh $(id -un) pid $$\"}" >/dev/null 2>&1 || true
   fi
   if [ -r "$CLAWDLINE_LEASE_DIR/holder.txt" ] \
-      && grep -qx "pid=$$" "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null; then
+      && grep -qx "holder=build.sh $(id -un) pid $$" "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null; then
     rm -rf "$CLAWDLINE_LEASE_DIR"
   fi
   CLAWDLINE_LEASE_MODE=""
@@ -326,18 +345,16 @@ echo "→ building staged app for $APP"
 mkdir -p "$(dirname "$BIN")" "$RES"
 
 clawdline_lease_acquire || exit 1
-clawdline_lease_renew_forever &
-CLAWDLINE_LEASE_RENEWER=$!
 
 # Say which ceiling was used and where the number came from, so a slow build is explained rather
 # than mysterious. `-j` is what decides how many `swift-frontend` processes exist at once, which
 # is the quantity that reboots this Mac.
 compile_jobs=()
-if [ -n "$CLAWDLINE_COMPILE_JOBS" ]; then
-  compile_jobs=(-j "$CLAWDLINE_COMPILE_JOBS")
-  echo "→ compiling with -j $CLAWDLINE_COMPILE_JOBS, from $CLAWDLINE_COMPILE_JOBS_SOURCE"
+if [ -n "$CLAWDLINE_SUITE_JOBS" ]; then
+  compile_jobs=(-j "$CLAWDLINE_SUITE_JOBS")
+  echo "→ compiling with -j $CLAWDLINE_SUITE_JOBS, from $CLAWDLINE_SUITE_JOBS_SOURCE"
 else
-  echo "→ compiling with swiftc's own default parallelism ($CLAWDLINE_COMPILE_JOBS_SOURCE)"
+  echo "→ compiling with swiftc's own default parallelism ($CLAWDLINE_SUITE_JOBS_SOURCE)"
 fi
 
 swiftc \
@@ -347,10 +364,15 @@ swiftc \
   "${compile_jobs[@]}" \
   -o "$BIN" \
   "${clawdline_production_sources[@]}" \
-  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
+  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network &
+CLAWDLINE_COMPILER=$!
+clawdline_lease_supervise "$CLAWDLINE_COMPILER"
+wait "$CLAWDLINE_COMPILER"
 
-# The slot is given back the moment the compiler exits, not at the end of the script: packaging,
-# signing and installing are not what this lease is protecting.
+# The work is over: say so positively, then give the slot back. `done_flag` existing is what lets
+# another line take the lock at once instead of waiting out a heartbeat threshold. Packaging,
+# signing and installing are not what this lease protects.
+: > "$CLAWDLINE_LEASE_DONE" 2>/dev/null || true
 clawdline_lease_release
 
 cp Resources/iterm.js "$RES/"

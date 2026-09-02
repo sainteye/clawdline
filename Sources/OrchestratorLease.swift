@@ -71,6 +71,15 @@ enum OrchestratorLease {
     /// Where the exclusive directory lives. Configurable so a test never touches the real one.
     static let defaultDirectory = "/tmp/clawdline-suite.lock"
 
+    /// The heartbeat file, **inside the lock directory**. That placement is the point: `rmdir`
+    /// takes the beat with it, so a released lock can never leave behind an orphan heartbeat
+    /// pointing at work that has ended. Its modification time is the beat.
+    static let beatFilename = "beat"
+
+    static func beatPath(inside directory: String) -> String {
+        (directory as NSString).appendingPathComponent(beatFilename)
+    }
+
     /// How long a holder may go without refreshing its record before it has stopped proving it
     /// is alive.
     ///
@@ -97,6 +106,85 @@ enum OrchestratorLease {
     static let pathLimit = 4_096
     /// The most work pids a record will carry. A record is a description, not an inventory.
     static let workPIDLimit = 32
+
+    // MARK: - What the holder is doing
+
+    /// What the holder is doing **right now**, refreshed at each renewal.
+    ///
+    /// It exists because of a picture this design could not otherwise distinguish. At 02:45 on
+    /// 2026-09-03 the lock had been held for 36 minutes, `holder.txt` was last written at 02:20,
+    /// there were zero `swift-frontend` processes on the machine, no `done_flag` had appeared,
+    /// and the holder's sentinel pid was alive. **From outside, "it is between compiles" and "it
+    /// finished and forgot to let go" are the same picture** — and another line had been ready
+    /// and waiting five minutes with no safe way to tell which one it was looking at.
+    ///
+    /// So renewal and phase are two halves of one answer. **Renewal proves "I am still here";
+    /// phase says "and this is what I am still doing."** Only together do they answer whether
+    /// the lock is currently protecting anything. Without it an honest holder writing its report
+    /// looks exactly like a dead one, and the only party that knows the difference is the holder.
+    ///
+    /// **`phase` is never a takeover input.** A stalled phase is something the query can *say*;
+    /// the two admission conditions are unchanged and remain the only ones. That boundary is the
+    /// point of the field: it can speak, it cannot decide.
+    enum Phase: String, Equatable, CaseIterable {
+        /// Running the compiler. This is what the lock exists for.
+        case compiling
+        /// Producing a snapshot, writing a command line, reading results — work between compiles
+        /// that is going to compile again.
+        case analysing
+        /// Still needs the slot and nothing is running right now. The name says exactly that,
+        /// which is the whole use of the field: it is the picture that otherwise looks identical
+        /// to a holder that finished and forgot to let go.
+        case idleHolding = "idle-holding"
+        /// No phase was recorded. Older writers, and shell holders that predate the field.
+        case unknown
+
+        /// Earlier spellings, accepted on the way in.
+        ///
+        /// `preparing`, `writing` and `idle` were published in the first draft of this field
+        /// before the vocabulary settled at three values, and a writer may already be using
+        /// them. Reading them is free; refusing them would turn a holder that is talking to us
+        /// into one that is not, which is `unknown`, which blocks.
+        static func decode(_ raw: String) -> Phase? {
+            if let exact = Phase(rawValue: raw) { return exact }
+            switch raw {
+            case "preparing": return .analysing
+            case "writing": return .idleHolding
+            case "idle": return .idleHolding
+            default: return nil
+            }
+        }
+    }
+
+    /// **The heartbeat must be emitted by something that stops when the work stops.**
+    ///
+    /// This is the one way `renewed=` becomes the defect it was introduced to fix, wearing a
+    /// different coat. A detached timer —
+    ///
+    /// ```bash
+    /// while true; do touch beat; sleep 60; done &     # this is a sentinel
+    /// ```
+    ///
+    /// — keeps beating after the work it claims to represent has died, which is exactly what
+    /// `sleep 14400` did. What is required is a **supervisor loop**: the same loop that waits on
+    /// the compiler's pid is the loop that writes the beat, so the heartbeat stops when the
+    /// compiler exits or when the supervisor is itself killed. The proposition being proved is
+    /// "somebody is still supervising this work", not "a timer is still running on this machine".
+    ///
+    /// Nothing in the broker can verify that from the outside — which is why it is written down
+    /// here, in `docs/orchestrator.md`, and in the child briefing that hands out the `curl`.
+    ///
+    /// The deadline is 60 seconds against a measured 30-second cadence whose worst observed
+    /// drift over 56 samples in an hour was 1 second — including a sample taken with 0.06 GB
+    /// free, 392 MB of swap free and a compiler running. That sample was taken along a
+    /// small-footprint shell path rather than along a 20 GB compile's supervisor, so it does not
+    /// prove the supervisor never stalls; it is the reason the deadline is 60 and not 90, and
+    /// the reason (B) is never waived when it passes.
+    static let heartbeatSupervisionRequired = true
+
+    /// How long a holder may sit outside `compiling` before a reader is told about it. A number
+    /// on a sentence, not on a decision: nothing is reclaimed when it passes.
+    static let phaseAttentionAfter: TimeInterval = 300
 
     // MARK: - Identity
 
@@ -152,10 +240,16 @@ enum OrchestratorLease {
         /// Whole seconds, last refreshed by the holder. This is the proof of life a shell holder
         /// leaves for a broker that restarted and has no record of the grant.
         var renewed: Date?
+        /// What the holder is doing right now. See ``Phase``.
+        var phase: Phase
+        /// The heartbeat file this holder touches, which is normally `beat` inside the lock
+        /// directory. Named in the file so a reader never has to assume the convention.
+        var heartbeat: String?
 
         init(holder: String, pid: Int32, started: Date?, tree: String? = nil,
              log: String? = nil, note: String? = nil, work: [Int32] = [],
-             done: String? = nil, renewed: Date? = nil) {
+             done: String? = nil, renewed: Date? = nil, phase: Phase = .unknown,
+             heartbeat: String? = nil) {
             self.holder = holder
             self.pid = pid
             self.started = started
@@ -165,6 +259,8 @@ enum OrchestratorLease {
             self.work = work
             self.done = done
             self.renewed = renewed
+            self.phase = phase
+            self.heartbeat = heartbeat
         }
     }
 
@@ -187,6 +283,8 @@ enum OrchestratorLease {
         out += line("work", file.work.map { "\($0)" }.joined(separator: ","))
         out += line("done_flag", file.done)
         out += line("renewed", file.renewed.map { "\(Int($0.timeIntervalSince1970))" } ?? "")
+        out += line("phase", file.phase == .unknown ? "" : file.phase.rawValue)
+        out += line("heartbeat", file.heartbeat)
         return out
     }
 
@@ -219,7 +317,9 @@ enum OrchestratorLease {
                           tree: present("tree"), log: present("log"), note: present("note"),
                           work: Array(work.prefix(workPIDLimit)),
                           done: present("done_flag") ?? present("done"),
-                          renewed: fields["renewed"].flatMap(parseStamp))
+                          renewed: fields["renewed"].flatMap(parseStamp),
+                          phase: present("phase").flatMap(Phase.decode) ?? .unknown,
+                          heartbeat: present("heartbeat"))
     }
 
     /// A time in any of the three shapes a `holder.txt` on this machine has actually carried.
@@ -400,16 +500,21 @@ enum OrchestratorLease {
         var compilers: CompilerObservation
         var owner: OwnerState
         var doneFlag: DoneFlag
+        /// The modification time of the holder's beat file, when there is one. It is the shell
+        /// holder's proof of life: a script with no broker record still says "I am here" by
+        /// touching a file, and that is what a restarted broker reads.
+        var beat: Date?
         var pressure: Pressure?
 
         init(holderProcess: ProcessObservation = .unknown("not observed"),
              compilers: CompilerObservation = .unknown("not observed"),
              owner: OwnerState = .unknown, doneFlag: DoneFlag = .unknown,
-             pressure: Pressure? = nil) {
+             beat: Date? = nil, pressure: Pressure? = nil) {
             self.holderProcess = holderProcess
             self.compilers = compilers
             self.owner = owner
             self.doneFlag = doneFlag
+            self.beat = beat
             self.pressure = pressure
         }
     }
@@ -449,11 +554,16 @@ enum OrchestratorLease {
     ///   3. the renewal deadline passed — the general case, and the only one a shell holder
     ///      with no Clawdline identity can trip.
     static func liveness(renewedAt: Date, owner: OwnerState, doneFlag: DoneFlag,
-                         now: Date, deadline: TimeInterval = renewalDeadline) -> Liveness {
+                         beat: Date? = nil, now: Date,
+                         deadline: TimeInterval = renewalDeadline) -> Liveness {
         if doneFlag == .present { return .stopped("work_finished") }
         if case .gone = owner { return .stopped("owner_gone") }
-        let since = now.timeIntervalSince(renewedAt)
-        if since > deadline { return .stopped("renewal_lapsed") }
+        // Two writers, one clock. A broker-granted holder renews over HTTP; a shell holder
+        // touches `beat` inside the lock directory and has no record at all. The later of the
+        // two is the proof, so a lease is never read as lapsed because the *other* channel is
+        // the one being used.
+        let latest = max(renewedAt, beat ?? .distantPast)
+        if now.timeIntervalSince(latest) > deadline { return .stopped("heartbeat_lapsed") }
         return .proving
     }
 
@@ -647,6 +757,14 @@ enum OrchestratorLease {
         var note: String?
         var budget: Budget?
         var provenance: Provenance
+        /// What the holder said it was doing at its last renewal.
+        var phase: Phase
+        /// When it entered that phase, so a reader gets "36 minutes" rather than a word.
+        var phaseSince: Date
+        /// When it was last in `compiling`. Nil means it has never said it was.
+        var lastCompilingAt: Date?
+        /// The beat file this holder touches. Nil falls back to `beat` inside the directory.
+        var heartbeatPath: String?
     }
 
     struct Waiter: Equatable {
@@ -713,6 +831,8 @@ enum OrchestratorLease {
         var note: String?
         var workPIDs: [Int32]
         var doneFlagPath: String?
+        var phase: Phase
+        var heartbeatPath: String?
         /// An explicit, named override of the *admission* gate. It never touches exclusion: a
         /// lease somebody else holds is not available to an override. A gate with no door is the
         /// deadlock this feature exists to remove, so the door exists, is named, and is logged.
@@ -830,6 +950,8 @@ enum OrchestratorLease {
             note: bounded(raw["note"] as? String, limit: reasonLimit),
             workPIDs: pids(from: raw["work_pids"]),
             doneFlagPath: bounded(raw["done_flag"] as? String, limit: pathLimit),
+            phase: (raw["phase"] as? String).flatMap(Phase.decode) ?? .unknown,
+            heartbeatPath: bounded(raw["heartbeat"] as? String, limit: pathLimit),
             pressureOverride: bounded(raw["pressure_override"] as? String, limit: labelLimit)))
     }
 
@@ -870,6 +992,13 @@ enum OrchestratorLease {
                 }
                 if !file.work.isEmpty { existing.workPIDs = file.work }
                 if let done = file.done { existing.doneFlagPath = done }
+                if file.phase != .unknown, file.phase != existing.phase {
+                    existing.phase = file.phase
+                    existing.phaseSince = file.renewed ?? now
+                }
+                if file.phase == .compiling {
+                    existing.lastCompilingAt = file.renewed ?? now
+                }
                 out.holder = existing
                 out.reconciliation = .matched
                 out.holdReason = nil
@@ -880,7 +1009,9 @@ enum OrchestratorLease {
                 pid: file.pid, processStart: file.started,
                 acquiredAt: file.started ?? now, renewedAt: file.renewed ?? now,
                 workPIDs: file.work, doneFlagPath: file.done, tree: file.tree, log: file.log,
-                note: file.note, budget: nil, provenance: .directory)
+                note: file.note, budget: nil, provenance: .directory, phase: file.phase,
+                phaseSince: file.renewed ?? now, lastCompilingAt: file.phase == .compiling
+                    ? (file.renewed ?? now) : nil, heartbeatPath: file.heartbeat)
             out.reconciliation = out.holder == nil ? .adopted : .replaced
             out.holder = adopted
             out.holdReason = nil
@@ -893,7 +1024,7 @@ enum OrchestratorLease {
                 return out
             }
             let alive = liveness(renewedAt: existing.renewedAt, owner: evidence.owner,
-                                 doneFlag: evidence.doneFlag, now: now)
+                                 doneFlag: evidence.doneFlag, beat: evidence.beat, now: now)
             let verdict = takeover(liveness: alive, compilers: evidence.compilers)
             out.livenessReason = alive.code
             if case .eligible = verdict {
@@ -942,7 +1073,7 @@ enum OrchestratorLease {
 
         if let holder = out.holder {
             let alive = liveness(renewedAt: holder.renewedAt, owner: evidence.owner,
-                                 doneFlag: evidence.doneFlag, now: now)
+                                 doneFlag: evidence.doneFlag, beat: evidence.beat, now: now)
             out.livenessReason = alive.code
             let verdict = takeover(liveness: alive, compilers: evidence.compilers)
             guard case .eligible = verdict, isHeadOfQueue(out, request: request) else {
@@ -1061,7 +1192,8 @@ enum OrchestratorLease {
     /// It also refreshes what is actually working right now, so a reader can tell "holder alive,
     /// compiling" from "holder alive, between compiles" instead of guessing from the machine.
     static func renew(record: Record, leaseID: String, owner: Owner, workPIDs: [Int32],
-                      directory: DirectoryState, evidence: Evidence, now: Date) -> Decision {
+                      phase: Phase = .unknown, directory: DirectoryState, evidence: Evidence,
+                      now: Date) -> Decision {
         let out = reconcile(record: record, directory: directory, evidence: evidence, now: now)
         guard let holder = out.holder else {
             return Decision(record: out, effect: .none, outcome: .refused(Refusal(
@@ -1078,6 +1210,16 @@ enum OrchestratorLease {
         renewed.holder?.renewedAt = now
         if !workPIDs.isEmpty {
             renewed.holder?.workPIDs = Array(workPIDs.prefix(workPIDLimit))
+        }
+        // The phase is the *content* of a renewal: the clock says the holder is there, this says
+        // what it is there doing. `phaseSince` moves only when the phase itself changes, so a
+        // reader gets "36 minutes in `writing`" rather than "renewed 4 seconds ago".
+        if phase != .unknown {
+            if phase != holder.phase {
+                renewed.holder?.phase = phase
+                renewed.holder?.phaseSince = now
+            }
+            if phase == .compiling { renewed.holder?.lastCompilingAt = now }
         }
         renewed.livenessReason = Liveness.proving.code
         guard let refreshed = renewed.holder else {
@@ -1144,14 +1286,17 @@ enum OrchestratorLease {
                processStart: request.processStart, acquiredAt: now, renewedAt: now,
                workPIDs: request.workPIDs, doneFlagPath: request.doneFlagPath,
                tree: request.tree, log: request.log, note: request.note, budget: nil,
-               provenance: .broker)
+               provenance: .broker, phase: request.phase, phaseSince: now,
+               lastCompilingAt: request.phase == .compiling ? now : nil,
+               heartbeatPath: request.heartbeatPath)
     }
 
     static func holderFile(for request: Request, now: Date) -> HolderFile {
         HolderFile(holder: request.owner.label, pid: request.pid,
                    started: request.processStart ?? now, tree: request.tree, log: request.log,
                    note: request.note, work: request.workPIDs, done: request.doneFlagPath,
-                   renewed: now)
+                   renewed: now, phase: request.phase,
+                   heartbeat: request.heartbeatPath ?? beatPath(inside: defaultDirectory))
     }
 
     static func file(from holder: Holder) -> HolderFile {
@@ -1213,6 +1358,31 @@ enum OrchestratorLease {
         if let log = holder.log { row["log"] = log }
         if let note = holder.note { row["note"] = note }
         if let done = holder.doneFlagPath { row["doneFlag"] = done }
+        // What the holder is doing, and — the whole reason the field exists — how long it has
+        // been doing something other than compiling. These are facts a waiter reads so it knows
+        // who to ask. **None of them is an admission input**: `attention` below is a sentence,
+        // not a verdict, and the takeover rule never consults any of it.
+        row["phase"] = holder.phase.rawValue
+        row["phaseAgeSeconds"] = max(0, Int(now.timeIntervalSince(holder.phaseSince)))
+        row["heartbeatAgeSeconds"] = max(0, Int(now.timeIntervalSince(holder.renewedAt)))
+        row["heartbeat"] = holder.heartbeatPath ?? NSNull()
+        if let compiling = holder.lastCompilingAt {
+            row["lastCompilingAt"] = Int(compiling.timeIntervalSince1970)
+            if holder.phase != .compiling {
+                row["notCompilingForSeconds"] = max(0, Int(now.timeIntervalSince(compiling)))
+            }
+        } else {
+            row["lastCompilingAt"] = NSNull()
+        }
+        if holder.phase != .compiling {
+            let idleFor = now.timeIntervalSince(holder.lastCompilingAt ?? holder.acquiredAt)
+            if idleFor > phaseAttentionAfter {
+                row["attention"] = "\(holder.owner.label) has not been compiling for "
+                    + "\(Int(idleFor / 60)) minutes (phase \(holder.phase.rawValue)), and last "
+                    + "renewed \(max(0, Int(now.timeIntervalSince(holder.renewedAt)))) seconds "
+                    + "ago. Ask it; nothing here will reclaim the lock for that reason."
+            }
+        }
         if let budget = holder.budget {
             var budgetRow: [String: Any] = ["parallelism": budget.parallelism,
                                             "basis": budget.basis]
@@ -1236,6 +1406,8 @@ enum OrchestratorLease {
         var topAnonymous: () -> [MemoryHolder]
         var readDirectory: (String) -> DirectoryState
         var fileExists: (String) -> Bool
+        /// The modification time of the beat file, or nil when there is not one.
+        var beat: (String) -> Date?
         /// `mkdir` plus `holder.txt`. Returns nil on success, or why it failed. A directory that
         /// already exists must report failure — that is the atomicity the whole design rests on.
         var createDirectory: (String, HolderFile) -> String?
@@ -1248,7 +1420,7 @@ enum OrchestratorLease {
     static var live: Probes {
         Probes(processStart: liveProcessStart, compilers: liveCompilers, pressure: { livePressure() },
                topAnonymous: { liveTopAnonymous() }, readDirectory: readDirectory,
-               fileExists: { FileManager.default.fileExists(atPath: $0) },
+               fileExists: { FileManager.default.fileExists(atPath: $0) }, beat: beatTime,
                createDirectory: createDirectory, refreshHolderFile: refreshHolderFile,
                removeDirectory: removeDirectory)
     }
@@ -1298,7 +1470,11 @@ enum OrchestratorLease {
         guard !counts.isEmpty else { return nil }
         func megabytes(_ key: String) -> Int { Int((counts[key] ?? 0) * pageSize / 1_048_576) }
         var swapUsed = 0, swapFree = 0, swapTotal = 0
-        for field in swapusage.split(separator: " ") {
+        // `sysctl -n vm.swapusage` prints `total = 12288.00M  used = 10870.75M  free = 1417.25M`
+        // — spaces around the equals. Normalising first is why this reads three numbers rather
+        // than three zeroes, which is the shape a silent "no pressure reading" would take.
+        for field in swapusage.replacingOccurrences(of: " = ", with: "=")
+            .split(whereSeparator: { $0 == " " || $0 == "\n" }) {
             let text = String(field)
             func value(_ prefix: String) -> Int? {
                 guard text.hasPrefix(prefix) else { return nil }
@@ -1338,6 +1514,10 @@ enum OrchestratorLease {
         return Array(found.sorted { $0.anonymousMB > $1.anonymousMB }.prefix(limit))
     }
 
+    static func beatTime(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+
     static func readDirectory(_ path: String) -> DirectoryState {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
@@ -1375,7 +1555,20 @@ enum OrchestratorLease {
             try? FileManager.default.removeItem(atPath: path)
             return "\(holderPath) could not be written: \(error.localizedDescription)"
         }
+        touchBeat(inside: path)
         return nil
+    }
+
+    /// The first beat, and every beat a broker-mediated renewal produces. It lives inside the
+    /// lock directory, so `rmdir` takes it with the lock and no orphan heartbeat can survive the
+    /// work it stood for.
+    static func touchBeat(inside directory: String) {
+        let path = beatPath(inside: directory)
+        if FileManager.default.fileExists(atPath: path) {
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: path)
+        } else {
+            FileManager.default.createFile(atPath: path, contents: Data())
+        }
     }
 
     static func refreshHolderFile(_ path: String, holder: HolderFile) -> String? {
@@ -1394,6 +1587,7 @@ enum OrchestratorLease {
             } catch {
                 return "\(holderPath) could not be written: \(error.localizedDescription)"
             }
+            touchBeat(inside: path)
             return nil
         }
     }
@@ -1441,7 +1635,9 @@ enum OrchestratorLease {
                 pid: file.pid, processStart: file.started, acquiredAt: file.started ?? Date(),
                 renewedAt: file.renewed ?? Date(), workPIDs: file.work, doneFlagPath: file.done,
                 tree: file.tree, log: file.log, note: file.note, budget: nil,
-                provenance: .directory)
+                provenance: .directory, phase: file.phase, phaseSince: file.renewed ?? Date(),
+                lastCompilingAt: file.phase == .compiling ? file.renewed : nil,
+                heartbeatPath: file.heartbeat)
         }
         var evidence = Evidence(compilers: probes.compilers(), pressure: probes.pressure())
         if let holder = holderForEvidence {
@@ -1449,6 +1645,8 @@ enum OrchestratorLease {
             evidence.owner = ownerState(holder)
             evidence.doneFlag = holder.doneFlagPath
                 .map { probes.fileExists($0) ? DoneFlag.present : .absent } ?? .absent
+            evidence.beat = probes.beat(holder.heartbeatPath
+                                        ?? beatPath(inside: record.directory))
         }
         return (directory, evidence)
     }

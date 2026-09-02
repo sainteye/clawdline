@@ -677,9 +677,21 @@ enum Coordinator {
         var bearings: [String: Any] = [:]
         if let record = full["bearings"] as? [String: Any] {
             for key in ["observed_at", "coordinator_lifecycle", "work_state_counts",
-                    "closeability_counts", "heavy_compile_lease",
+                    "closeability_counts",
                         "active_task_count", "pending_landing_count", "open_wait_count"] {
                 if let value = record[key] { bearings[key] = value }
+            }
+            // The lease crosses as three facts, not four. `holder` is free text a script wrote —
+            // on this machine `build.sh sainteye pid 4242` — and Bearings excludes usernames,
+            // pids and process identity from a paired device by construction. A phone that can
+            // see the slot is busy and how long the queue is has what it can act on; who is
+            // holding it is a Mac-side answer.
+            if let lease = record["heavy_compile_lease"] as? [String: Any] {
+                var reduced: [String: Any] = [:]
+                for key in ["state", "queue_depth", "hold_reason"] {
+                    if let value = lease[key] { reduced[key] = value }
+                }
+                bearings["heavy_compile_lease"] = reduced
             }
             bearings["pending_landings"] = ((record["pending_landings"]
                 as? [[String: Any]]) ?? []).map(allowedPendingLanding)

@@ -471,11 +471,11 @@ a full suite on 2026-09-02:
 
 | | this document said | observed after Cut 1 |
 |---|---:|---:|
-| ordered groups | 463 | 503 |
+| ordered groups | 463 | 504 |
 | ordered runners | 25 | 29 |
 | suite files | 38 | 42 |
 | Swift checks | — | 8,026 |
-| `Orchestrator.swift` ceiling | 13,592 | 13,127 |
+| `Orchestrator.swift` ceiling | 13,592 | 13,149 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,463 |
 
 That row reads 8,026 rather than the 8,025 observed after Cut 1: the multi-question picker's

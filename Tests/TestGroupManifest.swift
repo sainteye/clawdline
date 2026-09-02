@@ -510,6 +510,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "release and cancel belong to the sessions that own them",
     "a restart reconciles from the directory it never stopped owning",
     "admission degrades to one compiler rather than refusing, and the gate has a named door",
+    "a holder that is not compiling is reported, and is still not reclaimable",
     "the lease record survives a store round trip",
 ]
 

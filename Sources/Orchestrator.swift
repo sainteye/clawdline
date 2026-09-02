@@ -11325,10 +11325,25 @@ enum Orchestrator {
 
         The answer is `granted` with a `budget.parallelism` you must honour, or `queued` with a
         position and the reason the queue is not moving. **No lease means the compile does not
-        run** — there is no proceed-anyway. Renew it while you work
-        (`POST /v1/orchestrator/leases/<lease>/renew`, at least every
-        \(Int(OrchestratorLease.renewalDeadline)) seconds: renewal is what proves you are still
-        there, and a sentinel process cannot renew) and release it the moment the compiler exits.
+        run** — there is no proceed-anyway.
+
+        Then keep a heartbeat, at least every \(Int(OrchestratorLease.renewalDeadline)) seconds,
+        and **emit it from the loop that supervises the compiler rather than from a timer of its
+        own**:
+
+        ```bash
+        swiftc … & compiler=$!
+        while kill -0 "$compiler" 2>/dev/null; do
+          : > /tmp/clawdline-suite.lock/beat          # and POST …/leases/<lease>/renew
+          sleep 20
+        done
+        wait "$compiler"
+        ```
+
+        `while true; do : > beat; sleep 60; done &` is the same bug in a new coat: it keeps
+        beating after the work has died, which is exactly how a `sleep 14400` once held this
+        lock for four hours. The heartbeat has to prove somebody is still supervising the work,
+        not that a timer is still running. Release the lease the moment the compiler exits.
         Nothing in this system will ever end somebody else's compile, and neither may you.
 
         Verification stops after one third of this task's timeout
@@ -12302,7 +12317,9 @@ enum Orchestrator {
         switch applied.outcome {
         case .granted(let budget):
             var out: [String: Any] = ["ok": true, "state": "granted", "lease": record]
-            out["budget"] = ["parallelism": budget.parallelism, "basis": budget.basis]
+            let budgetRow: [String: Any] = ["parallelism": budget.parallelism,
+                                            "basis": budget.basis]
+            out["budget"] = budgetRow
             return .ok(out)
         case .queued(let position, let reason):
             return .ok(["ok": true, "state": "queued", "position": position,
@@ -12363,10 +12380,14 @@ enum Orchestrator {
             return .refused(400, "unknown_resource", "This machine does not lease \(resource).")
         }
         let workPIDs = OrchestratorLease.pids(from: raw["work_pids"])
+        // A renewal carries what the holder is doing as well as the fact that it is there. An
+        // absent or unrecognised `phase` leaves the recorded one alone rather than resetting it.
+        let phase = (raw["phase"] as? String)
+            .flatMap(OrchestratorLease.Phase.decode) ?? .unknown
         let applied = leaseStep(resource: resource, now: now) {
             record, directory, evidence, _ in
             OrchestratorLease.renew(record: record, leaseID: id, owner: owner,
-                                    workPIDs: workPIDs, directory: directory,
+                                    workPIDs: workPIDs, phase: phase, directory: directory,
                                     evidence: evidence, now: now)
         }
         return leaseReply(applied, now: now)
@@ -12499,6 +12520,7 @@ enum Orchestrator {
                 "queueDepth": record.queue.count,
             ]
             if let budget = holder.budget { row["parallelism"] = budget.parallelism }
+            row["phase"] = holder.phase.rawValue
             return row
         }
         guard let index = record.queue.firstIndex(where: { $0.owner.sessionID == id }) else {

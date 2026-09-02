@@ -373,7 +373,12 @@ enum OrchestratorStore {
             "renewed_at": holder.renewedAt.timeIntervalSince1970,
             "provenance": holder.provenance.rawValue,
             "work_pids": holder.workPIDs.map(Int.init),
+            "phase": holder.phase.rawValue,
+            "phase_since": holder.phaseSince.timeIntervalSince1970,
         ]
+        if let compiling = holder.lastCompilingAt {
+            row["last_compiling_at"] = compiling.timeIntervalSince1970
+        }
         if let start = holder.processStart { row["process_start"] = start.timeIntervalSince1970 }
         if let session = holder.owner.sessionID { row["session_id"] = session }
         if let task = holder.owner.taskID { row["task_id"] = task }
@@ -382,6 +387,7 @@ enum OrchestratorStore {
         if let log = holder.log { row["log"] = log }
         if let note = holder.note { row["note"] = note }
         if let done = holder.doneFlagPath { row["done_flag"] = done }
+        if let beat = holder.heartbeatPath { row["heartbeat"] = beat }
         if let budget = holder.budget {
             var budgetRow: [String: Any] = ["parallelism": budget.parallelism,
                                             "basis": budget.basis]
@@ -474,7 +480,15 @@ enum OrchestratorStore {
                                             limit: OrchestratorLease.reasonLimit),
             budget: budget,
             provenance: (row["provenance"] as? String)
-                .flatMap(OrchestratorLease.Provenance.init(rawValue:)) ?? .broker)
+                .flatMap(OrchestratorLease.Provenance.init(rawValue:)) ?? .broker,
+            phase: (row["phase"] as? String)
+                .flatMap(OrchestratorLease.Phase.decode) ?? .unknown,
+            phaseSince: (row["phase_since"] as? Double)
+                .map(Date.init(timeIntervalSince1970:)) ?? Date(timeIntervalSince1970: renewed),
+            lastCompilingAt: (row["last_compiling_at"] as? Double)
+                .map(Date.init(timeIntervalSince1970:)),
+            heartbeatPath: OrchestratorLease.bounded(row["heartbeat"] as? String,
+                                                     limit: OrchestratorLease.pathLimit))
         return record
     }
 

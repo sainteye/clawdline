@@ -211,15 +211,15 @@ done
 # How many `swift-frontend` processes this compile is allowed to have at once. That number, and
 # not the number of suites, is what took this 24 GB Mac down twice on 2026-09-03: four frontends
 # held lifetime-max footprints of about 46, 45, 27 and 8 GB. Unset keeps swiftc's own default, so
-# a contributor's behaviour is unchanged; `CLAWDLINE_COMPILE_JOBS=1` is the conservative setting,
+# a contributor's behaviour is unchanged; `CLAWDLINE_SUITE_JOBS=1` is the conservative setting,
 # and the machine lease hands this number out as a budget when one is acquired through the broker.
 # Whichever it is, say it, and say where it came from.
 compile_jobs=()
-if [ -n "${CLAWDLINE_COMPILE_JOBS:-}" ]; then
-  compile_jobs=(-j "$CLAWDLINE_COMPILE_JOBS")
-  echo "→ compiling with -j $CLAWDLINE_COMPILE_JOBS, from ${CLAWDLINE_COMPILE_JOBS_SOURCE:-the CLAWDLINE_COMPILE_JOBS environment variable}"
+if [ -n "${CLAWDLINE_SUITE_JOBS:-}" ]; then
+  compile_jobs=(-j "$CLAWDLINE_SUITE_JOBS")
+  echo "→ compiling with -j $CLAWDLINE_SUITE_JOBS, from ${CLAWDLINE_SUITE_JOBS_SOURCE:-the CLAWDLINE_SUITE_JOBS environment variable}"
 else
-  echo "→ compiling with swiftc's own default parallelism (CLAWDLINE_COMPILE_JOBS is unset)"
+  echo "→ compiling with swiftc's own default parallelism (CLAWDLINE_SUITE_JOBS is unset)"
 fi
 
 swiftc \

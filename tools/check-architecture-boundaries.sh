@@ -16,7 +16,7 @@ main_lines=$(line_count Tests/main.swift)
 [ "$main_lines" -le 500 ] \
   || architecture_guard_fail "Tests/main.swift has $main_lines lines; maximum is 500"
 
-orchestrator_ceiling=13127
+orchestrator_ceiling=13149
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift grew beyond the heavy-compile lease receipt ($orchestrator_ceiling)"
@@ -68,8 +68,8 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-[ "$manifest_group_count" -eq 503 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 503"
+[ "$manifest_group_count" -eq 504 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 504"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do

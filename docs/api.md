@@ -2484,9 +2484,22 @@ same id until it is granted, and polling neither duplicates its queue entry nor 
 It is a poll rather than a push because a grant delivered as a message can be lost, and a lost
 grant is a lease nobody holds and nobody releases.
 
-`pid` must be the process **doing the work**, never a sentinel — see the takeover rule below.
-`work_pids` (optional, refreshed at each renewal) names the compiler processes running right now,
-and `done_flag` names a path the run creates when its work has finished.
+`pid` must be the process **doing the work**, never a sentinel — see the takeover rule below; when
+the work is a *sequence* of processes the record carries the current one and refreshes it at each
+beat. `work_pids` (optional) names the compiler processes running right now, `phase` is
+`compiling`, `analysing` or `idle-holding`, `heartbeat` names the beat file (default `beat` inside
+the lock directory), and `done_flag` names a path the run creates when its work has finished —
+a **positive signal only**: present means the work is over and, with (B), the lock may be taken at
+once without waiting out the threshold; absent proves nothing, because a SIGKILLed run never
+writes one.
+
+The lock directory holds:
+
+```text
+/tmp/clawdline-suite.lock/
+  holder.txt    holder= pid= phase= heartbeat= started= tree= log= done_flag=
+  beat          the heartbeat file itself; rmdir takes it with the lock
+```
 
 A caller that is not granted is *queued*, which is not a refusal:
 
@@ -2496,24 +2509,47 @@ A caller that is not granted is *queued*, which is not a refusal:
 ```
 
 `holdReason` is the whole of "why am I still waiting", and it is a closed word: `holder_proving`,
-`compiler_running`, `evidence_unknown`, `directory_unreadable` or `queued_behind_others`.
+`compiler_running`, `evidence_unknown`, `directory_unreadable` or `queued_behind_others`. When
+the holder is not compiling, the query also carries `phase`, `phaseAgeSeconds`,
+`notCompilingForSeconds`, `heartbeatAgeSeconds` and an `attention` sentence naming who to ask —
+because "held" alone is the blank picture this field exists to remove.
 
 **A grant carries a budget, not just a yes.** `budget.parallelism` is a ceiling the holder must
 honour — it is what `build.sh` and `test.sh` pass to `swiftc` as `-j` — with a floor of one, and
 `budget.basis` says which measured quantity produced it. Until the per-compile peak is measured
 the basis is `peak_not_measured` and every grant is that floor.
 
-#### `POST /v1/orchestrator/leases/:id/renew` — the proof of life
+#### `POST /v1/orchestrator/leases/:id/renew` — the heartbeat
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/leases/$LEASE/renew \
     -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
-    -d '{"holder":"build.sh sainteye pid 4242","work_pids":[8101,8102]}'
+    -d '{"holder":"build.sh sainteye pid 4242","phase":"compiling","work_pids":[8101,8102]}'
 ```
 
-**Liveness is proved by renewal, not by a pid existing**, and the holder must renew at least
-every 60 seconds. A renewal never extends a right and a missed one never ends one: it moves a
-clock on the *proof of life*, and the takeover rule below is what actually decides anything.
+**Liveness is proved by heartbeat, not by a pid existing**, and the holder must beat at least
+every 60 seconds. `phase` is the content of a beat: the clock says the holder is there, `phase`
+says what it is there doing. An absent or unrecognised `phase` leaves the recorded one alone
+rather than resetting it.
+
+**The heartbeat must be emitted by something that stops when the work stops.**
+
+```bash
+while true; do : > beat; sleep 60; done &     # WRONG — a sentinel in a new coat
+
+swiftc … & compiler=$!                        # right — a supervisor loop
+while kill -0 "$compiler" 2>/dev/null; do : > beat; sleep 20; done
+wait "$compiler"
+```
+
+The proposition being proved is "somebody is still supervising this work", not "a timer is still
+running on this machine". A detached timer keeps beating after the work has died, which is
+exactly what `sleep 14400` did.
+
+A shell holder with no broker record beats by touching `beat` **inside the lock directory** — the
+placement matters, because `rmdir` then takes the beat with the lock and no orphan heartbeat can
+outlive the work it stood for. The record's own clock and that file are both read, and the later
+of the two is the proof.
 
 #### `POST /v1/orchestrator/leases/:id/release` and `/cancel`
 
@@ -2532,9 +2568,24 @@ broker last remembered.
 
 A lease may be taken over only when **both** hold:
 
-* **(A)** the current holder has **stopped proving it is alive** — its `done_flag` exists, or its
-  owning task reached `failure`/`timeout`/`cancelled`, or its renewal deadline passed; **and**
+* **(A)** the current holder's **heartbeat has lapsed** past the threshold — or, sooner, its
+  `done_flag` exists, or its owning task reached `failure`/`timeout`/`cancelled`; **and**
 * **(B)** **no `swift-frontend` process exists anywhere on this machine.**
+
+**heartbeat is what the holder says; `swift-frontend` is what the machine is doing. A
+machine-level resource guard fails closed on the fact, not on the self-report.** (B) is not
+redundant with (A) and it is never a sufficient condition on its own: a holder that is wedged or
+heavily swapped out can miss a beat *while still burning 46 GB*, which is what this machine was
+doing at 01:24 and 01:45. On a healthy machine (B) passes instantly and costs nothing; it blocks
+only when the holder is stuck, which is the only case it exists for.
+
+The scan matches the executable's own name — `pgrep -x` semantics, not `pgrep -f` — so a sampler
+or a `/usr/bin/time swift-frontend …` wrapper is correctly not counted as a compiler.
+
+`phase` is reported and is **never** a takeover input. `phase=idle-holding` means "I still need
+the slot and nothing is running right now"; the query says who holds it, how long since it was
+last `compiling`, and how old the heartbeat is, so a waiter knows **who to ask** rather than what
+to seize. The system may say; it may not decide.
 
 Neither half admits anybody alone, and this is not a timer on the work: a four-hour compile that
 keeps renewing is never stale. Both halves come from the same live defect, in opposite

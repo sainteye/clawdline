@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const script = readFileSync(new URL('../build.sh', import.meta.url), 'utf8');
 
@@ -28,7 +29,12 @@ assert.deepEqual(inspect(script), {
   explicitAbort: true,
 });
 
-const syntax = spawnSync('/bin/bash', ['-n', new URL('../build.sh', import.meta.url).pathname], {
+// `fileURLToPath`, not `.pathname`: a URL keeps the path percent-encoded, and every Clawdline
+// worktree lives under `~/Library/Application Support`, so `.pathname` handed `/bin/bash` a path
+// containing `%20` that does not exist. This assertion therefore failed — 127, "No such file or
+// directory" — in every isolated checkout while passing in the main one, which made the whole
+// suite unrunnable for exactly the sessions that run it most.
+const syntax = spawnSync('/bin/bash', ['-n', fileURLToPath(new URL('../build.sh', import.meta.url))], {
   encoding: 'utf8',
 });
 assert.equal(syntax.status, 0, syntax.stderr);
