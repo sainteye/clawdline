@@ -346,6 +346,19 @@ additions beside a hundred deletions. Counting only the `+` side is a query abou
 *contains*, not about what it *changed*, and the two differ by exactly the amount of moved code. The
 derivation and the measurement agree at 8101 — but only after the deletions were counted too.
 
+**A three-way merge can make both sides wrong and agree, and then say nothing.** The two faces above
+— records agreeing and both stale, records disagreeing and caught — both start with somebody editing
+one document and not the other. There is a third, and it needs no editor at all. On 2026-09-03 the
+governance row for ordered runners stood at 29 in the merge base, 30 on `main`, and 30 on the branch;
+the tree actually held 31. Git takes 30 without a conflict marker, because both sides moved the same
+way from the base — **and 30 is wrong on both.** The earlier instances each had one correct side to
+recover; this one has none, and produces no signal at the moment it is created.
+
+What caught it was the guard counting the tree. That is the whole distinction this page keeps
+returning to: five of those six rows compare a record against something counted here and know they
+are right when they fail, and the sixth compares two records and can only know they differ. **A merge
+is the cheapest way to make two records agree, and it agrees them without reading either.**
+
 **Whether a text scan works depends on whether its token has a habitat in prose.** The `-j` scan
 failed at sixteen false positives in seventeen because `-j` lives comfortably in three kinds of
 non-code text here: comments (`-j 8 24 s`, a measurement table), string assertions in the very
