@@ -379,12 +379,24 @@ remote_server_slack=$(( remote_server_ceiling - remote_server_lines ))
 ledger_sync_points='waitUntilTransactionCount|waitUntilPersisted|waitUntilRowCount'
 ledger_tests=Tests/CloudCommandLedgerTests.swift
 
-ledger_task_sites=$(grep -c '= Task {' "$ledger_tests")
+# `Task` written any of the ways Swift allows, not just `= Task {`. The first version of this
+# pinned that one spelling, and `Task { … }` unbound, `Task<V, E> { … }` and `Task.detached`
+# went past it in silence — a guard that misses reads exactly like a guard that passes.
+# awk has no `\b`, so the boundary is spelled out; `->` skips return types and the comment
+# skip keeps a commented-out example from counting.
+ledger_task_re='(^|[^A-Za-z0-9_])Task([^A-Za-z0-9_]|$)'
+ledger_task_sites=$(awk -v re="$ledger_task_re" '
+  /^[[:space:]]*\/\// { next }
+  $0 ~ "->[[:space:]]*Task" { next }
+  $0 ~ re && /\{/ { c++ }
+  END { print c+0 }' "$ledger_tests")
 [ "$ledger_task_sites" -gt 0 ] \
-  || architecture_guard_fail "found no 'Task {' sites in $ledger_tests; the scanner is broken, not the tree"
+  || architecture_guard_fail "found no Task sites in $ledger_tests; the scanner is broken, not the tree"
 
-unordered_ledger_tasks=$(awk -v ok="$ledger_sync_points" '
-  /= Task \{/ { site = NR; pending = 1; next }
+unordered_ledger_tasks=$(awk -v ok="$ledger_sync_points" -v re="$ledger_task_re" '
+  /^[[:space:]]*\/\// && pending != 1 { next }
+  $0 ~ "->[[:space:]]*Task" { next }
+  $0 ~ re && /\{/ { site = NR; pending = 1; next }
   pending == 1 && ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*\/\//) { next }
   pending == 1 { pending = 0; if ($0 !~ ok) printf "%d:%s\n", site, $0 }
 ' "$ledger_tests")
