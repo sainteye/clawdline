@@ -1144,6 +1144,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     // window, a session that is really there, a tier that is one of two, and the command class
     // the relay bills. None of them may reach the broker.
     let readsBeforeMalformed = await router.recordedReads().count
+    let envelopesBeforeMalformed = transport.envelopes().count
     let malformed = [
         #"{"type":"transcript","session":"plain"}"#,
         #"{"type":"transcript","session":"plain","limit":200,"extra":1}"#,
@@ -1190,7 +1191,10 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let readsAfterMalformed = await router.recordedReads().count
     try require(readsAfterMalformed == readsBeforeMalformed,
                 "no malformed read reaches the broker")
-    try require(transport.envelopes().count == 15,
+    // The count this asks about is its own delta, not a total. A literal here — it was 15 — spells
+    // out every publication above it, so adding one admitted read type turns a check about
+    // refusals red for a reason that has nothing to do with refusals.
+    try require(transport.envelopes().count == envelopesBeforeMalformed,
                 "a refused-before-routing read publishes nothing, having no answer to publish")
 
     await bridge.stop()
