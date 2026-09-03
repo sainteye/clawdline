@@ -99,6 +99,48 @@ and Phases 0, 3 and 4 have never been started. What Phase 0 asked for — the on
 benchmark — is the thing that would decide whether any of the rest is worth building, and it is
 still the honest next step. The unresolved decisions at the end are still unresolved.
 
+### What a file lock cannot reach, measured rather than reasoned
+
+The lock lives in `test.sh`, so a tree whose `test.sh` predates it has no lock at all. That was
+first written here as a limitation somebody had derived; it is now a measurement, and the two
+readings are worth keeping apart because the first one was wrong about a specific morning.
+
+On 2026-09-03 a monitor reported two concurrent suites and no lock held. It was a false alarm, and
+the diagnosis offered for it — that isolated worktrees carry an older `test.sh` — was not the cause:
+both trees involved had the lock block, both carried the current sealed count, and the lock was
+held throughout. One run was compiling; the other's only child was `sleep 5`, which is the wait
+loop. **What that morning actually demonstrated is the opposite: with a queue, two top-level
+`./test.sh` processes are what success looks like**, and a monitor that counts runs will report a
+violation every time the lock works — its false-positive rate rises as the feature works better.
+Count compilers instead: the JetsamEvent named four `swift-frontend`, not four `test.sh`.
+
+A later scan, calibrated against a known positive first because a zero and a broken query look the
+same, found the real thing:
+
+```
+git ls-files test.sh in each live worktree, matching the lock block
+  <shared checkout>                          157 hits    has the lock
+  /private/tmp/clawdline-refactor/ca-exp       0 hits    base 974f8558, no 10130e45
+  /private/tmp/clawdline-refactor/patch-land   0 hits    base 0ae16887, no 10130e45
+```
+
+So the limitation is real and currently live: **a checkout based on a commit older than the lock has
+no lock, and nothing tells its user that.** The remedy is to rebase such a tree onto a `main` that
+contains it — not to hand-write a lock file in it, because a record with no renewer behind it
+expires in sixty seconds and lands in exactly the window this page describes above.
+
+**This is the thing a broker lease could have done and a file in one tree cannot**: be visible to
+every checkout and every snapshot at once. It is written down because the decision to keep only the
+file lock was made knowing this, and the next person to reach for the other design should find the
+condition rather than rediscover it.
+
+Two habits are worth taking from the same morning. **A reading that rules out one cause is not
+evidence that the cause never happens** — the false alarm was correctly disproved and then quietly
+treated as proof that no tree lacked the lock, which one scan refuted. And **a limitation somebody
+reasoned out should not be written as an incident that happened**; use a sentence that says which
+it is, because somebody sent to reproduce an incident that never occurred will find nothing and
+conclude the limitation is imaginary.
+
 ## What the 2026-09-03 reboots measured, and what they changed
 
 Two forced reboots that night, 01:24 and 01:45, moved this page from a proposal nobody had costed
