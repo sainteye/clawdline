@@ -6,7 +6,7 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:68,CloudAppBridge:75,CloudSettings:59,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:87'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:68,CloudAppBridge:97,CloudSettings:59,ScheduleResume:12,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:87'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
 # the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,
@@ -204,7 +204,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # wrote down was that focused count added to the seal *its own* base carried, and that base is not
 # this one: `main` has moved to 8,549 since. The number below is what the merged tree's full run
 # reported, measured rather than computed. 8,549 + 34 = 8,583.
-expected_swift_receipt='8610 checks passed'
+expected_swift_receipt='8632 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
