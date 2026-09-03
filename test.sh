@@ -159,7 +159,13 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # Rebased onto the lease removal: that landing took the receipt to 8,093, and this
 # extraction's 157 land on top of it. Its 157 land on top of whatever base is current; the value below is what a run reported, and the
 # base under it moved from 8093 to 8101 to 8226 while this branch waited.
-expected_swift_receipt='8383 checks passed'
+# The durable handoff label and its correction wave add 39: 26 for the record — the codec, the
+# rehydration through a restart, the reused terminal id and the different conversation, the untitled
+# handoff that stores nothing — and 13 for the correction that split "is it bound?" from "is a field
+# missing?", gave the projection an ambiguity refusal, and made the forget guard able to go red.
+# **8383 -> 8422, read off the run, not added up.** The arithmetic agrees this time, which is worth
+# nothing on its own: it agreed on the base before this one too, while the base itself was wrong.
+expected_swift_receipt='8422 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
