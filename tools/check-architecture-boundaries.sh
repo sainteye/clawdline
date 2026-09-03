@@ -151,8 +151,17 @@ suspension_max=$(python3 tools/suspension-scan.py Sources/*.swift Tests/*.swift 
   | head -1 | awk '{print $1}')
 [ -n "$suspension_max" ] \
   || architecture_guard_fail "suspension-point scan produced no output; that is a broken scanner, not a clean tree"
-[ "$suspension_max" -le 131 ] \
-  || architecture_guard_fail "one function now owns $suspension_max suspension points; the ratchet is 131 and may only fall (the measured cliff is between 131 and 143)"
+# This was a ratchet at 131 while runCloudCommandLedgerTests sat there — a value with no meaning
+# except "today's worst", held only to stop it climbing. That function is now split into its
+# twenty-five group blocks and the tree's worst is 61, so the ratchet has done its job and the
+# guard can go back to being what it should have been: a threshold with a derivation.
+#
+# 100, because the cliff was measured between 131 and 143 and that leaves three tenths of margin,
+# and because the largest function in the tree is 61 — far enough that ordinary growth does not
+# trip it. A ratchet at 61 would be red the first time somebody adds five awaits to a test, which
+# teaches people to raise the number rather than to split the function.
+[ "$suspension_max" -le 100 ] \
+  || architecture_guard_fail "one function owns $suspension_max suspension points; the limit is 100, derived from a cliff measured between 131 and 143 — split it rather than raising this"
 
 suite_count=0
 for suite in Tests/*Tests.swift; do
