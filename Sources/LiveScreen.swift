@@ -389,7 +389,10 @@ final class LiveScreens: @unchecked Sendable {
     }
 
     /// Leases, the cache, the coalescer and the pipes. The only writer of the published snapshot.
-    private let state = DispatchQueue(label: "com.tsunamiworks.clawdline.live-screens")
+    ///
+    /// Assigned in `init` rather than here because `PaneSignal` is handed this queue, and a stored
+    /// property cannot be read through `self` until every other one has been set.
+    private let state: DispatchQueue
     /// Where a capture actually happens. Serial, because two captures of the same pane in flight
     /// answer the same question twice.
     private let captureQueue = DispatchQueue(label: "com.tsunamiworks.clawdline.live-screens.capture")
@@ -413,6 +416,8 @@ final class LiveScreens: @unchecked Sendable {
              Targets.screenWithHistory(of: $0, lines: LiveScreen.lines)
          },
          changed: @escaping @Sendable (String, String) -> Void) {
+        let state = DispatchQueue(label: "com.tsunamiworks.clawdline.live-screens")
+        self.state = state
         self.capture = capture
         self.changed = changed
         self.signal = PaneSignal(directory: directory, queue: state)
@@ -698,7 +703,12 @@ extension LiveScreens.Reading {
         ]
         if let text {
             out["text"] = text
-            out["lines"] = text.split(separator: "\n", omittingEmptySubsequences: false).count
+            // The trailing newline a capture ends with is a terminator, not a row. Counting it
+            // would report 26 lines for a 25-line screen, and the number is the one place this
+            // payload says how much history there actually was.
+            let body = text.hasSuffix("\n") ? String(text.dropLast()) : text
+            out["lines"] = body.isEmpty
+                ? 0 : body.split(separator: "\n", omittingEmptySubsequences: false).count
         }
         if let at { out["at"] = Int(at.timeIntervalSince1970) }
         if channel == .onDemand {

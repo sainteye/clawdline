@@ -720,4 +720,341 @@ group("a screen read to decide something is the screen, not its history") {
           !Orchestrator.briefingInputReady(stale, assistant: .claude))
 }
 
+
+/// Somewhere for a live-screen test to keep its FIFOs, deleted with the group.
+func makeScreenDirectory() -> URL {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-live-screens-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
+}
+
+/// What the `changed` callback saw, across the queues it is called from.
+final class ScreenEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [(String, String)] = []
+    func record(_ id: String, _ revision: String) {
+        lock.lock(); seen.append((id, revision)); lock.unlock()
+    }
+    var all: [(String, String)] {
+        lock.lock(); defer { lock.unlock() }; return seen
+    }
+    var count: Int { all.count }
+}
+
+/// A capture that can be changed from the test while the service is running.
+final class ScreenSource: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text: String?
+    private var taken = 0
+    init(_ initial: String?) { text = initial }
+    func set(_ value: String?) { lock.lock(); text = value; lock.unlock() }
+    var captures: Int { lock.lock(); defer { lock.unlock() }; return taken }
+    func read() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        taken += 1
+        return text
+    }
+}
+
+group("the pipe a live screen needs is one tmux command, and taking it off is another") {
+    let fake = makeFakeTmux()
+    defer { fake.cleanup(); Tmux.binaryForTesting = nil }
+    Tmux.binaryForTesting = fake.binary
+
+    check("a pipe is attached with the command it is to run",
+          Tmux.pipe("%4", into: "cat > /tmp/x.fifo"))
+    expect("as one invocation naming the pane and nothing else", fake.calls.last,
+           "pipe-pane -t %4 cat > /tmp/x.fifo")
+    check("and taken off with the same subcommand and no command at all", Tmux.unpipe("%4"))
+    expect("which is tmux's own way of saying it", fake.calls.last, "pipe-pane -t %4")
+
+    // The same closed vocabulary `batchedCaptureScript` keeps, and for a sharper reason: this one
+    // hands tmux a *shell line*, so a word that is not an id tmux gave out has no business here.
+    let before = fake.calls.count
+    check("a word that is not a pane id never reaches tmux", !Tmux.pipe("; kill-server", into: "cat"))
+    check("nor a bare percent", !Tmux.pipe("%", into: "cat"))
+    check("nor when it is being taken off again", !Tmux.unpipe("2; kill-server"))
+    check("an empty command is not a pipe", !Tmux.pipe("%4", into: ""))
+    expect("so none of the four reached the terminal at all", fake.calls.count, before)
+
+    // **Where the pipe writes, and the one path shape that is refused.** The command becomes a
+    // shell line inside somebody's multiplexer; the app's own directories have spaces in them, so
+    // the path is quoted, and a path that could close that quote is no command at all.
+    expect("the target is the FIFO, quoted", PaneSignal.pipeCommand(writingTo: "/a b/1.fifo"),
+           "cat > '/a b/1.fifo'")
+    check("a path that could close the quote is refused rather than escaped",
+          PaneSignal.pipeCommand(writingTo: "/a'b/1.fifo") == nil)
+    check("and so is nothing at all", PaneSignal.pipeCommand(writingTo: "") == nil)
+
+    // **The FIFO's name is the ownership record**, so it has to survive the round trip: a file
+    // left behind by a crashed app is the only thing that says which pane to take a pipe off.
+    let directory = makeScreenDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let signal = PaneSignal(directory: directory, queue: DispatchQueue(label: "test.signal"))
+    expect("a pane id becomes a file name", signal.fifoURL(for: "%12")?.lastPathComponent,
+           "12.fifo")
+    expect("and reads back as the pane it came from",
+           PaneSignal.paneID(ofFIFONamed: "12.fifo"), "%12")
+    check("a file this class did not make names no pane",
+          PaneSignal.paneID(ofFIFONamed: "notes.txt") == nil)
+    check("and neither does one that only looks like it",
+          PaneSignal.paneID(ofFIFONamed: "12a.fifo") == nil)
+
+    // **What tmux will and will not say about a pipe.** `#{pane_pipe}` is a boolean: it answers
+    // *is something piped* and never *is it ours*, which is why the state route reports a pane it
+    // cannot account for rather than calling it a leak.
+    let sep = "\u{1}"
+    let state = Tmux.parsePipedPanes(
+        "%1\(sep)1\n%2\(sep)0\n%3\(sep)1\n")
+    expect("every pane tmux listed is keyed by its own id", state.count, 3)
+    expect("a piped pane says so", state["%1"], true)
+    expect("and one with nothing attached says that instead", state["%2"], false)
+    check("a pane tmux did not list is absent rather than false", state["%9"] == nil)
+    // Missing, unreadable and not-piped are three states and must not share one spelling: a row
+    // this cannot read is dropped, so "no answer" never arrives looking like "no pipe".
+    let messy = Tmux.parsePipedPanes("%1\(sep)yes\n%2\n\(sep)1\nnonsense\n%3\(sep)1\n")
+    expect("only the rows that answered in tmux's own vocabulary survive", messy.count, 1)
+    expect("and the good row is still read", messy["%3"], true)
+    _ = Tmux.pipedPanes()
+    check("the state reading asks for every pane on the server in one command",
+          fake.calls.last == "list-panes -a -F \(Tmux.pipeStateFormat)", fake.calls.last ?? "none")
+}
+
+group("the coalescing window is what stops a signal becoming a nine-hertz sampler") {
+    // Measured on a working Claude Code pane: writes every 107 ms median, 9.3 a second, no quiet
+    // second in 139. So the window is not an optimisation — without it this shape captures on
+    // every redraw, which is the one way it is worse than sampling.
+    var window = ScreenCoalescer(window: 0.15)
+    expect("the first signal for a pane is captured immediately", window.signal("%1", at: 0), .now)
+    window.captured("%1", at: 0)
+    expect("a redraw inside the window is scheduled for the end of it",
+           window.signal("%1", at: 0.107), .at(0.15))
+    expect("and every further redraw joins the one already scheduled",
+           window.signal("%1", at: 0.12), .waiting)
+    check("which is a state the caller can ask about", window.isScheduled("%1"))
+    window.captured("%1", at: 0.15)
+    check("and stops being one once that capture has happened", !window.isScheduled("%1"))
+    expect("a redraw a whole window later is captured immediately again",
+           window.signal("%1", at: 0.31), .now)
+
+    // **The window is measured from the last capture, not from the last signal.** That asymmetry
+    // is the point of the whole shape: a burst is bounded at one capture per window, while a
+    // keystroke on a session that has been quiet is captured at once.
+    var quiet = ScreenCoalescer(window: 0.15)
+    expect("panes do not share a window", quiet.signal("%2", at: 5), .now)
+    quiet.captured("%2", at: 5)
+    expect("a change after a long silence does not wait for anything",
+           quiet.signal("%2", at: 90), .now)
+
+    // The arithmetic the comment claims, run: ten redraws at the measured 107 ms interval.
+    var burst = ScreenCoalescer(window: 0.15)
+    var captures = 0
+    var clock = 0.0
+    var due: Double?
+    for _ in 0..<10 {
+        if let at = due, at <= clock { burst.captured("%3", at: at); captures += 1; due = nil }
+        switch burst.signal("%3", at: clock) {
+        case .now: burst.captured("%3", at: clock); captures += 1
+        case .at(let at): due = at
+        case .waiting: break
+        }
+        clock += 0.107
+    }
+    if let at = due { burst.captured("%3", at: at); captures += 1 }
+    check("ten redraws in a second cost fewer captures than redraws", captures < 10, "\(captures)")
+    check("and no more than one per window", Double(captures) <= 1.07 / 0.15 + 1, "\(captures)")
+
+    // A pane the window has forgotten is a pane nobody is watching any more, and its next signal
+    // must not be answered against a stale last-capture time.
+    burst.forget("%3")
+    expect("a forgotten pane starts again", burst.signal("%3", at: clock), .now)
+}
+
+group("a screen nobody is watching costs nothing, and a signal is what buys the next one") {
+    let fake = makeFakeTmux()
+    let directory = makeScreenDirectory()
+    defer {
+        fake.cleanup()
+        Tmux.binaryForTesting = nil
+        try? FileManager.default.removeItem(at: directory)
+    }
+    Tmux.binaryForTesting = fake.binary
+
+    let events = ScreenEvents()
+    let source = ScreenSource("first screen\n")
+    let screens = LiveScreens(directory: directory, capture: { _ in source.read() },
+                              changed: { events.record($0, $1) })
+    defer { screens.stop() }
+
+    // **Nothing has been watched, so nothing has been done.** No lease, no pipe, no capture.
+    expect("an unwatched Mac has attached no pipe at all", fake.calls.count, 0)
+    expect("and taken no captures", source.captures, 0)
+
+    let pane = tmuxPane("%1")
+    let first = screens.read(pane)
+    expect("the first read names the backend before it says anything about the screen",
+           first.backend, Backend.tmux)
+    expect("and what that backend can promise", first.channel, LiveScreenChannel.signalled)
+    check("and a lease that starts now", first.watchingUntil > Date())
+    screens.settleForTesting()
+
+    check("reading is what attaches the pipe",
+          fake.calls.contains { $0.hasPrefix("pipe-pane -t %1 cat > ") },
+          fake.calls.joined(separator: " | "))
+    expect("and it costs exactly one capture", source.captures, 1)
+    check("which the watcher is told about once", eventually { events.count == 1 })
+    let held = screens.read(pane)
+    expect("the second read is answered out of that capture", held.text, "first screen\n")
+    expect("and its revision is the one the event carried", held.revision, events.all.last?.1)
+
+    // **Zero captures while nothing moves, and this is the half that separates C from sampling.**
+    // A sampler asks again on every beat; this asks only when the pane has said something.
+    for _ in 0..<5 { _ = screens.read(pane) }
+    screens.settleForTesting()
+    expect("reading again while the pane is quiet asks the terminal nothing", source.captures, 1)
+    expect("and tells the watcher nothing", events.count, 1)
+
+    // **The signal, exercised through a real FIFO.** This is what tmux's `pipe-pane` does: bytes
+    // arrive on the far end of the pipe, and their arrival — not their content — is the message.
+    source.set("second screen\n")
+    let fifo = directory.appendingPathComponent("1.fifo")
+    check("the pipe target is a FIFO on disk", FileManager.default.fileExists(atPath: fifo.path))
+    let writer = FileHandle(forWritingAtPath: fifo.path)
+    check("which something can write to, the way the pane's own output would", writer != nil)
+    writer?.write(Data("some bytes the pane drew".utf8))
+    check("a pane that moved reaches the watcher", eventually { events.count == 2 })
+    expect("having cost one more capture", source.captures, 2)
+    expect("and the screen the watcher can now fetch is the new one",
+           screens.read(pane).text, "second screen\n")
+
+    // **The route never waits on a terminal, and that is provable rather than probable.** A
+    // capture held open by a semaphore is a wedged tmux in slow motion: the read still answers,
+    // with no screen yet and a lease already running, and the screen arrives on the event.
+    let slowDirectory = makeScreenDirectory()
+    defer { try? FileManager.default.removeItem(at: slowDirectory) }
+    let gate = DispatchSemaphore(value: 0)
+    let slowEvents = ScreenEvents()
+    let slow = LiveScreens(directory: slowDirectory, capture: { _ in gate.wait(); return "late\n" },
+                           changed: { slowEvents.record($0, $1) })
+    let asked = Date()
+    let waiting = slow.read(tmuxPane("%6"))
+    let waited = Date().timeIntervalSince(asked)
+    check("a read whose capture has not finished answers anyway", waiting.text == nil)
+    check("without waiting for it", waited < 1, "waited \(waited)s")
+    expect("and says so rather than pretending the screen is empty",
+           waiting.payload["pending"] as? Bool, true)
+    gate.signal()
+    check("and the screen follows on the event", eventually { slowEvents.count == 1 })
+    slow.stop()
+
+    // **The 21%.** Ten samples a second of a working session came back byte-identical to the last
+    // one 23 times in 113. A capture that changed nothing is not a change.
+    let quiet = events.count
+    writer?.write(Data("more bytes, same screen".utf8))
+    check("a capture whose bytes did not change costs a capture",
+          eventually { source.captures == 3 })
+    screens.settleForTesting()
+    expect("and tells the watcher nothing at all", events.count, quiet)
+    writer?.closeFile()
+}
+
+group("no pipe-pane survives a watcher that stopped watching") {
+    let fake = makeFakeTmux()
+    let directory = makeScreenDirectory()
+    defer {
+        fake.cleanup()
+        Tmux.binaryForTesting = nil
+        try? FileManager.default.removeItem(at: directory)
+    }
+    Tmux.binaryForTesting = fake.binary
+
+    let screens = LiveScreens(directory: directory, capture: { _ in "screen\n" }, changed: { _, _ in })
+    defer { screens.stop() }
+    let pane = tmuxPane("%2")
+    _ = screens.read(pane)
+    screens.settleForTesting()
+    let fifo = directory.appendingPathComponent("2.fifo")
+    check("watching attached a pipe", FileManager.default.fileExists(atPath: fifo.path))
+
+    // The lease is what "somebody is still looking" means, and nothing else is. Move the clock
+    // past it rather than waiting for it, because what is being proved is the rule and not the
+    // number.
+    screens.sweep(now: Date().addingTimeInterval(LiveScreen.leaseSeconds + 1))
+    screens.settleForTesting()
+    expect("a lease nobody renewed takes the pipe off", fake.calls.last, "pipe-pane -t %2")
+    check("and the FIFO with it", !FileManager.default.fileExists(atPath: fifo.path))
+    check("so nothing is left claiming to be watched",
+          (screens.inventory()["attached"] as? [String])?.isEmpty == true)
+
+    // **The other half: a pipe this app attached in a previous life.** The FIFO left in its own
+    // directory is the record, so recovery needs no second file to fall out of step with.
+    let orphan = directory.appendingPathComponent("7.fifo")
+    FileManager.default.createFile(atPath: orphan.path, contents: Data())
+    let stranger = directory.appendingPathComponent("notes.txt")
+    FileManager.default.createFile(atPath: stranger.path, contents: Data())
+    let taken = screens.reclaim()
+    // This fake tmux answers `list-panes` with nothing, which is a server that has no such pane —
+    // so nothing is unpiped, and the record is forgotten anyway. That is the measured case: the
+    // pipe target dies on the pane's first write once the reading end is gone.
+    expect("a pane tmux no longer has is not sent a command", taken.count, 0)
+    check("but its record is cleared", !FileManager.default.fileExists(atPath: orphan.path))
+    check("and a file this app did not make is left alone",
+          FileManager.default.fileExists(atPath: stranger.path))
+}
+
+group("an iTerm2 screen says what it cannot do rather than doing less silently") {
+    let fake = makeFakeTmux()
+    let directory = makeScreenDirectory()
+    defer {
+        fake.cleanup()
+        Tmux.binaryForTesting = nil
+        try? FileManager.default.removeItem(at: directory)
+    }
+    Tmux.binaryForTesting = fake.binary
+
+    expect("tmux can say a pane moved", LiveScreens.channel(for: .tmux),
+           LiveScreenChannel.signalled)
+    // iTerm2's scripting interface publishes no byte stream, so there is no signal to have — this
+    // is not a slower version of the same thing, it is a different one.
+    expect("iTerm2 cannot, and the type says so", LiveScreens.channel(for: .iterm),
+           LiveScreenChannel.onDemand)
+
+    let screens = LiveScreens(directory: directory, capture: { _ in "iterm screen\n" },
+                              changed: { _, _ in })
+    defer { screens.stop() }
+    let session = TargetSession(backend: .iterm, id: "ABC-1", name: "tab", tty: "/dev/ttys901",
+                                windowIndex: 0, tabIndex: 0, assistant: .claude, cwd: "/tmp")
+    _ = screens.read(session)
+    screens.settleForTesting()
+    check("no pipe is attached to a backend that has none",
+          !fake.calls.contains { $0.hasPrefix("pipe-pane") }, fake.calls.joined(separator: " | "))
+    check("and no FIFO is made for it",
+          ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty)
+
+    let reading = screens.read(session)
+    let payload = reading.payload
+    expect("the payload names the backend it is looking at", payload["backend"] as? String,
+           "iterm")
+    expect("and that this one has to be asked", payload["channel"] as? String, "on-demand")
+    // **The interface has to be able to say it, so the payload has to carry it.** A view that
+    // draws a four-millisecond live screen and a sampled one with the same chrome repeats a defect
+    // this repository already had.
+    expect("with the fastest it may ask, which is the Mac's number and not the phone's",
+           payload["askAgainAfterMs"] as? Int, Int(LiveScreen.onDemandFloor * 1000))
+
+    let piped = LiveScreens(directory: directory, capture: { _ in "tmux screen\n" },
+                            changed: { _, _ in })
+    defer { piped.stop() }
+    let tmuxReading = piped.read(tmuxPane("%3"))
+    piped.settleForTesting()
+    let tmuxPayload = piped.read(tmuxPane("%3")).payload
+    expect("a signalled backend says that instead", tmuxPayload["channel"] as? String, "signalled")
+    check("and never asks the phone to poll it", tmuxPayload["askAgainAfterMs"] == nil)
+    expect("both readings are about the session they were asked about",
+           tmuxReading.sessionID, "%3")
+    expect("and the screen carries how many lines actually came back, not how many were asked for",
+           tmuxPayload["lines"] as? Int, 1)
+}
+
 }

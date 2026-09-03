@@ -90,6 +90,8 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `GET` | `/v1/sessions/:id/info` | token | `read` |
 | `GET` | `/v1/sessions/:id/skills` | token | `read` |
 | `GET` | `/v1/sessions/:id/git` | token | `read` |
+| `GET` | `/v1/sessions/:id/screen` | token | `read` |
+| `GET` | `/v1/screens` | token | `read` |
 | `GET` | `/v1/projects` | token | `read` |
 | `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/places/:id/sessions` | token | `read` |
@@ -838,6 +840,92 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/git
 The route runs status and both numstat views with `GIT_OPTIONAL_LOCKS=0` and a timeout. It never
 changes the worktree or index. A session outside a Git repository answers `404 not_a_repo` in the
 standard [error envelope](#the-error-envelope).
+
+### `GET /v1/sessions/:id/screen`
+
+**What that terminal is showing now — and, by asking, that somebody is still watching it.**
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/%31/screen
+{"screen":{"id":"%31","backend":"tmux","channel":"signalled","revision":"9f1c4a2b7d0e5613",
+  "readable":true,"pending":false,"text":"\u001b[32m❯\u001b[39m ready\n","lines":25,
+  "at":1788427310,"watchingUntil":1788427340,"captures":7,"signals":63}}
+```
+
+| field | |
+|---|---|
+| `backend` | `tmux` or `iterm` — **read this before anything else in the object** |
+| `channel` | `signalled` when the backend can say the screen moved, `on-demand` when it cannot |
+| `revision` | changes when the bytes change; the `screen` event carries the same value |
+| `readable` | false when the screen could not be read at all; `text` is then absent |
+| `pending` | true on the very first read, before any capture has finished |
+| `text` | the captured screen, SGR colour included, exactly as `capture-pane -p -e -J` gave it |
+| `lines` | how many lines actually came back — **not** how many were asked for |
+| `at` | when the capture that produced this `revision` was taken |
+| `watchingUntil` | when this reading's lease runs out, unless somebody reads again |
+| `captures`, `signals` | what watching this session has cost so far, and how many changes caused it |
+| `askAgainAfterMs` | `on-demand` only: the soonest a client may ask again |
+
+**Reading is the subscription.** There is no route that starts watching and none that stops. This
+renews a thirty-second lease; while a lease is live the Mac keeps a `pipe-pane` on that tmux pane
+and captures when the pane moves, and a lease nobody renews expires and takes the pipe with it. A
+client that means to keep watching should read again about every fifteen seconds — half the lease,
+so one lost request does not drop it — and otherwise wait for the `screen` event.
+
+**It is a `GET` on purpose.** Watching a screen types nothing and changes no session, and the write
+gate is about running code on this Mac; a paired device that may only read must still be able to
+look. The lease is the only state it creates and it is self-expiring.
+
+**It never waits on a terminal.** The answer comes out of a published snapshot and the capture
+happens behind it, so the first read of a session answers `pending: true` with no `text`, and the
+screen arrives a few milliseconds later on the `screen` event like every later one. A wedged tmux
+costs a stale screen, never a stalled request.
+
+**There is no scrollback for an assistant pane, and this must not be read as though there were.**
+Claude Code runs on the alternate screen — measured `alternate_on=1`, `history_size=0` on every
+live pane — so `lines` is the visible screen and nothing above it. An ordinary shell pane does have
+history and returns more. There is no way to ask for a different depth: it is the Mac's.
+
+**On iTerm2 there is no change signal at all.** `channel` is `on-demand`, no pipe is attached, and
+`askAgainAfterMs` says how fast a client may sample — one `ITerm.capture` round is 0.16 s measured,
+about forty times a tmux capture, and the floor is what stops a fast client spending a sixth of a
+core. A client that draws `signalled` and `on-demand` identically is claiming a liveness this Mac
+has not offered.
+
+A session id that is not in the current inventory answers `404 not_found` in the standard
+[error envelope](#the-error-envelope).
+
+### `GET /v1/screens`
+
+**The machine state watching creates, and how much of it this app can account for.** `pipe-pane`
+outlives the process that asked for it, so this exists for the same reason
+`tmux list-panes -a -F '#{pane_id} #{pane_pipe}'` does — and answers one thing that command cannot.
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/screens
+{"screens":[{"id":"%31","backend":"tmux","channel":"signalled","watching":true,"expiresIn":22,
+  "signalled":true,"captures":7,"signals":63,"readable":true}],
+ "attached":["%31"],"piped":["%31","%9"],"unattributed":["%9"],
+ "windowMs":150,"leaseSeconds":30}
+```
+
+| field | |
+|---|---|
+| `screens` | one row per session that has a lease, live or not yet swept |
+| `attached` | the panes this app currently holds a pipe on |
+| `piped` | every pane tmux reports `#{pane_pipe}` as set for |
+| `unattributed` | piped, and not this app's as far as it knows |
+| `windowMs` | the coalescing window: at most one capture per pane per window |
+| `leaseSeconds` | how long one read keeps a pipe attached |
+
+**`unattributed` is not a leak report.** `#{pane_pipe}` is a boolean with no owner in it, so tmux
+cannot say whose pipe it is; a pane in that list may be somebody's own `pipe-pane`, and this app
+never takes another one off. What it does take back — once, at start — is a pane named by a FIFO
+left in its own directory by a previous run. That file is the ownership record, so recovery needs
+no second list to fall out of step with.
+
+This route reads tmux, so it shares the bounded slow-reading budget with `/info` and may answer
+`429` when that budget is full. `/v1/sessions/:id/screen` deliberately does not.
 
 ### `GET /v1/places`
 
@@ -4566,6 +4654,10 @@ event: transcript
 id: 8
 data: {"id":"B3ACDE0D-DE72-4E58-A99A-AB845A539C90","signature":"38603412-1787049597","at":1787049597}
 
+event: screen
+id: 9
+data: {"id":"%31","revision":"9f1c4a2b7d0e5613","at":1787049598}
+
 : ping
 
 event: sessions
@@ -4581,6 +4673,14 @@ contains only a session id and file signature when that assistant's transcript f
 client fetches the authenticated transcript route for content, so conversation text never rides
 the event stream. Transcript events are not replayed; after reconnect, quietly refetch the
 currently open transcript once to cover bytes written while offline.
+
+A `screen` frame carries a session id and the revision of that session's captured screen, and never
+the screen itself — for the reason `transcript` carries only a signature: this frame reaches
+**every** connected device, and a terminal somebody else is watching has no business on this
+phone's socket. Fetch `GET /v1/sessions/:id/screen` when the revision is not the one you already
+hold, and ignore the frame otherwise. Frames arrive only for sessions somebody is currently
+watching, and only when the captured bytes actually changed — a capture identical to the last one
+sends nothing, which on one measured session was 21% of them.
 
 An `orchestrator` frame follows every change to any task record:
 
