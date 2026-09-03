@@ -278,6 +278,9 @@ enum OrchestratorStore {
     /// written between the tab opening and the first complete inventory genuinely does not have —
     /// and an empty label is dropped rather than resurrected, because a tab wearing an empty
     /// name is worse than one wearing the name its conversation gave itself.
+    ///
+    /// `Int32(exactly:)` rather than `Int32.init`, which traps: this runs on `load()`, so a pid
+    /// too large to be one would stop the app starting rather than cost one label its process.
     static func handoffLabel(from obj: [String: Any]) -> Orchestrator.HandoffLabel? {
         guard let id = obj["handoff_id"] as? String, Orchestrator.isTaskID(id),
               let label = obj["label"] as? String, !label.isEmpty, label.count <= 200,
@@ -290,7 +293,7 @@ enum OrchestratorStore {
             handoffID: id, label: label,
             identity: Orchestrator.RootAssignmentIdentity(
                 terminalID: terminal, assistant: assistant, tty: row["tty"] as? String,
-                pid: (row["pid"] as? Int).map(Int32.init),
+                pid: (row["pid"] as? Int).flatMap(Int32.init(exactly:)),
                 processStart: row["process_start"] as? Double,
                 conversationID: row["conversation_id"] as? String))
     }

@@ -96,6 +96,13 @@ func runOrchestratorRegistryTests() {
     group("a registry transaction reads back what it wrote, and the next one still sees it") {
         for fact in facts {
             Orchestrator.forget()
+            // Write it, *then* forget. A collection that was never written is empty for the wrong
+            // reason, and an expectation that cannot tell "forget() cleared this" from "nothing
+            // ever put it there" stays green when one of `forget()`'s calls is deleted outright:
+            // that is exactly what happened to `removeAllSuppressedHandoffLabels()`, whose body
+            // could be emptied with the whole suite still passing.
+            OrchestratorRegistry.withTransaction(fact.write)
+            Orchestrator.forget()
             expect("\(fact.name) is absent after forget",
                    OrchestratorRegistry.withTransaction(fact.read), fact.empty)
             let insideTheWriter = OrchestratorRegistry.withTransaction { registry -> String in
@@ -201,10 +208,10 @@ func runOrchestratorRegistryTests() {
         // Two sets, one shape, and an id that means different things in each: a handoff id and an
         // assignment id are drawn from the same alphabet, so a single set would let one primitive
         // hide the other's label.
-        OrchestratorRegistry.withTransaction {
-            $0.suppressRootAssignmentLabel("shared-id")
-            $0.unsuppressHandoffLabel("shared-id")
-        }
+        // Nothing unsuppresses the handoff side first: an explicit release here would make the
+        // next check green under a single shared set as well as under two, which is the one
+        // arrangement it exists to refuse.
+        OrchestratorRegistry.withTransaction { $0.suppressRootAssignmentLabel("shared-id") }
         let handoffFollowed = OrchestratorRegistry.withTransaction {
             $0.isHandoffLabelSuppressed("shared-id")
         }
@@ -217,8 +224,8 @@ func runOrchestratorRegistryTests() {
         check("and the two are suppressed independently under the same id",
               assignmentStillSuppressed)
 
-        // `forget()` clears each of the five separately and in the order it always did; what this
-        // asks is that none of those five calls reaches past its own collection.
+        // `forget()` clears each of the six separately and in the order it always did; what this
+        // asks is that none of those six calls reaches past its own collection.
         OrchestratorRegistry.withTransaction { registry in
             registry.setHandoffTitle("handoff cccc", forTerminal: "%h3")
             registry.setTerminalProjection(titles: ["%c": "kept"], roles: ["%c": first])

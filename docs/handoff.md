@@ -249,15 +249,28 @@ person in front of it, and it is a sequence:
    names its own session for it through
    [`POST /v1/sessions/:id/title`](api.md#post-v1sessionsidtitle) — the device token from
    `~/.config/clawdline/remote-token`, an `Idempotency-Key`, and `{"title":"…"}`. It is one call,
-   and what it buys is reach: the app already labels the tab it opened with the handoff's `title`
-   and remembers that across a restart, but that label is Clawdline's, so it stops at the surfaces
-   Clawdline draws. This route also syncs downstream into the assistant's own name — for Claude it
-   is a `/rename` — so the job name reaches the places the app does not own. **It is the
-   receiver's move, not the sender's**: the sender does not have the receiver's session id, and a
-   name typed on arrival is one the session can keep true as the work changes shape.
-   **A person's later `/rename` still wins**, for Claude by exactly the rule
-   [`api.md`](api.md#post-v1sessionsidtitle) gives — the newer of the two human names is the one
-   the label shows.
+   and **what it reliably buys is the local name**: `local_applied` is the durable Clawdline
+   title, it is rung 1 of [`TargetSession.preferredDisplayLabel`](../Sources/ITerm.swift), and it
+   therefore shows on every surface this app draws and outranks the label the app gave the tab
+   when it opened it. **What it does not reliably buy is the assistant's own name.** The route
+   also tries to sync downstream — for Claude that is a `/rename` typed into the session — and a
+   session running its own tool call is *working*, which [`api.md`](api.md#post-v1sessionsidtitle)
+   answers as `downstream: "busy"`. A receiver calling this from inside a turn is exactly that, so
+   expect `busy`, and **busy is deliberately not queued**: nothing replays it later. So take the
+   local name as the point of the call. If the downstream name matters, the second call to make is
+   one from a moment the session is genuinely idle — not a retry loop, which changes nothing while
+   the session is still the one making it. **It is the receiver's move, not the sender's**: the
+   sender does not have the receiver's session id, and a name typed on arrival is one the session
+   can keep true as the work changes shape. **A person's later `/rename` still wins**, for Claude
+   by exactly the rule [`api.md`](api.md#post-v1sessionsidtitle) gives — the newer of the two
+   human names is the one the label shows.
+
+   **And when this step happens, it covers the durable label rather than adding to it.** The name
+   written here is rung 1; the [`handoff_labels`](#what-the-app-remembers) record this app keeps
+   for the tab is rung 2, and rung 1 wins. That is not a conflict — the durable label is the
+   fallback for a receiver that never makes this call, which is most of them, and the reason it
+   exists is that until it did, a restart left such a tab wearing whatever name its conversation
+   had generated for itself.
 3. **Walk `REFERENCES`.** Actually open them. This is the step that costs ten minutes and saves the
    afternoon.
 4. **Answer `VERIFICATION` from those sources**, not from the handoff document. Say the answers out

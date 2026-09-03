@@ -1633,7 +1633,8 @@ enum Orchestrator {
     /// is the defect this record exists to fix, arriving a day later instead of at the next
     /// restart. The label is therefore reclaimed on the identity below: once a scan of the
     /// machine has failed to find the process it names, it has stopped meaning anything, and
-    /// ``pruneClosedHandoffTitles(visible:identities:)`` has already stopped showing it.
+    /// ``pruneClosedHandoffTitles(visible:identities:inventoryComplete:)`` has already stopped
+    /// showing it.
     ///
     /// The identity is a ``RootAssignmentIdentity`` because that is the executor-identity record
     /// this app already compares with ``rootAssignmentIdentityMatches(_:observed:)``: an
@@ -3863,9 +3864,20 @@ enum Orchestrator {
             // the assignment and task rows below, so the precedence between the three sources is
             // exactly what it was — this changes when a handoff label is *known*, never where it
             // ranks against anything else.
+            //
+            // Two unsuppressed labels on one terminal id are two answers to a question that has
+            // one, and dictionary iteration order is not a tie-break. `rootAssignmentSession-
+            // Projection` refuses the same class of question with `matches.count == 1`; this
+            // refuses per terminal, so an ambiguous tab keeps whatever name it would have had
+            // without any handoff label rather than one of the two at random.
+            var labelsByTerminal: [String: [String]] = [:]
             for label in handoffLabels.values
             where !registry.isHandoffLabelSuppressed(label.handoffID) {
-                found[label.identity.terminalID] = label.label
+                labelsByTerminal[label.identity.terminalID, default: []].append(label.label)
+            }
+            for (terminal, labels) in labelsByTerminal {
+                guard labels.count == 1, let only = labels.first else { continue }
+                found[terminal] = only
             }
             var roles: [String: Role] = [:]
             // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
@@ -3909,8 +3921,19 @@ enum Orchestrator {
     /// Handoff labels are transient UI state. Keep one while its tab is visible or its first line
     /// is still in flight; once a closed tab disappears from the reading, its reusable id must
     /// not carry the old root's label into a later session.
+    ///
+    /// `inventoryComplete` is the durable half's evidence test, and it is separate from
+    /// `identities` because production never passes nil: ``beat(fromTimer:)`` hands over an array
+    /// that is *empty* until the first scan publishes, and ``SessionWatch/InventoryPublication``
+    /// starts at `targets: [], complete: false`. Read as a reading, that empty array says every
+    /// tab on this Mac has closed, and every durable label would be suppressed on the beats
+    /// before the first scan — with `cleanup()` wired to delete exactly what is suppressed. An
+    /// unfinished reading is no evidence either way; a closed tab is one a *complete* reading
+    /// looked for and did not find. An empty complete reading is still a reading, and does
+    /// suppress: that is the case the reclaim path exists for.
     static func pruneClosedHandoffTitles(visible: Set<String>,
-                                         identities: [SessionWorkIdentity]? = nil) {
+                                         identities: [SessionWorkIdentity]? = nil,
+                                         inventoryComplete: Bool = true) {
         let delivering = Set(handoffDeliveries.values.map(\.terminalID))
         OrchestratorRegistry.withTransactionOnHeldLock { registry in
             registry.setHandoffTitles(registry.handoffTitles().filter {
@@ -3929,15 +3952,19 @@ enum Orchestrator {
                     }
                 }
                 // A durable handoff label answers the same question and therefore takes the same
-                // answer. A caller with no identities has no evidence either way and leaves the
-                // suppression alone: an absent reading is not a closed tab.
-                for label in handoffLabels.values {
-                    if identities.contains(where: {
-                        rootAssignmentIdentityMatches(label.identity, observed: $0)
-                    }) {
-                        registry.unsuppressHandoffLabel(label.handoffID)
-                    } else {
-                        registry.suppressHandoffLabel(label.handoffID)
+                // answer — but it is the only one of the two whose suppression is wired to
+                // deletion, so it also asks whether the reading is finished. An absent or
+                // unfinished reading is no evidence either way and leaves the suppression alone;
+                // an absent reading is not a closed tab.
+                if inventoryComplete {
+                    for label in handoffLabels.values {
+                        if identities.contains(where: {
+                            rootAssignmentIdentityMatches(label.identity, observed: $0)
+                        }) {
+                            registry.unsuppressHandoffLabel(label.handoffID)
+                        } else {
+                            registry.suppressHandoffLabel(label.handoffID)
+                        }
                     }
                 }
             }
@@ -3957,6 +3984,16 @@ enum Orchestrator {
     /// the process tuple is adopted whole, so the stored identity is either the opening record or
     /// one real process and never a mixture of two.
     ///
+    /// **Two questions, not one.** *Has this record been bound to a process at all?* is what may
+    /// adopt a new process tuple, and it is the question the sibling above asks —
+    /// `stored.pid == nil || stored.processStart == nil`. *Is a field still missing?* is a
+    /// different and much weaker one: a Claude tab has a pid before its transcript has a name, so
+    /// a bound record routinely has no conversation id yet, and `onThatTab` filters on terminal
+    /// id and assistant alone. Asking only the second would re-seed such a record onto whatever
+    /// single process is in that tab now — and a terminal id is reused the moment its tab closes.
+    /// So a bound record may only have its conversation id filled in, and only by the process it
+    /// is already bound to.
+    ///
     /// Under the lock. True when a record changed and the store owes a write.
     private static func adoptHandoffLabelIdentitiesLocked(
         snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
@@ -3964,15 +4001,20 @@ enum Orchestrator {
         var changed = false
         for id in Array(handoffLabels.keys) {
             guard let label = handoffLabels[id] else { continue }
-            let incomplete = label.identity.pid == nil || label.identity.processStart == nil
-                || label.identity.conversationID == nil
-            guard incomplete else { continue }
+            let bound = label.identity.pid != nil && label.identity.processStart != nil
+            guard !bound || label.identity.conversationID == nil else { continue }
             let onThatTab = identities.filter {
                 $0.terminalID == label.identity.terminalID
                     && $0.assistant == label.identity.assistant
             }
             guard onThatTab.count == 1, let only = onThatTab.first,
                   let pid = only.pid, let start = only.processStart else { continue }
+            // An already-bound record accepts nothing but the conversation id, from the same
+            // process: a different pid or a different start is a stranger in a reused tab.
+            if bound {
+                guard label.identity.pid == pid,
+                      label.identity.processStart == start.timeIntervalSince1970 else { continue }
+            }
             let adopted = RootAssignmentIdentity(
                 terminalID: only.terminalID, assistant: label.identity.assistant, tty: only.tty,
                 pid: pid, processStart: start.timeIntervalSince1970,
@@ -8493,7 +8535,8 @@ enum Orchestrator {
         // two held together.
         SessionNaming.forget(closedFrom: visibleTerminals)
         lock.lock()
-        pruneClosedHandoffTitles(visible: visibleTerminals, identities: executorIdentities)
+        pruneClosedHandoffTitles(visible: visibleTerminals, identities: executorIdentities,
+                                 inventoryComplete: watchSnapshot.complete)
         let handoffLabelsAdopted = adoptHandoffLabelIdentitiesLocked(
             snapshot: watchSnapshot, identities: executorIdentities)
         beatSequence += 1

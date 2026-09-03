@@ -195,6 +195,47 @@ group("handoff envelopes survive restart and terminal ones are swept as one unit
     check("the removal itself survives restart", Orchestrator.handoffRecord(id: id) == nil)
     check("and so does the label that outlived it",
           Orchestrator.handoffLabelForTesting(id)?.label == "Old line")
+
+    func reload(labels: [[String: Any]]) {
+        let rewritten = try! JSONSerialization.data(
+            withJSONObject: ["version": 1, "tasks": [], "handoffs": [],
+                             "handoff_labels": labels])
+        try! rewritten.write(to: store, options: .atomic)
+        Orchestrator.forget()
+        Orchestrator.load(force: true)
+    }
+
+    // Two unsuppressed labels reaching one terminal id are two answers to a question that has
+    // one, and dictionary iteration order is not a tie-break. The projection refuses instead,
+    // the way `rootAssignmentSessionProjection` refuses on `matches.count == 1`.
+    let twin = UUID().uuidString.lowercased()
+    reload(labels: [
+        ["handoff_id": id, "label": "Old line",
+         "identity": ["terminal_id": "%shared", "assistant": "claude"]],
+        ["handoff_id": twin, "label": "A second job on the same tab",
+         "identity": ["terminal_id": "%shared", "assistant": "claude"]],
+        ["handoff_id": orphanLabel, "label": "The only label on its own tab",
+         "identity": ["terminal_id": "%alone", "assistant": "claude"]],
+    ])
+    check("two unsuppressed labels on one terminal id name that tab nothing at all",
+          Orchestrator.title(forTerminal: "%shared") == nil)
+    expect("while a tab exactly one label names still wears it",
+           Orchestrator.title(forTerminal: "%alone"), "The only label on its own tab")
+
+    // `load()` is the boot path, so a stored value too large to be a process id costs this label
+    // its process rather than costing the app its start.
+    reload(labels: [
+        ["handoff_id": id, "label": "Old line",
+         "identity": ["terminal_id": "%live", "assistant": "claude", "tty": "/dev/ttys021",
+                      "pid": 4_294_967_296, "process_start": liveStart]],
+    ])
+    expect("a pid too large to be one does not stop the registry loading",
+           Orchestrator.handoffLabelForTesting(id)?.label, "Old line")
+    check("and that label simply comes back with no process bound to it",
+          Orchestrator.handoffLabelForTesting(id)?.identity.pid == nil)
+    check("the fields either side of it are untouched",
+          Orchestrator.handoffLabelForTesting(id)?.identity.processStart == liveStart
+            && Orchestrator.handoffLabelForTesting(id)?.identity.tty == "/dev/ttys021")
 }
 
 group("handoff registration opens once and shares the dispatch brake") {
@@ -345,6 +386,68 @@ group("handoff registration opens once and shares the dispatch brake") {
     check("nor does a different conversation in the same tab", otherConversationForgot)
     check("and the durable record is still there to give it back when the process returns",
           Orchestrator.handoffLabelForTesting(titledID)?.label == "接手成為 Clawdfather")
+
+    // An absence only means something once the reading is finished. Production's only caller
+    // passes an array that is empty rather than nil until the first scan publishes, and what is
+    // suppressed here is exactly what `cleanup()` deletes.
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%titled"], identities: [receiver])
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%titled"], identities: [],
+                                          inventoryComplete: false)
+    expect("an unfinished reading of this Mac leaves a durable label alone",
+           Orchestrator.title(forTerminal: "%titled"), "接手成為 Clawdfather")
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%titled"], identities: [],
+                                          inventoryComplete: true)
+    check("while a finished reading that finds no assistant anywhere does suppress it",
+          Orchestrator.title(forTerminal: "%titled") == nil)
+
+    // The five steps of the rebinding this feature exists to refuse, in the order one beat walks
+    // them. A Claude tab has a pid before its transcript has a name, so a record that is bound to
+    // a process and still missing its conversation id is an ordinary state — and "is a field
+    // missing?" is not the same question as "is this bound to anything yet?".
+    let rebindID = UUID().uuidString.lowercased()
+    var rebindRequest = envelope(rebindID)
+    rebindRequest["title"] = "not this stranger's job"
+    rebindRequest["assistant"] = "claude"
+    _ = Orchestrator.handoff(rebindRequest) { _, _, _, _ in
+        .started(id: "%rebind", backend: .tmux)
+    }
+    let firstProcess = Orchestrator.SessionWorkIdentity(
+        terminalID: "%rebind", assistant: .claude, tty: "/dev/ttys041", pid: 100,
+        processStart: Date(timeIntervalSince1970: 1_788_398_100), conversationID: nil)
+    check("a first complete reading binds the label to the process in that tab",
+          Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
+                                                             identities: [firstProcess]))
+    // That process ends and another opens in the same reusable tab. One beat sees both halves:
+    // the prune stops showing the label, which is right, and the adoption directly after it must
+    // not hand the record to whatever is in the tab now.
+    let strangerInThatTab = Orchestrator.SessionWorkIdentity(
+        terminalID: "%rebind", assistant: .claude, tty: "/dev/ttys041", pid: 200,
+        processStart: Date(timeIntervalSince1970: 1_788_398_200),
+        conversationID: "cccccccc-0000-4000-8000-000000000002")
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%rebind"], identities: [strangerInThatTab])
+    check("a bound record does not follow a new process into the tab it was opened in",
+          !Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
+                                                              identities: [strangerInThatTab]))
+    expect("so it still names the process this handoff was delivered to",
+           Orchestrator.handoffLabelForTesting(rebindID)?.identity.pid, 100)
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    Orchestrator.load(force: true)
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%rebind"], identities: [strangerInThatTab])
+    check("so the next beat leaves the stranger's tab unnamed rather than giving it this job",
+          Orchestrator.title(forTerminal: "%rebind") == nil)
+    // What a bound record may still accept from the process it is bound to is the one field it
+    // is missing.
+    let firstProcessNamed = Orchestrator.SessionWorkIdentity(
+        terminalID: "%rebind", assistant: .claude, tty: "/dev/ttys041", pid: 100,
+        processStart: Date(timeIntervalSince1970: 1_788_398_100),
+        conversationID: "cccccccc-0000-4000-8000-000000000001")
+    check("while the process it is bound to may still fill in its conversation id",
+          Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
+                                                             identities: [firstProcessNamed]))
+    expect("completing the record it already had rather than replacing it",
+           Orchestrator.handoffLabelForTesting(rebindID)?.identity.conversationID,
+           "cccccccc-0000-4000-8000-000000000001")
 
     Orchestrator.forget()
     for _ in 0..<max(10, Config.shared.orchestratorMaxDescendants) {
