@@ -404,6 +404,27 @@ And where a structured field exists, read it instead. The wait above is the case
 an order from a wait reads `paths`, never the reason. A field has a subject; a sentence about why
 someone is waiting has only the moment it was written in.
 
+### What the re-seal door has and has not been shown to do
+
+`CLAWDLINE_RESEAL=1` downgrades one row of the architecture guard — `Swift checks`, the only one
+comparing two records rather than a record against a measurement of the tree — from a failure to a
+warning. It exists because that row blocks the suite until the seal and the governance table agree,
+while the true count is only known once the suite has run; the exit is to make them agree, and the
+only value available before a run is a wrong one. A line spent an hour on 2026-09-03 in exactly that
+state, both records saying 8218 on a tree that ran 8226, with every guard green and nobody aware.
+
+**Shown, by mutation:** the door opens for that row and for nothing else — all five measured rows
+still fail hard with it set, each mutation printing the value it replaced. The end-of-run receipt
+check still fails on a wrong seal with the door open, so landing is not weakened. `CLAWDLINE_RESEAL=1
+./test.sh` reaches the guard through the ordinary child process, which is the path people will use
+rather than the direct invocation the first proofs used.
+
+**Not shown:** that a re-sealing cycle now costs one full suite instead of two. That needs somebody
+whose change moves the check count to run the whole loop, and at the time of writing nobody has —
+the line that expected to be first had already paid for two rounds before the door landed. The claim
+is that the cycle disappears; the evidence is that the door opens. **Those are different sentences,
+and the second one is the one that has been tested.**
+
 ### Two checks this page specifies but the tree does not yet carry
 
 Both were built and proved on 2026-09-03 and are waiting for `test.sh` and
