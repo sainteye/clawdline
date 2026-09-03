@@ -521,6 +521,28 @@ try {
               "refused", r.status === 0 && /cannot tell/.test(r.stderr));
     }
     {
+        // Both at once, which is the case neither half describes on its own: one claim this hook
+        // can attribute to a stranger and one it cannot attribute to anybody. The attributable one
+        // decides — a refusal — and the other is reported as what it is rather than folded into
+        // the count of paths "another session is working on".
+        const repo = makeRepo();
+        writeFileSync(join(repo, "known.txt"), "k\n");
+        writeFileSync(join(repo, "unknown.txt"), "u\n");
+        runGit(repo, ["add", "--", "known.txt", "unknown.txt"]);
+        setTasks([
+            liveTask(repo, ["known.txt"]),
+            liveTask(repo, ["unknown.txt"], { id: "anonymous", title: "anonymous task",
+                                              child: {}, root: { label: "nameless root" } }),
+        ]);
+        const r = attemptCommit(repo);
+        check("one attributable claim still refuses even beside one that cannot be attributed",
+              r.status !== 0 && /contains 1 path\(s\) another session is working on/.test(r.stderr));
+        check("and the unattributable one is reported as that, not counted as a stranger's",
+              /could not attribute to anybody/.test(r.stderr) && /unknown\.txt/.test(r.stderr));
+        check("and only the attributable one gets a `git reset` line",
+              /git reset -- known\.txt/.test(r.stderr) && !/git reset -- unknown\.txt/.test(r.stderr));
+    }
+    {
         // A claim is a hand-typed string and this repository lives on a case-insensitive volume,
         // where `sources/foo.swift` *is* `Sources/Foo.swift`. A byte-for-byte comparison let that
         // typo through in silence, which is the direction that loses work.
