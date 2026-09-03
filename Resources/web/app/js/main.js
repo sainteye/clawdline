@@ -35,6 +35,7 @@ import "./door/door.js";
 import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
 import { renderTranscript } from "./view/transcript.js";
+import "./view/terminal.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import "./view/markdown.js";
 import "./view/composer.js";

@@ -53,6 +53,7 @@ clawdline_production_sources=(
   Sources/HookBridge.swift
   Sources/HotKey.swift
   Sources/ITerm.swift
+  Sources/LiveScreen.swift
   Sources/Log.swift
   Sources/Markdown.swift
   Sources/Mascot.swift

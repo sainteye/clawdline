@@ -7,6 +7,7 @@ import { renderTranscript } from "../view/transcript.js";
 import { renderComposer } from "../view/composer.js";
 import { Waits } from "../view/waits.js";
 import { Start } from "../input/start.js";
+import { Terminal } from "../view/terminal.js";
 
 /**
  * Whether accepting this frame would close the chat on the strength of one empty observation.
@@ -65,6 +66,13 @@ export var handlers = {
     tasks: function (list) {
         S.tasks = list || [];
         if (els.rows) render();
+    },
+    /// A terminal this Mac is watching moved to a new revision. Nothing is stored here: the
+    /// panel either has that revision already, in which case this costs one comparison, or it
+    /// asks for the screen itself. The 21% of captures that come back byte-identical never reach
+    /// this at all — the Mac drops them before the event is sent.
+    screen: function (id, revision) {
+        Terminal.observe(id, revision);
     },
     hello: function (info) {
         if (!info) return;

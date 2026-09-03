@@ -143,6 +143,17 @@ export var LocalClient = {
         // Dispatched work. Its own event because it moves on its own clock — a task is briefed
         // and finishes without the session list changing at all — and an app that has never
         // heard of it simply never sends one.
+        // A terminal moved. Only its revision travels here, for the reason the transcript event
+        // gives one comment up: this frame reaches every connected device, and a screen somebody
+        // else is watching has no business on this phone's socket. The panel compares the
+        // revision with what it holds and fetches through the ordinary authenticated route.
+        es.addEventListener("screen", function (ev) {
+            try {
+                var d = JSON.parse(ev.data);
+                handlers.screen(d.id, d.revision);
+                self.emit({ type: "screen-revision", data: d, machine: LOCAL_MACHINE });
+            } catch (e) { }
+        });
         es.addEventListener("orchestrator", function (ev) {
             try {
                 var d = JSON.parse(ev.data);
@@ -498,6 +509,15 @@ export var LocalClient = {
 
     /// Branch and file changes are also fetched only when their panel opens. Unlike the command
     /// actions in the same menu this is read-only, and it never rides the event stream.
+    /// What that terminal is showing now — and, by asking, that somebody is still watching it.
+    ///
+    /// **Reading is the subscription.** The Mac attaches its `pipe-pane` because this was called
+    /// and takes it off when nobody has called for thirty seconds, so there is nothing to
+    /// unsubscribe from and nothing a phone that lost its network can leave behind. Read level,
+    /// like `git` above it: watching a terminal types nothing into it.
+    screen: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/screen");
+    },
     git: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/git");
     },

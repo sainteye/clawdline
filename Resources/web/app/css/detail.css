@@ -180,6 +180,35 @@
 }
 .panel-view-body { flex: 1 1 auto; padding: 16px 18px 24px; }
 
+/* The live screen, and the line above it that says what kind of live it is.
+
+   **The badge is not decoration.** On tmux this panel is about four milliseconds behind the pane;
+   on iTerm2 there is no change signal at all and the same panel is a sample taken when it asks.
+   Those are different products and this is the only place the difference is visible, so it sits
+   next to the title rather than under the screen, and `data-channel` colours it: the accent for
+   the one that follows the terminal, the dim ink for the one that has to go and look. */
+.screen-channel {
+    flex: 0 0 auto;
+    color: var(--faint); font: 11px/1 var(--mono); letter-spacing: .02em;
+    white-space: nowrap;
+}
+.screen-badge[data-channel="signalled"] { color: var(--accent); }
+.screen-badge[data-channel="on-demand"] { color: var(--dim); }
+
+/* The screen itself: a grid tmux has already laid out, so it is set in the terminal's typeface
+   at the terminal's own line height and it does not wrap. A wrapped line is a different picture
+   from the one on the Mac, and the whole promise of this panel is that it is the same picture —
+   so it scrolls sideways instead, which says "this is wider than your phone" rather than
+   silently redrawing it. */
+.screen-text {
+    margin: 0; color: var(--ink);
+    font: 11.5px/1.35 var(--mono);
+    white-space: pre; tab-size: 8;
+}
+#screen-body { padding: 12px 14px 20px; overflow: auto; background: var(--term-bg); }
+.screen-note { color: var(--dim); font-size: 13px; }
+.screen-note.err { color: var(--bad); }
+
 /* What a background command has printed, which is bytes in the order they were written and not
    a conversation. So: the terminal's own typeface, its own wrapping, and no attempt to make a
    build log look like prose. */

@@ -314,6 +314,7 @@ document.documentElement.className = "booting";
                             <div class="session-action-level" id="session-actions-main" data-place="current">
                                 <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
                                 <button id="session-info" type="button" role="menuitem">Session info</button>
+                                <button id="session-screen" type="button" role="menuitem">Screen</button>
                                 <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
                                 <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
                             </div>
@@ -357,6 +358,20 @@ document.documentElement.className = "booting";
                 <button class="chip" id="shell-close" type="button">Close</button>
             </div>
             <div class="scroller panel-view-body" id="shell-body" aria-live="polite"></div>
+        </section>
+        <!-- The terminal itself, live. The same furniture again, and one thing the other two do
+             not have: a line saying which backend is behind it. On tmux `pipe-pane` says the pane
+             moved and this is about four milliseconds behind it; on iTerm2 there is no such
+             signal and the same panel is a sample. Drawing those identically would be a lie the
+             reader has no way to catch. There is no Refresh: the panel keeps its own lease, and
+             on the backend that has to be asked it says how often it may ask. -->
+        <section class="panel-view" id="screen-panel" aria-labelledby="screen-title" hidden>
+            <div class="panel-view-head">
+                <h2 id="screen-title">Screen</h2>
+                <span class="screen-channel" id="screen-badge" aria-live="polite"></span>
+                <button class="chip" id="screen-close" type="button">Close</button>
+            </div>
+            <div class="scroller panel-view-body" id="screen-body" aria-live="polite"></div>
         </section>
         <div class="scroller tx-scroll" id="tx-scroll"><div class="tx" id="tx"></div></div>
         <!-- The session and the work it sent away, as one short tree: `main` at the root and a

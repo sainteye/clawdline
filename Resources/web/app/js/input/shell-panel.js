@@ -7,6 +7,7 @@ import { toast } from "../core/util.js";
 import { ActionConfirm } from "./action-confirm.js";
 import { byId } from "../view/derive.js";
 import { GitPanel } from "./git-panel.js";
+import { Terminal } from "../view/terminal.js";
 
 /**
  * What one background command has printed, in the transcript's space.
@@ -195,6 +196,7 @@ export var ShellPanel = (function () {
         open: function (id) {
             if (!S.openId || !id) return;
             GitPanel.close(false);
+            Terminal.close(false);
             forId = S.openId;
             shellId = id;
             // The strip's own row, so the first draw already names the command rather than

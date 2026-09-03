@@ -112,6 +112,46 @@ final class RemoteServer: @unchecked Sendable {
             }
         }
     }
+    /// Where the FIFOs a live screen signals through are kept.
+    ///
+    /// The process's own temporary directory: per-user, no spaces to quote into a shell line, and
+    /// emptied by a reboot — which is also when the tmux server holding the other end of them goes
+    /// away, so the two lifetimes cannot drift apart.
+    static let liveScreenDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        .appendingPathComponent("clawdline-live-screens", isDirectory: true)
+
+    private var liveScreensStorage: LiveScreens?
+    private let liveScreensLock = NSLock()
+
+    /// Live screens for whoever is watching one, made on first use and behind a lock rather than
+    /// `lazy`.
+    ///
+    /// **Because two queues reach it.** `/v1/sessions/:id/screen` is answered on `queue` and
+    /// `/v1/screens` is answered on the reading worker, and a `lazy var` initialised from two
+    /// queues is two objects — which here would be two owners of the same `pipe-pane`, the one
+    /// thing this feature must not have.
+    var liveScreens: LiveScreens {
+        liveScreensLock.lock()
+        defer { liveScreensLock.unlock() }
+        if let held = liveScreensStorage { return held }
+        let made = LiveScreens(directory: Self.liveScreenDirectory) { [weak self] id, revision in
+            guard let self else { return }
+            // Only that the screen moved, and to what revision. The screen itself is fetched
+            // through the authenticated GET, exactly as a transcript append is: a stream frame is
+            // broadcast to every connected device, and a terminal somebody else is watching has no
+            // business on this phone's socket.
+            let payload: [String: Any] = ["id": id, "revision": revision,
+                                          "at": Int(Date().timeIntervalSince1970)]
+            self.queue.async {
+                for stream in self.streams.values {
+                    self.write(event: "screen", data: payload, to: stream)
+                }
+            }
+        }
+        liveScreensStorage = made
+        return made
+    }
+
     /// Set only through `attachCloudBridge`. It lives on `queue`, beside the SSE streams whose
     /// already-serialized readings it shares.
     private var cloudBridge: CloudAppBridge?
@@ -495,6 +535,17 @@ final class RemoteServer: @unchecked Sendable {
         // understand. It does not satisfy the tunnel interlock — see RemoteAuth.isConfigured.
         _ = RemoteAuth.localToken()
 
+        // **A pipe this app attached in a previous life is machine state nobody else will take
+        // back.** The FIFOs left in `liveScreenDirectory` name those panes; taking them back is
+        // the only step of the live-screen lifecycle that cannot wait for somebody to ask.
+        queue.async { [weak self] in
+            guard let self else { return }
+            let taken = self.liveScreens.reclaim()
+            if !taken.isEmpty {
+                Log.write("remote: took back pipe-pane on \(taken.joined(separator: ", "))")
+            }
+        }
+
         // One observer for every stream there will ever be. Registering per client would mean a
         // reading fanned out by the watch to N closures that all do the same work.
         syncSnapshotObserver()
@@ -522,6 +573,9 @@ final class RemoteServer: @unchecked Sendable {
             self.streams.removeAll()
             self.transcriptRevisionStream.stop()
         }
+        // Not on `queue`, and not asynchronously: this is the one place where a `pipe-pane` has to
+        // be gone before the caller carries on, because the caller may be the app going away.
+        liveScreensStorage?.stop()
     }
 
     private func syncSnapshotObserver() {
@@ -1107,6 +1161,34 @@ final class RemoteServer: @unchecked Sendable {
             case .failed:
                 return .error(500, "git_failed", "Could not read that repository")
             }
+
+        // **What that terminal is showing, now.** The one route in this file whose subject is a
+        // screen rather than a decision made from one, so it is the one that calls
+        // `Targets.screenWithHistory` — through `LiveScreens`, which owns the single reader.
+        //
+        // **Reading it is the subscription.** There is no route that attaches a `pipe-pane` and
+        // none that takes one off: this renews a thirty-second lease, and a lease nobody renews
+        // expires and takes the pipe with it. That is deliberately a GET — watching a screen types
+        // nothing and changes no session, and a POST would put it behind the write gate, which is
+        // about running code on this Mac and is off by default. A device that may only read must
+        // still be able to look.
+        //
+        // It never waits on a terminal. The answer comes out of a published snapshot and the
+        // capture happens behind it, so the first read of a session answers `pending` and the
+        // screen arrives a few milliseconds later on the `screen` event like every other one.
+        case ("GET", let path) where path.hasSuffix("/screen") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/screen".count))
+            guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                return .error(404, "not_found", "No session named that")
+            }
+            return .json(["screen": liveScreens.read(session).payload])
+
+        // The machine state this feature creates, published so that somebody can see it.
+        // `tmux list-panes -a -F '#{pane_id} #{pane_pipe}'` answers the same question in one
+        // command; this answers it *and* says which of those pipes this app can account for,
+        // which tmux cannot, because `#{pane_pipe}` is a boolean with no owner in it.
+        case ("GET", "/v1/screens"):
+            return .json(liveScreens.inventory())
 
         case ("GET", let path) where path.hasPrefix("/v1/sessions/"):
             let rest = String(path.dropFirst("/v1/sessions/".count))
@@ -3944,6 +4026,11 @@ final class RemoteServer: @unchecked Sendable {
     /// `/info`'s screen/Git/project work. Match the whole route shape, not a suffix.
     static func isSlowReading(_ path: String) -> Bool {
         if path == "/v1/places" { return true }
+        // The live-screen state view asks tmux about every pane on the machine, which is one
+        // subprocess. `/v1/sessions/:id/screen` deliberately is *not* here: it is a lock and a
+        // dictionary read, and putting it behind this budget would let a busy `/info` refuse the
+        // route a phone asks for on every change.
+        if path == "/v1/screens" { return true }
         guard path.hasPrefix("/v1/sessions/") else { return false }
         let rest = path.dropFirst("/v1/sessions/".count)
         let parts = rest.split(separator: "/", omittingEmptySubsequences: false)

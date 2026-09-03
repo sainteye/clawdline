@@ -703,6 +703,70 @@ enum Tmux {
         return out
     }
 
+    // MARK: - The change signal
+
+    /// The format a piped-pane reading asks for. `#{pane_pipe}` is 1 while tmux holds a pipe on
+    /// that pane and 0 otherwise, and it is the only thing tmux will say about it: **there is no
+    /// format that names the command on the other end**, so this can answer *is something piped*
+    /// and never *is it ours*. Which is why ``LiveScreens`` keeps its own record of what it
+    /// attached rather than inferring ownership from this.
+    static let pipeStateFormat = "#{pane_id}\u{1}#{pane_pipe}"
+
+    /// Send this pane's output to a command as well as to the screen.
+    ///
+    /// **This is machine state that outlives the process that asked for it.** tmux keeps the pipe
+    /// until somebody takes it away, the pane dies, or the command on the far end does — so every
+    /// caller owes a matching ``unpipe(_:)``, and `LiveScreen.swift` carries the argument for why
+    /// a FIFO is the target that makes the third of those into a safety net rather than a leak.
+    ///
+    /// The pane id is checked rather than trusted for the reason ``batchedCaptureScript(_:scrollback:)``
+    /// gives: `-t` takes a target and the command is a shell line, so a word that is not an id
+    /// tmux handed out has no business in either.
+    @discardableResult
+    static func pipe(_ paneID: String, into command: String) -> Bool {
+        guard binary != nil, isPaneID(paneID), !command.isEmpty else { return false }
+        return run(["pipe-pane", "-t", paneID, command]).ok
+    }
+
+    /// Take the pipe off that pane. `pipe-pane` with no command is tmux's own way of saying it,
+    /// and it is idempotent: a pane with nothing attached answers ok.
+    @discardableResult
+    static func unpipe(_ paneID: String) -> Bool {
+        guard binary != nil, isPaneID(paneID) else { return false }
+        return run(["pipe-pane", "-t", paneID]).ok
+    }
+
+    /// Which panes tmux says have a pipe attached, keyed by pane id.
+    ///
+    /// One invocation for the whole server, like every other reading here. A pane missing from the
+    /// answer is a pane tmux does not have, which is not the same as a pane with no pipe — so the
+    /// caller gets a dictionary and decides, rather than a set that has already collapsed the two.
+    static func pipedPanes() -> [String: Bool] {
+        guard binary != nil else { return [:] }
+        let receipt = run(["list-panes", "-a", "-F", pipeStateFormat])
+        guard receipt.ok else { return [:] }
+        return parsePipedPanes(receipt.out)
+    }
+
+    /// The parse, split out so it can be proved with no tmux server running.
+    ///
+    /// A line whose second field is anything but `0` or `1` is dropped rather than guessed at:
+    /// this answers a question about machine state that somebody is about to act on, and
+    /// "unreadable" must not arrive spelled the same way as "not piped".
+    static func parsePipedPanes(_ output: String) -> [String: Bool] {
+        var state: [String: Bool] = [:]
+        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let fields = line.components(separatedBy: "\u{1}")
+            guard fields.count == 2, isPaneID(fields[0]) else { continue }
+            switch fields[1].trimmingCharacters(in: .whitespaces) {
+            case "1": state[fields[0]] = true
+            case "0": state[fields[0]] = false
+            default: continue
+            }
+        }
+        return state
+    }
+
     /// Bring a pane to the front within tmux. Whether the terminal window itself comes
     /// forward is up to whichever emulator is drawing it, and not something to chase.
     ///

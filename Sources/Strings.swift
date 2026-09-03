@@ -537,6 +537,16 @@ protocol Copy {
     var webShowOnMacAsked: String { get }
     var webSessionActions: String { get }
     var webSessionGit: String { get }
+    /// The live screen panel, and the two words that say what kind of live it is.
+    ///
+    /// **`webScreenLive` and `webScreenOnDemand` are the interface's whole answer to "which
+    /// backend am I looking at".** tmux can say a pane moved; iTerm2 has no such signal and can
+    /// only be asked. A translation that makes those two read the same removes the one thing that
+    /// stops the panel implying a liveness it does not have on one of the two backends.
+    var webScreenTitle: String { get }
+    var webScreenLive: String { get }
+    var webScreenOnDemand: String { get }
+    var webScreenGone: String { get }
     var webGitTitle: String { get }
     var webGitClean: String { get }
     var webGitNotRepo: String { get }

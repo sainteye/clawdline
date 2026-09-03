@@ -12,6 +12,7 @@ import { closeDetail } from "../session/open.js";
 import { closeAgent } from "../session/agent.js";
 import { SessionActions } from "./detail-actions.js";
 import { GitPanel } from "./git-panel.js";
+import { Terminal } from "../view/terminal.js";
 import { Info } from "./info.js";
 
 /** The second press before a session-changing action reaches the transport. */
@@ -231,6 +232,11 @@ els["session-actions"].addEventListener("click", function (ev) {
     if (ev.target.closest && ev.target.closest("#session-info")) {
         SessionActions.close(); Info.open(); return;
     }
+    // Also a read: what the terminal is showing, in the transcript's space. Opening it is what
+    // tells the Mac somebody is watching, and closing it is what eventually stops the pipe.
+    if (ev.target.closest && ev.target.closest("#session-screen")) {
+        Terminal.open(); return;
+    }
     if (ev.target.closest && ev.target.closest("#session-git-more")) {
         SessionActions.level("git", true); return;
     }
@@ -243,6 +249,12 @@ els["session-actions"].addEventListener("click", function (ev) {
         GitPanel.open(); return;
     }
     if (ev.target.closest && ev.target.closest("#session-end")) ActionConfirm.open("end");
+});
+
+els["screen-close"].addEventListener("click", function () { Terminal.close(true); });
+els["screen-panel"].addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    ev.preventDefault(); ev.stopPropagation(); Terminal.close(true);
 });
 
 els["git-refresh"].addEventListener("click", function () { GitPanel.refresh(); });

@@ -16,6 +16,7 @@ import { coordinatorForSession } from "../input/coordinator-actions.js";
 import { GitPanel } from "../input/git-panel.js";
 import { ShellPanel } from "../input/shell-panel.js";
 import { api } from "../net/api.js";
+import { Terminal } from "./terminal.js";
 import {
     connectArtifactTile, createImageLightbox, reconcileArtifactTiles
 } from "./transcript-images.js";
@@ -105,7 +106,9 @@ export function renderDetailHead() {
     els["session-commit"].disabled = !s || !S.write || ending;
     els["session-push"].disabled = !s || !S.write || ending;
     els["session-end"].disabled = !s || !S.write || ending;
-    if (!s) { SessionActions.close(); GitPanel.follow(); ShellPanel.follow(); }
+    if (!s) {
+        SessionActions.close(); GitPanel.follow(); ShellPanel.follow(); Terminal.follow();
+    }
 }
 
 export function renderTranscript() {

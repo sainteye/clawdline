@@ -44,6 +44,9 @@ export function paintStatic() {
     text(els["shell-title"], T.webShellTitle);
     text(els["shell-stop"], T.webShellStop);
     text(els["shell-close"], T.webShellClose);
+    text(els["session-screen"], T.webScreenTitle);
+    text(els["screen-title"], T.webScreenTitle);
+    text(els["screen-close"], T.webClose);
     text(els["action-confirm-cancel"], T.webCancel);
     text(els["action-confirm-go"], T.webConfirm);
 

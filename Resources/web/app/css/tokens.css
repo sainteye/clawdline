@@ -28,6 +28,25 @@
     --warn:      #b08a4a;
     --bad:       #a3564a;
 
+    /* The sixteen a terminal names by number rather than by colour, for the live screen panel.
+       They are here rather than inside that panel's rules because they are a palette and every
+       other palette on this page is here; and they are named `--term-N` because that is what the
+       SGR parameter is — `31` is "colour one", and what one *looks* like is this decision and not
+       the program's. Tuned against this page's near-black rather than lifted from a terminal
+       profile: xterm's own `#0000ff` on `#0e0e11` is unreadable, and a screen nobody can read is
+       not a faithful copy of anything. */
+    --term-0:  #35343c;   --term-8:  #55535d;
+    --term-1:  #d2695e;   --term-9:  #e88a7c;
+    --term-2:  #7fae74;   --term-10: #9ccf8e;
+    --term-3:  #c8a24f;   --term-11: #e2c072;
+    --term-4:  #7b93d8;   --term-12: #9db0ee;
+    --term-5:  #b483cf;   --term-13: #cfa2e6;
+    --term-6:  #62a8a8;   --term-14: #86c9c9;
+    --term-7:  #c9c6c0;   --term-15: #efece7;
+    /* What "inverse" swaps in when the screen named neither side of it. */
+    --term-fg:   var(--ink);
+    --term-bg:   #101014;
+
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
 

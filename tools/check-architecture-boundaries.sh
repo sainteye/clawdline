@@ -181,7 +181,16 @@ fi
 #                                          `streams` and `enqueueCloudPublication` are all
 #                                          `private` to this type, and both callers of the new
 #                                          body are methods on it.)
-remote_server_ceiling=5570
+#   5,652  the live screen's two routes       (+87, and the ceiling is the file measured rather
+#                                          than 5,570 plus 87: the receipt above had five lines of
+#                                          slack in it, and carrying slack forward is how a receipt
+#                                          stops being one. The lines are the `LiveScreens` holder,
+#                                          `GET /v1/sessions/:id/screen` and `GET /v1/screens`, the
+#                                          reclaim on start and the stop that has to be synchronous.
+#                                          The mechanism itself is not here — it is
+#                                          `Sources/LiveScreen.swift`, a new file, because this one
+#                                          is a router and a FIFO lifecycle is not routing.)
+remote_server_ceiling=5652
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"

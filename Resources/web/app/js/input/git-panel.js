@@ -9,6 +9,7 @@ import { SessionActions } from "./detail-actions.js";
 // the other down. They import each other, which is fine here and only here: neither touches the
 // other while its own module is being evaluated — only later, inside `open`.
 import { ShellPanel } from "./shell-panel.js";
+import { Terminal } from "../view/terminal.js";
 
 /**
  * A read-only view of the open session's repository, occupying the transcript's space.
@@ -101,6 +102,7 @@ export var GitPanel = (function () {
             if (!S.openId) return;
             SessionActions.close();
             ShellPanel.close(false);
+            Terminal.close(false);
             forId = S.openId;
             els["git-panel"].hidden = false;
             els["pane-detail"].dataset.panel = "git";

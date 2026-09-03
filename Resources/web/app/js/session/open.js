@@ -12,6 +12,7 @@ import { closeAgent } from "./agent.js";
 import { SessionActions } from "../input/detail-actions.js";
 import { GitPanel } from "../input/git-panel.js";
 import { ShellPanel } from "../input/shell-panel.js";
+import { Terminal } from "../view/terminal.js";
 import { ActionConfirm } from "../input/action-confirm.js";
 import { Info } from "../input/info.js";
 import { StatusLine } from "../input/status-line.js";
@@ -226,6 +227,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         Info.follow();
         GitPanel.follow();
         ShellPanel.follow();
+        Terminal.follow();
     } else if (forceRefresh) loadTranscript(id, true);
     if (phone()) {
         // A touch on a row does not reliably take focus from the filter on iOS. Release it before
@@ -274,6 +276,7 @@ export function closeDetail(silent) {
     Info.follow();
     GitPanel.follow();
     ShellPanel.follow();
+    Terminal.follow();
     SkillPicker.close();
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();
