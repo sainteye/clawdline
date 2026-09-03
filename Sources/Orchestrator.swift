@@ -4869,6 +4869,15 @@ enum Orchestrator {
             refundDispatchRate(rateTicket)
             return refusal
         }
+        // Before the live-session scans below it, and before any git subprocess: this one is
+        // decided by the bytes already in hand. A stored schedule template and a respawn carry a
+        // body no caller is holding, so both keep the warning instead — see the refusal itself.
+        if let refusal = OrchestratorDraft.claimsRequirementRefusal(
+                declared: made.claimsDeclared,
+                writtenForThisDispatch: schedule == nil && respawn == nil) {
+            refundDispatchRate(rateTicket)
+            return refusal
+        }
         let identityEvidence = rootIdentityEvidenceForTesting
             ?? activeRootIdentityEvidence(claimed: made.rootSessionId)
                 + Coordinator.rootIdentityEvidence(claimed: made.rootSessionId)

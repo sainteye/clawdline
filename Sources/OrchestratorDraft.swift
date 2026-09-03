@@ -157,6 +157,47 @@ enum OrchestratorDraft {
             extra: [:])
     }
 
+    /// The write set is the one thing every dispatcher knows and 60.7% of them never wrote down.
+    ///
+    /// **Mandatory means the key is present, and deliberately not that it is non-empty.** The
+    /// warning this replaces went out on every undeclared dispatch and changed nothing, because a
+    /// warning is free to ignore; a refusal is not. But the field being refused for has to be one
+    /// a caller can always fill honestly, or the refusal fires on dispatches nobody could have
+    /// written correctly and gets routed around instead of answered. Three answers are always
+    /// available: the files, the directories when the files are not decided yet, and `[]` when the
+    /// task genuinely writes nothing. Requiring a *non-empty* list would have made `[]` — a
+    /// positive read-only declaration, and the shipped meaning of the empty array — unsayable, so
+    /// every reviewer would have had to claim a path it does not write.
+    ///
+    /// **It applies to isolated dispatches too, and that is the half of the fleet this had to get
+    /// right.** Over half of one day's dispatches were worktree-isolated, and for those the
+    /// *edit-time* meaning of `claims` really is empty: the child edits its own checkout, so
+    /// ``prepareClaimsForIsolation`` drops the lease and is right to. Declaring is still
+    /// answerable, because since ``OrchestratorLandingQueue/retainLandingPaths(_:)`` the same
+    /// list is kept as the landing-time write set. A dispatcher writes one list; the broker
+    /// decides which of the two questions it is still answering.
+    ///
+    /// `writtenForThisDispatch` is false exactly where no caller is holding the answer: a stored
+    /// schedule template, whose editor on both surfaces has no `claims` control at all, and a
+    /// respawn, which re-enters with a body that was admitted once already. Refusing either would
+    /// break work over a field the surface that produced it cannot express — which is this
+    /// refusal's own failure mode, not an exception to it. Those two keep the `claims_missing`
+    /// warning, and so do records the registry recovered from before this landed.
+    static func claimsRequirementRefusal(declared: Bool,
+                                         writtenForThisDispatch: Bool) -> Orchestrator.Reply? {
+        guard !declared, writtenForThisDispatch else { return nil }
+        return .refused(
+            status: 422, code: "claims_required",
+            message: "claims is required: the relative paths under project_dir this task may "
+                + "write. Name the files when you know them, the directories when you do not, "
+                + "or send \"claims\": [] to declare that this task writes nothing. An isolated "
+                + "task declares the same list — its lease is dropped for the private checkout "
+                + "and the paths are kept as its landing write set. Leave out what a repository "
+                + "guard rewrites for you, such as a ratcheted line count: that belongs to "
+                + "whoever lands the change, not to this task's lease.",
+            extra: [:])
+    }
+
     /// A live task whose working directory intersects the one being dispatched. The task is a
     /// value snapshot: warning is advisory, so a task finishing while the new tab opens does not
     /// turn a truthful observation at dispatch time into a reason to change the reply.

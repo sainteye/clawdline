@@ -200,7 +200,15 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # The landing queue merges on top of that. Its own run reported 8,298 against a base of
 # 8,226 — a measured delta of 72 — but that base is not this one, so the delta is a
 # prediction and not the seal. The value below is what this tree's run reported.
-expected_swift_receipt='8510 checks passed'
+#
+# Making `claims` mandatory adds 21, and the number is half measured and half read. Its two groups
+# were run on their own through `CLAWDLINE_TEST_GROUPS` and reported 27 focused checks; the group
+# it replaces — the one that proved an undeclared dispatch was *warned* — executed 6, counted off
+# the diff rather than off a run, because measuring it would have meant compiling the base tree a
+# second time. 27 - 6 = 21. **So this line is arithmetic on top of a measurement, which is the
+# weaker of the two kinds of number in this file**: if the exact-tree run reports something else,
+# that run is right and this is what has to move. 8,510 -> 8,531.
+expected_swift_receipt='8531 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

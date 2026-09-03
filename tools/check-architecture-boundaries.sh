@@ -59,13 +59,20 @@ main_lines=$(line_count Tests/main.swift)
 #                                              ambiguity refusal. A feature's code arriving;
 #                                              nothing left the file)
 #   11,925  the delivery push moved in            (+51)
+#   11,934  claims became mandatory                (+9: the door itself is nine lines — three of
+#                                              comment saying why it sits above the live-session
+#                                              scans, and six for the call and its two exemptions.
+#                                              The refusal, its message and the reasoning behind
+#                                              both live in `OrchestratorDraft`, beside the other
+#                                              ingress refusals, so what landed here is the call
+#                                              site and nothing else)
 #
 # The last of those is a feature landing rather than a relocation: the notification that used to
 # fire when a turn stopped now fires on a root's own delivery receipt, and the push lives where
 # that receipt is created. Of the 51 lines, 12 are the sender, 9 the pure wording beside
 # `batchMessage`, 4 the test seam and its reset, and the rest are the doc comments that say why
 # `smart_notifications` means something narrower on this path than on any other.
-orchestrator_ceiling=11925
+orchestrator_ceiling=11934
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -141,7 +148,9 @@ manifest_group_count=$(awk '
 # `validateExecutedTestGroupManifest()`, which needs a whole suite run, and
 # `verify_swift_source_manifest`, which refuses to start one. **A green light that two edited
 # numbers produced by agreeing with each other looks exactly like a correct one.**
-[ "$manifest_group_count" -eq 515 ] \
+# 516 once claims became mandatory: the group that used to prove the undeclared dispatch was
+# warned now proves it is refused, and a second group holds the refusal's own four-row rule.
+[ "$manifest_group_count" -eq 516 ] \
   || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 515"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.

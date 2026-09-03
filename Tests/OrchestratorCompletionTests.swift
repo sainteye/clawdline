@@ -114,7 +114,7 @@ group("task completion ingress and delivery are durable protocol facts") {
     let dispatchObject: [String: Any] = [
         "clawdline_protocol": 1, "task_id": dispatchID, "kind": "custom",
         "assistant": "codex", "project_dir": "/tmp", "title": "identity gate probe",
-        "instructions": "must refuse before spawn", "timeout_minutes": 5,
+        "instructions": "must refuse before spawn", "timeout_minutes": 5, "claims": [],
         "root": ["session_id": "terminal-root", "assistant": "codex"],
     ]
     try! FileManager.default.createDirectory(at: dispatchDir, withIntermediateDirectories: true)
@@ -226,6 +226,7 @@ group("owned child dispatch and detached automation use different doors") {
             "clawdline_protocol": 1, "task_id": id, "kind": "custom",
             "assistant": "codex", "project_dir": "/tmp", "title": "poll-only probe",
             "instructions": "the test starter prevents a real terminal", "timeout_minutes": 5,
+            "claims": ["artifacts/poll-only"],
             "root": ["session_id": NSNull(), "poll_only": true,
                      "label": "unattended fixture"],
         ]
