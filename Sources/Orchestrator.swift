@@ -10299,12 +10299,58 @@ enum Orchestrator {
         }
     }
 
+    /// One task as the sweep sees it. `settledAt` is `finishedAt ?? created` — when the task
+    /// stopped being live, which is the clock both windows read; `created` is what the count
+    /// orders by, because that is what it has always ordered by.
+    struct TaskRetentionCandidate: Equatable {
+        let id: String
+        let terminal: Bool
+        let landingPending: Bool
+        let created: Date
+        let settledAt: Date
+    }
+
+    /// The two limits, answered separately so that a caller — and a test — can say which one
+    /// fired. They are deliberately not the same window. `directories` is heavyweight working
+    /// space under `/tmp/.clawdline`; `records` is the registry row, which is small and is the
+    /// only durable evidence the usage Feature classifier has, so it is worth keeping for far
+    /// longer than the directory it names. Three settings decide it:
+    /// `orchestrator_task_dir_retention_hours` for the first, and
+    /// `orchestrator_task_record_limit` (a valve on file size) together with
+    /// `orchestrator_task_record_retention_days` (the retention policy) for the second.
+    ///
+    /// Either record limit fires alone: the count drops what is past `recordLimit` however recent
+    /// it is, and the age drops what is past `recordDays` however few records there are. A
+    /// pending landing is exempt from both, unconditionally, and a task that is not terminal is
+    /// never aged out by either clock.
+    static func taskRetentionSweep(_ rows: [TaskRetentionCandidate], now: Date = Date(),
+                                   directoryHours: Int, recordLimit: Int, recordDays: Int)
+        -> (directories: [String], records: [String]) {
+        let directoryCutoff = now.addingTimeInterval(-Double(directoryHours) * 3600)
+        let recordCutoff = now.addingTimeInterval(-Double(recordDays) * 86_400)
+        let overCount = Set(rows.sorted { $0.created > $1.created }
+                                .dropFirst(recordLimit).map(\.id))
+        return (rows.filter {
+                    $0.terminal && !$0.landingPending && $0.settledAt < directoryCutoff
+                }.map(\.id),
+                rows.filter {
+                    !$0.landingPending && (overCount.contains($0.id)
+                        || ($0.terminal && $0.settledAt < recordCutoff))
+                }.map(\.id))
+    }
+
     /// Task directories are working files, not the archive — the record survives here, the
-    /// directory goes once it is a day old and its task is over. The registry keeps the newest 200
-    /// ordinary records, plus every pending landing obligation until root settles it.
+    /// directory goes once `orchestrator_task_dir_retention_hours` has passed and its task is
+    /// over. The registry keeps `orchestrator_task_record_limit` ordinary records for
+    /// `orchestrator_task_record_retention_days`, plus every pending landing obligation until root
+    /// settles it. See ``taskRetentionSweep(_:now:directoryHours:recordLimit:recordDays:)``.
     static func cleanup() {
         load()
-        let cutoff = Date().addingTimeInterval(-24 * 3600)
+        let now = Date()
+        let directoryHours = Config.shared.orchestratorTaskDirRetentionHours
+        let recordLimit = Config.shared.orchestratorTaskRecordLimit
+        let recordDays = Config.shared.orchestratorTaskRecordRetentionDays
+        let cutoff = now.addingTimeInterval(-Double(directoryHours) * 3600)
         // Read before the region below, because this one acquires the lock for itself. A handoff
         // label is reclaimed on the tab rather than on its envelope's 24-hour clock: suppressed
         // means a beat holding a live reading of this machine could not find the process the
@@ -10315,10 +10361,13 @@ enum Orchestrator {
             handoffLabels.keys.filter { registry.isHandoffLabelSuppressed($0) }
         }
         lock.lock()
-        let done = tasks.values.filter { task in
-            task.state.isTerminal && task.landing?.state != .pending
-                && (task.finishedAt ?? task.created) < cutoff
-        }
+        let sweep = taskRetentionSweep(tasks.values.map {
+            TaskRetentionCandidate(id: $0.id, terminal: $0.state.isTerminal,
+                                   landingPending: $0.landing?.state == .pending,
+                                   created: $0.created, settledAt: $0.finishedAt ?? $0.created)
+        }, now: now, directoryHours: directoryHours, recordLimit: recordLimit,
+           recordDays: recordDays)
+        let done = sweep.directories.compactMap { tasks[$0] }
         let expiredHandoffs = handoffs.values.filter {
             $0.state.isTerminal && $0.created < cutoff
         }
@@ -10338,32 +10387,27 @@ enum Orchestrator {
             handoffs.removeValue(forKey: envelope.id)
             handoffDeliveries.removeValue(forKey: envelope.id)
         }
-        let all = tasks.values.sorted { $0.created > $1.created }
-        let removable = all.dropFirst(200).filter { $0.landing?.state != .pending }
-        let removedIDs = Set(removable.map(\.id))
         let oldSessionDeliveryIDs = sessionDeliveries.values
             .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
             .map { $0.identity.terminalID }
         let oldRootAssignmentIDs = rootAssignmentCleanupIDs(rootAssignments.values.map {
             RootAssignmentCleanupCandidate(id: $0.id, state: $0.state, created: $0.created)
         })
-        if !removable.isEmpty {
-            for task in removable { tasks.removeValue(forKey: task.id) }
-        }
+        for id in sweep.records { tasks.removeValue(forKey: id) }
         for id in oldSessionDeliveryIDs { sessionDeliveries.removeValue(forKey: id) }
         for id in oldRootAssignmentIDs { rootAssignments.removeValue(forKey: id) }
         for id in forgottenLabels { handoffLabels.removeValue(forKey: id) }
+        let retained = Set(tasks.keys)
         lock.unlock()
         if !forgottenLabels.isEmpty {
             OrchestratorRegistry.withTransaction { registry in
                 for id in forgottenLabels { registry.unsuppressHandoffLabel(id) }
             }
         }
-        if !removable.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty
+        if !sweep.records.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty
             || !oldRootAssignmentIDs.isEmpty || !forgottenLabels.isEmpty {
             save()
         }
-        let retained = Set(all.filter { !removedIDs.contains($0.id) }.map(\.id))
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
         _ = OwnedStorage.compact()
     }

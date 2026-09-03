@@ -396,6 +396,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "owned storage ledger records proof durably and never claims a failed append",
     "the Claude live-session source distinguishes empty from unreadable",
     "pending landing storage survives task-directory cleanup",
+    "task retention answers its two limits separately",
+    "the retention settings reach the sweep that reads them",
     "task-owned work is reclaimed on the terminal-state schedule",
     "the beat reclaims what a terminal task still owes",
     "every terminal path keeps the reclaim contract at its real filesystem boundary",

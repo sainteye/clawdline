@@ -88,13 +88,25 @@ main_lines=$(line_count Tests/main.swift)
 #                                              three lines and now calls
 #                                              `resetTranscriptOwnershipCacheForTesting()` in one,
 #                                              so the cache stays private to the file that owns it)
+#   10,628  task retention became a setting        (4eb97d86, +44: a 40-line block above
+#                                              `cleanup()` — 10 for `TaskRetentionCandidate`, 28
+#                                              for `taskRetentionSweep`, which answers the two
+#                                              limits separately so a caller can say which one
+#                                              fired — and 4 net inside `cleanup()` itself, which
+#                                              now reads three settings instead of two literals
+#                                              and builds its candidates once under the lock. The
+#                                              24 hours and the 200 rows were written into this
+#                                              file; the count was the binding one, sweeping a
+#                                              task record in about five days, and 149 usage rows
+#                                              could never be attributed because the record they
+#                                              needed was gone. Nothing left the file)
 #
 # The 11,925 raise is a feature landing rather than a relocation: the notification that used to
 # fire when a turn stopped now fires on a root's own delivery receipt, and the push lives where
 # that receipt is created. Of the 51 lines, 12 are the sender, 9 the pure wording beside
 # `batchMessage`, 4 the test seam and its reset, and the rest are the doc comments that say why
 # `smart_notifications` means something narrower on this path than on any other.
-orchestrator_ceiling=10584
+orchestrator_ceiling=10628
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -178,8 +190,10 @@ manifest_group_count=$(awk '
 # The number in the message below was 515 while the check read 516, which is the failure this
 # comment block is about wearing its own costume: a guard whose message names a different number
 # from the one it enforces cannot be read to find out what it wants.
-[ "$manifest_group_count" -eq 517 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 517"
+# 519 once task retention became a setting: two groups, one for the pure sweep and one for the
+# three settings reaching it.
+[ "$manifest_group_count" -eq 519 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 519"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

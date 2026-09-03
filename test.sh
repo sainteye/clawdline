@@ -200,14 +200,18 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # The landing queue merges on top of that. Its own run reported 8,298 against a base of
 # 8,226 — a measured delta of 72 — but that base is not this one, so the delta is a
 # prediction and not the seal. The value below is what this tree's run reported.
-expected_swift_receipt='8549 checks passed'
+# Task retention becoming a setting adds 34, in the two groups that line introduced. The 8,563 it
+# wrote down was that focused count added to the seal *its own* base carried, and that base is not
+# this one: `main` has moved to 8,549 since. The number below is what the merged tree's full run
+# reported, measured rather than computed. 8,549 + 34 = 8,583.
+expected_swift_receipt='8583 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=6798
+expected_swift_receipt_witness=6827
 
 count_exact_receipt_lines() {
   local receipt=$1

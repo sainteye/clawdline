@@ -1071,29 +1071,40 @@ items:
     opened: 2026-09-03
 
   - id: B-LEDGER-QUIET-WINDOW-IS-NOT-QUIET
-    title: Two ledger assertions ask that nobody else wrote, and the suite decides whether that is true
+    title: The suite writes this Mac's real sessions into whatever test ledger is open
     problem: >-
-      Two checks in `Tests/UsagePortfolioAndLifecycleTests.swift` — that an ordinary shell and a
-      session whose transcript nothing can name each leave the ledger alone — are written as
-      `!eventually(timeout: 0.4) { !UsageLedger.shared.rows().isEmpty }`. `UsageLedger.shared` is
-      process-wide, so the assertion is not "my subject wrote nothing"; it is "nothing at all
-      arrived in this window". Whether that holds depends on what an earlier group left in flight
-      and how the machine was loaded, neither of which the group controls. The group's own setup is
-      clean — `freshUsageLedger()`, `Orchestrator.forget()`, `forgetWatchedForTesting()` — which is
-      why this reads as a solid test right up until it does not.
+      `SessionWatch`'s reading calls `UsageLedger.checkpoint(sessions:)`, and in the test binary
+      that reading is the real one: it resolves the transcripts of the live Claude and Codex
+      sessions on this machine and writes their usage into `UsageLedger.shared` — which, during a
+      usage group, is that group's `freshUsageLedger()` store. Nothing starts the watch on
+      purpose. Production code queues `DispatchQueue.main.async { SessionWatch.shared.nudge() }`
+      from `dispatch`, `beat`, `handoff`, `rootAssignment` and the two child-close paths, the
+      suite never drains the main queue, and then `eventually` — which pumps `RunLoop.main` —
+      releases the backlog. The scan that follows shells out to every terminal, so its write
+      lands hundreds of milliseconds later, in whichever group is running by then.
+      Any assertion about `UsageLedger.shared.rows()` or about an unranked portfolio is therefore
+      an assertion about this Mac, and goes red when a real session outranks the fixture.
     evidence: >-
-      2026-09-03, one tree: the re-seal run reported `2 of 8549 checks failed` naming exactly those
-      two; the confirming run on the same tree reported `8549 checks passed` with zero. Running that
-      group alone with `CLAWDLINE_TEST_GROUPS` passed 16 of 16. The tree had just gained a test group
-      from another branch, which changes group order and therefore which work is still settling when
-      this group's 0.4 s window opens — but the second run being green says the ordering is not the
-      whole story either, so this is filed as a race and not as an order dependency.
+      2026-09-03, one binary re-run without recompiling: runs 1 and 3 reported `5 of 8583 checks
+      failed`, runs 2 and 4 reported `8583 checks passed`. The five name themselves — three in
+      `legacy managed-worktree Projects migrate…` and the two quiet-window checks — and with a
+      witness printed in the failure detail they name the writer too: `project=/Users/sainteye/code/clawdline
+      output=166300`, `output=144813` and `output=59978`, filed under three live session UUIDs,
+      against a fixture row of 12. The Project ranked first was `clawdline` at 371,091 output.
+      The retention change was not involved: it adds no `nudge`, no `eventually` and no ledger
+      writer, and running all 519 groups through `CLAWDLINE_TEST_GROUPS` — which exits before the
+      cloud tail — was green while the same binary in full mode was red.
     severity: degrades
     cost: hours
     who_hurts: us
     trigger: >-
-      The next landing whose receipt has to be taken twice. The fix is to make the assertion about
-      its own subject rather than about a quiet window — assert on rows for these session ids, or
-      drain the ledger's pending work before opening the window — and never to widen the timeout,
-      which only moves the coin flip.
+      The five assertions are repaired where they stood: the migration group pins its fixture to a
+      fixed historical day and reads that closed range, so a row written at `Date()` cannot enter
+      its answer, and the two quiet-window checks assert a delta across their own two synchronous
+      calls instead of pumping the run loop for 0.4 s and then asking whether the process is
+      quiet. What is left is the production seam and it is not the test file's to close: the suite
+      should not be able to take a live reading of the machine at all. Fixing that means a seam in
+      `SessionWatch` or `UsageLedger.checkpoint(sessions:)` — neither is claimed by this task —
+      and the next assertion written against `UsageLedger.shared` without owning its subject is
+      the trigger.
     opened: 2026-09-03
