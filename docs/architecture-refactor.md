@@ -563,7 +563,7 @@ is written, and this document is not that place for any of them.
 | ordered runners | 31 | `Tests/main.swift`, counted by the guard |
 | suite files | 44 | `Tests/*Tests.swift`, counted by the guard |
 | Swift checks | 8,510 | `expected_swift_receipt` in `test.sh`, set from a run |
-| `Orchestrator.swift` ceiling | 11,925 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| `Orchestrator.swift` ceiling | 11,063 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 6,449 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->
@@ -734,3 +734,72 @@ over completely — `ReadingFreshness.swift` and `Orchestrator.swift` edits gave
 13,592 lines is an enormous claim. Each cut therefore declares its claims at dispatch, starts only
 when `Orchestrator.swift` is clean at HEAD, and lands as whole revertible commits before the next
 cut begins.
+
+### MARK boundaries are narrative, dependency boundaries are what compiles
+
+Cut 3 moved two blocks out by their `// MARK:` spans and the first compile failed:
+
+```
+Sources/OrchestratorChildBrief.swift:111:26: error: 'policySection' is inaccessible
+                                                   due to 'private' protection level
+```
+
+Swift's `private` is scoped to a file *and* a type, so a `private static func` that the
+whole `enum Orchestrator` could call becomes invisible the moment the caller moves to an
+extension in another file. `policySection()` had exactly one caller — the briefing that was
+being moved — and sat at lines 9,551–9,579, outside the 9,849–10,230 MARK span. Cutting on
+the MARK alone could not have kept them together.
+
+Three things were checked before the cut and all three passed: indentation depth (nested,
+not top level), stored-instance-property count (an extension cannot hold them; there were
+none), and `swiftc -parse` on the new files. None of them can see this. **What was missing
+was not a check but a criterion: which `private` members declared in the original file does
+the moving block call?**
+
+That is answerable with grep before cutting, and two lines wrote it independently. Both
+first versions matched the bare name and both reported four or five hits on a block that is
+mostly briefing prose — `record` and `shape` are ordinary English words. Stripping string
+literals (including `"""` bodies) and requiring a call position (`name(` or `.name`) took
+both down to the single real one. The two implementations disagreed about which false
+positives they produced, which is what makes their agreement on the answer worth something.
+
+Its limit travels with it: it sees direct calls only. A private member reached through
+`Self.`, through a typealias, or passed as a function value is invisible to it. **It is a
+cheap pass before cutting, not a promise that the cut compiles — the compiler is still the
+subject.** This cut bought that answer with a full suite compile; the next one need not.
+
+### `extension` and a new `enum` are both correct, and they cost different people
+
+The draft extraction moved 37 static symbols into `enum OrchestratorDraft`, so
+`Orchestrator.isTaskID` became `OrchestratorDraft.isTaskID`. Every branch written before it
+landed still spells the old name, and git says nothing: the two sides touch different lines,
+so the merge is clean and the compiler is the first thing to object —
+
+```
+Sources/OrchestratorStore.swift:285: error: type 'Orchestrator' has no member 'isTaskID'
+```
+
+The hard part is that it does not read as suspicious. The other six calls in that same file
+were already rewritten by the extraction, so the surviving one looks like its neighbours;
+the only difference is the type name, and a type name is not what anyone diffs for.
+
+This cut moved 875 lines into `extension Orchestrator` instead, so no symbol left the
+namespace and nothing downstream can break this way. That was not foresight — the blocks
+hold eighteen nested types and renaming them would have touched every call site, so the
+extension was the only cheap option. The benefit is worth naming anyway, because the next
+cut has to choose:
+
+```
+enum NewThing { … }          names the dependency in the type system;
+                             every queued branch pays one post-merge compile
+extension Existing { … }     invisible to queued branches;
+                             the grouping lives in the filename, not in the types
+```
+
+Neither is the right answer in general. The cost of the first one falls on people who are
+not in the room when the choice is made, which is the part that is easy to leave out of it.
+
+A one-minute check for anyone merging onto a tree that has had an `enum`-style extraction:
+list the moved symbols out of the new file, then grep your own diff for `Existing.<name>`
+against that list. Calibrate it first — a known-moved symbol must appear in the list, and
+the count of such calls in the post-extraction tree must be zero.

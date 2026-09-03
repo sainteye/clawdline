@@ -65,7 +65,7 @@ main_lines=$(line_count Tests/main.swift)
 # that receipt is created. Of the 51 lines, 12 are the sender, 9 the pure wording beside
 # `batchMessage`, 4 the test seam and its reset, and the rest are the doc comments that say why
 # `smart_notifications` means something narrower on this path than on any other.
-orchestrator_ceiling=11925
+orchestrator_ceiling=11063
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
