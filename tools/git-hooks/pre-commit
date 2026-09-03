@@ -1,0 +1,459 @@
+#!/bin/sh
+# Shared-tree pre-commit guard.
+#
+# Several agent sessions share this checkout and share ONE git index. A plain `git commit` with no
+# pathspec takes everything in that index, including what another session has just `git add`-ed.
+# That happened twice on 2026-08-28. Both times the rule in AGENTS.md existed, the check was run,
+# the output was correct, and it was read past. This hook is the mechanical version of that rule:
+#
+#   **A commit must not contain a path the committing session did not stage itself.**
+#
+# ---------------------------------------------------------------------------------------------
+# WHAT THIS HOOK CANNOT SEE. `pre-commit` runs on `git commit` and on nothing else. It does not
+# run on `git reset --hard`, on `git checkout -- <path>`, on `git stash`, or on the commit a
+# conflict-free `git merge` makes by itself. The 2026-09-03 03:30 incident — a bare
+# `git reset --hard HEAD` that destroyed another line's in-progress merge — could not have been
+# stopped here, and nothing in this file claims otherwise. See docs/shared-tree-guard.md.
+# ---------------------------------------------------------------------------------------------
+#
+# Two checks, deliberately unlike each other in how they fail:
+#
+#   1. **A sequencer operation is in progress** (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
+#      a rebase state directory). Local, no dependencies, **fails closed**.
+#   2. **A staged path is claimed by another root's live Clawdline task.** Needs the broker on
+#      127.0.0.1, so it **fails open with a loud warning** when Clawdline is not answering. A hook
+#      that refuses every commit whenever the app is down is uninstalled within the hour, and an
+#      uninstalled hook guards nothing.
+#
+# Identity failure takes the second check's direction, not the first's. When this hook cannot tell
+# whether a claim is the committer's own, it warns and allows: the one commit that must never be
+# refused is a root landing its own child's work, and that is exactly the commit an unresolved
+# identity used to land on.
+#
+# Every refusal names `git commit --no-verify`, so somebody who knows better is never stuck.
+#
+# Environment (all optional; the test suite drives the hook through these):
+#   CLAWDLINE_GUARD_ENDPOINT     base URL of the broker, e.g. http://127.0.0.1:7717
+#   CLAWDLINE_GUARD_CONFIG       path to config.json, read for `remote_port`
+#   CLAWDLINE_GUARD_TOKEN_FILE   path to the orchestrator token
+#   CLAWDLINE_GUARD_TIMEOUT      seconds to wait for the broker (default 2)
+#   CLAWDLINE_TERMINAL_ID        this session's identity, stated explicitly. When it is set it
+#                                REPLACES everything below rather than joining it.
+#   CLAUDE_CODE_SESSION_ID       set by Claude Code in every session it runs; it is the same value
+#                                Clawdline records as child.sessionId, and that a root passes as
+#                                root.sessionId when it dispatches.
+#   CLAWDLINE_SESSION_ID, ITERM_SESSION_ID, TERM_SESSION_ID, TMUX_PANE
+#                                the ambient identities, read as a union. See `identity()`.
+
+set -u
+
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+
+# ---- 1. a sequencer operation in progress -----------------------------------------------------
+# Fails closed: it needs nothing but the filesystem, so there is no outage to fail open for. A
+# conflict-free merge or cherry-pick commits without calling this hook, so reaching here with one
+# of these markers present means somebody resolved conflicts by hand and is now concluding that
+# operation. In a shared checkout the somebody and the committer are not reliably the same person.
+#
+# `git cherry-pick --continue` and `git revert --continue` do call `pre-commit`, and so does a
+# plain `git commit` typed while a rebase is stopped on a conflict. Only `MERGE_HEAD` used to be
+# looked at, which left the other three carrying the same hazard unguarded.
+op=""
+op_marker=""
+op_ref=""
+if [ -e "$git_dir/MERGE_HEAD" ]; then
+    op="a merge"; op_marker="MERGE_HEAD"
+    op_ref=$(head -n 1 "$git_dir/MERGE_HEAD" 2>/dev/null)
+elif [ -e "$git_dir/CHERRY_PICK_HEAD" ]; then
+    op="a cherry-pick"; op_marker="CHERRY_PICK_HEAD"
+    op_ref=$(head -n 1 "$git_dir/CHERRY_PICK_HEAD" 2>/dev/null)
+elif [ -e "$git_dir/REVERT_HEAD" ]; then
+    op="a revert"; op_marker="REVERT_HEAD"
+    op_ref=$(head -n 1 "$git_dir/REVERT_HEAD" 2>/dev/null)
+elif [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ]; then
+    op="a rebase"; op_marker="a rebase state directory"
+    op_ref=$(head -n 1 "$git_dir/rebase-merge/orig-head" 2>/dev/null \
+             || head -n 1 "$git_dir/rebase-apply/original-commit" 2>/dev/null)
+fi
+
+if [ -n "$op" ]; then
+    cat >&2 <<EOF
+
+  ✗ shared-tree guard: $op is in progress in this checkout.
+
+    $op_marker is ${op_ref:-present}
+
+    Committing now concludes that operation and writes whoever resolved those conflicts into your
+    commit. On 2026-09-03 a shared-tree merge held six hand-resolved conflicts and a 2,265-line
+    new file that belonged to another session.
+
+    If this $op is yours, say so and it goes through:
+
+        git commit --no-verify
+
+    If it is not, leave it alone — the session that started it is still working in it.
+
+    Scope: this hook runs on \`git commit\` only. It cannot see \`git reset --hard\`,
+    \`git checkout -- <path>\` or \`git stash\`.
+
+EOF
+    exit 1
+fi
+
+# ---- 2. live claims held by another root ------------------------------------------------------
+# Fails open. Everything below is skipped, with a warning, if python3 is missing or the broker is
+# not answering.
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "  ⚠ shared-tree guard: no python3, so this commit was NOT checked against other" >&2
+    echo "    sessions' claims. Allowing it." >&2
+    exit 0
+fi
+
+python3 - <<'CLAWDLINE_GUARD_PY'
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+def say(line=""):
+    sys.stderr.write(line + "\n")
+
+def allow_with_warning(reason, staged, also=()):
+    say()
+    say("  ⚠ shared-tree guard: %s," % reason)
+    say("    so this commit was NOT checked against other sessions' claims. Allowing it —")
+    say("    a guard that refuses everything when the app is down gets uninstalled, and an")
+    say("    uninstalled guard guards nothing. Nothing here can tell you whether these")
+    say("    %d staged path(s) are all yours:" % len(staged))
+    for path in staged[:12]:
+        say("        %s" % path)
+    if len(staged) > 12:
+        say("        … and %d more" % (len(staged) - 12))
+    for line in also:
+        say(line)
+    say()
+    sys.exit(0)
+
+def git(args):
+    return subprocess.run(["git"] + args, capture_output=True)
+
+# --- what this commit would carry ---------------------------------------------------------------
+# GIT_INDEX_FILE is inherited, so a partial commit (`git commit -- <paths>`) is read through its
+# temporary index and shows only the paths it names. A partial commit is therefore self-limiting
+# and normally passes here without the committer doing anything.
+#
+# `git commit --amend` is read the same way, against the commit it is replacing. A foreign path
+# that is *already* in HEAD does not appear in that diff and is carried through unchecked; a
+# foreign path the amend newly stages does appear and is refused like any other. That hole is
+# deliberate and documented rather than closed — see docs/shared-tree-guard.md, "The honest scope".
+head = git(["rev-parse", "-q", "--verify", "HEAD"])
+if head.returncode == 0:
+    listing = git(["diff-index", "--cached", "--name-only", "-z", "--no-renames", "HEAD"])
+else:
+    listing = git(["ls-files", "--cached", "-z"])
+if listing.returncode != 0:
+    allow_with_warning("git would not list the staged paths", [])
+staged = [p for p in listing.stdout.decode("utf-8", "surrogateescape").split("\0") if p]
+if not staged:
+    sys.exit(0)
+
+top = git(["rev-parse", "--show-toplevel"])
+if top.returncode != 0:
+    allow_with_warning("git would not name the top of this checkout", staged)
+toplevel = os.path.realpath(top.stdout.decode("utf-8", "surrogateescape").strip())
+
+# --- who is asking ------------------------------------------------------------------------------
+# Two channels, because neither one is always there.
+#
+#   *Terminal.* iTerm2 puts this session's terminal id in ITERM_SESSION_ID as `w0t12p0:<UUID>`,
+#   and Clawdline records that same id on a task as child.terminalId — which is why both the whole
+#   value and the half after the colon are matched.
+#
+#   *Session.* Claude Code puts its conversation id in CLAUDE_CODE_SESSION_ID, and that is exactly
+#   what Clawdline records as child.sessionId and what a root passes as root.sessionId when it
+#   dispatches. This is the channel that decides a landing. `root.terminalId` is **not a stored
+#   field**: Orchestrator.record(of:) recomputes it from the SessionWatch inventory on every
+#   response and omits the key when that lookup misses — and that inventory is the component this
+#   repository has already recorded as needing ten minutes to rebind after a crash. `root.sessionId`
+#   is always on the record. Reading only terminals meant that a root landing its own child's work
+#   was refused by its own guard for as long as the inventory was cold, and refused with a message
+#   that named the committer as the owner in the same breath.
+#
+# CLAWDLINE_TERMINAL_ID is an explicit statement of identity, so it REPLACES the ambient values
+# rather than joining them: a session that has said who it is must not also inherit a `%N` tmux
+# pane id, which every tmux server hands out again from zero. Everything else is a union — more
+# identities means fewer false refusals, and a false refusal is the failure this design cannot
+# afford.
+def identity():
+    mine = set()
+
+    def add(value):
+        value = (value or "").strip()
+        if not value:
+            return
+        mine.add(value.upper())
+        if ":" in value:
+            mine.add(value.split(":", 1)[1].upper())
+
+    override = os.environ.get("CLAWDLINE_TERMINAL_ID", "").strip()
+    if override:
+        add(override)
+        return mine
+    for var in ("CLAUDE_CODE_SESSION_ID", "CLAWDLINE_SESSION_ID",
+                "ITERM_SESSION_ID", "TERM_SESSION_ID", "TMUX_PANE"):
+        add(os.environ.get(var))
+    return mine
+
+MINE = identity()
+
+def task_identity(task):
+    ids = set()
+    for side in ("child", "root"):
+        block = task.get(side) or {}
+        if not isinstance(block, dict):
+            continue
+        for key in ("terminalId", "sessionId"):
+            value = block.get(key)
+            if isinstance(value, str) and value.strip():
+                ids.add(value.strip().upper())
+    return ids
+
+# A task the broker has not finished. Two independent signals have to agree, because a state name
+# this hook has never heard of must not be silently treated as over.
+FINISHED = {"success", "failure", "cancelled", "canceled", "timeout", "timed_out",
+            "spawn_failed", "expired", "abandoned", "superseded"}
+
+def is_live(task):
+    if task.get("finishedAt"):
+        return False
+    return str(task.get("state") or "").strip().lower() not in FINISHED
+
+# A claim is a repository-relative path. It covers a staged path when they are equal or when the
+# staged path is inside it. Returns "exact", "case" or None.
+#
+# The case-insensitive arm is not politeness. A claim is a string somebody typed into a dispatch,
+# this repository lives on a case-insensitive APFS volume, and `sources/foo.swift` there *is*
+# `Sources/Foo.swift`. Comparing byte-for-byte let that typo pass silently, which is the direction
+# that loses work. On a case-sensitive filesystem the same arm can over-refuse two files that
+# genuinely differ only in case; the refusal says which arm matched, and `--no-verify` is the way
+# past it.
+def normalized(claim):
+    claim = claim.strip().rstrip("/")
+    while claim.startswith("./"):
+        claim = claim[2:]
+    return claim
+
+def covers(claim, path):
+    claim = normalized(claim)
+    if not claim:
+        return None
+    if path == claim or path.startswith(claim + "/"):
+        return "exact"
+    lowered = claim.lower()
+    if path.lower() == lowered or path.lower().startswith(lowered + "/"):
+        return "case"
+    return None
+
+# --- ask the broker -----------------------------------------------------------------------------
+def endpoint():
+    explicit = os.environ.get("CLAWDLINE_GUARD_ENDPOINT", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    config = os.environ.get("CLAWDLINE_GUARD_CONFIG", "").strip() \
+        or os.path.expanduser("~/.config/clawdline/config.json")
+    port = 7717
+    try:
+        with open(config, "r", encoding="utf-8") as handle:
+            value = json.load(handle).get("remote_port")
+        if isinstance(value, int) and 0 < value < 65536:
+            port = value
+    except Exception:
+        pass
+    return "http://127.0.0.1:%d" % port
+
+token_file = os.environ.get("CLAWDLINE_GUARD_TOKEN_FILE", "").strip() \
+    or os.path.expanduser("~/.config/clawdline/orchestrator-token")
+try:
+    with open(token_file, "r", encoding="utf-8") as handle:
+        token = handle.read().strip()
+except Exception as error:
+    allow_with_warning("the orchestrator token at %s could not be read (%s)"
+                       % (token_file, type(error).__name__), staged)
+if not token:
+    allow_with_warning("the orchestrator token at %s is empty" % token_file, staged)
+
+try:
+    timeout = float(os.environ.get("CLAWDLINE_GUARD_TIMEOUT", "2"))
+except ValueError:
+    timeout = 2.0
+
+base = endpoint()
+request = urllib.request.Request(base + "/v1/orchestrator/tasks",
+                                 headers={"X-Clawdline-Orchestrator": token})
+# No proxy: this is loopback, and an http_proxy in the environment would otherwise send a local
+# token to whatever that proxy is.
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# Each failure says what actually happened. They used to share one sentence — "Clawdline is not
+# answering" — which sent whoever read it to check whether the app was running, when what had
+# happened was a 401 from an app that was answering perfectly well. A rotated orchestrator token
+# then leaves every commit silently unchecked behind a message pointing the other way.
+try:
+    with opener.open(request, timeout=timeout) as response:
+        body = response.read()
+except urllib.error.HTTPError as error:
+    hint = ""
+    if error.code in (401, 403):
+        hint = " — Clawdline is running and refused this hook; the orchestrator token it read " \
+               "from %s is not the one Clawdline expects" % token_file
+    allow_with_warning("Clawdline answered at %s with HTTP %s %s%s"
+                       % (base, error.code, error.reason, hint), staged)
+except Exception as error:
+    detail = getattr(error, "reason", None) or error
+    allow_with_warning("Clawdline is not answering at %s (%s)" % (base, detail), staged)
+
+try:
+    payload = json.loads(body.decode("utf-8"))
+except Exception as error:
+    allow_with_warning("Clawdline answered at %s with a body this hook could not read as JSON (%s)"
+                       % (base, type(error).__name__), staged)
+
+tasks = payload.get("tasks") if isinstance(payload, dict) else payload
+if not isinstance(tasks, list):
+    allow_with_warning("Clawdline answered at %s in a shape this hook does not understand" % base,
+                       staged)
+
+# --- match -------------------------------------------------------------------------------------
+# Only live, in-tree tasks in THIS checkout, belonging to a root that is not this session.
+#
+# Worktree-isolated tasks are skipped twice over: the broker already empties their claims
+# (Orchestrator.prepareClaimsForIsolation, `claims_ignored_for_worktree`) because a claim names the
+# shared checkout and an isolated child cannot touch it at that spelling. Reinstating them here
+# would refuse the root's own landing commit, which stages exactly the paths its child claimed.
+#
+# A match splits three ways rather than two. `foreign` is a claim this hook can positively say
+# belongs to somebody else. `unattributable` is a claim it cannot place — because this session
+# carries no identity Clawdline records, or because the task carries none. Only `foreign` refuses;
+# an unattributable claim is the broker-dependent layer failing to answer, and it takes that
+# layer's direction.
+foreign = []
+unattributable = []
+for task in tasks:
+    if not isinstance(task, dict):
+        continue
+    if not is_live(task):
+        continue
+    if str(task.get("isolation") or "").strip().lower() == "worktree":
+        continue
+    claims = task.get("claims")
+    if not isinstance(claims, list) or not claims:
+        continue
+    project = task.get("projectDir")
+    if not isinstance(project, str) or os.path.realpath(project) != toplevel:
+        continue
+    theirs = task_identity(task)
+    if MINE & theirs:
+        continue
+    hits = []
+    for path in staged:
+        for claim in claims:
+            if not isinstance(claim, str):
+                continue
+            how = covers(claim, path)
+            if how:
+                hits.append((path, task, claim, how))
+                break
+    if not hits:
+        continue
+    if MINE and theirs:
+        foreign.extend(hits)
+    else:
+        unattributable.extend(hits)
+
+if not foreign and not unattributable:
+    sys.exit(0)
+
+def described(task):
+    root = task.get("root") or {}
+    label = root.get("label") if isinstance(root, dict) else None
+    return (str(task.get("title") or "(untitled task)"),
+            str(task.get("state") or "?"),
+            str(label or "(unlabelled root)"))
+
+def held_by(hits):
+    lines = []
+    for path, task, claim, how in hits:
+        title, state, label = described(task)
+        lines.append("      %s" % path)
+        lines.append("          claimed by  %s [%s]" % (title, state))
+        lines.append("          owned by    %s" % label)
+        if how == "case":
+            lines.append("          the claim is spelled `%s` and differs from the staged path"
+                         % normalized(claim))
+            lines.append("          only in case; this filesystem does not tell the two apart")
+    return lines
+
+if not foreign:
+    # Nothing here can be attributed, so nothing here can be refused. Say which half of the
+    # attribution is missing, because the two have different remedies.
+    if not MINE:
+        reason = ("this session carries no identity Clawdline records — none of "
+                  "CLAWDLINE_TERMINAL_ID, CLAUDE_CODE_SESSION_ID, ITERM_SESSION_ID, "
+                  "TERM_SESSION_ID or TMUX_PANE is set — so this hook cannot tell whether the "
+                  "claims below are your own")
+    else:
+        reason = ("Clawdline's record for the task holding a claim here carries no session or "
+                  "terminal of its own, so this hook cannot tell whether it is yours")
+    also = [""]
+    also.append("    A live task claims %d of the staged path(s):" % len(unattributable))
+    also.extend(held_by(unattributable))
+    also.append("")
+    also.append("    If this is not your work, take it back out — this unstages without touching")
+    also.append("    their bytes:")
+    also.append("")
+    for path, _, _, _ in unattributable:
+        also.append("        git reset -- %s" % path)
+    also.append("")
+    also.append("    To be recognised next time, tell the hook who you are:")
+    also.append("")
+    also.append("        export CLAWDLINE_TERMINAL_ID=<the terminalId or sessionId on your task>")
+    allow_with_warning(reason, staged, also)
+
+say()
+say("  ✗ shared-tree guard: this commit contains %d path(s) another session is working on."
+    % len(foreign))
+say()
+for line in held_by(foreign):
+    say(line)
+say()
+if unattributable:
+    say("    And %d more path(s) belong to a task this hook could not attribute to anybody, so it"
+        % len(unattributable))
+    say("    did not refuse over them:")
+    for path, _, _, _ in unattributable:
+        say("        %s" % path)
+    say()
+say("    This checkout and its git index are shared. A `git commit` with no pathspec takes the")
+say("    whole index, including what somebody else has already `git add`-ed. That is how another")
+say("    session's work was committed twice on 2026-08-28.")
+say()
+say("    Take the stranger back out — this unstages without touching their bytes:")
+say()
+for path, _, _, _ in foreign:
+    say("        git reset -- %s" % path)
+say()
+say("    then commit your reviewed index with a plain `git commit -m <message>`. Do not reach for")
+say("    `git commit -- <path>` as a shortcut: it commits the worktree content of those paths, so")
+say("    it can absorb another session's *unstaged* hunks instead. See AGENTS.md.")
+say()
+say("    If you know better, this is the way past:")
+say()
+say("        git commit --no-verify")
+say()
+say("    Scope: this hook runs on `git commit` only. It cannot see `git reset --hard`,")
+say("    `git checkout -- <path>` or `git stash`, and a conflict-free `git merge` commits")
+say("    without calling it.")
+say()
+sys.exit(1)
+CLAWDLINE_GUARD_PY

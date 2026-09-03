@@ -300,7 +300,13 @@ that is the coarse tool doing the sharp one's job. Two sibling checkouts give ea
 own worktrees, claims and sessions, and cost only the convenience of editing both halves in one
 folder.
 
+**And there is a hook for the commit itself.** Claims are a gate at dispatch; the moment a commit
+is typed, this repository's own `pre-commit` guard reads them back and refuses a commit carrying a
+path another session's live task claimed, or one concluding a merge somebody else resolved by hand.
+It is not on until you switch it on — `sh tools/install-git-hooks.sh`.
+
 [Claims, leases, and the queue in full →](docs/orchestrator.md#reserving-declared-write-paths-at-dispatch)
+· [the commit guard →](docs/shared-tree-guard.md)
 
 ## Rules an agent reads on the way in
 
@@ -810,6 +816,7 @@ link to them.
 | [Session states and list icons](docs/session-states.md) | every status glyph, the four independent axes, what you should do, and why finished is not the same as safe to close |
 | [Clawdfather and feature-sized dispatch](docs/dispatching.md) | how the machine-wide context owner decomposes, delegates, reviews and retains landing ownership without turning every small task into a new tab |
 | [Handing work off](docs/orchestrator.md) | one session dispatching another: the protocol, the credentials, the lifecycle |
+| [The shared-tree commit guard](docs/shared-tree-guard.md) | the `pre-commit` hook that refuses another session's staged work, what `sh tools/install-git-hooks.sh` turns on, and what a `pre-commit` hook cannot see |
 | [Verification and review](docs/verification-workflow.md) | implementation → independent review → bounded correction → focused confirmation → exact-tree acceptance |
 | [Session closeability](docs/session-closeability.md) | broker evidence, closure attestations and the compare-and-swap that makes safe-to-close a proof rather than a colour |
 | [Scheduled tasks](docs/schedules.md) | task templates that dispatch on local wall-clock time, catch-up, and tab-close policy |
