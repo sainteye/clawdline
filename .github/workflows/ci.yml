@@ -40,4 +40,10 @@ jobs:
           test -x "$APP/Contents/MacOS/Clawdline"
           test -f "$APP/Contents/Resources/iterm.js"
           test -f "$APP/Contents/Resources/mascots/clawd.json"
+          # The installed SKILL.md is a stub that points at these two. If the bundle ships
+          # without them the stub resolves a reader that is not there, and nothing says so
+          # until an agent tries to load the guide.
+          test -x "$APP/Contents/Resources/clawdline-skill.sh"
+          test -f "$APP/Contents/Resources/skill-guides/clawdline.md"
+          test -f "$APP/Contents/Resources/skill-guides/clawdline.zh-TW.md"
           test -f "$APP/Contents/Info.plist"

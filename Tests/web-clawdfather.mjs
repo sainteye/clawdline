@@ -487,6 +487,15 @@ for (const stub of ["../skills/clawdline/SKILL.md", "../skills/clawdline/SKILL.z
     assert.match(text, /get clawdline/, `${stub} shows how to load the guide`);
     assert.doesNotMatch(text, /CODEX_THREAD_ID/,
         `${stub} must not re-absorb guide detail that goes stale in a copied file`);
+    // Why: the three banned strings above only catch what we thought to ban, and the dangerous
+    // direction is the other one — somebody lands skill prose on the stub because that is where
+    // it used to live, and every token check stays green. A size ceiling has no such blind spot:
+    // the body it replaced was 1,439 lines, so anything approaching that is the old file coming
+    // back whatever words it uses. Raise this deliberately if a stub ever needs to say more.
+    const lines = text.split("\n").length;
+    assert.ok(lines <= 140,
+        `${stub}: ${lines} lines. A discovery stub carries routing and the role contract, not the
+         guide. Content this size belongs in Resources/skill-guides/, which ships with the build.`);
 }
 
 // Phase A2's preview-only command list is a separate, still-unresolved feature.
