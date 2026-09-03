@@ -72,6 +72,7 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
 
 private actor LifecycleTestRouter: CloudCommandRouting {
     private var routed: [(CloudHeadlessCommand, String, String)] = []
+    private var reads: [(CloudHeadlessRead, String)] = []
 
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult {
@@ -79,7 +80,15 @@ private actor LifecycleTestRouter: CloudCommandRouting {
         return CloudCommandResult(status: 200, code: nil)
     }
 
+    /// This suite drives commands only; a read that reached it would be a lifecycle change
+    /// nobody asked for, so it is recorded rather than silently answered as a success.
+    func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
+        reads.append((read, sender))
+        return CloudReadResult(status: 200, body: Data("{}".utf8))
+    }
+
     func count() -> Int { routed.count }
+    func readCount() -> Int { reads.count }
     func lastIdempotencyKey() -> String? { routed.last?.2 }
 }
 

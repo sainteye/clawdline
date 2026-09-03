@@ -260,6 +260,39 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
+    /// Enter a verified cloud read through the same lanes local HTTP uses, and through the same
+    /// route transaction underneath them.
+    ///
+    /// **The lane matters more than the route here.** `/info` and `/transcript` are the two reads
+    /// this server deliberately keeps off its shared queue — one reads a transcript that can be
+    /// fifty megabytes on top of a `git status`, the other must reach first paint without waiting
+    /// behind it — so a second door that called `dispatch` directly would put back exactly the
+    /// exclusivity those lanes were built to remove. A cloud viewer therefore queues where a phone
+    /// on the tunnel queues, is shed by the same budgets, and is told `transcript_busy` or the
+    /// reading lane's 429 in the same words.
+    ///
+    /// There is no idempotency key and no write switch: a retried GET is not a second anything,
+    /// and `.verifiedCloud` already carries `.read`.
+    func routeVerifiedCloudRead(_ read: CloudHeadlessRead, sender: String) async -> Response {
+        let request = Request(verifiedCloudRead: read, sender: sender)
+        return await withCheckedContinuation { continuation in
+            serialized { [weak self] in
+                guard let self else {
+                    continuation.resume(returning: .error(503, "unavailable",
+                                                          "The local command broker is unavailable."))
+                    return
+                }
+                if Self.isTranscriptReading(request.path) {
+                    self.startTranscriptRead(request) { continuation.resume(returning: $0) }
+                } else if Self.isSlowReading(request.path) {
+                    self.startSlowReading(request) { continuation.resume(returning: $0) }
+                } else {
+                    continuation.resume(returning: self.withCachePolicy(self.dispatch(request)))
+                }
+            }
+        }
+    }
+
     /// Explicit Cloud lifecycle seam. Merely constructing a bridge changes nothing; attaching it
     /// starts its transport and installs the existing SessionWatch observer. Passing nil detaches
     /// and shuts it down without touching the local listener or its write setting.
@@ -4001,8 +4034,19 @@ final class RemoteServer: @unchecked Sendable {
     /// The optional reads, answered from the last good reading while the next one is taken. The
     /// lane's depth now refuses only a request that had nothing to serve; policy in `SlowReadings`.
     private func readSlowly(_ request: Request, on conn: NWConnection) {
+        startSlowReading(request) { [weak self] response in
+            guard let self else { conn.cancel(); return }
+            self.send(response, on: conn)
+        }
+    }
+
+    /// The same lane, delivered to a closure instead of a socket. A cloud viewer's `/info` is the
+    /// second caller and must share this budget rather than open a second one: the measurement
+    /// that produced the lane — five `/info` in flight answering `/v1/health` in 3.143 seconds —
+    /// is about the Mac, not about which transport asked.
+    private func startSlowReading(_ request: Request, deliver: @escaping (Response) -> Void) {
         if let refusal = slowReadingRefusal(request) {
-            send(withCachePolicy(refusal), on: conn)
+            deliver(withCachePolicy(refusal))
             return
         }
         let arrived = Date()
@@ -4015,10 +4059,9 @@ final class RemoteServer: @unchecked Sendable {
             compute: { self.route(request) }, classify: SlowReadings.classify,
             completeOnOwner: { [queue] work in queue.async(execute: work) },
             release: { self.readingLimiter.finish(request.path) },
-            deliver: { [weak self] answer in
-                guard let self else { conn.cancel(); return }
-                self.send(SlowReadings.stamp(answer, arrived: arrived, lane: "reading",
-                                             key: key, trace: Self.readingTrace), on: conn)
+            deliver: { answer in
+                deliver(SlowReadings.stamp(answer, arrived: arrived, lane: "reading",
+                                           key: key, trace: Self.readingTrace))
             })
     }
 
@@ -5341,6 +5384,25 @@ extension RemoteServer {
             body = (try? JSONSerialization.data(withJSONObject: object,
                                                  options: [.withoutEscapingSlashes])) ?? Data()
             contentLength = body.count
+        }
+
+        /// The read half of the same door, and it has no header spelling either.
+        ///
+        /// The path and the query are built here from a closed enum rather than sent by the
+        /// viewer, so a paired browser names one of two reads and can never name a route. There
+        /// is no idempotency key because there is nothing to make happen twice.
+        init(verifiedCloudRead read: CloudHeadlessRead, sender: String) {
+            source = .verifiedCloud(sender: sender)
+            method = "GET"
+            let segment = CloudAppBridge.channelSegment(read.session)
+            switch read {
+            case .transcript(_, let limit):
+                path = "/v1/sessions/\(segment)/transcript"
+                query = ["limit": String(limit)]
+            case .info(_, let parts):
+                path = "/v1/sessions/\(segment)/info"
+                if parts == "summary" { query = ["parts": "summary"] }
+            }
         }
 
         /// Parse a request head. Deliberately strict about the shape and uninterested in most of

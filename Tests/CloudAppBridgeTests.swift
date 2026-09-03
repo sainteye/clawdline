@@ -184,7 +184,14 @@ private actor CloudAppBridgeTestRouter: CloudCommandRouting {
         let idempotencyKey: String
     }
 
+    struct ReadCall: Equatable {
+        let read: CloudHeadlessRead
+        let sender: String
+    }
+
     private var calls: [Call] = []
+    private var reads: [ReadCall] = []
+    private var readAnswer = CloudReadResult(status: 200, body: Data(#"{"ok":true}"#.utf8))
 
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult {
@@ -192,7 +199,15 @@ private actor CloudAppBridgeTestRouter: CloudCommandRouting {
         return CloudCommandResult(status: 200, code: nil)
     }
 
+    func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
+        reads.append(ReadCall(read: read, sender: sender))
+        return readAnswer
+    }
+
+    func answerReadsWith(_ answer: CloudReadResult) { readAnswer = answer }
+
     func recorded() -> [Call] { calls }
+    func recordedReads() -> [ReadCall] { reads }
 }
 
 private final class CloudAppBridgeTestGate: @unchecked Sendable {
@@ -832,6 +847,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "reconnect": return try await runCloudAppBridgeReconnectTests()
     case "concrete-reconnect": return try await runCloudAppBridgeConcreteReconnectTests()
     case "aba": return try await runCloudAppBridgeABATests()
+    case "reads": return try await runCloudAppBridgeReadTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
         let lifecycle = try await runCloudAppBridgeLifecycleTests()
@@ -840,8 +856,9 @@ func runCloudAppBridgeTests() async throws -> Int {
         let reconnect = try await runCloudAppBridgeReconnectTests()
         let concreteReconnect = try await runCloudAppBridgeConcreteReconnectTests()
         let aba = try await runCloudAppBridgeABATests()
+        let reads = try await runCloudAppBridgeReadTests()
         return base + lifecycle + transitiveLifecycle + publicationLifecycle
-            + reconnect + concreteReconnect + aba
+            + reconnect + concreteReconnect + aba + reads
     }
 }
 
@@ -897,3 +914,178 @@ private enum CloudAppBridgeTestMain {
     }
 }
 #endif
+
+/// The reads a browser on the cloud path could not make.
+///
+/// The whole round trip, minus a relay: what the bridge accepts on the command channel, which
+/// door it sends it through, and what it publishes back. Nothing had ever published a `t/`
+/// envelope, so the two things being proved here are that one now exists and that a refusal
+/// becomes one too — a viewer that is told nothing waits behind a skeleton forever, which is
+/// exactly what a phone on this path used to do.
+private func runCloudAppBridgeReadTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x53, count: 32))
+    let transport = CloudAppBridgeTestTransport()
+    let router = CloudAppBridgeTestRouter()
+    let gate = CloudAppBridgeTestGate()
+    let results = CloudAppBridgeTestResults()
+    let bridge = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "Mac / 台灣", deviceID: "machine-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey
+        ),
+        sequencing: CloudAppBridgeTestSequence(),
+        allowCloudCommands: { gate.get() },
+        commandRouter: router,
+        nowMilliseconds: { 1_787_740_000_000 },
+        commandResult: { results.append($0) }
+    )
+    try await bridge.start()
+
+    func opened(_ envelope: CloudEnvelope) throws -> [String: Any] {
+        let clear = try envelope.open(masterSecret: masterSecret, publicKeyForSender: {
+            $0 == "machine-device" ? signingKey.publicKeyRaw : nil
+        })
+        return (try JSONSerialization.jsonObject(with: clear)) as? [String: Any] ?? [:]
+    }
+
+    // The write switch is off for the whole of this suite. A transcript read is still answered:
+    // on the direct path a paired device reads one with that switch off, and the session rows
+    // this bridge publishes cross without consulting it either.
+    try require(gate.get() == false, "the write switch is off for every read below")
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data(#"{"messages":[{"role":"user"}],"revision":"7"}"#.utf8)
+    ))
+    transport.yield(#"{"type":"transcript","session":"plain","limit":200}"#, sequence: 20)
+    try await waitForCloudAppBridge("a transcript read with the write switch off") {
+        await router.recordedReads().count == 1
+    }
+    let transcriptReads = await router.recordedReads()
+    try require(transcriptReads.first?.read == .transcript(session: "plain", limit: 200),
+                "the transcript read reaches the broker with its own window")
+    try require(transcriptReads.first?.sender == "viewer",
+                "a read carries the verified sender the envelope was signed by")
+    try require(!results.all().contains(where: { $0.code == "cloud_commands_disabled" }),
+                "the write switch does not refuse a read")
+
+    try await waitForCloudAppBridge("the transcript answer to be published") {
+        !transport.envelopes().isEmpty
+    }
+    let transcriptEnvelope = transport.envelopes()[0]
+    try require(
+        transcriptEnvelope.ch == "t/Mac%20%2F%20%E5%8F%B0%E7%81%A3/plain",
+        "the answer goes on the session's own transcript channel, which the viewer subscribes to"
+    )
+    try require(transcriptEnvelope.envelopeClass == .stream,
+                "an answer is a stream envelope; only a viewer publishes ctl")
+    let transcriptPayload = try opened(transcriptEnvelope)
+    try require(transcriptPayload["read"] as? String == "transcript",
+                "the answer names the read it answers")
+    try require(transcriptPayload["status"] as? Int == 200, "the answer carries the route's status")
+    try require((transcriptPayload["body"] as? [String: Any])?["revision"] as? String == "7",
+                "the answer carries the route's own body, unchanged")
+
+    // Full and summary Info are two answers, not one. A summary omits screen, Git and
+    // links/deploy, so a full request settled by a summary would be cached as complete.
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data(#"{"info":{"session":{"id":"plain"}}}"#.utf8)
+    ))
+    transport.yield(#"{"type":"info","session":"plain","parts":"summary"}"#, sequence: 21)
+    try await waitForCloudAppBridge("the summary Info answer") {
+        transport.envelopes().count == 2
+    }
+    let summaryReads = await router.recordedReads()
+    try require(summaryReads.last?.read == .info(session: "plain", parts: "summary"),
+                "the summary tier reaches the broker as the tier that was asked for")
+    let summaryPayload = try opened(transport.envelopes()[1])
+    try require(summaryPayload["read"] as? String == "info.summary",
+                "the summary answer is named apart from the full one")
+
+    // A refusal is published too, and it is the route's own typed code rather than a new one.
+    await router.answerReadsWith(CloudReadResult(
+        status: 404,
+        body: Data(#"{"error":{"code":"not_found","message":"No session named that"}}"#.utf8)
+    ))
+    transport.yield(#"{"type":"info","session":"gone","parts":"full"}"#, sequence: 22)
+    try await waitForCloudAppBridge("the refused Info answer") {
+        transport.envelopes().count == 3
+    }
+    let refusal = try opened(transport.envelopes()[2])
+    try require(refusal["read"] as? String == "info.full",
+                "a refusal names the read it refuses, so the right waiter hears it")
+    try require(refusal["status"] as? Int == 404, "a refusal carries the route's status")
+    try require((refusal["error"] as? [String: Any])?["code"] as? String == "not_found",
+                "a refused read crosses as a typed code rather than as an empty view")
+    try require(!refusal.keys.contains("body"),
+                "a refusal publishes no body to be mistaken for one")
+    try require(results.all().contains(where: { $0.code == "not_found" }),
+                "the refusal is observable at the bridge as well as on the channel")
+
+    // Strictness, in the same shape the commands already have: an exact key set, a bounded
+    // window, a session that is really there, a tier that is one of two, and the command class
+    // the relay bills. None of them may reach the broker.
+    let readsBeforeMalformed = await router.recordedReads().count
+    let malformed = [
+        #"{"type":"transcript","session":"plain"}"#,
+        #"{"type":"transcript","session":"plain","limit":200,"extra":1}"#,
+        #"{"type":"transcript","session":"plain","limit":0}"#,
+        #"{"type":"transcript","session":"plain","limit":1001}"#,
+        #"{"type":"transcript","session":"plain","limit":1.5}"#,
+        #"{"type":"transcript","session":"","limit":200}"#,
+        #"{"type":"info","session":"plain","parts":"everything"}"#,
+        #"{"type":"info","session":"plain"}"#,
+    ]
+    var sequence: UInt64 = 30
+    for body in malformed {
+        transport.yield(body, sequence: sequence)
+        sequence += 1
+    }
+    transport.yield(#"{"type":"transcript","session":"plain","limit":200}"#,
+                    sequence: sequence, commandClass: .dispatch)
+    try await waitForCloudAppBridge("every malformed read to be refused") {
+        results.all().filter { $0.code == "malformed_read" }.count == malformed.count + 1
+    }
+    let readsAfterMalformed = await router.recordedReads().count
+    try require(readsAfterMalformed == readsBeforeMalformed,
+                "no malformed read reaches the broker")
+    try require(transport.envelopes().count == 3,
+                "a refused-before-routing read publishes nothing, having no answer to publish")
+
+    await bridge.stop()
+
+    // What a viewer may actually reach. The path and the query are built from the closed enum
+    // rather than sent, so this is the whole surface a paired browser can ask for.
+    let transcriptRequest = RemoteServer.Request(
+        verifiedCloudRead: .transcript(session: "session/一|?", limit: 50), sender: "viewer"
+    )
+    try require(transcriptRequest.method == "GET", "a read is a GET and carries no body")
+    try require(transcriptRequest.path == "/v1/sessions/session%2F%E4%B8%80%7C%3F/transcript",
+                "the session id is encoded the same way the command door encodes it")
+    try require(transcriptRequest.query == ["limit": "50"],
+                "the window travels as the query the direct path uses")
+    try require(transcriptRequest.headers["idempotency-key"] == nil,
+                "a read mints no idempotency key, because a retried GET is not a second anything")
+    let fullInfoRequest = RemoteServer.Request(
+        verifiedCloudRead: .info(session: "plain", parts: "full"), sender: "viewer"
+    )
+    try require(fullInfoRequest.path == "/v1/sessions/plain/info" && fullInfoRequest.query.isEmpty,
+                "full Info is the bare route, exactly as the direct path asks for it")
+    let summaryInfoRequest = RemoteServer.Request(
+        verifiedCloudRead: .info(session: "plain", parts: "summary"), sender: "viewer"
+    )
+    try require(summaryInfoRequest.query == ["parts": "summary"],
+                "the summary tier is the same query string the local client sends")
+    try require(RemoteServer.isTranscriptReading(transcriptRequest.path),
+                "a cloud transcript read is classified into the transcript lane")
+    try require(RemoteServer.isSlowReading(fullInfoRequest.path),
+                "a cloud Info read is classified into the bounded reading lane")
+
+    return checks
+}

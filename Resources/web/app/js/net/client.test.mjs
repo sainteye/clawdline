@@ -595,5 +595,159 @@ assert.deepEqual((await connectedCloud.sessions()).sessions[0].identity,
 assert.equal(liveEvents.some(function (event) { return event.type === "sessions"; }), true);
 connectedCloud.stop();
 
-console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam");
+/* ---- the two reads a browser on the cloud path can now make ---------------
+   The channel and the subscription were always here; nothing ever published on them, so a
+   transcript request settled for nobody and Info was not a method at all. These hold the whole
+   round trip: what goes up the command channel, what comes back on the session's own channel,
+   and what a refusal looks like when it arrives instead of an answer. ----------------------- */
+
+const readOnlyCloud = new CloudClient({
+    relayURL: "wss://relay.example", deviceToken: "token", devicePrivateKey: signingKey,
+    masterKey: masterKey, senderKeys: { "device-vector-01": senderKey }
+});
+for (const [name, call] of [
+    ["transcript", () => readOnlyCloud.transcript({ machine: "mac-01", session: "session-01" })],
+    ["info", () => readOnlyCloud.info({ machine: "mac-01", session: "session-01" })],
+    ["infoSummary", () => readOnlyCloud.infoSummary({ machine: "mac-01", session: "session-01" })]
+]) {
+    await assert.rejects(call(), function (error) {
+        return error.code === "cloud_read_needs_send_prompt";
+    }, name + " on a device without send_prompt is refused in a word of its own");
+}
+assert.equal(readOnlyCloud.readWaiters.size, 0,
+    "a refused read registers no waiter and spends no envelope sequence");
+
+for (const missing of ["agent", "shell", "skills", "git"]) {
+    await assert.rejects(readOnlyCloud[missing]({ machine: "mac-01", session: "session-01" }),
+        function (error) { return error.code === "cloud_read_unavailable"; },
+        missing + "() answers a typed refusal instead of throwing 'is not a function'");
+}
+
+const readTimers = [];
+/** Sealing an envelope is real WebCrypto, so a published read is several turns away, not two. */
+async function until(predicate, what) {
+    for (let turn = 0; turn < 500; turn += 1) {
+        if (predicate()) return;
+        await new Promise(function (resolve) { setImmediate(resolve); });
+    }
+    assert.fail("timed out waiting for " + what);
+}
+function publishedReads(socket) {
+    return socket.sent.filter(function (frame) { return frame.type === "publish"; });
+}
+
+function makeReadingCloud() {
+    return new CloudClient({
+        relayURL: "https://relay.example", deviceToken: "jwt", devicePrivateKey: signingKey,
+        masterKey: masterKey, senderKeys: { "device-vector-01": senderKey },
+        WebSocket: FakeWebSocket, allowWrites: true, nextSequence: function () {
+            return Promise.resolve(readTimers.length + 900);
+        },
+        setTimeout: function (fn) { readTimers.push(fn); return readTimers.length; },
+        clearTimeout: function () {}
+    });
+}
+async function becomeReady(client) {
+    await client.start();
+    const socket = FakeWebSocket.latest;
+    socket.receive({ type: "challenge", v: 1, context: "clawdline-challenge-v1",
+        account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+        expires_in_ms: 30_000 });
+    await client.messageChain;
+    socket.receive({ type: "ready", v: 1, role: "viewer", account: "account-01",
+        device: "device-vector-01" });
+    await client.messageChain;
+    return socket;
+}
+async function answerRead(client, socket, payload, session = "session-01") {
+    const envelope = await sealEnvelope({
+        ch: "t/mac-01/" + session, seq: 4000 + readTimers.length, ts: 1787817600000,
+        class: "stream", key_id: "ms-1", sender: "device-vector-01"
+    }, JSON.stringify(payload), masterKey, signingKey);
+    socket.receive({ type: "envelope", envelope: envelope });
+    await client.messageChain;
+}
+
+const readingCloud = makeReadingCloud();
+const readingSocket = await becomeReady(readingCloud);
+const transcriptAnswer = readingCloud.transcript({ machine: "mac-01", session: "session-01" });
+await until(function () { return publishedReads(readingSocket).length === 1; },
+    "the transcript request to leave");
+const subscribed = readingSocket.sent.filter((frame) => frame.type === "subscribe");
+assert.deepEqual(subscribed.at(-1).channels, ["t/mac-01/session-01"],
+    "asking for a transcript subscribes to the session's own answer channel");
+const published = publishedReads(readingSocket);
+assert.equal(published.length, 1, "one read is one published envelope");
+assert.equal(published[0].envelope.ch, "ctl/mac-01",
+    "a read asks on the command channel, the only one a viewer may publish on");
+assert.equal(published[0].envelope.class, "ctl",
+    "a read is not a dispatch and is not billed as one");
+assert.deepEqual(JSON.parse(new TextDecoder().decode(
+    await openEnvelope(published[0].envelope, masterKey, senderKey))),
+    { type: "transcript", session: "session-01", limit: 200 },
+    "the transcript request carries the same window the direct path asks for");
+await answerRead(readingCloud, readingSocket,
+    { read: "transcript", status: 200, body: { messages: [{ role: "user", text: "hi" }] } });
+assert.deepEqual(await transcriptAnswer, { messages: [{ role: "user", text: "hi" }] },
+    "the answer on t/ settles the transcript the direct path would have fetched");
+
+const infoAnswer = readingCloud.info({ machine: "mac-01", session: "session-01" });
+const summaryAnswer = readingCloud.infoSummary({ machine: "mac-01", session: "session-01" });
+await until(function () { return publishedReads(readingSocket).length === 3; },
+    "both Info requests to leave");
+const infoRequests = await Promise.all(publishedReads(readingSocket).slice(1)
+    .map(async (frame) => JSON.parse(new TextDecoder().decode(
+        await openEnvelope(frame.envelope, masterKey, senderKey)))));
+assert.deepEqual(infoRequests, [
+    { type: "info", session: "session-01", parts: "full" },
+    { type: "info", session: "session-01", parts: "summary" }
+], "full and summary Info are two requests, told apart by the field the direct path uses");
+await answerRead(readingCloud, readingSocket,
+    { read: "info.full", status: 200, body: { info: { session: { id: "session-01" } } } });
+assert.deepEqual((await infoAnswer).info.session, { id: "session-01" },
+    "Info comes back in the same envelope shape the /info route answers with");
+// The summary read is still outstanding: `info` and `info?parts=summary` are two questions and
+// one answer does not settle both. Firing its own clock is the only thing that ends it.
+readTimers[2]();
+await assert.rejects(summaryAnswer, function (error) {
+    return error.code === "cloud_read_timeout";
+}, "a full Info answer does not settle a summary request that omits three of its parts");
+
+const refusedInfo = readingCloud.info({ machine: "mac-01", session: "gone" });
+await until(function () { return publishedReads(readingSocket).length === 4; },
+    "the refused Info request to leave");
+await answerRead(readingCloud, readingSocket, { read: "info.full", status: 404,
+    error: { code: "not_found", message: "No session named that" } }, "gone");
+await assert.rejects(refusedInfo, function (error) {
+    return error.code === "not_found" && error.message === "No session named that";
+}, "a refused read arrives as the Mac's own typed code, not as an empty view");
+
+const timersBeforeUnanswered = readTimers.length;
+const unansweredRead = readingCloud.transcript({ machine: "mac-01", session: "slow" });
+await until(function () { return readTimers.length > timersBeforeUnanswered; },
+    "the unanswered read to arm its clock");
+readTimers.at(-1)();
+await assert.rejects(unansweredRead, function (error) {
+    return error.code === "cloud_read_timeout";
+}, "a read nothing ever answers ends in a code rather than in a skeleton");
+
+const timersBeforeOrphan = readTimers.length;
+const orphaned = readingCloud.info({ machine: "mac-01", session: "session-01" });
+await until(function () { return readTimers.length > timersBeforeOrphan; },
+    "the orphaned read to arm its clock");
+readingCloud.stop();
+await assert.rejects(orphaned, function (error) { return error.code === "offline"; },
+    "stopping the socket fails the reads that were waiting on it");
+assert.equal(readingCloud.readWaiters.size, 0, "no read waiter outlives its transport");
+
+const strictCloud = makeReadingCloud();
+const strictSocket = await becomeReady(strictCloud);
+const strictErrors = [];
+strictCloud.events(function (event) { if (event.type === "error") strictErrors.push(event.error); });
+await answerRead(strictCloud, strictSocket, { session: "session-01", messages: [] });
+assert.equal(strictErrors.at(-1) && strictErrors.at(-1).code, "bad_payload",
+    "a t/ envelope that names no read is a protocol error rather than a stored transcript");
+strictCloud.stop();
+
+console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam, cloud reads");
 process.exit(0);

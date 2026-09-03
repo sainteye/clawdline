@@ -17,10 +17,51 @@ import { T } from "../core/i18n.js";
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
+/**
+ * The one spelling of a pending read's key. Both ends of a read compute it — the caller that
+ * registers a waiter and the envelope that settles it — and a key computed twice is a key that
+ * can be computed differently twice: the first draft of this used a space on one side and a NUL
+ * on the other, and every read hung with its answer already decrypted and in hand.
+ *
+ * `sessionIdentityKey` already ends in a NUL-joined identity, so a second NUL cannot collide with
+ * a machine or session name, both of which may contain anything else.
+ */
+function readKey(identity, read) {
+    return sessionIdentityKey(identity) + "\u0000" + read;
+}
+
+/** How long a read may go unanswered before it is an answer of its own. */
+const READ_TIMEOUT_MS = 60000;
+
+/** The transcript window the direct path asks for, so both transports show the same tail. */
+const TRANSCRIPT_LIMIT = 200;
+
 function cloudError(code, message) {
     var error = new Error(message || code);
     error.code = code;
     return error;
+}
+
+/**
+ * The shape a read's answer takes on `t/<machine>/<session>`, or null if this is not one.
+ *
+ * `read` names which of the two it answers, because both ride one channel: the channel prefix is
+ * the only part of an envelope the relay reads, so a second prefix would need a relay change and
+ * a payload field needs nothing. `body` on success, `error` on a refusal — and a refusal really
+ * does come back, which is the difference between a phone that can say "no session named that"
+ * and one that shows a skeleton until somebody closes the tab.
+ */
+function readAnswer(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    if (typeof payload.read !== "string" || !payload.read) return null;
+    var error = payload.error;
+    if (error && typeof error === "object" && !Array.isArray(error)) {
+        return { read: payload.read, body: null,
+            error: cloudError(typeof error.code === "string" && error.code
+                ? error.code : "read_failed", error.message) };
+    }
+    return { read: payload.read, body: payload.body === undefined ? null : payload.body,
+        error: null };
 }
 
 function socketURL(input) {
@@ -80,7 +121,10 @@ export class CloudClient {
         this.sessionSnapshots = new Map();
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
-        this.transcriptWaiters = new Map();
+        this.readWaiters = new Map();
+        this.readTimeoutMs = options.readTimeoutMs || READ_TIMEOUT_MS;
+        this.setTimeout = options.setTimeout || globalThis.setTimeout.bind(globalThis);
+        this.clearTimeout = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
         this.sequenceBySender = new Map();
         this.messageChain = Promise.resolve();
     }
@@ -120,6 +164,9 @@ export class CloudClient {
         ws.onclose = function () {
             if (self.socket === ws) self.socket = null;
             self.ready = false;
+            // Every read still waiting was waiting on this socket. Left alone they would sit out
+            // their whole timeout behind a skeleton for a connection that is already gone.
+            self._failAllReads(cloudError("offline", "the cloud connection dropped"));
             if (self.handlers && self.handlers.conn) self.handlers.conn("offline");
             self._emit({ type: "connection", state: "offline" });
         };
@@ -129,6 +176,7 @@ export class CloudClient {
         var ws = this.socket;
         this.socket = null;
         this.ready = false;
+        this._failAllReads(cloudError("offline", "the cloud connection was stopped"));
         if (ws) ws.close(1000, "viewer stopped");
     }
 
@@ -258,12 +306,18 @@ export class CloudClient {
             var transcriptIdentity = sessionIdentity({ machine: decodedChannelSegment(channel.machine),
                 session: decodedChannelSegment(channel.session) });
             var transcriptKey = sessionIdentityKey(transcriptIdentity);
-            this.transcriptSnapshots.set(transcriptKey, payload);
-            var waiters = this.transcriptWaiters.get(transcriptKey) || [];
-            this.transcriptWaiters.delete(transcriptKey);
-            waiters.forEach(function (resolve) { resolve(payload); });
-            this._emit({ type: "transcript", data: payload, identity: transcriptIdentity,
-                envelope: envelope, realign: realign });
+            var answer = readAnswer(payload);
+            // Nothing has ever published on this channel, so its payload is pinned here rather
+            // than inherited: an envelope that is not one of the two read answers is a protocol
+            // error and says so, instead of being stored as a transcript nobody can read.
+            if (!answer) throw cloudError("bad_payload", "the read answer names no read");
+            if (answer.read === "transcript" && !answer.error) {
+                this.transcriptSnapshots.set(transcriptKey, answer.body);
+            }
+            this._settleRead(readKey(transcriptIdentity, answer.read), answer.body, answer.error);
+            this._emit({ type: "read", read: answer.read, data: answer.body,
+                error: answer.error, identity: transcriptIdentity, envelope: envelope,
+                realign: realign });
             return;
         }
         if (channel.kind === "orch") {
@@ -286,17 +340,103 @@ export class CloudClient {
 
     sessions() { return Promise.resolve(this._sessionResponse(0)); }
 
+    /**
+     * This session's messages.
+     *
+     * **Not a cache read.** The channel and the subscription were here before this method could
+     * do anything with them — `t/<machine>/<session>` is in the relay and in `cloud-crypto.js`,
+     * and this client already subscribed to it when a session was opened — but no Mac had ever
+     * published a transcript envelope, so the promise this returned was never settled by anything
+     * and the phone sat behind a skeleton for as long as somebody was willing to look at it. What
+     * is new is the asking: the read goes up the command channel and its answer comes back down
+     * the channel that was already there.
+     *
+     * `phases` is the direct path's request/parse instrumentation and has no counterpart here —
+     * there is no HTTP response to report the status of — so it is accepted and ignored rather
+     * than made a different signature. `demand.foreground` likewise: the Mac's transcript lane
+     * reads that off the query it builds itself.
+     */
     transcript(value) {
+        return this._read(value, "transcript", { limit: TRANSCRIPT_LIMIT }, "transcript");
+    }
+
+    /**
+     * The facts behind the status line and the Session info card.
+     *
+     * The expensive read on this Mac — it opens a transcript that can be fifty megabytes and runs
+     * `git status` — so it goes down the same bounded lane a phone on the tunnel queues in, and
+     * can come back refused with `reading_busy` rather than late. It was absent here entirely,
+     * and absent in the quietest possible way: `status-line.js` asks `typeof api.info ===
+     * "function"` and resolves `null` when it is not, so a console on the cloud path drew a status
+     * line with nothing in it and no reason given.
+     */
+    info(value) {
+        return this._read(value, "info", { parts: "full" }, "info.full");
+    }
+
+    /** Transcript-derived facts only, the same subset the direct path asks for by query. */
+    infoSummary(value) {
+        return this._read(value, "info", { parts: "summary" }, "info.summary");
+    }
+
+    /**
+     * One read, asked on the command channel and answered on the session's own.
+     *
+     * At most one request per (session, read) is in flight: a second caller joins the first
+     * rather than spending another envelope sequence, which is what the direct path's own
+     * transcript coalescing does for the same reason.
+     */
+    _read(value, type, extra, answer) {
         var identity = sessionIdentity(value);
-        var key = sessionIdentityKey(identity);
-        if (this.transcriptSnapshots.has(key)) return Promise.resolve(this.transcriptSnapshots.get(key));
-        this.subscribe(["t/" + channelSegment(identity.machine) + "/" + channelSegment(identity.session)]);
+        // The refusal that is deliberate, and it is the relay's rather than this page's: PROTOCOL
+        // §12 says publishing to `ctl/` needs `send_prompt`, in either class, and a read has to
+        // ask on `ctl/` because that is the only channel a viewer may publish on at all. So a
+        // device downgraded to read-only cannot ask for a transcript however much it may read
+        // one, and it is told that in a code of its own rather than by a socket error or a
+        // skeleton. Widening it is a relay decision, not one this file may take.
+        if (!this.allowWrites) {
+            return Promise.reject(cloudError("cloud_read_needs_send_prompt",
+                "this device may not ask the Mac for reads"));
+        }
+        var key = readKey(identity, answer);
         var self = this;
-        return new Promise(function (resolve) {
-            var waiters = self.transcriptWaiters.get(key) || [];
-            waiters.push(resolve);
-            self.transcriptWaiters.set(key, waiters);
+        return new Promise(function (resolve, reject) {
+            var waiters = self.readWaiters.get(key);
+            if (waiters) {
+                waiters.waiting.push({ resolve: resolve, reject: reject });
+                return;
+            }
+            waiters = { waiting: [{ resolve: resolve, reject: reject }], timer: null };
+            self.readWaiters.set(key, waiters);
+            waiters.timer = self.setTimeout(function () {
+                self._settleRead(key, null,
+                    cloudError("cloud_read_timeout", "the Mac did not answer this read"));
+            }, self.readTimeoutMs);
+            self.subscribe(["t/" + channelSegment(identity.machine) + "/"
+                + channelSegment(identity.session)]);
+            Promise.resolve()
+                .then(function () {
+                    return self._publishCommand(identity.machine, type,
+                        Object.assign({ session: identity.session }, extra), "ctl");
+                })
+                .catch(function (error) { self._settleRead(key, null, error); });
         });
+    }
+
+    _settleRead(key, body, error) {
+        var waiters = this.readWaiters.get(key);
+        if (!waiters) return;
+        this.readWaiters.delete(key);
+        if (waiters.timer !== null) this.clearTimeout(waiters.timer);
+        waiters.waiting.forEach(function (waiter) {
+            if (error) waiter.reject(error); else waiter.resolve(body);
+        });
+    }
+
+    _failAllReads(error) {
+        var keys = Array.from(this.readWaiters.keys());
+        var self = this;
+        keys.forEach(function (key) { self._settleRead(key, null, error); });
     }
 
     subscribe(channels) {
@@ -350,6 +490,33 @@ export class CloudClient {
     title(value) {
         sessionIdentity(value);
         return Promise.reject(cloudError("unsupported", T.webInfoTitleCloud));
+    }
+
+    /**
+     * The four reads that do not cross yet, each saying so in one word.
+     *
+     * They are here because their absence was not silence, it was a crash: `git-panel.js`,
+     * `shell-panel.js`, `session/agent.js` and the skills picker all call `api.X(id).then(…)`
+     * without asking whether this transport has an `X`, so on the cloud path they threw
+     * `api.git is not a function` at whoever pressed the button. Every other absent read is
+     * behind a `typeof api.X === "function"` guard, which draws no control at all — a quieter
+     * and, for a missing feature, better answer — so those are left absent rather than given a
+     * stub that would put a dead button back on the screen.
+     *
+     * `cloud_read_unavailable` says *not carried yet*, and is deliberately not the same word as
+     * `cloud_read_needs_send_prompt`, which says *this device may not ask*. One is a gap and the
+     * other is a decision, and a page that showed the same sentence for both would be hiding the
+     * difference the person needs.
+     */
+    agent(value) { return this._unavailableRead(value); }
+    shell(value) { return this._unavailableRead(value); }
+    skills(value) { return this._unavailableRead(value); }
+    git(value) { return this._unavailableRead(value); }
+
+    _unavailableRead(value) {
+        sessionIdentity(value);
+        return Promise.reject(cloudError("cloud_read_unavailable",
+            "this reading does not cross the cloud connection yet"));
     }
 
     dispatch(machine, task) {

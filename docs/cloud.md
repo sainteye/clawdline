@@ -168,6 +168,12 @@ session list's connecting skeleton as the only visible state.
 also where a revoked device finds out. Writes are enabled only if the row still carries
 `send_prompt`.
 
+**And `send_prompt` gates one read as well, which is the relay's rule rather than this app's.**
+PROTOCOL §12 says publishing to `ctl/` needs that capability *in either class*, and a read has to
+ask on `ctl/` because it is the only channel a viewer may publish on at all. So a device
+downgraded to read-only can see every session row and cannot ask for the messages inside one. It
+is told `cloud_read_needs_send_prompt` rather than left waiting; widening it is a relay decision.
+
 **Pairing.** Covered in its own section below.
 
 **Reconnect.** `keepConnected` re-acquires the device token and restarts the socket with
@@ -346,10 +352,20 @@ SecurityTool invocation.
   `index.html` are English in every language. The string table is served by
   `Sources/RemoteServer.swift`, which this change does not own; adding proper names to `T` and to
   `/v1/strings` is a follow-up that must touch that file.
-- **Transcripts and push.** The viewer subscribes to `t/<machine>/<session>` on demand, which the
-  relay supports, but the Mac does not yet publish transcript envelopes. Web push needs the Mac's
-  VAPID keys and does not work through the relay, so the hosted console registers no service
-  worker.
+- **Push.** Web push needs the Mac's VAPID keys and does not work through the relay, so the hosted
+  console registers no service worker.
+- **The reads that still do not cross.** A session's messages and its Info do now: the viewer asks
+  on `ctl/<machine>` and the Mac answers on `t/<machine>/<session>`, which is the channel the
+  viewer had always subscribed to and nothing had ever published on. The route table and the typed
+  refusals are in
+  [`docs/api.md`](api.md#the-two-reads-a-browser-on-the-cloud-path-may-ask-for). Four reads behind
+  unguarded call sites — one background agent's conversation, a background command's output, a
+  session's skills and its Git panel — now answer `cloud_read_unavailable` instead of throwing
+  `api.git is not a function`, and everything else the Web UI reads is guarded by
+  `typeof api.X === "function"` and draws no control at all. `CloudClient.schedules()` is the one
+  exception and is a live defect rather than a policy: it reads a `schedules` key out of the
+  `orch/` snapshot, and `RemoteServer.broadcastOrchestrator` publishes only `tasks`, so the
+  Schedules screen on the hosted console is silently and permanently empty.
 - **`/v1/strings` for the hosted console.** There is no such route on the control plane, so the
   fetch fails and the page falls back to English inside its two-second budget. It is a 404 in the
   console and nothing else.

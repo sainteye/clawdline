@@ -129,7 +129,17 @@ if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.session
   architecture_guard_fail "Orchestrator task records re-scan Transcript/Targets on the main queue"
 fi
 
-remote_server_ceiling=5446
+# A receipt, not a ratchet: it is set to the measured value and raising it is a stated act.
+#   5,446  before the cloud read door
+#   5,508  the cloud read door arrived        (+62: 33 for `routeVerifiedCloudRead`, which sends a
+#                                          verified cloud read down the same two bounded lanes a
+#                                          phone on the tunnel uses instead of opening a second
+#                                          one; 21 for the `Request` initializer that builds those
+#                                          two routes from a closed enum so a viewer can never
+#                                          name a third; and 8 for splitting `readSlowly` into a
+#                                          socket half and a `deliver:` half so both callers share
+#                                          one budget. A feature's code arriving; nothing left.)
+remote_server_ceiling=5508
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
