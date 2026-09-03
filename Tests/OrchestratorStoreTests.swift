@@ -630,9 +630,9 @@ func runOrchestratorStoreTests() {
 
     group("the task codec keeps every field across a full and a minimal record") {
         let repository = "/clawdline-fixture/monorepo"
-        let worktreePath = Orchestrator.worktreePath(project: repository, taskID: taskID) ?? ""
+        let worktreePath = OrchestratorDraft.worktreePath(project: repository, taskID: taskID) ?? ""
         var worktree = Orchestrator.Worktree(
-            path: worktreePath, branch: Orchestrator.worktreeBranch(for: taskID) ?? "",
+            path: worktreePath, branch: OrchestratorDraft.worktreeBranch(for: taskID) ?? "",
             base: base, repository: repository, cwd: worktreePath + "/sub")
         worktree.head = commit
         worktree.commits = 3
@@ -676,7 +676,7 @@ func runOrchestratorStoreTests() {
         full.serialize = ["opus"]
         full.claims = ["Sources/Orchestrator.swift", "Sources/OrchestratorStore.swift"]
         full.claimsDeclared = true
-        full.claimKeys = Orchestrator.freezeClaims(full.claims, projectDir: repository)
+        full.claimKeys = OrchestratorDraft.freezeClaims(full.claims, projectDir: repository)
         full.releasedClaims = [Orchestrator.ReleasedClaim(path: full.claimKeys[0],
                                                           releasedAt: later(5))]
         full.untouchedClaims = ["Sources/Orchestrator.swift"]
@@ -810,7 +810,7 @@ func runOrchestratorStoreTests() {
         claimed.removeValue(forKey: "claim_keys")
         expect("claim keys absent from a row are frozen again from its claims",
                OrchestratorStore.task(from: claimed)?.claimKeys,
-               Orchestrator.freezeClaims(["Sources/Orchestrator.swift"],
+               OrchestratorDraft.freezeClaims(["Sources/Orchestrator.swift"],
                                          projectDir: "/clawdline-fixture/monorepo"))
         var undeclared = OrchestratorStore.stored(bare)
         undeclared.removeValue(forKey: "claims")
@@ -824,10 +824,10 @@ func runOrchestratorStoreTests() {
         var isolated = bare
         isolated.isolation = .worktree
         var worktree = Orchestrator.Worktree(
-            path: Orchestrator.worktreePath(project: repository, taskID: taskID) ?? "",
-            branch: Orchestrator.worktreeBranch(for: taskID) ?? "", base: base,
+            path: OrchestratorDraft.worktreePath(project: repository, taskID: taskID) ?? "",
+            branch: OrchestratorDraft.worktreeBranch(for: taskID) ?? "", base: base,
             repository: repository,
-            cwd: Orchestrator.worktreePath(project: repository, taskID: taskID) ?? "")
+            cwd: OrchestratorDraft.worktreePath(project: repository, taskID: taskID) ?? "")
         worktree.repositoryCommonDir = "/clawdline-fixture/monorepo/.git"
         isolated.worktree = worktree
         var nested = OrchestratorStore.stored(isolated)

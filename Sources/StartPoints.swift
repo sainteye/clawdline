@@ -104,7 +104,8 @@ enum StartPoints {
     /// A directory a session may be given reach over, or nil for anything that is not one.
     ///
     /// The only caller is the orchestrator and the only value it passes is `/tmp/.clawdline/<id>`,
-    /// where `<id>` has already been through `Orchestrator.isTaskID`. So this is not where that
+    /// where `<id>` has already been through `OrchestratorDraft.isTaskID`. So this is not
+    /// where that
     /// path is decided — it is where the promise in this file's header is kept anyway, because a
     /// second caller with a laxer idea of a path is exactly the change nobody would notice.
     ///
@@ -133,8 +134,8 @@ enum StartPoints {
     /// **Fail-closed, and deliberately silent here.** A name this refuses becomes *no flag*
     /// rather than a refusal, because by the time a tab is being opened the honest answer is a
     /// session on the default model rather than no session at all. The loud refusal belongs
-    /// upstream, where somebody is still holding the request: `Orchestrator.draft` runs the same
-    /// check and answers `bad_task`.
+    /// upstream, where somebody is still holding the request: `OrchestratorDraft.draft`
+    /// runs the same check and answers `bad_task`.
     static func modelName(_ raw: String?) -> String? {
         guard let raw, !raw.isEmpty, raw.count <= 64, !raw.hasPrefix("-") else { return nil }
         let ok = raw.allSatisfy {

@@ -40,16 +40,16 @@ group("serialized operations are acquired atomically and globally") {
     let free = task("44444444-4444-4444-4444-444444444444", .queued, ["release"],
                     created: 4, root: "root-b")
     expect("a live holder blocks the first waiter",
-           Orchestrator.serializeBlockers(for: first, among: [running, first, second, free])
+           OrchestratorDraft.serializeBlockers(for: first, among: [running, first, second, free])
                .map(\.id), [running.id])
     expect("FIFO makes an older queued task a blocker",
-           Orchestrator.serializeBlockers(for: second, among: [running, first, second, free])
+           OrchestratorDraft.serializeBlockers(for: second, among: [running, first, second, free])
                .map(\.id), [running.id, first.id])
     expect("a different root does not create a different mutex namespace",
-           Orchestrator.serializeBlockers(for: second, among: [first, second]).map(\.id),
+           OrchestratorDraft.serializeBlockers(for: second, among: [first, second]).map(\.id),
            [first.id])
     expect("a disjoint operation can start while build is held",
-           Orchestrator.serializeBlockers(for: free, among: [running, first, second, free])
+           OrchestratorDraft.serializeBlockers(for: free, among: [running, first, second, free])
                .map(\.id), [])
 
     let holdsA = task("55555555-5555-5555-5555-555555555555", .briefed, ["a"], created: 1)
@@ -57,20 +57,20 @@ group("serialized operations are acquired atomically and globally") {
     let crossed = task("77777777-7777-7777-7777-777777777777", .queued, ["b", "a"],
                        created: 3)
     expect("a multi-token waiter acquires nothing while any token is held",
-           Orchestrator.serializeBlockers(for: both, among: [holdsA, both, crossed]).map(\.id),
+           OrchestratorDraft.serializeBlockers(for: both, among: [holdsA, both, crossed]).map(\.id),
            [holdsA.id])
     expect("crossed token order queues behind the older atomic request without deadlock",
-           Orchestrator.serializeBlockers(for: crossed, among: [both, crossed]).map(\.id),
+           OrchestratorDraft.serializeBlockers(for: crossed, among: [both, crossed]).map(\.id),
            [both.id])
 
     for terminal in [Orchestrator.State.success, .failure, .timeout, .cancelled, .spawnFailed] {
         let ended = task(running.id, terminal, ["build"], created: 1)
         expect("\(terminal.rawValue) releases its serialized operation",
-               Orchestrator.serializeBlockers(for: first, among: [ended, first]).map(\.id), [])
+               OrchestratorDraft.serializeBlockers(for: first, among: [ended, first]).map(\.id), [])
     }
     let ordinary = task("88888888-8888-8888-8888-888888888888", .queued, [], created: 5)
     expect("a task without serialize has zero scheduling behavior",
-           Orchestrator.serializeBlockers(for: ordinary, among: [running, first, ordinary])
+           OrchestratorDraft.serializeBlockers(for: ordinary, among: [running, first, ordinary])
                .map(\.id), [])
 }
 
@@ -206,7 +206,7 @@ group("a queued task scans and types workspace warnings only when promoted") {
     Orchestrator.load()
 
     let observedLock = NSLock()
-    var observed: [Orchestrator.WorkspaceOverlapNotice] = []
+    var observed: [OrchestratorDraft.WorkspaceOverlapNotice] = []
     var observedOffMain = false
     Orchestrator.workspaceOverlapObserverForTesting = { task, overlaps in
         guard task.id == waiterID else { return }
@@ -217,7 +217,7 @@ group("a queued task scans and types workspace warnings only when promoted") {
         observedLock.unlock()
     }
     check("the queued waiter has no dispatch-time workspace warning",
-          Orchestrator.workspaceOverlaps(
+          OrchestratorDraft.workspaceOverlaps(
             for: OrchestratorStore.task(from: rows[2])!,
             among: [OrchestratorStore.task(from: rows[1])!]
           ).isEmpty)
@@ -359,7 +359,7 @@ group("every terminal outcome really pumps the next serialized waiter") {
             created: Date(), rootSessionId: "a-different-root", claims: ["owned-output"],
             secretHash: String(repeating: "0", count: 64))
         expect("a pump spawn failure releases its queued claim",
-               Orchestrator.claimsOverlaps(for: retry, among: [savedWaiter]).count, 0)
+               OrchestratorDraft.claimsOverlaps(for: retry, among: [savedWaiter]).count, 0)
     }
 }
 

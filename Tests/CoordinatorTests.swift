@@ -1149,7 +1149,11 @@ group("coordinator routes require the machine token and expose no implicit takeo
     // codes from the source and requires the page to name exactly that set, reporting the
     // difference in both directions. Undocumented codes and documented-but-nonexistent ones are
     // the same defect seen from either end, and the second one shipped here once already.
-    let source = try! String(contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8)
+    // Both files, because the attach refusals are declared in `OrchestratorDraft` and
+    // `root_unresolved` in `Orchestrator`. Reading one of them would turn this from "derived from
+    // the source" into "derived from part of the source", which is the drift it exists to catch.
+    let source = ["Sources/Orchestrator.swift", "Sources/OrchestratorDraft.swift"]
+        .map { try! String(contentsOfFile: $0, encoding: .utf8) }.joined(separator: "\n")
     func codes(in text: String, matching pattern: String) -> Set<String> {
         let expression = try! NSRegularExpression(pattern: pattern)
         let range = NSRange(text.startIndex..., in: text)

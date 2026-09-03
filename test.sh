@@ -133,7 +133,18 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
 # step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
 # 165 -> 150, counted by that file itself.
-expected_swift_receipt='8093 checks passed'
+# The draft/refusal extraction adds 157 unconditional checks in six groups, and moves no
+# pre-existing count — which is what makes the relocation behaviour-neutral rather than merely
+# green. The arithmetic, by group: 13 for the root-identity refusal (nine table rows plus the four
+# identity facts its extra carries), 23 for the dispatch door (four owner rows, eight route rows,
+# eight assistant rows and the three messages that each name a different door), 41 for the bodies
+# `draft(from:)` refuses (forty table rows plus the one row that proves the filesystem seam is
+# consulted), 50 for a fully populated body and a minimal one compared field by field against the
+# twenty-five fields a `Draft` has, 18 for the shapes an older root still writes, and 12 for
+# `isTaskID` and `isTaskSecret`. 8353 -> 8510.
+# Rebased onto the lease removal: that landing took the receipt to 8,093, and this
+# extraction's 157 land on top of it. 8093 + 157 -> 8250.
+expected_swift_receipt='8250 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
