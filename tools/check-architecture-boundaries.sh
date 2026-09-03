@@ -264,6 +264,39 @@ held_lock_door_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanni
 [ "$held_lock_door_sites" -gt 0 ] \
   || architecture_guard_fail "withTransactionOnHeldLock has no call sites left; delete the door and this ratchet together"
 
+# Cut 4 chose its two files by measuring, and what it measured was that neither of them touches
+# the registry lock. That is the whole reason they were cheap: eleven candidates were scored on
+# lines, private symbols crossing the proposed boundary, and lock acquisitions, and the two that
+# went are the ones whose lock count was zero. `Cross-session coordination waits` — 357 lines, two
+# crossing privates, eight acquisitions — is the candidate that looks clean by the first number and
+# is a lock-ownership question by the third, which is the rule this repository already wrote down.
+#
+# A property that decided a cut and is then never checked again lasts until the next person adds a
+# convenience. So it is checked. This is not a ratchet: the number is zero and stays zero, because
+# a file here that needs the lock belongs back beside the state the lock protects.
+#
+# **The scan is calibrated before its zero is believed.** The same pattern is run against
+# `Orchestrator.swift`, which is known to take the lock in three figures. If the spelling of taking
+# the lock ever changes, that control goes to zero and this fails there — rather than reporting a
+# clean zero for the two files because it can no longer recognise what it is looking for. That is
+# the failure this repository has shipped before: a guard that stopped matching read exactly like a
+# guard that passed.
+lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|withTransaction(OnHeldLock)?[[:space:]]*[({])'
+count_lock_sites() {
+  grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -cE "$lock_acquisition_re" || true
+}
+lock_scan_control=$(count_lock_sites Sources/Orchestrator.swift)
+[ "${lock_scan_control:-0}" -gt 100 ] \
+  || architecture_guard_fail "the lock-acquisition scan found only ${lock_scan_control:-0} sites in Sources/Orchestrator.swift, which takes the lock in three figures; the pattern has stopped recognising how this tree takes the lock, so the zero it would report for the lock-free files below means nothing"
+
+for lock_free in Sources/OrchestratorRootAssignmentShape.swift Sources/OrchestratorChildIdentity.swift; do
+  [ -f "$lock_free" ] \
+    || architecture_guard_fail "$lock_free is missing; it was cut out of Orchestrator.swift because it holds no lock, and this check cannot say that about a file that is not there"
+  lock_free_sites=$(count_lock_sites "$lock_free")
+  [ "${lock_free_sites:-0}" -eq 0 ] \
+    || architecture_guard_fail "$lock_free acquires the registry lock at ${lock_free_sites} site(s). It was taken out of Orchestrator.swift precisely because it took the lock zero times; code that needs the lock belongs beside the state the lock protects, not here."
+done
+
 # The governance table in docs/architecture-refactor.md drifted three times — 480 when the guard
 # held 479, 7,918 when the suite observed 7,941, 490 when it observed 494 — and every time for the
 # same reason: a count written in prose has no owner and nothing makes it go red. Reading the table
