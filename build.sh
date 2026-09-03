@@ -7,37 +7,44 @@ cd "$(dirname "$0")"
 verify_swift_source_manifest production
 
 
-# --- The machine-level heavy-compile lease -------------------------------------------------
+# --- The machine-level heavy-compile lock ---------------------------------------------------
 #
 # One full Swift compile is the most expensive thing that happens on this Mac, and four
 # `swift-frontend` processes have force-rebooted it. `/tmp/clawdline-suite.lock` is the truth:
-# holding it is what `mkdir` says it is, which keeps a contributor with no Clawdline running
-# from colliding with one that has it. The broker is the registry and the queue in front of that
-# directory, so `curl` failing costs the queue and the visibility, never the exclusion.
+# holding it is what `mkdir` says it is, which is what makes it work for a contributor with no
+# Clawdline running at all, and what makes it the same lock `test.sh` takes for itself.
 #
-# **Fail closed.** No lease means the compile does not run. There is no proceed-anyway, and
+# **There was a broker lease in front of this directory** — a registry, a queue up to thirty-two
+# deep, durable state across an app restart, and a liveness axis for waiters. It was removed on
+# 2026-09-03; `docs/machine-resource-scheduling.md` records what it was and why it went. What is
+# left is the 80% that was used on the night this was built: the directory, the record, the
+# heartbeat, and a wait that names who is holding the slot.
+#
+# **Fail closed.** No lock means the compile does not run. There is no proceed-anyway, and
 # nothing here ever ends anybody else's process.
 CLAWDLINE_LEASE_DIR="${CLAWDLINE_LEASE_DIR:-/tmp/clawdline-suite.lock}"
 CLAWDLINE_LEASE_ID=""
 CLAWDLINE_LEASE_MODE=""
 CLAWDLINE_LEASE_DONE=""
-CLAWDLINE_LEASE_QUEUED=""
 CLAWDLINE_LEASE_PHASE=""
 CLAWDLINE_LEASE_PHASE_SINCE=""
 CLAWDLINE_LEASE_LAST_COMPILING="never"
 CLAWDLINE_LEASE_OWNER_STARTED=""
 CLAWDLINE_LEASE_BEATING=1
 CLAWDLINE_SUITE_JOBS="${CLAWDLINE_SUITE_JOBS:-}"
-CLAWDLINE_SUITE_JOBS_SOURCE="unset"
+# Where the ceiling came from, said out loud below so a slow build is explained rather than
+# mysterious. There is one source now. While the broker lease existed there were two, and a grant
+# could hand a number down; the line that printed it took its answer from whichever branch of the
+# acquire ran, which is why it went on saying "unset" for a ceiling the environment had set.
+if [ -n "$CLAWDLINE_SUITE_JOBS" ]; then
+  CLAWDLINE_SUITE_JOBS_SOURCE="CLAWDLINE_SUITE_JOBS"
+else
+  CLAWDLINE_SUITE_JOBS_SOURCE="unset"
+fi
 CLAWDLINE_LEASE_WAIT_SECONDS="${CLAWDLINE_LEASE_WAIT_SECONDS:-1800}"
-# The same number `OrchestratorLease.renewalDeadline` and `test.sh` use. A reader prefers the
-# deadline the holder recorded to its own, so a record that does not carry one leaves every reader
-# guessing on this run's behalf.
+# The same number `test.sh` uses. A reader prefers the deadline the holder recorded to its own, so
+# a record that does not carry one leaves every reader guessing on this run's behalf.
 CLAWDLINE_LEASE_DEADLINE_SECONDS="${CLAWDLINE_LEASE_DEADLINE_SECONDS:-60}"
-
-clawdline_lease_port() {
-  /usr/bin/python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717
-}
 
 clawdline_lease_field() {
   # The value of one `key=` line, or nothing — the same reader `test.sh` uses, because the record
@@ -47,10 +54,11 @@ clawdline_lease_field() {
   awk -v key="$key" 'index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }' "$file" 2>/dev/null
 }
 
-# **The record. One format, three writers — see the contract above `clawdline_suite_lock_write_record`
-# in `test.sh`, which is where it is written down.** This used to write eleven of the eighteen
-# fields, and none of the four the shell's compare-and-swap depends on, so a `test.sh` waiting
-# behind a build compared two empty tokens and always found them equal.
+# **The record. One format, two writers — see the contract above `clawdline_suite_lock_write_record`
+# in `test.sh`, which is where it is written down.** It was three while the broker wrote the file
+# too. This used to write eleven of the eighteen fields, and none of the four the shell's
+# compare-and-swap depends on, so a `test.sh` waiting behind a build compared two empty tokens and
+# always found them equal.
 #
 # Three things it now does that it did not:
 #
@@ -119,16 +127,8 @@ clawdline_lease_beat() {
   [ "$CLAWDLINE_LEASE_BEATING" = 1 ] || return 0
   if ! clawdline_lease_record "$phase" "$pid"; then
     CLAWDLINE_LEASE_BEATING=0
-    echo "!! $CLAWDLINE_LEASE_DIR no longer records this build's lease; not writing to it." >&2
+    echo "!! $CLAWDLINE_LEASE_DIR no longer records this build's hold; not writing to it." >&2
     return 0
-  fi
-  if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
-    curl -s --max-time 5 -X POST \
-      "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_ID/renew" \
-      -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
-      -H 'Content-Type: application/json' \
-      -d "{\"holder\":\"build.sh $(id -un) pid $$\",\"phase\":\"$phase\",\"work_pids\":\"$pid\"}" \
-      >/dev/null 2>&1 || true
   fi
 }
 
@@ -167,13 +167,11 @@ clawdline_lease_supervise() {
 # unchecked call this replaces did not even get as far as reporting it — the build ended on the
 # failed write and left the machine's compile slot blocked with no automatic way out.
 #
-# `test.sh` has handled this since the record contract landed and the broker's `createDirectory`
-# removes the directory when its write fails; this was the third writer, and the asymmetry was
-# invisible because each was reviewed against its own file.
+# `test.sh` has handled this since the record contract landed, and so did the broker's
+# `createDirectory` while it existed; this was the third writer, and the asymmetry was invisible
+# because each was reviewed against its own file.
 clawdline_lease_first_record() {
-  local why=$1
   CLAWDLINE_LEASE_MODE=directory
-  CLAWDLINE_SUITE_JOBS_SOURCE="unset ($why)"
   if clawdline_lease_record analysing "$$" first; then
     return 0
   fi
@@ -190,23 +188,19 @@ clawdline_lease_first_record() {
 }
 
 clawdline_lease_acquire() {
-  CLAWDLINE_LEASE_PORT=$(clawdline_lease_port)
-  CLAWDLINE_LEASE_TOKEN="$HOME/.config/clawdline/orchestrator-token"
   CLAWDLINE_LEASE_ID="build-$$-$(date +%s)"
   # The owner's start identity, in the one shape the record contract defines for it: a normalised
   # `LC_ALL=C ps -o lstart=` line, from one formatter, compared whole. `LC_ALL=C` because this Mac
   # runs zh_TW.UTF-8, where the same instant renders with a different field count depending on the
   # day of the month.
   CLAWDLINE_LEASE_OWNER_STARTED=$(LC_ALL=C ps -o lstart= -p $$ 2>/dev/null | awk 'NR == 1 { $1 = $1; print; exit }') || CLAWDLINE_LEASE_OWNER_STARTED=""
-  # **The wire wants the same instant, as the epoch its reader parses**, and it wants *this
-  # process's start* rather than the moment it got here. `process_start` is compared by the broker
-  # against a fresh `ps` reading with a two-second tolerance, and `build.sh` reaches this line only
-  # after the Keychain helper has run — so `date +%s` here was minutes late on a queued build and
-  # read as `waiter_process_gone`. That axis had no production caller until the queue gained one,
-  # which is why an approximation survived. Derived from the same `ps` line above rather than taken
-  # separately, so the record and the wire cannot disagree; `LC_ALL=C` on both halves for the same
-  # reason it is on the reading. If the conversion cannot be made, fall back to now and say so by
-  # being late rather than by being absent — a missing field reads as unknown, which blocks.
+  # **`started=` is this process's start, not the moment it got here**, and it is derived from the
+  # `ps` line above rather than taken separately so that the record's two start fields cannot
+  # disagree. `build.sh` reaches this line only after the Keychain helper has run, so `date +%s`
+  # here was minutes late — a reader working out how long this hold has lasted was reading the wait
+  # rather than the run. `LC_ALL=C` on both halves for the same reason it is on the reading. If the
+  # conversion cannot be made, fall back to now and be late rather than absent: a missing field
+  # reads as unknown, which blocks.
   CLAWDLINE_LEASE_STARTED=$(LC_ALL=C date -j -f '%a %b %e %T %Y' "$CLAWDLINE_LEASE_OWNER_STARTED" +%s 2>/dev/null) \
     || CLAWDLINE_LEASE_STARTED=""
   [ -n "$CLAWDLINE_LEASE_STARTED" ] || CLAWDLINE_LEASE_STARTED=$(date +%s)
@@ -214,145 +208,36 @@ clawdline_lease_acquire() {
   rm -f "$CLAWDLINE_LEASE_DONE"
   local deadline=$(( $(date +%s) + CLAWDLINE_LEASE_WAIT_SECONDS ))
   local announced=0
+  # **`mkdir` is the whole of the exclusion, and the wait is the whole of the queue.** There is no
+  # broker in front of this any more, so there is no position, no budget and no visibility beyond
+  # the record in the directory — and none of those three was what stopped two compiles colliding.
+  # What is here is what was used: take it or say who has it, and never proceed without it.
   while :; do
-    if [ -r "$CLAWDLINE_LEASE_TOKEN" ] && command -v curl >/dev/null 2>&1; then
-      local answer
-      answer=$(curl -s --max-time 10 -X POST \
-        "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases" \
-        -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
-        -H 'Content-Type: application/json' \
-        -d "{\"request_id\":\"$CLAWDLINE_LEASE_ID\",\"resource\":\"heavy_compile\",
-             \"pid\":$$,\"process_start\":$CLAWDLINE_LEASE_STARTED,
-             \"holder\":\"build.sh $(id -un) pid $$\",\"phase\":\"analysing\",
-             \"heartbeat\":\"$CLAWDLINE_LEASE_DIR/beat\",
-             \"done_flag\":\"$CLAWDLINE_LEASE_DONE\",
-             \"reason\":\"building Clawdline.app\",\"tree\":\"$(pwd)\"}" 2>/dev/null) || answer=
-      # **A refusal is not silence, and it used to arrive as one.** The broker answers a refusal
-      # with `{"error": {"code": …}}` and no top-level `state`, so `pressure_refused`, `queue_full`
-      # and a 403 on a stale token all read as the empty string here and fell into the "the broker
-      # did not answer" branch below — which takes the directory directly and compiles, jumping a
-      # queue up to thirty-two deep. The `*)` branch that implements "no lease means the compile
-      # does not run" was unreachable. So the reading has three outcomes, not two: a state the
-      # broker named, a refusal named by its error code, or nothing at all.
-      local state
-      state=$(printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
-try:
-    a = json.load(sys.stdin)
-    print(a.get("state") or ("refused:" + (a.get("error") or {}).get("code", "unnamed")
-                             if isinstance(a.get("error"), dict) else ""))
-except Exception: print("")' 2>/dev/null)
-      case "$state" in
-        granted)
-          CLAWDLINE_LEASE_MODE=broker
-          CLAWDLINE_SUITE_JOBS=$(printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
-try: print(json.load(sys.stdin).get("budget",{}).get("parallelism",""))
-except Exception: print("")' 2>/dev/null)
-          CLAWDLINE_SUITE_JOBS_SOURCE="the broker lease budget"
-          echo "→ heavy-compile lease granted by the broker ($CLAWDLINE_LEASE_ID)"
-          # The broker has already written the record; this refreshes it under this run's own
-          # token, and it is a first write because the token in place is the broker's grant id,
-          # which is this run's `request_id` and so already matches.
-          clawdline_lease_record analysing "$$" first 2>/dev/null || true
-          return 0
-          ;;
-        queued)
-          # Remember that this request is in the broker's line. A queue entry that is never
-          # cancelled is a deadlock with a persistence layer: it survives an app restart, it can
-          # only be removed by the owner that made it, and every later acquirer waits behind it
-          # for ever while the lock itself is free.
-          CLAWDLINE_LEASE_QUEUED="$CLAWDLINE_LEASE_ID"
-          if [ "$announced" = 0 ]; then
-            printf '%s' "$answer" | /usr/bin/python3 -c 'import json,sys
-try:
-    a = json.load(sys.stdin)
-    h = (a.get("lease") or {}).get("holder") or {}
-    print("→ waiting for the heavy-compile slot: position %s, %s; held by %s" % (
-        a.get("position"), a.get("holdReason"), h.get("holder", "nobody recorded")))
-except Exception: print("→ waiting for the heavy-compile slot")' 2>/dev/null
-            announced=1
-          fi
-          ;;
-        "")
-          # The broker did not answer. The directory is still the truth, so fall back to it
-          # rather than proceeding without a lease.
-          if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
-            if ! clawdline_lease_first_record "no broker answered, so no budget"; then
-              return 1
-            fi
-            echo "→ heavy-compile lock taken directly; the broker did not answer"
-            return 0
-          fi
-          if [ "$announced" = 0 ]; then
-            echo "→ waiting for $CLAWDLINE_LEASE_DIR, held by:"
-            sed 's/^/    /' "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null | head -4
-            announced=1
-          fi
-          ;;
-        refused:lease_changed | refused:takeover_failed)
-          # **Not every refusal is an answer.** These two are the broker saying *ask again*: its own
-          # messages end in "Ask again", and `perform`'s comment says the caller polls again. They
-          # mean the lock moved between the read and the write, or a takeover could not complete —
-          # transient, and the next poll may well be granted. Reading them as "no lease" ended the
-          # build on a condition that resolves itself, which is worse than the dead branch this
-          # arm was added to fix: before that repair they fell through to the wait and queued.
-          # Everything else below is a real refusal and still fails closed.
-          if [ "$announced" = 0 ]; then
-            echo "→ the lease moved while this build was asking; queueing and asking again"
-            announced=1
-          fi
-          ;;
-        *)
-          echo "!! the heavy-compile lease was refused, and this build will not compile without it:" >&2
-          printf '%s\n' "$answer" >&2
-          return 1
-          ;;
-      esac
-    else
-      if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
-        if ! clawdline_lease_first_record "no orchestrator token, so no budget"; then
-          return 1
-        fi
-        echo "→ heavy-compile lock taken directly; this Mac has no orchestrator token"
-        return 0
+    if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
+      if ! clawdline_lease_first_record; then
+        return 1
       fi
+      echo "→ heavy-compile lock taken ($CLAWDLINE_LEASE_ID)"
+      return 0
+    fi
+    if [ "$announced" = 0 ]; then
+      echo "→ waiting for $CLAWDLINE_LEASE_DIR, held by:"
+      sed 's/^/    /' "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null | head -4
+      announced=1
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       echo "!! gave up waiting ${CLAWDLINE_LEASE_WAIT_SECONDS}s for the heavy-compile slot." >&2
       echo "   Nothing was killed and nothing was compiled. Look at $CLAWDLINE_LEASE_DIR/holder.txt." >&2
-      clawdline_lease_cancel
       return 1
     fi
     sleep 5
   done
 }
 
-# Leaving the queue. Called when this build gives up and from the exit trap, so a Ctrl-C on a
-# waiting build takes its entry with it. Idempotent: cancelling a request that is not queued is
-# answered `not_queued`, which is the shape a second call takes and is not an error here.
-clawdline_lease_cancel() {
-  [ -n "$CLAWDLINE_LEASE_QUEUED" ] || return 0
-  if [ -r "${CLAWDLINE_LEASE_TOKEN:-}" ] && command -v curl >/dev/null 2>&1; then
-    curl -s --max-time 5 -X POST \
-      "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_QUEUED/cancel" \
-      -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
-      -H 'Content-Type: application/json' \
-      -d "{\"holder\":\"build.sh $(id -un) pid $$\"}" >/dev/null 2>&1 || true
-  fi
-  CLAWDLINE_LEASE_QUEUED=""
-}
-
 # Release is idempotent and removes the directory only while it still names this process — the
 # one rule a release path may never break is removing a lock somebody else owns.
 clawdline_lease_release() {
-  clawdline_lease_cancel
   [ -n "$CLAWDLINE_LEASE_MODE" ] || return 0
-  if [ "$CLAWDLINE_LEASE_MODE" = broker ] && [ -r "$CLAWDLINE_LEASE_TOKEN" ]; then
-    curl -s --max-time 5 -X POST \
-      "http://127.0.0.1:$CLAWDLINE_LEASE_PORT/v1/orchestrator/leases/$CLAWDLINE_LEASE_ID/release" \
-      -H "X-Clawdline-Orchestrator: $(cat "$CLAWDLINE_LEASE_TOKEN")" \
-      -H 'Content-Type: application/json' \
-      -d "{\"holder\":\"build.sh $(id -un) pid $$\"}" >/dev/null 2>&1 || true
-  fi
   # The token, not the holder line: a pid is reused within hours on a busy machine, so
   # `holder=build.sh <user> pid <n>` can match a record this run did not write. The token cannot.
   if [ "$(clawdline_lease_field token "$CLAWDLINE_LEASE_DIR/holder.txt")" = "$CLAWDLINE_LEASE_ID" ]; then
@@ -551,7 +436,7 @@ wait "$CLAWDLINE_COMPILER"
 
 # The work is over: say so positively, then give the slot back. `done_flag` existing is what lets
 # another line take the lock at once instead of waiting out a heartbeat threshold. Packaging,
-# signing and installing are not what this lease protects.
+# signing and installing are not what this lock protects.
 : > "$CLAWDLINE_LEASE_DONE" 2>/dev/null || true
 clawdline_lease_release
 
