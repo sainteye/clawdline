@@ -1137,3 +1137,36 @@ items:
       holds it, because a wrong one returns an authentication error that reads exactly like a
       permission problem.
     opened: 2026-09-03
+
+  - id: B-A-SEALED-COUNT-CHANGES-WITHOUT-ITS-SEAL
+    title: A sealed check count changes without its seal, and the next landing pays for it
+    problem: >-
+      `expected_cloud_receipt` in `test.sh` pins the twelve Cloud suite counts as one exact string,
+      and `verify_test_completion_receipts` compares it literally. Nothing links a Cloud test file
+      to that line: a commit that adds or removes a `require` in `Tests/Cloud*Tests.swift` is
+      complete, reviewable and mergeable without touching `test.sh`, and the mismatch surfaces only
+      in the next full run — which belongs to whoever lands next, not to whoever caused it. Unlike
+      `expected_swift_receipt`, this seal has no `CLAWDLINE_RESEAL=1` door, so the person who does
+      hit it has no supported way to re-measure: the failure says the receipt appeared zero times
+      and never says which of the twelve fields moved.
+    evidence: >-
+      2026-09-03. `8399aee7` added two `require` calls to `Tests/CloudTransportTests.swift` and
+      `b66d5d27` removed one; neither commit touched `test.sh`. `main` at `9750f42f` therefore
+      carries `CloudTransport:67` against a tree that reports 68, and every landing after 19:15
+      dies on `Cloud test completion receipt appeared 0 times` before its Swift seal is compared at
+      all. Five run logs from one landing tree track main's two commits exactly — 67 at 19:09, 69
+      at 19:23 and 19:32, 68 at 20:26 and 20:33 — and the same binary re-run six times reported 68
+      every time, so the count is deterministic and what moved was `main`. Reading the source first
+      cost three wrong causes: a fixture token expiring 0.8 s after it is built, a `checks += 1`
+      under an `if`, and a suite reading live machine state. All three are real shapes and none of
+      them was this.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Either the seal stops being hand-written — generated the way the governance table now is —
+      or it gains the `CLAWDLINE_RESEAL=1` door its Swift sibling already has, so a red hands back
+      the string to write instead of a number to transcribe. The cheap half is the door, and the
+      failure naming the field that moved is cheaper still. The next commit that changes a Cloud
+      suite's check count without touching `test.sh` is the trigger.
+    opened: 2026-09-03
