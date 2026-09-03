@@ -380,6 +380,16 @@ func runCloudTransportTests() async throws -> Int {
     let refreshedTokens = await relay.observedTokens()
     try require(refreshedTokens.contains("machine-token-2"), "refresh uses a new device token")
 
+    // The socket this transport closes for the rotation comes back through `receive` as an
+    // ordinary error, so without a carried reason the rotation is logged as the relay failing.
+    // On 2026-09-03 that produced `reason=connection_failed` once per token lifetime on a Mac
+    // that was connected and publishing throughout, and the line was read as an outage.
+    let retryLines = logs.lines().filter { $0.contains("CloudTransport reconnect waiting") }
+    try require(retryLines.contains { $0.contains("reason=token_rotation") },
+                "the reconnect a token rotation causes is logged as a rotation")
+    try require(!retryLines.contains { $0.contains("reason=connection_failed") },
+                "a rotation this transport asked for is not reported as a failed connection")
+
     let handshakesBeforeDrop = await relay.completedHandshakes()
     let readyGenerationsBeforeDrop = await readyGenerations.all().count
     await relay.dropConnections()
