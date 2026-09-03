@@ -231,9 +231,16 @@ in `test.sh` and the governance table in `docs/architecture-refactor.md` are edi
 guard that compares them reports **green, governance table agrees** — because they agree, and they
 are both wrong. Two sources concurring is the thing we ordinarily use to *raise* confidence, so it
 is the last place anybody looks. The layer that actually refuses is
-`validateExecutedTestGroupManifest()`, which runs inside the suite: **a green from that guard means
-the two documents match each other, not that either matches the tree.** Say which of those you have
-before quoting it, and do not read the guard's silence as the suite's.
+`validateExecutedTestGroupManifest()`, which runs inside the suite: **a green from that comparison
+means the two documents match each other, not that either matches the tree.**
+
+The discriminator is worth stating because it is not the whole guard. Its group, runner and suite
+counts are computed *from the thing counted* — the manifest file, the runner list, the directory —
+so those cannot agree their way to a wrong answer. The susceptible ones are the comparisons where
+**both sides are documents**: `compare_documented "Swift checks"` puts `test.sh`'s sealed receipt
+against the governance table, and the number they both describe exists only in a run. So: when a
+guard is green, ask whether its number was compared against a *thing* or against another *record of
+the thing*. Only the second kind can be unanimously wrong.
 
 It has a sibling worth naming with it: **three independent readings that agree are not corroboration
 when all three were taken with the same wrong instrument** — that was measured here on a compile
