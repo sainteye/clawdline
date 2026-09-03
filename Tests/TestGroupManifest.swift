@@ -506,19 +506,6 @@ let expectedOrderedTestGroupTitles: [String] = [
     "one lock, and a reader waits for the whole of a writer's transaction",
     "the per-terminal facts keep the semantics the projection had before",
     "a graph admission is one reservation, and its release is a transaction of its own",
-    "holder.txt is the shape three programs share, and an unusable one is not an empty lock",
-    "liveness is proved by renewal, so a sentinel pid cannot hold a lock open",
-    "the physical backstop is never waived, and neither half admits anybody alone",
-    "a recycled pid reads as gone, and an unpinned locale reads as unknown rather than dead",
-    "the queue is FIFO, observable, and joining it does not jump it",
-    "release and cancel belong to the sessions that own them",
-    "a restart reconciles from the directory it never stopped owning",
-    "admission degrades to one compiler rather than refusing, and the gate has a named door",
-    "a holder that is not compiling is reported, and is still not reclaimable",
-    "a heartbeat that outlives its work is a sentinel, and only the loop shape stops it",
-    "the projections keep six states apart, and a refusal is one of them",
-    "a refusal is an answer to an ask, and the ask is what a waiter proves itself with",
-    "the lease record survives a store round trip",
 ]
 
 func validateExecutedTestGroupManifest() {
