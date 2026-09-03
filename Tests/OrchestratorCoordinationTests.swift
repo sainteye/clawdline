@@ -840,10 +840,23 @@ group("the session index a wait needs is the dispatch credential's own door") {
     let body = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
     check("the answer carries a session list", body?["sessions"] is [[String: Any]])
     check("stamped like every other orchestrator read", body?["at"] is Int)
-    // Nothing has read a terminal in this process, so the list is empty — and an empty list is
-    // an answer, not a refusal and not an absent key. A root that gets `[]` knows to look again.
+    // **The emptiness is installed, not assumed.** This read went through
+    // `SessionWatch.publishedInventory()`, which answers with whatever the process has published —
+    // and until 2026-09-03 nothing in a test process ever had, so "nothing has read a terminal
+    // here" held by accident. It stopped holding when this machine's sessions moved to tmux, which
+    // a test process can read with an ordinary subprocess where iTerm2 needed a running app: the
+    // group then saw two live sessions on `main` and four an hour later, failing on a number that
+    // is a fact about the Mac rather than about the route. What the assertion is for survives
+    // intact — an empty inventory publishes as `[]`, an answer, not a refusal and not an absent
+    // key — so the inventory it is about is now the one this line puts there.
+    SessionWatch.shared.installPublicationForTesting(
+        targets: [], states: [:], identities: [:], complete: true,
+        observedAt: Date(timeIntervalSince1970: 1_800_000_000))
+    let empty = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/sessions", headers: auth))
+    let emptyBody = (try? JSONSerialization.jsonObject(with: empty.body)) as? [String: Any]
     expect("no reading yet is an empty list rather than a missing one",
-           (body?["sessions"] as? [[String: Any]])?.count, 0)
+           (emptyBody?["sessions"] as? [[String: Any]])?.count, 0)
 
     // The other half of the same sentence: the wait route resolves its waiter against the same
     // population this route publishes, so an id that is not in the index is refused there.
