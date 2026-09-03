@@ -203,6 +203,7 @@ while because the answer looked like data:
 | what was run | what it answered | the truth |
 |---|---|---|
 | `pgrep -f swift-frontend` | 3 | 1 — the extras were a sampler and a `/usr/bin/time` wrapper whose *arguments* contain the string |
+| `ps -axo command \| grep '[s]wift-frontend'` | 2 compilers, one of them somebody else's | 0 — the bracket trick stops the grep matching itself and does nothing about other processes whose command line contains the string |
 | `grep` for `-wmo` over a process listing | present | it had matched the searcher's own shell command line |
 | `awk '$0 ~ "\\yvar\\y"'` | 0 crossing variables | macOS `awk` does not support `\y`; `grep -w` found 10 |
 | `swiftc -output-file-map <map>` with absolute keys and relative command-line paths | exit 0, and objects | the map was silently ignored and the objects went to default names in the working directory |
@@ -318,6 +319,16 @@ world.
 **And the seventh row is the cheapest to avoid.** An identifier written from memory cannot be
 repaired by its context: a reader who runs `git show` on it gets an error and then does not know
 which half of the message to trust. Paste a SHA from the output of the command that produced it.
+
+**The second row is worth its own sentence because it is a fix people trust.** Bracketing a letter
+is the standard answer to `grep` finding its own process, and it does solve that — so it gets used
+as though it solved the class. It does not touch the other half: a command listing carries every
+process's *arguments*, and anything mentioning the string matches however the pattern is written.
+On 2026-09-03 that reading was two, the truth was zero, and the conclusion being drafted from it was
+that another session was compiling outside the lock — an accusation, from an instrument nobody had
+calibrated. The tell was in the same output and went past unread: one of the two had `/bin/zsh` as
+its parent, and a shell does not fork a compiler. **A fix that half-works is harder to distrust than
+one that does not work at all.**
 
 This is not a stylistic note. **The physical backstop asks "is any compiler running on this
 machine".** Written with `pgrep -f`, it matches the process asking the question and therefore always
