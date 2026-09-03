@@ -6970,8 +6970,8 @@ enum Orchestrator {
         if let observer = agentPushForTesting {
             return observer(displayedTitle, body, "/", tag, icon)
         }
-        // This bypasses pushOnFinish because the dedicated orchestratorAgentNotify preference
-        // already gates agent-authored content; it is not an automatic finished-state notice.
+        // Under no push preference of its own: orchestratorAgentNotify already gates
+        // agent-authored content, and this is not an automatic completion notice.
         return WebPush.sendAndWait(title: displayedTitle, body: body, url: "/", tag: tag,
                                    icon: icon)
     }

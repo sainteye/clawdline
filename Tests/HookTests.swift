@@ -771,11 +771,19 @@ group("a fan-out is one sentence, whatever it cost") {
     expect("an explicit new answer outranks the old key",
            Config(directoryForTesting: directory).pushOnFanout, true)
 
-    inherited.save()
+    // What the app writes, with nothing on disk to merge with — which is the only way to ask
+    // "does it write this key" rather than "is this key in the file". `Config.save` deliberately
+    // passes through keys it does not know, so an old `push_on_finish` in somebody's file is left
+    // where it is; the migration reads it once and it is never a second source of truth.
+    try! FileManager.default.removeItem(at: file)
+    let rewriting = Config(directoryForTesting: directory)
+    rewriting.pushOnFanout = false
+    rewriting.save()
     let written = (try? Data(contentsOf: file))
         .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-    expect("saving writes the new key", written?["push_on_fanout"] as? Bool, false)
-    check("and stops writing the old one", written?["push_on_finish"] == nil)
+    expect("saving uses the new key", written?["push_on_fanout"] as? Bool, false)
+    expect("and the delivery preference beside it", written?["push_on_delivery"] as? Bool, true)
+    check("the app writes no push_on_finish of its own", written?["push_on_finish"] == nil)
 }
 
 group("a delivered turn is the finish a phone hears about") {

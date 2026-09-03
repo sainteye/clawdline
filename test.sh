@@ -133,7 +133,33 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
 # step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
 # 165 -> 150, counted by that file itself.
-expected_swift_receipt='8093 checks passed'
+# Putting the notification on the delivery receipt adds 23 checks and takes 7 away, counted from
+# the diff and confirmed by two mutation runs that made every one of the 23 go red. The 23: 12 in a
+# new group for the delivery push — its pure wording with and without `smart_notifications`, one
+# push for a new receipt, none for a repeat, none for a report outside its turn, and the preference
+# gate — 9 in the fan-out group for which key that push reads and for `push_on_fanout` inheriting
+# `push_on_finish`, and 2 in the audience group for the removed machinery being absent from
+# `Sources/StateHook.swift`. The 7: the three `.finished` decisions that had a case to test, and the
+# four in `a long turn keeps enough time to announce its finish`, whose `FinishTracker` is gone with
+# the event it timed. Net +16.
+#
+# **The number this line held was already 8 short before that, and the arithmetic only closes once
+# both halves are named.** `a4ed9edb` added four `check(` calls to the shipped-guide group in
+# `Tests/OrchestratorCompletionTests.swift` and did not move this line — and they sit inside the
+# loop over English and Traditional Chinese, so they are eight executed checks, not four. That is a
+# guard going red on the next person's landing for the previous person's reason, which is exactly
+# what this receipt exists to prevent, so it is corrected here rather than absorbed: 8093 + 8 = 8101
+# on `a4ed9edb`, + 16 -> 8117.
+#
+# **8117 is arithmetic, and the reason no run has printed it is worth stating.** Two runs of the
+# same binary on this tree reported 8018 and 8019 with `CLOUD_LEDGER_TEST_FILTER` set to one ledger
+# group contributing 2 and 3 checks — so everything outside `CloudCommandLedger` is 8016, twice,
+# independently — and the Cloud receipt guard above holds that suite at 101. Unfiltered, that suite
+# loses a known race (`outcomeUnknown` twice, `deadlineExpired` twice in four runs) whose fix,
+# `427ec660`, is on `main` and not in this branch's base. The root that rebases onto it owes this
+# line one observed green run; until then 8117 is derived from 8016 + 101 and from 8101 + 16, which
+# are two roads to the same number rather than one number asserted twice.
+expected_swift_receipt='8117 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

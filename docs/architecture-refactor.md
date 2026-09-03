@@ -553,7 +553,7 @@ checks without running them — so it is the one row that a full suite has to se
 | ordered groups | 463 | 498 |
 | ordered runners | 25 | 29 |
 | suite files | 38 | 42 |
-| Swift checks | — | 8,093 |
+| Swift checks | — | 8,117 |
 | `Orchestrator.swift` ceiling | 13,592 | 12,882 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,393 |
 
@@ -574,7 +574,11 @@ correction rounds carried it to 8,353: 8,331 observed by a full suite at `3a30b5
 22 the second correction round adds — a group for a refusal counting as an ask, the store round
 trip's three dropped fields and its own clock control, and the process readings one decision takes.
 Removing that lease takes 260 back off, to **8,093**, observed by a full suite on the removal
-branch rather than subtracted from the paragraph above. **Every figure here is arithmetic until the
+branch rather than subtracted from the paragraph above. That branch number then went stale on the
+tree that landed: `a4ed9edb` added four `check(` calls inside a two-language loop — eight executed
+checks — and moved nothing, so `a4ed9edb` really ran 8,101. The delivery-receipt notification adds
+16 more, and the row reads **8,117**; `test.sh` carries the whole derivation beside the value,
+including why no single run has yet printed it. **Every figure here is arithmetic until the
 landing root's full suite observes it**, and the number this row carries is only as good as the last
 run that did — which for this one is a run on a branch, so the root integrating it owes the tree it
 actually lands one of its own.
