@@ -4569,6 +4569,33 @@ client fetches the authenticated transcript route for content, so conversation t
 the event stream. Transcript events are not replayed; after reconnect, quietly refetch the
 currently open transcript once to cover bytes written while offline.
 
+An `orchestrator` frame follows every change to any task record:
+
+```console
+event: orchestrator
+id: 10
+data: {"tasks":[…],"schedules":[…],"at":1787049612,"app":{"version":"0.5.0","build":1787096354,"protocol":1}}
+```
+
+`tasks` is the body of `GET /v1/orchestrator/tasks` and `schedules` is the body of
+`GET /v1/orchestrator/schedules`, both without their own `at`. **`schedules` rides a frame that
+moves far more often than it does, on purpose.** It is 453 bytes beside a task list measured here
+at 1,056,958, so the field costs 0.043% of a frame already crossing, and what it buys is a client
+that does not have to ask — which matters on the cloud transport below, where asking means a
+person waiting. A client on this route may still poll `/v1/orchestrator/schedules`; both answer
+one inventory.
+
+`app` is `version`, `build` and `protocol` out of `GET /v1/health`, and deliberately not the rest
+of it: `write`, `auth`, `password` and `authed` are answers about *this* connection and belong to
+`hello`. It is here so that a client which never asks health again can still tell that the app it
+is talking to has been rebuilt under it.
+
+**The same three fields are what a cloud viewer has.** `RemoteServer.orchestratorSnapshot()`
+builds this body once and both publishers send it — this stream, and the `orch/<machine>` envelope
+the Mac republishes on every cloud transport-ready. On that path there is no `/v1/health` to ask
+and the relay's own `ready` frame knows nothing about a Mac, so `app` is the only reading the
+stale-build banner has.
+
 **It sends the whole list on every change rather than a diff, and that is the design.** A client
 that has just reconnected — a phone coming out of a tunnel, a laptop waking up — is level with the
 server as soon as the first frame lands, without asking for anything and without replaying anything

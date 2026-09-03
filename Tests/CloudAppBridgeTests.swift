@@ -838,6 +838,98 @@ private func runCloudAppBridgeConcreteReconnectTests() async throws -> Int {
     return checks
 }
 
+/// What a Cloud viewer is actually given, which no other check in this file looks at.
+///
+/// Every suite above hands the bridge `RemoteServer.cloudSnapshotDataForTesting`, so the bytes
+/// they publish are the test's own and would go on passing with the Mac publishing nothing at
+/// all. The body a real Mac sends comes from `RemoteServer.orchestratorSnapshot()`, and this is
+/// the only place that reads it.
+///
+/// **Failures are collected rather than thrown at the first one, and that is deliberate.**
+/// `CLAWDLINE_TEST_GROUPS` exits at `Tests/CloudTestRunner.swift:80`, before the `Task` at `:109`
+/// that starts the twelve Cloud suites, so nothing in this file can be selected and every red
+/// here costs a whole-tree compile. Stopping at the first failure would have made proving these
+/// six checks a six-compile battery on a machine that allows one compile at a time.
+private func runCloudAppBridgeSnapshotTests() async throws -> Int {
+    var checks = 0
+    var problems: [String] = []
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) {
+        checks += 1
+        if !condition() { problems.append(message) }
+    }
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-cloud-snapshot-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let previousScheduleDirectory = Orchestrator.scheduleDirectoryOverrideForTesting
+    defer {
+        Orchestrator.scheduleDirectoryOverrideForTesting = previousScheduleDirectory
+        try? FileManager.default.removeItem(at: directory)
+    }
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+
+    let bare = await MainActor.run { RemoteServer.orchestratorSnapshot() }
+    require((bare["schedules"] as? [[String: Any]])?.isEmpty == true,
+            "a Mac with no schedule files publishes the field holding an empty list — which is "
+                + "what lets a viewer tell it apart from a Mac that publishes no field at all")
+
+    let id = "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"
+    let source: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": id, "title": "nightly cloud read",
+        "when": ["at": "01:30", "days": "daily"],
+        "task": ["assistant": "codex", "project_dir": "/tmp",
+                 "instructions": "do the nightly work"],
+        "enabled": true,
+    ]
+    try JSONSerialization.data(withJSONObject: source)
+        .write(to: directory.appendingPathComponent("\(id).json"))
+    try Data("not json".utf8).write(to: directory.appendingPathComponent("broken.json"))
+
+    let snapshot = await MainActor.run { RemoteServer.orchestratorSnapshot() }
+    let published = snapshot["schedules"] as? [[String: Any]] ?? []
+    require(published.contains {
+        $0["id"] as? String == id && $0["title"] as? String == "nightly cloud read"
+    }, "the snapshot a Cloud viewer receives carries the schedules this Mac actually has")
+    require(published.contains {
+        $0["file"] as? String == "broken.json" && $0["state"] as? String == "invalid"
+    }, "and the unreadable ones, so a Cloud viewer is not shown a shorter list than the Mac's")
+    require(snapshot["tasks"] is [[String: Any]],
+            "the task list the snapshot already carried is still there beside them")
+
+    let listing = await MainActor.run {
+        RemoteServer.shared.route(remoteRequest(
+            "GET", "/v1/orchestrator/schedules",
+            headers: ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]))
+    }
+    let listed = ((try? JSONSerialization.jsonObject(with: listing.body)) as? [String: Any])?[
+        "schedules"] as? [[String: Any]] ?? []
+    func names(_ rows: [[String: Any]]) -> [String] {
+        rows.map { ($0["id"] as? String) ?? ($0["file"] as? String) ?? "" }
+    }
+    require(!listed.isEmpty && names(listed) == names(published),
+            "the cloud snapshot and GET /v1/orchestrator/schedules answer one inventory, "
+                + "so a phone away from the Mac and a browser on its network read the same list")
+
+    let health = await MainActor.run {
+        RemoteServer.shared.route(remoteRequest("GET", "/v1/health"))
+    }
+    let healthBody = (try? JSONSerialization.jsonObject(with: health.body)) as? [String: Any] ?? [:]
+    let stamp = snapshot["app"] as? [String: Any]
+    require(stamp?["build"] as? Int == healthBody["build"] as? Int
+                && stamp?["version"] as? String == healthBody["version"] as? String
+                && stamp?["protocol"] as? Int == healthBody["protocol"] as? Int,
+            "the build stamp on the snapshot is the reading /v1/health answers on the direct "
+                + "path, which is the comparison Build.saw makes to raise the stale banner")
+    require(stamp != nil && stamp?["write"] == nil && stamp?["instance"] == nil,
+            "and carries neither this Mac's write switch nor its instance id into a viewer's "
+                + "hello, because a viewer's write state is its own device capability")
+
+    if !problems.isEmpty {
+        throw CloudAppBridgeTestFailure(description: problems.joined(separator: " ✗ "))
+    }
+    return checks
+}
+
 func runCloudAppBridgeTests() async throws -> Int {
     switch ProcessInfo.processInfo.environment["CLAWDLINE_CLOUD_BRIDGE_CASE"] {
     case "base": return try await runCloudAppBridgeBaseTests()
@@ -849,6 +941,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "aba": return try await runCloudAppBridgeABATests()
     case "reads": return try await runCloudAppBridgeReadTests()
     case "images": return try await runCloudAppBridgeImageTests()
+    case "snapshot": return try await runCloudAppBridgeSnapshotTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
         let lifecycle = try await runCloudAppBridgeLifecycleTests()
@@ -859,8 +952,9 @@ func runCloudAppBridgeTests() async throws -> Int {
         let aba = try await runCloudAppBridgeABATests()
         let reads = try await runCloudAppBridgeReadTests()
         let images = try await runCloudAppBridgeImageTests()
+        let snapshot = try await runCloudAppBridgeSnapshotTests()
         return base + lifecycle + transitiveLifecycle + publicationLifecycle
-            + reconnect + concreteReconnect + aba + reads + images
+            + reconnect + concreteReconnect + aba + reads + images + snapshot
     }
 }
 

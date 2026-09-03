@@ -113,6 +113,23 @@ implementation. The write gate is the same one: a Mac with `remote_write` off re
 command with `cloud_commands_disabled`, exactly as it refuses one from the browser on its own
 network.
 
+**The `orch/` snapshot carries three things, and two of them were added because their absence
+was invisible.** `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the
+local `orchestrator` event and the cloud envelope — and it holds `tasks`, `schedules` and `app`.
+`schedules` is there rather than behind a request because the viewer reads that list on a
+one-minute lane and a request is a person waiting; measured on one Mac it is 453 bytes beside
+1,056,958 for the task list next to it. `app` is `version`, `build` and `protocol` out of
+`/v1/health` — nothing about permissions — and it is the only reading the "this page is behind"
+banner can have out here, because on the direct path that comparison comes from asking health on
+every reconnect and the relay's `ready` frame is the *relay's* and has never heard of a build.
+
+**An empty list and no list are different answers.** `CloudClient.schedules()` resolves an empty
+inventory and refuses an unknown one — `cloud_read_unavailable` before any snapshot has arrived,
+`cloud_schedules_unpublished` for a Mac whose build predates the field — because
+`net/schedules.js` draws whatever it is handed, so resolving `[]` would be the page asserting on
+the Mac's behalf that there is nothing scheduled. A refusal draws nothing and keeps the last
+truthful list; a real empty answer still draws.
+
 **Who may drive this Mac is a local fact.** `CloudPairedDeviceStore` holds the pinned viewer keys
 in `~/.config/clawdline/cloud-devices.json`, owner-readable only, scoped to one account.
 `CloudLifecycleKeyProvider` reads it on **every** inbound command rather than caching it at
@@ -368,18 +385,20 @@ SecurityTool invocation.
   turned into 12,582,132 bytes of PNG, and a picture over it is drawn as a stated size rather than
   as the broken-image icon it used to be.
   Everything else the Web UI reads is guarded by `typeof api.X === "function"` and draws no
-  control at all. `CloudClient.schedules()` is the one exception and is a live defect rather than
-  a policy: it reads a `schedules` key out of the `orch/` snapshot, and
-  `RemoteServer.broadcastOrchestrator` publishes only `tasks`, so the Schedules screen on the
-  hosted console is silently and permanently empty.
+  control at all. `CloudClient.schedules()` was the one exception and is no longer a defect: the
+  `orch/` snapshot now carries `schedules` beside `tasks`, and an unpublished field is refused
+  rather than drawn as an empty list — the two paragraphs above **The `orch/` snapshot carries
+  three things** say how, and why an empty inventory and a missing one had to be different answers.
 - **A read an older Mac has never heard of ends in a timeout, not in a refusal.** A malformed or
   unknown read is answered to the bridge and published to nobody — before it is parsed there is
   neither a body to send nor a name to send it under — so a hosted console that knows a read the
   paired Mac does not will wait out its sixty seconds and see `cloud_read_timeout`. On a matched
   pair this is invisible, because the client never sends a read it cannot spell. It is a real
-  minute across a version gap, and the thing that would let a console see the gap coming is the
-  build stamp, which this path still does not carry: `_becameReady` sends `handlers.hello({write})`
-  with no `build`, `version` or `protocol`, so the "this page is behind" banner can never fire.
+  minute across a version gap, and the thing that lets a console see the gap coming is the build
+  stamp — which this path now carries, in the `orch/` snapshot's `app` rather than in
+  `handlers.hello`. That is the only place it could come from out here: the comparison on the
+  direct path is a health request on every reconnect, and the relay's `ready` frame is the
+  *relay's* and has never heard of a Mac's build.
 - **`/v1/strings` for the hosted console.** There is no such route on the control plane, so the
   fetch fails and the page falls back to English inside its two-second budget. It is a 404 in the
   console and nothing else.
