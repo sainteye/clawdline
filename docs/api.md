@@ -2453,8 +2453,9 @@ Five routes — `GET`/`POST /v1/orchestrator/leases` and `/:id/renew`, `/release
 registry and a FIFO queue in front of that directory, with durable state across an app restart, a
 `heavy_compile_lease` block in Bearings, and a `lease` overlay on a session row. They were removed
 on 2026-09-03 along with `Sources/OrchestratorLease.swift`. An authenticated caller still holding
-their shapes gets the ordinary `404 not_found`; nothing reconciles a stored `leases` row any more,
-and a store written by an older build simply carries one nothing reads.
+their shapes gets the ordinary `404 not_found`. A durable store written by an older build may still
+carry a `leases` array: nothing reads it, and the next save drops it, because the store object is
+built from what the registry holds rather than merged onto what was on disk.
 
 [`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md) is where the night's
 measurements live, and it records what the lease was and why it went. The record every writer of
