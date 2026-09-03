@@ -177,6 +177,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the list of places, tidied",
     "the folder budget is spent on plausible places before scratch",
     "starting a session is behind the write gate, like everything else that runs code",
+    "a session started in a tmux server nobody is attached to says where to find it",
     "place history routes preserve their assistant from path to operation",
     "the page is given the words it draws the start sheet with",
     "restart maintenance drains the real terminal broker",

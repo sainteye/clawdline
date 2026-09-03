@@ -1072,6 +1072,119 @@ group("starting a session is behind the write gate, like everything else that ru
     expect("and the route that took a path in the body is gone", old.status, 404)
 }
 
+// **The one start that leaves nothing on screen, driven end to end.** Everything above stops at a
+// refusal: no test in this file has ever taken the success arm of this route, because taking it
+// meant opening a real terminal. `StartPoints.Fixture` is that arm's seam — it describes a Mac
+// with tmux chosen in Settings and no server running on it, which is the exact machine the attach
+// command exists for, and it replaces the asking rather than the deciding. `plan` still decides.
+//
+// A test that only proved `Tmux.attachCommand` builds the right string would have passed for the
+// whole of the time this feature did not exist: the string was already right, and it had no
+// callers at all.
+group("a session started in a tmux server nobody is attached to says where to find it") {
+    let wasWriting = Config.shared.remoteWrite
+    let phone = RemoteAuth.addDevice(name: "a phone starting a session", caps: [.read, .send])
+    defer {
+        Config.shared.remoteWrite = wasWriting
+        RemoteAuth.revoke(id: phone.id)
+        StartPoints.fixtureForTesting = nil
+    }
+    Config.shared.remoteWrite = true
+
+    // A real directory, because `start` checks and a fixture that could skip that check would be
+    // describing a Mac that cannot exist. The checkout the suite is running in is one.
+    let here = FileManager.default.currentDirectoryPath
+    let place = StartPoints.Place(id: StartPoints.id(for: here), path: here,
+                                  label: "this checkout", at: Date())
+    var openedWith: [StartPoints.Plan] = []
+    func mac(_ tmux: StartPoints.TmuxReach,
+             terminal: StartPoints.TerminalChoice = .tmux,
+             running: Set<String> = []) -> StartPoints.Fixture {
+        StartPoints.Fixture(terminal: terminal, running: running, tmux: tmux,
+                            open: { plan, _, _ in openedWith.append(plan); return .success("%0") },
+                            places: [place])
+    }
+
+    // tmux is what Settings asks for, tmux is installed, and no server is running — which is the
+    // machine this whole field is about. `plan` answers `.tmuxDetached`, `start` starts a server
+    // with nothing attached to it, and the outcome carries the way back to it.
+    StartPoints.fixtureForTesting = mac(.installed)
+    let detached = StartPoints.start(place)
+    expect("a start with no server running opens a detached one", openedWith, [.tmuxDetached])
+    if case .started(let id, let backend, let attach) = detached {
+        expect("the pane comes back as the session's id", id, "%0")
+        expect("on the tmux backend", backend, .tmux)
+        expect("carrying the command that reaches it", attach, "tmux attach -t clawdline")
+        expect("which is Tmux's own, not one assembled here", attach, Tmux.attachCommand)
+    } else {
+        check("a described Mac with tmux on it starts a session", false, "\(detached)")
+    }
+
+    // The other half of the judgement, and the reason this is a `String?` rather than a flag on
+    // every tmux start: a window on a server somebody is already attached to is a window they can
+    // see, and telling them to go and attach to it would be advice about where they already are.
+    openedWith = []
+    StartPoints.fixtureForTesting = mac(.running)
+    let window = StartPoints.start(place)
+    expect("a server that was already running gets a window, not a second server",
+           openedWith, [.tmux])
+    if case .started(_, _, let attach) = window {
+        expect("and nothing to say about how to reach it", attach, nil)
+    } else {
+        check("a running server still starts a session", false, "\(window)")
+    }
+
+    // An iTerm2 tab is in front of the person by the time the reply is written.
+    openedWith = []
+    StartPoints.fixtureForTesting = mac(.absent, terminal: .auto,
+                                        running: [StartPoints.itermBundleID])
+    if case .started(_, let backend, let attach) = StartPoints.start(place) {
+        expect("an iTerm2 start is on the iTerm2 backend", backend, .iterm)
+        expect("and has nowhere to send anybody", attach, nil)
+    }
+    expect("and it never asked tmux for anything", openedWith, [])
+
+    // **And now the caller.** This is the assertion the feature is: the reply a phone reads,
+    // through the real route, with the real gate in front of it.
+    func started(_ tmux: StartPoints.TmuxReach) -> [String: Any] {
+        openedWith = []
+        StartPoints.fixtureForTesting = mac(tmux)
+        let response = RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/places/\(place.id)/start",
+            headers: ["Authorization": "Bearer \(phone.token)",
+                      "Idempotency-Key": UUID().uuidString]))
+        return ((try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]) ?? [:]
+    }
+    let answered = started(.installed)
+    expect("the route answers that it started something", answered["ok"] as? Bool, true)
+    expect("and names the pane it started it in", answered["id"] as? String, "%0")
+    expect("the attach command reaches whoever asked for the session",
+           answered["attach"] as? String, "tmux attach -t clawdline")
+    // Empty rather than absent, the way `model` is on this same route: a field a page has to
+    // guard on `undefined` is a field a page will forget to guard on.
+    expect("and is empty when the session went somewhere visible",
+           started(.running)["attach"] as? String, "")
+
+    // The page's half of the same contract, read rather than assumed — the sentence exists, the
+    // reply is what fills it, and the band it goes on outlives the wait. A start that has landed
+    // is still a start nobody at that Mac can see.
+    let page = (try? String(contentsOfFile: "Resources/web/app/js/input/start.js",
+                            encoding: .utf8)) ?? ""
+    check("the page takes the attach command off the reply rather than composing one",
+          page.contains("d && d.attach"), "start.js does not read `attach`")
+    check("and writes it into the sentence written for it",
+          page.contains("fill(T.webStartDetached, { command: detached })"),
+          "start.js does not fill webStartDetached")
+    check("and the line saying where it went survives the row arriving",
+          page.contains("if (detached) band(detachedWords(), true); else hideBand();"),
+          "start.js hides the band unconditionally when the session lands")
+    let fixtureSource = (try? String(contentsOfFile: "Resources/web/app/js/net/mock.js",
+                                     encoding: .utf8)) ?? ""
+    check("and `?mock=1&start=detached` draws it without a Mac",
+          fixtureSource.contains("MOCK_START === \"detached\""),
+          "the mock cannot produce a detached start")
+}
+
 group("place history routes preserve their assistant from path to operation") {
     let legacyHistory = RemoteServer.placeHistoryTarget("/v1/places/place-one/sessions")
     expect("legacy history remains Claude", legacyHistory?.assistant, .claude)
@@ -1163,6 +1276,23 @@ group("the page is given the words it draws the start sheet with") {
     }.map { $0.tag }.sorted()
     check("and no language leaves a hole in the sentence that has no name to fill it",
           holed.isEmpty, holed.joined(separator: ", "))
+
+    // **The sentence for the one start that is not on screen anywhere.** The command comes off
+    // the reply's `attach` field, so a translation that dropped `{command}` would tell somebody
+    // their session is in a tmux server and not say which words reach it — which is the whole of
+    // what it was written to say. Every language, because the compiler only proves the string
+    // exists and a string that exists can still be the wrong shape.
+    let uncommanded = L.catalog.filter {
+        !$0.copy.webStartDetached.contains("{command}")
+    }.map { $0.tag }.sorted()
+    check("every language keeps the hole the attach command goes in", uncommanded.isEmpty,
+          uncommanded.joined(separator: ", "))
+    // And it is not a refusal, so it must not be filed with them: `webStartDetached` is drawn on
+    // a success, and the fourteen structs are the only place it can be checked whole.
+    let unpublished = (english["webStartDetached"] as? String ?? "")
+    check("and the page is given it along with the rest of the start sheet",
+          unpublished.contains("{command}"),
+          "on /v1/strings as: " + (unpublished.isEmpty ? "nothing" : unpublished))
 
     // The condition is read rather than the line, because the guard and the call are on the same
     // line in two of these files and on different lines in the third.

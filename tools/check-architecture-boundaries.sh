@@ -157,8 +157,14 @@ manifest_group_count=$(awk '
 # numbers produced by agreeing with each other looks exactly like a correct one.**
 # 516 once claims became mandatory: the group that used to prove the undeclared dispatch was
 # warned now proves it is refused, and a second group holds the refusal's own four-row rule.
-[ "$manifest_group_count" -eq 516 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 515"
+# 517 once a detached tmux start had to say where it went: one group, which takes the success arm
+# of the start route for the first time — every earlier test of it stops at a refusal, because
+# taking that arm meant opening a real terminal until `StartPoints.Fixture` existed.
+# The number in the message below was 515 while the check read 516, which is the failure this
+# comment block is about wearing its own costume: a guard whose message names a different number
+# from the one it enforces cannot be read to find out what it wants.
+[ "$manifest_group_count" -eq 517 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 517"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
