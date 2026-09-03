@@ -493,8 +493,9 @@ jq -n \
   --arg model "haiku" \
   --arg plan "$PLAN" \
   --argjson graph "$GRAPH" \
+  --argjson claims '["artifacts","Sources/Portrait.swift"]' \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
-    permission_mode:"full",
+    permission_mode:"full", claims:$claims,
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions,
     plan:$plan, graph:$graph,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
@@ -520,7 +521,7 @@ unknowns 與 scope，只改 `current_node`；frontier 由 broker 根據 task、r
 | `title` | ≤ 200 字，人看的一句話 |
 | `instructions` | 非空、≤ 16 KiB |
 | `deliverables` | 相對於 task 目錄的路徑，慣例是 `artifacts/…` |
-| `claims` | 選填，但**還是要寫**：這件任務可能寫到的相對路徑，0…32 條、不重複、每條 1…1024 字元，開頭不能是 `/`、不能有 `..`。寫 `[]` 是正面宣告「這件事唯讀」。見下面那段 |
+| `claims` | **必填**：這件任務可能寫到的相對路徑，0…32 條、不重複、每條 1…1024 字元，開頭不能是 `/`、不能有 `..`。必填的是「這個欄位要在」，不是「清單不能空」——唯讀的工作寫 `[]` 就已經答完了。整個欄位不寫是 `422 claims_required`；隔離的 task 一樣要宣告。寫 `[]` 是正面宣告「這件事唯讀」。見下面那段 |
 | `model` | 選填。小寫字母、數字、`.` `_` `-`，最多 64 字元。不寫 ＝ 該助理的預設模型 |
 | `reasoning_effort` | 選填，只限 Codex。只能是 `high`（寫程式）或 `xhigh`（規劃）。不寫 ＝ 沿用 Codex／使用者預設且不加 CLI override；不接受 `max`、`ultra` |
 | `permission_mode` | 選填。`ask`／`edits`／`full`。不寫 ＝ 這台 Mac 的上限值（預設 `full`）。寫別的字（包括 `auto`）＝ `bad_task` |
@@ -534,21 +535,37 @@ unknowns 與 scope，只改 `current_node`；frontier 由 broker 根據 task、r
 | `root.parent_task` | **不要填。** 這個欄位是給「會往下派的 child」用的，而 child 已經不能派工；現在這個 app 收得到的每一次派工都來自 root，這一格就是 `null`。它還是會被驗證、還是會被讀，因為舊版留下來的紀錄裡有 |
 | `root.poll_only` | 這份 owned-child recipe 永遠是 `false`。無人值守的 detached automation 有自己的 task shape 與 `/v1/orchestrator/detached-tasks`；它不是 Root 身分解析失敗時的 fallback |
 
-**宣告 `claims` 大約只花 root 二十個 output token，而多數派工還是沒寫。** 這台機器 206 筆派工
+**宣告 `claims` 大約只花 root 二十個 output token，而過去多數派工還是沒寫。** 這台機器 206 筆派工
 裡有 60.7% 什麼都沒宣告。撞一次的代價是整件 task 重來——同一份紀錄上是三百萬到一千八百萬 tokens。
+這個缺口曾經只用一則警告回答，而比例沒有動：警告對呼叫端是免費的，忽略它不用付任何代價。現在整個
+欄位不寫就是 `422 claims_required`——不登記、不開分頁、rate ticket 退回。
 
-還要知道 `claims` 救不了你的那一種情況：**worktree 隔離的 task，repository-relative 的 claims 會
-被丟掉**，因為 child 改的是另一份 checkout。2026-08-28 兩個 root 相隔六秒派出同一件交付的修正，
-兩件都是隔離的，沒有任何一道閘門攔得下來——`/inflight` 對兩邊都還是空的。**一旦用隔離，`/inflight`
-就是唯一的檢查**，所以要去讀它，並且把預計會寫到的檔案留在 `plan` 裡，讓 review 還有範圍可循。
+**用三種答案之一回答它，其中一種永遠適用。** 已經知道會寫的檔案；還沒定案時就寫涵蓋它們的目錄
+（`Sources`、`docs`——目錄宣告涵蓋整棵子樹）；或者 `[]`，意思是這件事什麼都不寫，這對 review 和
+稽核就是完整答案。**不要為了通過檢查而灌水**：宣告過的路徑不管你有沒有碰都在擋別人的樹，任務走到
+終局狀態時，broker 會把「宣告了卻從沒碰過」的路徑一條條點名。
 
-**`claims` 有兩種寫錯的方式，只有一種會叫。** 不寫是安靜的那種：broker 沒辦法證明你這件事跟別人
-不相交，只好退回去對「每一對共用同一個目錄的任務」發警告。2026-08-26 那個晚上就是這樣——一晚十幾
-條通知，沒有一條在講真的衝突；而那晚唯一一次真的撞上，是在派工當下就被
-`409 workspace_busy` 擋掉的。**不寫 `claims` 不是保守，是拿一個答案去換一堆雜訊。**
-宣告過寬是另一種，而它會自己叫出來：宣告過的路徑不管你有沒有碰，都在擋別人的樹；任務走到終局狀態
-時，broker 會把「宣告了卻從沒碰過」的路徑一條條點名。同一個錯誤的反方向——收到那份報告就當真，
-下一次宣告窄一點。
+**一個改動會逼你動到哪些既有測試，派工當下是不可知的，所以宣告目錄。** 這條規則自己那次派工的實測：
+協調者宣告了 14 條，交付實際碰到 11 條，而「碰了卻沒宣告」的五條全部是既有的 `Tests/*.swift`——
+「這個改動要動哪些既有 fixture」是讀完程式碼才知道的事，不是規劃時能寫出來的。那不是疏忽，任何
+任務書都補不了。宣告一條 `Tests` 就涵蓋那五條，花四個 token，而且是真的。
+
+**repository 的守衛替你改的東西不要寫進去。** 被 ratchet 的行數、產生出來的 manifest、封存的檢查
+總數：在有這些東西的 repository 裡，往原始檔加一行也會動到那筆紀錄，而沒有任何一個派工者事先算得
+出是哪一筆。broker 不會替你推導，也不想要它們——把「每次修改都會碰到的一行」拿去 lease，只會讓樹
+裡每一對任務在紙上都相撞。那些行屬於最後 landing 的人。宣告你這件任務自己決定要寫的東西。
+
+**用隔離的時候也要宣告，而且要知道它去哪了。** worktree 隔離的 task，repository-relative 的
+claims 會被丟掉，因為 child 改的是另一份 checkout——但同一份清單會被留成這件交付的 landing-time
+write set，以 `landing_paths` 回答出來，那就是 review 與 landing 讀到的範圍。2026-08-28 兩個 root
+相隔六秒派出同一件交付的修正，兩件都是隔離的，沒有任何一道閘門攔得下來——`/inflight` 對兩邊都還是
+空的。**一旦用隔離，`/inflight` 就是唯一的檢查**，所以要去讀它。
+
+**另一種寫錯的方式會自己叫，那就是宣告過寬。** 不寫已經不是選項了：在它被擋下來以前，broker 沒辦法
+證明你這件事跟別人不相交，只好退回去對「每一對共用同一個目錄的任務」發警告——2026-08-26 那個晚上
+一晚十幾條通知，沒有一條在講真的衝突；而那晚唯一一次真的撞上，是在派工當下就被
+`409 workspace_busy` 擋掉的。那堆雜訊正是這條必填規則要終結的東西，而終結它的方法是一份窄而真的
+宣告，不是一份寬而看起來安全的。
 
 ### 查自己的助理與 session id（owned-child 派工必填）
 

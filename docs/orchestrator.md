@@ -657,7 +657,7 @@ The field has three states, and the registry and every GET record preserve the d
 |---|---|---|
 | one or more paths | the task declares exactly these write scopes | reserves their frozen keys; disjoint declarations can silence L1 |
 | `[]` | the task positively declares that it is read-only | reserves no lease, never conflicts or receives `409 workspace_busy`, and can silence L1 |
-| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning, and the dispatch reply carries `claims_missing` |
+| absent | **refused `422 claims_required`** on an ordinary or detached dispatch; still readable, and still an unknown write set, on a stored schedule's task, a respawn, and every record admitted before the requirement | reserves no lease; L1 keeps its directory warning, and where it is still accepted the dispatch reply carries `claims_missing` |
 
 An empty array gives a read-only task an active, harmless declaration. Silence therefore has only
 one meaning: both tasks supplied enough scope information to prove their frozen claim sets do not
@@ -675,18 +675,38 @@ does announce itself: an over-wide claim blocks other trees whether or not the t
 One failure mode is reported after the fact and the other is not reported at all, which is why the
 absent field is the more expensive of the two to leave alone.
 
-**So the quiet one is answered out loud.** 60.7% of the dispatches measured on this machine
-declared nothing at all. Declaring costs the root about twenty output tokens, and a collision costs
-a whole task — three to eighteen million on that same record — so an absent field puts a
-`claims_missing` item in the dispatch reply's `warnings`, on the first request and on the
-idempotent retry alike. It is never a refusal: a root that has not worked its write set out yet
-must still be able to dispatch. **`"claims": []` does not warn**, and that difference is the whole
-point — warning about a positive read-only declaration would teach callers that the field is noise,
-which is how omission reached 60.7% in the first place.
+**So the quiet one was answered out loud, and out loud was not enough.** 60.7% of the dispatches
+measured on this machine declared nothing at all. Declaring costs the root about twenty output
+tokens, and a collision costs a whole task — three to eighteen million on that same record — so an
+absent field put a `claims_missing` item in the dispatch reply's `warnings`, on the first request
+and on the idempotent retry alike. The share did not move, for the reason every ignorable signal on
+this machine is ignored: a warning costs the caller nothing. An absent field is now
+`422 claims_required`, with nothing registered, nothing opened and the rate ticket refunded.
 
-The best evidence for the warning is not an argument. The root session that specified it dispatched
-the review of its own delivery without `claims`, and drew the `workspace_overlap` notice that
-`claims_missing` exists to prevent — on the day it implemented the guard.
+**The requirement is on the key, not on a non-empty list**, and that line is what keeps it fillable.
+A required non-empty list would make `[]` unsayable, and `[]` is the honest answer for a review, an
+audit, or anything else that reads and reports; forcing it to name a path it does not write would
+put a false reservation into the lease. So there are always three answers: the files, the
+directories containing them when the files are not settled, and `[]`. **`"claims": []` still does
+not warn**, and that difference is the whole point — warning about a positive read-only declaration
+would teach callers that the field is noise, which is how omission reached 60.7% in the first place.
+
+**Declare what the task decides to write, not what a repository guard writes for it.** A ratcheted
+line count, a generated manifest or a sealed check total moves on almost every change, so no
+dispatcher can foresee it and the broker does not derive it. Leasing such a path would make every
+pair of tasks in the same source tree intersect — `claims_overlap` inside a root, `409
+workspace_busy` between two — for contention that is settled when the merged tree re-runs the
+guard, not by scheduling. It belongs to whoever lands the change.
+
+**Two paths keep the warning rather than the refusal, and both because no caller is holding the
+answer**: a stored schedule's task template, whose editor has no `claims` control on either
+surface, and a respawn of a body that was already admitted once. Nothing revalidates work in
+flight — a record admitted before the requirement keeps its absent declaration, and its idempotent
+retry keeps the warning.
+
+The best evidence for requiring it is not an argument. The root session that specified the warning
+dispatched the review of its own delivery without `claims`, and drew the `workspace_overlap` notice
+that `claims_missing` exists to prevent — on the day it implemented the guard.
 
 The check and registration happen atomically as soon as the dispatch has validated. A serialized
 task reserves its claims for its entire time in `queued`; promotion is not a second gap where

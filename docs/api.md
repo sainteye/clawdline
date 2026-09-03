@@ -1538,6 +1538,7 @@ Dispatch refusals are closed and typed; a client should branch on every applicab
 | `graph_node_complete` | 409 | the current node already has durable completion evidence. Model a correction as its own node rather than making the control sheet silently regress |
 | `root_session_required` | 422 | `root.session_id` is null or empty. Nothing is registered or opened; prove the current interactive Root through `GET /v1/orchestrator/whoami`, then send its process-bound conversation id |
 | `root_assistant_required` | 422 | a non-null `root.session_id` was supplied without an explicit `root.assistant` of `claude` or `codex`. Nothing is registered or opened and the provisional rate ticket is refunded. New ordinary HTTP dispatch never applies the historical Claude default |
+| `claims_required` | 422 | `task.json` has no `claims` key. **Present, not non-empty**: the value may be the paths this task may write, the directories containing them when the files are not decided yet, or `[]` to declare that it writes nothing. Nothing is registered or opened and the provisional rate ticket is refunded. An isolated task declares like any other — its lease is still dropped, and the same list is kept as `landing_paths`. The two bodies no caller is holding are exempt and keep the `claims_missing` warning instead: a stored schedule template, whose editor has no `claims` control on either surface, and a respawn of a body that was admitted once already |
 | `root_unresolved` | 422 | the supplied non-null root id resolves to no live process-bound session for `root.assistant`. Nothing is registered or opened; re-prove the same interactive Root through `GET /v1/orchestrator/whoami` and correct the tuple. Do not turn identity failure into detached work |
 | `conversation_ambiguous` | 409 | more than one live process of `root.assistant` proves the same conversation id; no owner is selected and nothing is registered or opened |
 | `root_identity_is_terminal` | 422 | positive active-terminal or durable-Coordinator evidence proves `root.session_id` is a physical terminal id. The evidence is collected independently of caller-declared `root.assistant`; the error returns the actual `canonical_root_session_id` and `canonical_root_assistant`. Conflicting/unknown evidence remains nullable rather than guessed. The task is not registered and the provisional dispatch-rate ticket is refunded |
@@ -1699,25 +1700,57 @@ The wire field has three distinct states, preserved through the registry and all
 |---|---|---|
 | one or more paths | declared write scopes | freezes and holds those lease keys |
 | `[]` | explicit read-only declaration | holds no lease, never conflicts or receives claims `409`, and participates in L1 silence |
-| field absent | unknown write scope | holds no lease, retains L1 directory warnings, and the dispatch reply carries a `claims_missing` warning |
+| field absent | **refused `422 claims_required`** on an ordinary or detached dispatch. Still readable, and still means an unknown write scope, on a stored schedule's task, a respawn, and every record admitted before the requirement | holds no lease, retains L1 directory warnings, and where it is still accepted the dispatch reply carries a `claims_missing` warning |
 
 `[]` gives read-only work a proactive, harmless way to say so. Silence now has only one meaning:
 both sides supplied declarations whose frozen scopes do not intersect; omission says nothing.
 
-**An absent field is answered with a warning, and only an absent one.** 60.7% of the dispatches
-measured on one machine declared nothing at all; declaring costs the root about twenty output
-tokens, and a collision costs a whole task — three to eighteen million on that same record. So the
-reply carries
+**An absent field is refused, and only an absent one.** 60.7% of the dispatches measured on one
+machine declared nothing at all; declaring costs the root about twenty output tokens, and a
+collision costs a whole task — three to eighteen million on that same record. That gap was answered
+with a warning for one release and the share did not move, because a warning costs a caller nothing
+to ignore. So an ordinary or detached dispatch whose `task.json` has no `claims` key is now
 
 ```json
-{"warnings":[{"code":"claims_missing",
-              "message":"This task declared no claims, so nothing reserves the paths it is about to write…"}]}
+{"error":{"code":"claims_required","message":"claims is required: the relative paths under project_dir this task may write…","request_id":"…"}}
 ```
 
-on the first dispatch and on the idempotent retry alike. It is never a refusal: a root that has
-not worked out its write set yet must still be able to dispatch. **`"claims": []` does not warn** —
-it is a positive declaration that the task writes nothing, and warning about it would teach callers
-that the field is noise, which is how omission reached 60.7% in the first place.
+with nothing registered, nothing opened, and the provisional rate ticket refunded.
+
+**What is required is the key, never a non-empty list.** A required non-empty list would make `[]`
+unsayable, and `[]` is the one thing a genuinely read-only task can honestly send; a reviewer forced
+to name a path it does not write would be lying to the lease. Three answers are always available —
+the files, the directories containing them when the files are not decided yet, and `[]`. **`"claims":
+[]` still does not warn**: it is a positive declaration that the task writes nothing, and warning
+about it would teach callers that the field is noise, which is how omission reached 60.7% in the
+first place.
+
+**Declare what this task decides to write, and nothing a repository guard writes for it.** A
+ratcheted line count, a generated manifest, a sealed check total: in a repository that has them,
+every change touches those lines, so a dispatcher cannot foresee them and the broker does not derive
+them. Leasing them would be worse than leaving them out — every pair of tasks touching the same
+source tree would then intersect, which is `claims_overlap` on every pair inside one root and
+`409 workspace_busy` between two, for a contention that is resolved when the merged tree re-runs the
+guard rather than by scheduling. They belong to whoever lands the change; the field stays complete
+because they are outside what it declares.
+
+**A directory is the honest answer for what a dispatcher cannot yet know.** Measured on the
+dispatch that added this refusal: 14 paths declared, 11 touched, and every path touched without
+being declared was a pre-existing test file the change had to migrate — which fixtures an edit
+forces is learned by reading the code, not by planning the work. `Tests` as one claim is exact
+enough to arbitrate on and cheap enough to always send. **Declared completeness is therefore a
+statement of intent, not a promise about the final diff**, and nothing in the broker treats it as
+one: no route compares a task's claims with what it wrote, and the only report that looks —
+[the terminal claims audit](orchestrator.md#the-terminal-claims-audit) — names paths claimed and
+never touched, never the reverse.
+
+**Two dispatch paths keep the warning instead of the refusal, and both for the same reason: no
+caller is holding the answer.** A stored schedule's task template was written before the
+requirement and neither editing surface has a `claims` control, so refusing it would stop unattended
+work over a field the surface cannot express; a respawn re-enters with a body that was admitted once
+already. Records recovered from the store keep an absent declaration readable, and an idempotent
+retry of an already-registered task answers with that task's own record and its warning. Nothing
+revalidates work already in flight.
 
 If either task's root cannot be resolved, the dispatch is also admitted and the warning has the
 same fields and message with `code: "claims_overlap_unknown_root"`. An unknown root never has the
@@ -1738,7 +1771,9 @@ inspection and may still be writing; the root's typed completion line calls out 
 
 For an isolated task, relative claims under `project_dir` are discarded and a
 `claims_ignored_for_worktree` warning names them: the child writes corresponding paths in its
-private checkout. **The discarded list is no longer only in that warning.** It is kept as the
+private checkout. **It is still required to declare them**, and that is not ceremony: over half of
+one day's dispatches were isolated, so a requirement that excused them would be a requirement on a
+minority of the fleet. **The discarded list is no longer only in that warning.** It is kept as the
 task's landing-time write set and answered back as `landing_paths` on the task record, the inflight
 row and the landing queue, because the two questions `claims` used to answer are not the same
 question: isolation ends "who may edit this path in the shared checkout" and merely *defers* "who
