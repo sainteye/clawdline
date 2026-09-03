@@ -1560,6 +1560,64 @@ try {
     rmSync(dir, { recursive: true, force: true });
 }
 
+// The receipt reporter is lifted out of test.sh and driven, rather than retyped here: a copy would
+// go on passing after the original changed, which is the failure this whole file exists to catch.
+{
+    const marker = "# >>> clawdline receipt direction >>>";
+    const end = "# <<< clawdline receipt direction <<<";
+    if (!script.includes(marker) || !script.includes(end)) {
+        stop("test.sh has no receipt-direction block to drive; if it was renamed, update this file rather than deleting the checks");
+    }
+    const block = script.slice(script.indexOf(marker), script.indexOf(end) + end.length);
+    const cloudReceipt = /^expected_cloud_receipt='(.*)'$/m.exec(script)[1];
+    const work = mkdtempSync(join(tmpdir(), "receipt-direction-"));
+    const drive = (logBody, seal) => {
+        const log = join(work, "suite.log");
+        writeFileSync(log, logBody);
+        const harness = [
+            `expected_swift_receipt='${seal} checks passed'`,
+            `expected_cloud_receipt='${cloudReceipt}'`,
+            block,
+            `report_receipt_direction '${log}'`,
+        ].join("\n");
+        const run = spawnSync("/bin/bash", ["-c", harness], { encoding: "utf8" });
+        return `${run.stdout}${run.stderr}`;
+    };
+    const suiteLines = cloudReceipt.replace(/^.*suites=/, "").split(",")
+        .map((entry) => `  \u2713 ${entry.split(":")[0]} (${entry.split(":")[1]} checks)`);
+
+    // Long: the tree grew and nobody re-sealed. Until 2026-09-03 this shared one sentence with the
+    // short case, and `receipt mismatch` reads as *your delivery is broken* on a run that was fine.
+    const long = drive("8383 checks passed\n", 8226);
+    check("a total above the seal says the tree grew and the seal did not follow",
+        /tree grew and the seal did not follow/.test(long) && long.includes("157 checks were added"));
+    check("and it says the suite itself is fine, so nobody hunts a defect that is not there",
+        /suite itself is fine/.test(long));
+    check("and it sends them to a run for the new number, not to arithmetic",
+        /never from arithmetic/.test(long));
+
+    // Short: a group aborted and took the ones after it. The count is a coverage number too.
+    const short = drive([...suiteLines.slice(0, 8), "1 of 7724 checks failed:"].join("\n"), 8226);
+    check("a total below the seal says how many checks never ran",
+        /came out short/.test(short) && short.includes("502 never ran"));
+    check("and names the cloud suites that never reported, which does not drift as they grow",
+        ["CloudCommandLedger", "CloudOutboundSpool", "CloudPairing", "CloudLifecycle"]
+            .every((suite) => new RegExp(`never reported:[^\n]*${suite}`).test(short)));
+    check("and does not name a cause it has not established: cwd and abort look identical here",
+        !/aborted group shrinks/.test(short));
+    check("and says a run that did not finish is not a green",
+        /not a green/.test(short));
+
+    // The two totals live on different lines — `N of M checks failed:` and `M checks passed`. An
+    // earlier version read only the first and was therefore silent on the case that arrived.
+    check("it reads the green line as well as the red one, or it is silent on half its input",
+        /checks passed\$\//.test(block) || block.includes("checks passed$/"));
+    check("an exact total says nothing at all", drive("8226 checks passed\n", 8226).trim() === "");
+    check("a log with no total at all is silent rather than guessing",
+        drive("nothing here\n", 8226).trim() === "");
+    rmSync(work, { recursive: true, force: true });
+}
+
 console.log(failures === 0
     ? `test.sh suite lock: all ${checks} checks passed`
     : `test.sh suite lock: ${failures} of ${checks} checks failed`);

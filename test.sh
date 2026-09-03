@@ -153,12 +153,51 @@ count_exact_receipt_lines() {
   awk -v receipt="$receipt" '$0 == receipt { count++ } END { print count + 0 }' "$log"
 }
 
+# >>> clawdline receipt direction >>>
+# Says which way the total moved, because the two directions mean opposite things and shared one
+# sentence until 2026-09-03. A green run with zero failures and all twelve cloud suites present
+# exited 125 against a seal eight checks stale, and `receipt mismatch` reads as *your delivery is
+# broken* in a case where the delivery was fine; the line that hit it spent a round proving the
+# eight were not its own. Short is the other direction and is not cosmetic: a group that aborts
+# takes the ones after it, so the count is a coverage number as well as a result.
+# Reports only. The exit code belongs to whatever called this — a check should not alter the
+# conclusion of the thing it reports on.
+report_receipt_direction() {
+  local log=$1 sealed attempted ran suite missing=""
+  sealed=${expected_swift_receipt%% *}
+  case "$sealed" in "" | *[!0-9]*) return 0 ;; esac
+  # The total lives on a different line in each case: `N of M checks failed:` when the suite is
+  # red, `M checks passed` when it is green. An earlier version read only the first and was
+  # therefore silent on the case that actually arrived.
+  attempted=$(awk 'match($0, /^[0-9]+ of [0-9]+ checks failed/) { n = $3 }
+                   match($0, /^[0-9]+ checks passed$/)         { n = $1 } END { print n }' "$log")
+  case "$attempted" in "" | *[!0-9]*) return 0 ;; esac
+  if [ "$attempted" -lt "$sealed" ]; then
+    echo "The total came out short: $attempted ran, this tree's seal is $sealed, so $((sealed - attempted)) never ran." >&2
+    ran=$(grep -aoE '^  . [A-Za-z]+ \([0-9]+ checks\)' "$log" | awk '{ print $2 }')
+    for suite in $(printf '%s' "${expected_cloud_receipt#*suites=}" | tr ',' ' '); do
+      printf '%s\n' "$ran" | grep -qx "${suite%%:*}" || missing="$missing ${suite%%:*}"
+    done
+    [ -n "$missing" ] && echo "Cloud suites that never reported:$missing" >&2
+    echo "A run that did not finish is not a green, whatever its failure count says." >&2
+  elif [ "$attempted" -gt "$sealed" ]; then
+    echo "The tree grew and the seal did not follow: $attempted ran, the seal says $sealed, so $((attempted - sealed)) checks were added without re-sealing." >&2
+    echo "The suite itself is fine. What needs updating is the seal above and the governance row beside it — from a run, never from arithmetic." >&2
+  fi
+  return 0
+}
+# <<< clawdline receipt direction <<<
+
 verify_test_completion_receipts() {
   local log=$1
   local cloud_receipt_count swift_receipt_count reported_swift_receipts
   cloud_receipt_count=$(count_exact_receipt_lines "$expected_cloud_receipt" "$log")
   if [ "$cloud_receipt_count" -ne 1 ]; then
     echo "Cloud test completion receipt appeared $cloud_receipt_count times, expected exactly once — full output kept at $log" >&2
+    # An aborted group fails here first, before the Swift seal is ever compared, so the direction
+    # has to be reported on this path too or `--verify-completion-receipts` stays silent about the
+    # one case it is most often pointed at: a log from a run that stopped early.
+    report_receipt_direction "$log"
     return 125
   fi
 
@@ -166,6 +205,7 @@ verify_test_completion_receipts() {
   if [ "$swift_receipt_count" -ne 1 ]; then
     reported_swift_receipts=$(awk '/^[0-9]+ checks passed$/ { values = values (values ? ", " : "") $0 } END { print values ? values : "none" }' "$log")
     echo "Swift test completion receipt mismatch: expected exactly one '$expected_swift_receipt'; found $swift_receipt_count exact and reported $reported_swift_receipts — full output kept at $log" >&2
+    report_receipt_direction "$log"
     return 125
   fi
 }
@@ -1350,6 +1390,9 @@ tee_status=${pipe[1]}
 set -e
 if [ "$status" -ne 0 ]; then
   echo "the suite exited $status — full output kept at $LOG" >&2
+  # The receipt check below is never reached on a red run, so the one thing that would notice a
+  # shrunken total is unreachable exactly when it would help. This says it here instead.
+  report_receipt_direction "$LOG"
   exit "$status"
 fi
 # A `tee` that could not write has to end the run on its own number, and it has to do it *here*.

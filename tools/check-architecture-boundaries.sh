@@ -238,11 +238,44 @@ documented_swift_receipt=$(sed -n "s/^expected_swift_receipt='\([0-9]*\) checks 
 [ -n "$documented_swift_receipt" ] \
   || architecture_guard_fail "could not read expected_swift_receipt from test.sh"
 
+# The compile-job ceiling must not exist before ./test.sh holds the machine lock. b8dfd0ff moved
+# this block above the acquisition and an eight-way 104-file typecheck then ran outside the lock for
+# weeks; on 2026-09-03 a sampler caught eight frontends alive with the lock free, and the chain's
+# top was another line's own landing script, queueing for a machine it had just heated up. The
+# repair deletes the coupling rather than setting it to one, so this anchors on the marked block and
+# the lock's call site — an anchor on `export CLAWDLINE_COMPILE_JOBS` would pass afterwards for the
+# reason that its subject no longer exists anywhere, and one on the name alone matches the function
+# definition and a comment, putting the lock 343 lines early. Proved four ways against a4ed9edb,
+# which still carries the defect.
+ceiling_block_line=$(grep -n '^# >>> clawdline compile ceiling >>>' test.sh | head -1 | cut -d: -f1)
+suite_lock_line=$(grep -n 'clawdline_acquire_suite_lock' test.sh \
+  | grep -v '^[0-9]*:[[:space:]]*#' | grep -v 'clawdline_acquire_suite_lock()' | head -1 | cut -d: -f1)
+{ [ -n "$ceiling_block_line" ] && [ -n "$suite_lock_line" ]; } \
+  || architecture_guard_fail "cannot locate the compile-ceiling block or the suite lock in test.sh (block=${ceiling_block_line:-missing} lock=${suite_lock_line:-missing}); if either was renamed, update this check rather than deleting it"
+[ "$ceiling_block_line" -gt "$suite_lock_line" ] \
+  || architecture_guard_fail "test.sh settles its compile ceiling at line $ceiling_block_line but does not hold the machine lock until $suite_lock_line, so everything it runs above the lock can compile wide with nothing rationing it"
+
 compare_documented "ordered groups" "$manifest_group_count"
 compare_documented "ordered runners" "$runner_count"
 compare_documented "suite files" "$suite_count"
-compare_documented "Swift checks" "$documented_swift_receipt"
+# Re-sealing is a cycle without this door. The seal and the governance row must agree before the
+# suite is allowed to start, and the true count is only known once it has finished — so anyone whose
+# change adds checks has to first commit a number they know is wrong, run, then correct it. That
+# intermediate state is the exact shape this row is worst at: two records agreeing and both wrong,
+# with every guard green. It is fine while the author is standing there and dangerous the moment a
+# run is interrupted. `CLAWDLINE_RESEAL=1` says out loud that this run exists to produce the number,
+# and downgrades this one row to a warning. Nothing else relaxes: the suite still ends on
+# `verify_test_completion_receipts`, which still fails and now also says which way the total moved.
+if [ "${CLAWDLINE_RESEAL:-}" = "1" ]; then
+  documented_swift_checks=$(documented_value "Swift checks")
+  if [ "$documented_swift_checks" != "$documented_swift_receipt" ]; then
+    echo "architecture boundaries: CLAWDLINE_RESEAL=1 — governance table says Swift checks is ${documented_swift_checks:-none} and test.sh seals $documented_swift_receipt." >&2
+    echo "Letting the run proceed so it can report the real count. Set both to what it reports; this run's own receipt check still has to pass." >&2
+  fi
+else
+  compare_documented "Swift checks" "$documented_swift_receipt"
+fi
 compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
 compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
 
-echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
+echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
