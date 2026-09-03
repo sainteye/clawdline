@@ -360,9 +360,18 @@ that its subject no longer exists anywhere.
 **A red run should say how much never ran, and name it.** The receipt check that would notice a
 shrunken total sits below the `exit "$status"` that a red suite takes, so it is unreachable exactly
 when it would help. The addition reads the attempted total from the failure line, compares it to
-this tree's seal, and — only when the total came out *short*, so a tree with added tests never
-misreports — names the cloud suites that never announced themselves. It changes no exit code: the
-run was already red, and a check should not alter the conclusion of the thing it reports on.
+this tree's seal, and says which way it moved. **Short** means checks did not run: it names the
+cloud suites that never announced themselves, and says that a run which did not finish is not a
+green whatever its failure count says. **Long** means the tree grew and the seal did not follow: the
+suite is fine, and what needs updating is the seal, from a run rather than from arithmetic. It
+changes no exit code — a check should not alter the conclusion of the thing it reports on.
+
+The two directions shared one sentence until 2026-09-03, when a green run with zero failures and all
+twelve cloud suites present exited 125 against a stale seal, and the line that reported it —
+`expected exactly one '8093 checks passed'; found 0 exact and reported 8101` — reads as *your
+delivery is broken* in a case where the delivery was fine. **A check that says the same thing in two
+opposite situations has not said anything.** Both directions are proved against the two runs that
+actually produced them: 8101 against a seal of 8093, and 7716 against a seal of 8218.
 
 Three of its own bugs are worth keeping, because each failed toward silence. Its first pattern
 missed the trailing colon on `N of M checks failed:` and matched nothing, and matching nothing
