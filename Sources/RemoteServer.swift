@@ -413,9 +413,9 @@ final class RemoteServer: @unchecked Sendable {
             let sessions = try? JSONSerialization.data(
                 withJSONObject: self.sessionsPayload(), options: [.withoutEscapingSlashes]
             )
-            let orchestrator = try? JSONSerialization.data(withJSONObject: [
-                "tasks": Orchestrator.records(), "at": Int(Date().timeIntervalSince1970),
-            ], options: [.withoutEscapingSlashes])
+            let orchestrator = try? JSONSerialization.data(
+                withJSONObject: Self.orchestratorSnapshot(), options: [.withoutEscapingSlashes]
+            )
             guard let sessions, let orchestrator else { return }
             self.enqueueCloudReadySnapshots(
                 sessions, orchestrator: orchestrator, bridge: bridge,
@@ -5262,11 +5262,44 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
+    /// The one `orch/<machine>` body, built in one place because two publishers send it: the
+    /// broadcast below, and the republication `cloudTransportBecameReady` performs on every
+    /// transport-ready. They were two dictionary literals and had already drifted.
+    ///
+    /// **`schedules` rides the snapshot instead of answering a request.** The viewer reads
+    /// schedules on a deliberate one-minute lane (`net/schedules.js`), so a request/reply is a
+    /// person waiting; a field on a snapshot already crossing is not. Measured on this Mac:
+    /// `GET /v1/orchestrator/schedules` answered 453 bytes beside 1,056,958 for the task payload
+    /// next to it — 0.043% — in ~7 ms against ~68 ms. The list moves about twice a day and this
+    /// is republished every few seconds, so the *ratio* is bad and the *quantity* is nothing.
+    ///
+    /// **`app` is the build stamp, and it is here because this is the machine's own snapshot.**
+    /// On the direct path `/v1/health` answers it on every connect and reconnect and `Build.saw`
+    /// compares one reading against the last. The relay's `ready` frame is the relay's and cannot
+    /// carry a build, so the stamp rides the one thing republished at exactly the moment health
+    /// would have been asked again.
+    static func orchestratorSnapshot(now: Date = Date()) -> [String: Any] {
+        ["tasks": Orchestrator.records(),
+         "schedules": Orchestrator.scheduleRecords(now: now),
+         "at": Int(now.timeIntervalSince1970),
+         "app": appStamp()]
+    }
+
+    /// The three fields `Build.stamp()` compares, and deliberately not the two more that
+    /// ``restartHelloPayload()`` carries. `write` there is `Config.shared.remoteWrite`, this
+    /// Mac's switch for its own network, while a cloud viewer's write state is the capability
+    /// its device was granted. Publishing one where the other is read would let a switch on the
+    /// Mac silently regrant or revoke a paired phone.
+    static func appStamp() -> [String: Any] {
+        ["version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
+         "build": Self.buildStamp,
+         "protocol": Self.protocolVersion]
+    }
+
     /// Called by the orchestrator whenever any task record changes, from whichever thread it
     /// changed on — `records()` does its own main-thread crossing.
     func broadcastOrchestrator() {
-        let payload: [String: Any] = ["tasks": Orchestrator.records(),
-                                      "at": Int(Date().timeIntervalSince1970)]
+        let payload = Self.orchestratorSnapshot()
         let cloudPayload = try? JSONSerialization.data(withJSONObject: payload,
                                                         options: [.withoutEscapingSlashes])
         queue.async { [weak self] in

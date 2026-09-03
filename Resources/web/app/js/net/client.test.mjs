@@ -593,6 +593,111 @@ assert.deepEqual((await connectedCloud.sessions()).sessions[0].identity,
     { machine: "mac-01", session: "session-01" },
     "a verified cloud snapshot is stored under (machine, session)");
 assert.equal(liveEvents.some(function (event) { return event.type === "sessions"; }), true);
+
+/* ---- the two fields the orch/ snapshot used to leave out ------------------
+   Row 10 and row 17 of the Cloud enumeration are one defect twice: the Mac published a snapshot
+   with a field missing and the viewer drew the absence as though it were the answer. The reads
+   below are what a person on a hosted console sees, so they are asserted as answers rather than
+   as shapes. ------------------------------------------------------------- */
+
+const orchestratorSnapshots = [];
+const helloReadings = [];
+const stampCloud = new CloudClient({
+    relayURL: "https://relay.example", deviceToken: "jwt", devicePrivateKey: signingKey,
+    masterKey: masterKey, senderKeys: { "device-vector-01": senderKey },
+    WebSocket: FakeWebSocket,
+    handlers: {
+        hello: function (info) { helloReadings.push(info); },
+        tasks: function () {},
+        conn: function () {}
+    }
+});
+await stampCloud.start();
+const stampSocket = FakeWebSocket.latest;
+stampSocket.receive({ type: "challenge", v: 1, context: "clawdline-challenge-v1",
+    account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+    expires_in_ms: 30_000 });
+await stampCloud.messageChain;
+stampSocket.receive({ type: "ready", v: 1, role: "viewer", account: "account-01",
+    device: "device-vector-01" });
+await stampCloud.messageChain;
+
+const { Build } = await import("./build.js");
+const { els } = await import("../core/dom.js");
+const { T } = await import("../core/i18n.js");
+els.stale = elementWithID("stale");
+els.stale.hidden = true;
+
+assert.equal(helloReadings.length, 1, "the relay ready frame is still one hello");
+assert.equal(Build.stamp(helloReadings[0]), "",
+    "the relay ready frame carries no build — it is the relay's frame, not the Mac's");
+
+async function receiveOrchestrator(body, seq) {
+    const sealed = await sealEnvelope({
+        ch: "orch/mac-01", seq: seq, ts: 1787817600000 + seq, class: "stream",
+        key_id: "ms-1", sender: "device-vector-01"
+    }, JSON.stringify(body), masterKey, signingKey);
+    stampSocket.receive({ type: "envelope", envelope: sealed });
+    await stampCloud.messageChain;
+    orchestratorSnapshots.push(body);
+}
+
+await assert.rejects(stampCloud.schedules(),
+    function (error) { return error.code === "cloud_read_unavailable"; },
+    "before any orch snapshot the schedule list is unknown, and says so");
+
+await receiveOrchestrator({ tasks: [], at: 201 }, 1);
+await assert.rejects(stampCloud.schedules(),
+    function (error) { return error.code === "cloud_schedules_unpublished"; },
+    "a snapshot with no schedules field is a Mac that does not publish them, not a Mac with none");
+
+await receiveOrchestrator({ tasks: [], schedules: [], at: 202 }, 2);
+assert.deepEqual(await stampCloud.schedules(), { schedules: [], at: 202 },
+    "an inventory that really is empty resolves — this is the answer the refusals above are not");
+
+await receiveOrchestrator({
+    tasks: [], at: 203,
+    schedules: [
+        { id: "4b522e54", title: "Dual article publishing", enabled: true, next_fire: 400 },
+        { file: "broken.json", state: "invalid", error: "bad input" }
+    ],
+    app: { build: 1787096354, version: "0.5.0", protocol: 1 }
+}, 3);
+const listed = await stampCloud.schedules();
+assert.deepEqual(listed.schedules.map(function (row) { return row.id || row.file; }),
+    ["4b522e54", "broken.json"],
+    "a Cloud viewer lists the schedules this Mac actually has, invalid rows included");
+assert.equal(listed.schedules[0].machine, "mac-01",
+    "each listed schedule names the machine whose snapshot carried it");
+
+assert.equal(helloReadings.length, 2,
+    "only the snapshot carrying an app stamp is a second hello");
+assert.equal(Build.stamp(helloReadings[1]), "1787096354|0.5.0|1",
+    "the Cloud path now produces the same stamp shape /v1/health produces");
+assert.equal(helloReadings[1].write, false,
+    "the stamp does not carry the Mac's own write switch into a viewer's write state");
+
+// `Build.saw` is the line `handlers.hello` runs, and it is called here rather than through
+// `handlers.hello` only because the rest of that handler redraws a composer this environment has
+// no elements for. The wire itself is asserted from the source, so a hello that stopped feeding
+// the build watcher could not pass by leaving these three assertions green.
+const helloSource = await readFile(new URL("./handlers.js", import.meta.url), "utf8");
+assert.match(helloSource, /hello: function \(info\) \{[\s\S]*?Build\.saw\(info\);/,
+    "the shared hello handler still hands its whole reading to the build watcher");
+Build.saw(helloReadings[1]);
+assert.equal(els.stale.hidden, true, "the first reading is the baseline, not a rebuild");
+await receiveOrchestrator({
+    tasks: [], at: 204, schedules: [],
+    app: { build: 1787096999, version: "0.5.0", protocol: 1 }
+}, 4);
+Build.saw(helloReadings[2]);
+assert.equal(els.stale.hidden, false,
+    "a Cloud viewer older than the Mac's build is told so, on the direct path's own banner");
+assert.equal(T.webStale, "Clawdline has been rebuilt on the Mac. This page is the older one.",
+    "and in the direct path's own words");
+Build.hush();
+stampCloud.stop();
+
 connectedCloud.stop();
 
 /* ---- the two reads a browser on the cloud path can now make ---------------

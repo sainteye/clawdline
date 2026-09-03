@@ -171,7 +171,17 @@ fi
 #                                          own bound, its base64 and its refusal live in
 #                                          `CloudAppBridge.swift`, which is where an envelope's
 #                                          size limit belongs — this file only names the route.)
-remote_server_ceiling=5537
+#   5,570  schedules and the build stamp      (+33, counted per hunk: +23 for
+#                                          `orchestratorSnapshot()` with its comment, one body for
+#                                          the two publishers that had each written their own
+#                                          literal; +11 for `appStamp()` and the paragraph saying
+#                                          why it is narrower than `restartHelloPayload()`; -1
+#                                          where `broadcastOrchestrator` stopped spelling its
+#                                          dictionary out. A new file does not work here: `queue`,
+#                                          `streams` and `enqueueCloudPublication` are all
+#                                          `private` to this type, and both callers of the new
+#                                          body are methods on it.)
+remote_server_ceiling=5570
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"

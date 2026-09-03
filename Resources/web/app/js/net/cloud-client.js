@@ -404,6 +404,7 @@ export class CloudClient {
             this.orchestratorSnapshots.set(machine, payload || {});
             var tasks = this._allOrchestratorRows("tasks");
             if (this.handlers && this.handlers.tasks) this.handlers.tasks(tasks);
+            this._sawAppStamp(payload);
             this._emit({ type: "orchestrator", data: payload, machine: machine,
                 envelope: envelope, realign: realign });
             return;
@@ -589,17 +590,80 @@ export class CloudClient {
         return this;
     }
 
-    _allOrchestratorRows(name) {
-        var rows = [];
-        this.orchestratorSnapshots.forEach(function (snapshot, machine) {
-            var list = snapshot && Array.isArray(snapshot[name]) ? snapshot[name] : [];
-            list.forEach(function (row) { rows.push(Object.assign({}, row, { machine: machine })); });
-        });
-        return rows;
+    /**
+     * The Mac's build, version and protocol, carried on the machine's own snapshot.
+     *
+     * On the direct path `/v1/health` answers these on every connect and every reconnect, and
+     * `Build.saw` compares one answer against the last to raise "Clawdline has been rebuilt on
+     * the Mac. This page is the older one." The relay's `ready` frame is the *relay's*: it knows
+     * an account and a device and has never heard of a build, which is why `_becameReady` could
+     * only ever hand `handlers.hello` a write flag and the banner could not fire on this path at
+     * all. The stamp therefore rides `orch/<machine>`, which the Mac republishes on every
+     * transport-ready — the same moment health would have been asked again.
+     *
+     * **`write` is not read from the snapshot.** That field on the Mac is its own network's
+     * switch; a viewer's write state is the capability its device was granted, which is what
+     * `_becameReady` already passes. Taking one for the other would let a switch on the Mac
+     * silently regrant or revoke a paired phone.
+     */
+    _sawAppStamp(payload) {
+        var app = payload && payload.app;
+        if (!app || typeof app !== "object" || Array.isArray(app)) return;
+        if (!this.handlers || !this.handlers.hello) return;
+        this.handlers.hello({ build: app.build, version: app.version, protocol: app.protocol,
+            write: this.allowWrites });
     }
 
+    /**
+     * Rows for one snapshot field, and — separately — whether any machine published the field.
+     *
+     * The two are not the same answer and used to be the same value. `[]` because this Mac has no
+     * schedules and `[]` because nothing has ever said are opposite facts, and a viewer that
+     * cannot tell them apart draws the empty screen for both. That is the whole defect here: a
+     * person with six schedules saw none, and was told nothing.
+     */
+    _orchestratorRows(name) {
+        var rows = [];
+        var published = false;
+        var at = 0;
+        this.orchestratorSnapshots.forEach(function (snapshot, machine) {
+            if (!snapshot || !Array.isArray(snapshot[name])) return;
+            published = true;
+            if (typeof snapshot.at === "number" && snapshot.at > at) at = snapshot.at;
+            snapshot[name].forEach(function (row) {
+                rows.push(Object.assign({}, row, { machine: machine }));
+            });
+        });
+        return { published: published, rows: rows, at: at };
+    }
+
+    _allOrchestratorRows(name) { return this._orchestratorRows(name).rows; }
+
     tasks() { return Promise.resolve({ tasks: this._allOrchestratorRows("tasks") }); }
-    schedules() { return Promise.resolve({ schedules: this._allOrchestratorRows("schedules") }); }
+
+    /**
+     * The schedules every machine on this account published, or a refusal saying why there are
+     * none to give.
+     *
+     * Two codes rather than one, because they are two different things to be waiting for:
+     * `cloud_read_unavailable` is "no `orch/` snapshot has arrived yet", which a second of
+     * patience fixes, and `cloud_schedules_unpublished` is "a snapshot arrived and carried no
+     * such field", which means the Mac is running a build older than this one and no amount of
+     * waiting will help. Neither resolves to an empty list: `net/schedules.js` renders whatever
+     * it is handed, so resolving `[]` here is the page positively asserting an inventory nobody
+     * has read.
+     */
+    schedules() {
+        var answer = this._orchestratorRows("schedules");
+        if (!answer.published) {
+            return Promise.reject(this.orchestratorSnapshots.size
+                ? cloudError("cloud_schedules_unpublished",
+                    "this Mac does not publish its schedules over the relay")
+                : cloudError("cloud_read_unavailable",
+                    "no orchestrator snapshot has arrived from this account yet"));
+        }
+        return Promise.resolve({ schedules: answer.rows, at: answer.at });
+    }
 
     send(value, text, images) {
         var identity = sessionIdentity(value);

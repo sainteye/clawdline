@@ -90,6 +90,14 @@ function refresh() {
             });
     }).catch(function () {
         // Read-only and ambient: connection state already has a visible home in the header.
+        //
+        // **Nothing is rendered from here, and that is the point.** A refusal — the Cloud
+        // transport's `cloud_read_unavailable` and `cloud_schedules_unpublished`, or a dropped
+        // request on the direct path — means the inventory is unknown, and `renderSchedules([])`
+        // would be the page saying "there are none" on its behalf. Not drawing keeps the section
+        // as it was: absent before any answer, and holding the last truthful list after one. An
+        // inventory that really is empty still arrives as an answer and still draws, which is the
+        // difference a person can see.
     }).then(function () { inFlight = false; });
 }
 
