@@ -790,7 +790,12 @@ group("cleanup retains pending landing obligations beyond the ordinary registry 
     let pendingID = "30303030-4040-5050-6060-707070707070"
     let ordinaryOldID = "40404040-5050-6060-7070-808080808080"
     let now = Date()
-    for index in 0..<202 {
+    // Two past whatever the registry cap currently is, read from the setting rather than pinned:
+    // the literal 202 here was written against a literal 200 in `cleanup()`, and once the cap
+    // became `orchestrator_task_record_limit` a fixture of 202 rows stopped reaching it at all —
+    // the group stayed green while testing nothing.
+    let cap = Config.shared.orchestratorTaskRecordLimit
+    for index in 0..<(cap + 2) {
         let id = index == 0 ? pendingID
             : (index == 1 ? ordinaryOldID
                : String(format: "50505050-6060-7070-8080-%012d", index))
@@ -808,7 +813,7 @@ group("cleanup retains pending landing obligations beyond the ordinary registry 
         Orchestrator.holdScheduleTaskForTesting(task)
     }
     Orchestrator.cleanup()
-    check("a pending landing survives even when older than the newest 200 tasks",
+    check("a pending landing survives even when older than the newest \(cap) tasks",
           Orchestrator.record(id: pendingID) != nil)
     check("the ordinary cap still removes an old settled record",
           Orchestrator.record(id: ordinaryOldID) == nil)

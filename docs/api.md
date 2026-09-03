@@ -1400,7 +1400,9 @@ typing, and transcript confirmation happen after this response. The durable regi
 `handoff_id`, `project_dir`, optional `title` and `from_session`, `created`, and `state`. Repeating an
 id replays that envelope and opens no second tab, including after restart. A replay contains neither
 `opened` nor `assistant`, because only the envelope is stored. Terminal envelopes and their package
-directories are removed 24 hours after `created`. There is no GET, cancel, or completion route.
+directories are removed `orchestrator_task_dir_retention_hours` (24 by default) after `created` —
+the same clock as a task directory, in the same sweep. There is no GET, cancel, or completion
+route.
 
 The route uses the same orchestrator switch and ten-minute brake as dispatch. Replays do not take a
 ticket; every new call that gets past its id does, including a refusal. Errors are decided in this
@@ -1663,6 +1665,25 @@ tries again. In the registry, `build_cleanup_at` is absent on every task without
 own — a shared checkout's build output belongs to whoever is working in it — and, unlike
 whole-checkout disposal, it is **not** deferred by `landing.state == pending`: a landing under
 review needs the source and the delivery branch, both of which this leaves exactly as they were.
+
+**What the six-hourly sweep removes, and on which of two independent windows.** A task's `<dir>`
+under `/tmp/.clawdline` and its row in `~/.config/clawdline/orchestrator.json` are swept on
+separate clocks, because they cost separate things. The directory holds artifacts, logs and
+`work/`, so it goes `orchestrator_task_dir_retention_hours` after the task settled — `24` by
+default, range `1…8760`; terminal handoff envelopes and orphaned worktrees ride the same hour.
+The registry row is a few kilobytes and is the only durable evidence the usage Feature classifier
+has, so it survives far longer: the newest `orchestrator_task_record_limit` rows — `1350` by
+default, range `50…10000` — each kept for at most `orchestrator_task_record_retention_days`
+(`30`, range `1…3650`), counted from `finishedAt ?? created`. The count and the age fire
+independently: the count drops what is past it however recent, and the age drops what is past it
+however few rows there are. Neither touches a task whose `landing.state` is `pending`, and the
+age never touches a task that is not terminal.
+
+`1350` is the 30-day window times this machine's mean full-day dispatch rate of 45 tasks. The
+30 days is not a round number either: it is the window `Sources/UsageFeatureAttribution.swift`
+re-classifies on every pass, so a shorter registry throws away evidence for rows the classifier
+is still reading. A row whose task record is gone is permanently `no_durable_task_record`, and
+raising the limit recovers nothing already swept.
 
 An optional `serialize` array in `task.json` makes named operations machine-global mutexes. A task
 leaves `queued` only when it can acquire every name together; shared names are FIFO across roots,
@@ -2922,8 +2943,12 @@ until the matching DELETE records an explicit abort.
 
 ### `GET /v1/orchestrator/tasks`, `GET /v1/orchestrator/tasks/:id`
 
-Every task this Mac knows about, newest first, capped at the most recent 200 records — or one of
-them alone under `task`. `404 not_found` for an id that was never registered or has been cleaned up.
+Every task this Mac knows about, newest first, capped at whatever the registry still holds — the
+newest `orchestrator_task_record_limit` records (1350 by default), each kept for at most
+`orchestrator_task_record_retention_days` (30) — or one of them alone under `task`.
+`404 not_found` for an id that was never registered or has been cleaned up. **The response is
+linear in that limit**: raising it makes every call, and every orchestrator broadcast, project
+proportionally more records on the main queue.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/orchestrator/tasks \
@@ -3411,9 +3436,10 @@ grouping mode retrofitted onto the legacy aggregate URL.
 
 **What every assistant session on this machine has spent, out of a store nothing sweeps.**
 
-The task registry keeps 200 rows and a task directory is deleted 24 hours after the task
-finishes, so `GET /v1/orchestrator/tasks` cannot answer a question about last month and never
-will. These three read it out of `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
+The task registry keeps `orchestrator_task_record_limit` rows for at most
+`orchestrator_task_record_retention_days`, and a task directory is deleted
+`orchestrator_task_dir_retention_hours` after the task finishes, so
+`GET /v1/orchestrator/tasks` cannot answer a question about last month and never will. These three read it out of `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
 instead — see [`docs/orchestrator.md`](orchestrator.md#the-usage-ledger) for what is in there and
 how it gets there. The web app's **Usage** button is the human-facing Overview and Agent Work
 reader of the first route; it does not maintain a second store or a second arithmetic path.

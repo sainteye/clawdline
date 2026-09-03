@@ -562,6 +562,193 @@ group("pending landing storage survives task-directory cleanup") {
           !manager.fileExists(atPath: ordinaryDir.path))
 }
 
+group("task retention answers its two limits separately") {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func candidate(_ id: String, terminal: Bool = true, pending: Bool = false,
+                   hoursAgo: Double) -> Orchestrator.TaskRetentionCandidate {
+        let at = now.addingTimeInterval(-hoursAgo * 3600)
+        return Orchestrator.TaskRetentionCandidate(id: id, terminal: terminal,
+                                                   landingPending: pending,
+                                                   created: at, settledAt: at)
+    }
+
+    // The directory window on its own. Both rows are minutes-fresh against the record limits, so
+    // nothing here can be the count or the age answering instead.
+    let day = [candidate("stale", hoursAgo: 25), candidate("recent", hoursAgo: 23)]
+    let atTheDefault = Orchestrator.taskRetentionSweep(day, now: now, directoryHours: 24,
+                                                       recordLimit: 1350, recordDays: 30)
+    expect("the directory window sweeps what is past it", atTheDefault.directories, ["stale"])
+    expect("and the same pass keeps both registry rows", atTheDefault.records, [])
+    let shortWindow = Orchestrator.taskRetentionSweep(day, now: now, directoryHours: 1,
+                                                      recordLimit: 1350, recordDays: 30)
+    expect("a one-hour window sweeps both directories", shortWindow.directories.sorted(),
+           ["recent", "stale"])
+    expect("and still keeps both records", shortWindow.records, [])
+
+    // The count on its own: every row is hours old, so no age window is near firing.
+    let three = [candidate("newest", hoursAgo: 1), candidate("middle", hoursAgo: 2),
+                 candidate("oldest", hoursAgo: 3)]
+    let counted = Orchestrator.taskRetentionSweep(three, now: now, directoryHours: 24,
+                                                  recordLimit: 2, recordDays: 30)
+    expect("the count drops what is past it, ordered newest first by created",
+           counted.records, ["oldest"])
+    expect("and a count is not the directory's business", counted.directories, [])
+    let wideCount = Orchestrator.taskRetentionSweep(three, now: now, directoryHours: 24,
+                                                    recordLimit: 1350, recordDays: 30)
+    expect("widening only the count keeps all three, so the count is what dropped one",
+           wideCount.records, [])
+
+    // The age on its own: two rows against a limit of 1350, so no count is near firing.
+    let aged = [candidate("kept", hoursAgo: 29 * 24), candidate("expired", hoursAgo: 31 * 24)]
+    let byAge = Orchestrator.taskRetentionSweep(aged, now: now, directoryHours: 24,
+                                                recordLimit: 1350, recordDays: 30)
+    expect("the age drops a record no count would have reached", byAge.records, ["expired"])
+    expect("while the directories of both went a month ago", byAge.directories.sorted(),
+           ["expired", "kept"])
+    let wideAge = Orchestrator.taskRetentionSweep(aged, now: now, directoryHours: 24,
+                                                  recordLimit: 1350, recordDays: 3650)
+    expect("widening only the age keeps both, so the age is what dropped one", wideAge.records, [])
+
+    // A pending landing is exempt from both, at any age and past any count.
+    let obliged = [candidate("pending", pending: true, hoursAgo: 400 * 24),
+                   candidate("a", hoursAgo: 300 * 24), candidate("b", hoursAgo: 200 * 24)]
+    let exempt = Orchestrator.taskRetentionSweep(obliged, now: now, directoryHours: 1,
+                                                 recordLimit: 1, recordDays: 1)
+    check("a pending landing survives both record limits and keeps its directory",
+          !exempt.records.contains("pending") && !exempt.directories.contains("pending"))
+    expect("while everything beside it is swept on both", exempt.records.sorted(), ["a", "b"])
+
+    // A task that has not finished is never aged out; the count still reaches it, as it always did.
+    // Distinct ages on purpose. The first version of this gave both rows the same `created`, and
+    // `sorted { $0.created > $1.created }` is not stable, so which one the count reached was the
+    // sort's business rather than the sweep's — it went red on the tie, not on the behaviour.
+    let live = [candidate("live", terminal: false, hoursAgo: 400 * 24),
+                candidate("done", hoursAgo: 300 * 24)]
+    let running = Orchestrator.taskRetentionSweep(live, now: now, directoryHours: 24,
+                                                  recordLimit: 1350, recordDays: 30)
+    expect("age never removes a task that has not finished", running.records, ["done"])
+    expect("and never removes its directory either", running.directories, ["done"])
+    let squeezed = Orchestrator.taskRetentionSweep(live, now: now, directoryHours: 24,
+                                                   recordLimit: 1, recordDays: 3650)
+    expect("but the count reaches an unfinished task exactly as the fixed 200 did",
+           squeezed.records, ["live"])
+
+    // The fixed world this replaces, said as settings: the same answer, row for row.
+    let many = (0..<205).map { candidate("t\($0)", hoursAgo: Double($0) + 1) }
+    let asItWas = Orchestrator.taskRetentionSweep(many, now: now, directoryHours: 24,
+                                                  recordLimit: 200, recordDays: 3650)
+    expect("the previous fixed count, said as a setting, drops exactly the same five",
+           asItWas.records.sorted(), ["t200", "t201", "t202", "t203", "t204"])
+    expect("and the previous fixed day sweeps every directory past it",
+           asItWas.directories.count, 181)
+
+    // The settings themselves: what an absent key means, what a written one means, and that a
+    // value outside the range is ignored rather than clamped.
+    let manager = FileManager.default
+    let configDirectory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-task-retention-\(UUID().uuidString)", isDirectory: true)
+    defer { try? manager.removeItem(at: configDirectory) }
+    try! manager.createDirectory(at: configDirectory, withIntermediateDirectories: true)
+    let absent = Config(directoryForTesting: configDirectory)
+    expect("an absent directory key is the day this sweep always used",
+           absent.orchestratorTaskDirRetentionHours, 24)
+    expect("an absent record limit is the classifier's window at this machine's measured rate",
+           absent.orchestratorTaskRecordLimit, 1350)
+    expect("an absent record window is the classifier's own thirty days",
+           absent.orchestratorTaskRecordRetentionDays, 30)
+    let writable = Config(directoryForTesting: configDirectory)
+    writable.orchestratorTaskDirRetentionHours = 2
+    writable.orchestratorTaskRecordLimit = 60
+    writable.orchestratorTaskRecordRetentionDays = 7
+    writable.save()
+    let reread = Config(directoryForTesting: configDirectory)
+    expect("all three round-trip through config.json",
+           [reread.orchestratorTaskDirRetentionHours, reread.orchestratorTaskRecordLimit,
+            reread.orchestratorTaskRecordRetentionDays], [2, 60, 7])
+    let bounds: [(String, KeyPath<Config, Int>, [Int], Int)] = [
+        ("orchestrator_task_dir_retention_hours", \.orchestratorTaskDirRetentionHours,
+         [0, 8761], 24),
+        ("orchestrator_task_record_limit", \.orchestratorTaskRecordLimit, [49, 10_001], 1350),
+        ("orchestrator_task_record_retention_days", \.orchestratorTaskRecordRetentionDays,
+         [0, 3651], 30),
+    ]
+    for (key, path, invalids, fallback) in bounds {
+        for invalid in invalids {
+            let data = try! JSONSerialization.data(withJSONObject: [key: invalid])
+            try! data.write(to: configDirectory.appendingPathComponent("config.json"),
+                            options: .atomic)
+            expect("out-of-range \(key) \(invalid) falls back to the default",
+                   Config(directoryForTesting: configDirectory)[keyPath: path], fallback)
+        }
+    }
+}
+
+group("the retention settings reach the sweep that reads them") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    let hoursBefore = Config.shared.orchestratorTaskDirRetentionHours
+    let limitBefore = Config.shared.orchestratorTaskRecordLimit
+    let daysBefore = Config.shared.orchestratorTaskRecordRetentionDays
+    var made: [URL] = []
+    defer {
+        Config.shared.orchestratorTaskDirRetentionHours = hoursBefore
+        Config.shared.orchestratorTaskRecordLimit = limitBefore
+        Config.shared.orchestratorTaskRecordRetentionDays = daysBefore
+        for directory in made { try? manager.removeItem(at: directory) }
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+
+    // The directory window is only ever *widened* here, never narrowed. `cleanup()` hands the same
+    // cutoff to `cleanupOrphanWorktrees`, which scans the real `~/Library/Application
+    // Support/Clawdline/worktrees` with only this test's fixtures as its known ids — so a shorter
+    // window in a test is an offer to dispose another session's live checkout. The narrow
+    // direction is proved on `taskRetentionSweep` above, where nothing touches a filesystem.
+    func fixture(_ hoursAgo: Double) -> (String, URL) {
+        let id = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try! Data("retention receipt".utf8).write(to: directory.appendingPathComponent("receipt"))
+        let at = Date().addingTimeInterval(-hoursAgo * 3600)
+        Orchestrator.holdScheduleTaskForTesting(Orchestrator.Task(
+            id: id, state: .success, kind: "custom", title: "retention fixture",
+            assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: at,
+            finishedAt: at, secretHash: String(repeating: "0", count: 64)))
+        return (id, directory)
+    }
+
+    Orchestrator.forget()
+    Config.shared.orchestratorTaskDirRetentionHours = 24
+    Config.shared.orchestratorTaskRecordLimit = 1350
+    Config.shared.orchestratorTaskRecordRetentionDays = 30
+    let (dayOldID, dayOldDirectory) = fixture(25)
+    let (freshID, freshDirectory) = fixture(23)
+    Orchestrator.cleanup()
+    check("at the shipped defaults a day-old task directory still goes, exactly as before",
+          !manager.fileExists(atPath: dayOldDirectory.path))
+    check("and one inside the window is kept", manager.fileExists(atPath: freshDirectory.path))
+    check("while both records stay, which is the change: the row outlives the directory",
+          Orchestrator.record(id: dayOldID) != nil && Orchestrator.record(id: freshID) != nil)
+
+    Config.shared.orchestratorTaskDirRetentionHours = 8760
+    let (keptID, keptDirectory) = fixture(200)
+    Orchestrator.cleanup()
+    check("a widened directory window keeps a directory the fixed day would have swept",
+          manager.fileExists(atPath: keptDirectory.path))
+
+    Config.shared.orchestratorTaskRecordRetentionDays = 1
+    Orchestrator.cleanup()
+    check("a one-day record window drops the record of a two-hundred-hour-old task",
+          Orchestrator.record(id: keptID) == nil)
+    check("without touching the directory, which the other setting still keeps",
+          manager.fileExists(atPath: keptDirectory.path))
+    check("and a task inside that window keeps its record",
+          Orchestrator.record(id: freshID) != nil)
+}
+
 group("task-owned work is reclaimed on the terminal-state schedule") {
     let manager = FileManager.default
     let store = Orchestrator.storeURL

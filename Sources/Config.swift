@@ -487,6 +487,43 @@ final class Config {
     /// files nobody has ever read, and on this Mac it was 814 MB of them, kept alive by pending
     /// landings that needed only the source and the branch.
     var orchestratorBuildGraceMinutes = 60
+    /// How long a finished task's directory under `/tmp/.clawdline/` survives, in hours. That
+    /// directory is working space — artifacts, logs, and whatever `work/` still holds — and it is
+    /// the heavy half of a task's storage. Terminal handoff envelopes and their packages ride the
+    /// same clock, and so does an orphaned worktree with no registry row left to describe it.
+    ///
+    /// 24 by default, which is exactly what this sweep did when the number was written into
+    /// `cleanup()`; an absent key therefore means today's behaviour. There is deliberately no
+    /// value meaning *keep forever*: `/tmp` is not an archive, and the range starts at 1.
+    var orchestratorTaskDirRetentionHours = 24
+    /// How many task records the registry keeps, newest first by `created`.
+    ///
+    /// **This is a valve, not the retention policy** — `orchestrator_task_record_retention_days`
+    /// is the policy. It exists because `~/.config/clawdline/orchestrator.json` is serialised and
+    /// rewritten whole on every write and projected whole by ``Orchestrator/records()``, both on
+    /// the main queue, so a burst has to hit a ceiling somewhere.
+    ///
+    /// 1350 by default, which is the retention window (30 days) times this machine's mean
+    /// full-day dispatch rate of 45 tasks. That rate was measured on the usage ledger and not on
+    /// the registry, because the registry's own per-day counts are censored by this very limit —
+    /// it held 84 tasks for 2026-08-29 where the ledger has 106, and nothing at all for the two
+    /// days before that. At the measured 7,145 bytes a record that is 9.7 MB of task rows,
+    /// against 1.45 MB at the fixed 200 this replaces. An absent key means 1350, and there is
+    /// deliberately no value meaning *unbounded*.
+    var orchestratorTaskRecordLimit = 1350
+    /// How long a task's registry record is kept, in days, counted from `finishedAt ?? created`.
+    ///
+    /// **This is the time limit on the record, not on its directory**, which goes far sooner: the
+    /// record is small and it is the only durable evidence the usage Feature classifier has.
+    /// `Orchestrator.usageFeatureTaskFacts()` reads six fields off it, and a usage row whose
+    /// record has been swept is permanently `no_durable_task_record` — 149 rows were already in
+    /// that state when the classifier was first switched on.
+    ///
+    /// 30 by default, which is `FeatureAttributionSchedule.window` said in days. The classifier
+    /// re-reads a 30-day window of rows on every pass, so anything shorter throws away evidence
+    /// for rows it is still looking at. An absent key means 30; a non-terminal task is never aged
+    /// out by this, and neither is a pending landing.
+    var orchestratorTaskRecordRetentionDays = 30
     /// The used-percentage at which an assistant's quota reads as `low` rather than `ok`, both
     /// from `GET /v1/orchestrator/assistants` and at the dispatch gate — see
     /// `Sources/AssistantQuota.swift`.
@@ -679,6 +716,15 @@ final class Config {
         if let v = obj["orchestrator_build_grace_minutes"] as? Int, v >= -1, v <= 1440 {
             orchestratorBuildGraceMinutes = v
         }
+        if let v = obj["orchestrator_task_dir_retention_hours"] as? Int, v >= 1, v <= 8760 {
+            orchestratorTaskDirRetentionHours = v
+        }
+        if let v = obj["orchestrator_task_record_limit"] as? Int, v >= 50, v <= 10_000 {
+            orchestratorTaskRecordLimit = v
+        }
+        if let v = obj["orchestrator_task_record_retention_days"] as? Int, v >= 1, v <= 3650 {
+            orchestratorTaskRecordRetentionDays = v
+        }
         if let v = obj["assistant_quota_low_threshold"] as? Double, v > 0, v < 100 {
             assistantQuotaLowThreshold = v
         }
@@ -756,6 +802,9 @@ final class Config {
             "orchestrator_child_linger": orchestratorChildLinger,
             "orchestrator_work_grace_minutes": orchestratorWorkGraceMinutes,
             "orchestrator_build_grace_minutes": orchestratorBuildGraceMinutes,
+            "orchestrator_task_dir_retention_hours": orchestratorTaskDirRetentionHours,
+            "orchestrator_task_record_limit": orchestratorTaskRecordLimit,
+            "orchestrator_task_record_retention_days": orchestratorTaskRecordRetentionDays,
             "assistant_quota_low_threshold": assistantQuotaLowThreshold,
             "usage_feature_classifier": usageFeatureClassifier,
             "usage_feature_acceptance_threshold": usageFeatureAcceptanceThreshold,
