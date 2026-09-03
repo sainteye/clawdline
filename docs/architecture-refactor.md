@@ -543,19 +543,29 @@ the second.
 
 ### Governance correction, landed with Cut 1
 
-This document had drifted from the executable guard. The guard is authoritative, and these are its
-values on the tree being landed, read out of `tools/check-architecture-boundaries.sh`. **Five of the
-six rows are computed by the guard on every run. The Swift-checks row is not** — no guard can count
-checks without running them — so it is the one row that a full suite has to settle before a landing:
+This document had drifted from the executable guard, and the repair eventually went further than
+restating the numbers: **the table below is not written by hand at all.**
+`tools/check-architecture-boundaries.sh --emit-governance-table` renders it from the values that run
+just computed, `tools/generate-governance-table.sh` writes it between the markers, and the guard
+compares the committed block against the same rendering before a compiler is started. The six values
+this table once duplicated were, in order, 463 ordered groups, 25 ordered runners, 38 suite files, no
+Swift-checks row at all, a 13,592-line `Orchestrator.swift` ceiling and a 6,385-line `RemoteServer`
+one — every one of them wrong about the tree, and none of them attached to anything that could say
+so. The third column below is the point of the exercise: each row now names the one place its number
+is written, and this document is not that place for any of them.
 
-| | this document said | what the guard holds |
-|---|---:|---:|
-| ordered groups | 463 | 504 |
-| ordered runners | 25 | 29 |
-| suite files | 38 | 42 |
-| Swift checks | — | 8,226 |
-| `Orchestrator.swift` ceiling | 13,592 | 12,831 |
-| `RemoteServer.swift` ceiling | 6,385 | 6,393 |
+<!-- clawdline-governance-table:v1 -->
+
+| | value on this tree | the one place it is written |
+|---|---:|---|
+| ordered groups | 504 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered runners | 29 | `Tests/main.swift`, counted by the guard |
+| suite files | 42 | `Tests/*Tests.swift`, counted by the guard |
+| Swift checks | 8,226 | `expected_swift_receipt` in `test.sh`, set from a run |
+| `Orchestrator.swift` ceiling | 12,831 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| `RemoteServer.swift` ceiling | 6,393 | the receipt in `tools/check-architecture-boundaries.sh` |
+
+<!-- /clawdline-governance-table:v1 -->
 
 The `Orchestrator.swift` ceiling has moved in both directions and the guard now carries that
 history beside the number: 12,816 before the heavy-compile lease, 13,123 when `2eef7bb6` landed it,
@@ -579,14 +589,31 @@ landing root's full suite observes it**, and the number this row carries is only
 run that did — which for this one is a run on a branch, so the root integrating it owes the tree it
 actually lands one of its own.
 
-**The guard cannot catch this row being wrong, and it is worth saying why rather than pretending
-otherwise.** `compare_documented "Swift checks"` compares this table with `test.sh`'s
-`expected_swift_receipt`, and a single edit moves both — so both can be wrong together and the guard
-stays green. What closes the loop is `test.sh` itself, which compares its receipt against the run:
-table equals receipt (guard) and receipt equals run (suite) gives table equals run, but only when
-the suite has actually been run. That is the whole reason the landing rule is one exact-tree suite
-before landing, and why a stage that skipped it would be trusting a number nothing has ever
-produced.
+**This row used to be a comparison between two records, and that is what failed.**
+`compare_documented "Swift checks"` compared this table with `test.sh`'s `expected_swift_receipt`,
+two numbers neither of which had touched the tree, and on 2026-09-03 a commit added eight checks and
+updated neither. They agreed, so the guard was green, while `main` ran 8,101 against a seal of 8,093
+for hours — found by the next person's suite run and very nearly blamed on their change. **A green
+that two hand-edited numbers produced by agreeing with each other looks exactly like a correct one.**
+
+Rendering this table from the seal removes the second copy. It does not, on its own, make the seal
+true: no guard can count checks without running them, so `expected_swift_receipt` is still a record
+of what one run reported, and a record with nothing to compare against is green whatever it says. So
+the seal carries a second value on the line beneath it, `expected_swift_receipt_witness` — the number
+of assertion call sites in `Tests/*.swift` on the tree the seal was measured on. That one is a record
+against a measurement, the shape the five computed rows already have: add a `check` or an `expect`
+anywhere in the test sources and the guard goes red before a compiler starts, saying the seal belongs
+to a different tree. It does not know the new total, only that the old one is stale — and
+`CLAWDLINE_RESEAL=1` is what lets the run that does know the total start.
+
+**What the witness still cannot see**, said here rather than left to be discovered: a check
+multiplied by a loop rather than written out. `a4ed9edb`'s four checks came from two call sites, so
+the witness would have caught them; widening a loop around a check that already exists moves the
+total and no site, and nothing before the run notices. `report_receipt_direction` in `test.sh`
+catches that at the end of the run and says which way the total moved. Table equals seal (guard),
+seal's witness equals tree (guard) and seal equals run (suite) still only gives table equals run when
+the suite has actually been run, which is why the landing rule remains one exact-tree suite before
+landing.
 
 ### What stage 1 proved, and what it declined to do
 
