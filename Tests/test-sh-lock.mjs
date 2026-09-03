@@ -1586,6 +1586,26 @@ try {
     const suiteLines = cloudReceipt.replace(/^.*suites=/, "").split(",")
         .map((entry) => `  \u2713 ${entry.split(":")[0]} (${entry.split(":")[1]} checks)`);
 
+    // The two totals this reads are printed by Tests/CloudTestRunner.swift, and until now the checks
+    // below fed it strings typed here. That is the shape that bit three deliveries today: a check
+    // anchored on a spelling it does not share with the thing that produces it goes on passing while
+    // the producer moves, and this one's failure direction is silence — the reporter simply stops
+    // recognising a total. So the formats are lifted from the producer's `print` statements and the
+    // reporter's own pattern is run against what they render, with the interpolations filled in.
+    const runner = readFileSync(new URL("../Tests/CloudTestRunner.swift", import.meta.url), "utf8");
+    const printed = [...runner.matchAll(/print\("([^"]*\\\([^)]*\)[^"]*)"\)/g)].map((m) => m[1]);
+    const rendered = printed
+        .filter((t) => /checks (passed|failed)/.test(t) && !/focused/.test(t))
+        .map((t) => t.replace(/\\\(failures\.count\)/g, "1").replace(/\\\(checks\)/g, "7724"));
+    check("the runner's two total lines were found, or this check is testing nothing",
+        rendered.length === 2);
+    for (const line of rendered) {
+        const seal = line.includes("failed") ? 8226 : 9000;
+        const out = drive(`${line}\n`, seal);
+        check(`the reporter recognises a total the runner actually prints: ${JSON.stringify(line)}`,
+            /came out short/.test(out));
+    }
+
     // Long: the tree grew and nobody re-sealed. Until 2026-09-03 this shared one sentence with the
     // short case, and `receipt mismatch` reads as *your delivery is broken* on a run that was fine.
     const long = drive("8383 checks passed\n", 8226);
