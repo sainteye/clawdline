@@ -703,11 +703,16 @@ try {
     // 12. The compile-job ceiling, and where the number came from. Unset, the compile line below
     //     the block is byte-identical to what it has always been.
     rmSync(lockDir, { recursive: true, force: true });
-    // The second line reads the ceiling back **from a child process**, and that is the whole point
-    // of it. Read in this same shell, a variable that was merely set looks exactly like one that
-    // was exported: the first draft of this probe did that, the mutation that deleted `export`
-    // passed every check in this file, and the reader it was written for — a typecheck in a child
-    // process — would have got nothing.
+    // The second line reads the ceiling back **from a child process**, and the assertion on it has
+    // been inverted since it was written. It used to require the number to arrive there, because a
+    // typecheck in a child was meant to share it. That sharing is what put eight `swift-frontend`
+    // processes above the machine lock, so the requirement now runs the other way: **nothing.** A
+    // child that inherits this width is a child compiling at it outside the lock.
+    //
+    // Read in this same shell the two cases are indistinguishable — a variable merely set looks
+    // exactly like one exported — which is why the probe spawns `bash -c`. That was found by
+    // mutation: the first draft read it in-process and the mutation deleting `export` passed every
+    // check in this file.
     const jobs = shell("s12.sh", ceiling,
                        'echo "flags=[${clawdline_suite_jobs_flags[@]+${clawdline_suite_jobs_flags[@]}}]"\n'
                        + 'bash -c \'echo "exported=[${CLAWDLINE_COMPILE_JOBS:-}]"\'');
@@ -738,10 +743,26 @@ try {
     check("with no ceiling set, the default is derived from this machine and the run says so",
           r12a.code === 0 && r12a.all.includes(`flags=[-j ${derived}]`)
           && /min\(8, hw\.ncpu\)/.test(r12a.all) && /CLAWDLINE_SUITE_JOBS unset/.test(r12a.all));
-    // Exported rather than merely set, because the typecheck it also governs is a child process.
-    check("the settled ceiling is exported, so a child process can read what this run decided",
-          r12a.all.includes(`exported=[${derived}]`)
-          && run(jobs, { CLAWDLINE_SUITE_JOBS: "3" }).all.includes("exported=[3]"));
+    check("the settled ceiling reaches no child process, derived or explicit",
+          r12a.all.includes("exported=[]")
+          && run(jobs, { CLAWDLINE_SUITE_JOBS: "3" }).all.includes("exported=[]"));
+    // **Where the block sits is the rule, not the habit.** A ceiling settled above
+    // `clawdline_acquire_suite_lock` is one that the code above the lock can read, and code above
+    // the lock is rationed by nothing. `b8dfd0ff` moved this block to the top of the script so a
+    // typecheck outside the lock could share the number; that took the typecheck from 34 s to 7 s
+    // and put eight compilers beside whoever was holding the lock — caught in the act at 11:29:06
+    // on 2026-09-03, eight frontends with the lock free, under another line's landing run.
+    // `build.sh` never had the problem — its own ceiling block already sits below
+    // `clawdline_lease_acquire` — so this asserts the shape on both scripts, not only on the one
+    // that broke.
+    const acquireLine = lines.findIndex((l) => /^clawdline_acquire_suite_lock \|\| exit/.test(l));
+    check("test.sh settles its compile ceiling only after the machine lock is acquired",
+          acquireLine >= 0 && ceilFirst > acquireLine);
+    const buildLines2 = buildScript.split("\n");
+    const buildAcquire = buildLines2.findIndex((l) => /^clawdline_lease_acquire \|\| exit/.test(l));
+    const buildCeil = buildLines2.indexOf(CEIL_OPEN);
+    check("and build.sh settles its own the same way",
+          buildAcquire >= 0 && buildCeil > buildAcquire);
     // The cap and the floor, each driven from the reading rather than from this machine's own.
     check("a machine with more cores than the cap is capped at eight",
           cores("many", "echo 64").all.includes("flags=[-j 8]"));

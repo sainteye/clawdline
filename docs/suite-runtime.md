@@ -108,6 +108,41 @@ Eight is the floor here; fourteen is slower. Type checking was never this machin
 a quarter of a GiB, three readings agreeing — which is the same conclusion
 `machine-resource-scheduling.md` reached from the other direction.
 
+### The 27 seconds that went back
+
+The typecheck row above — 49 s to 22 s — was bought by letting a compile **outside the machine lock**
+run eight-wide, and that is the one thing the lock exists to prevent.
+
+`test.sh` takes `/tmp/clawdline-suite.lock` at `clawdline_acquire_suite_lock`, and everything above
+that line runs unrationed. Two node suites compile up there, and the comment beside the lock markers
+says why they were left outside it: their compiles are *seconds long*, and moving the lock above them
+would make every queued run wait out a dozen unrelated node suites first. **That trade was written
+down as a fact rather than as an intent**, so the next reader past it — the author of this page —
+read "not even inside the machine lock" as a reason to speed it up rather than as a reason to be
+careful. Seconds-long is not the same object as eight `swift-frontend` processes competing with
+whoever currently holds the lock, and this machine was measured with nine of them alive beside a
+lock holder the same afternoon.
+
+So the coupling is gone, and not by capping the shared number at one — **by making it unreachable**:
+
+| | before | after |
+|---|---|---|
+| `clawdline_acquire_suite_lock` | line 1222 | line 1140 |
+| the marked compile-ceiling block | line 177, at the top | line 1169, **below the lock** |
+| `CLAWDLINE_COMPILE_JOBS` exported to children | yes | the variable no longer exists |
+| the out-of-lock typecheck | `-j 8`, inherited | `-j 1`, stated in its own file |
+
+Above the lock the ceiling is not *restricted* to one job; it has not been defined yet. That turns a
+rule somebody has to remember into a variable that is not in scope, which is why this is a structural
+fix rather than a policy one.
+
+**`build.sh` already had this shape** — its own ceiling block sits below `clawdline_lease_acquire` —
+so what the original change actually broke was a symmetry between the two scripts that nobody had
+written down. Both are asserted now.
+
+The cost is the typecheck going back from 7 s to 34 s: **27 seconds, once per run**, measured in the
+sweep above. It buys back the property that only one compile at a time is wide on this machine.
+
 ## `build.sh` is a different compile, and it was measured separately
 
 Nothing above covers it. `build.sh` compiles the production sources with `-O`, and `-O` is where the
@@ -191,9 +226,13 @@ suite's receipt is `8353 checks passed` on both sides of the pair, and both runs
 detached worktree pinned at `d97d0afb`.
 
 `test.sh`'s compile ceiling now derives `min(8, hw.ncpu)` when `CLAWDLINE_SUITE_JOBS` is unset,
-instead of adding no flag, and exports what it settled as `CLAWDLINE_COMPILE_JOBS`. The block moved
-to the top of the script so the typecheck inside `keychain-rebuild-focused.mjs` — which runs long
-before the old position and had never been passed a `-j` by anybody — reads the same ceiling.
+instead of adding no flag. **The half of that change which shared the ceiling with a second compile
+was wrong and has since been taken back — see "The 27 seconds that went back" below.** As it first
+landed, the block also moved to the top of the script and exported what it settled as
+`CLAWDLINE_COMPILE_JOBS`, so the typecheck inside `keychain-rebuild-focused.mjs` read the same
+number. The table below is that version; it is kept because the two rows it explains are still the
+measurement, and because a page that quietly rewrites its own history is worth less than one that
+says which part of it did not survive.
 
 | part | before | after |
 |---|---|---|
@@ -229,7 +268,8 @@ without editing anything. The same trick works on the node suite, whose checks p
 
 ### The binary's minute is twenty groups
 
-509 groups timed, summing to 50.9 s of a 51 s run — so nothing is unaccounted for.
+510 group lines, 509 of them timed — the first has no predecessor to subtract — summing to
+50.9 s of a 51 s run, so nothing is unaccounted for.
 
 | | |
 |---|---|
@@ -238,16 +278,41 @@ without editing anything. The same trick works on the node suite, whose checks p
 | top 20 groups | 45.0 s (88%) |
 | the remaining ~489 | about 6 s |
 
-The largest is `the SQLite analytics bound belongs to the complete matching query`, and its time is
-**fixture construction, not the thing under test**: it inserts 120,000 rows through the production
-SQLite schema before asserting anything. 120,000 is not arbitrary — `UsageLedger.maxScannedRows` is
-`100_000`, and the fixture has to exceed it for "an old narrow month outside the newest global 100k
-remains visible" to mean anything. Its assertions are all correctness (`rowCount` 20,000 and 1,667,
-`!scanTruncated`, corrections scoping, freshness), so if that bound were injectable the same
-properties could be proved at a hundredth of the size.
+The largest is `the SQLite analytics bound belongs to the complete matching query`. **The first
+account of it on this page was wrong and is corrected here rather than edited away.** It said the
+time was fixture construction, because the group opens by inserting 120,000 rows through the
+production SQLite schema and that is the conspicuous thing in it. Timestamping inside the group, in
+a full 8,093-check run, says otherwise:
 
-**The 3.53 s group beside it is not a candidate and it is worth saying why**, because the two look
-identical from a profile. `a 60k-row SQLite-to-DTO usage query stays bounded and measured` times its
+| phase | seconds |
+|---|---|
+| opening the store, migrating it, and inserting all 120,000 rows | **0.30** |
+| the narrow-month queries and their assertions | 1.40 |
+| one unfiltered query, which must scan to the bound | **5.95** |
+| the CSV export that has to be refused with a typed 413 | **5.97** |
+| the narrowed export that succeeds | 1.86 |
+| tearing the fixture down | 0.00 |
+| total | 15.37, against the 15.57 the outside instrument measured |
+
+So the fixture is 2% of it and **13.8 seconds are three operations that each scan to
+`UsageLedger.maxScannedRows`, which is a hard-coded `100_000`**. That is not waste: the two
+six-second ones are exactly what the group exists to prove — that an over-bound query reports itself
+partial, and that an over-bound export is refused rather than served. They have to reach the bound.
+
+Which makes the remedy the same one, for a better reason. Every assertion here is about the
+*behaviour at the bound*, not about a hundred thousand of anything: `rowCount` 20,000 and 1,667,
+`scanTruncated` true then false, a 413 then a 200. **If `maxScannedRows` were injectable, a fixture
+of about 1,200 rows against a bound of 1,000 would exercise identical code paths and identical
+assertions, and the 13.8 seconds would be about 0.14.** The whole group would fall under a second.
+The change is one `static let` becoming settable for tests, in `Sources/UsageLedger.swift`.
+
+**A second reading worth carrying out of this:** refusing that export takes 5.97 seconds. The 413 is
+decided after the scan, so on a real store past the bound a person asking for a CSV waits six
+seconds to be told they cannot have one. That is a product latency, not a test cost, and it is
+recorded here because this is where it was measured.
+
+**The 3.53 s group beside it is not a candidate and it is worth saying why**, because from a
+profile the two are indistinguishable. `a 60k-row SQLite-to-DTO usage query stays bounded and measured` times its
 own query, asserts `seconds < 10`, and prints a `USAGE_ANALYTICS_PERF` receipt. Its fixture *is* the
 subject. Shrinking it would leave the check count untouched and delete the measurement, which is the
 precise shape of change this page exists to refuse.

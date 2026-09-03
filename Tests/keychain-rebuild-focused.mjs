@@ -954,26 +954,24 @@ print("\\(checks) settings checks passed")
   check(settingsProbe.status === 0 && /10 settings checks passed/.test(settingsProbe.stdout),
     "sign-out is bounded, generation-checked and never removes on the main thread");
 
-  // This is the second-most expensive thing in ./test.sh after the suite compile itself: a
-  // whole-`Sources/` typecheck, 104 files, measured at 34 s single-job and 7 s at eight. It ran
-  // at one job because nothing passed it a `-j`, and unlike the compile at the bottom of test.sh
-  // it is not even inside the machine lock. `CLAWDLINE_COMPILE_JOBS` is the ceiling that run
-  // settled, exported by test.sh's compile-ceiling block; running this file by hand leaves it
-  // unset and gets the driver's own default, which is what it always had.
-  const ceiling = process.env.CLAWDLINE_COMPILE_JOBS ?? "";
-  const ceilingFlags = /^[1-9][0-9]*$/.test(ceiling) ? ["-j", ceiling] : [];
+  // **One job, explicitly, because this runs outside the machine lock.** It is a whole-`Sources/`
+  // typecheck of 104 files and the second most expensive thing in `./test.sh`: 34 s at one job and
+  // 7 s at eight, measured. Seven seconds is the tempting number and it is the wrong one — it buys
+  // 27 s by putting eight `swift-frontend` processes beside whoever is currently holding the lock,
+  // and the lock exists precisely to stop this machine having several compiles at once. `-j 1` is
+  // stated rather than left to the driver's default: the default is one *on this Mac*, measured,
+  // and a default is not a rule.
   const typecheckArgs = ["swiftc", "-swift-version", "5", "-target",
-    "arm64-apple-macos13.0", "-typecheck", ...ceilingFlags, ...swiftSources("Sources")];
+    "arm64-apple-macos13.0", "-typecheck", "-j", "1", ...swiftSources("Sources")];
   const productionTypecheck = run("xcrun", typecheckArgs);
   check(productionTypecheck.status === 0,
     `production wiring compiles only through the asynchronous reader: ${productionTypecheck.stderr}`);
-  // Asserted against the argument vector that was actually handed to `xcrun`, not against the
-  // array it was built from. The failure being guarded is silent — a ceiling that is computed
-  // correctly and then never spread into the arguments costs 27 s a run and reads as success —
-  // and a check on `ceilingFlags` alone would pass straight through it.
+  // Asserted against the argument vector actually handed to `xcrun`, not against the array it was
+  // built from, because the failure is silent either way round: a width that never reaches the
+  // command line reads exactly like one that did.
   const jFlag = typecheckArgs.indexOf("-j");
-  check(ceiling === "" ? jFlag < 0 : jFlag > 0 && typecheckArgs[jFlag + 1] === ceiling,
-    `the typecheck really runs at the ceiling this run settled (CLAWDLINE_COMPILE_JOBS=${JSON.stringify(ceiling)})`);
+  check(jFlag > 0 && typecheckArgs[jFlag + 1] === "1",
+    "a compile above the machine lock runs at one job, and says so on the command line");
 
   const fakeBin = join(work, "fake-bin");
   mkdirSync(fakeBin);
