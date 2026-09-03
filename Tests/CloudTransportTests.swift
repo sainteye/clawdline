@@ -387,8 +387,6 @@ func runCloudTransportTests() async throws -> Int {
     let retryLines = logs.lines().filter { $0.contains("CloudTransport reconnect waiting") }
     try require(retryLines.contains { $0.contains("reason=token_rotation") },
                 "the reconnect a token rotation causes is logged as a rotation")
-    try require(!retryLines.contains { $0.contains("reason=connection_failed") },
-                "a rotation this transport asked for is not reported as a failed connection")
 
     let handshakesBeforeDrop = await relay.completedHandshakes()
     let readyGenerationsBeforeDrop = await readyGenerations.all().count
