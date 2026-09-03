@@ -78,6 +78,7 @@ clawdline_production_sources=(
   Sources/QuestionSteps.swift
   Sources/RemoteAuth.swift
   Sources/RemoteIcon.swift
+  Sources/RemotePage.swift
   Sources/RemoteQR.swift
   Sources/RemoteServer.swift
   Sources/RemoteTunnel.swift

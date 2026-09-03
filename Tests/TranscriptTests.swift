@@ -839,7 +839,9 @@ group("native session images render live thumbnails and explicit expiry") {
           English().imageExpired == "Image expired"
             && TraditionalChinese().imageExpired == "圖片已過期")
     let webFallback = (try? String(contentsOfFile: "Resources/web/app/js/core/i18n.js")) ?? ""
-    let webServer = (try? String(contentsOfFile: "Sources/RemoteServer.swift")) ?? ""
+    // Payload lives in RemotePage.swift since the extraction; read both.
+    let webServer = ["Sources/RemotePage.swift", "Sources/RemoteServer.swift"]
+        .compactMap { try? String(contentsOfFile: $0) }.joined(separator: "\n")
     for key in ["webImageExpired", "webImagePreview", "webImageClose"] {
         check("the browser fallback and /v1/strings both carry \(key)",
               webFallback.contains("\(key):") && webServer.contains("\"\(key)\":"))
@@ -1230,8 +1232,8 @@ group("the Web transcript has an inert Clawdline card") {
                             encoding: .utf8)) ?? ""
     let fallback = (try? String(contentsOfFile: "Resources/web/app/js/core/i18n.js",
                                 encoding: .utf8)) ?? ""
-    let server = (try? String(contentsOfFile: "Sources/RemoteServer.swift",
-                              encoding: .utf8)) ?? ""
+    let server = ["Sources/RemotePage.swift", "Sources/RemoteServer.swift"]
+        .compactMap { try? String(contentsOfFile: $0, encoding: .utf8) }.joined(separator: "\n")
     check("the notice role is routed to a dedicated renderer",
           js.contains(#"e.role === "notice""#) && js.contains("function noticeHTML"))
     let noticeRenderer = js.components(separatedBy: "function noticeHTML(e) {").dropFirst().first?
