@@ -1225,7 +1225,9 @@ group("an attached follow-up goes through dispatch, and survives its own single-
         ]
         if let attach { obj["attach_session"] = attach }
         if !serialize.isEmpty { obj["serialize"] = serialize }
-        if !claims.isEmpty { obj["claims"] = claims }
+        // Declared on every fixture, empty included: an absent field is `claims_required`
+        // now, so a follow-up that writes nothing has to say so like any other caller.
+        obj["claims"] = claims
         try! JSONSerialization.data(withJSONObject: obj)
             .write(to: directory.appendingPathComponent("task.json"), options: .atomic)
     }

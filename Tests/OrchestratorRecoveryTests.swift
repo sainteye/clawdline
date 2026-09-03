@@ -179,7 +179,7 @@ group("dispatch answers an immediate tab refusal; the later pump finalizes its r
     try! JSONSerialization.data(withJSONObject: [
         "clawdline_protocol": 1, "task_id": parentID, "kind": "custom", "assistant": "claude",
         "project_dir": "/tmp", "title": "a tab that will not open",
-        "instructions": "open a tab", "timeout_minutes": 30,
+        "instructions": "open a tab", "timeout_minutes": 30, "claims": ["Sources/Parent.swift"],
     ]).write(to: directory.appendingPathComponent("task.json"), options: .atomic)
 
     // Something the dispatching task handed on, alive at the instant the tab fails to open.
@@ -221,7 +221,7 @@ group("dispatch answers an immediate tab refusal; the later pump finalizes its r
     try! JSONSerialization.data(withJSONObject: [
         "clawdline_protocol": 1, "task_id": pumpedID, "kind": "custom",
         "assistant": "claude", "project_dir": "/tmp", "title": "pumped refusal",
-        "instructions": "open after the token", "timeout_minutes": 30,
+        "instructions": "open after the token", "timeout_minutes": 30, "claims": [],
         "serialize": ["pump-spawn-failure"],
         // A root to be owed the notice. Without one this fixture had nobody to notify, and the
         // assertion below it — `rootNotifications.contains(pumpedID)` — passed anyway, because
@@ -498,19 +498,28 @@ group("a tab that never opened is retried from its own task file, twice and no f
            refusal(Orchestrator.respawn(taskID: chosenID, secret: "too-short"))?.1, "bad_task")
 }
 
-group("a dispatch that never said what it writes is warned, and one that said nothing is not") {
+group("an undeclared write set is refused at the door, and warned about where nobody held the answer") {
     let manager = FileManager.default
     let store = Orchestrator.storeURL
     let storeBefore = try? Data(contentsOf: store)
     var made: [URL] = []
+    let outsideRepository = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-claims-\(UUID().uuidString)", isDirectory: true)
+    let scheduleDirectory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-claims-schedules-\(UUID().uuidString)", isDirectory: true)
     defer {
         for directory in made { try? manager.removeItem(at: directory) }
+        try? manager.removeItem(at: outsideRepository)
+        try? manager.removeItem(at: scheduleDirectory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
         AssistantQuota.clearOverridesForTesting()
         if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
         else { try? manager.removeItem(at: store) }
         Orchestrator.forget()
     }
     Orchestrator.forget()
+    try? manager.createDirectory(at: outsideRepository, withIntermediateDirectories: true)
+    try? manager.createDirectory(at: scheduleDirectory, withIntermediateDirectories: true)
     AssistantQuota.setOverrideForTesting(
         AssistantQuota(assistant: .claude, installed: true, loggedIn: true, plan: nil,
                        availability: .ok, source: .observed,
@@ -522,63 +531,133 @@ group("a dispatch that never said what it writes is warned, and one that said no
         .started(id: "TAB-\(UUID().uuidString)", backend: .iterm)
     }
 
-    func dispatch(claims: [String]?, secret pair: String) -> [String: Any]? {
+    func taskFile(claims: [String]?, isolated: Bool = false, dir: String = "/tmp") -> String {
         let id = UUID().uuidString.lowercased()
         let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
         made.append(directory)
         try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
         var obj: [String: Any] = [
             "clawdline_protocol": 1, "task_id": id, "kind": "code", "assistant": "claude",
-            "project_dir": "/tmp", "title": "writes something, or says it does not",
+            "project_dir": dir, "title": "writes something, or says it does not",
             "instructions": "do the work", "timeout_minutes": 30,
         ]
         if let claims { obj["claims"] = claims }
+        if isolated { obj["isolation"] = "worktree" }
         try! JSONSerialization.data(withJSONObject: obj)
             .write(to: directory.appendingPathComponent("task.json"), options: .atomic)
-        guard case .ok(let payload) = Orchestrator.dispatch(taskID: id,
-                                                           secret: String(repeating: pair, count: 32))
-        else { return nil }
-        return payload
+        return id
     }
-    func warns(_ payload: [String: Any]?) -> Bool {
-        (payload?["warnings"] as? [[String: Any]] ?? [])
+    func refusal(_ reply: Orchestrator.Reply) -> (Int, String, String)? {
+        guard case .refused(let status, let code, let message, _) = reply else { return nil }
+        return (status, code, message)
+    }
+    func payload(_ reply: Orchestrator.Reply) -> [String: Any]? {
+        guard case .ok(let body) = reply else { return nil }
+        return body
+    }
+    func warns(_ body: [String: Any]?) -> Bool {
+        (body?["warnings"] as? [[String: Any]] ?? [])
             .contains { $0["code"] as? String == "claims_missing" }
     }
 
-    let silent = dispatch(claims: nil, secret: "a1")
-    check("a task.json with no claims field at all is warned about",
-          warns(silent))
-    check("and it is a warning: the task was still dispatched",
-          (silent?["task"] as? [String: Any])?["state"] as? String == "spawning")
-    check("the warning says what to add, since the point is to change what the next one sends",
-          ((silent?["warnings"] as? [[String: Any]] ?? [])
-            .first { $0["code"] as? String == "claims_missing" }?["message"] as? String)?
-            .contains("\"claims\": []") == true)
-    // The difference between the two is the whole point: warning about an empty list would teach
-    // callers that the field is noise, which is how it got to 60.7% in the first place.
-    check("a task that declared it writes nothing is not warned about",
-          !warns(dispatch(claims: [], secret: "b2")))
-    check("nor is one that declared what it writes",
-          !warns(dispatch(claims: ["Sources/Declared.swift"], secret: "c3")))
+    // The warning this replaces went out on 60.7% of dispatches and moved nothing, because a
+    // warning costs a caller nothing to ignore. What is refused is an absent field — never an
+    // empty one, which is a positive declaration and the answer a genuinely read-only task gives.
+    let undeclaredID = taskFile(claims: nil)
+    let rateBefore = Orchestrator.dispatchRateCountForTesting()
+    let undeclared = refusal(Orchestrator.dispatch(taskID: undeclaredID,
+                                                   secret: String(repeating: "a1", count: 32)))
+    expect("a task.json with no claims field at all is refused", undeclared?.1, "claims_required")
+    expect("and refused as an incomplete body rather than a conflict", undeclared?.0, 422)
+    check("the refusal names all three answers a dispatcher can always give",
+          (undeclared?.2 ?? "").contains("\"claims\": []")
+              && (undeclared?.2 ?? "").contains("directories"))
+    check("and tells an isolated dispatcher its declaration is kept rather than dropped",
+          (undeclared?.2 ?? "").contains("landing write set"))
+    check("a body the door turned away registers no task",
+          Orchestrator.record(id: undeclaredID) == nil)
+    expect("and gives its provisional rate ticket back",
+           Orchestrator.dispatchRateCountForTesting(), rateBefore)
 
-    // The idempotent retry answers with the same record, and the same task is still the one that
-    // did not say what it writes.
-    let repeatedID = UUID().uuidString.lowercased()
-    let repeatedDirectory = Orchestrator.root.appendingPathComponent(repeatedID, isDirectory: true)
-    made.append(repeatedDirectory)
-    try? manager.createDirectory(at: repeatedDirectory, withIntermediateDirectories: true)
-    try! JSONSerialization.data(withJSONObject: [
-        "clawdline_protocol": 1, "task_id": repeatedID, "kind": "code", "assistant": "claude",
-        "project_dir": "/tmp", "title": "asked for twice", "instructions": "do the work",
-        "timeout_minutes": 30,
-    ]).write(to: repeatedDirectory.appendingPathComponent("task.json"), options: .atomic)
-    let secret = String(repeating: "d4", count: 32)
-    _ = Orchestrator.dispatch(taskID: repeatedID, secret: secret)
-    guard case .ok(let again) = Orchestrator.dispatch(taskID: repeatedID, secret: secret) else {
-        check("a repeated dispatch answers with the existing record", false)
-        return
+    let readOnly = payload(Orchestrator.dispatch(taskID: taskFile(claims: []),
+                                                 secret: String(repeating: "b2", count: 32)))
+    check("a task that declared it writes nothing is dispatched, not refused",
+          (readOnly?["task"] as? [String: Any])?["state"] as? String == "spawning")
+    check("and is not warned about either", !warns(readOnly))
+    let declared = payload(Orchestrator.dispatch(
+        taskID: taskFile(claims: ["Sources/Declared.swift"]),
+        secret: String(repeating: "c3", count: 32)))
+    check("nor is one that declared what it writes", declared != nil && !warns(declared))
+
+    // The half of the fleet this had to get right. Isolation buys no exemption — the same list is
+    // kept as the landing write set — and a declared isolated dispatch gets past this door to be
+    // judged on its repository, which is the only thing left that can refuse it here.
+    let isolatedSilent = refusal(Orchestrator.dispatch(
+        taskID: taskFile(claims: nil, isolated: true, dir: outsideRepository.path),
+        secret: String(repeating: "d4", count: 32)))
+    expect("an isolated task is not excused from saying what it will write",
+           isolatedSilent?.1, "claims_required")
+    let isolatedDeclared = refusal(Orchestrator.dispatch(
+        taskID: taskFile(claims: ["Sources/Feature.swift"], isolated: true,
+                         dir: outsideRepository.path),
+        secret: String(repeating: "e5", count: 32)))
+    check("and a declared one reaches its worktree stage instead of this refusal",
+          isolatedDeclared?.1 == "bad_task"
+              && (isolatedDeclared?.2 ?? "").contains("Git repository"))
+
+    // Where the requirement stops, and it stops for one reason: a body no caller is holding.
+    // A stored schedule was written before this existed and its editor has no claims control at
+    // all, so refusing it would stop work over a field the surface cannot express.
+    let scheduleID = "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"
+    let scheduleRow: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": scheduleID, "title": "nightly, from before this",
+        "when": ["at": "01:30", "days": "daily"],
+        "task": ["assistant": "claude", "project_dir": "/tmp",
+                 "instructions": "the work this schedule has always done"],
+        "enabled": true,
+    ]
+    if case .bad(let why) = Orchestrator.schedule(from: scheduleRow,
+                                                  filename: "\(scheduleID).json",
+                                                  isDirectory: { $0 == "/tmp" }) {
+        check("a stored template with no claims is still a valid schedule", false, why)
+    } else {
+        check("a stored template with no claims is still a valid schedule", true)
     }
-    check("and the retry of an undeclared task is warned about too", warns(again))
+    try! JSONSerialization.data(withJSONObject: scheduleRow)
+        .write(to: scheduleDirectory.appendingPathComponent("\(scheduleID).json"))
+    Orchestrator.scheduleDirectoryOverrideForTesting = scheduleDirectory
+    let scheduled = payload(Orchestrator.runSchedule(id: scheduleID))
+    if let id = (scheduled?["task"] as? [String: Any])?["id"] as? String {
+        made.append(Orchestrator.root.appendingPathComponent(id, isDirectory: true))
+    }
+    check("and it still runs, because nobody could have written the field it lacks",
+          (scheduled?["task"] as? [String: Any])?["state"] as? String == "spawning")
+    check("what it gets instead is the warning the door replaced", warns(scheduled))
+
+    // A respawn is the same body a second time. It was admitted once; refusing the retry would
+    // punish a dispatch for a rule that did not exist when it was written.
+    let strandedID = UUID().uuidString.lowercased()
+    let strandedDirectory = Orchestrator.root.appendingPathComponent(strandedID, isDirectory: true)
+    made.append(strandedDirectory)
+    try? manager.createDirectory(at: strandedDirectory, withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": strandedID, "kind": "code", "assistant": "claude",
+        "project_dir": "/tmp", "title": "written before claims were required",
+        "instructions": "the work itself", "timeout_minutes": 30,
+    ]).write(to: strandedDirectory.appendingPathComponent("task.json"), options: .atomic)
+    var stranded = Orchestrator.Task(
+        id: strandedID, state: .spawnFailed, kind: "code", title: "written before claims",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    stranded.claimsDeclared = false
+    Orchestrator.holdScheduleTaskForTesting(stranded)
+    let respawned = payload(Orchestrator.respawn(taskID: strandedID))
+    if let id = (respawned?["task"] as? [String: Any])?["id"] as? String {
+        made.append(Orchestrator.root.appendingPathComponent(id, isDirectory: true))
+    }
+    check("a task that failed to open before the requirement can still be retried",
+          (respawned?["task"] as? [String: Any])?["state"] as? String == "spawning")
+    check("and the retry is warned rather than refused", warns(respawned))
 }
 
 group("an attached briefing is delivered work, not a tab still trying to open") {

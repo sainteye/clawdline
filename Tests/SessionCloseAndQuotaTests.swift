@@ -1335,6 +1335,9 @@ group("the dispatch gate actually reads the quota it computed, rather than only 
             "assistant": assistant, "project_dir": "/tmp",
             "title": "quota gate probe", "instructions": "quota gate probe",
             "timeout_minutes": 5,
+            // The probe writes nothing; it still has to say so, or the claims door answers
+            // before the quota one and this group stops testing quota at all.
+            "claims": [],
         ]
         if ignoreQuota { obj["ignore_quota"] = true }
         if !serialize.isEmpty { obj["serialize"] = serialize }

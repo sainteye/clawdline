@@ -569,8 +569,9 @@ jq -n \
   --arg model "haiku" \
   --arg plan "$PLAN" \
   --argjson graph "$GRAPH" \
+  --argjson claims '["artifacts","Sources/Portrait.swift"]' \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
-    permission_mode:"full",
+    permission_mode:"full", claims:$claims,
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions,
     plan:$plan, graph:$graph,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
@@ -597,7 +598,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `title` | ≤ 200 characters, one line a person can read |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `deliverables` | paths relative to the task directory; `artifacts/…` by convention |
-| `claims` | optional, and **declare it anyway**: 0…32 unique relative paths this task may write, each 1…1024 characters, no leading `/` and no `..`. `[]` positively declares the task read-only. See below |
+| `claims` | **required**: 0…32 unique relative paths this task may write, each 1…1024 characters, no leading `/` and no `..`. What is required is the key, not a non-empty list — send `[]` and a read-only task has answered completely. Omitting it is `422 claims_required`, and an isolated task declares like any other. `[]` positively declares the task read-only. See below |
 | `model` | optional. Lowercase letters, digits, `.` `_` `-`, ≤ 64 characters. Absent = that assistant's default |
 | `reasoning_effort` | optional, Codex-only. Exactly `high` (coding) or `xhigh` (planning). Absent = inherit Codex/user defaults with no CLI override; `max` and `ultra` are not accepted |
 | `permission_mode` | optional. `ask` / `edits` / `full`. Absent = this Mac's ceiling (default `full`). Anything else, `auto` included, is `bad_task` |
@@ -611,25 +612,46 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `root.parent_task` | **leave it out.** It existed for a dispatching child, and a child cannot dispatch; every dispatch this app now accepts comes from a root, where the field is `null`. It is still validated and still read, because a stored record from an older build carries it |
 | `root.poll_only` | always `false` on this owned-child recipe. Unattended detached automation uses its own task shape and `/v1/orchestrator/detached-tasks`; it is never a fallback for failed Root identity |
 
-**Declaring `claims` costs about twenty output tokens, and most dispatches skip it anyway.**
+**Declaring `claims` costs about twenty output tokens, and for a year most dispatches skipped it.**
 Measured across 206 dispatches on this machine: 60.7% declared nothing at all. A collision costs a
-whole task, which on the same record is between three and eighteen million tokens thrown away.
+whole task, which on the same record is between three and eighteen million tokens thrown away. That
+gap was answered with a warning for one release and the share did not move, so the field is now
+required and a body without it is `422 claims_required` — nothing registered, nothing opened.
 
-And know the one case `claims` cannot save you from: **repository-relative claims are discarded for
-a worktree-isolated task**, because the child edits a separate checkout. On 2026-08-28 two roots
-dispatched a correction of the same delivery six seconds apart, both isolated, and nothing refused
-either of them — `/inflight` was still empty for both. When you isolate, `/inflight` is the only
-check there is, so read it, and keep the intended write set in the plan so review still has a scope.
+**Answer it with one of three things, and one of them always fits.** The files you know you will
+write; the directories containing them when the files are not settled yet (`Sources`, `docs` — a
+directory claim covers its subtree); or `[]`, which says this task writes nothing and is the whole
+answer for a review or an audit. Do **not** pad the list to satisfy the rule: a claimed path blocks
+other trees whether or not you touch it, and at terminal state the broker names every claim the
+task never touched.
 
-**There are two ways to get `claims` wrong and only one of them is loud.** Leaving it out is the
-quiet one: the broker cannot prove your task is disjoint from anybody else's, so it falls back to
-warning about every pair that shares a directory. On 2026-08-26 that was a dozen notices in one
-evening, not one of which described a real conflict, while the single genuine collision that night
-was refused at dispatch with `409 workspace_busy` in the same breath. **Omitting `claims` is not
-the cautious choice; it is the one that produces noise instead of an answer.** Claiming too widely
-is the other one, and it announces itself: a claimed path blocks other trees whether or not you
-ever touch it, and at terminal state the broker names every claim the task never touched. Same
-error, pointing the other way — take that report seriously and declare narrower next time.
+**The tests an edit forces are not knowable when you dispatch, so claim the directory.** Measured
+on the dispatch that produced this rule: the coordinator declared 14 paths, the delivery touched 11,
+and the five it touched without declaring were all pre-existing `Tests/*.swift` files — which
+fixtures a change has to migrate is something you learn by reading the code, not by planning the
+work. That is not carelessness and no briefing would have fixed it. `Tests` as one claim covers all
+five, costs four tokens, and is true.
+
+**Leave out what a repository guard writes for you.** A ratcheted line count, a generated manifest,
+a sealed check total: in a repository that keeps them, adding a line to a source file also changes
+that record, and no dispatcher can foresee which. The broker does not derive them and does not want
+them — leasing a line that every change touches would make every pair of tasks in the tree collide
+on paper. They belong to whoever lands the change. Declare what this task decides to write.
+
+**Declare when you isolate too, and know what happens to it.** Repository-relative claims are
+dropped for a worktree-isolated task, because the child edits a separate checkout — but the same
+list is kept as the task's landing-time write set and answered back as `landing_paths`, so it is
+the scope review and landing read. On 2026-08-28 two roots dispatched a correction of the same
+delivery six seconds apart, both isolated, and nothing refused either of them; `/inflight` was
+still empty for both. When you isolate, `/inflight` is the only check there is, so read it.
+
+**The other way to get `claims` wrong is loud, and it is over-claiming.** Leaving it out is no
+longer available: before it was refused, the broker could not prove your task was disjoint from
+anybody else's and fell back to warning about every pair that shares a directory — on 2026-08-26, a
+dozen notices in one evening, not one describing a real conflict, while the single genuine collision
+that night was refused with `409 workspace_busy` in the same breath. That is the noise the
+requirement exists to end; the way to end it is a narrow true declaration, not a wide safe-looking
+one.
 
 ### Finding your own assistant and session id (required for owned-child dispatch)
 

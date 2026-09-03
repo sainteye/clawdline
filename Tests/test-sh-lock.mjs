@@ -1659,13 +1659,42 @@ try {
             for (const [rel, text] of original) writeFileSync(join(tree, rel), text);
             original.clear();
         };
+        // **The operator's own `CLAWDLINE_RESEAL` must not reach the guard this block drives.** That
+        // door downgrades the witness mismatch to a warning, which is exactly the behaviour two
+        // checks below assert is *absent* — so on a re-seal run they saw a green guard and reported
+        // themselves as failures. Every use of the door here is passed explicitly instead, and a
+        // test that inherits the operator's environment is measuring the operator, not the tree.
+        const sealedEnv = () => {
+            const e = { ...process.env };
+            delete e.CLAWDLINE_RESEAL;
+            return e;
+        };
         const run = (args = [], env = {}) => {
             const r = spawnSync("/bin/bash", [join(tree, GUARD), ...args],
-                                { encoding: "utf8", env: { ...process.env, ...env } });
+                                { encoding: "utf8", env: { ...sealedEnv(), ...env } });
             return { status: r.status, out: `${r.stdout}${r.stderr}` };
         };
         const generate = () => spawnSync("/bin/bash", [join(tree, "tools/generate-governance-table.sh")],
-                                         { encoding: "utf8", env: { ...process.env } });
+                                         { encoding: "utf8", env: sealedEnv() });
+
+        // This copy inherits whatever re-seal state the real tree is in, and during a re-seal that
+        // tree's witness names a different tree **on purpose**. Nothing below is about that, so the
+        // copy is made self-consistent first — with the number read out of the guard's own message
+        // rather than counted a second time here, which would be the fourth copy of a number this
+        // change exists to have one of. Without this, the whole block stopped on its own
+        // precondition for every tree that had a re-seal pending, which is every tree that needs
+        // the suite run this file sits in front of.
+        const pending = run([], { CLAWDLINE_RESEAL: "1" });
+        const wantedWitness = /expected_swift_receipt_witness to (\d+)/.exec(pending.out);
+        // Written straight to disk rather than through `write`, which remembers the previous text
+        // for `restore()`. Seeding through `write` made the seed itself revertible: every check
+        // after the first restore got a witness mismatch instead of the failure it was asserting,
+        // and reported `wrong reason` — the seed has to be this copy's baseline, not an edit to it.
+        if (wantedWitness) {
+            writeFileSync(join(tree, "test.sh"),
+                          read("test.sh").replace(/^expected_swift_receipt_witness=\d+$/m,
+                                                  `expected_swift_receipt_witness=${wantedWitness[1]}`));
+        }
 
         const clean = run();
         if (clean.status !== 0) {

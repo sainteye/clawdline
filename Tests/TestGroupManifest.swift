@@ -405,7 +405,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "Clawdline answers a menu only on a tab it opened itself",
     "dispatch answers an immediate tab refusal; the later pump finalizes its refusal",
     "a tab that never opened is retried from its own task file, twice and no further",
-    "a dispatch that never said what it writes is warned, and one that said nothing is not",
+    "an undeclared write set is refused at the door, and warned about where nobody held the answer",
     "an attached briefing is delivered work, not a tab still trying to open",
     "a task that has posted progress is not a tab that never opened",
     "owned storage is visible through the read-only orchestrator route",
@@ -523,6 +523,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a fully populated task.json and a minimal one both arrive intact",
     "the shapes an older root still writes are the shapes this still reads",
     "a task id is a lowercase UUID, and a task secret is 32 bytes of lower-case hex",
+    "claims is required as a present field, which is the one shape every dispatcher can answer",
 ]
 
 func validateExecutedTestGroupManifest() {
