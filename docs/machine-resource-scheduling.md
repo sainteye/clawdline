@@ -359,6 +359,23 @@ prose and scans cleanly. A route path (`completion/ack`) has a large one — it 
 anyone writes about the route. Jargon has more. A bare number has the most. **The mistake is not
 scanning text; it is scanning a token without asking where else that token is allowed to live.**
 
+**Two records agreeing is worth something exactly when their mistakes differ.** This page has spent
+most of its length on records that agree and are both wrong, so it should record the shape that is
+the opposite. Two lines independently wrote the same check — list the `private` members a block
+about to be moved out of a file calls but does not take with it — one in shell, one in Python. Both
+returned the same single real dependency. Both first versions were noisy, and **noisy in different
+ways**: one reported `announce, dispatch, record, shape` beside the real one, the other
+`announce, record, shape`, because they stripped the surrounding briefing prose differently. The
+compiler, which is the thing rather than a record of it, confirmed the one they shared.
+
+The differing false positives are the evidence, not an embarrassment beside it. Agreement between
+two implementations means something only if they could have disagreed; **had either been copied from
+the other, the noise would have matched too, and the agreement would carry no information at all.**
+The morning's warning on this page — that unanimity built on a shared premise is not corroboration —
+has this as its exact converse: two different wrong paths arriving at one answer is corroboration,
+and the way to tell the cases apart is to look at where they were wrong rather than at what they
+concluded.
+
 **A right answer from a wrong method is the one variant with no natural detector.** Everything else
 on this page was caught by somebody: a second reader, a contradicting measurement, an output that
 did not look like the world it claimed to describe. A wrong answer runs into the next person's spot
