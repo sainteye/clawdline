@@ -70,7 +70,7 @@ group("landing records enforce the root-owned state machine and keep idempotent 
         created: Date(timeIntervalSince1970: 1), rootSessionId: root,
         claims: ["Sources/Landing.swift"], claimsDeclared: true,
         secretHash: Orchestrator.hash(ofSecret: secret))
-    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: made.projectDir)
+    made.claimKeys = OrchestratorDraft.freezeClaims(made.claims, projectDir: made.projectDir)
     Orchestrator.holdScheduleTaskForTesting(made)
 
     func landing(_ reply: Orchestrator.Reply) -> [String: Any]? {
@@ -89,7 +89,7 @@ group("landing records enforce the root-owned state machine and keep idempotent 
           pending?["state"] as? String == "pending"
               && pending?["target"] as? String == "main"
               && pending?["delivery"] as? String == "review/landing"
-              && pending?["owner_root_key"] as? String == Orchestrator.rootKeyDigest(root)
+              && pending?["owner_root_key"] as? String == OrchestratorDraft.rootKeyDigest(root)
               && pending?["since"] as? Int == 10)
 
     let repeated = Orchestrator.updateLanding(
@@ -183,7 +183,7 @@ group("landing records enforce the root-owned state machine and keep idempotent 
         created: Date(timeIntervalSince1970: 1), rootSessionId: root,
         claims: ["Sources/Abandoned.swift"], claimsDeclared: true,
         secretHash: Orchestrator.hash(ofSecret: abandonedSecret))
-    abandonedTask.claimKeys = Orchestrator.freezeClaims(
+    abandonedTask.claimKeys = OrchestratorDraft.freezeClaims(
         abandonedTask.claims, projectDir: abandonedTask.projectDir)
     Orchestrator.holdScheduleTaskForTesting(abandonedTask)
     _ = Orchestrator.updateLanding(
@@ -236,7 +236,7 @@ group("landing verification survives a disposed worktree but refuses a repositor
                       durableRepository: URL, secret: String,
                       worktreeRepository: String? = nil) -> Orchestrator.Task {
         let repositoryPath = worktreeRepository ?? durableRepository.path
-        let worktreePath = Orchestrator.worktreePath(
+        let worktreePath = OrchestratorDraft.worktreePath(
             project: repositoryPath, taskID: id)!
         var task = Orchestrator.Task(
             id: id, state: .success, kind: "custom", title: "durable landing repository",
@@ -260,7 +260,7 @@ group("landing verification survives a disposed worktree but refuses a repositor
     let disposedSecret = String(repeating: "a7", count: 32)
     let deletedRepositoryPath = repository.url.deletingLastPathComponent()
         .appendingPathComponent("deleted-repository-\(UUID().uuidString)", isDirectory: true).path
-    let disposedPath = Orchestrator.worktreePath(
+    let disposedPath = OrchestratorDraft.worktreePath(
         project: deletedRepositoryPath, taskID: disposedID)!
     check("the landing fixture's isolated cwd is genuinely absent",
           !FileManager.default.fileExists(atPath: disposedPath))
@@ -365,7 +365,7 @@ group("landing verification survives a disposed worktree but refuses a repositor
     // (therefore `.none`) and project_dir named a broker-owned worktree that was later disposed.
     // A separate retained worktree receipt for the same broker repository slug is bounded,
     // authoritative local evidence; no basename search or caller-supplied repository participates.
-    let staleProjectDir = Orchestrator.worktreePath(
+    let staleProjectDir = OrchestratorDraft.worktreePath(
         project: repository.url.path,
         taskID: "69b79f6d-8b70-4c43-bdb2-3d6590d79113")!
     check("the legacy non-isolated project_dir is genuinely disposed",
@@ -432,7 +432,7 @@ group("landing routes accept a matching task or machine credential and list pend
             created: Date(timeIntervalSince1970: 1), rootSessionId: "root-\(id)",
             rootLabel: "owner \(title)", claims: ["Sources/\(title).swift"],
             claimsDeclared: true, secretHash: Orchestrator.hash(ofSecret: secret))
-        task.claimKeys = Orchestrator.freezeClaims(task.claims, projectDir: task.projectDir)
+        task.claimKeys = OrchestratorDraft.freezeClaims(task.claims, projectDir: task.projectDir)
         return task
     }
     Orchestrator.holdScheduleTaskForTesting(fixture(firstID, secret: firstSecret, title: "pending"))
@@ -530,7 +530,8 @@ group("landing routes accept a matching task or machine credential and list pend
     check("a pending row carries owner, claims, target and the shared non-negative age formula",
           pending.first?["title"] as? String == "pending"
               && pending.first?["root_label"] as? String == "owner pending"
-              && pending.first?["root_key"] as? String == Orchestrator.rootKeyDigest("root-\(firstID)")
+              && pending.first?["root_key"] as? String
+                  == OrchestratorDraft.rootKeyDigest("root-\(firstID)")
               && pending.first?["paths"] as? [String] == ["Sources/pending.swift"]
               && pending.first?["target"] as? String == "main"
               && pending.first?["age_seconds"] as? Int == 50)
@@ -545,7 +546,8 @@ group("landing routes accept a matching task or machine credential and list pend
     let reloaded = Orchestrator.record(id: firstID)?["landing"] as? [String: Any]
     check("landing survives a registry save/load round trip",
           reloaded?["state"] as? String == "pending"
-              && reloaded?["owner_root_key"] as? String == Orchestrator.rootKeyDigest("root-\(firstID)"))
+              && reloaded?["owner_root_key"] as? String
+                  == OrchestratorDraft.rootKeyDigest("root-\(firstID)"))
     let reloadedLanded = Orchestrator.record(id: secondID)?["landing"] as? [String: Any]
     check("verified landing evidence survives a registry save/load round trip",
           reloadedLanded?["landed_at"] as? Int == 20
@@ -593,7 +595,7 @@ group("pending landing ownership is one fail-closed observation across list and 
             claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
         task.landing = Orchestrator.Landing(
             state: .pending, target: "main", delivery: nil,
-            ownerRootKey: Orchestrator.rootKeyDigest(root),
+            ownerRootKey: OrchestratorDraft.rootKeyDigest(root),
             since: Date(timeIntervalSince1970: 10), commit: nil, note: nil)
         return task
     }
@@ -1628,7 +1630,7 @@ group("the terminal claims audit tells touched from untouched from gone") {
                                  claims: ["Sources/touched.swift", "Sources/untouched.swift",
                                           "Sources/gone.swift"],
                                  claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
-    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    made.claimKeys = OrchestratorDraft.freezeClaims(made.claims, projectDir: dir)
     made.spawnedAt = Date(timeIntervalSince1970: 10)
     func mtime(_ path: String) -> Date? {
         switch path {
@@ -1642,7 +1644,8 @@ group("the terminal claims audit tells touched from untouched from gone") {
            untouched.sorted(), ["Sources/gone.swift", "Sources/untouched.swift"])
     var exactlyAtSpawn = made
     exactlyAtSpawn.claims = ["Sources/touched.swift"]
-    exactlyAtSpawn.claimKeys = Orchestrator.freezeClaims(exactlyAtSpawn.claims, projectDir: dir)
+    exactlyAtSpawn.claimKeys = OrchestratorDraft.freezeClaims(exactlyAtSpawn.claims,
+                                                              projectDir: dir)
     check("an mtime exactly at spawnedAt counts as touched",
           Orchestrator.untouchedClaims(exactlyAtSpawn,
                                        mtime: { _ in Date(timeIntervalSince1970: 10) }).isEmpty)
@@ -1716,7 +1719,7 @@ group("finalize runs the claims audit and writes it into the record") {
                                  claims: ["Sources/touched.swift", "Sources/untouched.swift",
                                           "Sources/missing.swift"],
                                  claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
-    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    made.claimKeys = OrchestratorDraft.freezeClaims(made.claims, projectDir: dir)
     made.spawnedAt = spawnedAt
     Orchestrator.holdScheduleTaskForTesting(made)
     try! Data("new".utf8).write(to: URL(fileURLWithPath: touchedPath))
@@ -1755,7 +1758,7 @@ group("a directory-shaped claim is judged by recursively walking its subtree, no
                                  projectDir: dir, timeoutMinutes: 30, created: spawnedAt,
                                  claims: ["Sources"], claimsDeclared: true,
                                  secretHash: String(repeating: "0", count: 64))
-    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    made.claimKeys = OrchestratorDraft.freezeClaims(made.claims, projectDir: dir)
     made.spawnedAt = spawnedAt
     expect("a file modified in place inside a claimed directory counts the whole claim as "
           + "touched, even though the directory's own mtime never moved",

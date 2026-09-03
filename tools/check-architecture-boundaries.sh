@@ -28,6 +28,10 @@ main_lines=$(line_count Tests/main.swift)
 #   13,123  the broker lease moved in            (2eef7bb6 / 15924b14, +307)
 #   13,085  the lease's projection moved out     (correction round, -38)
 #   12,831  the broker lease was removed         (-254)
+#   11,932  the draft/refusal block moved out    (Cut 1b, -1,153: 1,155 lines of draft,
+#                                              refusal and worktree lifecycle out, and two
+#                                              lines of comment in, saying why the worktree
+#                                              queue they enqueue on is no longer private)
 #
 # The raise to 13,123 was legitimate and reviewed at the time — a landed, green feature's code has
 # to live somewhere — and of those 307 lines roughly 250 were registry ownership, store wiring and
@@ -43,8 +47,14 @@ main_lines=$(line_count Tests/main.swift)
 #
 # Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
 # to grow that nobody reviewed. Anyone raising it again adds the line, the commit and the reason.
-orchestrator_ceiling=12831
+#   11,678  rebased onto the lease removal        (the extraction measured itself at 11,932 on a
+#                                              base that still had the lease; 254 of those lines
+#                                              had already gone by the time it merged, and the
+#                                              ceiling briefly carried that stale figure)
+orchestrator_ceiling=11678
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
+[ -n "$orchestrator_lines" ] \
+  || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."
 
@@ -78,6 +88,8 @@ fi
 
 remote_server_ceiling=6393
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
+[ -n "$remote_server_lines" ] \
+  || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
 [ "$remote_server_lines" -le "$remote_server_ceiling" ] \
   || architecture_guard_fail "Sources/RemoteServer.swift grew beyond its receipt ($remote_server_ceiling)"
 
@@ -86,8 +98,8 @@ if grep -q 'group(' Tests/main.swift; then
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 29 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 29"
+[ "$runner_count" -eq 30 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 30"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -112,8 +124,8 @@ manifest_group_count=$(awk '
 # `validateExecutedTestGroupManifest()`, which needs a whole suite run, and
 # `verify_swift_source_manifest`, which refuses to start one. **A green light that two edited
 # numbers produced by agreeing with each other looks exactly like a correct one.**
-[ "$manifest_group_count" -eq 504 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 504"
+[ "$manifest_group_count" -eq 510 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 510"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -187,8 +199,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 42 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 42"
+[ "$suite_count" -eq 43 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 43"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
@@ -277,5 +289,61 @@ else
 fi
 compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
 compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
+
+# The two ceilings above are the only rows here whose left-hand side is also a record: both are
+# constants in this script, compared against constants in a document. Everything else on that list
+# is derived from the thing it describes on every run, so it cannot agree with a stale copy.
+#
+# That matters because the check which reads the real file is `-le`, a bound, and a bound cannot
+# see slack. A ceiling set too high passes it, passes the table row if both records were edited
+# together, and silently licenses the growth it was supposed to stop. This line shipped that
+# mistake once: an extraction measured 11,932 on a base that still had the lease, the merged tree
+# was 11,678, and 254 lines of headroom nobody granted survived every check but one — and that one
+# only fired because the script and the table had been edited separately.
+#
+# So the ceilings are pinned to the file as well. A ceiling more than 200 lines above what it
+# guards is not a ceiling, it is a budget nobody approved.
+orchestrator_slack=$(( orchestrator_ceiling - orchestrator_lines ))
+[ "$orchestrator_slack" -le 200 ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines under a ceiling of $orchestrator_ceiling; $orchestrator_slack lines of unearned headroom. Lower the ceiling to what the tree measures."
+remote_server_slack=$(( remote_server_ceiling - remote_server_lines ))
+[ "$remote_server_slack" -le 200 ] \
+  || architecture_guard_fail "Sources/RemoteServer.swift is $remote_server_lines lines under a ceiling of $remote_server_ceiling; $remote_server_slack lines of unearned headroom. Lower the ceiling to what the tree measures."
+
+# A `Task { … }` started inside the ledger tests races the statements after it. `Task.yield()`
+# does not order it: yield hands the executor one turn, it does not wait for the task to reach the
+# point the next statements assume. Five of the six sites were written with a real barrier and the
+# sixth was not, and that one difference produced a red that four sessions spent two hours
+# attributing to three innocent commits.
+#
+# `waitUntilTransactionCount` waits for an event, so it absorbs a delay of any size; `yield`
+# absorbs zero. Measured on one binary: with 50ms injected inside the duplicate, yield went red
+# 3 of 3 and the barrier stayed green 3 of 3.
+#
+# The assertion is about shape, not about the barrier's argument. All six sites pass `3` today,
+# and a `waitUntilTransactionCount(2)` would satisfy this check and still race.
+#
+# Extend this list when a genuinely-ordering primitive is added. A new, correct barrier missing
+# from here turns a correct line red, and the repair is to add its name — never to go back to
+# `Task.yield()`.
+ledger_sync_points='waitUntilTransactionCount|waitUntilPersisted|waitUntilRowCount'
+ledger_tests=Tests/CloudCommandLedgerTests.swift
+
+ledger_task_sites=$(grep -c '= Task {' "$ledger_tests")
+[ "$ledger_task_sites" -gt 0 ] \
+  || architecture_guard_fail "found no 'Task {' sites in $ledger_tests; the scanner is broken, not the tree"
+
+unordered_ledger_tasks=$(awk -v ok="$ledger_sync_points" '
+  /= Task \{/ { site = NR; pending = 1; next }
+  pending == 1 && ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*\/\//) { next }
+  pending == 1 { pending = 0; if ($0 !~ ok) printf "%d:%s\n", site, $0 }
+' "$ledger_tests")
+
+[ -z "$unordered_ledger_tasks" ] \
+  || architecture_guard_fail "$(printf '%s\n' \
+       "a Task in $ledger_tests is followed by something that does not order it:" \
+       "$unordered_ledger_tasks" \
+       "Wait for the task to arrive (store.waitUntilTransactionCount), not for one executor turn." \
+       "If you added a new ordering primitive, add its name to ledger_sync_points in this script.")"
 
 echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"

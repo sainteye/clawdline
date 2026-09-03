@@ -271,7 +271,7 @@ extension AssistantQuota {
     /// the same type, so the two routes describe the same fact in the same words.
     ///
     /// `age_seconds` uses the identical formula the B-task's `ClaimsOverlap.warning(for:now:)`
-    /// and `Orchestrator.workspaceBusyExtra` already use: `max(0, Int(now - observed))`, an
+    /// and `OrchestratorDraft.workspaceBusyExtra` already use: `max(0, Int(now - observed))`, an
     /// integer number of seconds — not this route's own idea of what "age" means.
     func payload(now: Date = Date()) -> [String: Any] {
         var out: [String: Any] = [

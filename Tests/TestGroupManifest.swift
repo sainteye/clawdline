@@ -512,6 +512,12 @@ let expectedOrderedTestGroupTitles: [String] = [
     "one lock, and a reader waits for the whole of a writer's transaction",
     "the per-terminal facts keep the semantics the projection had before",
     "a graph admission is one reservation, and its release is a transaction of its own",
+    "a root id that is really a terminal id is refused, and only when the evidence agrees",
+    "the dispatch door sorts owned children from detached automation before anything opens",
+    "a task.json is read whole, or refused naming the field that was wrong",
+    "a fully populated task.json and a minimal one both arrive intact",
+    "the shapes an older root still writes are the shapes this still reads",
+    "a task id is a lowercase UUID, and a task secret is 32 bytes of lower-case hex",
 ]
 
 func validateExecutedTestGroupManifest() {

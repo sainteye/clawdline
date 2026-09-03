@@ -46,10 +46,10 @@ group("a task.json is read before a terminal is opened for it") {
         for (key, value) in overrides { obj[key] = value }
         return obj
     }
-    func read(_ obj: [String: Any], expecting: String = taskID) -> Orchestrator.DraftOutcome {
-        Orchestrator.draft(from: obj, expecting: expecting, isDirectory: { _ in true })
+    func read(_ obj: [String: Any], expecting: String = taskID) -> OrchestratorDraft.DraftOutcome {
+        OrchestratorDraft.draft(from: obj, expecting: expecting, isDirectory: { _ in true })
     }
-    func made(_ obj: [String: Any]) -> Orchestrator.Draft? {
+    func made(_ obj: [String: Any]) -> OrchestratorDraft.Draft? {
         if case .ok(let draft) = read(obj) { return draft }
         return nil
     }
@@ -229,7 +229,7 @@ group("a task.json is read before a terminal is opened for it") {
           refused(file(["instructions": String(repeating: "x", count: 16_385)])))
     check("a project_dir that is not a directory",
           {
-              if case .bad = Orchestrator.draft(from: file(), expecting: taskID,
+              if case .bad = OrchestratorDraft.draft(from: file(), expecting: taskID,
                                                 isDirectory: { _ in false }) { return true }
               return false
           }())
@@ -954,25 +954,27 @@ group("the directory a child is given reach over is a path, not a fragment of on
 }
 
 group("a task id is the name of a directory, so it may not be a path") {
-    check("a lowercase UUID is one", Orchestrator.isTaskID(taskID))
-    check("in upper case it is not", !Orchestrator.isTaskID(taskID.uppercased()))
-    check("nor is a walk upwards", !Orchestrator.isTaskID("../../etc/passwd"))
+    check("a lowercase UUID is one", OrchestratorDraft.isTaskID(taskID))
+    check("in upper case it is not", !OrchestratorDraft.isTaskID(taskID.uppercased()))
+    check("nor is a walk upwards", !OrchestratorDraft.isTaskID("../../etc/passwd"))
     check("nor is one with a slash at the right length",
-          !Orchestrator.isTaskID("0f8fad5b-d9cb-469f-a165-7086772895/e"))
+          !OrchestratorDraft.isTaskID("0f8fad5b-d9cb-469f-a165-7086772895/e"))
     check("nor a letter that is not hex",
-          !Orchestrator.isTaskID("0f8fad5b-d9cb-469f-a165-70867728950g"))
-    check("nor one character too few", !Orchestrator.isTaskID(String(taskID.dropLast())))
-    check("nor nothing at all", !Orchestrator.isTaskID(""))
+          !OrchestratorDraft.isTaskID("0f8fad5b-d9cb-469f-a165-70867728950g"))
+    check("nor one character too few", !OrchestratorDraft.isTaskID(String(taskID.dropLast())))
+    check("nor nothing at all", !OrchestratorDraft.isTaskID(""))
 }
 
 group("a worktree is named by repository and task, without accepting a path as a ref") {
     expect("the branch is the complete task id in Clawdline's namespace",
-           Orchestrator.worktreeBranch(for: taskID), "clawdline/task/\(taskID)")
+           OrchestratorDraft.worktreeBranch(for: taskID), "clawdline/task/\(taskID)")
     check("branch naming fails closed on anything that is not a task id",
-          Orchestrator.worktreeBranch(for: "../../main") == nil)
+          OrchestratorDraft.worktreeBranch(for: "../../main") == nil)
 
-    let first = Orchestrator.worktreePath(project: "/Users/me/code/two words/專案..", taskID: taskID)
-    let second = Orchestrator.worktreePath(project: "/Users/other/code/專案..", taskID: taskID)
+    let first = OrchestratorDraft.worktreePath(
+        project: "/Users/me/code/two words/專案..", taskID: taskID)
+    let second = OrchestratorDraft.worktreePath(
+        project: "/Users/other/code/專案..", taskID: taskID)
     check("the checkout path lives under Application Support and contains the task id",
           first?.contains("/Library/Application Support/Clawdline/worktrees/") == true
               && first?.hasSuffix("/\(taskID)") == true
@@ -1025,7 +1027,7 @@ group("worktree task records, briefings and shared-tree coordination stay distin
         if isolated {
             made.isolation = .worktree
             made.spawnedAt = Date()
-            let path = Orchestrator.worktreePath(project: "/repo", taskID: id)!
+            let path = OrchestratorDraft.worktreePath(project: "/repo", taskID: id)!
             made.worktree = Orchestrator.Worktree(
                 path: path,
                 branch: "clawdline/task/\(id)", base: String(repeating: "a", count: 40),
@@ -1075,7 +1077,7 @@ group("worktree task records, briefings and shared-tree coordination stay distin
     tmpTask.isolation = .worktree
     let reportedTmpRepository = tmpAlias.path
     let canonicalTmpRepository = tmpAlias.standardizedFileURL.resolvingSymlinksInPath().path
-    let tmpPath = Orchestrator.worktreePath(project: reportedTmpRepository, taskID: taskID)!
+    let tmpPath = OrchestratorDraft.worktreePath(project: reportedTmpRepository, taskID: taskID)!
     tmpTask.worktree = Orchestrator.Worktree(
         path: tmpPath, branch: "clawdline/task/\(taskID)",
         base: String(repeating: "b", count: 40), repository: canonicalTmpRepository, cwd: tmpPath)
@@ -1126,9 +1128,9 @@ group("worktree task records, briefings and shared-tree coordination stay distin
     var claiming = isolated
     claiming.claims = ["Sources/Parser.swift"]
     claiming.claimsDeclared = true
-    claiming.claimKeys = Orchestrator.freezeClaims(claiming.claims,
+    claiming.claimKeys = OrchestratorDraft.freezeClaims(claiming.claims,
                                                     projectDir: claiming.projectDir)
-    let claimWarnings = Orchestrator.prepareClaimsForIsolation(&claiming)
+    let claimWarnings = OrchestratorDraft.prepareClaimsForIsolation(&claiming)
     check("workspace-local claims are discarded with one typed warning",
           claiming.claims.isEmpty && claiming.claimKeys.isEmpty
               && claimWarnings.count == 1
@@ -1139,7 +1141,7 @@ group("worktree task records, briefings and shared-tree coordination stay distin
 
     let other = task("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", isolated: false)
     expect("an isolated task never receives a shared-project L1 overlap warning",
-           Orchestrator.workspaceOverlaps(for: isolated, among: [other]).count, 0)
+           OrchestratorDraft.workspaceOverlaps(for: isolated, among: [other]).count, 0)
     var serialized = isolated
     serialized.serialize = ["build"]
     check("serialize and isolation retain both independent controls",
@@ -1148,19 +1150,19 @@ group("worktree task records, briefings and shared-tree coordination stay distin
 
 group("workspace overlap is a path-component relationship") {
     expect("the same directory is shared",
-           Orchestrator.sharedWorkspaceDirectory("/a/b", "/a/b"), "/a/b")
+           OrchestratorDraft.sharedWorkspaceDirectory("/a/b", "/a/b"), "/a/b")
     expect("a child is the shared part of an ancestor and descendant",
-           Orchestrator.sharedWorkspaceDirectory("/a/b", "/a/b/c"), "/a/b/c")
+           OrchestratorDraft.sharedWorkspaceDirectory("/a/b", "/a/b/c"), "/a/b/c")
     expect("and order does not change that answer",
-           Orchestrator.sharedWorkspaceDirectory("/a/b/c", "/a/b"), "/a/b/c")
+           OrchestratorDraft.sharedWorkspaceDirectory("/a/b/c", "/a/b"), "/a/b/c")
     expect("a string prefix that ends mid-component is not overlap",
-           Orchestrator.sharedWorkspaceDirectory("/a/b", "/a/bc"), nil)
+           OrchestratorDraft.sharedWorkspaceDirectory("/a/b", "/a/bc"), nil)
     expect("case follows the repository's exact resolved-path comparisons",
-           Orchestrator.sharedWorkspaceDirectory("/a/B", "/a/b"), nil)
+           OrchestratorDraft.sharedWorkspaceDirectory("/a/B", "/a/b"), nil)
     expect("standard path components are compared after dot segments are removed",
-           Orchestrator.sharedWorkspaceDirectory("/a/b/../c", "/a/c/d"), "/a/c/d")
+           OrchestratorDraft.sharedWorkspaceDirectory("/a/b/../c", "/a/c/d"), "/a/c/d")
     expect("a trailing slash is the same directory",
-           Orchestrator.sharedWorkspaceDirectory("/a/b/", "/a/b"), "/a/b")
+           OrchestratorDraft.sharedWorkspaceDirectory("/a/b/", "/a/b"), "/a/b")
 }
 
 group("workspace overlap follows the whole dispatch tree") {
@@ -1176,7 +1178,7 @@ group("workspace overlap follows the whole dispatch tree") {
         if let claims {
             made.claims = claims
             made.claimsDeclared = true
-            made.claimKeys = Orchestrator.freezeClaims(claims, projectDir: dir)
+            made.claimKeys = OrchestratorDraft.freezeClaims(claims, projectDir: dir)
         }
         return made
     }
@@ -1184,16 +1186,16 @@ group("workspace overlap follows the whole dispatch tree") {
     let otherID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     let other = task(otherID, dir: "/a/b/c", root: secondRoot)
     expect("the same known root is quiet",
-           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: secondRoot),
+           OrchestratorDraft.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: secondRoot),
                                           among: [other]).count, 0)
     let newcomer = task(taskID, dir: "/a/b/c/d", root: firstRoot)
-    let across = Orchestrator.workspaceOverlaps(for: newcomer, among: [other])
+    let across = OrchestratorDraft.workspaceOverlaps(for: newcomer, among: [other])
     expect("different roots warn", across.count, 1)
     let declaredNewcomer = task(taskID, dir: "/a/b", root: firstRoot,
                                 claims: ["Sources"])
     let declaredOther = task(otherID, dir: "/a/b/c", root: secondRoot,
                              claims: ["Tests"])
-    let disjointOverlaps = Orchestrator.workspaceOverlaps(for: declaredNewcomer,
+    let disjointOverlaps = OrchestratorDraft.workspaceOverlaps(for: declaredNewcomer,
                                                            among: [declaredOther])
     expect("disjoint declarations silence the directory warning",
            disjointOverlaps.count, 0)
@@ -1205,19 +1207,19 @@ group("workspace overlap follows the whole dispatch tree") {
     let intersectingNewcomer = task(taskID, dir: "/a/b", root: firstRoot,
                                     claims: ["c/Sources"])
     expect("intersecting declarations with an unknown root still warn",
-           Orchestrator.workspaceOverlaps(for: intersectingNewcomer,
+           OrchestratorDraft.workspaceOverlaps(for: intersectingNewcomer,
                                           among: [intersectingUnknown]).count, 1)
     let readOnlyNewcomer = task(taskID, dir: "/a/b", root: firstRoot, claims: [])
     let readOnlyOther = task(otherID, dir: "/a/b/c", root: secondRoot, claims: [])
     expect("a declaration paired with read-only is quiet",
-           Orchestrator.workspaceOverlaps(for: declaredNewcomer,
+           OrchestratorDraft.workspaceOverlaps(for: declaredNewcomer,
                                           among: [readOnlyOther]).count, 0)
     expect("two read-only declarations are quiet",
-           Orchestrator.workspaceOverlaps(for: readOnlyNewcomer,
+           OrchestratorDraft.workspaceOverlaps(for: readOnlyNewcomer,
                                           among: [readOnlyOther]).count, 0)
     expect("a declaration paired with an absent field still warns",
-           Orchestrator.workspaceOverlaps(for: declaredNewcomer, among: [other]).count, 1)
-    let absentOverlaps = Orchestrator.workspaceOverlaps(for: declaredNewcomer, among: [other])
+           OrchestratorDraft.workspaceOverlaps(for: declaredNewcomer, among: [other]).count, 1)
+    let absentOverlaps = OrchestratorDraft.workspaceOverlaps(for: declaredNewcomer, among: [other])
     let absentNotices = Orchestrator.workspaceOverlapNotices(newTask: declaredNewcomer,
                                                               overlaps: absentOverlaps)
     check("both sides get typed lines when one claims field is absent",
@@ -1229,12 +1231,12 @@ group("workspace overlap follows the whole dispatch tree") {
                   $0.rootSessionID == secondRoot && $0.taskID == other.id
               })
     expect("two absent fields still warn",
-           Orchestrator.workspaceOverlaps(for: newcomer, among: [other]).count, 1)
+           OrchestratorDraft.workspaceOverlaps(for: newcomer, among: [other]).count, 1)
     let mixedDisjoint = task("10101010-2020-3030-4040-505050505050",
                              dir: "/a/b/c", root: secondRoot, claims: ["Tests"])
     let mixedSameRoot = task("20202020-3030-4040-5050-606060606060",
                              dir: "/a/b", root: firstRoot, claims: ["Sources"])
-    let mixed = Orchestrator.workspaceOverlaps(
+    let mixed = OrchestratorDraft.workspaceOverlaps(
         for: declaredNewcomer, among: [mixedDisjoint, other, mixedSameRoot]
     )
     check("silence is decided per pair within one dispatch",
@@ -1251,7 +1253,7 @@ group("workspace overlap follows the whole dispatch tree") {
               && mixedNotices.contains { $0.taskID == declaredNewcomer.id }
               && mixedNotices.contains { $0.taskID == other.id })
     expect("different roots in unrelated directories remain quiet",
-           Orchestrator.workspaceOverlaps(
+           OrchestratorDraft.workspaceOverlaps(
                for: task(taskID, dir: "/unrelated", root: firstRoot), among: [other]
            ).count, 0)
     expect("the overlap records the shared descendant directory", across.first?.sharedDir,
@@ -1266,13 +1268,13 @@ group("workspace overlap follows the whole dispatch tree") {
     let unknown = task("bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
                        dir: "/a/b/child", root: nil)
     expect("an existing task with unknown root warns",
-           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: firstRoot),
+           OrchestratorDraft.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: firstRoot),
                                           among: [unknown]).count, 1)
     expect("an unknown new root warns against a known root",
-           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: nil),
+           OrchestratorDraft.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: nil),
                                           among: [other]).count, 1)
     expect("and an unknown new root warns even against another unknown root",
-           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: nil),
+           OrchestratorDraft.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: nil),
                                           among: [unknown]).count, 1)
 
     var parent = task("12121212-3434-5656-7878-909090909090",
@@ -1287,7 +1289,7 @@ group("workspace overlap follows the whole dispatch tree") {
     sibling.depth = 2
     sibling.parentTaskId = parent.id
     expect("a grandchild inherits its parent's root and does not warn about its tree",
-           Orchestrator.workspaceOverlaps(for: grandchild,
+           OrchestratorDraft.workspaceOverlaps(for: grandchild,
                                           among: [parent, sibling]).count, 0)
 
     let finished = task("cccccccc-dddd-eeee-ffff-000000000000",
@@ -1296,44 +1298,44 @@ group("workspace overlap follows the whole dispatch tree") {
                            dir: "/a/b", root: secondRoot, state: .spawnFailed)
     let scanningNewcomer = task(taskID, dir: "/a/b", root: firstRoot)
     expect("all terminal existing tasks are outside the dispatch-time scan",
-           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+           OrchestratorDraft.workspaceOverlaps(for: scanningNewcomer,
                                           among: [finished, spawnFailed]).count, 0)
     let failedNewcomer = task(taskID, dir: "/a/b", root: firstRoot, state: .spawnFailed)
     expect("a terminal new task does not report stale overlaps",
-           Orchestrator.workspaceOverlaps(for: failedNewcomer, among: [other]).count, 0)
+           OrchestratorDraft.workspaceOverlaps(for: failedNewcomer, among: [other]).count, 0)
     let queued = task("dddddddd-eeee-ffff-0000-111111111111",
                       dir: "/a/b/queued", root: secondRoot, state: .queued, created: 2)
     let spawning = task("eeeeeeee-ffff-0000-1111-222222222222",
                         dir: "/a/b/spawning", root: secondRoot, state: .spawning, created: 1)
     expect("queued tasks are absent from L1 while spawning tasks remain active",
-           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+           OrchestratorDraft.workspaceOverlaps(for: scanningNewcomer,
                                           among: [queued, spawning]).count, 1)
     let queuedNewcomer = task(taskID, dir: "/a/b", root: firstRoot, state: .queued)
     expect("a queued newcomer does not warn before it can touch the workspace",
-           Orchestrator.workspaceOverlaps(for: queuedNewcomer, among: [other]).count, 0)
+           OrchestratorDraft.workspaceOverlaps(for: queuedNewcomer, among: [other]).count, 0)
     expect("overlaps are sorted by creation time",
-           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+           OrchestratorDraft.workspaceOverlaps(for: scanningNewcomer,
                                           among: [queued, spawning]).first?.task.id,
            spawning.id)
     let sameTimeLaterID = task("ffffffff-ffff-ffff-ffff-ffffffffffff",
                                dir: "/a/b/later-id", root: secondRoot, created: 1)
     expect("equal creation times are sorted by task id",
-           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+           OrchestratorDraft.workspaceOverlaps(for: scanningNewcomer,
                                           among: [sameTimeLaterID, spawning]).first?.task.id,
            spawning.id)
 
-    let quietReply = Orchestrator.dispatchPayload(record: ["id": taskID],
+    let quietReply = OrchestratorDraft.dispatchPayload(record: ["id": taskID],
                                                   taskID: taskID, overlaps: [])
     check("a dispatch without overlap omits warnings rather than returning an empty array",
           quietReply["warnings"] == nil)
-    let warnedReply = Orchestrator.dispatchPayload(record: ["id": taskID],
+    let warnedReply = OrchestratorDraft.dispatchPayload(record: ["id": taskID],
                                                    taskID: taskID, overlaps: across)
     expect("a dispatch with overlap includes one warning",
            (warnedReply["warnings"] as? [[String: Any]])?.count, 1)
 
     let third = task("56565656-7878-9090-1212-343434343434",
                      dir: "/a/b/third", root: nil)
-    let notificationOverlaps = Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+    let notificationOverlaps = OrchestratorDraft.workspaceOverlaps(for: scanningNewcomer,
                                                                among: [other, third])
     let notices = Orchestrator.workspaceOverlapNotices(newTask: scanningNewcomer,
                                                        overlaps: notificationOverlaps)
@@ -1373,33 +1375,33 @@ group("declared write claims are reserved across dispatch trees") {
                                      serialize: serialize, claims: claims,
                                      claimsDeclared: true,
                                      secretHash: String(repeating: "0", count: 64))
-        made.claimKeys = Orchestrator.freezeClaims(claims, projectDir: dir)
+        made.claimKeys = OrchestratorDraft.freezeClaims(claims, projectDir: dir)
         return made
     }
 
     let holderID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     let holder = task(holderID, root: secondRoot, claims: ["Sources"])
     let exact = task(taskID, root: firstRoot, claims: ["Sources"])
-    let equal = Orchestrator.claimsOverlaps(for: exact, among: [holder])
+    let equal = OrchestratorDraft.claimsOverlaps(for: exact, among: [holder])
     expect("equal absolute claims conflict", equal.first?.paths, ["/repo/Sources"])
     expect("a directory claim covers a descendant file",
-           Orchestrator.claimsOverlaps(
+           OrchestratorDraft.claimsOverlaps(
                for: task(taskID, root: firstRoot, claims: ["Sources/Orchestrator.swift"]),
                among: [holder]
            ).first?.paths, ["/repo/Sources/Orchestrator.swift"])
     expect("the ancestor relationship is symmetric",
-           Orchestrator.claimsOverlaps(
+           OrchestratorDraft.claimsOverlaps(
                for: task(taskID, root: firstRoot, claims: ["Sources"]),
                among: [task(holderID, root: secondRoot,
                             claims: ["Sources/Orchestrator.swift"])]
            ).first?.paths, ["/repo/Sources/Orchestrator.swift"])
     expect("a string prefix ending mid-component is not a claim conflict",
-           Orchestrator.claimsOverlaps(
+           OrchestratorDraft.claimsOverlaps(
                for: task(taskID, root: firstRoot, claims: ["a/b"]),
                among: [task(holderID, root: secondRoot, claims: ["a/bc"])]
            ).count, 0)
     expect("claim path case follows L1's exact resolved spelling",
-           Orchestrator.claimsOverlaps(
+           OrchestratorDraft.claimsOverlaps(
                for: task(taskID, root: firstRoot, claims: ["Sources"]),
                among: [task(holderID, root: secondRoot, claims: ["sources"])]
            ).count, 0)
@@ -1407,7 +1409,7 @@ group("declared write claims are reserved across dispatch trees") {
     let nested = task(holderID, dir: "/repo", root: secondRoot,
                       claims: ["packages/app/Sources"])
     expect("claims are absolutized before nested project directories are compared",
-           Orchestrator.claimsOverlaps(
+           OrchestratorDraft.claimsOverlaps(
                for: task(taskID, dir: "/repo/packages/app", root: firstRoot,
                          claims: ["Sources/file.swift"]),
                among: [nested]
@@ -1416,7 +1418,7 @@ group("declared write claims are reserved across dispatch trees") {
     check("a cross-root overlap is a blocker",
           equal.count == 1 && equal.first?.sameRoot == false)
     let busy = equal.first.map {
-        Orchestrator.workspaceBusyExtra($0, now: Date(timeIntervalSince1970: 61))
+        OrchestratorDraft.workspaceBusyExtra($0, now: Date(timeIntervalSince1970: 61))
     } ?? [:]
     check("workspace_busy context names the blocker, title, root, creation and paths",
           busy["blocking_task"] as? String == holderID
@@ -1429,40 +1431,41 @@ group("declared write claims are reserved across dispatch trees") {
     // dispatch hit tonight — so this also proves root_key distinguishes what the label cannot.
     check("the 409 is context-sufficient: real age, and root_key rather than the collidable label",
           busy["age_seconds"] as? Int == 60
-              && busy["root_key"] as? String == Orchestrator.rootKeyDigest(secondRoot)
-              && Orchestrator.rootKeyDigest(secondRoot) != Orchestrator.rootKeyDigest("root label")
+              && busy["root_key"] as? String == OrchestratorDraft.rootKeyDigest(secondRoot)
+              && OrchestratorDraft.rootKeyDigest(secondRoot)
+                  != OrchestratorDraft.rootKeyDigest("root label")
               && (busy["root_key"] as? String)?.count == 8)
     // Pinned against the function's own output would pass no matter what the function
     // computes — this is the actual SHA-256 of the literal string below, truncated to 8 hex
     // characters (`printf '%s' clawdline-root-key-fixture | shasum -a 256 | cut -c1-8`), so a
     // change to the algorithm or its inputs breaks this test rather than sailing through it.
     expect("rootKeyDigest is a stable SHA-256 prefix, pinned to a literal expectation",
-           Orchestrator.rootKeyDigest("clawdline-root-key-fixture"), "237b1f8e")
+           OrchestratorDraft.rootKeyDigest("clawdline-root-key-fixture"), "237b1f8e")
     let clockRolledBack = equal.first.map {
-        Orchestrator.workspaceBusyExtra($0, now: Date(timeIntervalSince1970: 0))
+        OrchestratorDraft.workspaceBusyExtra($0, now: Date(timeIntervalSince1970: 0))
     } ?? [:]
     check("age_seconds never goes negative, even against a clock that rolled back before the "
           + "blocking task's own created time",
           clockRolledBack["age_seconds"] as? Int == 0)
 
     let sibling = task(holderID, root: firstRoot, claims: ["Sources"])
-    let sameRoot = Orchestrator.claimsOverlaps(for: exact, among: [sibling])
+    let sameRoot = OrchestratorDraft.claimsOverlaps(for: exact, among: [sibling])
     check("the same root keeps authority over its own overlapping graph",
           sameRoot.count == 1 && sameRoot.first?.sameRoot == true)
-    let warned = Orchestrator.dispatchPayload(record: ["id": taskID], taskID: taskID,
+    let warned = OrchestratorDraft.dispatchPayload(record: ["id": taskID], taskID: taskID,
                                               overlaps: [], claimsOverlaps: sameRoot)
     let warning = (warned["warnings"] as? [[String: Any]])?.first
     check("same-root overlap is admitted with a claims_overlap warning",
           warning?["code"] as? String == "claims_overlap"
               && warning?["task"] as? String == holderID
               && warning?["paths"] as? [String] == ["/repo/Sources"])
-    let warnedAt = Orchestrator.dispatchPayload(record: ["id": taskID], taskID: taskID,
+    let warnedAt = OrchestratorDraft.dispatchPayload(record: ["id": taskID], taskID: taskID,
                                                 overlaps: [], claimsOverlaps: sameRoot,
                                                 now: Date(timeIntervalSince1970: 31))
     let timedWarning = (warnedAt["warnings"] as? [[String: Any]])?.first
     check("the claims_overlap warning is context-sufficient too",
           timedWarning?["age_seconds"] as? Int == 30
-              && timedWarning?["root_key"] as? String == Orchestrator.rootKeyDigest(firstRoot))
+              && timedWarning?["root_key"] as? String == OrchestratorDraft.rootKeyDigest(firstRoot))
 
     var parent = task("12121212-3434-5656-7878-909090909090",
                       root: firstRoot, state: .briefed, claims: ["elsewhere"])
@@ -1473,7 +1476,7 @@ group("declared write claims are reserved across dispatch trees") {
     var otherChild = task(holderID, root: nil, claims: ["Sources"], rootLabel: nil)
     otherChild.depth = 2
     otherChild.parentTaskId = parent.id
-    let inherited = Orchestrator.claimsOverlaps(for: child, among: [parent, otherChild])
+    let inherited = OrchestratorDraft.claimsOverlaps(for: child, among: [parent, otherChild])
     check("descendants inherit root identity and label for claims just as they do for L1",
           inherited.allSatisfy(\.sameRoot) && inherited.first?.rootLabel == "root label")
 
@@ -1481,16 +1484,16 @@ group("declared write claims are reserved across dispatch trees") {
                        claims: ["Sources"])
     unknown.depth = 2
     unknown.parentTaskId = "99999999-9999-9999-9999-999999999999"
-    let unknownRoot = Orchestrator.claimsOverlaps(for: unknown, among: [holder])
-    let unknownReply = Orchestrator.dispatchPayload(record: ["id": taskID], taskID: taskID,
+    let unknownRoot = OrchestratorDraft.claimsOverlaps(for: unknown, among: [holder])
+    let unknownReply = OrchestratorDraft.dispatchPayload(record: ["id": taskID], taskID: taskID,
                                                     overlaps: [], claimsOverlaps: unknownRoot)
     let unknownWarning = (unknownReply["warnings"] as? [[String: Any]])?.first
     check("an unresolved root degrades to a typed warning instead of a hard blocker",
           unknownRoot.first?.blocks == false
               && unknownWarning?["code"] as? String == "claims_overlap_unknown_root")
     check("even inside an unknown-root pair, a resolvable blocker still reports its own root_key",
-          unknownWarning?["root_key"] as? String == Orchestrator.rootKeyDigest(secondRoot))
-    let unknownHolder = Orchestrator.claimsOverlaps(for: exact, among: [unknown])
+          unknownWarning?["root_key"] as? String == OrchestratorDraft.rootKeyDigest(secondRoot))
+    let unknownHolder = OrchestratorDraft.claimsOverlaps(for: exact, among: [unknown])
     check("an unresolved blocking side also lacks hard-block authority",
           unknownHolder.first?.blocks == false
               && unknownHolder.first?.warning(for: taskID)["code"] as? String
@@ -1503,7 +1506,7 @@ group("declared write claims are reserved across dispatch trees") {
     for terminal in terminals {
         let ended = task(holderID, root: secondRoot, state: terminal, claims: ["Sources"])
         expect("\(terminal.rawValue) releases every claim",
-               Orchestrator.claimsOverlaps(for: exact, among: [ended]).count, 0)
+               OrchestratorDraft.claimsOverlaps(for: exact, among: [ended]).count, 0)
     }
     let timedOut = task(holderID, root: secondRoot, state: .timeout, claims: ["Sources"])
     check("a timeout completion line says the claims are free while the tab may still write",
@@ -1512,19 +1515,19 @@ group("declared write claims are reserved across dispatch trees") {
     let queuedHolder = task(holderID, root: secondRoot, claims: ["Sources"],
                             serialize: ["build"])
     expect("a serialized task reserves claims for its whole queued wait",
-           Orchestrator.claimsOverlaps(for: exact, among: [queuedHolder]).count, 1)
+           OrchestratorDraft.claimsOverlaps(for: exact, among: [queuedHolder]).count, 1)
     expect("a candidate combining claims and serialize still checks claims while queued",
-           Orchestrator.claimsOverlaps(
+           OrchestratorDraft.claimsOverlaps(
                for: task(taskID, root: firstRoot, claims: ["Sources"], serialize: ["build"]),
                among: [queuedHolder]
            ).count, 1)
     let readOnly = task(taskID, root: firstRoot, claims: [])
     expect("a read-only task cannot conflict with a live lease",
-           Orchestrator.claimsOverlaps(
+           OrchestratorDraft.claimsOverlaps(
                for: readOnly, among: [holder]
            ).count, 0)
     expect("a live lease cannot conflict with a read-only task either",
-           Orchestrator.claimsOverlaps(for: exact, among: [readOnly]).count, 0)
+           OrchestratorDraft.claimsOverlaps(for: exact, among: [readOnly]).count, 0)
     check("a read-only task holds no lease keys while retaining its declaration",
           readOnly.claimsDeclared && readOnly.claimKeys.isEmpty)
 
@@ -1560,14 +1563,14 @@ group("declared write claims are reserved across dispatch trees") {
                             withIntermediateDirectories: true)
     defer { try? fm.removeItem(at: physicalURL) }
     let claim = "link/created-later.txt"
-    let beforeCreation = Orchestrator.freezeClaims([claim], projectDir: physicalRoot)
+    let beforeCreation = OrchestratorDraft.freezeClaims([claim], projectDir: physicalRoot)
     fm.createFile(atPath: physicalURL.appendingPathComponent(claim).path,
                   contents: Data("made later".utf8))
-    let afterCreation = Orchestrator.freezeClaims([claim], projectDir: physicalRoot)
+    let afterCreation = OrchestratorDraft.freezeClaims([claim], projectDir: physicalRoot)
     expect("a frozen claim key does not change when its target file is created",
            afterCreation, beforeCreation)
     expect("literal joining normalises dot and empty relative components",
-           Orchestrator.freezeClaims(["./link//created-later.txt"], projectDir: physicalRoot),
+           OrchestratorDraft.freezeClaims(["./link//created-later.txt"], projectDir: physicalRoot),
            beforeCreation)
 
     let tmpSpelling = physicalRoot.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")
@@ -1576,7 +1579,8 @@ group("declared write claims are reserved across dispatch trees") {
     let tmpCandidate = task(taskID, dir: tmpSpelling, root: firstRoot,
                             claims: ["future/output.txt"])
     check("/tmp and /private/tmp project roots reserve one canonical namespace",
-          Orchestrator.claimsOverlaps(for: tmpCandidate, among: [tmpHolder]).first?.blocks == true)
+          OrchestratorDraft.claimsOverlaps(for: tmpCandidate, among: [tmpHolder])
+              .first?.blocks == true)
 }
 
 group("a released claim key no longer counts as held") {
@@ -1589,7 +1593,7 @@ group("a released claim key no longer counts as held") {
                                  rootSessionId: "root-full",
                                  claims: ["Sources/A.swift", "Sources/B.swift"],
                                  claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
-    full.claimKeys = Orchestrator.freezeClaims(full.claims, projectDir: dir)
+    full.claimKeys = OrchestratorDraft.freezeClaims(full.claims, projectDir: dir)
     check("before any release, both claims are active",
           full.activeClaimKeys == ["\(dir)/Sources/A.swift", "\(dir)/Sources/B.swift"])
     var partiallyReleased = full
@@ -1621,11 +1625,11 @@ group("a released claim key no longer counts as held") {
                                       rootSessionId: "root-candidate",
                                       claims: ["Sources/A.swift"], claimsDeclared: true,
                                       secretHash: String(repeating: "0", count: 64))
-    candidate.claimKeys = Orchestrator.freezeClaims(candidate.claims, projectDir: dir)
+    candidate.claimKeys = OrchestratorDraft.freezeClaims(candidate.claims, projectDir: dir)
     check("a still-held claim keeps blocking a cross-root candidate",
-          Orchestrator.claimsOverlaps(for: candidate, among: [full]).first?.blocks == true)
+          OrchestratorDraft.claimsOverlaps(for: candidate, among: [full]).first?.blocks == true)
     check("the same candidate is free once its path was released",
-          Orchestrator.claimsOverlaps(for: candidate, among: [partiallyReleased]).isEmpty)
+          OrchestratorDraft.claimsOverlaps(for: candidate, among: [partiallyReleased]).isEmpty)
 }
 
 group("the claims/release route frees paths early, guards terminal tasks, and is idempotent") {
@@ -1639,7 +1643,7 @@ group("the claims/release route frees paths early, guards terminal tasks, and is
                                      claims: ["Sources/A.swift", "Sources/B.swift"],
                                      claimsDeclared: true,
                                      secretHash: String(repeating: "0", count: 64))
-        made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+        made.claimKeys = OrchestratorDraft.freezeClaims(made.claims, projectDir: dir)
         return made
     }
 
@@ -1703,7 +1707,7 @@ group("release compares ancestor and descendant paths like arbitration does, val
                                      created: Date(timeIntervalSince1970: 1),
                                      claims: claims, claimsDeclared: true,
                                      secretHash: String(repeating: "0", count: 64))
-        made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+        made.claimKeys = OrchestratorDraft.freezeClaims(made.claims, projectDir: dir)
         return made
     }
     func releasedPaths(_ reply: Orchestrator.Reply) -> [String] {
@@ -1770,7 +1774,7 @@ group("the claims/release HTTP route is orchestrator-token gated") {
                                  timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
                                  claims: ["Sources/A.swift"], claimsDeclared: true,
                                  secretHash: String(repeating: "0", count: 64))
-    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    made.claimKeys = OrchestratorDraft.freezeClaims(made.claims, projectDir: dir)
     Orchestrator.holdScheduleTaskForTesting(made)
 
     let anonymous = RemoteServer.shared.route(remoteRequest(

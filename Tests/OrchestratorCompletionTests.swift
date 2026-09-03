@@ -7,11 +7,11 @@ import SQLite3
 
 func runOrchestratorCompletionTests() {
 group("task completion ingress and delivery are durable protocol facts") {
-    let physical = Orchestrator.RootIdentityEvidence(
+    let physical = OrchestratorDraft.RootIdentityEvidence(
         source: "active_terminal", terminalID: "terminal-root",
         canonicalSessionID: "conversation-root", assistant: .codex)
     guard case .refused(let status, let code, _, let extra)? =
-        Orchestrator.rootIdentityRefusal(
+        OrchestratorDraft.rootIdentityRefusal(
             claimed: "terminal-root", evidence: [physical]) else {
         check("an active physical root id is refused", false)
         return
@@ -21,26 +21,26 @@ group("task completion ingress and delivery are durable protocol facts") {
     expect("the physical root refusal names the canonical conversation id",
            extra["canonical_root_session_id"] as? String, "conversation-root")
     check("an unknown or offline identity is not guessed",
-          Orchestrator.rootIdentityRefusal(
+          OrchestratorDraft.rootIdentityRefusal(
             claimed: "unknown-root", evidence: []) == nil)
     check("a caller-mislabeled assistant cannot hide a proved physical terminal tuple",
-          Orchestrator.rootIdentityRefusal(
+          OrchestratorDraft.rootIdentityRefusal(
             claimed: "terminal-root", evidence: [physical]) != nil)
-    if case .refused(_, _, _, let mislabeledExtra)? = Orchestrator.rootIdentityRefusal(
+    if case .refused(_, _, _, let mislabeledExtra)? = OrchestratorDraft.rootIdentityRefusal(
         claimed: "terminal-root", evidence: [physical]) {
         expect("the correction returns the actual assistant, not the caller label",
                mislabeledExtra["canonical_root_assistant"] as? String, "codex")
     } else {
         check("the correction returns the actual assistant, not the caller label", false)
     }
-    let conflicting = Orchestrator.RootIdentityEvidence(
+    let conflicting = OrchestratorDraft.RootIdentityEvidence(
         source: "conflict", terminalID: "terminal-root",
         canonicalSessionID: "conversation-other", assistant: .codex)
     check("conflicting positive tuples remain inconclusive",
-          Orchestrator.rootIdentityRefusal(
+          OrchestratorDraft.rootIdentityRefusal(
             claimed: "terminal-root", evidence: [physical, conflicting]) == nil)
     check("a null claimed identity remains polling-compatible",
-          Orchestrator.rootIdentityRefusal(
+          OrchestratorDraft.rootIdentityRefusal(
             claimed: nil, evidence: [physical]) == nil)
 
     // New ordinary HTTP work must never choose Claude merely because the owner assistant was
@@ -603,8 +603,8 @@ group("ACK save failure rolls back only its delivery transition") {
 
     let concurrentClose = Date(timeIntervalSince1970: 900)
     let concurrentRepository = "/tmp/concurrent-repository"
-    let concurrentBranch = Orchestrator.worktreeBranch(for: id)!
-    let concurrentPath = Orchestrator.worktreePath(project: concurrentRepository, taskID: id)!
+    let concurrentBranch = OrchestratorDraft.worktreeBranch(for: id)!
+    let concurrentPath = OrchestratorDraft.worktreePath(project: concurrentRepository, taskID: id)!
     Orchestrator.storeSaveInterceptorForTesting = { _ in
         Orchestrator.mutateTaskForTesting(id) { latest in
             latest.worktree = Orchestrator.Worktree(

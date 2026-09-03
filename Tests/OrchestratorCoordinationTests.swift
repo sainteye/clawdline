@@ -830,62 +830,62 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
     check("the launch-time task-root grant survives a registry round trip",
           OrchestratorStore.task(from: OrchestratorStore.stored(durableGrant))?.childTaskRootAccess == true)
 
-    func refusal(_ decision: Orchestrator.AttachmentDecision) -> (Int, String)? {
+    func refusal(_ decision: OrchestratorDraft.AttachmentDecision) -> (Int, String)? {
         guard case .refused(let status, let code, _) = decision else { return nil }
         return (status, code)
     }
     expect("an unknown attachment is typed 404 before registration",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: "UNKNOWN", assistant: .codex, sessions: [standing], states: [:],
             tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
            "attach_session_not_found")
     expect("a plain shell cannot receive a child briefing",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: shell.id, assistant: .codex, sessions: [shell], states: [:],
             tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
            "attach_unsupported")
     expect("a session Clawdline never opened for a task cannot be attached to",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
             tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
            "attach_not_managed")
     expect("and a person's own session is refused before the assistant is even compared",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .claude, sessions: [standing], states: [:],
             tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
            "attach_not_managed")
     expect("a managed leaf without task-root access cannot host a follow-up",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
             tasks: [], roles: [standing.id: leafRole], isChoosing: { _ in false }))?.1,
            "attach_not_managed")
     expect("the task assistant must match the standing assistant",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .claude, sessions: [standing], states: [:],
             tasks: [], roles: [standing.id: role], isChoosing: { _ in false }))?.1,
            "attach_assistant_mismatch")
     expect("one live task occupies a standing session",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
             tasks: [existing], roles: [standing.id: role], isChoosing: { _ in false }))?.1,
            "attach_session_occupied")
     check("but not that task's own second resolution, which is how the pump promotes it",
-          refusal(Orchestrator.attachmentDecision(
+          refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
             tasks: [existing], roles: [standing.id: role], isChoosing: { _ in false },
             excluding: existing.id)) == nil)
     expect("a cached waiting state plus the narrow menu proof refuses before typing",
-           refusal(Orchestrator.attachmentDecision(
+           refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing],
             states: [standing.id: .waiting], tasks: [], roles: [standing.id: role],
             isChoosing: { _ in true }))?.1,
            "attach_session_busy")
     check("waiting without the menu proof is accepted",
-          refusal(Orchestrator.attachmentDecision(
+          refusal(OrchestratorDraft.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing],
             states: [standing.id: .waiting], tasks: [], roles: [standing.id: role],
             isChoosing: { _ in false })) == nil)
-    if case .accepted(_, let depth) = Orchestrator.attachmentDecision(
+    if case .accepted(_, let depth) = OrchestratorDraft.attachmentDecision(
         sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
         tasks: [], roles: [standing.id: role], isChoosing: { _ in false }) {
         expect("attachment keeps the standing session's existing depth", depth, 2)
@@ -897,7 +897,7 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
     holder.rootSessionId = "root-a"
     holder.claims = ["Sources/Feature.swift"]
     holder.claimsDeclared = true
-    holder.claimKeys = Orchestrator.freezeClaims(holder.claims, projectDir: holder.projectDir)
+    holder.claimKeys = OrchestratorDraft.freezeClaims(holder.claims, projectDir: holder.projectDir)
     var candidate = Orchestrator.Task(
         id: "66666666-7777-4888-8999-aaaaaaaaaaaa", state: .queued, kind: "code",
         title: "conflicting follow-up", assistant: .codex, projectDir: "/tmp",
@@ -905,10 +905,10 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
         attachSessionId: "OTHER", secretHash: String(repeating: "0", count: 64))
     candidate.claims = holder.claims
     candidate.claimsDeclared = true
-    candidate.claimKeys = Orchestrator.freezeClaims(candidate.claims,
+    candidate.claimKeys = OrchestratorDraft.freezeClaims(candidate.claims,
                                                      projectDir: candidate.projectDir)
     check("an attached live task reserves claims through the ordinary workspace gate",
-          Orchestrator.claimsOverlaps(for: candidate, among: [holder]).first?.blocks == true)
+          OrchestratorDraft.claimsOverlaps(for: candidate, among: [holder]).first?.blocks == true)
 
     let manager = FileManager.default
     let store = Orchestrator.storeURL

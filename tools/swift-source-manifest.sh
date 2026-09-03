@@ -59,6 +59,7 @@ clawdline_production_sources=(
   Sources/NotchIsland.swift
   Sources/Onboarding.swift
   Sources/Orchestrator.swift
+  Sources/OrchestratorDraft.swift
   Sources/OrchestratorPlanning.swift
   Sources/OrchestratorRegistry.swift
   Sources/OrchestratorStore.swift
@@ -133,6 +134,7 @@ clawdline_test_sources=(
   Tests/OrchestratorCompletionTests.swift
   Tests/OrchestratorCoordinationTests.swift
   Tests/OrchestratorDispatchTests.swift
+  Tests/OrchestratorDraftTests.swift
   Tests/OrchestratorLandingTests.swift
   Tests/OrchestratorLifecycleTests.swift
   Tests/OrchestratorRecoveryTests.swift

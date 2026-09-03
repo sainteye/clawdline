@@ -1135,7 +1135,9 @@ group("cleanup documentation describes the API and runtime contract, not registr
     let registryRecord = OrchestratorStore.stored(task)
     let api = try! String(contentsOfFile: "docs/api.md", encoding: .utf8)
     let guide = try! String(contentsOfFile: "docs/orchestrator.md", encoding: .utf8)
-    let implementation = try! String(contentsOfFile: "Sources/Orchestrator.swift",
+    // `attachmentDecision` and its comment live in `OrchestratorDraft` since the draft/refusal
+    // extraction; the assertion is about the comment, so it follows the function.
+    let implementation = try! String(contentsOfFile: "Sources/OrchestratorDraft.swift",
                                      encoding: .utf8)
     check("cleanup deadlines are registry-internal and absent from the public task shape",
           publicRecord["work_cleanup_at"] == nil && publicRecord["build_cleanup_at"] == nil
@@ -1236,7 +1238,7 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     // `attach_session` is parsed out of task.json at all — every existing test built the field
     // by hand on an `Orchestrator.Task`, so the parser could be deleted without a red.
     let parsedID = UUID().uuidString.lowercased()
-    switch Orchestrator.draft(from: [
+    switch OrchestratorDraft.draft(from: [
         "clawdline_protocol": 1, "task_id": parsedID, "assistant": "codex",
         "project_dir": "/tmp", "instructions": "read", "attach_session": standing.id,
     ], expecting: parsedID, isDirectory: { _ in true }) {
