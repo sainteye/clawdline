@@ -1206,9 +1206,14 @@ group("file-wait and handoff deliveries type only the versioned envelope") {
           registerRoute.contains("Orchestrator.registerCoordinationWait(")
               && releaseRoute.contains("Orchestrator.releaseCoordinationWait(")
               && serverSource.contains("private func coordinationReadiness("))
-    check("both wait routes hand the broker the real picker check",
+    // Three production sites pass the picker check: the two wait routes, and the landing queue's
+    // advance, which needs the same answer about whether the next holder is reachable. The count
+    // lives here so a fourth site cannot appear without somebody reading this line — the name says
+    // what it counts, because the old name said "both wait routes" while counting the whole file,
+    // and the two stopped meaning the same thing the moment a third caller was correct to exist.
+    check("every production use of the picker check is inventoried",
           serverSource.components(separatedBy:
-              "readiness: self.coordinationReadiness").count - 1 == 2)
+              "readiness: self.coordinationReadiness").count - 1 == 3)
     check("registration and release each wire that check at their production route",
           registerRoute.components(separatedBy:
               "readiness: self.coordinationReadiness").count - 1 == 1

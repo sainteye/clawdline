@@ -136,6 +136,9 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
 | `GET` | `/v1/orchestrator/assistants` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/landings` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/landing-queue` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/orchestrator/landing-queue/order` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/landing-queue/advance` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage` | orchestrator token, **or** token | `read` |
@@ -1735,7 +1738,11 @@ inspection and may still be writing; the root's typed completion line calls out 
 
 For an isolated task, relative claims under `project_dir` are discarded and a
 `claims_ignored_for_worktree` warning names them: the child writes corresponding paths in its
-private checkout. `serialize` remains active and independent for ports, builds, devices, and other
+private checkout. **The discarded list is no longer only in that warning.** It is kept as the
+task's landing-time write set and answered back as `landing_paths` on the task record, the inflight
+row and the landing queue, because the two questions `claims` used to answer are not the same
+question: isolation ends "who may edit this path in the shared checkout" and merely *defers* "who
+will write it when this lands". `serialize` remains active and independent for ports, builds, devices, and other
 machine-global resources. Because isolated tasks have distinct effective cwd values, they do not
 produce L1 warnings merely because their `projectDir` fields name the same repository.
 
@@ -2941,6 +2948,8 @@ The record:
     ]
   },
   "claims": ["Sources/Orchestrator.swift"],   // present (maybe []) only when task.json declared it
+  "claims_declared": true,                    // always present: was a write set declared at all
+  "landing_paths": ["Sources/Orchestrator.swift"],  // absent unless isolation emptied `claims`
   "released_claims": [                        // absent unless something was given back early
     {"path": "/Users/you/code/clawdline/Sources/Orchestrator.swift", "released_at": 1787100090}
   ],
@@ -3031,6 +3040,16 @@ included in `orchestrator.dispatch` audit metadata.
 
 The same payload goes out on [the event stream](#the-event-stream) as an `orchestrator` frame
 whenever any record changes, and once when a stream opens, right after `hello` and `sessions`.
+
+**`claims: []` is a sentence, not a blank, which is why the two fields beside it exist.** The
+dispatch contract says an empty declared set positively declares the task read-only, so an isolated
+task whose nine declared paths were erased used to read as a promise to write nothing. `isolation`
+was always readable beside it, so the pair *could* be told apart by a reader who thought to read
+both — but the field lies when it is read alone, and a field that lies alone will be read alone. So
+`claims_declared` says whether a write set was declared at all (absence of `claims` means unknown,
+`[]` with `claims_declared: true` means read-only), and `landing_paths` says what an erased lease
+will write when it lands. Both projections of a task now emit these together, so the broker cannot
+answer with the empty lease and omit what replaced it.
 
 `released_claims` and `untouched_claims` are two independent, purely observational trails —
 neither ever blocks anything. `released_claims` is written by
@@ -3155,6 +3174,130 @@ without exposing a conversation id, transcript, token, tty, pid, process start o
 A row is a signpost, not a gate: callers decide whether to wait or continue.
 Pending landing obligations are exempt from the registry's ordinary newest-200 cleanup cap; they
 remain queryable until a root explicitly marks them `landed` or `abandoned`.
+
+### `GET /v1/orchestrator/landing-queue`
+
+Who is waiting to land in one repository, in what order, and what they will collide over.
+Authentication is identical to `GET /v1/orchestrator/landings`: the orchestrator token or a paired
+device with `read`. `project` (or `project_dir`) is any absolute path; the repository containing it
+is resolved on this side, exactly as `GET /v1/orchestrator/inflight` does.
+
+**There is no route that adds an entry, and that is the point.** Membership is derived on every
+read from the task registry through the same
+`workVisibility(state:landing:isolated:branchExists:branchMerged:)` the inflight list uses, so a
+root is in the queue when it has live work in the repository, a delivery on an unmerged branch, or
+a declared `landing: pending` — whether or not anybody wrote it down. The hand-maintained list this
+replaces lost two roots that were working in the shared checkout at the time.
+
+```json
+{"repository":"/Users/me/code/clawdline",
+ "queue":[{"root_key":"9f1c2e7a","root_label":"clawdline main","position":1,"placement":"ordered",
+   "holder":true,"reasons":["unlanded_delivery"],"since":1787100110,"age_seconds":42,
+   "paths":["Sources/Orchestrator.swift","tools/check-architecture-boundaries.sh"],
+   "tasks":[{"id":"3f9a21bc-…","title":"Edit the orchestrator","state":"success",
+     "visibility":"unmerged","reason":"unlanded_delivery",
+     "delivery":{"branch":"clawdline/task/3f9a21bc","base":"9e12a2a8…","head":"427ec660…"}}]},
+  {"root_key":"a1e5c53d","root_label":null,"position":null,"placement":"unplaced",
+   "holder":false,"reasons":["live_work"],"since":1787100150,"age_seconds":2,
+   "paths":["tools/check-architecture-boundaries.sh"],"tasks":[…]}],
+ "order":{"keys":["9f1c2e7a"],"generation":3,"updated":1787100120,"set_by":"clawdfather",
+   "stale":[],"unplaced":["a1e5c53d"]},
+ "contended_paths":[{"path":"tools/check-architecture-boundaries.sh",
+   "entries":[{"root_key":"9f1c2e7a","source":"claims"},
+              {"root_key":"a1e5c53d","source":"delivery_diff"}]}],
+ "at":1787100152}
+```
+
+`root_key` is the same eight-hex digest a claims conflict and a landing row publish, so the three
+are comparable without a conversation id leaving the machine. `reasons` is closed: `live_work`,
+`unlanded_delivery`, `pending_landing`. `since` is the oldest contributing task's clock, and
+`age_seconds` uses the same `max(0, now - since)` formula as `workspace_busy`.
+
+`position` is 1-based and **nullable, which is a value rather than a gap**: `placement: "unplaced"`
+means the queue knows about this line and no coordinator has said where it goes. Unplaced entries
+sort after ordered ones, oldest first, and `order.unplaced` names them so an incomplete order is
+visible instead of quiet. `order.stale` names digests the stored order still holds that are no
+longer members; they are reported, never revived.
+
+`holder` marks the one entry that may land now — the first ordered entry, or the oldest unplaced
+one when nothing has been ordered. It is derived, so a slot completing moves it with no write.
+
+`paths` is that entry's landing-time write set: the declared `claims` of its tasks, plus what each
+delivery branch changed against its own base (`git diff --name-only base...branch`, one per live
+branch). `contended_paths` is every path more than one entry writes, in queue order, with `source`
+saying which evidence put each entry there — `claims`, `delivery_diff`, or `both` when the two
+agree. This is the answer three lines all changing one line of `tools/check-architecture-boundaries.sh`
+had to discover by tripping over each other.
+
+| `code` | status | |
+|---|---|---|
+| `bad_request` | 400 | `project` was missing, relative, or not inside a Git repository |
+
+### `POST /v1/orchestrator/landing-queue/order`
+
+Sets the order over the entries currently in one repository's queue. Orchestrator token only: this
+is a coordinator's decision, and it is the **only** thing about the queue anybody writes.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/landing-queue/order \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"project":"/Users/me/code/clawdline","order":["9f1c2e7a","a1e5c53d"],
+         "if_generation":2,"set_by":"clawdfather"}'
+```
+
+The body accepts `project` (or `project_dir`), `order`, and the optional `if_generation` and
+`set_by`. `order` is an array of root keys already in the queue; each may appear once. An accepted
+write bumps `generation` by one and answers with the same body `GET` returns.
+
+**It cannot add a member and it cannot remove one.** A digest that is not currently in the queue is
+refused rather than stored, because an order that can name absent work is an order that can quietly
+be about the wrong tree; and an entry the order omits keeps its row. The worst a wrong order can do
+is put somebody in the wrong place, which is visible — not out of the queue, which was not.
+
+| `code` | status | |
+|---|---|---|
+| `bad_request` | 400 | `project` is not inside a Git repository, `order` is absent or not an array of non-empty keys |
+| `duplicate_entry` | 400 | one root key appears twice, so it has no position |
+| `forbidden` | 403 | no orchestrator token |
+| `not_queued` | 409 | a named root key is not in this repository's queue; `queued` lists the ones that are |
+| `stale_order` | 409 | `if_generation` did not match; `generation` carries the current value |
+
+### `POST /v1/orchestrator/landing-queue/advance`
+
+Hands the landing slot to whoever is now at the front, by typing one broker-composed message into
+that root's session. Orchestrator token only, and bounded like the other routes that reach a
+terminal.
+
+Nothing here decides who is next: the previous holder left the queue when its landing was recorded,
+and the arithmetic moved on without being told. What this adds is the one thing arithmetic cannot
+do, which is reach the session that is now at the front — the relay a person used to type by hand.
+
+```json
+{"ok":true,"repository":"/Users/me/code/clawdline","delivered":true,"reason":"delivered",
+ "holder":{"root_key":"a1e5c53d","position":1,…},"queue":[…],"order":{…},"contended_paths":[…],
+ "at":1787100152}
+```
+
+`delivered` is `false` with `reason: "already_notified"` when this holder has already been told at
+this order generation, so a second call is a no-op rather than the same paragraph typed twice. A
+re-ordering bumps the generation and therefore re-arms the notice, because a re-ordered queue is a
+different instruction even to the same holder. A refusal writes no receipt, so a retry after one is
+a real delivery.
+
+**The message prints the whole write set and then says the route wins.** A coordination wait once
+listed four `paths` correctly while the message describing it foregrounded one, and the waiting line
+believed the conflict surface was one file until it attempted the merge three hours later. Prose
+that summarises a list is the defect, so this prose does not summarise: every path, every entry
+sharing one, and the `GET` above named as the authority over the sentence a reader is holding.
+
+| `code` | status | |
+|---|---|---|
+| `bad_request` | 400 | `project` was missing, relative, or not inside a Git repository |
+| `forbidden` | 403 | no orchestrator token |
+| `queue_empty` | 409 | nothing is outstanding in that repository, so there is no slot to hand on |
+| `holder_busy` | 409 | the holder's session would read typed words as an answer to a menu; nothing was sent and no receipt was written |
+| `holder_unreachable` | 409 | the entry at the front has no Clawdline session to type into |
+| `handoff_delivery_failed` | 502 | the line could not be typed; no receipt was written |
 
 ### `GET /v1/orchestrator/storage`
 

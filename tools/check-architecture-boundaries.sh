@@ -100,7 +100,7 @@ if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.session
   architecture_guard_fail "Orchestrator task records re-scan Transcript/Targets on the main queue"
 fi
 
-remote_server_ceiling=6393
+remote_server_ceiling=6449
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -112,8 +112,8 @@ if grep -q 'group(' Tests/main.swift; then
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 30 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 30"
+[ "$runner_count" -eq 31 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 31"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -129,6 +129,9 @@ manifest_group_count=$(awk '
 # for the Project scope a Feature and the Projects table now resolve by one shared rule.
 # A number that only ever rises silently is not a ratchet, so both directions are named here the
 # way the `Orchestrator.swift` ceiling's are.
+# 509 once the landing queue landed its five: derived membership, a coordinator setting position
+# and only position, the contended-path answer, the broker-made slot handoff, and the
+# landing-time write set an isolated dispatch used to hand back and drop.
 #
 # **This number and the manifest it counts moved apart once, and the guard stayed green.** On
 # 2026-09-03 a root took its own manifest edit back out of the shared tree while the lease removal
@@ -138,8 +141,8 @@ manifest_group_count=$(awk '
 # `validateExecutedTestGroupManifest()`, which needs a whole suite run, and
 # `verify_swift_source_manifest`, which refuses to start one. **A green light that two edited
 # numbers produced by agreeing with each other looks exactly like a correct one.**
-[ "$manifest_group_count" -eq 510 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 510"
+[ "$manifest_group_count" -eq 515 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 515"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -213,8 +216,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 43 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 43"
+[ "$suite_count" -eq 44 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 44"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

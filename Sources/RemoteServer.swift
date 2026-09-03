@@ -696,7 +696,8 @@ final class RemoteServer: @unchecked Sendable {
             || path == "/v1/orchestrator/detached-tasks"
             || path == "/v1/orchestrator/handoffs"
             || path == "/v1/orchestrator/root-assignments"
-            || path == "/v1/orchestrator/waits" { return true }
+            || path == "/v1/orchestrator/waits"
+            || path == "/v1/orchestrator/landing-queue/advance" { return true }
         if path.hasPrefix("/v1/orchestrator/schedules/") && path.hasSuffix("/run") {
             return true
         }
@@ -1493,6 +1494,16 @@ final class RemoteServer: @unchecked Sendable {
                 "at": Int(observation.registry.observedAt.timeIntervalSince1970),
             ])
 
+        // **Who is waiting to land here, in what order, and what they will collide over.**
+        //
+        // Read-level like `landings` above it, and derived the same way `inflight` is: there is no
+        // route that adds an entry, because membership comes out of the task registry rather than
+        // out of anybody's memory of it. `project` is any directory; the repository containing it
+        // is resolved on this side, exactly as `inflight` does.
+        case ("GET", "/v1/orchestrator/landing-queue"):
+            let project = request.query["project"] ?? request.query["project_dir"] ?? ""
+            return answer(OrchestratorLandingQueue.queueReply(project: project))
+
         case ("GET", "/v1/orchestrator/storage"):
             return .json(Orchestrator.storageInventory())
 
@@ -1939,6 +1950,46 @@ final class RemoteServer: @unchecked Sendable {
                 id: id.removingPercentEncoding ?? id,
                 ownerSessionID: body["owner_session_id"] as? String ?? "",
                 commit: body["commit"] as? String, note: body["note"] as? String,
+                readiness: self.coordinationReadiness,
+                deliver: { targetID, text in
+                    guard let target = self.session(withID: targetID) else {
+                        return "No session named \(targetID)."
+                    }
+                    return Targets.send(text, to: target)
+                })
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
+        // **Position is the only thing a coordinator writes.** It cannot add an entry and it
+        // cannot take one away — both refusals are typed below — so the worst a wrong order can
+        // do is put somebody in the wrong place, which is visible, rather than out of the queue,
+        // which was not.
+        case ("POST", "/v1/orchestrator/landing-queue/order"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Setting the landing order needs the orchestrator token.")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            guard let keys = body["order"] as? [String] else {
+                return .error(400, "bad_request", "order is an array of queued root keys.")
+            }
+            return answer(OrchestratorLandingQueue.setOrder(
+                project: body["project"] as? String ?? body["project_dir"] as? String ?? "",
+                keys: keys, ifGeneration: body["if_generation"] as? Int,
+                setBy: body["set_by"] as? String))
+
+        // **The handoff a person used to type.** The next holder is arithmetic; this is the call
+        // that reaches them, once, with the structured answer quoted rather than summarised.
+        case ("POST", "/v1/orchestrator/landing-queue/advance"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Handing on the landing slot needs the orchestrator token.")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let reply = OrchestratorLandingQueue.advance(
+                project: body["project"] as? String ?? body["project_dir"] as? String ?? "",
                 readiness: self.coordinationReadiness,
                 deliver: { targetID, text in
                     guard let target = self.session(withID: targetID) else {
@@ -3178,6 +3229,11 @@ final class RemoteServer: @unchecked Sendable {
         if request.path == "/v1/orchestrator/waits" {
             let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
             return (body?["owner_session_id"] as? String).map { [$0] } ?? []
+        }
+        if request.path == "/v1/orchestrator/landing-queue/advance" {
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+            let project = body?["project"] as? String ?? body?["project_dir"] as? String ?? ""
+            return ["landing-queue:" + project]
         }
         if request.path == "/v1/orchestrator/root-assignments" {
             let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]

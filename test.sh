@@ -133,6 +133,15 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
 # step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
 # 165 -> 150, counted by that file itself.
+#
+# The landing queue adds 72, and they were counted rather than predicted: its five groups were run
+# on their own through CLAWDLINE_TEST_GROUPS against the delivered branch and reported `72 focused
+# checks passed`, and against a mutation restoring the pre-change world — membership admitting only
+# declared pending landings, the isolated write set handed back and dropped, the old single-line
+# claims projection — the same selection reported `47 of 72 focused checks failed`. Both runs held
+# this script's own lock; neither was a full suite, so 8,298 is 8,226 plus a measured delta and not
+# a reading of the whole tree. `main` has moved since this branch's base, so the landing root
+# recomputes the absolute from its own tree and what carries across the merge is the 72.
 # The local Feature classifier adds 125: six groups in `Tests/UsageLedgerTests.swift` — the rung
 # ladder and its decline reasons, the acceptance policy's threshold, the conflicting-head refusal,
 # the backfill dry run, the payload's statement of whether a producer is configured, and the Project
@@ -187,7 +196,11 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # short, and the guard that compares these two records cannot tell a pair that agrees from a pair
 # that is correct. This one was re-sealed under `CLAWDLINE_RESEAL=1`, which says out loud that the
 # run existed to produce the count, and the receipt check at the end of that run is what settled it.
-expected_swift_receipt='8438 checks passed'
+#
+# The landing queue merges on top of that. Its own run reported 8,298 against a base of
+# 8,226 — a measured delta of 72 — but that base is not this one, so the delta is a
+# prediction and not the seal. The value below is what this tree's run reported.
+expected_swift_receipt='8510 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
