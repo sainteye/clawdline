@@ -22,6 +22,10 @@ to the narrower operational document for the work in front of you.
   stat as *"is every one of these lines mine?"* rather than *"does this look about right"*, and
   take a stranger back out with `git reset -- <path>`, which unstages without touching their bytes.
 - Read the staged diff itself; a clean stat does not prove that a file contains only your work.
+- There is a `pre-commit` hook that mechanises the two bullets above, and it is **off until
+  somebody installs it**: `sh tools/install-git-hooks.sh` points `core.hooksPath` at the tracked
+  `tools/git-hooks`, repository-wide. What it refuses, what it cannot see, and how to get past it
+  are in [`docs/shared-tree-guard.md`](docs/shared-tree-guard.md).
 - After hunk-staging, commit the reviewed index with plain `git commit -m <message>` and no
   pathspec. `git commit -- <path>...` takes the named files from the worktree instead of the staged
   hunk selection and can absorb another session's unstaged hunks. A commit pathspec is safe only

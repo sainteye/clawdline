@@ -289,6 +289,11 @@ node Tests/dispatch-role-contract.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/remote-response-write-close.mjs
 node Tests/release-signing-contract.mjs
+# The shared-tree commit guard: that `tools/git-hooks/pre-commit` refuses a commit carrying a path
+# another session is working on, that it lets everything else through, and that it fails open and
+# loudly when Clawdline is not answering. Throwaway repositories under `mkdtemp` only — this suite
+# never runs git against the checkout it is testing, and proves that containment on the way out.
+node Tests/git-hooks.mjs
 # The onboarding policy, compiled out of Sources/Onboarding.swift without its AppKit half: that a
 # config switch is not readiness, that an allocated credential is not a connection, and that the
 # installer reopens the exact bundle it just wrote. It runs here rather than in the Swift suite

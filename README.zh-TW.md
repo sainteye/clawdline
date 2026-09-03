@@ -258,7 +258,12 @@ flag，為什麼在最便宜的模型上意思正好相反。
 的 checkout 讓每個 repo 都有自己完整的 worktree、claims 跟 session，代價只是不能在同一個資料夾
 裡同時改兩邊。
 
+**commit 那一刻也有一道門。** claims 是派工當下的門；等到有人真的打下 commit，這個 repo 自己的
+`pre-commit` 守衛會把 claims 讀回來，擋掉夾帶別的 session 活著的任務所宣告的路徑的 commit，也擋掉
+去收尾一個別人手動解完衝突的 merge。它預設是關的，要自己打開——`sh tools/install-git-hooks.sh`。
+
 [claims 怎麼算、什麼時候放掉、佇列怎麼排 →](docs/orchestrator.md#reserving-declared-write-paths-at-dispatch)
+· [commit 守衛 →](docs/shared-tree-guard.md)
 
 ## agent 一進門就讀到的規矩
 
@@ -703,6 +708,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | --- | --- |
 | [輸入條的細節](docs/interface.md) | session 清單、<kbd>⌘</kbd><kbd>J</kbd> 那塊、語音、檔案、瀏海 |
 | [把工作派出去](docs/orchestrator.md) | 一個 session 派工給另一個：協定、憑證、生命週期 |
+| [共用工作區的 commit 守衛](docs/shared-tree-guard.md) | 擋掉夾帶別人已 stage 檔案的 `pre-commit` hook、`sh tools/install-git-hooks.sh` 開了什麼，以及 `pre-commit` 看不到哪些事 |
 | [排程的任務](docs/schedules.md) | 按本地時間派出的 task 模板、睡眠補課與收 tab 政策 |
 | [交給新 session 接著做](docs/handoff.md) | 把整條工作的現況交給下一個 session 繼續 |
 | [被派出去的 session 會在哪停](docs/dispatch-permissions.md) | 四道門依序是什麼，以及那個在最便宜的模型上意思相反的 flag |
