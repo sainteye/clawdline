@@ -404,6 +404,17 @@ And where a structured field exists, read it instead. The wait above is the case
 an order from a wait reads `paths`, never the reason. A field has a subject; a sentence about why
 someone is waiting has only the moment it was written in.
 
+**A moved index tree is a question, not a verdict.** The third credential item — record the index
+tree the measurement was taken on, and re-derive it before landing — came out of a receipt that
+expired while its author changed nothing, because a shared index advances with other people's
+commits. Read as a trigger, it says *re-run whenever the SHA moved*, and on a tree several sessions
+are committing to that is most of the time. Read as a question, it says *go and look at what moved*.
+A landing on 2026-09-03 measured at one commit and landed three later; the three had touched a
+single documentation file and zero files under `Tests/` or `Sources/`, so the count could not have
+changed and the receipt still described the tree being landed. **The difference between a
+documentation commit and a test-file commit is the whole content of the item**, and a rule phrased
+as a trigger discards exactly that.
+
 ### What the re-seal door has and has not been shown to do
 
 `CLAWDLINE_RESEAL=1` downgrades one row of the architecture guard — `Swift checks`, the only one
