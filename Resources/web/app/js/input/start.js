@@ -74,6 +74,11 @@ export var Start = (function () {
     var coordinatorPayload = null; // durable device Bearings; null while its read is in flight
     var coordinatorFailed = false;
     var wait = null;     // { id, from, late, place } — started, and not in the list yet
+    // The command that reaches the session just started, or null when there is nowhere to send
+    // anybody. Only the detached-tmux start fills it — see `attach` on the start reply — and it
+    // is the one thing on this band that outlives the wait: everything else here is about a
+    // session that is on its way, and this is about where it went.
+    var detached = null;
     var timer = null;
     var placeholderNode = null;
     // Held at the placeholder's position through the first following stream update. That first
@@ -588,7 +593,7 @@ export var Start = (function () {
                 pressing = null;
                 // From here the tab exists on the Mac. Nothing after this line is allowed to read
                 // as "it might not have worked", and nothing after it presses this again.
-                began(d && d.id, place, makeClawdfather);
+                began(d && d.id, place, makeClawdfather, d && d.attach);
             });
         }).catch(function (e) {
             Waits.startPress.settle(function () {
@@ -648,7 +653,8 @@ export var Start = (function () {
         api.resumePlace(place.id, sessionID, with_).then(function (d) {
             Waits.startPress.settle(function () {
                 pressing = null;
-                began(d && d.id, { label: row.title, path: place.path, icon: place.icon });
+                began(d && d.id, { label: row.title, path: place.path, icon: place.icon },
+                      false, d && d.attach);
             });
         }).catch(function (e) {
             Waits.startPress.settle(function () {
@@ -669,26 +675,42 @@ export var Start = (function () {
         });
     }
 
-    /** Started. The sheet has done its job, and what is left is a wait. */
-    function began(id, place, makeClawdfather) {
+    /**
+     * Started. The sheet has done its job, and what is left is a wait.
+     *
+     * `attach` is the Mac's own answer to *where did it go* — empty for every start that put a
+     * tab in front of somebody, and the command to type for the one that did not. When it is
+     * there it replaces the waiting line, because "waiting for it to appear" is the wrong thing
+     * to say about a session that is never going to appear on that Mac's screen at all.
+     */
+    function began(id, place, makeClawdfather, attach) {
         assignmentState.begin(id, makeClawdfather === true);
+        detached = attach || null;
         close();
         if (!id) {
             // A reply with no id is nothing to watch the list for. The tab was still opened —
             // that is what `ok` meant — so this says now what the fifteen seconds would have.
-            band(T.webStartSlow, true);
+            band(detached ? detachedWords() : T.webStartSlow, true);
             return;
         }
         wait = { id: id, from: S.openId, late: false, place: place || {} };
-        band(T.webStartWaiting, false);
+        band(detached ? detachedWords() : T.webStartWaiting, false);
         renderList();
         clearTimeout(timer);
         timer = setTimeout(function () {
             if (!wait) return;
             wait.late = true;
-            band(T.webStartSlow, true);
+            // "Have a look at the Mac" is advice for a session that should have turned up and
+            // has not. A detached one is not late; it is somewhere else, and the line that says
+            // where stays where it is.
+            band(detached ? detachedWords() : T.webStartSlow, true);
             renderList();
         }, HOLD);
+    }
+
+    /** The one sentence written around the Mac's own `attach` command. */
+    function detachedWords() {
+        return fill(T.webStartDetached, { command: detached });
     }
 
     function band(words, slow) {
@@ -806,6 +828,7 @@ export var Start = (function () {
          *  turns up afterwards is a row in the list like any other. */
         dismiss: function () {
             wait = null;
+            detached = null;
             clearTimeout(timer);
             timer = null;
             hideBand();
@@ -832,7 +855,11 @@ export var Start = (function () {
             wait = null;
             clearTimeout(timer);
             timer = null;
-            hideBand();
+            // **The wait is over and the sentence is not.** Everything else this band says is
+            // about a session on its way, so the row arriving is the end of it. Where that
+            // session went is still true after it arrives, and it is a command somebody has to
+            // carry to a keyboard — so it stays until the × beside it is pressed.
+            if (detached) band(detachedWords(), true); else hideBand();
             draw();
             // Opened, for somebody who has not gone anywhere since pressing it — that is what
             // they asked for, and it is one less tap on a phone. Not if they have opened

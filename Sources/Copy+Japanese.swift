@@ -565,6 +565,7 @@ struct Japanese: Copy {
     let webStartGone = "そのプロジェクトはもう Mac にありません。"
     let webStartTerminalClosed = "{app} が Mac で動いていません。あちらで開いてから、もう一度どうぞ。"
     let webStartTerminalUnsupported = "設定では新しいセッションを tmux で開きますが、この Mac に tmux がありません。Mac に入れるか、設定で別のターミナルを選んでください。"
+    let webStartDetached = "セッションは、誰も接続していない tmux サーバーの中で始まりました。Mac で {command} と入力すると見られます。"
     let webStartOff = "セッションを始めるのはオフです。Mac の「設定 → リモート」で入ります。"
     let webResumeWith = "前の続きから"
     let webResumePick = "どの会話を？"

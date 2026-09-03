@@ -337,7 +337,7 @@ group("a tab that never opened is retried from its own task file, twice and no f
     var tabOpens = false
     Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
         tabOpens
-            ? .started(id: "TAB-\(UUID().uuidString)", backend: .iterm)
+            ? .started(id: "TAB-\(UUID().uuidString)", backend: .iterm, attach: nil)
             : .refused(status: 409, code: "terminal_closed",
                        message: "no terminal is running", app: "iTerm")
     }
@@ -528,7 +528,7 @@ group("an undeclared write set is refused at the door, and warned about where no
         for: .claude)
     Orchestrator.workspaceOverlapObserverForTesting = { _, _ in }
     Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
-        .started(id: "TAB-\(UUID().uuidString)", backend: .iterm)
+        .started(id: "TAB-\(UUID().uuidString)", backend: .iterm, attach: nil)
     }
 
     func taskFile(claims: [String]?, isolated: Bool = false, dir: String = "/tmp") -> String {

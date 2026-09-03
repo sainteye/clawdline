@@ -1242,7 +1242,7 @@ final class RemoteServer: @unchecked Sendable {
                                                      "assistant": assistant.rawValue,
                                                      "ok": "0", "why": code])
                     return .error(status, code, message, extra: app.map { ["app": $0] } ?? [:])
-                case .started(let made, let backend):
+                case .started(let made, let backend, let attach):
                     RemoteAuth.audit("place.start", ["place": place.id, "cwd": place.path,
                                                      "assistant": assistant.rawValue,
                                                      "ok": "1", "id": made])
@@ -1251,10 +1251,10 @@ final class RemoteServer: @unchecked Sendable {
                     DispatchQueue.main.async { SessionWatch.shared.nudge() }
                     // `model` is echoed the way `assistant` is, and is empty when the path did
                     // not name one — a client that asked for a size should be able to see it
-                    // arrived rather than infer it from a `200`.
+                    // arrived rather than infer it from a `200`. So is `attach`: see `Outcome`.
                     return .json(["ok": true, "id": made, "backend": backend.rawValue,
                                   "assistant": assistant.rawValue, "model": model,
-                                  "place": place.id, "cwd": place.path,
+                                  "place": place.id, "cwd": place.path, "attach": attach ?? "",
                                   "at": Int(Date().timeIntervalSince1970)])
                 }
             }
@@ -1304,7 +1304,7 @@ final class RemoteServer: @unchecked Sendable {
                                                       "session": String(conversation.prefix(64)),
                                                       "ok": "0", "why": code])
                     return .error(status, code, message, extra: app.map { ["app": $0] } ?? [:])
-                case .started(let made, let backend):
+                case .started(let made, let backend, let attach):
                     RemoteAuth.audit("place.resume", ["place": place.id, "cwd": place.path,
                                                       "assistant": assistant.rawValue,
                                                       "session": conversation,
@@ -1313,7 +1313,7 @@ final class RemoteServer: @unchecked Sendable {
                     return .json(["ok": true, "id": made, "backend": backend.rawValue,
                                   "assistant": assistant.rawValue,
                                   "place": place.id, "cwd": place.path,
-                                  "session": conversation,
+                                  "session": conversation, "attach": attach ?? "",
                                   "at": Int(Date().timeIntervalSince1970)])
                 }
             }

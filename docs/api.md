@@ -888,7 +888,7 @@ flag and one id.
 $ curl -s -X POST \
     http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/resume/105344fb-c769-4b37-b766-403b410897eb \
     -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b4' -d '{}'
-{"ok":true,"id":"…","backend":"iterm","assistant":"claude","place":"…","cwd":"…","session":"105344fb-c769-4b37-b766-403b410897eb","at":…}
+{"ok":true,"id":"…","backend":"iterm","assistant":"claude","place":"…","cwd":"…","session":"105344fb-c769-4b37-b766-403b410897eb","attach":"","at":…}
 ```
 
 **There is no request body here either**, and the conversation is a path segment for exactly the
@@ -913,6 +913,10 @@ the terminal actually opened. The hint is normalized and capped at 80 characters
 against the observed conversation as soon as that record exists, and is discarded if the terminal
 is reused for another assistant process. The schedule-only exception uses its retained task title.
 
+`attach` is `…/start`'s too, and means the same thing here: everything about *where* a session is
+opened is that route unchanged, so a conversation picked back up can land in a detached tmux server
+exactly as a new one can, and the reply says so the same way.
+
 The refusals are `…/start`'s, plus `not_found` for a conversation that is not on the listing — a
 transcript deleted since you last looked, an id from another project, or one that was never real.
 **Resuming a `live` conversation is not refused**, because the Mac cannot always tell which tab has
@@ -931,14 +935,14 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start \
 {"error":{"code":"write_disabled","message":"Sending is switched off. Settings → Remote turns it on, and it is off by default because typing into a session runs code on this Mac.","request_id":"2fd356e8-bef8-4f54-a312-851c0cfa8045"}}
 ```
 
-With the switch on: `{"ok":true,"id":"…","backend":"iterm","assistant":"claude","model":"","place":"…","cwd":"…","at":…}`.
+With the switch on: `{"ok":true,"id":"…","backend":"iterm","assistant":"claude","model":"","place":"…","cwd":"…","attach":"","at":…}`.
 
 To open Codex instead, name it:
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start/codex \
     -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b3' -d '{}'
-{"ok":true,"id":"…","backend":"iterm","assistant":"codex","model":"","place":"…","cwd":"…","at":…}
+{"ok":true,"id":"…","backend":"iterm","assistant":"codex","model":"","place":"…","cwd":"…","attach":"","at":…}
 ```
 
 A fourth segment says how big the session should be. It is one of **`haiku`, `sonnet`, `opus`** and
@@ -947,7 +951,7 @@ nothing else:
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start/claude/opus \
     -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b4' -d '{}'
-{"ok":true,"id":"…","backend":"iterm","assistant":"claude","model":"opus","place":"…","cwd":"…","at":…}
+{"ok":true,"id":"…","backend":"iterm","assistant":"claude","model":"opus","place":"…","cwd":"…","attach":"","at":…}
 ```
 
 `model` is echoed back the way `assistant` is, and is `""` when the path named none. **A name that
@@ -991,6 +995,28 @@ it, so a page can write its own sentence around it instead of showing the Englis
 left alone, because whoever pressed this is holding a phone and whoever is at the Mac is in the
 middle of something else. The one exception is a terminal with no window open at all, where making
 a window is unavoidably making a window.
+
+#### `attach`: where the session went, when that is not obvious
+
+Every reply above carries **`attach`**, and on almost every one of them it is `""`. It is filled in
+for exactly one case: tmux is the terminal in Settings, no tmux server was running, so the Mac
+started one **detached** — a session called `clawdline` with nothing attached to it. That session is
+real, it is in `/v1/sessions`, this app can read it and type into it, and at the Mac it is drawn
+nowhere at all. `attach` is the line somebody there types to see it:
+
+```json
+{"ok":true,"id":"%0","backend":"tmux","assistant":"claude","model":"","place":"…","cwd":"…","attach":"tmux attach -t clawdline","at":…}
+```
+
+A window opened on a tmux server that was *already* running is not this case and answers `""`: that
+window is in whatever client is attached to that server, which is where the person already is.
+Neither is an iTerm2 tab.
+
+`""` rather than an absent key, the same way `model` is `""` when the path named none — a field a
+client has to guard on `undefined` is a field a client will forget to guard on. **A non-empty
+`attach` is not a warning and not a partial success**: what was asked for happened. It is the
+answer to *where did it go*, and a client that shows it should keep it on screen long enough to be
+typed somewhere else rather than replacing it as soon as the session's row arrives.
 
 #### Between "started" and the session appearing
 

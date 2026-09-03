@@ -384,6 +384,9 @@ export var T = {
     webStartGone: "That project is not on the Mac any more.",
     webStartTerminalClosed: "{app} is not running on the Mac. Open it there and try again.",
     webStartTerminalUnsupported: "Settings starts new sessions in tmux, and this Mac has no tmux. Install it there, or pick another terminal in Settings.",
+    // Not a refusal: the session started, and this is the only start that leaves nothing on
+    // screen at the Mac. `{command}` is the reply's own `attach` field.
+    webStartDetached: "That started in a tmux server with nothing attached to it. Type {command} on the Mac to see it.",
     webStartOff: "Starting a session is switched off. Settings → Remote on the Mac turns it on.",
     webResumeWith: "Pick up an earlier one",
     webResumePick: "Which conversation?",

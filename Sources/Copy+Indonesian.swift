@@ -567,6 +567,7 @@ struct Indonesian: Copy {
     let webStartGone = "Proyek itu sudah tidak ada di Mac."
     let webStartTerminalClosed = "{app} tidak sedang jalan di Mac. Buka di sana lalu coba lagi."
     let webStartTerminalUnsupported = "Pengaturan membuka sesi baru di tmux, dan Mac ini tidak punya tmux. Pasang di sana, atau pilih terminal lain di pengaturan."
+    let webStartDetached = "Sesi ini dimulai di server tmux yang tidak ada yang terhubung. Ketik {command} di Mac untuk melihatnya."
     let webStartOff = "Memulai sesi sedang dimatikan. Pengaturan → Akses jarak jauh di Mac yang menyalakannya."
     let webResumeWith = "Lanjutkan yang lama"
     let webResumePick = "Percakapan yang mana?"

@@ -262,8 +262,16 @@ equal(retryLoads[1].demand.foreground, true,
 const testScript = readFileSync(new URL("../test.sh", import.meta.url), "utf8");
 ok(/browser_contract_suites=\([\s\S]*Tests\/web-transcript-requests\.mjs[\s\S]*\)/.test(testScript),
     "the exact full-suite browser roster contains this guard");
-ok(/\$\{#browser_contract_suites\[@\]\}[^\n]*-ne 15/.test(testScript),
-    "the roster count goes red if this suite entry is deleted");
+// The count is read out of the roster rather than written here a second time. It was `-ne 15`
+// until a sixteenth suite landed and updated `test.sh` alone: two records of one number, agreeing
+// with each other right up until one of them moved. Deriving it keeps what this line is for — the
+// guard in test.sh is armed, so deleting an entry from the roster still goes red — while removing
+// the copy that can drift.
+const rosterEntries = /browser_contract_suites=\(([\s\S]*?)\)/.exec(testScript)?.[1] ?? "";
+const rosterCount = rosterEntries.trim().split(/\s+/).filter(Boolean).length;
+ok(rosterCount > 0, "the browser roster was found and is not empty");
+ok(new RegExp(`\\$\\{#browser_contract_suites\\[@\\]\\}[^\\n]*-ne ${rosterCount}`).test(testScript),
+    "the roster count guard names the roster's own length, so deleting an entry goes red");
 const apiDocs = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8");
 ok(apiDocs.includes("transcript_busy") && apiDocs.includes("retry_after"),
     "API docs name typed transcript saturation and bounded retry guidance");

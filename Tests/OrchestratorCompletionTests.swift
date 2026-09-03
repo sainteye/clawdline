@@ -65,7 +65,7 @@ group("task completion ingress and delivery are durable protocol facts") {
     var openedWithoutOwnerAssistant = 0
     Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
         openedWithoutOwnerAssistant += 1
-        return .started(id: "SHOULD-NOT-OPEN", backend: .iterm)
+        return .started(id: "SHOULD-NOT-OPEN", backend: .iterm, attach: nil)
     }
     Orchestrator.rootIdentityEvidenceForTesting = []
     let missingRateBefore = Orchestrator.dispatchRateCountForTesting()
@@ -238,7 +238,7 @@ group("owned child dispatch and detached automation use different doors") {
     var opened = 0
     Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
         opened += 1
-        return .started(id: "TEST-DETACHED-\(opened)", backend: .iterm)
+        return .started(id: "TEST-DETACHED-\(opened)", backend: .iterm, attach: nil)
     }
     let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
     let secret = String(repeating: "da", count: 32)

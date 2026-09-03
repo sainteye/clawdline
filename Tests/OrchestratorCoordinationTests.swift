@@ -269,7 +269,7 @@ group("handoff registration opens once and shares the dispatch brake") {
     let first = Orchestrator.handoff(envelope(id)) { _, _, _, addDir in
         opens += 1
         grantedDirectory = addDir
-        return .started(id: "%handoff", backend: .tmux)
+        return .started(id: "%handoff", backend: .tmux, attach: nil)
     }
     guard case .ok(let payload) = first,
           let handoff = payload["handoff"] as? [String: Any] else {
@@ -319,10 +319,10 @@ group("handoff registration opens once and shares the dispatch brake") {
     var titledRequest = envelope(titledID)
     titledRequest["title"] = "接手成為 Clawdfather"
     titledRequest["assistant"] = "claude"
-    _ = Orchestrator.handoff(titledRequest) { _, _, _, _ in .started(id: "%titled", backend: .tmux) }
+    _ = Orchestrator.handoff(titledRequest) { _, _, _, _ in .started(id: "%titled", backend: .tmux, attach: nil) }
     let untitledID = UUID().uuidString.lowercased()
     _ = Orchestrator.handoff(envelope(untitledID)) { _, _, _, _ in
-        .started(id: "%untitled", backend: .tmux)
+        .started(id: "%untitled", backend: .tmux, attach: nil)
     }
     check("an untitled handoff stores no durable placeholder",
           Orchestrator.handoffLabelForTesting(untitledID) == nil)
@@ -409,7 +409,7 @@ group("handoff registration opens once and shares the dispatch brake") {
     rebindRequest["title"] = "not this stranger's job"
     rebindRequest["assistant"] = "claude"
     _ = Orchestrator.handoff(rebindRequest) { _, _, _, _ in
-        .started(id: "%rebind", backend: .tmux)
+        .started(id: "%rebind", backend: .tmux, attach: nil)
     }
     let firstProcess = Orchestrator.SessionWorkIdentity(
         terminalID: "%rebind", assistant: .claude, tty: "/dev/ttys041", pid: 100,

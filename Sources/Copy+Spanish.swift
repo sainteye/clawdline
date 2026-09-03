@@ -567,6 +567,7 @@ struct Spanish: Copy {
     let webStartGone = "Ese proyecto ya no está en el Mac."
     let webStartTerminalClosed = "{app} no está abierto en el Mac. Ábrelo allí y vuelve a intentarlo."
     let webStartTerminalUnsupported = "Los ajustes abren las sesiones nuevas en tmux, y este Mac no tiene tmux. Instálalo ahí, o elige otro terminal en los ajustes."
+    let webStartDetached = "Se inició en un servidor tmux al que no hay nada conectado. Escribe {command} en el Mac para verlo."
     let webStartOff = "Empezar sesiones está desactivado. Se activa en Ajustes → Acceso remoto, en el Mac."
     let webResumeWith = "Retomar una anterior"
     let webResumePick = "¿Qué conversación?"

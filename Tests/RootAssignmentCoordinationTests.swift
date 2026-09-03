@@ -175,21 +175,21 @@ group("root assignments are a closed durable fourth primitive") {
     let mismatchReply = Orchestrator.rootAssignment(
         base, idempotencyKey: UUID().uuidString.lowercased(),
         assistantAvailable: { _ in true }, start: { _, _, _ in
-            opens += 1; return .started(id: "%mismatch", backend: .tmux) })
+            opens += 1; return .started(id: "%mismatch", backend: .tmux, attach: nil) })
     expect("a mismatched idempotency header has a typed refusal",
            refusalCode(mismatchReply), "idempotency_mismatch")
     let priorEnabled = Config.shared.orchestratorEnabled; Config.shared.orchestratorEnabled = false
     var disabled = base; let disabledID = UUID().uuidString.lowercased(); disabled["request_id"] = disabledID
     let disabledReply = Orchestrator.rootAssignment(
         disabled, idempotencyKey: disabledID, assistantAvailable: { _ in true },
-        start: { _, _, _ in opens += 1; return .started(id: "%disabled", backend: .tmux) })
+        start: { _, _, _ in opens += 1; return .started(id: "%disabled", backend: .tmux, attach: nil) })
     expect("the shared orchestrator switch has a typed creation refusal", refusalCode(disabledReply), "orchestrator_disabled")
     Config.shared.orchestratorEnabled = priorEnabled
     var persistence = base; let persistenceID = UUID().uuidString.lowercased(); persistence["request_id"] = persistenceID
     Orchestrator.storeSaveInterceptorForTesting = { _ in false }
     let persistenceReply = Orchestrator.rootAssignment(
         persistence, idempotencyKey: persistenceID, assistantAvailable: { _ in true },
-        start: { _, _, _ in opens += 1; return .started(id: "%persistence", backend: .tmux) })
+        start: { _, _, _ in opens += 1; return .started(id: "%persistence", backend: .tmux, attach: nil) })
     Orchestrator.storeSaveInterceptorForTesting = nil
     expect("a refused durable write is a typed creation failure", refusalCode(persistenceReply), "persistence_failed")
     var unavailable = base; let unavailableID = UUID().uuidString.lowercased(); unavailable["request_id"] = unavailableID
@@ -197,14 +197,14 @@ group("root assignments are a closed durable fourth primitive") {
         unavailable, idempotencyKey: unavailableID,
         assistantAvailable: { _ in false }, projectApproved: { _ in false }) { _, _, _ in
             opens += 1
-            return .started(id: "%should-not-open", backend: .tmux)
+            return .started(id: "%should-not-open", backend: .tmux, attach: nil)
         }
     expect("an unavailable selected assistant has a typed refusal", refusalCode(unavailableReply), "assistant_unavailable")
     expect("assistant availability is checked before opening a terminal", opens, 0)
     let first = Orchestrator.rootAssignment(base, idempotencyKey: requestID,
         assistantAvailable: { _ in true }, projectApproved: { _ in true }) { _, _, _ in
             opens += 1
-            return .started(id: "%feature-root", backend: .tmux)
+            return .started(id: "%feature-root", backend: .tmux, attach: nil)
         }
     guard case .ok(let firstPayload) = first,
           let firstRecord = firstPayload["root_assignment"] as? [String: Any],
@@ -221,14 +221,14 @@ group("root assignments are a closed durable fourth primitive") {
     let replay = Orchestrator.rootAssignment(base, idempotencyKey: requestID,
         assistantAvailable: { _ in true }, projectApproved: { _ in true }) { _, _, _ in
             opens += 1
-            return .started(id: "%duplicate", backend: .tmux)
+            return .started(id: "%duplicate", backend: .tmux, attach: nil)
         }
     check("a later language setting cannot conflict with or reopen an accepted request",
           { if case .ok = replay { return opens == 1 }; return false }())
     var conflict = base; conflict["label"] = "Different content under one request"
     let conflictReply = Orchestrator.rootAssignment(
         conflict, idempotencyKey: requestID, assistantAvailable: { _ in true },
-        start: { _, _, _ in opens += 1; return .started(id: "%conflict", backend: .tmux) })
+        start: { _, _, _ in opens += 1; return .started(id: "%conflict", backend: .tmux, attach: nil) })
     expect("different content under one request id is a typed conflict", refusalCode(conflictReply), "request_conflict")
     var terminalFailure = base; let terminalFailureID = UUID().uuidString.lowercased(); terminalFailure["request_id"] = terminalFailureID
     let refusedOpen = Orchestrator.rootAssignment(
@@ -240,7 +240,7 @@ group("root assignments are a closed durable fourth primitive") {
     let refusedReplay = Orchestrator.rootAssignment(
         terminalFailure, idempotencyKey: terminalFailureID,
         assistantAvailable: { _ in true }, start: { _, _, _ in
-            replayStarts += 1; return .started(id: "%unsafe-retry", backend: .tmux) })
+            replayStarts += 1; return .started(id: "%unsafe-retry", backend: .tmux, attach: nil) })
     expect("a terminal assignment replay requires a new request id", refusalCode(refusedReplay), "request_terminated")
     expect("terminal replay cannot risk a duplicate tab", replayStarts, 0)
     let assigningRoot = TargetSession(
@@ -415,7 +415,7 @@ group("root assignments are a closed durable fourth primitive") {
     check("a closed or reused terminal id cannot inherit a stale assignment label", reuseForgot && Orchestrator.title(forTerminal: exact.terminalID) == nil)
     while Orchestrator.takeDispatchRate() != nil {}
     var limited = base; let limitedID = UUID().uuidString.lowercased(); limited["request_id"] = limitedID
-    let limitedReply = Orchestrator.rootAssignment(limited, idempotencyKey: limitedID, assistantAvailable: { _ in true }, start: { _, _, _ in .started(id: "%rate-limited", backend: .tmux) })
+    let limitedReply = Orchestrator.rootAssignment(limited, idempotencyKey: limitedID, assistantAvailable: { _ in true }, start: { _, _, _ in .started(id: "%rate-limited", backend: .tmux, attach: nil) })
     expect("the shared launch brake has a typed creation refusal", refusalCode(limitedReply), "rate_limited")
 }
 }

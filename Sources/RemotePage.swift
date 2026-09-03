@@ -260,6 +260,7 @@ enum RemotePage {
             "webStartGone": t.webStartGone,
             "webStartTerminalClosed": t.webStartTerminalClosed,
             "webStartTerminalUnsupported": t.webStartTerminalUnsupported,
+            "webStartDetached": t.webStartDetached,
             "webStartOff": t.webStartOff,
             "webResumeWith": t.webResumeWith,
             "webResumePick": t.webResumePick,

@@ -3506,7 +3506,7 @@ enum Orchestrator {
             RemoteAuth.audit("handoff.undelivered", ["handoff": id, "why": code])
             return .refused(status: status, code: code, message: message,
                             extra: app.map { ["app": $0] } ?? [:])
-        case .started(let terminalID, let backend):
+        case .started(let terminalID, let backend, _):
             let delivery = HandoffDelivery(id: id, assistant: draft.assistant,
                                            model: draft.model, terminalID: terminalID,
                                            backend: backend, spawnedAt: Date())
@@ -3810,7 +3810,7 @@ enum Orchestrator {
             var extra: [String: Any] = ["assignment_id": id]
             if let app { extra["app"] = app }
             return .refused(status: status, code: code, message: message, extra: extra)
-        case .started(let terminalID, let backend):
+        case .started(let terminalID, let backend, _):
             lock.lock()
             var opened = rootAssignments[id] ?? assignment
             opened.state = .terminalOpened
@@ -4443,7 +4443,7 @@ enum Orchestrator {
             if let worktree = task.worktree {
                 OrchestratorDraft.disposeWorktree(worktree, taskID: task.id, why: "spawn_failed")
             }
-        case .started(let id, let backend):
+        case .started(let id, let backend, _):
             task.state = .spawning
             task.spawnedAt = Date()
             task.childTerminalId = id

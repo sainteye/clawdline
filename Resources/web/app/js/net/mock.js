@@ -609,8 +609,8 @@ export var Mock = (function () {
 
     // How the fixture's start behaves: `?start=slow` never reports in, so the fifteen seconds
     // can be watched rather than described; `closed`, `unsupported` and `gone` are the three
-    // refusals with a sentence of their own on the other end, and `empty` is a Mac with
-    // nowhere to start at all.
+    // refusals with a sentence of their own on the other end, `detached` is the success with a
+    // sentence of its own, and `empty` is a Mac with nowhere to start at all.
     var MOCK_START = params.get("start") || "";
 
     // Dictation, which is the one fixture that cannot fake its own half of the job: the
@@ -1260,8 +1260,16 @@ export var Mock = (function () {
                         return;
                     }
                     var made = "N" + Math.floor(Math.random() * 9000 + 1000) + "-" + Math.floor(Math.random() * 90 + 10);
-                    done({ ok: true, id: made, backend: "iterm", assistant: assistant || "claude",
-                           place: place.id, cwd: place.path, at: Math.floor(Date.now() / 1000) });
+                    // `?start=detached` is the one success that leaves nothing on that Mac's
+                    // screen: tmux is what Settings asks for, no server was running, so one was
+                    // started with nothing attached to it. The pane is real and Clawdline lists
+                    // it; `attach` is the only way anybody at the Mac finds it. Empty on every
+                    // other path, exactly as the server sends it.
+                    var detached = MOCK_START === "detached";
+                    done({ ok: true, id: made, backend: detached ? "tmux" : "iterm",
+                           assistant: assistant || "claude", place: place.id, cwd: place.path,
+                           attach: detached ? "tmux attach -t clawdline" : "",
+                           at: Math.floor(Date.now() / 1000) });
                     // Not with the reply: the whole point is that the id is answered before
                     // there is a session to go with it. `?start=slow` is the one that never does.
                     if (MOCK_START === "slow") return;
