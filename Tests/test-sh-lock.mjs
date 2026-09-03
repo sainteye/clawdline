@@ -168,6 +168,16 @@ const baseEnv = {
     TMPDIR: dir,
 };
 
+// **Nothing ambient reaches a harness, and one variable was getting through.** Everything the two
+// blocks read is pinned above except `CLAWDLINE_SUITE_JOBS` — which the caller's own environment
+// can carry, and which this machine's dispatch policy tells a session to set:
+// `CLAWDLINE_SUITE_JOBS=1 ./test.sh` is the supported way to ask for fewer compiler jobs. That
+// value reached scenario 12's control, the one that asserts what happens when *no* ceiling is set,
+// and made the whole suite red on a tree where nothing about the ceiling had changed. Every
+// scenario that wants a value passes it explicitly, so the ambient one is removed rather than
+// overridden: an override would be one more value to keep in step with the block's default.
+delete baseEnv.CLAWDLINE_SUITE_JOBS;
+
 // The block acquires as its last act, which is what a caller wants and what most scenarios below
 // want too. One scenario needs the functions without the acquisition — the outer shell of a `nohup`
 // that never held the lock — so the block is cut at the trap. Cutting is checked rather than
