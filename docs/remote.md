@@ -404,9 +404,11 @@ error parsing tunnel ID: clawdline-no-such-tunnel is neither the ID nor the name
 ## Being told, instead of looking
 
 A paired device can subscribe to notifications and then buzz when **a session starts waiting for an
-answer** — the one state that costs you something for every second it goes unnoticed. Two more, both
-off unless asked for: `push_on_finish` for a turn that ran over two minutes and stopped, and
-`push_on_deploy` for a deploy that stopped running, whichever way it went.
+answer** — the one state that costs you something for every second it goes unnoticed. Three more.
+`push_on_delivery` and `push_on_fanout` are on unless you say otherwise: the first for a session
+reporting that it delivered and is waiting for you to look, the second for the last task of a
+fan-out coming back with its count. `push_on_deploy` is off until asked for, and covers a deploy
+that stopped running, whichever way it went.
 
 <img src="assets/web-push.gif" width="390" alt="A notification arriving on a phone: the banner drops over the home screen carrying the app's own mark, sits long enough to be read, and slides away. This one is the test the page can ask for; the ones that arrive unasked name the session task and project that are waiting.">
 

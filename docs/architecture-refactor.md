@@ -554,7 +554,7 @@ checks without running them — so it is the one row that a full suite has to se
 | ordered runners | 25 | 29 |
 | suite files | 38 | 42 |
 | Swift checks | — | 8,093 |
-| `Orchestrator.swift` ceiling | 13,592 | 12,831 |
+| `Orchestrator.swift` ceiling | 13,592 | 12,882 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,393 |
 
 The `Orchestrator.swift` ceiling has moved in both directions and the guard now carries that

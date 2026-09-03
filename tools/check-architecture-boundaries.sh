@@ -28,6 +28,13 @@ main_lines=$(line_count Tests/main.swift)
 #   13,123  the broker lease moved in            (2eef7bb6 / 15924b14, +307)
 #   13,085  the lease's projection moved out     (correction round, -38)
 #   12,831  the broker lease was removed         (-254)
+#   12,882  the delivery push moved in           (+51)
+#
+# The last of those is a feature landing rather than a relocation: the notification that used to
+# fire when a turn stopped now fires on a root's own delivery receipt, and the push lives where
+# that receipt is created. Of the 51 lines, 12 are the sender, 9 the pure wording beside
+# `batchMessage`, 4 the test seam and its reset, and the rest are the doc comments that say why
+# `smart_notifications` means something narrower on this path than on any other.
 #
 # The raise to 13,123 was legitimate and reviewed at the time — a landed, green feature's code has
 # to live somewhere — and of those 307 lines roughly 250 were registry ownership, store wiring and
@@ -43,7 +50,7 @@ main_lines=$(line_count Tests/main.swift)
 #
 # Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
 # to grow that nobody reviewed. Anyone raising it again adds the line, the commit and the reason.
-orchestrator_ceiling=12831
+orchestrator_ceiling=12882
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."

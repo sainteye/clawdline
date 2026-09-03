@@ -735,8 +735,9 @@ itself.
 | `remote_tunnel` | `off` | `off` · `quick` · `named` |
 | `remote_tunnel_name` · `remote_hostname` | `""` | both required for a named tunnel |
 | `cloudflared_path` | `""` | empty looks where package managers put it |
-| `push_on_finish` · `push_on_deploy` | `true` · `false` | when a phone should buzz |
-| `smart_notifications` | `false` | let Haiku replace a generic finish notice with one sentence about what the work did |
+| `push_on_delivery` · `push_on_fanout` | `true` · `true` | a session reporting it delivered; the last task of a fan-out coming back. `push_on_fanout` inherits the removed `push_on_finish` |
+| `push_on_deploy` | `false` | when a deploy stops running, either way |
+| `smart_notifications` | `false` | let Haiku replace the generic fan-out notice with one sentence about what the work did. On the delivery notice it spends nothing and carries the session's own summary |
 | `orchestrator_enabled` | `true` | may a session hand work to another |
 | `orchestrator_max_children` | `5` | child sessions one session may have out, 1–10 |
 | `orchestrator_max_grandchildren` | — | no longer read. The tree is one level deep as a fact of the code, not of this file; an old config keeps the key and nothing looks at it |
