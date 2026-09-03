@@ -15,7 +15,10 @@ WEB = Path(os.environ.get("CLAWDLINE_WEB_ROOT", ROOT / "Resources" / "web"))
 JS_ROOT = WEB / "app" / "js"
 I18N = JS_ROOT / "core" / "i18n.js"
 USAGE = JS_ROOT / "view" / "usage.js"
-SERVER = ROOT / "Sources" / "RemoteServer.swift"
+# The /v1/strings payload moved from RemoteServer.swift to RemotePage.swift when the page
+# assets were extracted, and a check with one path pinned into it goes red on a pure
+# relocation. Read whichever of them exist, concatenated, so the next move is invisible here.
+SERVER_FILES = [ROOT / "Sources" / "RemotePage.swift", ROOT / "Sources" / "RemoteServer.swift"]
 INDEX = Path(os.environ.get("CLAWDLINE_WEB_INDEX", WEB / "index.html"))
 NAME = r"[A-Za-z_$][A-Za-z0-9_$]*"
 
@@ -39,7 +42,7 @@ def main():
         modules = sorted(JS_ROOT.rglob("*.js"))
         i18n = I18N.read_text()
         usage = USAGE.read_text()
-        server = SERVER.read_text()
+        server = "\n".join(f.read_text() for f in SERVER_FILES if f.exists())
         index = INDEX.read_text()
     except OSError as error:
         fail(str(error))
@@ -72,10 +75,13 @@ def main():
     # routes build JSON dictionaries here, and names such as `ok`, `id`, and `build` are not
     # strings the page translates.  The name on the left is authoritative: some values come
     # from a differently named Copy member (for example webScheduleNext/settingsScheduleNext).
+    # Bounded by the function names alone. The full signatures were pinned here once, and a
+    # relocation that changed `private func … (Request)` to `static func … (RemoteServer.Request)`
+    # made both boundaries vanish — a pure move read as a missing payload.
     payload = section(
         server,
-        "private func strings(for request: Request)",
-        "private func stringsScript(for request: Request)",
+        "func strings(for request:",
+        "func stringsScript(for request:",
         "/v1/strings",
     )
     sent = set(

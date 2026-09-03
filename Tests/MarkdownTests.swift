@@ -1165,7 +1165,11 @@ group("every Session work-state string crosses the typed localization contract")
                 "sessionWorkOwed", "sessionWorkSelfStated",
                 "sessionWorkMilestone", "sessionWorkComplete"]
     let fallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
-    let server = try! String(contentsOfFile: "Sources/RemoteServer.swift")
+    // The payload moved to RemotePage.swift when the page assets were extracted. Read both,
+    // so a pure relocation does not read as a missing key.
+    let server = ["Sources/RemotePage.swift", "Sources/RemoteServer.swift"]
+        .compactMap { try? String(contentsOfFile: $0) }
+        .joined(separator: "\n")
     for key in keys {
         check("the browser fallback and /v1/strings payload both name \(key)",
               fallback.contains("\(key):") && server.contains("\"\(key)\":"))
@@ -1187,7 +1191,11 @@ group("the code-block copy button's words cross the typed localization contract"
     // button staying in English in thirteen languages.
     let keys = ["webCodeCopy", "webCodeCopied", "webCodeCopyFailed"]
     let fallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
-    let server = try! String(contentsOfFile: "Sources/RemoteServer.swift")
+    // The payload moved to RemotePage.swift when the page assets were extracted. Read both,
+    // so a pure relocation does not read as a missing key.
+    let server = ["Sources/RemotePage.swift", "Sources/RemoteServer.swift"]
+        .compactMap { try? String(contentsOfFile: $0) }
+        .joined(separator: "\n")
     for key in keys {
         check("the browser fallback and /v1/strings payload both name \(key)",
               fallback.contains("\(key):") && server.contains("\"\(key)\":"))

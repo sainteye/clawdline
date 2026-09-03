@@ -114,7 +114,7 @@ if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.session
   architecture_guard_fail "Orchestrator task records re-scan Transcript/Targets on the main queue"
 fi
 
-remote_server_ceiling=6449
+remote_server_ceiling=5446
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
