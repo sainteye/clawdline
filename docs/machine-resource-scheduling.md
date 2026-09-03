@@ -320,6 +320,26 @@ world.
 repaired by its context: a reader who runs `git show` on it gets an error and then does not know
 which half of the message to trust. Paste a SHA from the output of the command that produced it.
 
+**The size of the shortfall says *where* the run stopped — until it doesn't.** On 2026-09-03 six
+red runs across three trees and two different seals all came out exactly 502 checks short: 7716
+against a seal of 8218, and 7591 against a seal of 8093. The arithmetic is the four suites the
+abort took with it — `CloudCommandLedger:101 + CloudOutboundSpool:141 + CloudPairing:172 +
+CloudLifecycle:87` = 501, plus the failing check itself. Two lines independently proposed treating
+502 as an identifier for that abort point, on the grounds that the error type (`deadlineExpired` /
+`outcomeUnknown`) has only two values and collides, while 502 names a position.
+
+**It does name a position, and it is not durable.** It is the sum of four suite sizes as they stand
+today; add one check to `CloudPairing` and the signature is 503. A number that identifies a failure
+until somebody writes a test is worse than no identifier, because it fails toward *this is a
+different failure* — the direction that starts a new investigation instead of joining the existing
+one. And it only works paired with the right seal: applying 8218 to a tree sealed at 8093 gives 627,
+a number belonging to no explanation. That mistake was caught here only because the wrong answer
+happened not to look like a right one.
+
+So the shortfall is reported as a quantity, alongside the suite list that produced it, and the
+reader matches the tail themselves. The durable identifier is *which suites are missing*, which
+does not drift; 502 is what that identity happens to weigh this week.
+
 **A red run's check count is also a coverage number, and nothing says so.** On 2026-09-03 three runs
 each reported `1 of 7716 checks failed`. The tree they ran was reported to total 8,218 — so five
 hundred-odd checks never executed, because the failure was a bare error escaping an unwrapped `try
