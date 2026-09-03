@@ -372,13 +372,22 @@ enum StartPoints {
                           tmux: fixture?.tmux ?? tmuxReach())
         switch chosen {
         case .iterm:
-            let opened = ITerm.newTabResult(line: itermLine(cwd: place.path,
-                                                             assistant: assistant,
-                                                             model: model,
-                                                             reasoningEffort: reasoningEffort,
-                                                             permission: permission,
-                                                             addDir: addDir,
-                                                             resume: resume))
+            let tab = itermLine(cwd: place.path, assistant: assistant, model: model,
+                                reasoningEffort: reasoningEffort, permission: permission,
+                                addDir: addDir, resume: resume)
+            // **A fixture stands in for every opening this file does, not only tmux's.** An
+            // `.iterm` plan reached with one set would otherwise drive real AppleScript from a
+            // test that believed it had described a Mac — which is a seam with a hole in exactly
+            // the shape nobody looks for.
+            if let fixture {
+                switch fixture.open(chosen, place.path, tab) {
+                case .success(let made): return .started(id: made, backend: .iterm, attach: nil)
+                case .failure(let problem):
+                    return .refused(status: 502, code: "terminal_io_failed",
+                                    message: problem.message, app: nil)
+                }
+            }
+            let opened = ITerm.newTabResult(line: tab)
             guard case .success(let made) = opened else {
                 let failure: TerminalFailure
                 if case .failure(let problem) = opened { failure = problem }

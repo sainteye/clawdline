@@ -1129,20 +1129,22 @@ group("a session started in a tmux server nobody is attached to says where to fi
     expect("a server that was already running gets a window, not a second server",
            openedWith, [.tmux])
     if case .started(_, _, let attach) = window {
-        expect("and nothing to say about how to reach it", attach, nil)
+        check("and nothing to say about how to reach it", attach == nil, attach ?? "nil")
     } else {
         check("a running server still starts a session", false, "\(window)")
     }
 
-    // An iTerm2 tab is in front of the person by the time the reply is written.
+    // An iTerm2 tab is in front of the person by the time the reply is written. The fixture
+    // covers this opening too — a seam that stood in for tmux and let `.iterm` through would
+    // drive real AppleScript out of a test that thought it had described a Mac.
     openedWith = []
     StartPoints.fixtureForTesting = mac(.absent, terminal: .auto,
                                         running: [StartPoints.itermBundleID])
     if case .started(_, let backend, let attach) = StartPoints.start(place) {
         expect("an iTerm2 start is on the iTerm2 backend", backend, .iterm)
-        expect("and has nowhere to send anybody", attach, nil)
+        check("and has nowhere to send anybody", attach == nil, attach ?? "nil")
     }
-    expect("and it never asked tmux for anything", openedWith, [])
+    expect("and it opened a tab rather than anything on tmux", openedWith, [.iterm])
 
     // **And now the caller.** This is the assertion the feature is: the reply a phone reads,
     // through the real route, with the real gate in front of it.
