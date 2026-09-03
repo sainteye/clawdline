@@ -222,10 +222,57 @@ flags computed correctly but never spread into the argument vector (1).
 ## What is left after all of it
 
 `test-sh-lock.mjs` at 71 s and the test binary at 60 s are now 72% of a 183-second run, and neither
-is addressed by any axis above. The binary's minute has never been broken down at all — 8,353 checks
-and no per-group timing — and that is the obvious next measurement. It needs a different instrument
-from this one: the section boundaries here come from process lifetimes, and the binary is one
-process.
+is addressed by any axis above. Both have since been broken down, with the same instrument turned
+inward: `group(title) { body }` prints `  ✓ title` *after* the body, and the binary's stdout is
+line-buffered by `Tests/TestIsolation.swift`, so timestamping each line gives per-group wall time
+without editing anything. The same trick works on the node suite, whose checks print one line each.
+
+### The binary's minute is twenty groups
+
+509 groups timed, summing to 50.9 s of a 51 s run — so nothing is unaccounted for.
+
+| | |
+|---|---|
+| the single largest group | **15.57 s — 31% of the whole binary** |
+| top 5 groups | 28.4 s (56%) |
+| top 20 groups | 45.0 s (88%) |
+| the remaining ~489 | about 6 s |
+
+The largest is `the SQLite analytics bound belongs to the complete matching query`, and its time is
+**fixture construction, not the thing under test**: it inserts 120,000 rows through the production
+SQLite schema before asserting anything. 120,000 is not arbitrary — `UsageLedger.maxScannedRows` is
+`100_000`, and the fixture has to exceed it for "an old narrow month outside the newest global 100k
+remains visible" to mean anything. Its assertions are all correctness (`rowCount` 20,000 and 1,667,
+`!scanTruncated`, corrections scoping, freshness), so if that bound were injectable the same
+properties could be proved at a hundredth of the size.
+
+**The 3.53 s group beside it is not a candidate and it is worth saying why**, because the two look
+identical from a profile. `a 60k-row SQLite-to-DTO usage query stays bounded and measured` times its
+own query, asserts `seconds < 10`, and prints a `USAGE_ANALYTICS_PERF` receipt. Its fixture *is* the
+subject. Shrinking it would leave the check count untouched and delete the measurement, which is the
+precise shape of change this page exists to refuse.
+
+### The lock guard's seventy seconds are idle, and that is measurable
+
+`Tests/test-sh-lock.mjs`: a 74.5 s span, of which **70.8 s sits in gaps longer than 0.8 s**. Not one
+pathological scenario — about twenty of them, each honestly waiting out a deadline it is there to
+prove. The four longest are 8.09 s, 7.88 s, 6.79 s and 6.40 s.
+
+**An earlier section of this page turned down parallelising this file on the ground that a timing
+test run under load would go flaky. That was an assumption, and it does not survive being measured.**
+The file already isolates itself per process — its own `mkdtemp` scratch, its own `lockprobe<pid>`
+stand-in compiler name — so four whole-file runs were started at once on a machine already at load
+average 9. **All four finished in 74 seconds, the same as one alone, all green at 164 checks, zero
+reds.** Four runs costing what one costs is the definition of idle waiting, and green under 4×
+concurrency is evidence the deadlines are not fragile.
+
+So the prize is real and large: about 60 seconds off a 183-second run, a third of it. What stops it
+being cheap is not risk but shape. The scenarios are sequential inline code inside one `try` block,
+sharing one scratch directory, one stand-in lock directory and one block scope, driven by
+**synchronous** `spawnSync`. Running them concurrently means either making twenty scenarios async or
+sharding them across processes, and both need the cross-scenario variable scope of a 1,400-line
+concurrency test established first. That is a piece of work with a number attached to it now, which
+is what it did not have before.
 
 ## The instruments, and how to repeat this
 
