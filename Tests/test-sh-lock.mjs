@@ -18,7 +18,7 @@
 // abandoned.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync, mkdirSync, cpSync, copyFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1616,6 +1616,179 @@ try {
     check("a log with no total at all is silent rather than guessing",
         drive("nothing here\n", 8226).trim() === "");
     rmSync(work, { recursive: true, force: true });
+}
+
+// The governance table and the seal it renders, driven the same way: the real
+// `tools/check-architecture-boundaries.sh` is run against a scratch copy of this tree, and the
+// mutations are applied to the copy. It lives beside the receipt checks above because it is the
+// same subject — what `./test.sh` believes about its own totals before it starts compiling — and
+// because both are guards whose failure mode is silence.
+//
+// **What it is guarding.** On 2026-09-03 a commit added eight checks and updated neither the seal in
+// `test.sh` nor the governance row in `docs/architecture-refactor.md`. The guard compared those two
+// with each other, they still agreed, so it was green — while `main` ran 8,101 against a seal of
+// 8,093 for hours, and the next person's suite run nearly wore the blame. The decisive check below
+// is that exact sequence: add an assertion to a Swift test file, change nothing else, and the guard
+// must now refuse to start a compiler.
+{
+    const tree = mkdtempSync(join(tmpdir(), "governance-table-"));
+    const from = (rel) => new URL(`../${rel}`, import.meta.url);
+    try {
+        for (const dir of ["Sources", "Tests", "tools"]) {
+            cpSync(from(dir), join(tree, dir), { recursive: true });
+        }
+        mkdirSync(join(tree, "docs"), { recursive: true });
+        copyFileSync(from("docs/architecture-refactor.md"), join(tree, "docs/architecture-refactor.md"));
+        copyFileSync(from("test.sh"), join(tree, "test.sh"));
+
+        const GUARD = "tools/check-architecture-boundaries.sh";
+        const DOC = "docs/architecture-refactor.md";
+        // Not a `*Tests.swift` file, so appending to it cannot trip the 2,000-line suite limit and
+        // be mistaken for the witness firing.
+        const PROBE = "Tests/TestProcessProbes.swift";
+        const original = new Map();
+        const read = (rel) => readFileSync(join(tree, rel), "utf8");
+        const write = (rel, text) => {
+            if (!original.has(rel)) original.set(rel, read(rel));
+            writeFileSync(join(tree, rel), text);
+        };
+        // Anything the generator is about to rewrite has to be remembered before it runs, or
+        // `restore()` puts back only what this file edited and leaves the tool's own write standing.
+        const snapshot = (rel) => { if (!original.has(rel)) original.set(rel, read(rel)); };
+        const restore = () => {
+            for (const [rel, text] of original) writeFileSync(join(tree, rel), text);
+            original.clear();
+        };
+        const run = (args = [], env = {}) => {
+            const r = spawnSync("/bin/bash", [join(tree, GUARD), ...args],
+                                { encoding: "utf8", env: { ...process.env, ...env } });
+            return { status: r.status, out: `${r.stdout}${r.stderr}` };
+        };
+        const generate = () => spawnSync("/bin/bash", [join(tree, "tools/generate-governance-table.sh")],
+                                         { encoding: "utf8", env: { ...process.env } });
+
+        const clean = run();
+        if (clean.status !== 0) {
+            stop(`the architecture guard is not green on an untouched copy of this tree, so nothing below can mean anything: ${clean.out.slice(0, 400)}`);
+        }
+        check("the guard says the table it accepted was its own rendering, not a document it read",
+              /governance table is this run's own rendering/.test(clean.out));
+
+        // Every row this file mutates is read out of the guard's own rendering rather than typed
+        // here. A test that spelled out a row's value would be a fourth copy of a number this change
+        // exists to have one of, and on the day that number moves it would fail on the literal
+        // rather than on the behaviour. Four of the six moved on `main` while this was being written.
+        const emitted = () => run(["--emit-governance-table"]).out.trim().split("\n");
+        const dataRows = (lines) => lines.filter((line) => line.startsWith("| ") && !line.startsWith("|---")
+                                                  && !line.includes("value on this tree"));
+        const rowFor = (lines, label) => dataRows(lines).find((line) => line.split("|")[1].trim() === label);
+        // Any different string will do; appending a digit cannot collide with the real value.
+        const bumped = (row) => {
+            const cells = row.split("|");
+            cells[2] = `${cells[2].trimEnd()}0 `;
+            return cells.join("|");
+        };
+        const committedRows = dataRows(emitted());
+        if (committedRows.length !== 6) {
+            stop(`the guard rendered ${committedRows.length} governance rows, not the six this file drives`);
+        }
+
+        // The decisive one. Today's failure, reproduced: one assertion added, nothing else touched.
+        write(PROBE, `${read(PROBE)}\n// added by Tests/test-sh-lock.mjs\nfunc probeAddedAssertion() { check("added", true) }\n`);
+        const added = run();
+        check("an assertion added to a Swift test file turns the guard red with the seal untouched",
+              added.status !== 0 && /assertion call sites/.test(added.out));
+        check("and it says the seal was measured somewhere else rather than blaming the tree",
+              /measured somewhere else/.test(added.out) || /no run has produced a total/.test(added.out));
+        check("and it names the door to the run that knows the total, not an arithmetic correction",
+              /CLAWDLINE_RESEAL=1/.test(added.out));
+
+        const resealed = run([], { CLAWDLINE_RESEAL: "1" });
+        check("CLAWDLINE_RESEAL=1 lets that run start, because only a run knows the new total",
+              resealed.status === 0 && /CLAWDLINE_RESEAL=1/.test(resealed.out));
+        // The door relaxes one thing. The table is rendered from the seal, so a re-sealing run never
+        // had to route around it — but a table somebody typed into is red under the door as well.
+        const suiteFilesRow = rowFor(committedRows, "suite files");
+        write(DOC, read(DOC).replace(suiteFilesRow, bumped(suiteFilesRow)));
+        const doorWithHandEditedTable = run([], { CLAWDLINE_RESEAL: "1" });
+        check("and the door opens for the witness alone: a hand-edited table is red under it too",
+              doorWithHandEditedTable.status !== 0
+                && /is not what this tree renders/.test(doorWithHandEditedTable.out));
+        restore();
+
+        // Every row, not just the one that broke, and each edited in the document and nowhere else.
+        // Hand-editing the document is the shape the whole change exists to abolish.
+        const rowResults = committedRows.map((row) => {
+            const doc = read(DOC);
+            if (!doc.includes(row)) return `row not in the document: ${row}`;
+            write(DOC, doc.replace(row, bumped(row)));
+            const r = run();
+            const named = /tools\/generate-governance-table\.sh/.test(r.out);
+            restore();
+            if (r.status === 0) return `stayed green: ${row}`;
+            if (!/is not what this tree renders/.test(r.out)) return `wrong reason: ${row}`;
+            if (!named) return `did not name the generator: ${row}`;
+            return null;
+        });
+        check("all six rows go red when the document disagrees with its source, the Swift-checks row "
+              + `included, and each names the generator rather than another number: ${rowResults.filter(Boolean).join("; ") || "none stayed green"}`,
+              rowResults.length === 6 && rowResults.every((problem) => problem === null));
+
+        // One source, demonstrated: move the seal and the document follows it without a suite run.
+        const seal = /expected_swift_receipt='(\d+) checks passed'/.exec(read("test.sh"));
+        if (!seal) stop("test.sh has no expected_swift_receipt to move; if it was renamed, update this file rather than deleting the checks");
+        write("test.sh", read("test.sh").replace(seal[0], `expected_swift_receipt='${Number(seal[1]) + 1} checks passed'`));
+        const movedSeal = run();
+        check("moving the seal alone is red, because the document is a rendering of it",
+              movedSeal.status !== 0 && /is not what this tree renders/.test(movedSeal.out));
+        snapshot(DOC);
+        const regenerated = generate();
+        check("and running the generator is the whole repair — no suite run, no second edit",
+              regenerated.status === 0 && run().status === 0);
+        check("which leaves the row carrying the moved seal, written by the tool rather than by a person",
+              read(DOC).includes(rowFor(emitted(), "Swift checks"))
+                && !read(DOC).includes(rowFor(committedRows, "Swift checks")));
+        restore();
+        check("the guard is green again once the copy is put back", run().status === 0);
+
+        // Fail-closed. A guard that cannot find what it guards must say so, not report a clean scan.
+        // The scanner's own comment claims it goes red whether the names change or the boundary
+        // stops being honoured; a claim about a guard is worth what its red proof is worth.
+        write(GUARD, read(GUARD).replace("'\\b(check|expect)[A-Za-z0-9_]*\\('", "'zzz-no-such-assertion'"));
+        const brokenScan = run();
+        check("a scan that has stopped matching is red, not a clean scan of a tree without tests",
+              brokenScan.status !== 0 && /broken scan/.test(brokenScan.out));
+        restore();
+
+        write("test.sh", read("test.sh").replace(/^expected_swift_receipt_witness=\d+$/m, ""));
+        const noWitness = run();
+        // On the exact message, not on the name appearing anywhere: without the fail-closed read the
+        // comparison catches an empty witness too, and reports it as a tree that moved. That is red
+        // for the wrong reason, and it is the reason a mutation of that line has to fail this.
+        check("a seal with no witness names the missing line rather than blaming the tree",
+              noWitness.status !== 0
+                && /could not read expected_swift_receipt_witness/.test(noWitness.out));
+        restore();
+
+        write(DOC, read(DOC).replace("<!-- clawdline-governance-table:v1 -->", ""));
+        const noMarkers = run();
+        check("a document with the markers removed is red rather than a table nobody compares",
+              noMarkers.status !== 0 && /markers are missing/.test(noMarkers.out));
+        restore();
+
+        // The generator renders from the guard's own values, so it cannot render a table for a tree
+        // the guard rejects — which is what keeps it from being a way to write down a wrong number.
+        write(GUARD, read(GUARD).replace(/^orchestrator_ceiling=\d+$/m, "orchestrator_ceiling=1"));
+        const brokenTree = generate();
+        // Named on the ratchet's own message, not on the exit code alone: a generator that is simply
+        // missing also exits non-zero, and this check has to be able to tell those apart.
+        check("the generator refuses a tree whose ratchets are red rather than writing it a table",
+              brokenTree.status !== 0
+                && /against a ceiling of 1,/.test(`${brokenTree.stdout}${brokenTree.stderr}`));
+        restore();
+    } finally {
+        rmSync(tree, { recursive: true, force: true });
+    }
 }
 
 console.log(failures === 0

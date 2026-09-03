@@ -235,32 +235,47 @@ held_lock_door_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanni
 
 # The governance table in docs/architecture-refactor.md drifted three times — 480 when the guard
 # held 479, 7,918 when the suite observed 7,941, 490 when it observed 494 — and every time for the
-# same reason: a count written in prose has no owner and nothing makes it go red. test.sh and this
-# script hold the same numbers and fail the build when they drift, which is why they were right
-# each time the table was wrong. So the table is no longer a copy. It is read back here and
-# compared with the values this run just computed; a landing that moves a count must move it there
-# too, or this fails before a compiler is started.
+# same reason: a count written in prose has no owner and nothing makes it go red. Reading the table
+# back and comparing it row by row fixed that for the five rows this script measures, and left the
+# sixth exactly as it was: `Swift checks` compared a number in the doc with a number in test.sh, two
+# records, neither of which had touched the tree. On 2026-09-03 a commit added eight checks and
+# updated neither, so the two agreed, so this guard was green while `main` ran 8,101 against a seal
+# of 8,093. **Two copies agreeing is not evidence, and the comparison that produced that green could
+# not have produced anything else.**
+#
+# So the table stops being a list of numbers and becomes a rendering. This script already holds all
+# six — it counts three of them, owns two as ratchets, and reads the sixth out of test.sh — so it
+# renders the block itself and compares the committed one against that rendering. Nobody types a
+# governance number into the doc any more; `tools/generate-governance-table.sh` writes what
+# `--emit-governance-table` prints. Every row is now a value against its own rendering, which is a
+# comparison that cannot be satisfied by two people making the same mistake twice.
 governance_doc=docs/architecture-refactor.md
+governance_marker_open='<!-- clawdline-governance-table:v1 -->'
+governance_marker_close='<!-- /clawdline-governance-table:v1 -->'
 
-documented_value() {
-  awk -F'|' -v want="$1" '
-    { gsub(/^[ \t]+|[ \t]+$/, "", $2) }
-    $2 == want {
-      value = $4
-      gsub(/[ \t,]/, "", value)
-      print value
-      exit
+# The table has always written its larger numbers with thousands separators and the smaller ones
+# without, so the rendering does too rather than reformatting a document to suit a script.
+with_thousands() {
+  awk -v n="$1" 'BEGIN {
+    out = ""
+    while (length(n) > 3) {
+      out = "," substr(n, length(n) - 2) out
+      n = substr(n, 1, length(n) - 3)
     }
-  ' "$governance_doc"
+    print n out
+  }'
 }
 
-compare_documented() {
-  local label=$1 actual=$2 documented
-  documented=$(documented_value "$label")
-  [ -n "$documented" ] \
-    || architecture_guard_fail "governance table in $governance_doc has no row named '$label'"
-  [ "$documented" = "$actual" ] \
-    || architecture_guard_fail "governance table says $label is $documented; this run measured $actual"
+render_governance_table() {
+  printf '%s\n' \
+    '| | value on this tree | the one place it is written |' \
+    '|---|---:|---|' \
+    "| ordered groups | $(with_thousands "$manifest_group_count") | \`Tests/TestGroupManifest.swift\`, counted by the guard |" \
+    "| ordered runners | $(with_thousands "$runner_count") | \`Tests/main.swift\`, counted by the guard |" \
+    "| suite files | $(with_thousands "$suite_count") | \`Tests/*Tests.swift\`, counted by the guard |" \
+    "| Swift checks | $(with_thousands "$documented_swift_receipt") | \`expected_swift_receipt\` in \`test.sh\`, set from a run |" \
+    "| \`Orchestrator.swift\` ceiling | $(with_thousands "$orchestrator_ceiling") | the ratchet in \`tools/check-architecture-boundaries.sh\` |" \
+    "| \`RemoteServer.swift\` ceiling | $(with_thousands "$remote_server_ceiling") | the receipt in \`tools/check-architecture-boundaries.sh\` |"
 }
 
 documented_swift_receipt=$(sed -n "s/^expected_swift_receipt='\([0-9]*\) checks passed'/\1/p" test.sh)
@@ -284,28 +299,30 @@ suite_lock_line=$(grep -n 'clawdline_acquire_suite_lock' test.sh \
 [ "$ceiling_block_line" -gt "$suite_lock_line" ] \
   || architecture_guard_fail "test.sh settles its compile ceiling at line $ceiling_block_line but does not hold the machine lock until $suite_lock_line, so everything it runs above the lock can compile wide with nothing rationing it"
 
-compare_documented "ordered groups" "$manifest_group_count"
-compare_documented "ordered runners" "$runner_count"
-compare_documented "suite files" "$suite_count"
-# Re-sealing is a cycle without this door. The seal and the governance row must agree before the
-# suite is allowed to start, and the true count is only known once it has finished — so anyone whose
-# change adds checks has to first commit a number they know is wrong, run, then correct it. That
-# intermediate state is the exact shape this row is worst at: two records agreeing and both wrong,
-# with every guard green. It is fine while the author is standing there and dangerous the moment a
-# run is interrupted. `CLAWDLINE_RESEAL=1` says out loud that this run exists to produce the number,
-# and downgrades this one row to a warning. Nothing else relaxes: the suite still ends on
-# `verify_test_completion_receipts`, which still fails and now also says which way the total moved.
-if [ "${CLAWDLINE_RESEAL:-}" = "1" ]; then
-  documented_swift_checks=$(documented_value "Swift checks")
-  if [ "$documented_swift_checks" != "$documented_swift_receipt" ]; then
-    echo "architecture boundaries: CLAWDLINE_RESEAL=1 — governance table says Swift checks is ${documented_swift_checks:-none} and test.sh seals $documented_swift_receipt." >&2
-    echo "Letting the run proceed so it can report the real count. Set both to what it reports; this run's own receipt check still has to pass." >&2
-  fi
-else
-  compare_documented "Swift checks" "$documented_swift_receipt"
-fi
-compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
-compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
+# Rendering the table from the seal removes the second copy of the Swift-checks number and does not
+# make that number true. `expected_swift_receipt` is a record of what one run reported, and a record
+# with nothing to compare against is green whatever it says — which is how eight added checks stayed
+# invisible until somebody else's suite run hours later. No guard can count checks without running
+# them, so what stands in for the count is a witness of the tree the count was taken on: the number
+# of assertion call sites in the sealed test sources. It is a record against a measurement, the
+# shape the other five rows already have, and it goes red on the thing that actually happened —
+# an assertion added to a test file with the seal left alone.
+#
+# It is deliberately not a model of the total. Two of a4ed9edb's four checks came from one call site
+# inside a two-variant loop; the witness would have caught that, because the sites moved. Widening a
+# loop around an existing check moves the total and no site, and nothing before the run sees it.
+# `report_receipt_direction` in test.sh still catches that at the end, and the run is still what
+# settles the number. This closes the case that has bitten twice, not the general one.
+#
+# The scan fails closed in every way it can fail. If `\b` stops being honoured, or the names change,
+# the count moves or falls to zero, and both are red.
+sealed_assertion_sites=$(sed -n 's/^expected_swift_receipt_witness=\([0-9]*\).*$/\1/p' test.sh)
+[ -n "$sealed_assertion_sites" ] \
+  || architecture_guard_fail "could not read expected_swift_receipt_witness from test.sh; it says which tree expected_swift_receipt was measured on, and without it the seal is a number nothing can check"
+assertion_sites=$(cat Tests/*.swift \
+  | grep -oE '\b(check|expect)[A-Za-z0-9_]*\(' | wc -l | tr -d '[:space:]' || true)
+[ "${assertion_sites:-0}" -gt 0 ] \
+  || architecture_guard_fail "the assertion-site scan of Tests/*.swift found nothing; that is a broken scan, not a tree without tests"
 
 # The two ceilings above are the only rows here whose left-hand side is also a record: both are
 # constants in this script, compared against constants in a document. Everything else on that list
@@ -363,4 +380,50 @@ unordered_ledger_tasks=$(awk -v ok="$ledger_sync_points" '
        "Wait for the task to arrive (store.waitUntilTransactionCount), not for one executor turn." \
        "If you added a new ordering primitive, add its name to ledger_sync_points in this script.")"
 
-echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
+# Printing the table is the only thing this mode does, and it happens before the comparison below so
+# that a doc which has fallen behind can still be regenerated. Everything above has already run, so
+# a tree that fails a ratchet cannot render itself a table saying otherwise.
+if [ "${1:-}" = "--emit-governance-table" ]; then
+  render_governance_table
+  exit 0
+fi
+
+# Re-sealing is a cycle without this door, and rendering the table did not close it — it moved it
+# one step earlier, which is where it belongs. The seal's witness now goes red the moment a check is
+# added, before a compiler starts; the true total is only known once the suite has finished. So the
+# door is what lets the run that produces the number start at all. `CLAWDLINE_RESEAL=1` says out
+# loud that this run exists to produce it, and downgrades the witness to a warning. Nothing else
+# relaxes — including the table, which never needs to: it is rendered from the seal, so it is still
+# in agreement with the seal that has not been changed yet. The suite still ends on
+# `verify_test_completion_receipts`, which still fails and says which way the total moved.
+if [ "$assertion_sites" != "$sealed_assertion_sites" ]; then
+  if [ "${CLAWDLINE_RESEAL:-}" = "1" ]; then
+    echo "architecture boundaries: CLAWDLINE_RESEAL=1 — the seal was measured on a tree with $sealed_assertion_sites assertion call sites and this one has $assertion_sites." >&2
+    echo "Letting the run proceed so it can report the real total. Set expected_swift_receipt from what it reports and expected_swift_receipt_witness to $assertion_sites, then run tools/generate-governance-table.sh; this run's own receipt check still has to pass." >&2
+  else
+    architecture_guard_fail "test.sh seals $documented_swift_receipt checks against a tree with $sealed_assertion_sites assertion call sites, and this tree has $assertion_sites — so the seal was measured somewhere else and no run has produced a total for what is here. Re-run with CLAWDLINE_RESEAL=1 to let the suite report the real total, then set expected_swift_receipt from it and expected_swift_receipt_witness to $assertion_sites."
+  fi
+fi
+
+# One comparison for all six rows, against the rendering above rather than against six hand-typed
+# cells. It catches a row edited, and also a row renamed, reordered or deleted, which six per-row
+# lookups could not: a lookup for a row that is gone reports a missing row, and a lookup nobody
+# wrote reports nothing at all.
+documented_governance_table=$(awk -v opener="$governance_marker_open" -v closer="$governance_marker_close" '
+  $0 == opener { inside = 1; found = 1; next }
+  $0 == closer { inside = 0 }
+  inside      { print }
+  END         { exit found ? 0 : 3 }
+' "$governance_doc" | sed '/^[[:space:]]*$/d') \
+  || architecture_guard_fail "governance table markers are missing from $governance_doc; the table is generated by tools/generate-governance-table.sh and the markers are how it finds where to write"
+[ -n "$documented_governance_table" ] \
+  || architecture_guard_fail "the governance table in $governance_doc is empty between its markers; run tools/generate-governance-table.sh"
+if [ "$documented_governance_table" != "$(render_governance_table)" ]; then
+  echo "governance table in $governance_doc is not what this tree renders. Committed:" >&2
+  printf '%s\n' "$documented_governance_table" >&2
+  echo "Rendered:" >&2
+  render_governance_table >&2
+  architecture_guard_fail "run tools/generate-governance-table.sh — the table is generated, so the fix is never to retype a number into it"
+fi
+
+echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, seal witness=$assertion_sites sites, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
