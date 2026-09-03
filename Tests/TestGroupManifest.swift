@@ -519,6 +519,12 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the projections keep six states apart, and a refusal is one of them",
     "a refusal is an answer to an ask, and the ask is what a waiter proves itself with",
     "the lease record survives a store round trip",
+    "a root id that is really a terminal id is refused, and only when the evidence agrees",
+    "the dispatch door sorts owned children from detached automation before anything opens",
+    "a task.json is read whole, or refused naming the field that was wrong",
+    "a fully populated task.json and a minimal one both arrive intact",
+    "the shapes an older root still writes are the shapes this still reads",
+    "a task id is a lowercase UUID, and a task secret is 32 bytes of lower-case hex",
 ]
 
 func validateExecutedTestGroupManifest() {

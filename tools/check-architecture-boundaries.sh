@@ -85,8 +85,8 @@ if grep -q 'group(' Tests/main.swift; then
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 30 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 30"
+[ "$runner_count" -eq 31 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 31"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -95,10 +95,12 @@ manifest_group_count=$(awk '
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
 # 510 until the compile lease's second correction round, which adds the group for a refusal
-# counting as a waiter's ask. A number that only ever rises silently is not a ratchet, so raises
-# are named here the way the `Orchestrator.swift` ceiling's are.
-[ "$manifest_group_count" -eq 511 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 511"
+# counting as a waiter's ask. 511 until the draft/refusal extraction, whose six groups are the
+# first table-driven coverage the moved admission layer has ever had. A number that only ever
+# rises silently is not a ratchet, so raises are named here the way the `Orchestrator.swift`
+# ceiling's are.
+[ "$manifest_group_count" -eq 517 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 517"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -172,8 +174,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 43 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 43"
+[ "$suite_count" -eq 44 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 44"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
