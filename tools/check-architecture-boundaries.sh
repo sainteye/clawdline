@@ -58,7 +58,7 @@ main_lines=$(line_count Tests/main.swift)
 #                                              "is a field missing?" and gave the projection an
 #                                              ambiguity refusal. A feature's code arriving;
 #                                              nothing left the file)
-#   11,925  the delivery push moved in            (+51)
+#   11,925  the delivery push moved in            (0c4c85c7, +51)
 #   11,063  the task shape and the child briefing moved out
 #                                              (Cut 3, 47740b5c, -862: OrchestratorTaskShape 457
 #                                              lines and OrchestratorChildBrief 418, plus the two

@@ -57,7 +57,7 @@ was done, and somebody who turned the switch off was turning off a lie rather th
 What replaced it was already in the app and pushed nowhere: a root reports one authenticated
 delivery at the end of the turn it delivered in — `Orchestrator.reportSessionDelivery` — and the
 broker de-duplicates a repeat of the same report to `created: false`. So the push hangs off the
-receipt, on the branch that creates one, and *is delivered, awaiting your confirmation* is a
+receipt, on the branch that creates one, and *has delivered, and is waiting for you* is a
 sentence the reader can act on. The fan-out row kept its notification and got a switch of its own;
 the point of the split was to leave two switches that mean something rather than one that did not.
 
