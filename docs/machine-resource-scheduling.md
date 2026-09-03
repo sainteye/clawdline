@@ -598,10 +598,12 @@ off a cliff after the top three — so a static check over the test sources can 
 before it is ever compiled, in the same place and style as the trailing-comma check that already
 runs before `swiftc` does. It costs milliseconds, it names the file and the function, and unlike a
 queue it prevents the problem instead of scheduling around it. **That guard now exists**, in
-`tools/check-architecture-boundaries.sh`, as a ratchet at 131 suspension points in one function —
-today's worst value rather than a target, with the cliff between 131 and 143 written down beside
-it, because a guard whose constant nobody can justify is the next thing somebody raises to make
-their build pass.
+`tools/check-architecture-boundaries.sh`, as a ceiling on suspension points in one function, with
+the cliff measured between 131 and 143 written down beside the number and the tree's next largest
+function written down beside that — because a guard whose constant nobody can justify is the next
+thing somebody raises to make their build pass. Read the number off the guard rather than off this
+page: it was set at today's worst value while the worst offender was unrepaired and lowered to a
+derived threshold once it was.
 
 ## The broker lease, while it existed
 
