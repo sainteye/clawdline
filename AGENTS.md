@@ -519,6 +519,36 @@ sections down; the two are separate constants that happen to share a value on pi
 the last bytes themselves — `tail -c` — and if a size is going to carry an argument, record where
 stdout was pointed when it was taken.
 
+### Before moving a file, list what names it — that costs nothing, and testing costs four minutes
+
+Moving code out of a large file breaks things that named the old file by a spelling: a tool that
+pinned a full function signature, a test that pinned `Sources/X.swift`, a guard that pinned one way
+of writing a call. **None of them appears in the diff**, and the compiler sees only the first kind,
+so the rest surface one at a time — each costing a full suite run to find and another to confirm.
+
+On 2026-09-03, extracting 1,003 lines out of `Sources/RemoteServer.swift` took five suite runs.
+Four were red, each on a different pinned spelling, each found by running rather than by looking.
+After the third the line stopped repairing and enumerated instead: seven files read that file's
+contents, four of them compared its payload against a fallback, and all four were already fixed.
+**The enumeration cost no machine time. The four runs it replaced cost sixteen minutes of a
+machine that serialises compiles behind a lock.**
+
+So, before the first run of an extraction:
+
+- **List every referrer by name**, not by memory: `grep -rn '<old file path>' Tests tools Sources`,
+  plus the symbols the extraction renames.
+- **Calibrate the pattern against a known positive before believing a zero.** That day's first
+  enumeration reported "11 sites, none affected" while one of them was red at that moment: the
+  pattern matched `contains("literal")` and the code wrote `contains("\(key):")`. A count of zero
+  from an uncalibrated pattern is a statement about the pattern.
+- **Prepare the negatives too.** A pattern widened to catch what it missed will catch things it
+  should not; the only way that shows up before it wastes a run is a list of sites that must *not*
+  match. That day's negatives caught a return type and a commented-out example.
+
+**And a delivery's own count is a claim you can check.** One landing that day said "six adapter
+lines"; five were repaired, the sixth was in a test file, and the two numbers sat on the same screen
+without being subtracted. The compiler charged four minutes for that.
+
 ### A sample taken along one path measures that path
 
 The same shape turned up four times in one day at three different levels, and it is the reason the

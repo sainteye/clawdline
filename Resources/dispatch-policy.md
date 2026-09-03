@@ -183,6 +183,9 @@ root's. It repairs only what does not change the design; a design-changing corre
 the implementer's session. Never one task per finding.
 
 **One review round per feature or batch.** Parallel complementary reviewers count as one round.
+Measured on one line here: the implementation cost $30.90 and its four review rounds cost $57.39 —
+**1.9x the thing being reviewed** — and both correction rounds introduced defects the next review
+caught, so the rounds were not merely expensive, they were part of what made themselves necessary.
 Seal findings before correction; disjoint fixes remain one wave, and confirmation reruns only named
 questions. A second round needs a recurring defect class. A third needs `scope_changed`,
 `new_external_evidence`, or `systemic_pattern`. If the same class escapes again, stop at

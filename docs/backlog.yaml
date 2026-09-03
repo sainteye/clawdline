@@ -885,3 +885,187 @@ items:
       keystroke that has no digit, and `previous`/`next` would be the same shape, keeping the
       allowlist closed while giving the phone the movement the bar advertises.
     opened: 2026-09-03
+
+  - id: B-PRE-COMMIT-CANNOT-SEE-A-LANDING-WORKTREE
+    title: The shared-tree guard blocks a landing worktree, so every landing is committed with --no-verify
+    problem: >-
+      `tools/git-hooks/pre-commit` refuses a commit while `MERGE_HEAD` exists, because in the shared
+      checkout it cannot tell whose merge it is. A linked worktree created for one landing has
+      exactly one possible owner, and every landing conducted in one therefore ends with
+      `git commit --no-verify`. The guard's own message offers that as the way to assert ownership,
+      so nothing is being circumvented — but a root that lands several deliveries a day types the
+      escape hatch several times a day, and an escape hatch typed by reflex stops being read. The
+      guard's value is that somebody reads it; the failure mode is not that it blocks the wrong
+      commit but that it teaches its only regular caller to skip it.
+    evidence: >-
+      Landed 2026-09-03 as `ecd87586`, installed the same day. Three of the four landings that
+      followed it (`276b141e`, `14dfeaba`, and the seal commit's parent) were made in dedicated
+      worktrees under `/private/tmp/clawdline-*-landing` and used `--no-verify`; the fourth,
+      `873e5213`, had no `MERGE_HEAD` and passed the hook with rc=0, so the hook does distinguish
+      the two situations it can see. `git rev-parse --git-common-dir` differs from `--git-dir` in a
+      linked worktree, which is the distinction the hook does not currently make.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Any change to that hook, or the first time somebody uses `--no-verify` on a commit in the
+      shared checkout because the habit carried over. The narrowing has to keep the shared-checkout
+      behaviour exactly as it is: the danger it was written for is real and happened.
+    opened: 2026-09-03
+
+  - id: B-PRE-COMMIT-CANNOT-SAY-IT-DID-NOT-RUN
+    title: When the shared-tree guard fails to start, nothing says the commit did not happen
+    problem: >-
+      The hook shells to `python3` for everything after its cheap checks. It already fails open with
+      a named warning when `python3` is missing, but there is no branch for `python3` present and
+      unable to start: the interpreter's own startup error reaches the terminal unframed, mentioning
+      neither the hook nor the commit. A caller reading it sees something that looks like a crash in
+      their own tooling, and the commit silently did not happen. One session then printed
+      `git rev-parse --short HEAD` on the next line, read another session's landing, and reported it
+      as its own.
+    evidence: >-
+      Observed 2026-09-03 on this machine: `Fatal Python error:
+      config_get_locale_encoding: failed to get the locale encoding: nl_langinfo(CODESET) failed`
+      with `Python runtime state: preinitialized`, and no commit made. The trigger is **not
+      established** — three interpreters (/usr/bin 3.9.6, /usr/local/bin 3.12.8,
+      /opt/homebrew/bin 3.14.6) were each run with seven locale configurations, including every
+      variable unset, and all 21 combinations exited 0. Setting `LANG`/`LC_ALL` made the commit
+      succeed, which is evidence that something about the environment mattered and not evidence
+      that the absence of those variables was the cause.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      The next time it happens, capture `env | grep -Ei '^(LANG|LC_|PYTHON)'`, `command -v python3`
+      and `python3 -V` **in that shell**, before changing anything. The presentation half can be
+      fixed without the cause: check the interpreter's exit status and say that the hook could not
+      start and the commit was not made.
+    opened: 2026-09-03
+
+  - id: B-LANDING-QUEUE-COUNTS-A-RECUT-AS-UNLANDED
+    title: A delivery landed by re-cutting stays in the landing queue for ever
+    problem: >-
+      Landing-queue membership is derived from branch ancestry, which is what makes a black hole
+      impossible. But an extraction-shaped delivery whose base has moved is landed by re-cutting on
+      the new base, not by merging the old branch — so its content reaches `main` while its branch
+      never becomes an ancestor, and the entry never leaves. A queue that keeps a completed entry at
+      its head is a queue people learn to scroll past, which is the exact failure the derivation was
+      built to prevent.
+    evidence: >-
+      Task `b57fc96f`'s delivery landed 2026-09-03 as `2023d7e3` — `Sources/RemotePage.swift` is on
+      `main` at the same 1,024 lines the branch holds — and `git merge-base --is-ancestor 43b7c7e6
+      HEAD` is still false, so `GET /v1/orchestrator/landing-queue` reports it `unlanded_delivery`
+      with `holder: true`. Re-cutting rather than merging is the documented rule for extractions
+      whose base moved: see `docs/architecture-refactor.md` and the three line-number tables in
+      `47740b5c`'s history, where the same MARK moved twice while its content did not.
+    severity: degrades
+    cost: days
+    who_hurts: us
+    trigger: >-
+      The second entry that lands this way, or the first time somebody asks why the queue's head has
+      not moved in a day. Content equality is the hard part: a cheap first answer is an explicit
+      "landed as <sha>" record a root can write when it lands by re-cut, which keeps derivation for
+      membership and adds a fact only the lander knows.
+    opened: 2026-09-03
+
+  - id: B-SERVICE-WORKER-HAS-NO-ROUTE-TEST
+    title: One of RemotePage's five entry points has no route test
+    problem: >-
+      `RemotePage` was extracted from `RemoteServer` with five entry points called from the server.
+      Four are covered by existing route tests; `serviceWorker` is not reachable by either spelling
+      those tests use. The extraction did not make it worse and did not make it better, so this is
+      not a regression — it is a gap that was invisible while the code sat inside a 6,449-line file
+      and is nameable now that it does not.
+    evidence: >-
+      Found 2026-09-03 while landing `2023d7e3`, and recorded in that commit's own message rather
+      than only in the delivery report. The wording matters: the line that found it wrote "cannot
+      find" rather than "does not exist", having first stated the stronger claim without checking.
+    severity: noise
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Any change to the service worker, or a report that the web app serves a stale asset after a
+      deploy — which is what a service worker fault looks like from outside.
+    opened: 2026-09-03
+
+  - id: B-FANOUT-GATE-GUARD-CANNOT-GO-RED
+    title: The fan-out switch's only evidence is a string match that cannot see polarity
+    problem: >-
+      `Tests/HookTests.swift` proves the fan-out push reads `push_on_fanout` by slicing
+      `Sources/Orchestrator.swift` around `announce`'s signature and asking whether the slice
+      contains `Config.shared.pushOnFanout`. That check passes for `guard !Config.shared.pushOnFanout
+      else { return }` too — the switch inverted, the guard still green. And the slice degrades:
+      `components(separatedBy:).last` returns the whole file when the separator is absent, so the
+      day somebody changes `announce`'s signature the check silently becomes a whole-file grep that
+      can never fail. The delivery half has a real behavioural test ("and the switch is a switch");
+      the fan-out half does not.
+    evidence: >-
+      Measured by the independent reviewer of `0c4c85c7` on 2026-09-03, which ran both mutations:
+      inverting the gate keeps `contains` true, and replacing the separator with a string that does
+      not occur makes the slice 582,116 characters while both checks stay green. Not tautological —
+      both went red under mutation run A, which deleted the gate line — they simply prove less than
+      their names claim. Cheap fix: assert the separator occurred exactly once before slicing, or
+      lift the gate into a pure decision and cover polarity with a behavioural test.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Any change to `announce`'s signature, or the next time somebody relies on a source-slicing
+      guard to prove a preference is honoured.
+    opened: 2026-09-03
+
+  - id: B-DELIVERY-PUSH-DIVERGES-FROM-ITS-SIBLINGS
+    title: The delivery notification took four shapes its sibling pushes do not
+    problem: >-
+      Four divergences, none of which breaks anything, and none of which is written down anywhere
+      but here. (1) With `smart_notifications` on, the body is the session's own summary, bounded
+      only by 500 characters, no NUL and trimmed ends — interior newlines and C0 pass through, while
+      the neighbouring `selfNote`/`closureNote` reject newlines outright and the fan-out path folds
+      whitespace and cuts at 180. (2) `announceDelivery` calls `WebPush.send` directly, so it has no
+      burst coalescing and no queue ceiling; deleting `sendFinishedPush` left `SmartNotification`
+      with exactly one producer, and that machinery was written for "twenty tabs finishing", which
+      is the producer that just went away. (3) It resolves its target through `target(withID:)`,
+      which is `DispatchQueue.main.sync`, on a route that had deliberately used
+      `publishedInventory()` to stay off the main queue — not a deadlock, and five other call sites
+      do the same, but this route had chosen the other shape. (4) The guard that stops any language
+      from saying a stopped turn means finished work only covers English.
+    evidence: >-
+      Independent review of `0c4c85c7`, 2026-09-03, findings M2/M3/M4/M6, each with a file and line:
+      `Orchestrator.swift:2736` (bounds), `:11017` (direct send), `:11020` -> `:12688` (main-queue
+      hop), `Tests/HookTests.swift:802` (English-only guard). The reviewer read all 14 `Copy` structs
+      and confirmed no language currently makes the old claim — the gap is the guard against
+      regression, not the strings. Delivery is far rarer than a turn ending, so (2) is probably the
+      right trade; it just had no record until this entry.
+    severity: noise
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      A second producer for delivery pushes, several roots reporting delivery at once, or the first
+      lock-screen notification somebody finds unreadable because it carried four lines.
+    opened: 2026-09-03
+
+  - id: B-CLOSEABILITY-KEEPS-A-REMOVED-WORKTREE-DIRTY
+    title: A removed worktree blocks its Session's close for ever
+    problem: >-
+      `closeability` reads `dirty_isolated_worktree` from the task record, which is a snapshot taken
+      when the task ended. Removing the worktree afterwards — the correct action once its content is
+      proven redundant — updates nothing, so the reason never clears and the Session can never reach
+      `safe`. A closure attestation does not help by design: the broker merge outputs `safe` only
+      when its own blockers are clear, and this one cannot become clear. The result is a Session that
+      has genuinely finished, has said so, and has no path to being closed.
+    evidence: >-
+      Session `6050ED1D` on 2026-09-03. Task `23e78454`'s worktree was removed after its one dirty
+      file was proven byte-identical to `main`; the directory is gone and `git worktree list` has
+      zero entries for it. A `status: clear` attestation at `activity_generation: 74` returned
+      `state: blocked, reasons: ["dirty_isolated_worktree"]`. Two other Sessions closed cleanly the
+      same hour through the same route, so the route works — this reason is the one that cannot be
+      retired.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      The second Session that cannot be closed for this reason, or any change to how the task record
+      stores worktree state. The cheap answer is to re-stat the worktree path when the projection is
+      computed and treat a missing directory as not dirty; the durable one is for worktree disposal
+      to write back to the record it is evidence for.
+    opened: 2026-09-03
