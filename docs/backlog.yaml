@@ -1098,33 +1098,31 @@ items:
       which only moves the coin flip.
     opened: 2026-09-03
 
-  - id: B-DEPLOY-CREDENTIALS-EXPIRE-IN-SILENCE
-    title: Both Pages deploy tokens are dead and nothing said so
+  - id: B-TOKEN-VERIFY-IS-NOT-A-LIVENESS-CHECK
+    title: `/user/tokens/verify` fails for a least-privilege token that works
     problem: >-
-      Deploying either Cloudflare Pages site reads a token from the macOS Keychain. Two of the three
-      Clawdline entries answer `1000 Invalid API Token`, including
-      `dev.sainteye.clawdline.cloudflare-pages`, which is the only entry `scripts/deploy-marketing.py`
-      reads — so the marketing site cannot be deployed either, and nobody knew. The third entry,
-      `com.tsunamiworks.clawdline.cloudflare.deploy`, is active and never expires but is scoped to
-      zones: it can list `clawdline.com` and cannot touch Pages projects (`10000`) or create API
-      tokens (`9109`). **A credential's death is invisible until somebody needs it**, and the person
-      who needs it is mid-task when they find out.
+      A Cloudflare API token scoped to exactly one thing — `Account · Cloudflare Pages · Edit` —
+      answers `1000 Invalid API Token` at `/client/v4/user/tokens/verify`, because that route needs
+      `User → API Tokens → Read` and a minimal token does not carry it. **The route tests whether a
+      token can inspect itself, not whether it can be used.** Anything that treats a `verify`
+      failure as a dead credential will condemn a working one, and the deploy paths here store
+      exactly such minimal tokens.
     evidence: >-
-      Measured 2026-09-03 against `/client/v4/user/tokens/verify`, with two controls to prove the
-      error was the token and not the call: a malformed string answers `6003/6111 Invalid format for
-      Authorization header` and no header at all answers `1001 Missing "Authorization" header`, while
-      the stored token answers `1000 Invalid API Token` — a well-formed credential the server
-      refuses. The consequence was already visible and misread: `app.clawdline.com` had been serving
-      a 2026-09-01 build for two and a half days, which was first explained as "no deploy script for
-      the console" before the credential was checked.
+      Measured 2026-09-03. The token in Keychain under `dev.sainteye.clawdline.cloudflare-pages`
+      answers `1000` at `/user/tokens/verify` and, with the same bearer, lists both Pages projects
+      at `/accounts/8700c833c6f6493e8b54b1af028c0c21/pages/projects`:
+      `clawdline-marketing, clawdline-app`. It had been declared dead an hour earlier on the
+      strength of `verify` alone, and the user was asked to mint a replacement that was not needed.
+      Two independent-looking signals agreed and both were wrong: the second was a `10000` from a
+      Pages call made against an account id whose first eight characters came from
+      `scripts/deploy-marketing.py` and whose remaining twenty-four were invented.
     severity: degrades
     cost: hours
     who_hurts: us
     trigger: >-
-      The next deploy, which is the current failure mode. A cheap first answer is a check that hits
-      `/user/tokens/verify` for each entry a deploy path reads and says which are dead — runnable
-      from `test.sh`'s cheap half or from `scripts/deploy-status.py`, which already exists and
-      already reports on deployment state. There is also no console equivalent of
-      `scripts/deploy-marketing.py`; `docs/RUNBOOK-DEPLOY.md` §4 covers the first DNS cutover and not
-      the updates that follow it.
+      Any check that asks whether a stored deploy token still works. The liveness question is
+      answered by the narrowest call the token is actually for — for a Pages token, listing the
+      project it deploys — never by `verify`. And an account id is copied whole from the file that
+      holds it, because a wrong one returns an authentication error that reads exactly like a
+      permission problem.
     opened: 2026-09-03
