@@ -9,8 +9,8 @@ import Foundation
 // Chosen by measuring rather than by `// MARK:`. On the base this was cut from, this block
 // referenced no `private` symbol left behind and acquired `Orchestrator.lock` zero times, which
 // is not true of the `// MARK: - Independent feature roots` heading it used to sit under: the
-// forty lines that remain there — `reportRootAssignmentTransition` and `cwd(of:)` — take the lock
-// twice and read `private static var rootAssignments`, so they stayed.
+// forty-one lines that remain there — `reportRootAssignmentTransition` and `cwd(of:)` — take
+// the lock twice and read `private static var rootAssignments`, so they stayed.
 //
 // It moves as an `extension`, which renames nothing. 84 branches on this machine have a base that
 // predates this cut and a commit touching `Orchestrator.swift`; a new `enum` would have renamed
