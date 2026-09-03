@@ -167,7 +167,7 @@ struct Italian: Copy {
     let pairingScanTitle = "Inquadra questo con il telefono"
     let pushWaiting = "aspetta una risposta"
     let pushTest = "Notifica di prova. È tutto collegato."
-    let pushFinished = "ha finito un lavoro lungo"
+    let pushDelivered = "ha consegnato e sta aspettando te"
     let pushDeployOk = "il deploy è andato bene"
     let pushDeployFail = "il deploy è fallito"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -178,8 +178,10 @@ struct Italian: Copy {
         let all = done == 1 ? "ha completato 1 attività" : "ha completato \(done) attività"
         return failed == 0 ? all : "\(all), \(failed) non riuscite"
     }
-    let settingsPushFinish = "Avvisa quando finisce un lavoro lungo"
-    let settingsPushFinishHint = "Solo oltre i due minuti."
+    let settingsPushDelivery = "Avvisa quando una sessione dichiara di aver consegnato"
+    let settingsPushDeliveryHint = "Una volta per dichiarazione; ripeterla non suona."
+    let settingsPushFanout = "Avvisa quando finisce un gruppo di attività"
+    let settingsPushFanoutHint = "Una sola notifica per tutto il gruppo, con quante non sono riuscite."
     let settingsSmartNotifications = "Notifiche intelligenti"
     let settingsSmartNotificationsHint = "Haiku riassume in una frase il lavoro concluso. Se fallisce, arriva la notifica normale."
     func pushCoalesced(count: Int) -> String { "\(count) lavori conclusi insieme" }

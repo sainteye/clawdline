@@ -293,10 +293,11 @@ protocol Copy {
     /// The body of `clawdline://push?test=1`. It has to be unmistakably a test — one that
     /// reads like a real notification teaches somebody to distrust the real ones.
     var pushTest: String { get }
-    /// The body of the "a long turn finished" notification, off by default. Past tense, because
-    /// by the time this arrives the thing is done — "finished" and "is finishing" are a lock
-    /// screen apart and only one of them means you can stop waiting.
-    var pushFinished: String { get }
+    /// The body of the "this session says it delivered" notification. Past tense for the delivery
+    /// and present for what is left: the work is done and the next move is the reader's, which is
+    /// the whole reason this one is worth a lock screen. It must not say a *turn* ended — that was
+    /// the sentence this replaced, and it was true dozens of times a day.
+    var pushDelivered: String { get }
     /// The two ends of a deploy. Kept apart rather than one string with a word swapped in: the
     /// languages this speaks do not all agree on where that word goes, and the failure is the one
     /// that has to be unmistakable at a glance.
@@ -313,8 +314,13 @@ protocol Copy {
     func pushBatchDone(done: Int, failed: Int) -> String
     /// Several finishes that arrived together, delivered as one push instead of one each.
     func pushCoalesced(count: Int) -> String
-    var settingsPushFinish: String { get }
-    var settingsPushFinishHint: String { get }
+    /// The delivery switch and the fan-out switch, which were one dishonest switch before. Each
+    /// label names the event itself, because a label that names a consequence — "tell me when it
+    /// is done" — is exactly how the old one came to promise something it could not see.
+    var settingsPushDelivery: String { get }
+    var settingsPushDeliveryHint: String { get }
+    var settingsPushFanout: String { get }
+    var settingsPushFanoutHint: String { get }
     var settingsSmartNotifications: String { get }
     var settingsSmartNotificationsHint: String { get }
     // The health card under the smart-notifications switch. It exists because the feature once

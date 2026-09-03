@@ -2317,6 +2317,9 @@ enum Orchestrator {
     /// Test seam for the final display sentence; production always enters WebPush below.
     static var agentPushForTesting:
         ((String, String, String, String?, String?) -> WebPush.Delivery)?
+    /// Test seam for the delivery push, so "once for a new receipt, never for a repeat" can be
+    /// checked without a paired device. Production always enters WebPush.
+    static var sessionDeliveryPushForTesting: ((StateHook.PushMessage) -> Void)?
     /// Where a session sits in the tree, for anything that has to decide who to tell.
     ///
     /// **Nil is the definition of a root.** A session this app did not open for a task is one a
@@ -2758,6 +2761,10 @@ enum Orchestrator {
         RemoteAuth.audit("orchestrator.session.delivered", [
             "session": identity.terminalID, "assistant": identity.assistant?.rawValue ?? "?",
         ])
+        // Outside the lock, beside the audit, and only on this branch: the `created: false` return
+        // above is a root repeating itself inside one turn, and a phone that buzzed twice for one
+        // delivery would be the old defect wearing a new event.
+        announceDelivery(made)
         return .ok(["ok": true, "created": true, "disposition": disposition])
     }
 
@@ -10966,10 +10973,10 @@ enum Orchestrator {
 
     /// The two lines a finished fan-out is worth. Pure half in ``batchMessage(project:done:failed:)``.
     private static func announce(_ batch: Batch, rootKey key: String) {
-        // The "it finished" class, so it takes the preference that class already has. A batch
-        // that ended badly is still a batch that ended: whatever is worth doing about it is
-        // waiting in the root's own conversation, which was told the moment each part came back.
-        guard Config.shared.pushOnFinish else { return }
+        // Its own switch, because it is its own event. A batch that ended badly is still a batch
+        // that ended: whatever is worth doing about it is waiting in the root's own conversation,
+        // which was told the moment each part came back.
+        guard Config.shared.pushOnFanout else { return }
         let project = batch.projectDir.map { StateHook.projectName(forDirectory: $0) } ?? "Clawdline"
         let message = batchMessage(project: project, label: batch.rootLabel,
                                    done: batch.done, failed: batch.failed)
@@ -10999,6 +11006,49 @@ enum Orchestrator {
                              done: Int, failed: Int) -> StateHook.PushMessage {
         StateHook.PushMessage(title: label ?? project,
                               body: "\(project) \(L.t.pushBatchDone(done: done, failed: failed))")
+    }
+
+    /// The two lines a delivered turn is worth, and the one push it earns.
+    ///
+    /// Called only where a receipt is created, so the de-duplication that already answers a
+    /// repeated report `created: false` is the same de-duplication that keeps the phone quiet.
+    /// A session the watch no longer holds still buzzes: the receipt is the event, and a tab
+    /// closed between the report and this line does not unmake it.
+    private static func announceDelivery(_ delivery: SessionDelivery) {
+        guard Config.shared.pushOnDelivery else { return }
+        let id = delivery.identity.terminalID
+        let session = target(withID: id)
+        let message = deliveryMessage(project: session.map(StateHook.projectName(for:))
+                                          ?? "Clawdline",
+                                      label: session?.displayLabel, summary: delivery.summary,
+                                      smart: Config.shared.smartNotifications)
+        if let observer = sessionDeliveryPushForTesting {
+            observer(message)
+            return
+        }
+        // Its own tag rather than the session's, so a delivery never quietly replaces a "waiting
+        // for an answer" that is still unanswered on the same phone.
+        WebPush.send(title: message.title, body: message.body, url: "/#session=\(id)",
+                     tag: "delivery-\(id)",
+                     icon: RemoteIcon.projectPath(
+                         for: session.flatMap(Targets.workingDirectory(of:))
+                             .flatMap(ProjectIcon.grid(forCwd:))))
+    }
+
+    /// Pure, so the wording can be checked without a phone, a terminal or a clock.
+    ///
+    /// **`smart_notifications` means something narrower on this path, and it is worth saying so
+    /// here.** For the fan-out push it spends a bounded Haiku turn writing a sentence. Here it
+    /// spends nothing: it carries the session's own `summary` from the receipt, verbatim, with no
+    /// model call, no timeout and therefore no fallback to arrange. The assistant wrote that line
+    /// about its own delivery with the work still in front of it, which is better evidence than a
+    /// generated sentence and costs no quota.
+    static func deliveryMessage(project: String, label: String?, summary: String,
+                                smart: Bool) -> StateHook.PushMessage {
+        StateHook.PushMessage(
+            title: label ?? project,
+            body: smart ? SmartNotification.body(project: project, summary: summary)
+                        : "\(project) \(L.t.pushDelivered)")
     }
 
     // MARK: - What the child is told
@@ -12784,6 +12834,7 @@ enum Orchestrator {
         attachmentInventoryForTesting = nil
         taskStarterForTesting = nil
         agentPushForTesting = nil
+        sessionDeliveryPushForTesting = nil
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllTerminalTitles() }
         OrchestratorRegistry.withTransactionOnHeldLock {
             $0.removeAllSuppressedRootAssignmentLabels()

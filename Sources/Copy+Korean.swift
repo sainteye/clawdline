@@ -165,7 +165,7 @@ struct Korean: Copy {
     let pairingScanTitle = "휴대폰으로 이것을 스캔하세요"
     let pushWaiting = "이 답을 기다리는 중"
     let pushTest = "테스트 알림입니다. 필요한 것은 다 연결되어 있습니다."
-    let pushFinished = "의 긴 작업이 끝났습니다"
+    let pushDelivered = "이 완료를 보고했고, 확인을 기다립니다"
     let pushDeployOk = "의 배포가 성공했습니다"
     let pushDeployFail = "의 배포가 실패했습니다"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -176,8 +176,10 @@ struct Korean: Copy {
         let all = "의 작업 \(done)개가 끝났습니다"
         return failed == 0 ? all : "\(all), \(failed)개 실패"
     }
-    let settingsPushFinish = "긴 작업이 끝나면 알리기"
-    let settingsPushFinishHint = "2분이 넘는 작업만입니다."
+    let settingsPushDelivery = "세션이 완료를 보고하면 알리기"
+    let settingsPushDeliveryHint = "보고 한 번에 한 번. 같은 보고를 반복하면 울리지 않습니다."
+    let settingsPushFanout = "한 번에 내보낸 작업이 모두 끝나면 알리기"
+    let settingsPushFanoutHint = "묶음 전체에 알림 하나, 몇 개가 실패했는지도 함께."
     let settingsSmartNotifications = "스마트 알림"
     let settingsSmartNotificationsHint = "Haiku가 완료한 내용을 한 문장으로 알려 줍니다. 실패하면 일반 알림을 보냅니다."
     func pushCoalesced(count: Int) -> String { "\(count)건의 작업이 한꺼번에 완료" }

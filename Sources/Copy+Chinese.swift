@@ -168,7 +168,7 @@ struct TraditionalChinese: Copy {
     let pairingScanTitle = "用手機掃這張 QR code"
     let pushWaiting = "在等你回答"
     let pushTest = "這是一則測試通知，該接的都接好了。"
-    let pushFinished = "跑完一段長工作了"
+    let pushDelivered = "回報交件了，在等你確認"
     let pushDeployOk = "deploy 成功了"
     let pushDeployFail = "deploy 失敗了"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -179,8 +179,10 @@ struct TraditionalChinese: Copy {
         let all = "跑完 \(done) 件任務"
         return failed == 0 ? all : "\(all)，\(failed) 件失敗"
     }
-    let settingsPushFinish = "一段長工作跑完時通知我"
-    let settingsPushFinishHint = "只有跑超過兩分鐘的才算。"
+    let settingsPushDelivery = "session 回報交件時通知我"
+    let settingsPushDeliveryHint = "一次回報通知一次，同一份重複回報不會再響。"
+    let settingsPushFanout = "一批派出去的任務全部結束時通知我"
+    let settingsPushFanoutHint = "整批只通知一次，會說有幾件失敗。"
     let settingsSmartNotifications = "智慧通知"
     let settingsSmartNotificationsHint = "用 Haiku 說明剛完成了什麼；產生失敗時仍會送出原本的通知。"
     func pushCoalesced(count: Int) -> String { "\(count) 件工作同時完成" }
@@ -1026,7 +1028,7 @@ struct SimplifiedChinese: Copy {
     let pairingScanTitle = "用手机扫这张 QR code"
     let pushWaiting = "在等你回答"
     let pushTest = "这是一条测试通知，该接的都接上了。"
-    let pushFinished = "跑完一段长任务了"
+    let pushDelivered = "回报交付了，在等你确认"
     let pushDeployOk = "deploy 成功了"
     let pushDeployFail = "deploy 失败了"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -1037,8 +1039,10 @@ struct SimplifiedChinese: Copy {
         let all = "跑完 \(done) 件任务"
         return failed == 0 ? all : "\(all)，\(failed) 件失败"
     }
-    let settingsPushFinish = "一段长任务跑完时通知我"
-    let settingsPushFinishHint = "只有跑超过两分钟的才算。"
+    let settingsPushDelivery = "session 回报交付时通知我"
+    let settingsPushDeliveryHint = "一次回报通知一次，同一份重复回报不会再响。"
+    let settingsPushFanout = "一批派出去的任务全部结束时通知我"
+    let settingsPushFanoutHint = "整批只通知一次，会说有几件失败。"
     let settingsSmartNotifications = "智能通知"
     let settingsSmartNotificationsHint = "用 Haiku 说明刚完成了什么；生成失败时仍会发送原来的通知。"
     func pushCoalesced(count: Int) -> String { "\(count) 件任务同时完成" }

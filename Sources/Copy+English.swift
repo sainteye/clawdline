@@ -166,7 +166,7 @@ struct English: Copy {
     let pairingScanTitle = "Scan this with the phone"
     let pushWaiting = "is waiting for an answer"
     let pushTest = "A test notification. Everything is wired up."
-    let pushFinished = "finished a long run"
+    let pushDelivered = "has delivered, and is waiting for you"
     let pushDeployOk = "deploy succeeded"
     let pushDeployFail = "deploy failed"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -177,8 +177,10 @@ struct English: Copy {
         let all = done == 1 ? "finished 1 task" : "finished \(done) tasks"
         return failed == 0 ? all : "\(all), \(failed) failed"
     }
-    let settingsPushFinish = "Notify when a long turn finishes"
-    let settingsPushFinishHint = "Only for turns over two minutes."
+    let settingsPushDelivery = "Notify when a session reports it delivered"
+    let settingsPushDeliveryHint = "Once per report. Repeating the same one is silent."
+    let settingsPushFanout = "Notify when a fan-out of tasks ends"
+    let settingsPushFanoutHint = "One notification for the whole batch, with how many failed."
     let settingsSmartNotifications = "Smart notifications"
     let settingsSmartNotificationsHint = "Use Haiku to say what the finished work did. Falls back to the ordinary notice."
     func pushCoalesced(count: Int) -> String { "\(count) jobs finished together" }

@@ -167,7 +167,7 @@ struct Russian: Copy {
     let pairingScanTitle = "Наведите на это телефон"
     let pushWaiting = "ждёт ответа"
     let pushTest = "Тестовое уведомление. Всё подключено."
-    let pushFinished = "долгая работа закончена"
+    let pushDelivered = "сдал работу и ждёт вас"
     let pushDeployOk = "деплой прошёл успешно"
     let pushDeployFail = "деплой не удался"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -178,8 +178,10 @@ struct Russian: Copy {
         let all = "задач завершено: \(done)"
         return failed == 0 ? all : "\(all), с ошибкой: \(failed)"
     }
-    let settingsPushFinish = "Сообщать, когда долгая работа закончится"
-    let settingsPushFinishHint = "Только дольше двух минут."
+    let settingsPushDelivery = "Сообщать, когда сессия сообщает о сдаче работы"
+    let settingsPushDeliveryHint = "Один раз на сообщение; повтор того же молчит."
+    let settingsPushFanout = "Сообщать, когда закончится пачка задач"
+    let settingsPushFanoutHint = "Одно уведомление на всю пачку, с числом ошибок."
     let settingsSmartNotifications = "Умные уведомления"
     let settingsSmartNotificationsHint = "Haiku одним предложением опишет результат. При ошибке придёт обычное уведомление."
     func pushCoalesced(count: Int) -> String { "Завершено сразу: \(count)" }

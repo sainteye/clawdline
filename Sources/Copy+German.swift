@@ -167,7 +167,7 @@ struct German: Copy {
     let pairingScanTitle = "Scanne das mit dem Telefon"
     let pushWaiting = "wartet auf eine Antwort"
     let pushTest = "Eine Testbenachrichtigung. Alles ist angeschlossen."
-    let pushFinished = "hat einen langen Durchlauf beendet"
+    let pushDelivered = "hat geliefert und wartet auf dich"
     let pushDeployOk = "das Deploy hat geklappt"
     let pushDeployFail = "das Deploy ist fehlgeschlagen"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -178,8 +178,10 @@ struct German: Copy {
         let all = done == 1 ? "hat 1 Aufgabe beendet" : "hat \(done) Aufgaben beendet"
         return failed == 0 ? all : "\(all), \(failed) fehlgeschlagen"
     }
-    let settingsPushFinish = "Bescheid sagen, wenn ein langer Durchlauf fertig ist"
-    let settingsPushFinishHint = "Nur ab zwei Minuten."
+    let settingsPushDelivery = "Bescheid sagen, wenn eine Session ihre Lieferung meldet"
+    let settingsPushDeliveryHint = "Einmal pro Meldung; dieselbe noch einmal bleibt still."
+    let settingsPushFanout = "Bescheid sagen, wenn ein Schwung Aufgaben endet"
+    let settingsPushFanoutHint = "Eine Nachricht für den ganzen Schwung, mit der Zahl der Fehlschläge."
     let settingsSmartNotifications = "Intelligente Benachrichtigungen"
     let settingsSmartNotificationsHint = "Haiku beschreibt die fertige Arbeit in einem Satz. Bei Fehlern bleibt die normale Meldung."
     func pushCoalesced(count: Int) -> String { "\(count) Arbeiten zusammen fertig" }

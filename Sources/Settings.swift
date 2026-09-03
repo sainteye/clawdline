@@ -530,10 +530,14 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         // These live here rather than in General because what they control is a phone — there is
         // no notification without a paired device, so each switch belongs beside the devices
         // rather than in a list of things about the bar.
-        pane.left.row(L.t.settingsPushFinish,
-                      switchFor({ Config.shared.pushOnFinish },
-                                { Config.shared.pushOnFinish = $0 }),
-                      hint: L.t.settingsPushFinishHint)
+        pane.left.row(L.t.settingsPushDelivery,
+                      switchFor({ Config.shared.pushOnDelivery },
+                                { Config.shared.pushOnDelivery = $0 }),
+                      hint: L.t.settingsPushDeliveryHint)
+        pane.left.row(L.t.settingsPushFanout,
+                      switchFor({ Config.shared.pushOnFanout },
+                                { Config.shared.pushOnFanout = $0 }),
+                      hint: L.t.settingsPushFanoutHint)
         pane.left.row(L.t.settingsSmartNotifications,
                       switchFor({ Config.shared.smartNotifications },
                                 { Config.shared.smartNotifications = $0 }),

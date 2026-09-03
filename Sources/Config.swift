@@ -313,24 +313,37 @@ final class Config {
     ///
     /// `["node", "~/bin/notify.mjs"]`. An array because nothing should be word-split: a path with
     /// a space in it is a path, not two arguments. See Sources/StateHook.swift.
-    /// Buzz when a turn that took a while finishes, not when any turn finishes.
+    /// Buzz when a session says it has delivered what it was asked for.
     ///
-    /// **On by default, and the threshold underneath is what makes that defensible.** A turn ends
-    /// dozens of times a day and the unthresholded version would be unusable; over two minutes it
-    /// is a different event, because two minutes is roughly where somebody stops watching and goes
-    /// to do something else. See `StateHook.finishThreshold`.
+    /// **The event is a receipt, not a screen reading, and that is the whole difference.** A root
+    /// posts one authenticated claim at the end of the turn it delivered in — see
+    /// `Orchestrator.reportSessionDelivery` — so what buzzes is a session saying *this is done and
+    /// I am waiting for you to look*, which is a thing you can act on. What was here before was
+    /// `push_on_finish`, and it named `working → idle` past two minutes: answering one question
+    /// ended a turn, so did finishing a step, and the switch's own label claimed the work was
+    /// over. Somebody who turned it off was turning off a lie rather than declining the news.
     ///
-    /// This was off when it shipped, on the argument that a notification you already knew about
-    /// trains you to ignore the ones you did not. The owner's call on 2026-08-19 was the other
-    /// way, and the reasoning is worth keeping: at this volume a notification arriving is itself
-    /// useful confirmation the thing works, and **a rule elaborate enough to suppress the
-    /// redundant ones is a rule nobody can debug when it goes quiet**. A feature that is off by
-    /// default is also a feature most people never find.
-    var pushOnFinish = true
-    /// Replace the generic long-turn and fan-out wording with one bounded Haiku summary.
+    /// On by default, for the reason the old one was: at this volume a notification arriving is
+    /// itself useful confirmation the thing works, and a rule elaborate enough to suppress the
+    /// redundant ones is a rule nobody can debug when it goes quiet.
+    var pushOnDelivery = true
+    /// Buzz when the last task of a fan-out ends.
+    ///
+    /// One notification for a whole subtree, with a count and how many failed — worth a phone
+    /// because the tabs it ran in have closed by then and the count exists nowhere a person is
+    /// looking. It is a separate switch from the one above rather than a finer setting on it:
+    /// a delivery is one session saying it is your turn, a fan-out ending is a tree going quiet,
+    /// and somebody who wants one of those does not necessarily want the other.
+    ///
+    /// It inherits `push_on_finish` on the way in. That key covered both events, so an answer of
+    /// "do not buzz me when things end" was given about this one too and has to survive the split.
+    var pushOnFanout = true
+    /// Replace the generic fan-out wording with one bounded Haiku summary.
     ///
     /// Off by default because it spends assistant quota and puts authored work detail on the
     /// lock screen. The ordinary completion notification remains the fallback in every case.
+    /// On the delivery push it spends nothing: the session already wrote a sentence about its own
+    /// delivery, and that sentence is carried verbatim instead of a generated one.
     var smartNotifications = false
     /// Buzz when a deploy stops running.
     ///
@@ -596,7 +609,16 @@ final class Config {
         if let v = obj["session_registry"] as? Bool { sessionRegistry = v }
         if let v = obj["remote"] as? Bool { remote = v }
         if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
-        if let v = obj["push_on_finish"] as? Bool { pushOnFinish = v }
+        if let v = obj["push_on_delivery"] as? Bool { pushOnDelivery = v }
+        // `push_on_fanout` was `push_on_finish`, which also covered the turn-stopped push that no
+        // longer exists. Somebody who turned that off asked not to be buzzed when work ended, and
+        // the fan-out push is the half of it that survived — so the old answer is taken rather
+        // than silently reset to the new default. The old key is never written back.
+        if let v = obj["push_on_fanout"] as? Bool {
+            pushOnFanout = v
+        } else if let legacy = obj["push_on_finish"] as? Bool {
+            pushOnFanout = legacy
+        }
         if let v = obj["smart_notifications"] as? Bool { smartNotifications = v }
         if let v = obj["push_on_deploy"] as? Bool { pushOnDeploy = v }
         if let v = obj["on_state_change"] as? [String] { onStateChange = v }
@@ -691,7 +713,8 @@ final class Config {
             "session_registry": sessionRegistry,
             "remote": remote,
             "remote_port": remotePort,
-            "push_on_finish": pushOnFinish,
+            "push_on_delivery": pushOnDelivery,
+            "push_on_fanout": pushOnFanout,
             "smart_notifications": smartNotifications,
             "push_on_deploy": pushOnDeploy,
             "on_state_change": onStateChange,
