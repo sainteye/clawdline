@@ -26,6 +26,14 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
     case authenticationTimedOut
     case receiveTimedOut
     case connectionFailed(String)
+    /// This transport closed its own socket because the device token is being rotated, and the
+    /// reconnect that follows is the rotation finishing rather than anything going wrong. It is
+    /// a separate case because the socket close arrives back through `receive` as an ordinary
+    /// URLSession error and is otherwise indistinguishable from a relay that dropped us: on
+    /// 2026-09-03 a healthy Mac logged `reason=connection_failed` every four minutes — 300-second
+    /// token TTL less the 60-second `refreshAhead` — and that line was read as "the Mac cannot
+    /// reach the relay" while it was in fact connected and publishing throughout.
+    case tokenRotated
     case notConnected
     case unexpectedFrame(String)
     case relay(String, String)
@@ -50,6 +58,8 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
             return "The cloud relay stopped sending frames before its receive deadline."
         case .connectionFailed(let reason):
             return "The cloud relay connection failed: \(reason)"
+        case .tokenRotated:
+            return "The cloud relay connection is being rebuilt with a fresh device token."
         case .notConnected:
             return "CloudTransport is not connected."
         case .unexpectedFrame(let type):
@@ -483,6 +493,9 @@ actor CloudTransport {
     private var droppedReadyGenerations = 0
     private var sequenceTracker = CloudSequenceTracker()
     private var pendingByChannel: [String: CloudEnvelope] = [:]
+    /// The generation whose socket `refreshToken` closed on purpose. Read once, by the reconnect
+    /// loop, so the retry it triggers is named for what caused it rather than for how it arrived.
+    private var rotatingGeneration: Int?
 
     init(
         relayBaseURL: URL,
@@ -578,6 +591,7 @@ actor CloudTransport {
         socket?.close()
         socket = nil
         cachedToken = nil
+        rotatingGeneration = nil
         pendingByChannel.removeAll()
         commandContinuation.finish()
         readyContinuation.finish()
@@ -737,6 +751,12 @@ actor CloudTransport {
                     state = .reconnecting
                 }
                 var retryError = error
+                // A socket this transport closed itself comes back as an ordinary receive error,
+                // so the reason has to be carried rather than inferred from the error.
+                if rotatingGeneration == activeGeneration {
+                    rotatingGeneration = nil
+                    retryError = CloudTransportError.tokenRotated
+                }
 
                 while state != .shutDown, !Task.isCancelled {
                     let jitter = 0.75 + (await clock.jitterUnit() * 0.5)
@@ -811,6 +831,7 @@ actor CloudTransport {
         case .authenticationTimedOut: return "authentication_timeout"
         case .receiveTimedOut: return "receive_timeout"
         case .connectionFailed: return "connection_failed"
+        case .tokenRotated: return "token_rotation"
         case .alreadyConnected: return "already_connected"
         case .invalidRelayURL: return "invalid_relay_url"
         case .invalidTokenResponse: return "invalid_token_response"
@@ -902,6 +923,7 @@ actor CloudTransport {
     private func refreshToken(generation expectedGeneration: Int) {
         guard state == .ready, generation == expectedGeneration else { return }
         cachedToken = nil
+        rotatingGeneration = expectedGeneration
         socket?.close()
     }
 
