@@ -242,6 +242,29 @@ against the governance table, and the number they both describe exists only in a
 guard is green, ask whether its number was compared against a *thing* or against another *record of
 the thing*. Only the second kind can be unanimously wrong.
 
+**And a third shape, which is neither, and is the one that actually happened.** A guard can compare
+a thing against a record, get the right answer on both sides, and still miss the defect — because
+what it counts is not everything there is to count. On 2026-09-03 a manifest edit was backed out of
+a shared index; afterwards the guard counted the manifest file (498) against its own constant (498)
+and both were right, while `Tests/UsageLedgerTests.swift` declared five groups that neither of them
+listed. **Nothing was inconsistent. The guard simply does not read that file.** Only
+`validateExecutedTestGroupManifest()` refuses, because it is the one place that compares what was
+*declared* against what was *executed* — and that requires a run.
+
+So the three are worth keeping apart, because they need different answers:
+
+| shape | what it looks like | what catches it |
+|---|---|---|
+| one reading lying | a count, an exit status, an `ok` | a positive control that must match |
+| two records agreeing | *governance table agrees* | comparing one of them against the thing |
+| a correct count of the wrong set | everything green, nothing inconsistent | something that observes execution, not declaration |
+
+The third is the hardest to see because **nothing about it is wrong** — it is a scope problem
+wearing an accuracy problem's clothes, and it is this repository's older rule about samples
+(*a question sampled along a single path measures that path*) applied to a guard's reach rather
+than to a probe's. When a guard is green, the second question after *thing or record?* is
+**what does it not look at?**
+
 It has a sibling worth naming with it: **three independent readings that agree are not corroboration
 when all three were taken with the same wrong instrument** — that was measured here on a compile
 peak, where two `ps` samples and a third agreed on about 3 GB against a kernel-tracked lifetime
