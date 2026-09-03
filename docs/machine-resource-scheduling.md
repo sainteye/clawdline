@@ -207,6 +207,8 @@ while because the answer looked like data:
 | `awk '$0 ~ "\\yvar\\y"'` | 0 crossing variables | macOS `awk` does not support `\y`; `grep -w` found 10 |
 | `swiftc -output-file-map <map>` with absolute keys and relative command-line paths | exit 0, and objects | the map was silently ignored and the objects went to default names in the working directory |
 | a message body built with `python3 -c "..."` in double quotes | `ok: true` from the API | backticks in the text were run as command substitution by the shell and the words vanished before the request was built |
+| `tools/check-architecture-boundaries.sh` on a tree where the manifest and the guard were edited together | green, *governance table agrees* | both had been changed the same wrong way; the layer that would have refused is `validateExecutedTestGroupManifest()`, which needs a full suite |
+| a commit SHA quoted in a broadcast | a reader's `git show` | it had been written from memory rather than pasted from a command's output, and named no object |
 
 The family is one sentence: **taking something that returned success as proof that it did the thing
 you meant.** It has four faces here — text appearing in a command line read as the thing existing;
@@ -222,6 +224,26 @@ is how the broker lease's requests could be answered `ok` while carrying words t
 already removed. Both have one prescription: before believing a count, run a positive control that
 must match — the third row was caught exactly that way, by checking a word known to be present and
 getting 0 from `\y` and 54 from a plain pattern.
+
+**The sixth row is the one that resists that prescription, and it is the most dangerous.** A
+positive control tests one reading; this failure is *two readings agreeing*. When the sealed count
+in `test.sh` and the governance table in `docs/architecture-refactor.md` are edited together, the
+guard that compares them reports **green, governance table agrees** — because they agree, and they
+are both wrong. Two sources concurring is the thing we ordinarily use to *raise* confidence, so it
+is the last place anybody looks. The layer that actually refuses is
+`validateExecutedTestGroupManifest()`, which runs inside the suite: **a green from that guard means
+the two documents match each other, not that either matches the tree.** Say which of those you have
+before quoting it, and do not read the guard's silence as the suite's.
+
+It has a sibling worth naming with it: **three independent readings that agree are not corroboration
+when all three were taken with the same wrong instrument** — that was measured here on a compile
+peak, where two `ps` samples and a third agreed on about 3 GB against a kernel-tracked lifetime
+maximum of 46.06 GiB. Agreement is evidence about the instrument before it is evidence about the
+world.
+
+**And the seventh row is the cheapest to avoid.** An identifier written from memory cannot be
+repaired by its context: a reader who runs `git show` on it gets an error and then does not know
+which half of the message to trust. Paste a SHA from the output of the command that produced it.
 
 This is not a stylistic note. **The physical backstop asks "is any compiler running on this
 machine".** Written with `pgrep -f`, it matches the process asking the question and therefore always
