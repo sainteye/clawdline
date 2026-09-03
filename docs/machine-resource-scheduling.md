@@ -234,13 +234,29 @@ is the last place anybody looks. The layer that actually refuses is
 `validateExecutedTestGroupManifest()`, which runs inside the suite: **a green from that comparison
 means the two documents match each other, not that either matches the tree.**
 
-The discriminator is worth stating because it is not the whole guard. Its group, runner and suite
-counts are computed *from the thing counted* — the manifest file, the runner list, the directory —
-so those cannot agree their way to a wrong answer. The susceptible ones are the comparisons where
-**both sides are documents**: `compare_documented "Swift checks"` puts `test.sh`'s sealed receipt
-against the governance table, and the number they both describe exists only in a run. So: when a
-guard is green, ask whether its number was compared against a *thing* or against another *record of
-the thing*. Only the second kind can be unanimously wrong.
+The discriminator is worth stating because it is not the whole guard, and the boundary is not where
+it first looks. Read from the script, its six documented rows split three and three:
+
+| row | left-hand side | |
+|---|---|---|
+| ordered groups | `awk` over `Tests/TestGroupManifest.swift` | a thing |
+| ordered runners | `grep -c` over `Tests/main.swift` | a thing |
+| suite files | counted from the directory | a thing |
+| **Swift checks** | `sed` out of `test.sh`'s sealed string | **a record** |
+| **`Orchestrator.swift` ceiling** | a constant in the script | **a record** |
+| **`RemoteServer.swift` ceiling** | a constant in the script | **a record** |
+
+The first three cannot agree their way to a wrong answer. The last three can: both sides are
+written down, and the quantity they describe — the number of checks a run emits, the number of lines
+in a file — is somewhere else. So: when a guard is green, ask whether its number was compared
+against a *thing* or against another *record of the thing*. Only the second kind can be unanimously
+wrong.
+
+**The ceilings look anchored and are not, and the reason is worth its own sentence.** Each is also
+checked against the file it governs — but as a **bound**, `lines -le ceiling`, which can only refuse
+a ceiling that is too *low*. A ceiling set too high passes it for ever. **Slack is invisible to the
+check that looks at the real thing, and visible only to the one that compares two documents** — so
+it is caught only while somebody edits one of them and not the other.
 
 **And a third shape, which is neither, and is the one that actually happened.** A guard can compare
 a thing against a record, get the right answer on both sides, and still miss the defect — because
@@ -268,9 +284,12 @@ against a file of 11,678 — and it silently grants 254 lines of headroom nobody
 approved. **A ceiling carrying invented slack is worse than one that is failing**, because a failure
 is an argument and slack is an absence.
 
-It was caught because that comparison's left side is a `wc -l` the guard takes every run: a thing,
-not a record, so it cannot be wrong in company with a stale number. Had that row been record against
-record, editing the script and leaving the table would have left both wrong and everything green.
+It was caught by the governance-table row — and that row compares two records, so the catch was
+narrower than it looks: the script constant had been corrected and the table had not, and a
+disagreement between two written-down numbers is exactly what that row does see. **Had both been
+edited together it would have been green**, and the bound beside it would have stayed green too,
+because a bound cannot refuse slack. The rule earned its place here; the margin it won by was one
+unedited document.
 
 The third is the hardest to see because **nothing about it is wrong** — it is a scope problem
 wearing an accuracy problem's clothes, and it is this repository's older rule about samples
