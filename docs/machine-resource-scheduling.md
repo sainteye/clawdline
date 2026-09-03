@@ -259,6 +259,19 @@ So the three are worth keeping apart, because they need different answers:
 | two records agreeing | *governance table agrees* | comparing one of them against the thing |
 | a correct count of the wrong set | everything green, nothing inconsistent | something that observes execution, not declaration |
 
+**The middle row paid for itself twenty minutes after it was written, against the line that wrote
+the classification.** A ceiling was set from a number measured on one tree and carried, through a
+merge, into a statement about another: `Orchestrator.swift` was 11,932 lines on a delivery branch
+that still contained the lease, and 11,678 once integrated onto a `main` where the lease was gone.
+The guard's ceiling was filled in as 11,932. **That can never go red** — `-le 11932` holds for ever
+against a file of 11,678 — and it silently grants 254 lines of headroom nobody measured and nobody
+approved. **A ceiling carrying invented slack is worse than one that is failing**, because a failure
+is an argument and slack is an absence.
+
+It was caught because that comparison's left side is a `wc -l` the guard takes every run: a thing,
+not a record, so it cannot be wrong in company with a stale number. Had that row been record against
+record, editing the script and leaving the table would have left both wrong and everything green.
+
 The third is the hardest to see because **nothing about it is wrong** — it is a scope problem
 wearing an accuracy problem's clothes, and it is this repository's older rule about samples
 (*a question sampled along a single path measures that path*) applied to a guard's reach rather
