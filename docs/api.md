@@ -579,6 +579,63 @@ a card is opened; not something to do on every beat of the stream. Everything he
 nothing is written — the `git` runs with `GIT_OPTIONAL_LOCKS=0` and a deadline, and nothing is
 asked of GitHub that `/links` did not already ask.
 
+### The two reads a browser on the Cloud path may ask for
+
+Everything above is the direct path: a browser on this Mac's own network, or through its
+Cloudflare tunnel, holding a paired-device token. A browser on the **Cloud** path holds no such
+token and speaks no HTTP to this Mac at all — it publishes one encrypted envelope to the relay,
+and the Mac publishes one back. So the routes above are not reachable from there by definition,
+and what is reachable is a closed list of two, named in `CloudHeadlessRead`:
+
+| asked as | answered by | the direct route it stands for |
+|---|---|---|
+| `{"type":"transcript","session":"…","limit":1‑1000}` | `read: "transcript"` | [`GET /v1/sessions/:id/transcript`](#get-v1sessionsidtranscriptlimit200) |
+| `{"type":"info","session":"…","parts":"full"}` | `read: "info.full"` | [`GET /v1/sessions/:id/info`](#get-v1sessionsidinfo) |
+| `{"type":"info","session":"…","parts":"summary"}` | `read: "info.summary"` | `GET /v1/sessions/:id/info?parts=summary` |
+
+The request rides `ctl/<machine>` with class `ctl`, the channel a viewer already publishes
+commands on; the answer rides `t/<machine>/<session>` with class `stream`, the channel a viewer
+already subscribes to when it opens a session. Neither is new. What is new is that anything at
+all is published on the second one: the relay and both clients have carried `t/` since the
+protocol was written and no Mac had ever sent a transcript envelope, so a phone that asked for one
+waited behind a skeleton until somebody closed the tab.
+
+**The key set is exact and the answer names itself.** A body with a missing, extra or wrongly typed
+field is `400 malformed_read` and never reaches a route; so is a read that arrives with class
+`dispatch` rather than `ctl`. The answer carries `read`, `status`, and then either `body` — the
+route's own JSON, unchanged — or `error`, the route's own typed refusal, unchanged. `info.full` and
+`info.summary` are two names rather than one because they are two answers: the summary omits
+`permission`, `files`, `links` and `deploy`, and a full request settled by a summary would be
+cached as complete while missing exactly those.
+
+**Reads do not consult the remote-write switch, and commands still do.** `Settings → Remote`'s
+write switch is the answer to "may a remote device type into a session on this Mac"; a transcript
+read types into nothing, and on the direct path a paired device reads one whatever that switch
+says. The session rows this Mac publishes to the relay cross without consulting it either, so a
+viewer that can see every row and not the messages inside one would be showing less than the same
+device sees through the tunnel, for no reason anybody chose. `send`, `answer` and `key` still meet
+`cloud_commands_disabled` exactly where they always did.
+
+**They queue where a phone queues.** A cloud transcript read enters the same serial transcript
+worker and a cloud Info read the same eight-place reading lane, so both can come back
+`429 transcript_busy` or `429 busy` with the same fields as above. A second door that skipped
+those lanes would put back the exclusivity they were built to remove.
+
+**What a viewer cannot ask for.** The refusals below are the deliberate ones, and each has a code
+of its own so a page can say which it hit rather than showing the same empty view for all three:
+
+| code | what it means | whose decision |
+|---|---|---|
+| `cloud_read_needs_send_prompt` | this device may read but may not publish on `ctl/`, so it cannot ask | the relay's: PROTOCOL §12 requires `send_prompt` to publish on `ctl/` in either class |
+| `cloud_read_unavailable` | `agents`, `shells`, `skills` and `git` do not cross yet | this repository's, and a gap rather than a policy |
+| `cloud_read_timeout` | nothing answered within the client's window | the client's, and the honest end of a read nobody will answer |
+
+Every other read the Web UI performs — `/v1/places`, `/v1/places/:id/sessions`,
+`GET /v1/orchestrator/schedules/:id`, `/v1/orchestrator/coordinator/bearings`, `/v1/push/key` —
+is absent on the Cloud path and is guarded at its call site by `typeof api.X === "function"`, so
+the control it belongs to is not drawn at all. That is a quieter answer than a button that fails
+when pressed, and it is the deliberate one for a feature that is missing rather than refused.
+
 ### `GET /v1/orchestrator/assistants`
 
 What this Mac can say about each assistant's own **account-level** quota — a machine-level fact,

@@ -31,9 +31,53 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case answer(session: String, key: String)
 }
 
+/// The reads a paired viewer may ask this Mac for over the relay.
+///
+/// A separate type from `CloudHeadlessCommand` because the two are gated differently, and the
+/// difference is the whole reason this exists. A command types into somebody's session and needs
+/// the write switch; a read changes nothing, and on the direct path a paired device reads a
+/// transcript with that switch off. The session rows this bridge already publishes cross without
+/// consulting it either, so a viewer that can see every row and not the messages inside one is
+/// showing less than the same device sees over the tunnel — for no reason anybody chose.
+///
+/// The vocabulary is closed on purpose: a viewer names one of these, never a route.
+enum CloudHeadlessRead: Equatable, Sendable {
+    case transcript(session: String, limit: Int)
+    case info(session: String, parts: String)
+
+    /// The session this read is about — also the channel its answer is published on.
+    var session: String {
+        switch self {
+        case .transcript(let session, _): return session
+        case .info(let session, _): return session
+        }
+    }
+
+    /// The word the answer carries, so a viewer waiting for one read cannot accept another.
+    ///
+    /// The two halves of Info are separate names rather than one, because they are separate
+    /// answers: the summary omits screen, Git and links/deploy, and a full request settled by a
+    /// summary would be cached as complete while missing exactly those. A distinction that is
+    /// only in the request and not in the answer is a distinction the receiver cannot make.
+    var name: String {
+        switch self {
+        case .transcript: return "transcript"
+        case .info(_, let parts): return "info." + parts
+        }
+    }
+}
+
 struct CloudCommandResult: Equatable, Sendable {
     let status: Int
     let code: String?
+}
+
+/// A read's answer, kept as the route's own bytes rather than a parsed object: a refusal is an
+/// answer too, and forwarding the typed `{"error":{"code",…}}` unchanged is what lets a browser
+/// on the cloud path branch on exactly the codes it already branches on over the tunnel.
+struct CloudReadResult: Equatable, Sendable {
+    let status: Int
+    let body: Data
 }
 
 /// Both cloud and HTTP commands enter this door. The production implementation below converts a
@@ -42,6 +86,9 @@ struct CloudCommandResult: Equatable, Sendable {
 protocol CloudCommandRouting: Sendable {
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult
+    /// Reads enter through the same door for the same reason, minus the idempotency key: a GET
+    /// that is retried is not a second anything.
+    func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult
 }
 
 struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable {
@@ -59,6 +106,11 @@ struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable 
         let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
         let error = object?["error"] as? [String: Any]
         return CloudCommandResult(status: response.status, code: error?["code"] as? String)
+    }
+
+    func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
+        let response = await server.routeVerifiedCloudRead(read, sender: sender)
+        return CloudReadResult(status: response.status, body: response.body)
     }
 }
 
@@ -302,6 +354,16 @@ actor CloudAppBridge {
         "s/" + Self.channelSegment(identity.machineID) + "/" + Self.channelSegment(sessionID)
     }
 
+    /// Where a read's answer goes. `t/<machine>/<session>` is PROTOCOL §2's transcript channel and
+    /// has been in the relay and in `cloud-crypto.js` all along with nothing publishing to it; the
+    /// viewer already subscribes to it when a session is opened. `info` rides the same channel
+    /// rather than a new prefix because a prefix is the one part of an envelope the relay reads,
+    /// and adding one would need a relay this repository does not contain. The payload says which
+    /// read it is, which costs the relay nothing: everything past `ch` is ciphertext to it.
+    private func transcriptChannel(_ sessionID: String) -> String {
+        "t/" + Self.channelSegment(identity.machineID) + "/" + Self.channelSegment(sessionID)
+    }
+
     private func publishJSON(
         _ object: [String: Any], channel: String, lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
@@ -380,18 +442,27 @@ actor CloudAppBridge {
         _ inbound: CloudInboundCommand, lifecycleGeneration ownedGeneration: UInt64
     ) async {
         guard running, lifecycleGeneration == ownedGeneration else { return }
-        guard allowCloudCommands() else {
-            commandResult(CloudCommandResult(status: 403, code: "cloud_commands_disabled"))
-            return
-        }
         let wantedChannel = "ctl/" + Self.channelSegment(identity.machineID)
         guard inbound.channel == wantedChannel else {
             commandResult(CloudCommandResult(status: 409, code: "wrong_machine"))
             return
         }
-        guard let object = try? JSONSerialization.jsonObject(with: inbound.plaintext),
-              let body = object as? [String: Any], let type = body["type"] as? String
-        else {
+        // Parsed before the write gate rather than after it, because the gate is not the same
+        // question for a read: `Config.shared.remoteWrite` is "may a remote device type into a
+        // session on this Mac", and a transcript read types into nothing. Everything that is not
+        // a read — an unparseable body included — meets that gate exactly where it always did.
+        let parsed = (try? JSONSerialization.jsonObject(with: inbound.plaintext)) as? [String: Any]
+        let requestedType = parsed?["type"] as? String
+        if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
+            await serveRead(requestedType, body: parsed, inbound: inbound,
+                            lifecycleGeneration: ownedGeneration)
+            return
+        }
+        guard allowCloudCommands() else {
+            commandResult(CloudCommandResult(status: 403, code: "cloud_commands_disabled"))
+            return
+        }
+        guard let body = parsed, let type = requestedType else {
             commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
             return
         }
@@ -434,5 +505,91 @@ actor CloudAppBridge {
             idempotencyKey: "cloud:\(inbound.sender):\(inbound.sequence)"
         )
         commandResult(result)
+    }
+
+    /// The two reads a viewer may name. A closed set, checked before the write gate, so that
+    /// adding a third is a deliberate edit here rather than a spelling that slipped past.
+    static let readTypes: Set<String> = ["transcript", "info"]
+
+    /// Answer one read: parse it strictly, route it through the door local HTTP already uses, and
+    /// publish the answer on the session's own transcript channel.
+    ///
+    /// A refusal is published too. That is the whole point of the shape: a browser that asked for
+    /// a transcript and is told `not_found` can say so, while a browser that is told nothing at all
+    /// waits forever behind a skeleton — which is what this path did before, because nothing on
+    /// this Mac had ever published a `t/` envelope.
+    private func serveRead(
+        _ type: String, body: [String: Any], inbound: CloudInboundCommand,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        // A read rides the command channel and therefore its class, which is what the relay bills
+        // and what `CloudEnvelope` pins. `dispatch` is a command class and never a read.
+        guard inbound.commandClass == .ctl else {
+            commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+            return
+        }
+        let read: CloudHeadlessRead
+        switch type {
+        case "transcript":
+            guard Set(body.keys) == ["type", "session", "limit"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let limit = body["limit"] as? Int, (1...1000).contains(limit)
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .transcript(session: session, limit: limit)
+        default:
+            guard Set(body.keys) == ["type", "session", "parts"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let parts = body["parts"] as? String,
+                  parts == "full" || parts == "summary"
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .info(session: session, parts: parts)
+        }
+
+        let answer = await commandRouter.read(read, sender: inbound.sender)
+        commandResult(CloudCommandResult(status: answer.status,
+                                         code: Self.errorCode(in: answer.body)))
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        let parsedAnswer = (try? JSONSerialization.jsonObject(with: answer.body)) as? [String: Any]
+        var payload: [String: Any] = ["read": read.name, "status": answer.status]
+        if answer.status == 200, let parsedAnswer {
+            payload["body"] = parsedAnswer
+        } else {
+            // Whatever went wrong, the viewer gets a code it can branch on rather than silence.
+            payload["error"] = (parsedAnswer?["error"] as? [String: Any])
+                ?? ["code": "read_failed", "message": "This read could not be answered."]
+        }
+        guard JSONSerialization.isValidJSONObject(payload),
+              let bytes = try? JSONSerialization.data(
+                  withJSONObject: payload, options: [.withoutEscapingSlashes]
+              )
+        else {
+            commandResult(CloudCommandResult(status: 500, code: "unserializable_read"))
+            return
+        }
+        let channel = transcriptChannel(read.session)
+        do {
+            try await runPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publish(
+                    bytes, channel: channel, lifecycleGeneration: ownedGeneration
+                )
+            }
+        } catch {
+            // The answer's own channel is the only way back to the asker, so a publication that
+            // cannot leave has nothing to report with. It is recorded here and the viewer's read
+            // ages out at its end, which is the honest end state for a bridge that is going down.
+            commandResult(CloudCommandResult(status: 503, code: "read_answer_undeliverable"))
+        }
+    }
+
+    private static func errorCode(in body: Data) -> String? {
+        let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        return (object?["error"] as? [String: Any])?["code"] as? String
     }
 }
