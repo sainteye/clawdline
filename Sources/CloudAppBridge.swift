@@ -44,12 +44,20 @@ enum CloudHeadlessCommand: Equatable, Sendable {
 enum CloudHeadlessRead: Equatable, Sendable {
     case transcript(session: String, limit: Int)
     case info(session: String, parts: String)
+    case agent(session: String, agent: String, limit: Int)
+    case shell(session: String, shell: String, bytes: Int)
+    case skills(session: String)
+    case git(session: String)
 
     /// The session this read is about — also the channel its answer is published on.
     var session: String {
         switch self {
         case .transcript(let session, _): return session
         case .info(let session, _): return session
+        case .agent(let session, _, _): return session
+        case .shell(let session, _, _): return session
+        case .skills(let session): return session
+        case .git(let session): return session
         }
     }
 
@@ -59,10 +67,21 @@ enum CloudHeadlessRead: Equatable, Sendable {
     /// answers: the summary omits screen, Git and links/deploy, and a full request settled by a
     /// summary would be cached as complete while missing exactly those. A distinction that is
     /// only in the request and not in the answer is a distinction the receiver cannot make.
+    ///
+    /// **An agent and a shell put their id in the name, and there the distinction is sharper
+    /// still.** A session has many of each and one answer channel between them, so a reader who
+    /// opens two agents — the ordinary case, the strip lists them side by side — would have the
+    /// first settled by the second's conversation, with nothing in either answer able to tell
+    /// them apart. `skills` and `git` need no id: there is one of each per session, exactly as
+    /// there is one transcript.
     var name: String {
         switch self {
         case .transcript: return "transcript"
         case .info(_, let parts): return "info." + parts
+        case .agent(_, let agent, _): return "agent:" + agent
+        case .shell(_, let shell, _): return "shell:" + shell
+        case .skills: return "skills"
+        case .git: return "git"
         }
     }
 }
@@ -507,9 +526,17 @@ actor CloudAppBridge {
         commandResult(result)
     }
 
-    /// The two reads a viewer may name. A closed set, checked before the write gate, so that
-    /// adding a third is a deliberate edit here rather than a spelling that slipped past.
-    static let readTypes: Set<String> = ["transcript", "info"]
+    /// The reads a viewer may name. A closed set, checked before the write gate, so that adding
+    /// a seventh is a deliberate edit here rather than a spelling that slipped past.
+    ///
+    /// This and the switch in `serveRead` are two lists that have to agree, which is why that
+    /// switch ends in a `default` that refuses rather than in the last read: a word admitted here
+    /// and unknown there fails closed instead of being parsed as whichever case happens to sit at
+    /// the bottom. `every read type this bridge admits also parses` walks this set and asks each
+    /// member for a well-formed body, so the two cannot come apart quietly.
+    static let readTypes: Set<String> = [
+        "transcript", "info", "agent", "shell", "skills", "git",
+    ]
 
     /// Answer one read: parse it strictly, route it through the door local HTTP already uses, and
     /// publish the answer on the session's own transcript channel.
@@ -539,7 +566,7 @@ actor CloudAppBridge {
                 return
             }
             read = .transcript(session: session, limit: limit)
-        default:
+        case "info":
             guard Set(body.keys) == ["type", "session", "parts"],
                   let session = body["session"] as? String, !session.isEmpty,
                   let parts = body["parts"] as? String,
@@ -549,6 +576,58 @@ actor CloudAppBridge {
                 return
             }
             read = .info(session: session, parts: parts)
+        case "agent":
+            // An agent's window is a transcript's window, bounded where the route bounds it,
+            // because an agent's file is read the same way a session's is — it is the same kind
+            // of file, and `agentPayload` hands it to the same parser.
+            guard Set(body.keys) == ["type", "session", "agent", "limit"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let agent = body["agent"] as? String, !agent.isEmpty,
+                  let limit = body["limit"] as? Int, (1...1000).contains(limit)
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .agent(session: session, agent: agent, limit: limit)
+        case "shell":
+            // Bytes and not entries: a command has no turns, so the only honest bound on its
+            // output is how much of the tail to take. The range is the route's own — 1 KiB to
+            // 1 MiB — so a cloud viewer can ask for exactly what a phone on the tunnel can and
+            // no more, and the ceiling stays far inside one envelope.
+            guard Set(body.keys) == ["type", "session", "shell", "bytes"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let shell = body["shell"] as? String, !shell.isEmpty,
+                  let bytes = body["bytes"] as? Int, ((1 << 10)...(1 << 20)).contains(bytes)
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .shell(session: session, shell: shell, bytes: bytes)
+        case "skills":
+            // No window on either of these two. `/skills` answers a menu whose length is how
+            // many skills that assistant has, and `/git` answers file rows with counts and no
+            // diff text at all, so neither has a size a caller could name.
+            guard Set(body.keys) == ["type", "session"],
+                  let session = body["session"] as? String, !session.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .skills(session: session)
+        case "git":
+            guard Set(body.keys) == ["type", "session"],
+                  let session = body["session"] as? String, !session.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .git(session: session)
+        default:
+            // `readTypes` admitted a word this switch does not know, which means the two lists
+            // have come apart. Fail closed rather than reading it as whichever case sits last —
+            // that is how a misspelled `info` would have become a transcript.
+            commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+            return
         }
 
         let answer = await commandRouter.read(read, sender: inbound.sender)

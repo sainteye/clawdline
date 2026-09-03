@@ -33,8 +33,41 @@ function readKey(identity, read) {
 /** How long a read may go unanswered before it is an answer of its own. */
 const READ_TIMEOUT_MS = 60000;
 
+/** The agent or shell a read is about, as the string the Mac will echo back inside `read`. */
+function readSubject(value) {
+    return value === undefined || value === null ? "" : String(value);
+}
+
+/**
+ * The refusal for an agent or shell read with no id, raised here rather than at the Mac.
+ *
+ * It is the Mac's own word because it is the Mac's own rule — an empty id is `malformed_read`
+ * in `serveRead` — but the Mac cannot be the one to say it: a read refused before it is parsed
+ * publishes nothing, having neither an answer nor a name to publish it under, so a request this
+ * client already knows is malformed would leave, be dropped in silence, and end sixty seconds
+ * later as `cloud_read_timeout`. Refusing it here spends no envelope sequence and gives a page
+ * branching on that word no reason to care which end noticed.
+ */
+function missingSubject(what) {
+    return cloudError("malformed_read", "this read names no " + what);
+}
+
 /** The transcript window the direct path asks for, so both transports show the same tail. */
 const TRANSCRIPT_LIMIT = 200;
+
+/** An agent's window: the same number for the same reason — `live.js` asks for `?limit=200`. */
+const AGENT_LIMIT = 200;
+
+/**
+ * How much of a background command's tail to take.
+ *
+ * The direct path sends no `bytes` at all and lets the route's own default stand. That is not
+ * something this path can copy by omission: the Mac checks a read's key set exactly, so a field
+ * left out is a malformed read rather than a default. The default is therefore written down here
+ * — 64 KiB, which is what the shell panel already renders on the tunnel, and three orders of
+ * magnitude inside a single envelope.
+ */
+const SHELL_BYTES = 64 * 1024;
 
 function cloudError(code, message) {
     var error = new Error(message || code);
@@ -308,8 +341,10 @@ export class CloudClient {
             var transcriptKey = sessionIdentityKey(transcriptIdentity);
             var answer = readAnswer(payload);
             // Nothing has ever published on this channel, so its payload is pinned here rather
-            // than inherited: an envelope that is not one of the two read answers is a protocol
-            // error and says so, instead of being stored as a transcript nobody can read.
+            // than inherited: an envelope that names no read at all is a protocol error and says
+            // so, instead of being stored as a transcript nobody can read. Which read it names is
+            // not checked against a list — a viewer only ever waits on names it asked for, and an
+            // answer to a read nobody asked for settles nothing.
             if (!answer) throw cloudError("bad_payload", "the read answer names no read");
             if (answer.read === "transcript" && !answer.error) {
                 this.transcriptSnapshots.set(transcriptKey, answer.body);
@@ -493,31 +528,47 @@ export class CloudClient {
     }
 
     /**
-     * The four reads that do not cross yet, each saying so in one word.
+     * One background agent's conversation.
      *
-     * They are here because their absence was not silence, it was a crash: `git-panel.js`,
-     * `shell-panel.js`, `session/agent.js` and the skills picker all call `api.X(id).then(…)`
-     * without asking whether this transport has an `X`, so on the cloud path they threw
-     * `api.git is not a function` at whoever pressed the button. Every other absent read is
-     * behind a `typeof api.X === "function"` guard, which draws no control at all — a quieter
-     * and, for a missing feature, better answer — so those are left absent rather than given a
-     * stub that would put a dead button back on the screen.
+     * The first of the four that used to be a crash — `session/agent.js` calls `api.agent(…)`
+     * unguarded, so on this path it threw `api.agent is not a function` at whoever pressed the
+     * button — then a typed `cloud_read_unavailable`, and now a read like the rest. It answers
+     * the same `{agent, entries, signature}` the direct route answers, so nothing above this line
+     * needs a cloud branch: the panel's signature bargain, which is what stops a refetch from
+     * throwing a reader's scroll position away, works here because it is the Mac's own signature.
      *
-     * `cloud_read_unavailable` says *not carried yet*, and is deliberately not the same word as
-     * `cloud_read_needs_send_prompt`, which says *this device may not ask*. One is a gap and the
-     * other is a decision, and a page that showed the same sentence for both would be hiding the
-     * difference the person needs.
+     * **The id travels into the answer's name.** A session has many agents and one answer
+     * channel, so `agent:<id>` is what a waiter waits on; see `CloudHeadlessRead.name`.
      */
-    agent(value) { return this._unavailableRead(value); }
-    shell(value) { return this._unavailableRead(value); }
-    skills(value) { return this._unavailableRead(value); }
-    git(value) { return this._unavailableRead(value); }
-
-    _unavailableRead(value) {
-        sessionIdentity(value);
-        return Promise.reject(cloudError("cloud_read_unavailable",
-            "this reading does not cross the cloud connection yet"));
+    agent(value, agentId) {
+        var agent = readSubject(agentId);
+        if (!agent) return Promise.reject(missingSubject("agent"));
+        return this._read(value, "agent", { agent: agent, limit: AGENT_LIMIT },
+                          "agent:" + agent);
     }
+
+    /** One background command's output — text and `ended`, because a command has no turns. */
+    shell(value, shellId) {
+        var shell = readSubject(shellId);
+        if (!shell) return Promise.reject(missingSubject("shell"));
+        return this._read(value, "shell", { shell: shell, bytes: SHELL_BYTES },
+                          "shell:" + shell);
+    }
+
+    /** The commands this session's assistant can be offered in the composer. Metadata only. */
+    skills(value) { return this._read(value, "skills", {}, "skills"); }
+
+    /**
+     * The Git panel.
+     *
+     * The one of the four the person uses most, and the one whose call site already branches on
+     * a typed code: `git-panel.js` shows a different sentence for `not_a_repo` than for anything
+     * else. That code arrives here as the Mac's own word, forwarded by the bridge rather than
+     * translated, which is the whole reason a refusal crosses as `error` and not as an empty
+     * body — so the panel that could say "this session is not inside a Git repository" over the
+     * tunnel can say it over the relay too, in the same branch.
+     */
+    git(value) { return this._read(value, "git", {}, "git"); }
 
     dispatch(machine, task) {
         if (machine && typeof machine === "object") {

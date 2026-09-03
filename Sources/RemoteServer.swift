@@ -271,6 +271,13 @@ final class RemoteServer: @unchecked Sendable {
     /// on the tunnel queues, is shed by the same budgets, and is told `transcript_busy` or the
     /// reading lane's 429 in the same words.
     ///
+    /// **And the other four queue where a phone queues too, which is the shared queue.** An
+    /// agent, a shell, a session's skills and its Git panel are not lane reads on the direct path
+    /// either: `isTranscriptReading` and `isSlowReading` both say no to them, exactly as they do
+    /// to the same four paths arriving over HTTP, so they fall through to `dispatch` here for the
+    /// same reason they fall through to it there. Putting them in a lane would not be following
+    /// the direct path, it would be a second policy nobody measured.
+    ///
     /// There is no idempotency key and no write switch: a retried GET is not a second anything,
     /// and `.verifiedCloud` already carries `.read`.
     func routeVerifiedCloudRead(_ read: CloudHeadlessRead, sender: String) async -> Response {
@@ -5389,8 +5396,13 @@ extension RemoteServer {
         /// The read half of the same door, and it has no header spelling either.
         ///
         /// The path and the query are built here from a closed enum rather than sent by the
-        /// viewer, so a paired browser names one of two reads and can never name a route. There
+        /// viewer, so a paired browser names one of six reads and can never name a route. There
         /// is no idempotency key because there is nothing to make happen twice.
+        ///
+        /// An agent's and a shell's own ids go through `channelSegment`, which escapes exactly
+        /// what `encodeURIComponent` escapes at the direct path's call sites — so an id holding a
+        /// slash stays one path segment here as it does there, and the route on the other side
+        /// takes its `removingPercentEncoding` back off.
         init(verifiedCloudRead read: CloudHeadlessRead, sender: String) {
             source = .verifiedCloud(sender: sender)
             method = "GET"
@@ -5402,6 +5414,18 @@ extension RemoteServer {
             case .info(_, let parts):
                 path = "/v1/sessions/\(segment)/info"
                 if parts == "summary" { query = ["parts": "summary"] }
+            case .agent(_, let agent, let limit):
+                path = "/v1/sessions/\(segment)/agents/"
+                    + CloudAppBridge.channelSegment(agent)
+                query = ["limit": String(limit)]
+            case .shell(_, let shell, let bytes):
+                path = "/v1/sessions/\(segment)/shells/"
+                    + CloudAppBridge.channelSegment(shell)
+                query = ["bytes": String(bytes)]
+            case .skills:
+                path = "/v1/sessions/\(segment)/skills"
+            case .git:
+                path = "/v1/sessions/\(segment)/git"
             }
         }
 

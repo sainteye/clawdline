@@ -152,7 +152,18 @@ fi
 #                                          and +11 -1 for splitting `readSlowly` into a socket
 #                                          half and a `deliver:` half so both callers share one
 #                                          budget. A feature's code arriving; nothing left.)
-remote_server_ceiling=5508
+#   5,532  the other four reads joined them  (+24, counted per hunk: +17 in the `Request`
+#                                          initializer — twelve lines of route for `agents`,
+#                                          `shells`, `skills` and `git`, and five saying that an
+#                                          id goes through the same escaping its direct-path call
+#                                          site uses — and +7 of comment on `routeVerifiedCloudRead`
+#                                          saying why those four take the shared queue: because
+#                                          `isTranscriptReading` and `isSlowReading` refuse them on
+#                                          the direct path too, so a lane here would be a second
+#                                          policy nobody measured. No new routing code: the
+#                                          classification written for the first two already sends
+#                                          everything that is neither lane to `dispatch`.)
+remote_server_ceiling=5532
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
