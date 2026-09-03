@@ -550,12 +550,12 @@ checks without running them — so it is the one row that a full suite has to se
 
 | | this document said | what the guard holds |
 |---|---:|---:|
-| ordered groups | 463 | 504 |
-| ordered runners | 25 | 29 |
-| suite files | 38 | 42 |
+| ordered groups | 463 | 509 |
+| ordered runners | 25 | 30 |
+| suite files | 38 | 43 |
 | Swift checks | — | 8,226 |
 | `Orchestrator.swift` ceiling | 13,592 | 12,831 |
-| `RemoteServer.swift` ceiling | 6,385 | 6,393 |
+| `RemoteServer.swift` ceiling | 6,385 | 6,449 |
 
 The `Orchestrator.swift` ceiling has moved in both directions and the guard now carries that
 history beside the number: 12,816 before the heavy-compile lease, 13,123 when `2eef7bb6` landed it,

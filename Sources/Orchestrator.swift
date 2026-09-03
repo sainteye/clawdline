@@ -4503,7 +4503,7 @@ enum Orchestrator {
             .appendingPathComponent(taskID, isDirectory: true).path
     }
 
-    private struct GitAnswer {
+    struct GitAnswer {
         var output: String
         var status: Int32
     }
@@ -4511,7 +4511,7 @@ enum Orchestrator {
     /// The only git execution seam for worktree lifecycle operations. Arguments never pass
     /// through a shell, optional locks are disabled, and a wedged repository cannot hold the
     /// broker queue indefinitely.
-    private static func git(_ arguments: [String], cwd: String,
+    static func git(_ arguments: [String], cwd: String,
                             gitDirectory: String? = nil,
                             timeout: TimeInterval = 15) -> GitAnswer? {
         let process = Process()
@@ -5083,7 +5083,7 @@ enum Orchestrator {
         return at
     }
 
-    private static func rootKey(of task: Task, among existing: [String: Task]) -> String {
+    static func rootKey(of task: Task, among existing: [String: Task]) -> String {
         let at = rootTask(of: task, among: existing)
         return at.rootSessionId ?? "task:\(at.id)"
     }
@@ -6027,7 +6027,7 @@ enum Orchestrator {
         // `resolveAttachment` accepts only a host whose launch-time grant covers the task root.
         // A guest inherits that property while it temporarily supplies the session's live role.
         task.childTaskRootAccess = made.attachSessionId != nil
-        worktreeWarnings += prepareClaimsForIsolation(&task)
+        worktreeWarnings += OrchestratorLandingQueue.retainLandingPaths(&task)
         task.claimKeys = freezeClaims(task.claims, projectDir: task.projectDir)
         if !task.serialize.isEmpty {
             guard let sealed = sealQueuedSecret(secret) else {
@@ -7670,8 +7670,8 @@ enum Orchestrator {
             "project_dir": task.projectDir,
             "created": Int(task.created.timeIntervalSince1970),
             "age_seconds": ageSeconds(since: task.created, now: now),
-            "claims": task.claims,
         ]
+        OrchestratorLandingQueue.projectWriteSet(of: task, into: &row, alwaysClaims: true)
         if let label = task.rootLabel { row["root_label"] = label }
         if let session = task.rootSessionId { row["root_key"] = rootKeyDigest(session) }
         if !task.progress.isEmpty {
@@ -11942,7 +11942,7 @@ enum Orchestrator {
             out["attachSession"] = session
         }
         if !task.artifacts.isEmpty { out["artifacts"] = task.artifacts }
-        if task.claimsDeclared { out["claims"] = task.claims }
+        OrchestratorLandingQueue.projectWriteSet(of: task, into: &out)
         if !task.releasedClaims.isEmpty {
             out["released_claims"] = task.releasedClaims.map {
                 ["path": $0.path, "released_at": Int($0.releasedAt.timeIntervalSince1970)]
