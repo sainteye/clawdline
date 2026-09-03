@@ -27,12 +27,14 @@ main_lines=$(line_count Tests/main.swift)
 #   12,816  after the registry owner left        (Cut 2 stage 1, -3)
 #   13,123  the broker lease moved in            (2eef7bb6 / 15924b14, +307)
 #   13,085  the lease's projection moved out     (correction round, -38)
+#   12,831  the broker lease was removed         (-254)
 #
-# The raise to 13,123 was legitimate and reviewed — the lease is a landed, green feature and its
-# code has to live somewhere — but of those 307 lines, roughly 250 are registry ownership, store
-# wiring and route surface, which is what this file is for, and about sixty were pure
-# `Record` -> dictionary projection. Those sixty now sit in `Sources/OrchestratorLease.swift`
-# beside `OrchestratorLease.record(_:now:)`, which is the same translation for the same type.
+# The raise to 13,123 was legitimate and reviewed at the time — a landed, green feature's code has
+# to live somewhere — and of those 307 lines roughly 250 were registry ownership, store wiring and
+# route surface, which is what this file is for, with about sixty being pure `Record` -> dictionary
+# projection that then moved out to sit beside the type it projected. The removal takes the 254
+# that were still here, which is that raise less the projection that had already left. **It is the
+# largest fall this ceiling has had, and it is not a refactor**: the feature is gone, not moved.
 #
 # **The guard's meaning changed when the ratchet was released, and both halves matter.** It no
 # longer promises "this file only shrinks". It promises "every growth is stated by somebody, in a
@@ -41,7 +43,7 @@ main_lines=$(line_count Tests/main.swift)
 #
 # Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
 # to grow that nobody reviewed. Anyone raising it again adds the line, the commit and the reason.
-orchestrator_ceiling=13085
+orchestrator_ceiling=12831
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."
@@ -74,18 +76,18 @@ if printf '%s\n' "$orchestrator_record_projection" | grep -q 'Transcript.session
   architecture_guard_fail "Orchestrator task records re-scan Transcript/Targets on the main queue"
 fi
 
-remote_server_ceiling=6463
+remote_server_ceiling=6393
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ "$remote_server_lines" -le "$remote_server_ceiling" ] \
-  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond the heavy-compile lease receipt ($remote_server_ceiling)"
+  || architecture_guard_fail "Sources/RemoteServer.swift grew beyond its receipt ($remote_server_ceiling)"
 
 if grep -q 'group(' Tests/main.swift; then
   architecture_guard_fail "new domain group found in Tests/main.swift"
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 30 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 30"
+[ "$runner_count" -eq 29 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 29"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -93,11 +95,12 @@ manifest_group_count=$(awk '
   in_manifest && /",[[:space:]]*$/ { count++ }
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
-# 510 until the compile lease's second correction round, which adds the group for a refusal
-# counting as a waiter's ask. A number that only ever rises silently is not a ratchet, so raises
-# are named here the way the `Orchestrator.swift` ceiling's are.
-[ "$manifest_group_count" -eq 511 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 511"
+# 510 until the compile lease's second correction round, which added the group for a refusal
+# counting as a waiter's ask, then 511; 498 once that lease's thirteen groups were removed with it.
+# A number that only ever rises silently is not a ratchet, so both directions are named here the
+# way the `Orchestrator.swift` ceiling's are.
+[ "$manifest_group_count" -eq 498 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 498"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -162,8 +165,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 43 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 43"
+[ "$suite_count" -eq 42 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 42"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

@@ -1,82 +1,83 @@
 # Machine resource scheduling
 
-Status: **built, and on `architecture_hold`.** Three independent reviews have read it and the third
-found the same defect class outside the correction seam, which by this repository's rule
+Status: **the exclusion is built and in use; the scheduler in front of it was built, used by
+nobody, and removed on 2026-09-03.** What is on this machine today:
+
+- **`test.sh` takes the machine-wide lock itself** (`10130e45`), about two hundred lines between
+  two marker comments, covering the `swiftc` invocation *and* the test-binary run after it.
+  `Tests/test-sh-lock.mjs` lifts that block out and runs it against stand-ins — 150 checks.
+- **`build.sh` takes the same directory** the same way, with the same eighteen-field record, the
+  same heartbeat and the same fail-closed wait.
+- **`CLAWDLINE_SUITE_JOBS`** (`54891280`), a compile-job ceiling both scripts read and both print
+  the provenance of.
+- **The measurements below**, which are the most durable thing the night produced and which depend
+  on none of the above.
+
+And what is not:
+
+- **The broker heavy-compile lease** — `Sources/OrchestratorLease.swift` and its 1,506-line suite,
+  the registry inside `Orchestrator`, the durable store rows, the five `/v1/orchestrator/leases`
+  routes, the `heavy_compile_lease` block in Bearings and the `lease` overlay on a session row. It
+  landed as `2eef7bb6` / `15924b14`, was corrected in `5098c2b1` and again after that, and was
+  removed whole a day later.
+
+## Why the lease was removed
+
+**Not because it was wrong.** It added three real things a directory cannot hold: durable state
+across an app restart, queue position and depth a person could read, and a liveness axis for
+waiters — a waiter that has died stops holding up the line. Every one of them is a genuine
+improvement on a `mkdir` and a `sleep 5`.
+
+**None of the three was needed on the night.** Two sessions ran `./test.sh` at once, four
+`swift-frontend` processes reached 46 / 45 / 27 / 8 GB on a 24 GiB Mac, and Jetsam force-rebooted it
+at 01:24 and again at 01:45. What stopped that recurring was one directory that two scripts take
+for themselves; the lock ran all night and worked. One of the three can be said to have done
+nothing rather than merely gone unused: **the admission half never took a decision it could not
+have taken by doing nothing.** `Policy` shipped with a nil per-compile peak, on purpose — this
+build cannot refuse on a number nobody has taken — so every grant was the floor of one, and one is
+what the driver does anyway (measured, below).
+
+**And it cost more than it returned, in a shape worth naming.** Three independent review rounds,
+thirty-one findings, two correction rounds. It broke `build.sh` twice, and both breaks stopped the
+script reaching `swiftc`. `cf4b63d6`: `"${compile_jobs[@]}"` on an empty array is an unbound
+variable under bash 3.2, so the script died before the compiler on every path where no budget was
+granted — the default path, **and the fallback taken when the broker is not answering, which is the
+path after a crash, that is, exactly when somebody needs to rebuild.** `5de913dd`: `lease_changed`
+and `takeover_failed` are the broker saying *ask again*, and reading them as refusals ended a build
+on a condition that resolves itself. Neither could happen without the lease; both were found by
+review rather than by use.
+
+**What it was left on, and what is still true.** The third review found the same defect class
+outside the correction seam, which by this repository's rule
 ([`AGENTS.md`](../AGENTS.md#verifying-your-work)) stops the patch loop and sends the boundary back
-to be repaired rather than dispatching a fourth correction. **Two boundaries are named and neither
-is a bug in a line:**
+rather than dispatching a fourth correction. Two boundaries were named, and neither was a bug in a
+line:
 
 1. **Whoever starts a renewer refreshes the beat first.** `clawdline_confirm_suite_lock` restarts a
    dead renewer without beating, and the restarted loop sleeps before its first tick — so for one
    renewal interval the lock reads *stale* to every waiter while `confirm` has just returned
-   success. At the shipped numbers that is twenty seconds against a five-second poll: four chances
-   for a second run to take a held lock. The acquire path already writes the record before starting
-   the renewer; the confirm path does not, and the ordering is an invariant rather than a step, so
-   it belongs in one function both callers use. The relative check passes because its harness sets
-   the interval to one second and kills the renewer 0.2 s before confirming.
-2. **Every refusal is produced by the function that records it.** Eighteen places construct a
-   `Refusal`; one `refuse(...)` records it. `queue_full` is built outside that path and never writes
-   `lastRefusal`, so a session turned away by the queue cap is indistinguishable — in Bearings and
-   in the Session overlay both — from one that never asked. That is the class the first review named
-   as F12 and the second as F3, found a third time, outside the seam, which is what a class means.
+   success. At the shipped numbers that is twenty seconds against a five-second poll. The acquire
+   path already writes the record before starting the renewer; the confirm path does not, and the
+   ordering is an invariant rather than a step, so it belongs in one function both callers use.
+   **This one survives the removal**, because it is in `test.sh`, which stays. It has not been
+   observed: it needs a renewer to have died *and* a second run to be waiting. It is written down
+   here so that whoever repairs it does not have to re-derive it.
+2. **A refusal cannot be produced without being recorded.** Eighteen places constructed a
+   `Refusal` and one `refuse(...)` recorded it, so `queue_full` — built inline inside its own
+   `Decision` — never wrote `lastRefusal`, and a session turned away by the queue cap was
+   indistinguishable, in Bearings and in the Session overlay both, from one that never asked. That
+   was the class the first review named F12, the second F3 and the third F2. **This one went with
+   the code.** The lesson it leaves is general and is the reason the class recurred: *make the
+   unrecorded construction impossible rather than discouraged* — a single entry point that returns
+   the `Decision`, or a type that cannot be built outside it. Sixteen of the eighteen were correct
+   by care alone, which is the definition of a boundary rather than a bug.
 
-The rest of the third review's findings are inside the seam and mostly fall out of those two. The
-rule this page has been arguing all along applies to itself here: **a defect that keeps coming back
-in new places is a boundary, and patching its instances is how it keeps coming back.**
+**The judgement, in one sentence:** the 80% solution was the half that was used, and a feature that
+needs three review rounds to hold still is paying for visibility nobody looked at.
 
-### The two boundary repairs, written out so the decision is one sentence
-
-Nothing here needs the machine and nothing here is urgent. It is written down now so that whoever
-decides can decide rather than re-derive.
-
-**Boundary 1 — whoever starts a renewer refreshes the beat first.**
-
-*The invariant, not the fix:* a lock is never observable as unbeaten while a run holds it. Today the
-acquire path satisfies that by accident of ordering — it writes the record before starting the
-renewer — and the confirm path does not, because restarting a dead renewer is written as a separate
-step and the restarted loop sleeps before its first tick.
-
-*The structural answer:* one function that beats and then starts the renewer, used by both callers,
-so the ordering cannot be got wrong by writing the two lines in the other order. That removes the
-whole class rather than this instance: any future third caller inherits it.
-
-*What it excludes:* the twenty-second window in which `confirm` has returned success and every
-waiter reads the lock as stale.
-
-**Boundary 2 — a refusal cannot be produced without being recorded.**
-
-*The invariant:* every refusal a caller can see is also a refusal the projections can see. Today
-**eighteen places construct a `Refusal`, and the one function that records it is reached from two of
-them**; `queue_full` builds one inline inside its `Decision` and never writes `lastRefusal`, so a
-session turned away by the queue cap is indistinguishable, in Bearings and the Session overlay both,
-from one that never asked.
-
-*The structural answer:* make the unrecorded construction impossible rather than discouraged — a
-single entry point that returns the `Decision`, or a type that cannot be built outside it. Sixteen
-of the eighteen are correct today by care alone.
-
-*What it excludes:* the class this repository has now named three times — the first review's F12,
-the second's F3, the third's F2.
-
-**What it costs to leave both.** The first is a window of one renewal interval, twenty seconds
-against a five-second poll: four chances for a second run to enter a section somebody holds. It
-needs a renewer to have died *and* a second run to be waiting, which is to say it needs the
-concurrency this feature exists for; it has not been observed. The second costs no correctness at
-all — it costs a person looking at a stalled queue the ability to tell *refused* from *never asked*,
-which is the distinction the projections were built to keep.
-
-**After the repair, the review reads the two boundaries** — not a fourth round of patches over the
-same seam. That is what taking the hold is for.
-
-This page was a proposal until it was built. `CLAWDLINE_SUITE_JOBS` landed in
-`test.sh` as `54891280`; `test.sh` takes the machine lock itself as of `10130e45`; the broker lease,
-its queue, its routes and the Bearings and Session projections landed as `2eef7bb6` and were
-corrected against an independent review in `5098c2b1`. Two reviews have returned findings against
-it; the second review's ten are answered across `5de913dd` and the correction round after it, and
-where a finding was disproved rather than fixed this page says so beside the rule it is about. Read
-the later sections as the design it was built to, and treat any sentence with no code behind it as
-the thing to check first. The measurements in the next section are real
-and were taken on one Mac on 2026-09-03.
+The rest of this page is what the night measured, what the lease was while it existed, and the
+proposal the whole thing was built from. **The measurements are the part to keep.** They are real,
+they were taken on one Mac on 2026-09-03, and none of them depends on the lease having existed.
 
 Clawdline can keep many assistant Sessions useful at once. Most of those Sessions spend most of
 their time reading, reasoning, editing or waiting, which is cheap to run concurrently. The trouble
@@ -91,10 +92,12 @@ open-source design: the protocol, policy and fallback must work without a hosted
 must expose what the machine is doing, and must remain useful to a contributor who runs the scripts
 directly rather than through an orchestrated task.
 
-Most of this page now describes something the build has, which was not true when it was written:
-the sections from *The current boundary* onward were the proposal, and the lock, the lease, the
-queue and the projections were built from them on 2026-09-03. What has not been built is marked
-where it appears. The unresolved decisions at the end are still unresolved.
+**The sections from *The current boundary* onward are still the proposal, and reading them as a
+description of this machine is the mistake this paragraph exists to prevent.** Of the five phases
+at the end, Phase 1 is built and in use, Phase 2 was built on 2026-09-03 and removed the next day,
+and Phases 0, 3 and 4 have never been started. What Phase 0 asked for — the one-versus-many
+benchmark — is the thing that would decide whether any of the rest is worth building, and it is
+still the honest next step. The unresolved decisions at the end are still unresolved.
 
 ## What the 2026-09-03 reboots measured, and what they changed
 
@@ -170,14 +173,15 @@ happened; and an accepted request read as the content having arrived as written.
 before believing the status, and build any body that will carry arbitrary text with a quoted
 heredoc (`<<'EOF'`, which turns off every shell expansion) rather than an interpolating string.
 
-That last one is not a footnote for this design. **A lease's state changes are exactly "arbitrary
-text assembled by a shell and posted to a broker"** — a holder identity, a phase, a log path. A
-field eaten by the shell before the request is built produces a record with different meaning, and
-the broker answers `ok`, because from its side nothing went wrong. Both have one prescription: before
-believing a count, run a positive control that must match — the third row was caught exactly that
-way, by checking a word known to be present and getting 0 from `\y` and 54 from a plain pattern.
+That last one is not a footnote for this design. **A lock record's fields are exactly "arbitrary
+text assembled by a shell"** — a holder identity, a phase, a log path. A field eaten by the shell
+before the line is written produces a record with a different meaning and no error anywhere, which
+is how the broker lease's requests could be answered `ok` while carrying words the shell had
+already removed. Both have one prescription: before believing a count, run a positive control that
+must match — the third row was caught exactly that way, by checking a word known to be present and
+getting 0 from `\y` and 54 from a plain pattern.
 
-This is not a stylistic note. **A lease's physical backstop asks "is any compiler running on this
+This is not a stylistic note. **The physical backstop asks "is any compiler running on this
 machine".** Written with `pgrep -f`, it matches the process asking the question and therefore always
 answers yes, so the lock can never be reclaimed — the permanent roadblock this design exists to
 remove, rebuilt in a new place. Match the executable name exactly (`pgrep -x`, or compare `comm`),
@@ -237,11 +241,14 @@ The rule, therefore:
    a sequence of processes — a study that runs several compiles — one static pid field cannot
    describe it, and that gap is exactly how a sentinel came to be the holder.
 
-**This is where a broker earns its place beside a lock directory.** It knows what a file cannot: an
-owning task that has reached `failure`, `timeout` or `cancelled`, or a session positively gone, has
-stopped proving liveness whatever a sentinel pid is doing — an answer available immediately rather
-than after a deadline. It remains subject to the backstop: a task that is gone while a compiler
-still runs is a refusal that names the orphan, not a takeover.
+**This was the argument for a broker beside the lock directory**, and it is worth keeping as an
+argument even though the broker is gone. A registry knows what a file cannot: an owning task that
+has reached `failure`, `timeout` or `cancelled`, or a session positively gone, has stopped proving
+liveness whatever a sentinel pid is doing — an answer available immediately rather than after a
+deadline. It would still have been subject to the backstop: a task that is gone while a compiler
+still runs is a refusal that names the orphan, not a takeover. What the night showed is that the
+sixty-second deadline is a cheap enough answer to the same question that nobody reached for the
+immediate one.
 
 ### The record, as it was settled
 
@@ -281,17 +288,19 @@ holder.txt
 beat                   the beat file itself, so it disappears with the lock rather than outliving it
 ```
 
-**One record, three writers, and the list above is the whole of it.** `test.sh`, `build.sh` and
-`OrchestratorLease.encode` all write this file and all three read each other's. They did not agree:
-seventeen fields, eleven and eleven, eight in common, and the four the shell's compare-and-swap
-depends on — `token`, `owner_pid`, `owner_started`, `heartbeat_deadline` — written by nobody but
-`test.sh`. Against a record either of the other two wrote, that compare was `"" = ""` and always
-true, so the re-read beside it was carrying the whole swap alone. In the other direction `test.sh`
-wrote `working=` while the Swift reader read `work=`, so each side showed an empty working list for
-the other's holder and the field the design specifies as *the record names the process actually
-working* crossed in neither direction. The contract is written out once above
-`clawdline_suite_lock_write_record` in `test.sh`, and `Tests/test-sh-lock.mjs` reads all three
-writers and fails when any of them drifts from it.
+**One record, two writers, and the list above is the whole of it.** `test.sh` and `build.sh` both
+write this file and both read each other's. It was three writers while the broker lease existed,
+and **the list did not move when that writer went**: nothing in the contract was the broker's
+alone, which is the cleanest evidence that the record belongs to the lock rather than to the thing
+that was built on top of it. The three did not agree: seventeen fields, eleven and eleven, eight in
+common, and the four the shell's compare-and-swap depends on — `token`, `owner_pid`,
+`owner_started`, `heartbeat_deadline` — written by nobody but `test.sh`. Against a record either of
+the other two wrote, that compare was `"" = ""` and always true, so the re-read beside it was
+carrying the whole swap alone. In the other direction `test.sh` wrote `working=` while the Swift
+reader read `work=`, so each side showed an empty working list for the other's holder and the field
+the design specifies as *the record names the process actually working* crossed in neither
+direction. The contract is written out once above `clawdline_suite_lock_write_record` in `test.sh`,
+and `Tests/test-sh-lock.mjs` reads every writer and fails when one of them drifts from it.
 
 **`pid` and `owner_pid` are two different questions and only the second is an identity.** A hold is
 a sequence — the compiler driver, then the test binary — so `pid` changes *during* one hold. Every
@@ -428,80 +437,11 @@ process was producing the evidence everyone was waiting for. A refusal that name
 holders of memory is **information for a person to act on, not a target list**, and no route, flag
 or code path in this work terminates a process it did not start.
 
-### The queue proves itself the same way the holder does
-
-Everything above is about the holder. The line behind it had no liveness axis at all: a waiter
-recorded a `pid` and a `process_start` that nothing read, so **a waiter whose process died at the
-head of the queue left an entry that could never be granted, never expired, and could only be
-cancelled by an owner that no longer existed** — while the lock itself was free. Everybody behind it
-was answered `queued_behind_others` for ever; the queue is persisted, so it survived an app restart;
-and thirty-two such entries turned the whole thing into `queue_full` for the machine, which is the
-same deadlock wearing a different code. `build.sh` never cancelled, so an ordinary Ctrl-C on a
-waiting build was enough to produce one.
-
-```
-(A) it asked again inside the waiter deadline     the poll clock, and it needs no probe
-(B) and its process has not provably gone         a strengthening, never a weakening
-```
-
-`POST /v1/orchestrator/leases` is idempotent on `request_id` and a waiting client re-sends it every
-few seconds, so **asking again is to a waiter what renewing is to a holder** — and it is the
-primary axis because it is a fact the broker recorded itself rather than a reading of a machine that
-may not answer. The process axis only ever makes a negative faster: a pid this machine says is gone
-stops the waiter at once instead of after the deadline, and a reading that could not be taken says
-nothing.
-
-Three consequences are written into the shape rather than left to be discovered:
-
-* **An unproven waiter is passed over, never reclaimed from.** It keeps its entry, and if it starts
-  polling again it is back at the front of the line, because order comes from when it *joined* and
-  not from when it last spoke.
-* **The depth limit counts the line, not the litter.** Entries nobody is asking for do not spend the
-  machine's queue budget, which is what turned a blocked head into a 429 for everybody.
-* **The array is still bounded.** Above a hard limit the longest-silent entries go, and never one
-  that is still asking.
-
-**And every answer counts as an ask, not only `queued`.** The poll clock moved when a request
-joined or re-joined the line and nowhere else, so the two answers that are not `queued` did not
-count as having asked: a refusal, and a decision whose effect failed. A head of the line refused for
-pressure, or told `lease_changed` because the lock moved between the reading and the write, was
-polling every five seconds exactly as the contract asks and was recorded as silent — passed over
-after the deadline, and droppable by the trim above, by the very contention it was waiting out. So
-the ask is stamped once on the decision and applied to whichever record survives the effect: a
-failed effect returns the record unchanged in everything the effect would have done, and the caller
-having asked is not one of those things. A refusal also stays visible for twice the waiter deadline
-rather than exactly one, because the two clocks expiring together left a person looking at Bearings
-at that moment with neither the request nor the reason it had been given.
-
-Deliberately asymmetric, and worth saying why: passing over a live waiter costs it one grant, while
-trusting a dead one blocks the machine until a person notices. That is why the deadline is generous
-— twenty-four missed polls at `build.sh`'s rate — rather than tight.
-
-### Refused is a state, and both projections can say it
-
-An admission refusal leaves the record otherwise untouched: no holder, no queue entry, nothing. So a
-session told *this Mac cannot admit even one compiler* was, in Bearings and in the Session overlay,
-indistinguishable from a session that had never asked. The record now keeps the last refusal —
-its code, its message, when, and who asked — and both projections have a sixth word for it. It ages
-out on the waiter's clock, because a refusal is a moment rather than a state.
-
-The freshness stamp beside it belongs to the lease. Neither projection re-reads the filesystem — a
-redraw must never start a subprocess — so what they show is as old as the last reconciliation, and
-that row used to carry the *task* registry's clock. A lock held by a run that died an hour ago read
-exactly like a live compile. `Record.reconciledAt` is the right clock and is now the one used.
-
-### Admission and exclusion are two questions, and the second one degrades
-
-Exclusion asks *whose turn is it* and fails closed: no lease, no compile. Admission asks *may this
-start now, and at what size*, and it must not be a yes/no, because on a baseline like the one
-measured above the answer would be *no* for hours at a stretch. A grant therefore carries a
-**budget** — a ceiling the holder honours, floor of one — so that low headroom means a slower
-compile rather than a slot that never comes. When not even the floor can be admitted, the refusal
-names the deficit, which measured quantity it is short of and how that was taken, and who is holding
-the memory, so that *why am I waiting* always has an answer.
+### The compile-job ceiling, and the axis that turned out to be empty
 
 **A correction, because the axis this was first drawn on turned out to be empty.** The degradation
-ladder above was written assuming a compile could be made smaller by asking for fewer jobs. On this
+ladder the lease was built to — a grant carrying a parallelism budget rather than a yes or no — was
+written assuming a compile could be made smaller by asking for fewer jobs. On this
 machine it cannot. Measured twice against the exact `-c -o "$BIN"` invocation — 7,479 samples at
 54 ms from a walker filtering on the driver's own descendants, and 426 `ps` samples at 250 ms — the
 driver never had more than one `swift-frontend` alive without `-j`, while the same instruments read
@@ -509,15 +449,15 @@ driver never had more than one `swift-frontend` alive without `-j`, while the sa
 The peak lives inside a single frontend compiling a single file, which no job count can influence.
 
 So the ceiling is worth having as a **ceiling** — it stops a caller from multiplying the peak by
-eight — and is worth nothing as a floor. The shape of the idea survives: a grant that carries a
-budget is better than a yes/no, and a refusal must name its deficit. What does not survive is the
-assumption that a knob exists because a policy would like one. **Any degradation ladder has to be
-built from a measured axis, and this one had to be measured before it could be used.**
+eight — and is worth nothing as a floor. That is why `CLAWDLINE_SUITE_JOBS` outlived the thing that
+was going to hand it down: the knob is real, the policy that would have set it was not. **Any
+degradation ladder has to be built from a measured axis, and this one had to be measured before it
+could be used.**
 
 There is a second thing that reading exposed, and it lands directly on `(B)`. During that compile a
 **second `swift-driver` was running that no lock governs**, spawned by `node
 Tests/keychain-rebuild-focused.mjs` — a node test inside `test.sh` itself, further down the same
-script that holds the lock. A lease that guards one `swiftc` line therefore does not guard the
+script that holds the lock. A lock that guards one `swiftc` line therefore does not guard the
 script it lives in. It also settles what `(B)` counts: **machine-wide, including compilers that are
 not yours.** That looks like a false positive and is the definition — `(B)` asks whether anything on
 this machine is burning, not whether your own work is running, so counting somebody else's compiler
@@ -525,8 +465,10 @@ is exactly its job, and missing one you spawned yourself is the failure that mat
 
 `test.sh` gained that injection point in `54891280`: `CLAWDLINE_SUITE_JOBS` is a positive whole
 number that becomes `-j <n>`, anything else is refused, unset adds no flag at all, and the run
-prints which ceiling it used and where the number came from. Unset is deliberate — the driver's
-default here is greater than one and this script does not pretend to know it.
+prints which ceiling it used and where the number came from. `build.sh` reads the same variable and
+prints the same two things. Unset adds no flag because the command line then stays byte-identical to
+what it has always been — not because the default is unknown: it is known, and by the measurement
+above it is one.
 
 ### Where the peak actually comes from
 
@@ -640,24 +582,111 @@ function until it jumps: that locates the cliff and settles whether the variable
 at all, for the price of one single-file compile under a watchdog. Until then the threshold is
 conservative on purpose.
 
-It is worth being honest about what that does to this page's own argument. **If one file explains
-the peak, then fixing that file removes most of the danger the lease was drawn to contain.** Two
-suites at a gigabyte each do not reboot a 24 GiB machine. What survives the fix is smaller and
-still real: fixed build outputs that collide whatever their size, CPU and I/O contention that makes
-every concurrent run slower, the promotion and restart boundaries that were always exclusive for
-correctness rather than capacity, and the next function nobody has written yet. A lease is
-insurance and a queue, and after the fix it should be described as that rather than as the only
-thing standing between this machine and a reboot.
+It is worth being honest about what that does to this page's own argument, and it is the strongest
+single reason the lease came out. **If one file explains the peak, then fixing that file removes
+most of the danger the scheduler was drawn to contain.** Two suites at a gigabyte each do not reboot
+a 24 GiB machine. What survives the fix is smaller and still real: fixed build outputs that collide
+whatever their size, CPU and I/O contention that makes every concurrent run slower, the promotion
+and restart boundaries that were always exclusive for correctness rather than capacity, and the
+next function nobody has written yet. A queue is insurance, and insurance against a hazard that has
+been measured down by two orders of magnitude is bought differently — which is what a directory two
+scripts agree on already is.
 
 Which suggests the cheaper half of the remedy is a guard rather than a scheduler. The measured
 shape is specific — one `async` function carrying many suspension points, with the ranking dropping
 off a cliff after the top three — so a static check over the test sources can refuse a new one
 before it is ever compiled, in the same place and style as the trailing-comma check that already
 runs before `swiftc` does. It costs milliseconds, it names the file and the function, and unlike a
-lease it prevents the problem instead of scheduling around it. Its threshold has to be set from the
-ranking after the known offenders are repaired, and the number written down beside the reason,
-because a guard whose constant nobody can justify is the next thing somebody raises to make their
-build pass.
+queue it prevents the problem instead of scheduling around it. **That guard now exists**, in
+`tools/check-architecture-boundaries.sh`, as a ratchet at 131 suspension points in one function —
+today's worst value rather than a target, with the cliff between 131 and 143 written down beside
+it, because a guard whose constant nobody can justify is the next thing somebody raises to make
+their build pass.
+
+## The broker lease, while it existed
+
+The three sections below described the half that was removed. They are kept because each one
+records a defect that was found and fixed in a shipped design, and those findings outlive the
+code: a queue with no liveness axis, a refusal nobody can see, and an admission ladder built on
+an axis that turned out to be empty are three ways to get this wrong that the next attempt
+should not have to rediscover. Nothing here is running.
+
+### The queue proved itself the same way the holder does
+
+Everything above is about the holder. The line behind it had no liveness axis at all: a waiter
+recorded a `pid` and a `process_start` that nothing read, so **a waiter whose process died at the
+head of the queue left an entry that could never be granted, never expired, and could only be
+cancelled by an owner that no longer existed** — while the lock itself was free. Everybody behind it
+was answered `queued_behind_others` for ever; the queue is persisted, so it survived an app restart;
+and thirty-two such entries turned the whole thing into `queue_full` for the machine, which is the
+same deadlock wearing a different code. `build.sh` never cancelled, so an ordinary Ctrl-C on a
+waiting build was enough to produce one.
+
+```
+(A) it asked again inside the waiter deadline     the poll clock, and it needs no probe
+(B) and its process has not provably gone         a strengthening, never a weakening
+```
+
+`POST /v1/orchestrator/leases` was idempotent on `request_id` and a waiting client re-sent it every
+few seconds, so **asking again is to a waiter what renewing is to a holder** — and it is the
+primary axis because it is a fact the broker recorded itself rather than a reading of a machine that
+may not answer. The process axis only ever makes a negative faster: a pid this machine says is gone
+stops the waiter at once instead of after the deadline, and a reading that could not be taken says
+nothing.
+
+Three consequences are written into the shape rather than left to be discovered:
+
+* **An unproven waiter is passed over, never reclaimed from.** It keeps its entry, and if it starts
+  polling again it is back at the front of the line, because order comes from when it *joined* and
+  not from when it last spoke.
+* **The depth limit counts the line, not the litter.** Entries nobody is asking for do not spend the
+  machine's queue budget, which is what turned a blocked head into a 429 for everybody.
+* **The array is still bounded.** Above a hard limit the longest-silent entries go, and never one
+  that is still asking.
+
+**And every answer counts as an ask, not only `queued`.** The poll clock moved when a request
+joined or re-joined the line and nowhere else, so the two answers that are not `queued` did not
+count as having asked: a refusal, and a decision whose effect failed. A head of the line refused for
+pressure, or told `lease_changed` because the lock moved between the reading and the write, was
+polling every five seconds exactly as the contract asks and was recorded as silent — passed over
+after the deadline, and droppable by the trim above, by the very contention it was waiting out. So
+the ask is stamped once on the decision and applied to whichever record survives the effect: a
+failed effect returns the record unchanged in everything the effect would have done, and the caller
+having asked is not one of those things. A refusal also stays visible for twice the waiter deadline
+rather than exactly one, because the two clocks expiring together left a person looking at Bearings
+at that moment with neither the request nor the reason it had been given.
+
+Deliberately asymmetric, and worth saying why: passing over a live waiter costs it one grant, while
+trusting a dead one blocks the machine until a person notices. That is why the deadline is generous
+— twenty-four missed polls at `build.sh`'s rate — rather than tight.
+
+### Refused was a state, and both projections could say it
+
+An admission refusal left the record otherwise untouched: no holder, no queue entry, nothing. So a
+session told *this Mac cannot admit even one compiler* was, in Bearings and in the Session overlay,
+indistinguishable from a session that had never asked. The repair was to keep the last refusal in
+the record — its code, its message, when, and who asked — and give both projections a sixth word
+for it, ageing out on the waiter's clock, because a refusal is a moment rather than a state. **The
+rule generalises past the code it was written in:** a state a projection cannot say is a state a
+person cannot act on, and *refused* and *never asked* look identical from outside.
+
+The freshness stamp beside it belonged to the lease, and that is the second general rule here.
+Neither projection re-read the filesystem — a redraw must never start a subprocess — so what they
+showed was as old as the last reconciliation, and that row carried the *task* registry's clock
+instead. A lock held by a run that had died an hour before read exactly like a live compile. **A
+projection's freshness stamp has to be the clock of the thing it is projecting**, which for that
+row was `Record.reconciledAt`.
+
+### Admission and exclusion are two questions, and only the first one is built
+
+Exclusion asks *whose turn is it* and fails closed: no lock, no compile. That is what the directory
+does, and it is what is left. Admission asks *may this start now, and at what size*, and the lease
+answered it with a **budget** — a ceiling the holder honours, floor of one — so that low headroom
+would mean a slower compile rather than a slot that never comes, with a refusal naming the deficit,
+the measured quantity it was short of, how that was taken, and who was holding the memory. **No
+admission decision was ever taken on this machine**: the policy shipped with no measured
+per-compile peak, so every grant was the floor of one, which is what a compile does anyway. That is
+the whole of what the admission half cost and produced.
 
 ## The current boundary
 
@@ -988,6 +1017,9 @@ by job class on the supported Mac.
 
 ### Phase 1 — correctness locks at the scripts
 
+**Built, in use, and the whole of what this machine runs.** `test.sh` takes the lock in `10130e45`;
+`build.sh` takes the same directory the same way.
+
 - Add a machine-local exclusive fallback around install/restart/signing.
 - Add a conservative compile lock to `build.sh` and `test.sh`.
 - Use unique output and private `TMPDIR` everywhere.
@@ -997,6 +1029,12 @@ Exit: two direct shells cannot race promotion or accidentally overlap full compi
 orchestrated task exists.
 
 ### Phase 2 — operation leases and queue visibility
+
+**Built on 2026-09-03 and removed on 2026-09-03.** See [*Why the lease was removed*](#why-the-lease-was-removed)
+at the top of this page: the exit condition below was met and none of it was used, which is a
+different result from "it did not work" and is the one worth carrying forward. Anybody restarting
+this phase owes an answer to the question that decided it — *who is waiting on the queue this
+would make visible, and what would they do differently seeing it* — before writing the first route.
 
 - Introduce the local lease authority and wrapper.
 - Acquire only around compile, test execution and promotion phases.
