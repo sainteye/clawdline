@@ -307,9 +307,23 @@ documented_swift_receipt=$(sed -n "s/^expected_swift_receipt='\([0-9]*\) checks 
 # reason that its subject no longer exists anywhere, and one on the name alone matches the function
 # definition and a comment, putting the lock 343 lines early. Proved four ways against a4ed9edb,
 # which still carries the defect.
+# Both anchors are counted before either is used. Taking the first hit and moving on was wrong in
+# two ways that were only found by mutating this file. `head -1` on the lock matched an assignment —
+# `acq=clawdline_acquire_suite_lock` — and the guard then measured against wherever the name first
+# appeared rather than where the lock is taken, so a ceiling placed between the two read as green;
+# the `()` filter had excluded the definition, which is what its author thought of, and nothing had
+# excluded an assignment. And a second stray ceiling marker made the guard report the first one's
+# line while the real block sat correctly below the lock, sending a reader to a line that is not the
+# problem. A count of both, reported when it is not one, costs two greps and closes both.
+ceiling_block_lines=$(grep -c '^# >>> clawdline compile ceiling >>>' test.sh || true)
 ceiling_block_line=$(grep -n '^# >>> clawdline compile ceiling >>>' test.sh | head -1 | cut -d: -f1)
-suite_lock_line=$(grep -n 'clawdline_acquire_suite_lock' test.sh \
-  | grep -v '^[0-9]*:[[:space:]]*#' | grep -v 'clawdline_acquire_suite_lock()' | head -1 | cut -d: -f1)
+suite_lock_hits=$(grep -n 'clawdline_acquire_suite_lock' test.sh \
+  | grep -v '^[0-9]*:[[:space:]]*#' | grep -v 'clawdline_acquire_suite_lock()' \
+  | grep -v '^[0-9]*:[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=')
+suite_lock_line=$(printf '%s\n' "$suite_lock_hits" | head -1 | cut -d: -f1)
+[ "${ceiling_block_lines:-0}" -le 1 ] \
+  || architecture_guard_fail "test.sh carries $ceiling_block_lines compile-ceiling markers; this check reads the first and cannot say which one rations the compile, so fix the duplicate rather than trusting the line it names"
+
 { [ -n "$ceiling_block_line" ] && [ -n "$suite_lock_line" ]; } \
   || architecture_guard_fail "cannot locate the compile-ceiling block or the suite lock in test.sh (block=${ceiling_block_line:-missing} lock=${suite_lock_line:-missing}); if either was renamed, update this check rather than deleting it"
 [ "$ceiling_block_line" -gt "$suite_lock_line" ] \
