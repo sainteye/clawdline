@@ -249,6 +249,12 @@ compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
 #
 # So the ceilings are pinned to the file as well. A ceiling more than 200 lines above what it
 # guards is not a ceiling, it is a budget nobody approved.
+# `$(( ))` treats an unset or empty variable as 0 without complaint, so a future edit that moves
+# either line_count below this point turns both checks into a permanent red whose message points
+# at the ceiling while the broken thing is the count. Fail on the empty value instead, and say
+# which of the two it is.
+[ -n "$orchestrator_lines" ] && [ -n "$remote_server_lines" ] \
+  || architecture_guard_fail "line counts are empty (orchestrator='$orchestrator_lines' remote='$remote_server_lines'); that is a broken script, not a clean tree"
 orchestrator_slack=$(( orchestrator_ceiling - orchestrator_lines ))
 [ "$orchestrator_slack" -le 200 ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines under a ceiling of $orchestrator_ceiling; $orchestrator_slack lines of unearned headroom. Lower the ceiling to what the tree measures."
