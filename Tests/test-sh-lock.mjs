@@ -282,11 +282,12 @@ try {
     const r1 = run(one);
     const record = readIf(join(dir, "record.txt"));
     check("a run acquires the lock and says so", r1.code === 0 && /is this run's/.test(r1.all));
-    check("and its phase is one of the three words the lease also reads",
+    check("and its phase is one of the three words every reader of the record knows",
           existsSync(join(dir, "phase-was-vocabulary")));
-    // The ratified record — **the whole of it, and the same list for all three writers**. It is
-    // declared once at the top of this file and checked against `test.sh` here, against `build.sh`
-    // and against `OrchestratorLease.encode` in scenario 18.
+    // The ratified record — **the whole of it, and the same list for every writer**. It is
+    // declared once at the top of this file, checked against `test.sh` here and against `build.sh`
+    // in scenario 18. It was checked against `OrchestratorLease.encode` too until that writer was
+    // removed, and the list did not move.
     for (const field of RECORD_CONTRACT) {
         check(`the record carries ${field}`, new RegExp(`^${field}=`, "m").test(record));
     }
