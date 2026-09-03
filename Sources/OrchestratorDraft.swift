@@ -690,8 +690,8 @@ enum OrchestratorDraft {
         return verifyTargetLanding(gitDirectory: common, target: target, commit: commit)
     }
 
-    private static func verifyTargetLanding(gitDirectory: String, target: String,
-                                            commit: String) -> Orchestrator.LandingVerification? {
+    static func verifyTargetLanding(gitDirectory: String, target: String,
+                                    commit: String) -> Orchestrator.LandingVerification? {
         guard let branchCheck = git(["check-ref-format", "--branch", target], cwd: "/",
                                     gitDirectory: gitDirectory),
               branchCheck.status == 0 else { return nil }

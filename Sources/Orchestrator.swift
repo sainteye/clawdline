@@ -2237,7 +2237,9 @@ enum Orchestrator {
     /// Worktree inspection and disposal can each wait on several bounded git subprocesses.
     /// Keeping them on one utility queue both keeps the panel responsive and prevents two close
     /// paths from racing to dispose the same checkout.
-    private static let worktreeQueue = DispatchQueue(
+    /// Internal rather than private since the worktree lifecycle moved to `OrchestratorDraft`,
+    /// which enqueues on it; the queue itself, its label and its QoS are unchanged.
+    static let worktreeQueue = DispatchQueue(
         label: "com.tsunamiworks.clawdline.orchestrator.worktree", qos: .utility)
     /// A background pump and a new remote dispatch may both persist. Serializing the whole
     /// snapshot-and-write prevents an older snapshot from winning the atomic rename last.

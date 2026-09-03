@@ -27,7 +27,10 @@ main_lines=$(line_count Tests/main.swift)
 #   12,816  after the registry owner left        (Cut 2 stage 1, -3)
 #   13,123  the broker lease moved in            (2eef7bb6 / 15924b14, +307)
 #   13,085  the lease's projection moved out     (correction round, -38)
-#   11,930  the draft/refusal block moved out    (Cut 1b, -1,155)
+#   11,932  the draft/refusal block moved out    (Cut 1b, -1,153: 1,155 lines of draft,
+#                                              refusal and worktree lifecycle out, and two
+#                                              lines of comment in, saying why the worktree
+#                                              queue they enqueue on is no longer private)
 #
 # The raise to 13,123 was legitimate and reviewed — the lease is a landed, green feature and its
 # code has to live somewhere — but of those 307 lines, roughly 250 are registry ownership, store
@@ -42,7 +45,7 @@ main_lines=$(line_count Tests/main.swift)
 #
 # Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
 # to grow that nobody reviewed. Anyone raising it again adds the line, the commit and the reason.
-orchestrator_ceiling=11930
+orchestrator_ceiling=11932
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."
