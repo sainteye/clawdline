@@ -1135,7 +1135,9 @@ group("cleanup documentation describes the API and runtime contract, not registr
     let registryRecord = OrchestratorStore.stored(task)
     let api = try! String(contentsOfFile: "docs/api.md", encoding: .utf8)
     let guide = try! String(contentsOfFile: "docs/orchestrator.md", encoding: .utf8)
-    let implementation = try! String(contentsOfFile: "Sources/Orchestrator.swift",
+    // `attachmentDecision` and its comment live in `OrchestratorDraft` since the draft/refusal
+    // extraction; the assertion is about the comment, so it follows the function.
+    let implementation = try! String(contentsOfFile: "Sources/OrchestratorDraft.swift",
                                      encoding: .utf8)
     check("cleanup deadlines are registry-internal and absent from the public task shape",
           publicRecord["work_cleanup_at"] == nil && publicRecord["build_cleanup_at"] == nil

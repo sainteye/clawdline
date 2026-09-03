@@ -104,7 +104,9 @@ func runOrchestratorDraftTests() {
 
 // Fixed rather than generated: a fixture that changes between runs cannot be quoted in a failure
 // report, and `isTaskID` wants lower-case hex.
-let taskID = "11111111-2222-3333-4444-555555555555"
+// Hex letters on purpose: an all-digit id makes `.uppercased()` the identity, and the two rows
+// below that are about case would pass without testing anything.
+let taskID = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
 let parentID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 let graphID = "99999999-8888-7777-6666-555555555555"
 // Every `draft(from:)` row below passes this stub instead of touching the filesystem, so the
