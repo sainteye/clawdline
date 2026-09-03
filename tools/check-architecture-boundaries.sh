@@ -73,13 +73,28 @@ main_lines=$(line_count Tests/main.swift)
 #                                              both live in `OrchestratorDraft`, beside the other
 #                                              ingress refusals, so what landed here is the call
 #                                              site and nothing else)
+#   10,584  the root-assignment shapes and the child-identity
+#           block moved out                    (Cut 4, -487: OrchestratorRootAssignmentShape 205
+#                                              lines and OrchestratorChildIdentity 329, chosen by
+#                                              measurement rather than by `// MARK:`. Both blocks
+#                                              acquire this file's lock zero times and referenced
+#                                              no `private` symbol left behind — the two cheapest
+#                                              of the eleven candidates measured, and the second
+#                                              of them had no heading of its own: it sat in the
+#                                              middle of `Independent feature roots`, which never
+#                                              described it. No `// MARK:` moved. 485 of the 487
+#                                              are the two blocks; the other 2 are the test reset,
+#                                              which reached into the ownership memo cache in
+#                                              three lines and now calls
+#                                              `resetTranscriptOwnershipCacheForTesting()` in one,
+#                                              so the cache stays private to the file that owns it)
 #
 # The 11,925 raise is a feature landing rather than a relocation: the notification that used to
 # fire when a turn stopped now fires on a root's own delivery receipt, and the push lives where
 # that receipt is created. Of the 51 lines, 12 are the sender, 9 the pure wording beside
 # `batchMessage`, 4 the test seam and its reset, and the rest are the doc comments that say why
 # `smart_notifications` means something narrower on this path than on any other.
-orchestrator_ceiling=11071
+orchestrator_ceiling=10584
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

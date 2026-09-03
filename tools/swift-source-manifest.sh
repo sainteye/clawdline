@@ -61,10 +61,12 @@ clawdline_production_sources=(
   Sources/Orchestrator.swift
   Sources/OrchestratorDraft.swift
   Sources/OrchestratorChildBrief.swift
+  Sources/OrchestratorChildIdentity.swift
   Sources/OrchestratorTaskShape.swift
   Sources/OrchestratorLandingQueue.swift
   Sources/OrchestratorPlanning.swift
   Sources/OrchestratorRegistry.swift
+  Sources/OrchestratorRootAssignmentShape.swift
   Sources/OrchestratorStore.swift
   Sources/OwnedStorage.swift
   Sources/Panel.swift
