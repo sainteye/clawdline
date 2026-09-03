@@ -1109,6 +1109,12 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "shell": #"{"type":"shell","session":"typed","shell":"s","bytes":1024}"#,
         "skills": #"{"type":"skills","session":"typed"}"#,
         "git": #"{"type":"git","session":"typed"}"#,
+        // The stub answers every read with the same JSON body and no `Content-Type`, so this one
+        // is refused 415 by `imageOutcome` rather than answered. That is the right fixture here:
+        // this table asks whether a word admitted by `readTypes` reaches its own case, and a read
+        // that is parsed and then refused has answered that question. The picture's own answer,
+        // its byte bound and its refusals are checked further down with a real PNG.
+        "image": #"{"type":"image","session":"typed","id":"img-1"}"#,
     ]
     try require(Set(wellFormed.keys) == CloudAppBridge.readTypes,
                 "every read type this bridge admits has a body written for it here")
@@ -1130,7 +1136,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let typedReads = await router.recordedReads().suffix(wellFormed.count)
     let typedNames = Set(typedReads.map(\.read.name))
     try require(typedNames
-                    == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git"],
+                    == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git",
+                        "image.img-1"],
                 "and each parses into the read it names rather than into the switch's last case")
 
     // Strictness, in the same shape the commands already have: an exact key set, a bounded
