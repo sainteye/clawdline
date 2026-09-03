@@ -531,39 +531,36 @@ group("a task id is a lowercase UUID, and a task secret is 32 bytes of lower-cas
 }
 
 group("claims is required as a present field, which is the one shape every dispatcher can answer") {
-    func refusal(declared: Bool, written: Bool) -> (Int, String, String)? {
-        guard case .refused(let status, let code, let message, _) =
-            OrchestratorDraft.claimsRequirementRefusal(declared: declared,
-                                                       writtenForThisDispatch: written)
-        else { return nil }
-        return (status, code, message)
+    func answer(declared: Bool, written: Bool) -> String {
+        refusalAnswer(OrchestratorDraft.claimsRequirementRefusal(
+            declared: declared, writtenForThisDispatch: written))
     }
-    // The four rows are the whole rule. Only one of them refuses, and it is the one the warning
-    // was already firing on — an absent field in a body somebody is holding the answer for.
-    let rows: [(String, Bool, Bool, Bool)] = [
-        ("a body written now with no claims field is refused", false, true, true),
-        ("a declared write set passes, empty or not", true, true, false),
+    // Four rows are the whole rule, and only one of them refuses: an absent field in a body
+    // somebody is holding the answer for. It is the row the warning was already firing on.
+    let rows: [(String, Bool, Bool, String)] = [
+        ("a body written now with no claims field is refused", false, true,
+         "422 claims_required"),
+        ("a declared write set passes, and an empty declaration is a declaration", true, true,
+         "none"),
         ("a stored schedule template is not refused for a field its editor cannot write",
-         false, false, false),
-        ("and neither is a respawn of a body that was admitted once already", true, false, false),
+         false, false, "none"),
+        ("and neither is a respawn of a body that was admitted once already", true, false, "none"),
     ]
-    for (label, declared, written, wantRefusal) in rows {
-        expect(label, refusal(declared: declared, written: written) != nil, wantRefusal)
+    for (label, declared, written, want) in rows {
+        expect(label, answer(declared: declared, written: written), want)
     }
-    let refused = refusal(declared: false, written: true)
-    expect("an incomplete body is 422, not a 409 about the state of the machine",
-           refused?.0, 422)
-    expect("and it is refused by name", refused?.1, "claims_required")
+
     // A refusal that only says no teaches the caller to route around it. Each of these is an
     // answer a dispatcher always has: the files, the directories when the files are undecided,
     // and the empty array when the task genuinely writes nothing.
-    let message = refused?.2 ?? ""
+    let message = refusalMessage(OrchestratorDraft.claimsRequirementRefusal(
+        declared: false, writtenForThisDispatch: true))
     check("the message names the paths a task may write", message.contains("relative paths"))
     check("and the directories to fall back on", message.contains("directories"))
     check("and the empty array that keeps a read-only task sayable",
           message.contains("\"claims\": []"))
-    // The two things that stop it becoming the field it replaced: an isolated dispatcher is told
-    // its list is kept rather than dropped, and nobody is asked for paths a guard writes for them.
+    // The two sentences that stop this becoming the field it replaced: an isolated dispatcher is
+    // told its list is kept rather than dropped, and nobody is asked for paths a guard writes.
     check("it tells an isolated caller the same list becomes its landing write set",
           message.contains("landing write set"))
     check("and it asks nobody to declare what a repository guard rewrites",
