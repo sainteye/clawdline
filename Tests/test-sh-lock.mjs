@@ -1752,10 +1752,22 @@ try {
         check("the guard is green again once the copy is put back", run().status === 0);
 
         // Fail-closed. A guard that cannot find what it guards must say so, not report a clean scan.
+        // The scanner's own comment claims it goes red whether the names change or the boundary
+        // stops being honoured; a claim about a guard is worth what its red proof is worth.
+        write(GUARD, read(GUARD).replace("'\\b(check|expect)[A-Za-z0-9_]*\\('", "'zzz-no-such-assertion'"));
+        const brokenScan = run();
+        check("a scan that has stopped matching is red, not a clean scan of a tree without tests",
+              brokenScan.status !== 0 && /broken scan/.test(brokenScan.out));
+        restore();
+
         write("test.sh", read("test.sh").replace(/^expected_swift_receipt_witness=\d+$/m, ""));
         const noWitness = run();
-        check("a seal with no witness is red rather than unchecked",
-              noWitness.status !== 0 && /expected_swift_receipt_witness/.test(noWitness.out));
+        // On the exact message, not on the name appearing anywhere: without the fail-closed read the
+        // comparison catches an empty witness too, and reports it as a tree that moved. That is red
+        // for the wrong reason, and it is the reason a mutation of that line has to fail this.
+        check("a seal with no witness names the missing line rather than blaming the tree",
+              noWitness.status !== 0
+                && /could not read expected_swift_receipt_witness/.test(noWitness.out));
         restore();
 
         write(DOC, read(DOC).replace("<!-- clawdline-governance-table:v1 -->", ""));

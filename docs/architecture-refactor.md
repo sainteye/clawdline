@@ -543,8 +543,9 @@ the second.
 
 ### Governance correction, landed with Cut 1
 
-This document had drifted from the executable guard, and the repair eventually went further than
-restating the numbers: **the table below is not written by hand at all.**
+This document had drifted from the executable guard. The correction landed with Cut 1; on 2026-09-03
+the repair went further than restating the numbers, and the heading is left naming the first half so
+that the two are not read as one event: **the table below is not written by hand at all.**
 `tools/check-architecture-boundaries.sh --emit-governance-table` renders it from the values that run
 just computed, `tools/generate-governance-table.sh` writes it between the markers, and the guard
 compares the committed block against the same rendering before a compiler is started. The six values
@@ -587,7 +588,9 @@ Removing that lease takes 260 back off, to **8,093**, observed by a full suite o
 branch rather than subtracted from the paragraph above. **Every figure here is arithmetic until the
 landing root's full suite observes it**, and the number this row carries is only as good as the last
 run that did — which for this one is a run on a branch, so the root integrating it owes the tree it
-actually lands one of its own.
+actually lands one of its own. **This paragraph is a history and stops where it stops**: it ends at
+8,093 and the seal has moved since, which the table above will always say and this will not. That is
+the difference between a rendering and a prose number, and the reason only one of the two is asserted.
 
 **This row used to be a comparison between two records, and that is what failed.**
 `compare_documented "Swift checks"` compared this table with `test.sh`'s `expected_swift_receipt`,
