@@ -282,7 +282,7 @@ enum OrchestratorStore {
     /// `Int32(exactly:)` rather than `Int32.init`, which traps: this runs on `load()`, so a pid
     /// too large to be one would stop the app starting rather than cost one label its process.
     static func handoffLabel(from obj: [String: Any]) -> Orchestrator.HandoffLabel? {
-        guard let id = obj["handoff_id"] as? String, Orchestrator.isTaskID(id),
+        guard let id = obj["handoff_id"] as? String, OrchestratorDraft.isTaskID(id),
               let label = obj["label"] as? String, !label.isEmpty, label.count <= 200,
               let row = obj["identity"] as? [String: Any],
               let terminal = row["terminal_id"] as? String, !terminal.isEmpty,
