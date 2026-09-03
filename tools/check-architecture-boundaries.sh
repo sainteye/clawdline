@@ -47,7 +47,11 @@ main_lines=$(line_count Tests/main.swift)
 #
 # Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
 # to grow that nobody reviewed. Anyone raising it again adds the line, the commit and the reason.
-orchestrator_ceiling=11932
+#   11,678  rebased onto the lease removal        (the extraction measured itself at 11,932 on a
+#                                              base that still had the lease; 254 of those lines
+#                                              had already gone by the time it merged, and the
+#                                              ceiling briefly carried that stale figure)
+orchestrator_ceiling=11678
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."
