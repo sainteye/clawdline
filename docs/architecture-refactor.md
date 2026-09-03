@@ -510,7 +510,7 @@ checks without running them — so it is the one row that a full suite has to se
 | ordered groups | 463 | 498 |
 | ordered runners | 25 | 29 |
 | suite files | 38 | 42 |
-| Swift checks | — | 8,353 |
+| Swift checks | — | 8,093 |
 | `Orchestrator.swift` ceiling | 13,592 | 12,831 |
 | `RemoteServer.swift` ceiling | 6,385 | 6,393 |
 
@@ -527,11 +527,14 @@ The Swift-checks row read 8,025 after Cut 1, then 8,026 when the multi-question 
 confirmation guard added one check on 2026-09-02 (`4273990a`) — the first landing to move a count
 after this table became asserted, and therefore the one that proved the mechanism works. It then
 read 8,061, which was 8,026 plus that stage's 35, and the heavy-compile lease and its two
-correction rounds have carried it to 8,353: 8,331 observed by a full suite at `3a30b5a8`, plus the
+correction rounds carried it to 8,353: 8,331 observed by a full suite at `3a30b5a8`, plus the
 22 the second correction round adds — a group for a refusal counting as an ask, the store round
 trip's three dropped fields and its own clock control, and the process readings one decision takes.
-**Every figure here is arithmetic until the landing root's full suite observes it**, and the number
-this row carries is only as good as the last run that did.
+Removing that lease takes 260 back off, to **8,093**, observed by a full suite on the removal
+branch rather than subtracted from the paragraph above. **Every figure here is arithmetic until the
+landing root's full suite observes it**, and the number this row carries is only as good as the last
+run that did — which for this one is a run on a branch, so the root integrating it owes the tree it
+actually lands one of its own.
 
 **The guard cannot catch this row being wrong, and it is worth saying why rather than pretending
 otherwise.** `compare_documented "Swift checks"` compares this table with `test.sh`'s

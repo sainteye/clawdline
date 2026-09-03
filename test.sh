@@ -123,7 +123,17 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # clocks coincide. 1 more is that same control for the `holder.txt` round trip beside it, whose
 # four clocks were all one instant. 2 are the process readings one decision takes, now that the
 # one nothing read is gone. 8331 -> 8353. The exact candidate-tree run remains authoritative.
-expected_swift_receipt='8353 checks passed'
+# Removing the broker heavy-compile lease takes 260 away, and the number is the one the suite
+# reported rather than one read off the source: 8353 -> 8093, from the run that this line now
+# guards, on this branch's tree with `CLAWDLINE_SUITE_JOBS=1`. Thirteen groups go with
+# `Tests/OrchestratorLeaseTests.swift` — the same eleven the lease's own paragraph above lists,
+# plus the two its two correction rounds added — and no group outside that file loses a check,
+# which is what makes this a removal rather than a change to anything that stayed. **The three
+# paragraphs above are kept rather than collapsed into this one**: each says how its own number was
+# arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
+# step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
+# 165 -> 150, counted by that file itself.
+expected_swift_receipt='8093 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
