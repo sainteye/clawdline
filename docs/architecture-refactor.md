@@ -498,6 +498,49 @@ Expected end state: `Orchestrator.swift` near 11,000 lines, and — more importa
 schedules, handoffs and coordination waits each have somewhere to go, so the next feature stops
 paying rent in the frozen file.
 
+### Splittability is a property of variable scope, not of size
+
+`tools/` gained a mechanical splitter during the CloudAccountTests work: it takes a run of
+consecutive top-level statements and lifts it into a nested `async throws` section, but only when
+no declaration made inside that run is referenced after it. On `runCloudAccountTests` it produced
+twenty-eight sections and took the file's codegen peak from 46.06 GiB to 0.83.
+
+Pointed at `runCloudCommandLedgerTests`, which had the same symptom — 131 suspension points in one
+coroutine, second worst in the tree — **the same tool produced one section of 635 lines and no
+improvement at all.**
+
+The difference is not size. That function's top level is two declarations and twenty-five
+`if checks.includes("group")` blocks, each carrying its own fixture and referencing nothing from
+its neighbours. There is no *run of statements whose declarations die with them* to find, because
+every statement is inside a block. The tool looked for the wrong shape and correctly reported that
+it was absent.
+
+What the file needed was already there: twenty-five named groups, each a natural boundary. Wrapping
+each block's body in a nested `async throws` took the largest coroutine from 131 to 18 and moved
+nothing — same statements, same order, same 84 assertions, byte-identical string literals.
+
+**So: before reaching for the splitter, look at where the declarations live.** A function whose
+top level is a flat sequence of statements splits mechanically. A function whose top level is a
+list of self-contained blocks is already split and only needs each block given its own coroutine.
+A function whose long-lived values thread through everything splits neither way, and that is the
+one to leave alone until its state has an owner.
+
+### A ratchet and a threshold are not the same guard
+
+The suspension-point guard was a ratchet at 131 for as long as `runCloudCommandLedgerTests` sat
+there: a number with no meaning except *today's worst*, held only to stop it climbing, and
+justified only because that worst value was itself under the measured cliff. With the tree's worst
+now 61, it is a threshold with a derivation instead — 100, three tenths of margin below a cliff
+measured between 131 and 143, and far enough above 61 that ordinary test growth does not trip it.
+
+The distinction is worth stating because the two look identical in the script and behave opposite
+in practice. **A ratchet at today's value is right for a quantity that can only fall by deliberate
+work** — the held-lock door count is one, because every one of those call sites has to be moved by
+hand. **It is wrong for a quantity that grows in the ordinary course of the work**: a ratchet at 61
+goes red the first time somebody adds five awaits to a test, and the lesson it teaches is to raise
+the number, not to split the function. Zero headroom is correct for the first kind and a trap for
+the second.
+
 ### Governance correction, landed with Cut 1
 
 This document had drifted from the executable guard. The guard is authoritative, and these are its
