@@ -1450,7 +1450,7 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
     var opens = 0
     CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
         opens += 1
-        return .started(id: "RECEIVER", backend: .iterm)
+        return .started(id: "RECEIVER", backend: .iterm, attach: nil)
     }
     let createPath = "/v1/orchestrator/coordinator/successions"
     let created = RemoteServer.shared.route(remoteRequest(
@@ -1497,7 +1497,7 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
     }
     CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
         lostOpens += 1
-        return .started(id: "LOST-RECEIVER", backend: .iterm)
+        return .started(id: "LOST-RECEIVER", backend: .iterm, attach: nil)
     }
     let lostReceipt = RemoteServer.shared.route(remoteRequest(
         "POST", createPath, headers: auth, body: lostRequest))
@@ -1541,7 +1541,7 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
 
     CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
         opens += 1
-        return .started(id: "RECEIVER", backend: .iterm)
+        return .started(id: "RECEIVER", backend: .iterm, attach: nil)
     }
 
     Orchestrator.settleHandoff(handoffID, delivered: true, assistant: .claude, why: nil)
@@ -1756,7 +1756,7 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
        "title":"stale generation"}}
     """
     CoordinatorSuccession.handoffStarterForTesting = { _, _, _, _ in
-        .started(id: "NEXT", backend: .iterm)
+        .started(id: "NEXT", backend: .iterm, attach: nil)
     }
     let staleCreated = RemoteServer.shared.route(remoteRequest(
         "POST", createPath, headers: auth, body: staleRequest))

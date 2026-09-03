@@ -1352,7 +1352,7 @@ group("resuming a known conversation carries its title onto the new terminal") {
     let target = TargetSession(backend: .iterm, id: "terminal-resumed-title",
                                name: "Default", tty: "/dev/ttys078",
                                windowIndex: 0, tabIndex: 11, assistant: .codex)
-    _ = StartPoints.resumed(.started(id: target.id, backend: target.backend),
+    _ = StartPoints.resumed(.started(id: target.id, backend: target.backend, attach: nil),
                             conversationID: conversationID, title: title, assistant: .codex)
     expect("the new row has the selected title before another inventory read",
            CodexNaming.shared.title(for: target), title)
@@ -1372,7 +1372,7 @@ group("resuming a known conversation carries its title onto the new terminal") {
     let absent = TargetSession(backend: .iterm, id: "terminal-titleless-resume",
                                name: "Default", tty: "/dev/ttys081",
                                windowIndex: 0, tabIndex: 14, assistant: .codex)
-    _ = StartPoints.resumed(.started(id: absent.id, backend: absent.backend),
+    _ = StartPoints.resumed(.started(id: absent.id, backend: absent.backend, attach: nil),
                             conversationID: conversationID, title: nil, assistant: .codex)
     check("an authorized resume with no title does not invent one",
           CodexNaming.shared.title(for: absent) == nil)
@@ -1380,7 +1380,7 @@ group("resuming a known conversation carries its title onto the new terminal") {
     let long = TargetSession(backend: .iterm, id: "terminal-long-resume",
                              name: "Default", tty: "/dev/ttys082",
                              windowIndex: 0, tabIndex: 15, assistant: .codex)
-    _ = StartPoints.resumed(.started(id: long.id, backend: long.backend),
+    _ = StartPoints.resumed(.started(id: long.id, backend: long.backend, attach: nil),
                             conversationID: conversationID,
                             title: String(repeating: "x", count: 200), assistant: .codex)
     expect("a history preview is bounded before becoming a session label",
@@ -1390,7 +1390,7 @@ group("resuming a known conversation carries its title onto the new terminal") {
     let claude = TargetSession(backend: .iterm, id: "terminal-resumed-claude-title",
                                name: "Default", tty: "/dev/ttys079",
                                windowIndex: 0, tabIndex: 12, assistant: .claude)
-    _ = StartPoints.resumed(.started(id: claude.id, backend: claude.backend),
+    _ = StartPoints.resumed(.started(id: claude.id, backend: claude.backend, attach: nil),
                             conversationID: conversationID, title: title, assistant: .claude)
     expect("Claude receives the same display-only resume hint",
            CodexNaming.shared.title(for: claude), title)

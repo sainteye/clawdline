@@ -305,12 +305,49 @@ enum StartPoints {
     // MARK: - Starting one
 
     enum Outcome {
-        case started(id: String, backend: Backend)
+        /// `attach` is what somebody types to reach this session, and it is **only** ever filled
+        /// in for the one plan that puts a session somewhere nobody is looking: ``Plan/tmuxDetached``,
+        /// a tmux server this app started with nothing attached to it. Every other path opens the
+        /// session in front of the person who asked for it and has nothing to add.
+        ///
+        /// **The fact travels with the outcome rather than being worked out again by whoever
+        /// receives it.** `backend` is `.tmux` for a window on a server somebody is already
+        /// watching and for a server started detached, so no caller can tell the two apart from
+        /// what it is given — and the one that can, `plan`, is two frames below by then. Before
+        /// this field the session was listed, drivable and unfindable: ``Tmux/attachCommand``
+        /// existed and had no callers at all.
+        case started(id: String, backend: Backend, attach: String?)
         /// `app` is the terminal the refusal is about, when it is about one. It rides next to the
         /// code in the error envelope so a page can name it in a sentence of its own rather than
         /// having to show the English one.
         case refused(status: Int, code: String, message: String, app: String?)
     }
+
+    /// Everything ``start(_:assistant:model:reasoningEffort:permission:addDir:resume:)`` would
+    /// otherwise go and ask this Mac, described instead.
+    ///
+    /// **It replaces the asking and nothing else.** ``plan(terminal:running:tmux:)`` still
+    /// decides, `start` still maps that decision onto an ``Outcome``, and the route above still
+    /// resolves an opaque id against a list. What a fixture supplies is the three answers the
+    /// plan is read from, the one subprocess the tmux path ends in, and the list — which is
+    /// between them the whole of *a Mac with tmux installed and no server running on it*, and
+    /// that Mac is the entire subject of the attach command. Without this the success arm of the
+    /// start route could only be exercised by opening a real terminal, which is why it never was.
+    struct Fixture {
+        var terminal: TerminalChoice
+        var running: Set<String>
+        var tmux: TmuxReach
+        /// `Plan` is passed so a fixture can tell a detached server from a window on a running
+        /// one; the two strings are the working directory and the line to be typed.
+        var open: (Plan, String, String) -> Result<String, TerminalFailure>
+        /// What ``places(limit:)`` answers. The paths still have to be real directories: `start`
+        /// checks, and a fixture that could skip that check would be describing a Mac that
+        /// cannot exist.
+        var places: [Place]
+    }
+
+    /// Test seam for the whole of the above. Nil in the app, and the only writer is the suite.
+    static var fixtureForTesting: Fixture?
 
     /// Open a tab where that place is and run an assistant in it.
     ///
@@ -329,8 +366,10 @@ enum StartPoints {
         }
         // Asked once and held: `tmuxReach()` lists panes, and asking it twice would be a second
         // subprocess answering a question that may by then have a different answer.
-        let chosen = plan(terminal: Config.shared.terminal, running: runningApps(),
-                          tmux: tmuxReach())
+        let fixture = fixtureForTesting
+        let chosen = plan(terminal: fixture?.terminal ?? Config.shared.terminal,
+                          running: fixture?.running ?? runningApps(),
+                          tmux: fixture?.tmux ?? tmuxReach())
         switch chosen {
         case .iterm:
             let opened = ITerm.newTabResult(line: itermLine(cwd: place.path,
@@ -349,7 +388,8 @@ enum StartPoints {
                                 code: modal ? "iterm_attention_required" : "terminal_io_failed",
                                 message: failure.message, app: modal ? "iTerm2" : nil)
             }
-            return .started(id: made.id, backend: .iterm)
+            // Nothing to attach to and nothing to say: an iTerm2 tab is already on screen.
+            return .started(id: made.id, backend: .iterm, attach: nil)
 
         case .tmux, .tmuxDetached:
             // Nothing is quoted here and nothing needs to be: tmux is given a working directory
@@ -362,9 +402,10 @@ enum StartPoints {
                                          permission: permission,
                                          addDir: extraDir(addDir),
                                          resume: sessionName(resume))
-            let opened = chosen == .tmuxDetached
-                ? Tmux.newSessionResult(cwd: place.path, command: line)
-                : Tmux.newWindowResult(cwd: place.path, command: line)
+            let opened = fixture?.open(chosen, place.path, line)
+                ?? (chosen == .tmuxDetached
+                    ? Tmux.newSessionResult(cwd: place.path, command: line)
+                    : Tmux.newWindowResult(cwd: place.path, command: line))
             guard case .success(let pane) = opened else {
                 let message: String
                 if case .failure(let failure) = opened { message = failure.message }
@@ -372,7 +413,13 @@ enum StartPoints {
                 return .refused(status: 502, code: "terminal_io_failed",
                                 message: message, app: nil)
             }
-            return .started(id: pane, backend: .tmux)
+            // **The one branch with somewhere to send somebody.** A window on a server that was
+            // already running is a window in whatever is attached to that server; a server this
+            // app started is drawn nowhere until ``Tmux/attachCommand`` is typed, so that
+            // command travels with the outcome rather than being reassembled by a caller that
+            // can no longer tell which of the two it got.
+            return .started(id: pane, backend: .tmux,
+                            attach: chosen == .tmuxDetached ? Tmux.attachCommand : nil)
 
         case .notRunning(let app):
             let name = appName(app)
@@ -442,7 +489,7 @@ enum StartPoints {
     /// from assistant-specific history or the exact retained scheduled task that authorized it.
     static func resumed(_ outcome: Outcome, conversationID: String, title: String?,
                         assistant: Assistant) -> Outcome {
-        guard case .started(let terminalID, _) = outcome, let title else { return outcome }
+        guard case .started(let terminalID, _, _) = outcome, let title else { return outcome }
         CodexNaming.shared.rememberResumedTitle(
             title, assistant: assistant, conversationID: conversationID, targetID: terminalID)
         return outcome
@@ -748,7 +795,8 @@ enum StartPoints {
     /// opened Claude Code in is a perfectly good place to open Codex. Offering two lists would
     /// have been two lists to scroll for one answer.
     static func places(limit: Int = 40) -> [Place] {
-        tidy(recorded() + codexRecorded() + live(), limit: limit)
+        if let fixture = fixtureForTesting { return fixture.places }
+        return tidy(recorded() + codexRecorded() + live(), limit: limit)
     }
 
     /// Where Codex has been run, out of its own record of it. See ``Codex/workedIn(days:limit:)``.

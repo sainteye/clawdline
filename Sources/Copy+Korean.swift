@@ -565,6 +565,7 @@ struct Korean: Copy {
     let webStartGone = "그 프로젝트는 이제 Mac에 없습니다."
     let webStartTerminalClosed = "{app} 앱이 Mac에서 돌고 있지 않습니다. 거기서 연 뒤에 다시 해 보세요."
     let webStartTerminalUnsupported = "설정에서 새 세션을 tmux로 열게 되어 있는데, 이 Mac에는 tmux가 없습니다. Mac에 설치하거나 설정에서 다른 터미널을 고르세요."
+    let webStartDetached = "세션은 아무도 붙어 있지 않은 tmux 서버 안에서 시작됐습니다. Mac에서 {command} 를 입력하면 볼 수 있습니다."
     let webStartOff = "세션 시작이 꺼져 있습니다. Mac의 설정 → 원격에서 켤 수 있습니다."
     let webResumeWith = "이어서 하기"
     let webResumePick = "어느 대화를?"

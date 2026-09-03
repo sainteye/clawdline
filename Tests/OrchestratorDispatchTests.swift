@@ -859,7 +859,7 @@ group("a task keeps its per-dispatch Codex reasoning effort") {
     var startedWith: (Assistant, String?, ReasoningEffort?, Permission)?
     let spawned = Orchestrator.spawn(task) { _, assistant, model, effort, permission, _ in
         startedWith = (assistant, model, effort, permission)
-        return .started(id: "reasoning-child", backend: .iterm)
+        return .started(id: "reasoning-child", backend: .iterm, attach: nil)
     }
     expect("spawn carries reasoning effort into the terminal starter",
            startedWith?.2, .xhigh)

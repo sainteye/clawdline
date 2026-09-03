@@ -979,6 +979,19 @@ protocol Copy {
     /// application. So this sentence is written whole rather than around a hole, and it says the
     /// two things somebody can do about it: install tmux, or choose another terminal in Settings.
     var webStartTerminalUnsupported: String { get }
+    /// The one success that is not one. `{command}` is the line somebody types on the Mac to
+    /// reach the session, and it arrives in the reply's `attach` field rather than in this
+    /// sentence — the same shape as ``webStartTerminalClosed``, and for the same reason: the
+    /// session name belongs to ``Tmux/attachCommand`` and must not be spelled out fourteen more
+    /// times where it can drift.
+    ///
+    /// **It is the answer to the only start that leaves nothing on screen.** With tmux chosen in
+    /// Settings and no server running, the Mac starts one with nothing attached to it: the
+    /// session is real, Clawdline lists it and can type into it, and at the Mac it is drawn
+    /// nowhere at all. Every other start puts a tab in front of somebody. So this is not a
+    /// refusal and must not read as one — what happened is what was asked for, and the sentence
+    /// exists to say where it went.
+    var webStartDetached: String { get }
     var webStartOff: String { get }
 
     // Picking a conversation back up instead of starting a new one — see

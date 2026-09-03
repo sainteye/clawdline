@@ -571,6 +571,7 @@ struct Hindi: Copy {
     let webStartGone = "वह प्रोजेक्ट अब Mac पर नहीं है।"
     let webStartTerminalClosed = "{app} इस Mac पर चल नहीं रहा। पहले उसे वहाँ खोलिए, फिर कोशिश कीजिए।"
     let webStartTerminalUnsupported = "सेटिंग्ज़ में नई session tmux में खुलती है, और इस Mac पर tmux नहीं है। उसे वहाँ इंस्टॉल कीजिए, या सेटिंग्ज़ में दूसरा terminal चुनिए।"
+    let webStartDetached = "session एक ऐसे tmux server में शुरू हुई जिससे कोई जुड़ा नहीं है। Mac पर {command} टाइप कीजिए और वह दिख जाएगी।"
     let webStartOff = "session शुरू करना बंद है। Mac पर सेटिंग्ज़ → रिमोट पहुँच से चालू होता है।"
     let webResumeWith = "पिछली कोई जारी रखें"
     let webResumePick = "कौन-सी बातचीत?"

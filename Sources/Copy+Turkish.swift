@@ -567,6 +567,7 @@ struct Turkish: Copy {
     let webStartGone = "O proje artık Mac'te yok."
     let webStartTerminalClosed = "{app} Mac'te çalışmıyor. Orada aç ve yeniden dene."
     let webStartTerminalUnsupported = "Ayarlar yeni oturumları tmux'ta açıyor ama bu Mac'te tmux yok. Oraya kur ya da ayarlardan başka bir terminal seç."
+    let webStartDetached = "Oturum, hiçbir şeyin bağlı olmadığı bir tmux sunucusunda başladı. Görmek için Mac'te {command} yaz."
     let webStartOff = "Oturum başlatma kapalı. Mac'te Ayarlar → Uzaktan erişim onu açar."
     let webResumeWith = "Öncekini sürdür"
     let webResumePick = "Hangi konuşma?"

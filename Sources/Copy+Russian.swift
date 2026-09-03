@@ -567,6 +567,7 @@ struct Russian: Copy {
     let webStartGone = "Этого проекта на Mac больше нет."
     let webStartTerminalClosed = "На Mac не запущен {app}. Откройте его там и попробуйте снова."
     let webStartTerminalUnsupported = "В настройках новые сессии открываются в tmux, а на этом Mac нет tmux. Установите его там или выберите другой терминал в настройках."
+    let webStartDetached = "Сессия запустилась в сервере tmux, к которому никто не подключён. Введите на Mac {command}, чтобы её увидеть."
     let webStartOff = "Запуск сессий выключен. Включается на Mac, в Настройках → Удалённый доступ."
     let webResumeWith = "Продолжить прежний"
     let webResumePick = "Какой разговор?"
