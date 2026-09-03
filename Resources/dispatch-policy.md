@@ -196,3 +196,15 @@ runner ships, an implementer may run one full suite only when labelled
 `focused_runner_unavailable`; reviewers do not repeat it. Root tests the exact target candidate.
 Never repeat a green tree/question/environment tuple; a second run needs a typed
 `inconclusive_environment` receipt.
+
+**A child may add Swift assertions, and the seal is not the reason it cannot.** Adding a `check(`
+or `expect(` to `Tests/*.swift` moves `expected_swift_receipt_witness`, and the architecture guard
+refuses to start a compile while the witness names a different tree — which reads like a wall,
+because a child cannot run the full suite that would produce a new total. **`CLAWDLINE_RESEAL=1` is
+the door built for exactly this**: it downgrades that refusal to a warning and lets the run proceed,
+so a child runs its focused groups normally and leaves both `expected_swift_receipt` and the witness
+untouched for the root to set from the landing run. Verified 2026-09-03: without the flag the guard
+prints "the seal was measured somewhere else"; with it, "Letting the run proceed so it can report
+the real total", followed by the ordinary green summary. One delivery that day wrote down that it
+had added no assertions **because it believed the seal forbade it**, and lost the coverage to a
+limit that does not exist.
