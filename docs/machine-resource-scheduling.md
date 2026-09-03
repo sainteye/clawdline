@@ -228,8 +228,8 @@ getting 0 from `\y` and 54 from a plain pattern.
 
 **The sixth row is the one that resists that prescription, and it is the most dangerous.** A
 positive control tests one reading; this failure is *two readings agreeing*. When the sealed count
-in `test.sh` and the governance table in `docs/architecture-refactor.md` are edited together, the
-guard that compares them reports **green, governance table agrees** — because they agree, and they
+in `test.sh` and the governance table in `docs/architecture-refactor.md` were edited together, the
+guard that compared them reported **green, governance table agrees** — because they agreed, and they
 are both wrong. Two sources concurring is the thing we ordinarily use to *raise* confidence, so it
 is the last place anybody looks. The layer that actually refuses is
 `validateExecutedTestGroupManifest()`, which runs inside the suite: **a green from that comparison
@@ -285,7 +285,7 @@ So the three are worth keeping apart, because they need different answers:
 | shape | what it looks like | what catches it |
 |---|---|---|
 | one reading lying | a count, an exit status, an `ok` | a positive control that must match |
-| two records agreeing | *governance table agrees* | comparing one of them against the thing |
+| two records agreeing | *governance table agrees* | comparing one of them against the thing — since 2026-09-03 the table is rendered from the counts, so this row no longer exists to be fooled |
 | a correct count of the wrong set | everything green, nothing inconsistent | something that observes execution, not declaration |
 
 **The middle row paid for itself twenty minutes after it was written, against the line that wrote
@@ -345,6 +345,26 @@ the ledger tests into groups and re-indented the same hundred assertions, so the
 additions beside a hundred deletions. Counting only the `+` side is a query about what a commit
 *contains*, not about what it *changed*, and the two differ by exactly the amount of moved code. The
 derivation and the measurement agree at 8101 — but only after the deletions were counted too.
+
+**This row does not exist any more, and how it was closed is the point.** On 2026-09-03 the
+governance table stopped being a list of numbers somebody types and became a rendering: the guard
+prints the block from what it counted, `tools/generate-governance-table.sh` writes that, and the
+committed document is compared against the rendering. `compare_documented` and `documented_value`
+are gone. **Every row is now a count against its own rendering** — the shape the other five rows
+always had, extended to the one that never did.
+
+The seal was the hard case, because no count in the guard can produce it; only a full run can. What
+stands in for it is a **witness**: the number of assertion call sites in `Tests/*.swift` on the tree
+the seal was measured on, recorded beside the seal. A seal from another tree now fails against the
+witness, which is what silently passed on 2026-09-03 when eight checks were added and nothing
+re-sealed. **The witness does not see a loop running an existing assertion more times** — that moves
+the total without moving the sites, and `a4ed9edb` was exactly that shape, four `check(` calls inside
+a two-variant loop. It closes *added assertions without a re-seal*, not *a total that moved for any
+reason*, and the difference is worth knowing before trusting it.
+
+So the entries below describe a defect that has been repaired. They are kept because the defect took
+a full day to become visible and cost two lines a round each, and because the shape recurs wherever
+two documents are asked to agree instead of one document being asked to match the thing.
 
 **A three-way merge can make both sides wrong and agree, and then say nothing.** The two faces above
 — records agreeing and both stale, records disagreeing and caught — both start with somebody editing
