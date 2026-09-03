@@ -1062,10 +1062,11 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     ))
     transport.yield(#"{"type":"skills","session":"plain"}"#, sequence: 25)
     try await waitForCloudAppBridge("the skills answer") { transport.envelopes().count == 6 }
-    try require(await router.recordedReads().last?.read == .skills(session: "plain"),
+    let skillsRead = await router.recordedReads().last?.read
+    try require(skillsRead == .skills(session: "plain"),
                 "the composer's menu is a read of the session and nothing else")
-    try require(try opened(transport.envelopes()[5])["read"] as? String == "skills",
-                "the skills answer names itself")
+    let skillsName = try opened(transport.envelopes()[5])["read"] as? String
+    try require(skillsName == "skills", "the skills answer names itself")
 
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data(#"{"text":"building","ended":false}"#.utf8)
@@ -1073,11 +1074,11 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     transport.yield(#"{"type":"shell","session":"plain","shell":"sh-9","bytes":65536}"#,
                     sequence: 26)
     try await waitForCloudAppBridge("the shell answer") { transport.envelopes().count == 7 }
-    try require(await router.recordedReads().last?.read
-                    == .shell(session: "plain", shell: "sh-9", bytes: 65536),
+    let shellRead = await router.recordedReads().last?.read
+    try require(shellRead == .shell(session: "plain", shell: "sh-9", bytes: 65536),
                 "a command's tail reaches the broker with the bound it was asked for")
-    try require(try opened(transport.envelopes()[6])["read"] as? String == "shell:sh-9",
-                "and its answer names the command, not the kind")
+    let shellName = try opened(transport.envelopes()[6])["read"] as? String
+    try require(shellName == "shell:sh-9", "and its answer names the command, not the kind")
 
     // The decisive one, and the reason `name` carries an id at all. Two agents in one session
     // answer on that session's single channel; a viewer waiting on both can only tell the answers
@@ -1092,8 +1093,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let agentNames = try [8, 9].map { try opened(transport.envelopes()[$0 - 1])["read"] as? String }
     try require(agentNames == ["agent:a-1", "agent:a-2"],
                 "two agents in one session are two names, so neither settles the other's waiter")
-    try require(await router.recordedReads().last?.read
-                    == .agent(session: "plain", agent: "a-2", limit: 200),
+    let secondAgentRead = await router.recordedReads().last?.read
+    try require(secondAgentRead == .agent(session: "plain", agent: "a-2", limit: 200),
                 "and the second reaches the broker as its own agent with its own window")
 
     // The two lists that have to agree: `readTypes` admits a word, and the switch in `serveRead`
@@ -1110,7 +1111,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(Set(wellFormed.keys) == CloudAppBridge.readTypes,
                 "every read type this bridge admits has a body written for it here")
     let readsBeforeTyped = await router.recordedReads().count
-    var typedSequence: UInt64 = 40
+    let envelopesBeforeTyped = transport.envelopes().count
+    var typedSequence: UInt64 = 60
     for type in CloudAppBridge.readTypes.sorted() {
         transport.yield(wellFormed[type]!, sequence: typedSequence)
         typedSequence += 1
@@ -1118,8 +1120,14 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try await waitForCloudAppBridge("every admitted read type to parse and route") {
         await router.recordedReads().count == readsBeforeTyped + wellFormed.count
     }
+    // Drained before the malformed table below counts envelopes: an answer still in flight would
+    // arrive during that count and be read as a malformed read having published one.
+    try await waitForCloudAppBridge("every admitted read type to be answered") {
+        transport.envelopes().count == envelopesBeforeTyped + wellFormed.count
+    }
     let typedReads = await router.recordedReads().suffix(wellFormed.count)
-    try require(Set(typedReads.map(\.read.name))
+    let typedNames = Set(typedReads.map(\.read.name))
+    try require(typedNames
                     == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git"],
                 "and each parses into the read it names rather than into the switch's last case")
 
@@ -1173,7 +1181,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let readsAfterMalformed = await router.recordedReads().count
     try require(readsAfterMalformed == readsBeforeMalformed,
                 "no malformed read reaches the broker")
-    try require(transport.envelopes().count == 9,
+    try require(transport.envelopes().count == 15,
                 "a refused-before-routing read publishes nothing, having no answer to publish")
 
     await bridge.stop()
