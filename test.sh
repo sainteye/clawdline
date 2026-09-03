@@ -123,7 +123,17 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # clocks coincide. 1 more is that same control for the `holder.txt` round trip beside it, whose
 # four clocks were all one instant. 2 are the process readings one decision takes, now that the
 # one nothing read is gone. 8331 -> 8353. The exact candidate-tree run remains authoritative.
-expected_swift_receipt='8353 checks passed'
+# Removing the broker heavy-compile lease takes 260 away, and the number is the one the suite
+# reported rather than one read off the source: 8353 -> 8093, from the run that this line now
+# guards, on this branch's tree with `CLAWDLINE_SUITE_JOBS=1`. Thirteen groups go with
+# `Tests/OrchestratorLeaseTests.swift` — the same eleven the lease's own paragraph above lists,
+# plus the two its two correction rounds added — and no group outside that file loses a check,
+# which is what makes this a removal rather than a change to anything that stayed. **The three
+# paragraphs above are kept rather than collapsed into this one**: each says how its own number was
+# arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
+# step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
+# 165 -> 150, counted by that file itself.
+expected_swift_receipt='8093 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -495,9 +505,10 @@ clawdline_suite_lock_phase() {
   # which is what happened here at 02:45 on 2026-09-03: a lock held 36 minutes, zero compilers on
   # the machine, no done flag, and a second line waiting with no safe way to tell the two apart.
   #
-  # Three values, and they are the broker lease's, not this script's, because a waiter and the lease
-  # have to read the same word: `compiling` is the reason the lock exists; `analysing` is working
-  # but not compiling, which for this script is the test binary running for its several minutes; and
+  # Three values, and they are the record's rather than this script's, because every writer and
+  # every waiter has to read the same word: `compiling` is the reason the lock exists; `analysing`
+  # is working but not compiling, which for this script is the test binary running for its several
+  # minutes; and
   # `idle-holding` is "this run still needs the lock and nothing expensive is happening under it" —
   # the value that has to be *seen*, because it is the one an outside reader cannot tell from a
   # holder that finished and forgot to let go.
@@ -518,17 +529,18 @@ clawdline_suite_lock_write_record() {
   # Rewritten whole on acquisition and on every renewal, then moved into place, so a reader sees the
   # previous complete record or the new complete one and never half of either.
   #
-  # **THE RECORD CONTRACT. One record, three writers, and this is the list.**
+  # **THE RECORD CONTRACT. One record, two writers, and this is the list.**
   #
-  # `test.sh`, `build.sh` and the broker (`OrchestratorLease.encode`) all write
-  # `<lock>/holder.txt`, and all three read each other's. They used to write three different
-  # subsets of it: `test.sh` wrote seventeen fields, the other two wrote eleven, only eight
-  # overlapped, and the four `test.sh` needs for its compare-and-swap — `token`, `owner_pid`,
-  # `owner_started`, `heartbeat_deadline` — were written by nobody else. So against a
-  # broker-written or `build.sh`-written lock its compare was `"" = ""`, always true, and the
-  # re-read beside it was carrying the whole swap alone. The same accident in the other direction:
-  # `test.sh` wrote `working=` and the Swift reader has always read `work=`, so each side showed an
-  # empty working list for the other's holder.
+  # `test.sh` and `build.sh` both write `<lock>/holder.txt` and both read each other's. It was
+  # three writers while the broker lease existed, and the field list is the one all three agreed
+  # on: nothing in it was the broker's alone, so removing that writer costs the contract nothing.
+  # They used to write three different subsets of it: `test.sh` wrote seventeen fields, the other
+  # two wrote eleven, only eight overlapped, and the four `test.sh` needs for its compare-and-swap
+  # — `token`, `owner_pid`, `owner_started`, `heartbeat_deadline` — were written by nobody else. So
+  # against a lock either of them wrote its compare was `"" = ""`, always true, and the re-read
+  # beside it was carrying the whole swap alone. The same accident in the other direction:
+  # `test.sh` wrote `working=` and the Swift reader read `work=`, so each side showed an empty
+  # working list for the other's holder.
   #
   #   holder              who to go and ask. Free text, one line.
   #   pid                 the process actually doing the work at this beat, never a stand-in.
@@ -536,9 +548,9 @@ clawdline_suite_lock_write_record() {
   #                       loop supervises. It exists for exactly as long as the run does.
   #   owner_started       `owner_pid`'s start identity as one normalised `LC_ALL=C ps -o lstart=`
   #                       line. **The one field a writer may leave empty**, meaning "this writer
-  #                       did not record it" — a shell can read that line, a broker holding only
+  #                       did not record it" — a shell can read that line, a writer holding only
   #                       epoch seconds cannot. Empty is unknown to every reader and is never a
-  #                       mismatch. `started=` carries the same fact in the form the broker compares.
+  #                       mismatch. `started=` carries the same instant as epoch seconds.
   #   token               this hold's unique identity, and the compare in every compare-and-swap.
   #                       A pid is reused within hours on a busy machine; a token is not.
   #   phase               compiling | analysing | idle-holding. Reportable, never a takeover input.
@@ -732,9 +744,9 @@ clawdline_suite_lock_admission() {
   if [ "$age" -le "$deadline" ]; then
     clawdline_suite_lock_state="held"
     # Three answers, not two. A record that carries no `owner_started` is one a writer that has no
-    # `ps -o lstart=` line to give wrote — the broker writes epoch seconds in `started=` instead —
-    # and reporting that as "this pid no longer looks like the one that took the lock" was a
-    # sentence about every single broker-held lock that a person could act on and should not have.
+    # `ps -o lstart=` line to give wrote — it has only epoch seconds, in `started=` — and reporting
+    # that as "this pid no longer looks like the one that took the lock" is a sentence about every
+    # lock such a writer holds that a person could act on and should not have.
     case "$(clawdline_suite_lock_identity_verdict "$(clawdline_suite_lock_field owner_pid "$file")" "$pid_started")" in
       same)
       # Everything a person needs to decide whether to go and ask: who, how long, what they say they
@@ -794,9 +806,9 @@ clawdline_suite_lock_take_over() {
   # having: it stops several waiters running the re-read and the swap over each other.
   #
   # The token compare is only a compare when both sides have a token. Against a record written by
-  # the broker or by `build.sh` it used to be `"" = ""` — always true, with the re-read carrying the
-  # whole swap alone. All three writers now write one, which is what the record contract above
-  # `clawdline_suite_lock_write_record` is for.
+  # `build.sh`, or by the broker lease while it existed, it used to be `"" = ""` — always true, with
+  # the re-read carrying the whole swap alone. Every writer now writes one, which is what the record
+  # contract above `clawdline_suite_lock_write_record` is for.
   local lock=$1 judged_token=$2
   local gate="$lock.takeover" gate_pid gate_verdict stale
   if ! mkdir "$gate" 2>/dev/null; then

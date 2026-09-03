@@ -41,15 +41,15 @@ const stop = (why) => {
 const script = readFileSync(new URL("../test.sh", import.meta.url), "utf8");
 const lines = script.split("\n");
 const buildScript = readFileSync(new URL("../build.sh", import.meta.url), "utf8");
-const leaseSource = readFileSync(new URL("../Sources/OrchestratorLease.swift", import.meta.url),
-                                 "utf8");
 
-// **One record, three writers.** `test.sh`, `build.sh` and `OrchestratorLease.encode` all write
-// `<lock>/holder.txt` and all three read each other's. They used to write three different subsets:
-// seventeen fields, eleven and eleven, eight in common, and the four the shell's compare-and-swap
-// needs — `token`, `owner_pid`, `owner_started`, `heartbeat_deadline` — written by nobody else, so
-// against a broker-written lock that compare was `"" = ""` and always true. Order is the contract
-// too: a reader diffing two records by eye should not have to sort them first.
+// **One record, two writers.** `test.sh` and `build.sh` both write `<lock>/holder.txt` and both
+// read each other's. It was three while the broker lease wrote it too, and the list below is the
+// one all three agreed on, so removing that writer costs the contract nothing. They used to write
+// three different subsets: seventeen fields, eleven and eleven, eight in common, and the four the
+// shell's compare-and-swap needs — `token`, `owner_pid`, `owner_started`, `heartbeat_deadline` —
+// written by nobody else, so against a lock either of the others wrote that compare was `"" = ""`
+// and always true. Order is the contract too: a reader diffing two records by eye should not have
+// to sort them first.
 const RECORD_CONTRACT = [
     "holder", "pid", "owner_pid", "owner_started", "token", "phase", "phase_since",
     "heartbeat", "heartbeat_deadline", "started", "renewed", "tree", "log", "done_flag",
@@ -168,6 +168,16 @@ const baseEnv = {
     TMPDIR: dir,
 };
 
+// **Nothing ambient reaches a harness, and one variable was getting through.** Everything the two
+// blocks read is pinned above except `CLAWDLINE_SUITE_JOBS` — which the caller's own environment
+// can carry, and which this machine's dispatch policy tells a session to set:
+// `CLAWDLINE_SUITE_JOBS=1 ./test.sh` is the supported way to ask for fewer compiler jobs. That
+// value reached scenario 12's control, the one that asserts what happens when *no* ceiling is set,
+// and made the whole suite red on a tree where nothing about the ceiling had changed. Every
+// scenario that wants a value passes it explicitly, so the ambient one is removed rather than
+// overridden: an override would be one more value to keep in step with the block's default.
+delete baseEnv.CLAWDLINE_SUITE_JOBS;
+
 // The block acquires as its last act, which is what a caller wants and what most scenarios below
 // want too. One scenario needs the functions without the acquisition — the outer shell of a `nohup`
 // that never held the lock — so the block is cut at the trap. Cutting is checked rather than
@@ -282,11 +292,12 @@ try {
     const r1 = run(one);
     const record = readIf(join(dir, "record.txt"));
     check("a run acquires the lock and says so", r1.code === 0 && /is this run's/.test(r1.all));
-    check("and its phase is one of the three words the lease also reads",
+    check("and its phase is one of the three words every reader of the record knows",
           existsSync(join(dir, "phase-was-vocabulary")));
-    // The ratified record — **the whole of it, and the same list for all three writers**. It is
-    // declared once at the top of this file and checked against `test.sh` here, against `build.sh`
-    // and against `OrchestratorLease.encode` in scenario 18.
+    // The ratified record — **the whole of it, and the same list for every writer**. It is
+    // declared once at the top of this file, checked against `test.sh` here and against `build.sh`
+    // in scenario 18. It was checked against `OrchestratorLease.encode` too until that writer was
+    // removed, and the list did not move.
     for (const field of RECORD_CONTRACT) {
         check(`the record carries ${field}`, new RegExp(`^${field}=`, "m").test(record));
     }
@@ -689,8 +700,8 @@ try {
     }
 
     // -----------------------------------------------------------------------------------------
-    // 12. The parallelism ceiling the lease will hand down, and where the number came from. Unset,
-    //     the compile line below the block is byte-identical to what it has always been.
+    // 12. The compile-job ceiling, and where the number came from. Unset, the compile line below
+    //     the block is byte-identical to what it has always been.
     rmSync(lockDir, { recursive: true, force: true });
     const jobs = shell("s12.sh", ceiling, 'echo "flags=[${clawdline_suite_jobs_flags[@]+${clawdline_suite_jobs_flags[@]}}]"');
     const r12a = run(jobs);
@@ -1095,8 +1106,10 @@ try {
           /jobs -p 2>\/dev\/null \| grep -qx "\$clawdline_suite_lock_renewer"/.test(block));
 
     // -----------------------------------------------------------------------------------------
-    // 18. **One record, three writers.** The contract is declared once at the top of this file;
-    //     this reads it back out of all three programs.
+    // 18. **One record, two writers.** The contract is declared once at the top of this file;
+    //     this reads it back out of `build.sh`. It read it out of `OrchestratorLease.encode` too
+    //     until that writer was removed, and the list did not move: nothing in the contract was
+    //     the broker's alone.
     //
     //     They did not agree. `test.sh` wrote seventeen fields, `build.sh` and
     //     `OrchestratorLease.encode` eleven each, eight in common — and the four the shell's
@@ -1106,49 +1119,20 @@ try {
     //     carrying the whole swap alone. In the other direction `test.sh` wrote `working=` and the
     //     Swift reader read `work=`, so each side showed an empty working list for the other.
     const buildKeys = [...buildScript.matchAll(/^\s*printf '([a-z_]+)=%s\\n'/gm)].map((m) => m[1]);
-    const leaseKeys = [...leaseSource.matchAll(/^\s*out \+= line\("([a-z_]+)"/gm)].map((m) => m[1]);
     check("build.sh writes the record contract, in the contract's order",
           buildKeys.join(",") === RECORD_CONTRACT.join(","));
-    check("and OrchestratorLease.encode writes the same list, in the same order",
-          leaseKeys.join(",") === RECORD_CONTRACT.join(","));
-    // A guard nobody has seen refuse is not a guard: the two readings above have to be able to
-    // find something, or a rename in either file would make this a clean scan of nothing.
-    check("both readings actually found a writer, rather than reporting a clean scan of nothing",
-          buildKeys.length === RECORD_CONTRACT.length
-            && leaseKeys.length === RECORD_CONTRACT.length);
+    // A guard nobody has seen refuse is not a guard: the reading above has to be able to find
+    // something, or a rename in build.sh would make this a clean scan of nothing.
+    check("the reading actually found a writer, rather than reporting a clean scan of nothing",
+          buildKeys.length === RECORD_CONTRACT.length);
 
-    // **Not every refusal is an answer, and reading them all as one ended the build.** The `*)` arm
-    // was added because the refusal branch had been unreachable — every 409 arrived as an empty
-    // string and fell into the wait. Fixing that made the opposite mistake: `lease_changed` and
-    // `takeover_failed` are the broker saying *ask again* (its own messages end in those words),
-    // and returning 1 on them ends a build on a condition that resolves itself. So the arms are
-    // driven here with the shapes the broker actually sends, out of `build.sh` itself rather than a
-    // retyped copy — `return 1` rewritten to a distinct exit so the two outcomes are told apart.
-    const refusalReader = buildScript.slice(
-      buildScript.indexOf("      local state\n"),
-      buildScript.indexOf("      esac", buildScript.indexOf("      local state\n")) + "      esac".length);
-    const readRefusal = (answer) => {
-      const harness = `set -uo pipefail\nannounced=0\nanswer='${answer}'\n`
-        + refusalReader.replace(/return 1/g, "exit 9") + "\nexit 0\n";
-      return spawnSync("/bin/bash", ["-c", harness], { encoding: "utf8" }).status;
-    };
-    check("the reader was found in build.sh, so these five are not a scan of nothing",
-          refusalReader.includes("refused:") && refusalReader.includes("granted)"));
-    check("a lease that moved while this build was asking is queued, not fatal",
-          readRefusal('{"error":{"code":"lease_changed"},"message":"Ask again."}') !== 9);
-    check("and so is a takeover that could not complete",
-          readRefusal('{"error":{"code":"takeover_failed"}}') !== 9);
-    check("while a machine with no room for it still ends the build, closed",
-          readRefusal('{"error":{"code":"pressure_refused"}}') === 9);
-    check("and so does a queue that will not take it",
-          readRefusal('{"error":{"code":"queue_full"}}') === 9);
-
-    // **`process_start` is compared, not stored**, and it was the moment the build asked rather than
-    // the moment the build started. The broker matches it against a fresh `ps` reading with a
-    // two-second tolerance, and `build.sh` gets here only after the Keychain helper has run — so a
-    // queued build read as `waiter_process_gone`. The axis had no production caller until the queue
-    // gained one, which is how an approximation survived being wrong. Driven, not read: the value
-    // must not move as work elapses.
+    // **`started=` is this process's start, not the moment it asked**, and it used to be the
+    // latter. `build.sh` reaches that line only after the Keychain helper has run, so `date +%s`
+    // there was minutes late and anybody working out how long the hold had lasted was reading the
+    // wait instead of the run. The broker compared the same instant on the wire with a two-second
+    // tolerance and answered `waiter_process_gone`; that reader is gone and the record's own field
+    // is not, so what is asserted here is the field. Driven, not read: the value must not move as
+    // work elapses.
     // **The work goes before the assignment, or this check cannot fail.** The first version put the
     // sleep after it and passed for both the derived value and the `date +%s` it replaced — in a
     // harness with nothing before the assignment the two are the same number, which is exactly the
@@ -1164,7 +1148,7 @@ try {
     ].join("\n");
     const [wireStart, harnessT0] = (spawnSync("/bin/bash", ["-c", preamble], { encoding: "utf8" }).stdout || "0 0")
       .split(" ").map(Number);
-    check("the start on the wire is the shell's, not the moment three seconds of work later",
+    check("the recorded start is the shell's, not the moment three seconds of work later",
           wireStart > 0 && wireStart - harnessT0 <= 1);
     // The textual half names the derivation rather than forbidding a spelling: `date +%s` is still
     // there as the fallback for a `ps` that cannot be read or a stamp that will not parse, and
@@ -1229,54 +1213,26 @@ try {
     // The write is atomic: a temp file and a rename, so a reader sees one complete record or the
     // other and never half of either. Every reader of this file fails closed on a partial record,
     // which turned a non-atomic rewrite every twenty seconds into a scheduled `unknown`.
-    check("build.sh writes the record through a temporary file and a rename, as the other two do",
+    check("build.sh writes the record through a temporary file and a rename, as test.sh does",
           /temp="\$CLAWDLINE_LEASE_DIR\/\.holder\.\$\$\.\$RANDOM"/.test(buildBlock)
             && /mv "\$temp" "\$CLAWDLINE_LEASE_DIR\/holder\.txt"/.test(buildBlock)
             && !/> "\$CLAWDLINE_LEASE_DIR\/holder\.txt"/.test(buildBlock));
 
     // -----------------------------------------------------------------------------------------
-    // 20. A refusal is not silence, and giving up leaves the line.
+    // 20. **No lock, no compile**, which is the whole of what the acquire path promises now that
+    //     there is no broker in front of it.
     //
-    //     The broker answers a refusal with `{"error": {"code": …}}` and no top-level `state`, so
-    //     `pressure_refused`, `queue_full` and a 403 on a stale token all read as the empty string
-    //     and fell into the "the broker did not answer" branch — which takes the lock directory
-    //     directly and compiles, jumping a queue up to thirty-two deep. The branch that implements
-    //     "no lease means the compile does not run" was unreachable.
-    const reader = /state=\$\(printf '%s' "\$answer" \| \/usr\/bin\/python3 -c '([\s\S]*?)'\s*2>\/dev\/null\)/
-        .exec(buildScript);
-    check("build.sh's answer reader was found", reader !== null);
-    if (reader !== null) {
-        const readState = (body) => {
-            const p = join(dir, "read-state.py");
-            writeFileSync(p, reader[1]);
-            const r = spawnSync("/usr/bin/python3", [p], { input: body, encoding: "utf8" });
-            return (r.stdout ?? "").trim();
-        };
-        check("a granted answer still reads as granted",
-              readState('{"ok":true,"state":"granted","budget":{"parallelism":1}}') === "granted");
-        check("a queued answer still reads as queued",
-              readState('{"ok":true,"state":"queued","position":2}') === "queued");
-        check("a refusal reads as a refusal named by its code, not as silence",
-              readState('{"error":{"code":"pressure_refused","message":"no headroom"}}')
-                === "refused:pressure_refused");
-        check("and so does a queue that is full, and a token the broker rejected",
-              readState('{"error":{"code":"queue_full"}}') === "refused:queue_full"
-                && readState('{"error":{"code":"forbidden"}}') === "refused:forbidden");
-        check("while a broker that answered nothing at all still reads as nothing",
-              readState("") === "" && readState("<html>502</html>") === "");
-    }
-    // And the queue entry goes when the build stops waiting for it. A queued request that is never
-    // cancelled is a deadlock with a persistence layer: it survives an app restart, only its owner
-    // may remove it, and everybody behind it waits for ever while the lock is free.
-    check("build.sh remembers that it is in the broker's line",
-          /CLAWDLINE_LEASE_QUEUED="\$CLAWDLINE_LEASE_ID"/.test(buildScript));
-    check("cancels it when it gives up waiting",
-          /gave up waiting[\s\S]{0,400}clawdline_lease_cancel/.test(buildScript));
-    check("and cancels it from the release path too, which the exit trap reaches on a Ctrl-C",
-          /clawdline_lease_release\(\) \{\n  clawdline_lease_cancel/.test(buildScript));
-    check("the cancel posts to the route that removes only this request",
-          /leases\/\$CLAWDLINE_LEASE_QUEUED\/cancel/.test(buildScript));
-
+    //     The broker era's version of this was a refusal reader: `pressure_refused`, `queue_full`
+    //     and a 403 on a stale token arrived as `{"error": {"code": …}}` with no top-level
+    //     `state`, all read as the empty string, and fell into the "the broker did not answer"
+    //     branch — which took the directory and compiled, jumping a queue up to thirty-two deep.
+    //     The arm that implemented "no lease means the compile does not run" was unreachable. That
+    //     reader and that queue are gone; the promise they were guarding is not, and it now rests
+    //     on two lines that have to stay in this order.
+    const acquireCall = buildScript.indexOf("\nclawdline_lease_acquire || exit 1\n");
+    const compileCall = buildScript.indexOf("\nswiftc \\\n");
+    check("build.sh takes the lock before swiftc, and a failure to take it ends the build",
+          acquireCall > 0 && compileCall > acquireCall);
 
     // -----------------------------------------------------------------------------------------
     // 21. **`compilers=` has three states, and the writer has to be able to write all three.**
@@ -1477,13 +1433,13 @@ try {
         'RANDOM=4242; blocked="$CLAWDLINE_LEASE_DIR/.holder.$$.$RANDOM"',
         'mkdir -p "$blocked"',
         'RANDOM=4242',
-        'st=0; clawdline_lease_first_record "a test" || st=$?; echo "first=$st"',
+        'st=0; clawdline_lease_first_record || st=$?; echo "first=$st"',
         '[ -d "$CLAWDLINE_LEASE_DIR" ] && echo "lock=left" || echo "lock=given_back"',
         'echo "mode=[${CLAWDLINE_LEASE_MODE}]"',
         'rm -rf "$CLAWDLINE_LEASE_DIR"',
         // The control: the same call against a writable directory takes the lock and says so.
         'mkdir -p "$CLAWDLINE_LEASE_DIR"',
-        'st=0; clawdline_lease_first_record "a test" || st=$?; echo "good=$st"',
+        'st=0; clawdline_lease_first_record || st=$?; echo "good=$st"',
         'grep -q "^token=build-test-24$" "$CLAWDLINE_LEASE_DIR/holder.txt" && echo "record=written"',
         'echo "good_mode=[${CLAWDLINE_LEASE_MODE}]"',
         'rm -rf "$CLAWDLINE_LEASE_DIR"',
@@ -1498,11 +1454,13 @@ try {
     check("while the same call against a writable directory takes the lock and records it",
           /good=0/.test(r24.all) && /record=written/.test(r24.all)
             && /good_mode=\[directory\]/.test(r24.all));
-    // The call sites, in build.sh itself: both direct acquisitions go through the checked write.
-    // A function nobody calls and a call to a function that does nothing are the same silence.
-    const directTakes = [...buildScript.matchAll(/mkdir "\$CLAWDLINE_LEASE_DIR" 2>\/dev\/null; then\n([\s\S]{0,200}?)\n\s*echo "→ heavy-compile lock taken directly/g)];
-    check("both of build.sh's direct acquisitions write their first record through the checked path",
-          directTakes.length === 2
+    // The call site, in build.sh itself: the one acquisition goes through the checked write. A
+    // function nobody calls and a call to a function that does nothing are the same silence. There
+    // were two of these while the broker branch existed and one of them jumped the queue; there is
+    // one now, and the count is asserted so a second one cannot be added in silence.
+    const directTakes = [...buildScript.matchAll(/mkdir "\$CLAWDLINE_LEASE_DIR" 2>\/dev\/null; then\n([\s\S]{0,200}?)\n\s*echo "→ heavy-compile lock taken/g)];
+    check("build.sh's one acquisition writes its first record through the checked path",
+          directTakes.length === 1
             && directTakes.every((m) => /clawdline_lease_first_record/.test(m[1])
                                         && !/clawdline_lease_record analysing/.test(m[1])));
 

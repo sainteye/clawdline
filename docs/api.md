@@ -161,11 +161,6 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/cancel` | orchestrator token | — |
-| `GET` | `/v1/orchestrator/leases` | orchestrator token | — |
-| `POST` | `/v1/orchestrator/leases` | orchestrator token | — |
-| `POST` | `/v1/orchestrator/leases/:id/renew` | orchestrator token | — |
-| `POST` | `/v1/orchestrator/leases/:id/release` | orchestrator token | — |
-| `POST` | `/v1/orchestrator/leases/:id/cancel` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/schedules` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/schedules/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/schedules` | token + key | `send` **and** the write switch |
@@ -2446,190 +2441,26 @@ This is a proposed restart policy, not a current restart capability. Phase A2's 
 only rebinds a provably offline role to an already live exact process; it does not restart, start,
 stop, health-to-action, or execute a web command.
 
-### The heavy-compile lease
+### The heavy-compile slot
 
 One full Swift compile is the most expensive operation on this machine, and four `swift-frontend`
-processes have force-rebooted it. These five routes are the queue in front of it. All of them
-require `X-Clawdline-Orchestrator`; a paired device may not read or take a machine lease.
+processes have force-rebooted it. **There is no broker route over it.** `/tmp/clawdline-suite.lock`
+is a directory, holding it is what `mkdir` says it is, and `./test.sh` and `./build.sh` each take
+it for themselves. That is what makes it work for a contributor with no Clawdline running at all,
+and it is the half that was used on the night the exclusion was built.
 
-**The lock directory is the truth and these routes are the registry in front of it.** Holding
-`/tmp/clawdline-suite.lock` is what `mkdir` says it is, so a contributor running `./test.sh` with
-no Clawdline cannot collide with a session that has it. What the durable record adds is what a
-directory cannot hold: who the holder is in Clawdline terms, the FIFO queue and its depth, the
-clocks, and what the reconciliation found after a restart. There is deliberately no second lock.
+Five routes — `GET`/`POST /v1/orchestrator/leases` and `/:id/renew`, `/release`, `/cancel` — were a
+registry and a FIFO queue in front of that directory, with durable state across an app restart, a
+`heavy_compile_lease` block in Bearings, and a `lease` overlay on a session row. They were removed
+on 2026-09-03 along with `Sources/OrchestratorLease.swift`. An authenticated caller still holding
+their shapes gets the ordinary `404 not_found`. A durable store written by an older build may still
+carry a `leases` array: nothing reads it, and the next save drops it, because the store object is
+built from what the registry holds rather than merged onto what was on disk.
 
-The resource vocabulary is closed and currently has one member, `heavy_compile`, which `build.sh`
-and `test.sh` both take because it is the same machine capacity. One resource cannot deadlock
-against itself.
-
-#### `POST /v1/orchestrator/leases` — acquire, or join the queue
-
-```console
-$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/leases \
-    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
-    -d '{"request_id":"build-4242-1788370000","resource":"heavy_compile","pid":4242,
-         "process_start":1788370000,"holder":"build.sh sainteye pid 4242",
-         "reason":"building Clawdline.app","tree":"/Users/you/code/clawdline"}'
-{"ok":true,"state":"granted","budget":{"parallelism":1,"basis":"peak_not_measured"},
- "lease":{"resource":"heavy_compile","directory":"/tmp/clawdline-suite.lock",
-   "reconciliation":"matched","renewalDeadlineSeconds":60,"queueDepth":0,"queue":[],
-   "holder":{"leaseId":"build-4242-1788370000","holder":"build.sh sainteye pid 4242","pid":4242,
-     "provenance":"broker","acquiredAt":1788370000,"renewedAt":1788370000,
-     "renewalAgeSeconds":0,"heldSeconds":0,"workPids":[],
-     "budget":{"parallelism":1,"basis":"peak_not_measured"}}}}
-```
-
-`request_id` is the caller's, and **this route is idempotent on it**: the client polls with the
-same id until it is granted, and polling neither duplicates its queue entry nor loses its place.
-It is a poll rather than a push because a grant delivered as a message can be lost, and a lost
-grant is a lease nobody holds and nobody releases.
-
-`pid` must be the process **doing the work**, never a sentinel — see the takeover rule below; when
-the work is a *sequence* of processes the record carries the current one and refreshes it at each
-beat. `work_pids` (optional) names the compiler processes running right now, `phase` is
-`compiling`, `analysing` or `idle-holding`, `heartbeat` names the beat file (default `beat` inside
-the lock directory), and `done_flag` names a path the run creates when its work has finished —
-a **positive signal only**: present means the work is over and, with (B), the lock may be taken at
-once without waiting out the threshold; absent proves nothing, because a SIGKILLed run never
-writes one.
-
-The lock directory holds:
-
-```text
-/tmp/clawdline-suite.lock/
-  holder.txt    holder= pid= phase= heartbeat= started= tree= log= done_flag=
-  beat          the heartbeat file itself; rmdir takes it with the lock
-```
-
-A caller that is not granted is *queued*, which is not a refusal:
-
-```json
-{"ok":true,"state":"queued","position":2,"holdReason":"holder_proving","retryAfterSeconds":5,
- "lease":{"…":"…"}}
-```
-
-`holdReason` is the whole of "why am I still waiting", and it is a closed word: `holder_proving`,
-`compiler_running`, `evidence_unknown`, `directory_unreadable` or `queued_behind_others`. When
-the holder is not compiling, the query also carries `phase`, `phaseAgeSeconds`,
-`notCompilingForSeconds`, `heartbeatAgeSeconds` and an `attention` sentence naming who to ask —
-because "held" alone is the blank picture this field exists to remove.
-
-**A grant carries a budget, not just a yes.** `budget.parallelism` is a ceiling the holder must
-honour — it is what `build.sh` passes to `swiftc` as `-j` — with a floor of one, and
-`budget.basis` says which measured quantity produced it. Until the per-compile peak is measured
-the basis is `peak_not_measured` and every grant is that floor. **It is a ceiling, not a
-throttle**: it can only lower the number of concurrent frontends, and granting the floor is not a
-promise that a compile will fit. The evidence behind the policy is in
-[`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md).
-
-#### `POST /v1/orchestrator/leases/:id/renew` — the heartbeat
-
-```console
-$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/leases/$LEASE/renew \
-    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
-    -d '{"holder":"build.sh sainteye pid 4242","phase":"compiling","work_pids":[8101,8102]}'
-```
-
-**Liveness is proved by heartbeat, not by a pid existing**, and the holder must beat at least
-every 60 seconds. `phase` is the content of a beat: the clock says the holder is there, `phase`
-says what it is there doing. An absent or unrecognised `phase` leaves the recorded one alone
-rather than resetting it.
-
-**The heartbeat must be emitted by something that stops when the work stops.**
-
-```bash
-while true; do : > beat; sleep 60; done &     # WRONG — a sentinel in a new coat
-
-swiftc … & compiler=$!                        # right — a supervisor loop
-while kill -0 "$compiler" 2>/dev/null; do : > beat; sleep 20; done
-wait "$compiler"
-```
-
-The proposition being proved is "somebody is still supervising this work", not "a timer is still
-running on this machine". A detached timer keeps beating after the work has died, which is
-exactly what `sleep 14400` did.
-
-A shell holder with no broker record beats by touching `beat` **inside the lock directory** — the
-placement matters, because `rmdir` then takes the beat with the lock and no orphan heartbeat can
-outlive the work it stood for. The record's own clock and that file are both read, and the later
-of the two is the proof.
-
-#### `POST /v1/orchestrator/leases/:id/release` and `/cancel`
-
-Both take `{"holder":"…"}` plus whichever of `session_id` or `task_id` the caller acquired with.
-Release belongs to the holder; cancel removes one queued request and only its own. The lock
-directory is removed only while `holder.txt` still names that pid and start — the one rule a
-release path may never break is removing a lock somebody else owns. Releasing something nobody
-holds returns `released` rather than an error, because that is the shape a retry takes.
-
-#### `GET /v1/orchestrator/leases` — who is compiling, and how long is the queue
-
-Re-reads the directory and the machine, so the answer is what is true now rather than what the
-broker last remembered.
-
-#### The takeover rule, and the two ways it has already been got wrong
-
-A lease may be taken over only when **both** hold:
-
-* **(A)** the current holder's **heartbeat has lapsed** past the threshold — or, sooner, its
-  `done_flag` exists, or its owning task reached `failure`/`timeout`/`cancelled`; **and**
-* **(B)** **no `swift-frontend` process exists anywhere on this machine.**
-
-**heartbeat is what the holder says; `swift-frontend` is what the machine is doing. A
-machine-level resource guard fails closed on the fact, not on the self-report.** (B) is not
-redundant with (A) and it is never a sufficient condition on its own: a holder that is wedged or
-heavily swapped out can miss a beat *while still burning 46 GB*, which is what this machine was
-doing at 01:24 and 01:45. On a healthy machine (B) passes instantly and costs nothing; it blocks
-only when the holder is stuck, which is the only case it exists for.
-
-The scan matches the executable's own name — `pgrep -x` semantics, not `pgrep -f` — so a sampler
-or a `/usr/bin/time swift-frontend …` wrapper is correctly not counted as a compiler.
-
-`phase` is reported and is **never** a takeover input. `phase=idle-holding` means "I still need
-the slot and nothing is running right now"; the query says who holds it, how long since it was
-last `compiling`, and how old the heartbeat is, so a waiter knows **who to ask** rather than what
-to seize. The system may say; it may not decide.
-
-Neither half admits anybody alone, and this is not a timer on the work: a four-hour compile that
-keeps renewing is never stale. Both halves come from the same live defect, in opposite
-directions. A holder once recorded a `sleep 14400` sentinel as its pid; under a pid-existence
-rule that sentinel outlives the work and the lock is a four-hour roadblock, which is why (A) is
-renewal. The obvious patch — "no `swift-frontend` means stale" — reclaims the lock in the gaps
-between the compiles of one study, which is the collision back again, which is why (B) can never
-admit on its own.
-
-Evidence that is missing, stale or ambiguous is `unknown`, and `unknown` **blocks**. It never
-reads as dead. **Nothing on this path ever ends a process**: an orphaned compile after its owner
-died is named in the refusal, with its pids, for a person to act on.
-
-#### Refusal codes
-
-| code | status | when |
-|---|---:|---|
-| `bad_lease` | 400 | `request_id`, `resource`, `pid`, `holder` or `reason` missing or malformed |
-| `unknown_resource` | 400 | a resource this machine does not lease; the vocabulary is closed |
-| `not_holder` | 403 | renew or release by a session that is not the recorded holder |
-| `not_requester` | 403 | cancel of a queued request by a session that did not make it |
-| `not_queued` | 404 | cancel of a request id that is not waiting |
-| `lease_lost` | 409 | renew when nothing holds the resource any more |
-| `lease_changed` | 409 | the lock directory changed between the reading and the write; ask again |
-| `takeover_failed` | 409 | the previous lock could not be removed, so it was not taken |
-| `release_failed` | 409 | the lock was not removed; the next reading reconciles |
-| `pressure_refused` | 409 | not even one compiler can be admitted; names the deficit, how it was measured, and the largest anonymous-memory holders |
-| `queue_full` | 429 | 32 requests are already waiting; something is wedged |
-
-`pressure_refused` carries `need_mb`, `have_mb`, `quantity`, `method` and `taken_at`, and a caller
-that has decided anyway repeats the request with `pressure_override` naming who decided. **The
-override is admission only.** It can never take a lease somebody else holds, and it is audited.
-
-#### What a restart does
-
-The broker rebuilds its view by reading the directory it never stopped owning, and `reconciliation`
-says what it found: `matched`, `adopted` (a `holder.txt` this broker did not write — a script, or
-this machine before the restart), `replaced` (the record and the directory named different holders
-and the directory won), `directoryMissing` (a durable grant with no directory: **the holder is
-kept**, and clears only on both halves of the takeover rule), `unreadable` (the directory exists
-and cannot be read: admission is closed) or `idle`.
+[`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md) is where the night's
+measurements live, and it records what the lease was and why it went. The record every writer of
+`holder.txt` shares — eighteen fields, in order — is written out above `clawdline_suite_lock_write_record`
+in `test.sh`, and `Tests/test-sh-lock.mjs` fails when a writer drifts from it.
 
 ### Coordination waits
 

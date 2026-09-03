@@ -1539,7 +1539,7 @@ drives the loud row and push notification. Native and web rows draw peer waits q
 `⏳ owner · release condition`, making an idle-looking but parked session safe for a person to leave
 open. A final-line `[Clawdline waiting]` sentence is only a fallback when that UI is unavailable.
 
-### The heavy-compile slot is leased, not agreed
+### The heavy-compile slot is locked, not agreed
 
 Two force-reboots on 2026-09-03 came from four `swift-frontend` processes on a 24 GB Mac holding
 lifetime-max footprints of about 46, 45, 27 and 8 GB. Several sessions share one checkout and each
@@ -1547,9 +1547,9 @@ ran `./test.sh`, whose one `swiftc` call compiles 134,863 lines. The stopgap was
 agreement to create `/tmp/clawdline-suite.lock` by hand; queueing is now the system's behaviour
 instead of a convention people remember.
 
-**One primitive, two front doors.** The lock directory is the truth: holding it is what `mkdir`
-says it is, atomic and kernel-backed, and still correct for a contributor who runs the scripts
-with no Clawdline at all. Inside it:
+**One primitive and no second one.** The lock directory is the truth: holding it is what `mkdir`
+says it is, atomic and kernel-backed, and correct for a contributor who runs the scripts with no
+Clawdline at all. Inside it:
 
 ```text
 /tmp/clawdline-suite.lock/          (path overridable)
@@ -1566,13 +1566,17 @@ with no Clawdline at all. Inside it:
   beat           the heartbeat file itself, inside the lock so `rmdir` takes it too
 ```
 
-`note=` and `work=` are additive and optional. The broker's durable record adds only what a
-directory cannot hold: who the holder is in
-Clawdline terms, the FIFO queue and its depth, the acquisition and renewal clocks, and the
-reconciliation state after a restart. **There is no second lock**, because a second independent
-authority that can disagree with the directory is a race rather than a safety net.
+`note=` and `work=` are additive and optional; the full eighteen-field contract every writer
+shares is written out above `clawdline_suite_lock_write_record` in `test.sh`.
 
-The five routes and every refusal code are in [the API page](api.md#the-heavy-compile-lease).
+**A broker lease sat in front of this directory for one day and was removed.** It added a durable
+registry, a FIFO queue with its depth and position, and the reconciliation state after an app
+restart — real things a directory cannot hold, and none of them needed on the night two sessions
+collided. `Sources/OrchestratorLease.swift`, the five `/v1/orchestrator/leases` routes, the
+Bearings block and the session overlay went on 2026-09-03;
+[`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md) records what was measured
+and why the half that was not used came out. **There is still no second lock**, because a second
+authority that can disagree with the directory is a race rather than a safety net.
 
 **Liveness is proved by heartbeat, not by a pid existing.** This is the rule the first
 implementation of the stopgap got wrong, in both directions from one cause: a holder recorded
@@ -1635,24 +1639,17 @@ be resolved by a person reading a `work_state` by hand, because the query could 
 query now says who holds it, how long since it was last `compiling`, and how old the heartbeat is,
 and it still refuses to decide: the waiter learns **who to ask**, not what to seize.
 
-**The broker's third liveness axis is why it exists on top of a file lock.** A lease whose owning
-task has reached `failure`, `timeout` or `cancelled` has stopped proving liveness no matter what
-any sentinel pid is doing, and that answers a four-hour sentinel immediately rather than waiting
-out a deadline. It is still subject to (B): a terminal task plus a live `swift-frontend` is a
-refusal naming the orphan, not a takeover.
-
-**Exclusion and admission are two questions and the record keeps them apart.** Exclusion is whose
-turn it is, and it fails closed: no lease, no compile. Admission is whether the holder may start
-now and *at what size*, and it refuses only as a last resort — a grant carries a parallelism
-ceiling with a floor of one. **The ceiling is a ceiling, not a throttle**: its job is to stop
-somebody passing `-j 8` and multiplying the peak by eight, not to make a compile that will not fit
-fit. `swiftc` with no `-j` was measured on this Mac to run one frontend already, so granting `-j 1`
-grants nothing; a second reading saw two concurrent frontends during a full compile, reconcilable
-with the first only if one was the stray driver `node Tests/keychain-rebuild-focused.mjs` starts
-outside `test.sh`'s own `swiftc` line. What the ceiling is relied on for is the direction that is
-certain: it can only lower the number of concurrent frontends, never raise it. `build.sh` passes it
-to `swiftc` and prints where the number came from; `test.sh` reads the same number from
-`CLAWDLINE_SUITE_JOBS`, which landed separately on `main`.
+**Exclusion and admission are two questions and only the first one is implemented.** Exclusion is
+whose turn it is, and it fails closed: no lock, no compile. Admission — whether the holder may
+start now and *at what size* — was the broker's half and went with it; what remains of it is the
+ceiling. **The ceiling is a ceiling, not a throttle**: its job is to stop somebody passing `-j 8`
+and multiplying the peak by eight, not to make a compile that will not fit fit. `swiftc` with no
+`-j` was measured on this Mac to run one frontend already, so `-j 1` asks for what already
+happens; a second reading saw two concurrent frontends during a full compile, reconcilable with the
+first only if one was the stray driver `node Tests/keychain-rebuild-focused.mjs` starts outside
+`test.sh`'s own `swiftc` line. What the ceiling is relied on for is the direction that is certain:
+it can only lower the number of concurrent frontends, never raise it. `build.sh` and `test.sh` both
+read it from `CLAWDLINE_SUITE_JOBS` and both print where the number came from.
 
 The evidence behind the policy, and the failure list it has to survive, are in
 [`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md) rather than repeated here.
@@ -1665,23 +1662,14 @@ processes summed to 22.33 GB on a 24 GB machine while `memory_pressure` reported
 physical free percentage looks excellent right after Jetsam kills something. Swap free alone is
 not a budget either: over forty minutes with nothing compiling, `vm.swapusage` total went 9,216 →
 10,240 → 12,288 MB and free swung from 353 MB to 1,417 MB. **A fixed floor on a quantity whose
-denominator moves is a deadlock wearing a threshold's clothes**, so headroom here is free plus
-file-backed pages, and until the per-compile peak is measured the policy carries no floor at all
-and every grant is one — this build cannot refuse on a number nobody has taken. When a floor is
-measured and cannot be met, the refusal names the deficit, how it was taken, and the largest
-holders of anonymous memory for a person to read, and it has an explicit override with a named,
-audited owner: a gate with no door is the deadlock this feature exists to remove.
+denominator moves is a deadlock wearing a threshold's clothes** — which is why the pressure gate
+that would have carried one was never relied on, and why nothing that remains here refuses on a
+number nobody has taken.
 
-`GET /v1/sessions` exposes the lease as a quiet `lease` overlay on exactly the coordination-wait
-precedent — `state` is `holding` or `queued`, with the position, the wait age and the hold reason
-— and it does not change the session's terminal `state`, because `waiting` means a person must
-answer and this is not that. Bearings carries `heavy_compile_lease` as four separate facts —
-`state`, `holder`, `queue_depth` and `hold_reason` — keeping `missing`, `zero`, `queued`, `held`
-and `unknown` apart, because a single spinner would collapse exactly the states this exists to
-show. A paired device gets three of the four: `holder` is free text a script wrote, and on this
-machine that text carries a username and a pid, which Bearings excludes from a device by
-construction. Whether the slot is busy and how long the queue is are things a phone can act on;
-who is holding it is a Mac-side answer.
+**Nothing in Clawdline projects the slot.** `GET /v1/sessions` carried a `lease` overlay and
+Bearings a `heavy_compile_lease` block; both went with the broker lease. Who is holding the slot is
+in `/tmp/clawdline-suite.lock/holder.txt`, which is what a waiting run prints, and asking that run
+is what a waiter is told to do.
 
 ### Clawdfather Phase A1: durable identity and read-only Bearings
 

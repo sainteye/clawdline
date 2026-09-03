@@ -661,14 +661,8 @@ final class RemoteServer: @unchecked Sendable {
         return nil
     }
 
-    /// The lease or request id in `/v1/orchestrator/leases/:id/<verb>`.
-    static func leaseID(_ path: String, suffix: String) -> String {
-        let id = String(path.dropFirst("/v1/orchestrator/leases/".count).dropLast(suffix.count))
-        return id.removingPercentEncoding ?? id
-    }
-
-    /// A JSON object body, or an empty one. Shared by the lease routes, which all read the same
-    /// three identity fields and refuse in the model rather than at the door.
+    /// A JSON object body, or an empty one. Shared by the orchestrator routes, which read their
+    /// identity fields out of it and refuse in the model rather than at the door.
     func orchestratorBody(_ request: Request) -> [String: Any] {
         (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
     }
@@ -1452,7 +1446,6 @@ final class RemoteServer: @unchecked Sendable {
             let observation = coordinatorObservation()
             let live = observation.sessions
             let registry = observation.registry
-            let leaseFacts = Orchestrator.leaseBearings()
             return .json(Coordinator.inspection(
                 liveSessions: live,
                 bearings: .init(
@@ -1461,9 +1454,6 @@ final class RemoteServer: @unchecked Sendable {
                     pendingLandingCount: registry.pendingLandings,
                     pendingLandingRows: registry.pendingLandingRows,
                     openWaitCount: registry.openWaits,
-                    leaseState: leaseFacts.state, leaseHolder: leaseFacts.holder,
-                    leaseQueueDepth: leaseFacts.queueDepth,
-                    leaseHoldReason: leaseFacts.holdReason, leaseObservedAt: leaseFacts.observedAt,
                     sessionsObservedAt: observation.sessionsObservedAt,
                     registryObservedAt: registry.observedAt,
                     sessionsGeneration: observation.sessionsGeneration)))
@@ -1479,7 +1469,6 @@ final class RemoteServer: @unchecked Sendable {
         case ("GET", "/v1/orchestrator/coordinator/bearings"):
             let observation = coordinatorObservation()
             let registry = observation.registry
-            let leaseFacts = Orchestrator.leaseBearings()
             return .json(Coordinator.deviceBearings(
                 liveSessions: observation.sessions,
                 bearings: .init(
@@ -1488,61 +1477,9 @@ final class RemoteServer: @unchecked Sendable {
                     pendingLandingCount: registry.pendingLandings,
                     pendingLandingRows: registry.pendingLandingRows,
                     openWaitCount: registry.openWaits,
-                    leaseState: leaseFacts.state, leaseHolder: leaseFacts.holder,
-                    leaseQueueDepth: leaseFacts.queueDepth,
-                    leaseHoldReason: leaseFacts.holdReason, leaseObservedAt: leaseFacts.observedAt,
                     sessionsObservedAt: observation.sessionsObservedAt,
                     registryObservedAt: registry.observedAt,
                     sessionsGeneration: observation.sessionsGeneration)))
-
-        // **The machine-level lease over the heavy-compile slot.**
-        //
-        // Deliberately in this switch rather than on the bounded orchestrator worker, even
-        // though a turn of the crank runs `ps` twice. That worker refuses while restart
-        // maintenance is active, and a release that can be refused by somebody else's rebuild is
-        // a lease that gets stranded — the exact deadlock this feature exists to remove. The
-        // probes are bounded at five seconds each and normally cost milliseconds.
-        case ("GET", "/v1/orchestrator/leases"):
-            guard orchestratorAuthed else {
-                return .error(403, "forbidden", "Reading the machine leases needs the "
-                              + "orchestrator token.")
-            }
-            return .json(["leases": Orchestrator.leaseRecords(),
-                          "at": Int(Date().timeIntervalSince1970)])
-
-        case ("POST", "/v1/orchestrator/leases"):
-            guard orchestratorAuthed else {
-                return .error(403, "forbidden", "Taking a machine lease needs the orchestrator "
-                              + "token.")
-            }
-            return answer(Orchestrator.acquireLease(orchestratorBody(request)))
-
-        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/leases/")
-            && path.hasSuffix("/renew"):
-            guard orchestratorAuthed else {
-                return .error(403, "forbidden", "Renewing a machine lease needs the "
-                              + "orchestrator token.")
-            }
-            return answer(Orchestrator.renewLease(
-                id: Self.leaseID(path, suffix: "/renew"), orchestratorBody(request)))
-
-        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/leases/")
-            && path.hasSuffix("/release"):
-            guard orchestratorAuthed else {
-                return .error(403, "forbidden", "Releasing a machine lease needs the "
-                              + "orchestrator token.")
-            }
-            return answer(Orchestrator.releaseLease(
-                id: Self.leaseID(path, suffix: "/release"), orchestratorBody(request)))
-
-        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/leases/")
-            && path.hasSuffix("/cancel"):
-            guard orchestratorAuthed else {
-                return .error(403, "forbidden", "Cancelling a queued lease request needs the "
-                              + "orchestrator token.")
-            }
-            return answer(Orchestrator.cancelLeaseRequest(
-                id: Self.leaseID(path, suffix: "/cancel"), orchestratorBody(request)))
 
         case ("GET", "/v1/orchestrator/waits"):
             return .json(["waits": Orchestrator.coordinationWaitRecords(),
@@ -4879,13 +4816,6 @@ final class RemoteServer: @unchecked Sendable {
                 "state": waitingOn.isEmpty ? "has_waiters" : "waiting_on_session",
                 "waitingOn": waitingOn, "waitedOnBy": waitedOnBy,
             ]
-        }
-        // The heavy-compile lease, as a quiet overlay on exactly the coordination-wait
-        // precedent. `SessionState.waiting` means *a person must answer*; a session holding or
-        // queued for the compile slot needs nobody, so its terminal state is untouched and this
-        // rides beside it. A client that does not know the key is unaffected.
-        if let lease = Orchestrator.leaseSession(forTerminal: session.id) {
-            out["lease"] = lease
         }
         Self.attachCoordinator(to: &out, liveSession: Self.coordinatorProjectionSession(
             identity: identity,
