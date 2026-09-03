@@ -51,7 +51,14 @@ main_lines=$(line_count Tests/main.swift)
 #                                              base that still had the lease; 254 of those lines
 #                                              had already gone by the time it merged, and the
 #                                              ceiling briefly carried that stale figure)
-orchestrator_ceiling=11678
+#   11,874  the handoff label became durable      (+196: 153 for the record, its codec, the
+#                                              rehydration, the suppress/unsuppress pass, the
+#                                              first-identity adoption and the reclaim, and 43
+#                                              for the correction that split "is it bound?" from
+#                                              "is a field missing?" and gave the projection an
+#                                              ambiguity refusal. A feature's code arriving;
+#                                              nothing left the file)
+orchestrator_ceiling=11874
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

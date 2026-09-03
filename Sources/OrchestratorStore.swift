@@ -260,6 +260,44 @@ enum OrchestratorStore {
         return out
     }
 
+    /// The handoff→tab binding, which is a row of its own beside `handoffs` rather than a field
+    /// on the envelope: the envelope's own comment says it carries no terminal id on purpose.
+    static func stored(_ label: Orchestrator.HandoffLabel) -> [String: Any] {
+        var identity: [String: Any] = ["terminal_id": label.identity.terminalID,
+                                       "assistant": label.identity.assistant.rawValue]
+        if let tty = label.identity.tty { identity["tty"] = tty }
+        if let pid = label.identity.pid { identity["pid"] = Int(pid) }
+        if let start = label.identity.processStart { identity["process_start"] = start }
+        if let conversation = label.identity.conversationID {
+            identity["conversation_id"] = conversation
+        }
+        return ["handoff_id": label.handoffID, "label": label.label, "identity": identity]
+    }
+
+    /// A label back off disk. Every field is required except the process tuple, which a record
+    /// written between the tab opening and the first complete inventory genuinely does not have —
+    /// and an empty label is dropped rather than resurrected, because a tab wearing an empty
+    /// name is worse than one wearing the name its conversation gave itself.
+    ///
+    /// `Int32(exactly:)` rather than `Int32.init`, which traps: this runs on `load()`, so a pid
+    /// too large to be one would stop the app starting rather than cost one label its process.
+    static func handoffLabel(from obj: [String: Any]) -> Orchestrator.HandoffLabel? {
+        guard let id = obj["handoff_id"] as? String, Orchestrator.isTaskID(id),
+              let label = obj["label"] as? String, !label.isEmpty, label.count <= 200,
+              let row = obj["identity"] as? [String: Any],
+              let terminal = row["terminal_id"] as? String, !terminal.isEmpty,
+              terminal.count <= 512,
+              let assistant = (row["assistant"] as? String).flatMap(Assistant.init(rawValue:))
+        else { return nil }
+        return Orchestrator.HandoffLabel(
+            handoffID: id, label: label,
+            identity: Orchestrator.RootAssignmentIdentity(
+                terminalID: terminal, assistant: assistant, tty: row["tty"] as? String,
+                pid: (row["pid"] as? Int).flatMap(Int32.init(exactly:)),
+                processStart: row["process_start"] as? Double,
+                conversationID: row["conversation_id"] as? String))
+    }
+
     static func stored(_ assignment: Orchestrator.RootAssignment) -> [String: Any] {
         var out: [String: Any] = [
             "id": assignment.id, "request_id": assignment.requestID,

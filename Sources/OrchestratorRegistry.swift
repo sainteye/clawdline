@@ -52,6 +52,12 @@ enum OrchestratorRegistry {
     /// pending. Suppress only that assignment's label so a reused terminal id is never renamed.
     private static var suppressedRootAssignmentLabels: Set<String> = []
 
+    /// The same shape for a handoff's durable label, by handoff id. Suppression rather than
+    /// deletion because this side of it is recomputed from a live reading on every beat: one
+    /// inventory that could not see a tab must cost that tab its name until the next reading,
+    /// never the durable record that gives the name back after a restart.
+    private static var suppressedHandoffLabels: Set<String> = []
+
     /// Terminal id → where that tab sits in the tree. Rebuilt beside ``titlesByTerminal``.
     private static var rolesByTerminal: [String: Orchestrator.Role] = [:]
 
@@ -166,6 +172,24 @@ enum OrchestratorRegistry {
 
         func removeAllSuppressedRootAssignmentLabels() {
             OrchestratorRegistry.suppressedRootAssignmentLabels = []
+        }
+
+        // MARK: Suppressed handoff labels
+
+        func isHandoffLabelSuppressed(_ id: String) -> Bool {
+            OrchestratorRegistry.suppressedHandoffLabels.contains(id)
+        }
+
+        func suppressHandoffLabel(_ id: String) {
+            OrchestratorRegistry.suppressedHandoffLabels.insert(id)
+        }
+
+        func unsuppressHandoffLabel(_ id: String) {
+            OrchestratorRegistry.suppressedHandoffLabels.remove(id)
+        }
+
+        func removeAllSuppressedHandoffLabels() {
+            OrchestratorRegistry.suppressedHandoffLabels = []
         }
     }
 
