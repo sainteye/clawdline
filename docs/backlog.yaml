@@ -1108,3 +1108,34 @@ items:
       and the next assertion written against `UsageLedger.shared` without owning its subject is
       the trigger.
     opened: 2026-09-03
+
+  - id: B-DEPLOY-CREDENTIALS-EXPIRE-IN-SILENCE
+    title: Both Pages deploy tokens are dead and nothing said so
+    problem: >-
+      Deploying either Cloudflare Pages site reads a token from the macOS Keychain. Two of the three
+      Clawdline entries answer `1000 Invalid API Token`, including
+      `dev.sainteye.clawdline.cloudflare-pages`, which is the only entry `scripts/deploy-marketing.py`
+      reads — so the marketing site cannot be deployed either, and nobody knew. The third entry,
+      `com.tsunamiworks.clawdline.cloudflare.deploy`, is active and never expires but is scoped to
+      zones: it can list `clawdline.com` and cannot touch Pages projects (`10000`) or create API
+      tokens (`9109`). **A credential's death is invisible until somebody needs it**, and the person
+      who needs it is mid-task when they find out.
+    evidence: >-
+      Measured 2026-09-03 against `/client/v4/user/tokens/verify`, with two controls to prove the
+      error was the token and not the call: a malformed string answers `6003/6111 Invalid format for
+      Authorization header` and no header at all answers `1001 Missing "Authorization" header`, while
+      the stored token answers `1000 Invalid API Token` — a well-formed credential the server
+      refuses. The consequence was already visible and misread: `app.clawdline.com` had been serving
+      a 2026-09-01 build for two and a half days, which was first explained as "no deploy script for
+      the console" before the credential was checked.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      The next deploy, which is the current failure mode. A cheap first answer is a check that hits
+      `/user/tokens/verify` for each entry a deploy path reads and says which are dead — runnable
+      from `test.sh`'s cheap half or from `scripts/deploy-status.py`, which already exists and
+      already reports on deployment state. There is also no console equivalent of
+      `scripts/deploy-marketing.py`; `docs/RUNBOOK-DEPLOY.md` §4 covers the first DNS cutover and not
+      the updates that follow it.
+    opened: 2026-09-03
