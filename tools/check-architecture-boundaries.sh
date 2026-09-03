@@ -53,6 +53,8 @@ main_lines=$(line_count Tests/main.swift)
 #                                              ceiling briefly carried that stale figure)
 orchestrator_ceiling=11678
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
+[ -n "$orchestrator_lines" ] \
+  || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."
 
@@ -86,6 +88,8 @@ fi
 
 remote_server_ceiling=6393
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
+[ -n "$remote_server_lines" ] \
+  || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
 [ "$remote_server_lines" -le "$remote_server_ceiling" ] \
   || architecture_guard_fail "Sources/RemoteServer.swift grew beyond its receipt ($remote_server_ceiling)"
 
@@ -249,12 +253,6 @@ compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
 #
 # So the ceilings are pinned to the file as well. A ceiling more than 200 lines above what it
 # guards is not a ceiling, it is a budget nobody approved.
-# `$(( ))` treats an unset or empty variable as 0 without complaint, so a future edit that moves
-# either line_count below this point turns both checks into a permanent red whose message points
-# at the ceiling while the broken thing is the count. Fail on the empty value instead, and say
-# which of the two it is.
-[ -n "$orchestrator_lines" ] && [ -n "$remote_server_lines" ] \
-  || architecture_guard_fail "line counts are empty (orchestrator='$orchestrator_lines' remote='$remote_server_lines'); that is a broken script, not a clean tree"
 orchestrator_slack=$(( orchestrator_ceiling - orchestrator_lines ))
 [ "$orchestrator_slack" -le 200 ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines under a ceiling of $orchestrator_ceiling; $orchestrator_slack lines of unearned headroom. Lower the ceiling to what the tree measures."
