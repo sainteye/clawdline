@@ -565,49 +565,6 @@ group("state hook: a reading is not an event") {
                                  sessions: sessions).count, 0)
 }
 
-group("a long turn keeps enough time to announce its finish") {
-    let session = hookTarget("LONG")
-    let epoch = Date(timeIntervalSince1970: 1_000)
-    func change(_ from: SessionState, _ to: SessionState) -> StateHook.Change {
-        StateHook.Change(session: session, from: from, to: to)
-    }
-
-    var launchedLate = StateHook.FinishTracker()
-    expect("a first reading is still not a finished turn",
-           launchedLate.update(states: [session.id: .working("Working (2m 5s • esc to interrupt)")],
-                               sessions: [session], changes: [], now: epoch,
-                               threshold: 120).count, 0)
-    expect("but its own clock survives launching halfway through",
-           launchedLate.update(states: [session.id: .idle], sessions: [session],
-                               changes: [change(.working("Working (2m 5s)"), .idle)],
-                               now: epoch.addingTimeInterval(1), threshold: 120).map(\.id),
-           [session.id])
-
-    var interrupted = StateHook.FinishTracker()
-    _ = interrupted.update(states: [session.id: .working("Generating… (1s)")],
-                           sessions: [session], changes: [change(.idle, .working("Generating… (1s)"))],
-                           now: epoch, threshold: 120)
-    _ = interrupted.update(states: [session.id: .waiting], sessions: [session],
-                           changes: [change(.working("Generating… (2m 3s)"), .waiting)],
-                           now: epoch.addingTimeInterval(123), threshold: 120)
-    _ = interrupted.update(states: [session.id: .working("Generating… (1s)")],
-                           sessions: [session], changes: [change(.waiting, .working("Generating… (1s)"))],
-                           now: epoch.addingTimeInterval(140), threshold: 120)
-    expect("a permission pause does not turn one long task into two short ones",
-           interrupted.update(states: [session.id: .idle], sessions: [session],
-                              changes: [change(.working("Generating… (8s)"), .idle)],
-                              now: epoch.addingTimeInterval(148), threshold: 120).map(\.id),
-           [session.id])
-
-    var short = StateHook.FinishTracker()
-    _ = short.update(states: [session.id: .working("Working (8s)")], sessions: [session],
-                     changes: [], now: epoch, threshold: 120)
-    expect("the two-minute preference remains a real threshold",
-           short.update(states: [session.id: .idle], sessions: [session],
-                        changes: [change(.working("Working (8s)"), .idle)],
-                        now: epoch.addingTimeInterval(2), threshold: 120).count, 0)
-}
-
 group("state hook: the words a hook reads") {
     // Spelled out rather than derived, because these are somebody else's API: renaming a case in
     // Swift must not quietly rename a string a shell script compares against.
@@ -708,24 +665,25 @@ group("a notification goes to whoever is actually blocked") {
     // Routed against `L.t` rather than against English, so the test says what it means — which
     // string this event picks — on a machine in any language.
     expect("a root that is waiting still says so",
-           StateHook.pushDecision(.waiting, role: nil, minutesLeft: nil),
+           StateHook.pushDecision(role: nil, minutesLeft: nil),
            .send(L.t.pushWaiting))
-    expect("and a root that finished still says so",
-           StateHook.pushDecision(.finished, role: nil, minutesLeft: nil),
-           .send(L.t.pushFinished))
 
-    // The whole point: twenty tabs finishing is one batch, not twenty notifications.
-    expect("a child that finished is silent",
-           StateHook.pushDecision(.finished, role: role(depth: 1), minutesLeft: nil), .silent)
-    expect("and so is a grandchild",
-           StateHook.pushDecision(.finished, role: role(depth: 2), minutesLeft: nil), .silent)
+    // There used to be a second event on this path, and the acceptance for removing it is a
+    // negative: no reachable code turns a stopped turn into a notification. A pure function
+    // cannot assert its own absence, so the file is read — and this goes red the moment anybody
+    // brings the clock back.
+    let hook = try! String(contentsOfFile: "Sources/StateHook.swift", encoding: .utf8)
+    check("nothing here times a turn any more",
+          !hook.contains("FinishTracker") && !hook.contains("finishThreshold"))
+    check("and no push is gated on a turn merely stopping",
+          !hook.contains("pushOnFinish") && !hook.contains("sendFinishedPush"))
 
     // The one below a root that is *more* urgent than a root, because nobody is on that tab.
     expect("a child that is waiting says which kind of session it is",
-           StateHook.pushDecision(.waiting, role: role(depth: 1), minutesLeft: nil),
+           StateHook.pushDecision(role: role(depth: 1), minutesLeft: nil),
            .send(L.t.pushChildWaiting(minutes: nil)))
     expect("and carries the clock when there is one",
-           StateHook.pushDecision(.waiting, role: role(depth: 1), minutesLeft: 12),
+           StateHook.pushDecision(role: role(depth: 1), minutesLeft: 12),
            .send(L.t.pushChildWaiting(minutes: 12)))
     check("which is a different sentence from a root's, not a politer one",
           L.t.pushChildWaiting(minutes: nil) != L.t.pushWaiting)
@@ -736,7 +694,7 @@ group("a notification goes to whoever is actually blocked") {
     expect("and absent rather than blank when there is none", en.pushChildWaiting(minutes: nil),
            "has a child session waiting")
     expect("a tab whose task is over has nobody behind it",
-           StateHook.pushDecision(.waiting, role: role(depth: 1, live: false), minutesLeft: 5),
+           StateHook.pushDecision(role: role(depth: 1, live: false), minutesLeft: 5),
            .silent)
 
     let now = Date(timeIntervalSince1970: 1_000_000)
@@ -778,6 +736,131 @@ group("a fan-out is one sentence, whatever it cost") {
            "parser")
     expect("and a path with nothing on the end falls back",
            StateHook.projectName(forDirectory: "/", fallback: "Clawdline"), "Clawdline")
+
+    // Which preference the announcement reads, checked in the source because the gate sits inside
+    // a private function two layers under the beat. A test that cannot reach the branch can still
+    // require the branch to name the right key, and this one goes red if it names the old one.
+    let orchestrator = try! String(contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8)
+    let announcement = orchestrator
+        .components(separatedBy: "private static func announce(_ batch: Batch, rootKey key: String)")
+        .last?.components(separatedBy: "let project = batch.projectDir").first ?? ""
+    check("the fan-out push is gated on push_on_fanout",
+          announcement.contains("Config.shared.pushOnFanout"))
+    check("and on nothing that names a turn stopping",
+          !announcement.contains("pushOnFinish"))
+
+    // The rename has to carry the answer somebody already gave. `push_on_finish` covered both the
+    // turn-stopped push and this one, so an off there was an off about fan-outs too.
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-fanout-config-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("config.json")
+
+    let fresh = Config(directoryForTesting: directory)
+    expect("both push preferences default on", fresh.pushOnDelivery && fresh.pushOnFanout, true)
+
+    try! Data("{\"push_on_finish\":false}".utf8).write(to: file)
+    let inherited = Config(directoryForTesting: directory)
+    expect("a config carrying only the old key keeps its answer about fan-outs",
+           inherited.pushOnFanout, false)
+    expect("and says nothing about the delivery push, which is a new question",
+           inherited.pushOnDelivery, true)
+
+    try! Data("{\"push_on_finish\":false,\"push_on_fanout\":true}".utf8).write(to: file)
+    expect("an explicit new answer outranks the old key",
+           Config(directoryForTesting: directory).pushOnFanout, true)
+
+    // What the app writes, with nothing on disk to merge with — which is the only way to ask
+    // "does it write this key" rather than "is this key in the file". `Config.save` deliberately
+    // passes through keys it does not know, so an old `push_on_finish` in somebody's file is left
+    // where it is; the migration reads it once and it is never a second source of truth.
+    try! FileManager.default.removeItem(at: file)
+    let rewriting = Config(directoryForTesting: directory)
+    rewriting.pushOnFanout = false
+    rewriting.save()
+    let written = (try? Data(contentsOf: file))
+        .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    expect("saving uses the new key", written?["push_on_fanout"] as? Bool, false)
+    expect("and the delivery preference beside it", written?["push_on_delivery"] as? Bool, true)
+    check("the app writes no push_on_finish of its own", written?["push_on_finish"] == nil)
+}
+
+group("a delivered turn is the finish a phone hears about") {
+    // The wording first, because it is pure: the session's name, the project, and a phrase that
+    // says the work is over and the next move is the reader's.
+    let plain = Orchestrator.deliveryMessage(project: "clawdline", label: "ship the parser",
+                                             summary: "Landed the resume path and its tests.",
+                                             smart: false)
+    expect("the session's own name is the title", plain.title, "ship the parser")
+    expect("the project and the event are the body", plain.body,
+           "clawdline " + L.t.pushDelivered)
+    expect("with no name to use, the project stands in for it",
+           Orchestrator.deliveryMessage(project: "clawdline", label: nil, summary: "x",
+                                        smart: false).title,
+           "clawdline")
+    check("and in English the phrase says a delivery, never that a turn stopped",
+          !English().pushDelivered.contains("run") && !English().pushDelivered.contains("turn"))
+
+    // `smart_notifications` spends nothing on this path: the sentence already exists and the
+    // assistant wrote it about its own delivery.
+    let smart = Orchestrator.deliveryMessage(project: "clawdline", label: nil,
+                                             summary: "Landed the resume path and its tests.",
+                                             smart: true)
+    expect("the receipt's own summary is carried verbatim", smart.body,
+           "clawdline · Landed the resume path and its tests.")
+    check("which is a different body from the generic one", smart.body != plain.body)
+
+    // And the event itself: one receipt, one push, however many times a root says it again.
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    let deliveryPreference = Config.shared.pushOnDelivery
+    let smartPreference = Config.shared.smartNotifications
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Config.shared.pushOnDelivery = deliveryPreference
+        Config.shared.smartNotifications = smartPreference
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    Config.shared.pushOnDelivery = true
+    Config.shared.smartNotifications = false
+    var pushed: [StateHook.PushMessage] = []
+    Orchestrator.sessionDeliveryPushForTesting = { pushed.append($0) }
+
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: "DELIVERY-TAB", assistant: .claude, tty: "/dev/ttys11", pid: 1100,
+        processStart: Date(timeIntervalSince1970: 600), conversationID: "delivery-conversation")
+    // How many pushes *this* report produced, rather than how many have happened so far. A running
+    // total makes every check after the first divergence red for somebody else's reason, and then
+    // one mutation cannot tell you which of them are load-bearing.
+    func pushes(reporting summary: String, while state: SessionState,
+                at seconds: TimeInterval) -> Int {
+        let already = pushed.count
+        _ = Orchestrator.reportSessionDelivery(identity: identity, terminalState: state,
+                                               summary: summary,
+                                               now: Date(timeIntervalSince1970: seconds))
+        return pushed.count - already
+    }
+
+    let delivered = "Landed the resume path and its tests."
+    expect("a first receipt buzzes once",
+           pushes(reporting: delivered, while: .working("wrapping up"), at: 700), 1)
+    expect("carrying the generic phrase, because smart notifications are off",
+           pushed.first?.body, "Clawdline " + L.t.pushDelivered)
+    expect("the same report again is the same delivery, and says nothing",
+           pushes(reporting: delivered, while: .working("still wrapping up"), at: 701), 0)
+    expect("a report from outside its own turn never reaches a phone",
+           pushes(reporting: "too late", while: .idle, at: 702), 0)
+    expect("a genuinely new receipt is a new event",
+           pushes(reporting: "Also fixed the stale snapshot.",
+                  while: .working("one more thing"), at: 703), 1)
+
+    Config.shared.pushOnDelivery = false
+    expect("and the switch is a switch",
+           pushes(reporting: "Wrote the migration down as well.",
+                  while: .working("and another"), at: 704), 0)
 }
 
 group("smart notifications describe the completed work, not its machinery") {

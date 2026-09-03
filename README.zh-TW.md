@@ -645,8 +645,9 @@ claude
 | `remote_tunnel` | `off` | `off` · `quick` · `named` |
 | `remote_tunnel_name` · `remote_hostname` | `""` | named tunnel 兩個都必填 |
 | `cloudflared_path` | `""` | 空的 ＝ 去套件管理器慣用的位置找 |
-| `push_on_finish` · `push_on_deploy` | `true` · `false` | 手機什麼時候該震 |
-| `smart_notifications` | `false` | 用 Haiku 把籠統的完成通知換成一句「剛完成了什麼」 |
+| `push_on_delivery` · `push_on_fanout` | `true` · `true` | session 回報交件了、一批派出去的任務全部回來了。`push_on_fanout` 會沿用已移除的 `push_on_finish` |
+| `push_on_deploy` | `false` | deploy 結束時通知，成功失敗都算 |
+| `smart_notifications` | `false` | 用 Haiku 把籠統的整批完成通知換成一句「剛完成了什麼」；交件通知不花額度，直接照抄 session 自己寫的那句 |
 | `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
 | `orchestrator_max_children` | `5` | 一個 session 同時最多派幾個子 session，1–10 |
 | `orchestrator_max_grandchildren` | — | 已經不再讀取。樹只有一層是程式碼的事實，不是這個檔案的；舊設定檔留著這個 key，沒有任何地方會看它 |

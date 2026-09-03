@@ -29,17 +29,40 @@ around it.
 | what happened | who is blocked on it | channel | what it says |
 | --- | --- | --- | --- |
 | root stops to ask | you | push | Unconditional, ahead of every preference. The one interruption in the app that earns itself. |
-| root ends a long turn | you | push | Only past `finishThreshold` (120s), and only with `push_on_finish` on. With `smart_notifications`, Haiku gets the bounded last request and answer and replaces the generic body with one sentence. |
+| root says it delivered | you | push | The root's own authenticated receipt, pushed once where it is created and never again for a repeat of the same report. Only with `push_on_delivery` on. With `smart_notifications`, the body carries the session's own summary verbatim — no model turn is spent on this one. |
 | child stops to ask | you, and only you | push | Louder than a root asking, and it carries the clock. |
 | child finishes (depth 1) | the root session | durable typed line, no push | The id, the state, the path to `result.json`, a stable notice id and the ACK route. |
 | a task below a task finishes (depth 2) | the task that dispatched it | durable typed line, no push | The same, plus how many of that task's own children are still running. Unreachable in a live tree, where a child dispatches nothing; kept for a stored record an older build left behind. |
-| the last of a fan-out ends | you | push | One notification for the whole subtree, with a count and how many failed. With `smart_notifications`, the task titles, states and authored summaries become one sentence instead. |
+| the last of a fan-out ends | you | push | One notification for the whole subtree, with a count and how many failed, and only with `push_on_fanout` on. With `smart_notifications`, the task titles, states and authored summaries become one sentence instead. |
 | an agent has timely content you are waiting for | you | push | The task-secret or root `/notify` route, only with `orchestrator_agent_notify` on. When it is off, `409 agent_notify_disabled` spends no allowance; the agent does not retry and keeps the content in `result.json`. |
 | a tab whose task is over | nobody | silent | A child's terminal lingers for `orchestrator_child_linger` (180s) after the work ends. |
 
-`StateHook.pushDecision(_:role:minutesLeft:)` is that table as one pure function. It takes the
-event, the role and a number of minutes, and answers with a sentence or with silence; it touches
-no terminal, no clock and no phone, so the whole policy is checkable in a test.
+`StateHook.pushDecision(role:minutesLeft:)` is the asking half of that table as one pure function.
+It takes the role and a number of minutes, and answers with a sentence or with silence; it touches
+no terminal, no clock and no phone, so the whole policy is checkable in a test. It used to take an
+event as well, because there was a second one — see below.
+
+`Orchestrator.deliveryMessage(project:label:summary:smart:)` and
+`Orchestrator.batchMessage(project:label:done:failed:)` are the other two rows' wording, pure for
+the same reason.
+
+## Why "a long turn finished" is not in that table any more
+
+There was a row here that fired on `working → idle` when the turn had run for at least 120s, under
+a switch labelled *Notify when a long turn finishes*. **The label named the work; the trigger named
+the terminal.** Answering one question ends a turn. So does finishing an intermediate step, or
+asking something that is not a permission prompt. Every one of those buzzed a phone to say the work
+was done, and somebody who turned the switch off was turning off a lie rather than declining news.
+
+What replaced it was already in the app and pushed nowhere: a root reports one authenticated
+delivery at the end of the turn it delivered in — `Orchestrator.reportSessionDelivery` — and the
+broker de-duplicates a repeat of the same report to `created: false`. So the push hangs off the
+receipt, on the branch that creates one, and *is delivered, awaiting your confirmation* is a
+sentence the reader can act on. The fan-out row kept its notification and got a switch of its own;
+the point of the split was to leave two switches that mean something rather than one that did not.
+
+The notch is unaffected and still dances when a long job ends. That surface is on the screen you
+are already looking at, so being told twice there costs nothing.
 
 ## Why a child that finishes says nothing to your phone
 
@@ -144,7 +167,6 @@ like the treatment is not a test.
 
 | | |
 | --- | --- |
-| `StateHook.finishThreshold` | 120s. How long a turn must run before finishing it is news. |
 | `WebPush.ttl` | 3600s. Longer than a lift, a tunnel or a meeting; shorter than the point at which the sentence stops being true. |
 | `WebPush.urgency` | `high`. Defensible only because it is rare. |
 | `WebPush.maxPayload` | 3993 octets. If a title and body crowd out the mark, the mark is dropped and the message still goes. |
@@ -153,14 +175,21 @@ like the treatment is not a test.
 | `SmartNotification.timeout` | 8s. The most a completion waits for Haiku before the ordinary wording wins. |
 | `SmartNotification.maxPending` | 4. Past the bounded queue, the ordinary notification is sent immediately. |
 
-## The five switches
+## The six switches
 
-`push_on_finish` covers the whole *it finished* class — root turns and fan-outs alike.
-`smart_notifications` changes only the wording of that class. It is off by default; when enabled,
-the last request and answer or the task result summaries are sent through a tool-free, low-effort
-`haiku` turn.
-It never sends a second notification: missing input, queue pressure, timeout and malformed output
-all choose the ordinary wording before the one push is handed off.
+`push_on_delivery` covers the delivery receipt: one session saying it is done and waiting for you.
+`push_on_fanout` covers the last task of a fan-out coming back. They were one key, `push_on_finish`,
+which also covered the turn-stopped push that no longer exists — so `push_on_fanout` inherits its
+value on the way in, because an answer of "do not buzz me when work ends" was given about this event
+too. `push_on_finish` is never written back.
+
+`smart_notifications` changes only the wording, and it means two different things on the two paths.
+On the fan-out push it sends the task titles, states and authored summaries through a tool-free,
+low-effort `haiku` turn; it never sends a second notification, and missing input, queue pressure,
+timeout and malformed output all choose the ordinary wording before the one push is handed off. On
+the delivery push it spends nothing at all: the session's own summary is carried verbatim, so there
+is no model turn, no timeout and no fallback to arrange.
+
 `push_on_deploy` covers the separate deploy-finished push, on success and failure.
 `orchestrator_notify_root` covers the typed line, in both directions.
 `orchestrator_agent_notify` covers content an agent proactively sends through either `/notify`

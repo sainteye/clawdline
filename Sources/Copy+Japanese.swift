@@ -165,7 +165,7 @@ struct Japanese: Copy {
     let pairingScanTitle = "これをスマートフォンで読み取ってください"
     let pushWaiting = "が答えを待っています"
     let pushTest = "これはテスト通知です。ひととおりつながっています。"
-    let pushFinished = "の長い実行が終わりました"
+    let pushDelivered = "が完了を報告しました。確認待ちです"
     let pushDeployOk = "のデプロイが成功しました"
     let pushDeployFail = "のデプロイが失敗しました"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -176,8 +176,10 @@ struct Japanese: Copy {
         let all = "の \(done) 件のタスクが終わりました"
         return failed == 0 ? all : "\(all)（\(failed) 件失敗）"
     }
-    let settingsPushFinish = "長い作業が終わったら知らせる"
-    let settingsPushFinishHint = "2 分を超えたものだけです。"
+    let settingsPushDelivery = "セッションが完了を報告したら知らせる"
+    let settingsPushDeliveryHint = "報告 1 件につき 1 回。同じ報告の繰り返しでは鳴りません。"
+    let settingsPushFanout = "まとめて出したタスクが全部終わったら知らせる"
+    let settingsPushFanoutHint = "ひとまとまりにつき 1 通、失敗した件数つきです。"
     let settingsSmartNotifications = "スマート通知"
     let settingsSmartNotificationsHint = "Haiku が完了した内容を一文で伝えます。失敗時は通常の通知に戻ります。"
     func pushCoalesced(count: Int) -> String { "\(count) 件の作業がまとめて完了" }

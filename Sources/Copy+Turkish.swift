@@ -167,7 +167,7 @@ struct Turkish: Copy {
     let pairingScanTitle = "Bunu telefonla tara"
     let pushWaiting = "bir yanıt bekliyor"
     let pushTest = "Bu bir deneme bildirimi. Her şey bağlı."
-    let pushFinished = "uzun bir işi bitirdi"
+    let pushDelivered = "teslim etti, seni bekliyor"
     let pushDeployOk = "deploy başarıyla bitti"
     let pushDeployFail = "deploy hata verdi"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -178,8 +178,10 @@ struct Turkish: Copy {
         let all = "\(done) görevi bitirdi"
         return failed == 0 ? all : "\(all), \(failed) başarısız"
     }
-    let settingsPushFinish = "Uzun bir iş bitince haber ver"
-    let settingsPushFinishHint = "Yalnızca iki dakikayı geçenler."
+    let settingsPushDelivery = "Bir oturum teslim ettiğini bildirince haber ver"
+    let settingsPushDeliveryHint = "Bildirim başına bir kez; aynısı yinelenirse ses çıkmaz."
+    let settingsPushFanout = "Toplu gönderilen işler bitince haber ver"
+    let settingsPushFanoutHint = "Tüm küme için tek bildirim, kaçının başarısız olduğuyla."
     let settingsSmartNotifications = "Akıllı bildirimler"
     let settingsSmartNotificationsHint = "Haiku biten işi tek cümlede anlatır. Başarısız olursa normal bildirim gönderilir."
     func pushCoalesced(count: Int) -> String { "\(count) iş birlikte bitti" }

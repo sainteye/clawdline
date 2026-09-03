@@ -196,67 +196,6 @@ enum StateHook {
     /// only one thread ever touches would be a lock explaining nothing.
     private static var previous: [String: SessionState] = [:]
 
-    /// The clock behind "a long turn finished". Kept as a value with a pure-ish update boundary
-    /// because the edge cases are the feature: launching halfway through work and pausing for a
-    /// permission must not erase time that belongs to the same turn.
-    private static var finishTracker = FinishTracker()
-
-    /// How long a turn has to have run before finishing it is news.
-    ///
-    /// Two minutes, because that is roughly the point where somebody stops watching. Under it you
-    /// were still looking at the screen — the notch already told you, and a second telling is the
-    /// same fact arriving late. Over it you had gone to do something else, which is the entire
-    /// case for a notification.
-    static let finishThreshold: TimeInterval = 120
-
-    /// Remember the beginning of each turn across the imperfect sequence of screen readings.
-    ///
-    /// A live line has its own elapsed counter. That is stronger evidence than the instant this
-    /// app happened to notice it, and lets a newly launched Clawdline recover a turn already in
-    /// progress. `waiting` deliberately keeps the clock: a permission prompt pauses one turn; it
-    /// does not begin a new one. `idle` ends it, and a vanished session is forgotten.
-    struct FinishTracker {
-        private var began: [String: Date] = [:]
-
-        mutating func update(states: [String: SessionState],
-                             sessions: [TargetSession],
-                             changes: [Change],
-                             now: Date,
-                             threshold: TimeInterval) -> [TargetSession] {
-            let live = Set(sessions.map(\.id))
-            began = began.filter { live.contains($0.key) }
-
-            // Read every current working state, not only transitions into one. The first reading
-            // after launch is intentionally not a transition, but it still carries a real clock.
-            for session in sessions {
-                guard case .working(let line) = states[session.id] else { continue }
-                let inferred = Activity.elapsed(in: line).map { now.addingTimeInterval(-$0) } ?? now
-                if let existing = began[session.id] {
-                    began[session.id] = min(existing, inferred)
-                } else {
-                    began[session.id] = inferred
-                }
-            }
-
-            var finished: [TargetSession] = []
-            for change in changes where change.to == .idle {
-                let start = began.removeValue(forKey: change.session.id)
-                // Usually this is working → idle. It may also be waiting → idle when somebody
-                // answers a permission and the remaining work finishes before the next capture;
-                // requiring one last observed spinner there recreates the same missed-event bug.
-                guard let start else { continue }
-                if now.timeIntervalSince(start) >= threshold { finished.append(change.session) }
-            }
-
-            // Clear a turn even when the previous reading was unknown and therefore produced no
-            // transition. Otherwise the next prompt in that terminal inherits an old clock.
-            for session in sessions where states[session.id] == .idle {
-                began.removeValue(forKey: session.id)
-            }
-            return finished
-        }
-    }
-
     /// Start listening.
     ///
     /// Seeded from the reading that already happened, and that is the difference between switching
@@ -267,10 +206,6 @@ enum StateHook {
     static func observe() {
         previous = SessionWatch.shared.states
         Orchestrator.reconcileSessionDeliveryStates(previous)
-        finishTracker = FinishTracker()
-        _ = finishTracker.update(states: previous,
-                                 sessions: SessionWatch.shared.targets,
-                                 changes: [], now: Date(), threshold: finishThreshold)
         SessionWatch.shared.observers[observerKey] = { react() }
     }
 
@@ -280,7 +215,6 @@ enum StateHook {
     static func stop() {
         SessionWatch.shared.observers.removeValue(forKey: observerKey)
         previous = [:]
-        finishTracker = FinishTracker()
     }
 
     /// What to call a directory on a lock screen: the registry's name for the project, or the
@@ -317,9 +251,6 @@ enum StateHook {
         let body: String
     }
 
-    /// The two things a session can do that a phone might hear about.
-    enum PushEvent { case waiting, finished }
-
     /// Whether a phone hears about it at all, and in what words.
     enum PushDecision: Equatable {
         case send(String)
@@ -333,26 +264,24 @@ enum StateHook {
     /// somebody is a program — so the rule is to tell whoever is actually blocked, in the channel
     /// they can act in, rather than to tell the phone about everything and let a person sort it out.
     ///
-    /// - **A child that finished is silent here.** Not because it does not matter, but because
-    ///   the same fact arrives once from the tree — see ``Orchestrator/sweepBatches()`` — instead
-    ///   of once per tab. Twenty tabs is the ceiling, and twenty was what a fan-out used to send.
+    /// **There used to be a second event here, and its removal is why this takes no event any
+    /// more.** `finished` fired on `working → idle` past two minutes, and a turn stopping is not a
+    /// task ending: answering one question, finishing a step and asking something that is not a
+    /// permission all ended a turn. Completion now has a receipt of its own — see
+    /// ``Orchestrator/reportSessionDelivery(identity:terminalState:summary:now:)`` — and the phone
+    /// hears about that instead. What is left on this path is the one state a screen reading can
+    /// prove: somebody has stopped to ask.
+    ///
     /// - **A child that is waiting is louder than a root that is waiting**, and carries a clock.
     ///   Nobody is looking at that tab at all, its timeout is counting down, and a person is the
     ///   only thing that can answer a permission prompt. The briefing warns about this failure
     ///   twice; before this it arrived looking like every other notification.
     /// - **A tab whose task is over says nothing.** It lingers for a few minutes after the work
     ///   ends, and during those minutes there is nobody behind it to be blocked.
-    static func pushDecision(_ event: PushEvent, role: Orchestrator.Role?,
-                             minutesLeft: Int?) -> PushDecision {
-        switch event {
-        case .waiting:
-            guard let role else { return .send(L.t.pushWaiting) }
-            guard role.live else { return .silent }
-            return .send(L.t.pushChildWaiting(minutes: minutesLeft))
-        case .finished:
-            guard role == nil else { return .silent }
-            return .send(L.t.pushFinished)
-        }
+    static func pushDecision(role: Orchestrator.Role?, minutesLeft: Int?) -> PushDecision {
+        guard let role else { return .send(L.t.pushWaiting) }
+        guard role.live else { return .silent }
+        return .send(L.t.pushChildWaiting(minutes: minutesLeft))
     }
 
     /// Whole minutes left before a child's task gives up on itself, or nothing when there is no
@@ -390,22 +319,6 @@ enum StateHook {
                      icon: RemoteIcon.projectPath(for: projectMark(for: session)))
     }
 
-    /// A completed turn may wait a few seconds for one better sentence. The transcript identity is
-    /// resolved on the state-reading thread, while the bounded file read and model turn happen on
-    /// `SmartNotification`'s queue. Its fallback sends this exact ordinary message once.
-    private static func sendFinishedPush(for session: TargetSession, event: String) {
-        let project = projectName(for: session)
-        let message = pushMessage(for: session, project: project, event: event)
-        let delivery = SmartNotification.Delivery(
-            title: message.title, project: project, fallbackBody: message.body,
-            url: "/#session=\(session.id)", tag: session.id,
-            icon: RemoteIcon.projectPath(for: projectMark(for: session)))
-        let record = Transcript.record(of: session)
-        SmartNotification.send(delivery) {
-            record.flatMap(SmartNotification.source(from:))
-        }
-    }
-
     private static func react() {
         let states = SessionWatch.shared.states
         let sessions = SessionWatch.shared.targets
@@ -420,36 +333,24 @@ enum StateHook {
             Orchestrator.noteSessionStateChange(terminalID: change.session.id, to: change.to)
         }
 
-        // A phone, buzzing, for the one state that is worth it.
+        // A phone, buzzing, for the one state a screen reading can prove.
         //
-        // **Only `waiting`.** "It finished" is the tempting one and it is the wrong one: it
-        // happens dozens of times a day, and not being told costs nothing — it will still be
-        // finished when you next look. A question with nobody answering it is the only state that
-        // costs something for every second it goes unnoticed, and a notification that fires for
-        // everything trains somebody who looks at none of them.
+        // **Only `waiting`, and this is the whole of what a state change is worth to a phone.**
+        // "It finished" used to be sent from here as well, off `working → idle` past two minutes,
+        // and it was the wrong event twice over: it happens dozens of times a day, and a turn
+        // stopping was never the same fact as the work being done. The event that is worth an
+        // interruption — a root saying it delivered — is a receipt rather than a screen reading,
+        // and it is pushed where that receipt is created. A question with nobody answering it is
+        // the only state that costs something for every second it goes unnoticed.
         //
         // Above the guard below on purpose: sending to a phone has nothing to do with whether
         // this machine has a command configured to run.
         let now = Date()
         for change in changes where change.to == .waiting {
             let role = Orchestrator.role(forTerminal: change.session.id)
-            if case .send(let event) = pushDecision(.waiting, role: role,
+            if case .send(let event) = pushDecision(role: role,
                                                     minutesLeft: minutesLeft(for: role, now: now)) {
                 sendPush(for: change.session, event: event)
-            }
-        }
-
-        // "It finished" — thresholded even when enabled. See `finishThreshold` for why the
-        // unthresholded version is the mistake. Tracking still runs while the preference is off,
-        // so turning it on cannot announce a turn that already ended.
-        let finished = finishTracker.update(states: states, sessions: sessions, changes: changes,
-                                            now: now, threshold: finishThreshold)
-        if Config.shared.pushOnFinish {
-            for session in finished {
-                let role = Orchestrator.role(forTerminal: session.id)
-                if case .send(let event) = pushDecision(.finished, role: role, minutesLeft: nil) {
-                    sendFinishedPush(for: session, event: event)
-                }
             }
         }
 

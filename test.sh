@@ -165,7 +165,29 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # missing?", gave the projection an ambiguity refusal, and made the forget guard able to go red.
 # **8383 -> 8422, read off the run, not added up.** The arithmetic agrees this time, which is worth
 # nothing on its own: it agreed on the base before this one too, while the base itself was wrong.
-expected_swift_receipt='8422 checks passed'
+# Putting the notification on the delivery receipt adds 23 checks and takes 7 away, counted from
+# the diff and confirmed by two mutation runs that made every one of the 23 go red. The 23: 12 in a
+# new group for the delivery push — its pure wording with and without `smart_notifications`, one
+# push for a new receipt, none for a repeat, none for a report outside its turn, and the preference
+# gate — 9 in the fan-out group for which key that push reads and for `push_on_fanout` inheriting
+# `push_on_finish`, and 2 in the audience group for the removed machinery being absent from
+# `Sources/StateHook.swift`. The 7: the three `.finished` decisions that had a case to test, and the
+# four in `a long turn keeps enough time to announce its finish`, whose `FinishTracker` is gone with
+# the event it timed. Net +16.
+#
+# **Both halves found `a4ed9edb`'s missing re-seal on their own.** The classifier line measured
+# `main` at 8,101 against a seal of 8,093; this one reached the same eight from the other end, by
+# reading that the four new `check(` calls sit inside a loop over English and Traditional Chinese.
+# Two roads to one number is worth more than one number asserted twice — and neither road is what
+# this line is set from.
+#
+# **8,438 is what this tree's own run reported**, and the number reached this line from that run
+# rather than from 8,422 + 16. The two agree, which is worth stating only because agreeing is not
+# what makes it right: the same arithmetic agreed with the seal below it on a base that was eight
+# short, and the guard that compares these two records cannot tell a pair that agrees from a pair
+# that is correct. This one was re-sealed under `CLAWDLINE_RESEAL=1`, which says out loud that the
+# run existed to produce the count, and the receipt check at the end of that run is what settled it.
+expected_swift_receipt='8438 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

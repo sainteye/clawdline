@@ -171,7 +171,7 @@ struct Hindi: Copy {
     let pairingScanTitle = "इसे फ़ोन से scan करें"
     let pushWaiting = "जवाब का इंतज़ार कर रहा है"
     let pushTest = "यह एक test notification है। सब कुछ जुड़ा हुआ है।"
-    let pushFinished = "ने एक लंबा काम पूरा किया"
+    let pushDelivered = "ने काम सौंप दिया, अब आपकी बारी"
     let pushDeployOk = "का deploy सफल रहा"
     let pushDeployFail = "का deploy फ़ेल हो गया"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -182,8 +182,10 @@ struct Hindi: Copy {
         let all = "के \(done) काम पूरे हुए"
         return failed == 0 ? all : "\(all), \(failed) फ़ेल"
     }
-    let settingsPushFinish = "लंबा काम पूरा होने पर बताएँ"
-    let settingsPushFinishHint = "सिर्फ़ दो मिनट से लंबे कामों के लिए।"
+    let settingsPushDelivery = "कोई session काम सौंपने की ख़बर दे तो बताएँ"
+    let settingsPushDeliveryHint = "हर ख़बर पर एक बार; वही दोबारा आए तो चुप।"
+    let settingsPushFanout = "एक साथ भेजे गए काम ख़त्म होने पर बताएँ"
+    let settingsPushFanoutHint = "पूरे बैच के लिए एक ही सूचना, कितने फ़ेल हुए उसके साथ।"
     let settingsSmartNotifications = "स्मार्ट सूचनाएँ"
     let settingsSmartNotificationsHint = "Haiku पूरे हुए काम को एक वाक्य में बताएगा। विफल होने पर सामान्य सूचना भेजी जाएगी।"
     func pushCoalesced(count: Int) -> String { "\(count) काम एक साथ पूरे हुए" }

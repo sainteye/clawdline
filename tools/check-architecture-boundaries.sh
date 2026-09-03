@@ -58,7 +58,14 @@ main_lines=$(line_count Tests/main.swift)
 #                                              "is a field missing?" and gave the projection an
 #                                              ambiguity refusal. A feature's code arriving;
 #                                              nothing left the file)
-orchestrator_ceiling=11874
+#   11,925  the delivery push moved in            (+51)
+#
+# The last of those is a feature landing rather than a relocation: the notification that used to
+# fire when a turn stopped now fires on a root's own delivery receipt, and the push lives where
+# that receipt is created. Of the 51 lines, 12 are the sender, 9 the pure wording beside
+# `batchMessage`, 4 the test seam and its reset, and the rest are the doc comments that say why
+# `smart_notifications` means something narrower on this path than on any other.
+orchestrator_ceiling=11925
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

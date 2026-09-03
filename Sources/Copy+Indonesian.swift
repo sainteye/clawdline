@@ -167,7 +167,7 @@ struct Indonesian: Copy {
     let pairingScanTitle = "Pindai ini dengan ponsel"
     let pushWaiting = "menunggu jawaban"
     let pushTest = "Ini notifikasi percobaan. Semuanya sudah tersambung."
-    let pushFinished = "selesai setelah berjalan lama"
+    let pushDelivered = "melapor sudah menyerahkan hasil dan menunggu kamu"
     let pushDeployOk = "berhasil di-deploy"
     let pushDeployFail = "gagal di-deploy"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -178,8 +178,10 @@ struct Indonesian: Copy {
         let all = "menyelesaikan \(done) tugas"
         return failed == 0 ? all : "\(all), \(failed) gagal"
     }
-    let settingsPushFinish = "Beri tahu kalau pekerjaan panjang selesai"
-    let settingsPushFinishHint = "Hanya yang lebih dari dua menit."
+    let settingsPushDelivery = "Beri tahu kalau sebuah sesi melapor sudah menyerahkan hasil"
+    let settingsPushDeliveryHint = "Sekali per laporan; laporan yang sama diulang tidak berbunyi."
+    let settingsPushFanout = "Beri tahu kalau sekumpulan tugas selesai"
+    let settingsPushFanoutHint = "Satu notifikasi untuk seluruh kumpulan, dengan jumlah yang gagal."
     let settingsSmartNotifications = "Notifikasi pintar"
     let settingsSmartNotificationsHint = "Haiku merangkum pekerjaan yang selesai dalam satu kalimat. Jika gagal, notifikasi biasa tetap dikirim."
     func pushCoalesced(count: Int) -> String { "\(count) pekerjaan selesai bersamaan" }

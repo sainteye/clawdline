@@ -170,7 +170,7 @@ struct Portuguese: Copy {
     let pairingScanTitle = "Escaneie isto com o celular"
     let pushWaiting = "está esperando uma resposta"
     let pushTest = "Notificação de teste. Está tudo ligado."
-    let pushFinished = "terminou uma tarefa longa"
+    let pushDelivered = "entregou e está esperando por você"
     let pushDeployOk = "o deploy deu certo"
     let pushDeployFail = "o deploy falhou"
     func pushChildWaiting(minutes: Int?) -> String {
@@ -181,8 +181,10 @@ struct Portuguese: Copy {
         let all = done == 1 ? "terminou 1 tarefa" : "terminou \(done) tarefas"
         return failed == 0 ? all : "\(all), \(failed) falharam"
     }
-    let settingsPushFinish = "Avisar quando uma tarefa longa terminar"
-    let settingsPushFinishHint = "Só as que passam de dois minutos."
+    let settingsPushDelivery = "Avisar quando uma sessão informar que entregou"
+    let settingsPushDeliveryHint = "Uma vez por aviso; repetir o mesmo não toca."
+    let settingsPushFanout = "Avisar quando um lote de tarefas terminar"
+    let settingsPushFanoutHint = "Uma notificação para o lote inteiro, com quantas falharam."
     let settingsSmartNotifications = "Notificações inteligentes"
     let settingsSmartNotificationsHint = "O Haiku resume em uma frase o trabalho concluído. Se falhar, a notificação normal é enviada."
     func pushCoalesced(count: Int) -> String { "\(count) trabalhos terminados juntos" }
