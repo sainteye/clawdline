@@ -29,9 +29,15 @@ as often as you like; installing twice prints `already installed` and changes no
 It will not take a setting that belongs to somebody else — that is the same class of mistake the
 hook exists to prevent.
 
-`core.hooksPath` is repository-wide, so linked worktrees get the hook too. That is harmless: in an
-isolated worktree the claims check finds no task whose `projectDir` is that worktree and passes
-silently, and the merge check below is worth having everywhere.
+**`core.hooksPath` is repository-wide.** A linked worktree shares the repository's config, so
+running the installer from inside a Clawdline task worktree installs the hook for the main checkout
+and for every other worktree at the same moment. Install it deliberately, from the checkout itself,
+rather than as a side effect of a task. Once installed, worktrees are covered too, which is
+harmless: in an isolated worktree the claims check finds no task whose `projectDir` is that
+worktree and passes silently, and the merge check below is worth having everywhere.
+
+The hook reads `git rev-parse --git-dir` rather than assuming `.git`, so the merge check looks at
+the right `MERGE_HEAD` in a linked worktree.
 
 ## What the guard refuses
 
