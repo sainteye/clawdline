@@ -346,6 +346,19 @@ additions beside a hundred deletions. Counting only the `+` side is a query abou
 *contains*, not about what it *changed*, and the two differ by exactly the amount of moved code. The
 derivation and the measurement agree at 8101 — but only after the deletions were counted too.
 
+**A three-way merge can make both sides wrong and agree, and then say nothing.** The two faces above
+— records agreeing and both stale, records disagreeing and caught — both start with somebody editing
+one document and not the other. There is a third, and it needs no editor at all. On 2026-09-03 the
+governance row for ordered runners stood at 29 in the merge base, 30 on `main`, and 30 on the branch;
+the tree actually held 31. Git takes 30 without a conflict marker, because both sides moved the same
+way from the base — **and 30 is wrong on both.** The earlier instances each had one correct side to
+recover; this one has none, and produces no signal at the moment it is created.
+
+What caught it was the guard counting the tree. That is the whole distinction this page keeps
+returning to: five of those six rows compare a record against something counted here and know they
+are right when they fail, and the sixth compares two records and can only know they differ. **A merge
+is the cheapest way to make two records agree, and it agrees them without reading either.**
+
 **Whether a text scan works depends on whether its token has a habitat in prose.** The `-j` scan
 failed at sixteen false positives in seventeen because `-j` lives comfortably in three kinds of
 non-code text here: comments (`-j 8 24 s`, a measurement table), string assertions in the very
@@ -447,11 +460,16 @@ check still fails on a wrong seal with the door open, so landing is not weakened
 ./test.sh` reaches the guard through the ordinary child process, which is the path people will use
 rather than the direct invocation the first proofs used.
 
-**Not shown:** that a re-sealing cycle now costs one full suite instead of two. That needs somebody
-whose change moves the check count to run the whole loop, and at the time of writing nobody has —
-the line that expected to be first had already paid for two rounds before the door landed. The claim
-is that the cycle disappears; the evidence is that the door opens. **Those are different sentences,
-and the second one is the one that has been tested.**
+**Since measured, and the claim was wrong.** Somebody ran the whole loop on both trees and counted:
+two suite runs before, two suite runs after, two hand-edited numbers each time. **The door saves no
+run.** What it changes is step one: adding an assertion and running the guard used to exit 0 —
+green, on a tree whose seal now describes a different tree — and now exits 1 with a message naming
+the next command. So the door's value is not the arithmetic this page claimed for it. It is that the
+silent state becomes loud, which is the same thing every other entry here is about, and the run-count
+saving was a guess made by someone who had not walked the loop.
+
+Worth keeping as its own small lesson: **the reason a mechanism is worth having and the benefit its
+author predicted can come apart, and only walking the whole path tells you which one you have.**
 
 ### Two checks this page specifies but the tree does not yet carry
 
