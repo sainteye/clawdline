@@ -636,11 +636,18 @@ function publishedReads(socket) {
     return socket.sent.filter(function (frame) { return frame.type === "publish"; });
 }
 
-function makeReadingCloud() {
+/** A real `WebSocket.close()` fires `onclose` as a later task, never inside the call. */
+class DeferredCloseWebSocket extends FakeWebSocket {
+    close() {
+        this.readyState = 3;
+        queueMicrotask(() => { if (this.onclose) this.onclose(); });
+    }
+}
+function makeReadingCloud(socketClass = FakeWebSocket) {
     return new CloudClient({
         relayURL: "https://relay.example", deviceToken: "jwt", devicePrivateKey: signingKey,
         masterKey: masterKey, senderKeys: { "device-vector-01": senderKey },
-        WebSocket: FakeWebSocket, allowWrites: true, nextSequence: function () {
+        WebSocket: socketClass, allowWrites: true, nextSequence: function () {
             return Promise.resolve(readTimers.length + 900);
         },
         setTimeout: function (fn) { readTimers.push(fn); return readTimers.length; },
@@ -698,10 +705,14 @@ await until(function () { return publishedReads(readingSocket).length === 3; },
 const infoRequests = await Promise.all(publishedReads(readingSocket).slice(1)
     .map(async (frame) => JSON.parse(new TextDecoder().decode(
         await openEnvelope(frame.envelope, masterKey, senderKey)))));
-assert.deepEqual(infoRequests, [
-    { type: "info", session: "session-01", parts: "full" },
-    { type: "info", session: "session-01", parts: "summary" }
-], "full and summary Info are two requests, told apart by the field the direct path uses");
+// Compared as a set. Both requests are sealed concurrently and either may reach the socket
+// first; asserting an order here is asserting which WebCrypto call finished, which is not a
+// contract and does not always hold.
+assert.deepEqual(infoRequests.map((request) => request.parts).sort(), ["full", "summary"],
+    "full and summary Info are two requests, told apart by the field the direct path uses");
+assert.deepEqual(infoRequests.map((request) => [request.type, request.session]),
+    [["info", "session-01"], ["info", "session-01"]],
+    "and both are the info read for the session that was asked about");
 await answerRead(readingCloud, readingSocket,
     { read: "info.full", status: 200, body: { info: { session: { id: "session-01" } } } });
 assert.deepEqual((await infoAnswer).info.session, { id: "session-01" },
@@ -722,23 +733,53 @@ await assert.rejects(refusedInfo, function (error) {
     return error.code === "not_found" && error.message === "No session named that";
 }, "a refused read arrives as the Mac's own typed code, not as an empty view");
 
-const timersBeforeUnanswered = readTimers.length;
 const unansweredRead = readingCloud.transcript({ machine: "mac-01", session: "slow" });
-await until(function () { return readTimers.length > timersBeforeUnanswered; },
-    "the unanswered read to arm its clock");
+await until(function () { return publishedReads(readingSocket).length === 5; },
+    "the unanswered read to leave");
 readTimers.at(-1)();
 await assert.rejects(unansweredRead, function (error) {
     return error.code === "cloud_read_timeout";
 }, "a read nothing ever answers ends in a code rather than in a skeleton");
 
-const timersBeforeOrphan = readTimers.length;
+// The request has to be **on the wire** before the socket is stopped, and the count it waits for
+// has to be exact. Waiting for "more than before" left `_send` to throw `offline` on a socket
+// closed out from under a request that had never left — the right code for the wrong reason —
+// and this check stayed green with `_failAllReads` deleted from both `stop()` and `onclose`,
+// which is precisely the leak it exists to catch.
 const orphaned = readingCloud.info({ machine: "mac-01", session: "session-01" });
-await until(function () { return readTimers.length > timersBeforeOrphan; },
-    "the orphaned read to arm its clock");
+await until(function () { return publishedReads(readingSocket).length === 6; },
+    "the orphaned read to reach the wire before its socket is stopped");
 readingCloud.stop();
 await assert.rejects(orphaned, function (error) { return error.code === "offline"; },
     "stopping the socket fails the reads that were waiting on it");
 assert.equal(readingCloud.readWaiters.size, 0, "no read waiter outlives its transport");
+
+// And a socket that goes on its own, which is the ordinary case rather than the deliberate one.
+// `stop()` and `onclose` are two paths and each has to sweep: with the sweep left only in
+// `stop()`, every check above still passed while a dropped connection stranded its reads.
+const dropCloud = makeReadingCloud();
+const dropSocket = await becomeReady(dropCloud);
+const dropped = dropCloud.transcript({ machine: "mac-01", session: "session-01" });
+await until(function () { return publishedReads(dropSocket).length === 1; },
+    "the read to leave before the relay drops the socket");
+dropSocket.close();
+await assert.rejects(dropped, function (error) { return error.code === "offline"; },
+    "a socket the relay closes fails the reads that were waiting on it");
+assert.equal(dropCloud.readWaiters.size, 0, "a dropped connection leaves no read waiter behind");
+
+// And `stop()` sweeps for itself rather than leaning on the close it has just asked for. A real
+// socket's `onclose` is a later task, so `refresh()` — stop then start — would otherwise carry
+// live read waiters across the gap and settle them against the wrong connection.
+const deferredCloud = makeReadingCloud(DeferredCloseWebSocket);
+const deferredSocket = await becomeReady(deferredCloud);
+const acrossRefresh = deferredCloud.transcript({ machine: "mac-01", session: "session-01" });
+await until(function () { return publishedReads(deferredSocket).length === 1; },
+    "the read to leave before the transport is stopped");
+deferredCloud.stop();
+assert.equal(deferredCloud.readWaiters.size, 0,
+    "stop() settles its reads before returning, without waiting for onclose to be scheduled");
+await assert.rejects(acrossRefresh, function (error) { return error.code === "offline"; },
+    "and the read it settled says the connection went, not that the Mac refused");
 
 const strictCloud = makeReadingCloud();
 const strictSocket = await becomeReady(strictCloud);
