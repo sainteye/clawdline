@@ -320,6 +320,42 @@ world.
 repaired by its context: a reader who runs `git show` on it gets an error and then does not know
 which half of the message to trust. Paste a SHA from the output of the command that produced it.
 
+### Two checks this page specifies but the tree does not yet carry
+
+Both were built and proved on 2026-09-03 and are waiting for `test.sh` and
+`tools/check-architecture-boundaries.sh` to be free of another session's staged work. They are
+written down here because a verified check that exists only in a scratch directory is a check
+nobody has.
+
+**The ceiling must be settled after the lock, anchored on the block.** `b8dfd0ff` moved the
+compile-ceiling block above `clawdline_acquire_suite_lock`, and an eight-way 104-file typecheck
+then ran outside the lock for weeks. The check compares the line of the marked block against the
+line of the lock's *call site* — not its definition, and not a comment mentioning its name, both of
+which a looser anchor matched, putting the lock 343 lines early and opening a false-negative window
+that spanned the whole function-definition region. Proved four ways against commit `a4ed9edb`,
+which still carries the defect: red as it stands; green with the block moved below the call; **red
+with only the `export` line deleted**, which is the shape the repair actually takes and which an
+anchor on that line would have called green; and exit 2, not 0, when the block is renamed away. The
+third case is why the anchor is the block: the repair removes the coupling rather than setting it
+to one, so a check looking for `export CLAWDLINE_COMPILE_JOBS` passes afterwards for the reason
+that its subject no longer exists anywhere.
+
+**A red run should say how much never ran, and name it.** The receipt check that would notice a
+shrunken total sits below the `exit "$status"` that a red suite takes, so it is unreachable exactly
+when it would help. The addition reads the attempted total from the failure line, compares it to
+this tree's seal, and — only when the total came out *short*, so a tree with added tests never
+misreports — names the cloud suites that never announced themselves. It changes no exit code: the
+run was already red, and a check should not alter the conclusion of the thing it reports on.
+
+Three of its own bugs are worth keeping, because each failed toward silence. Its first pattern
+missed the trailing colon on `N of M checks failed:` and matched nothing, and matching nothing
+prints nothing, which reads exactly like nothing was lost. Its first message named a cause — *a
+group aborted* — for a shortfall that had been produced by a run started outside its tree; a wrong
+explanation that reads as complete stops the next reader from looking further, which is worse than
+no explanation. And the decision to print the whole suite list rather than name the missing ones
+rested on a pattern of mine that matched one suite in twelve and was read as *the log does not
+carry this*, when the log carries it in a format I had not looked at.
+
 **The size of the shortfall says *where* the run stopped — until it doesn't.** On 2026-09-03 six
 red runs across three trees and two different seals all came out exactly 502 checks short: 7716
 against a seal of 8218, and 7591 against a seal of 8093. The arithmetic is the four suites the
