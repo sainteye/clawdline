@@ -337,6 +337,19 @@ additions beside a hundred deletions. Counting only the `+` side is a query abou
 *contains*, not about what it *changed*, and the two differ by exactly the amount of moved code. The
 derivation and the measurement agree at 8101 — but only after the deletions were counted too.
 
+**Whether a text scan works depends on whether its token has a habitat in prose.** The `-j` scan
+failed at sixteen false positives in seventeen because `-j` lives comfortably in three kinds of
+non-code text here: comments (`-j 8 24 s`, a measurement table), string assertions in the very
+guard that checks the ceiling is passed through (`flags=[-j 8]`), and prose describing the flag. A
+scan for a position instead — the first substantive line after `= Task {` — came in at zero false
+positives in six, because a position has no counterpart in prose to be confused with.
+
+The finer version, which the Orca line reached from a different guard: rank the token by where it
+can legitimately appear. An environment variable name (`CODEX_THREAD_ID`) has almost no habitat in
+prose and scans cleanly. A route path (`completion/ack`) has a large one — it appears whenever
+anyone writes about the route. Jargon has more. A bare number has the most. **The mistake is not
+scanning text; it is scanning a token without asking where else that token is allowed to live.**
+
 **A right answer from a wrong method is the one variant with no natural detector.** Everything else
 on this page was caught by somebody: a second reader, a contradicting measurement, an output that
 did not look like the world it claimed to describe. A wrong answer runs into the next person's spot
