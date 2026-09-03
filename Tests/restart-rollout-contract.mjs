@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { cpus, tmpdir } from 'node:os';
 
 const script = readFileSync(new URL('../build.sh', import.meta.url), 'utf8');
 
@@ -85,10 +85,19 @@ assert.equal(inspect(broken).postBeforeReplacement, false);
 //
 // The block and the expansion are lifted from `build.sh` rather than retyped, so this asserts what
 // the script will actually do rather than what it is supposed to say.
-const jobsBlockStart = script.indexOf('compile_jobs=()');
-assert.notEqual(jobsBlockStart, -1, 'build.sh no longer builds a compile_jobs array; update this check');
+// Lifted by the markers rather than by hunting for the next `fi`. The old extraction sliced from
+// `compile_jobs=()` to the first `\nfi\n`, which worked only while every branch of the block ended
+// on its own line; the first single-line `if … ; fi` inside it silently swallowed the `swiftc`
+// invocation below and the harness died on an unbound `BIN`. A block that has to be run on its own
+// needs boundaries that say where it ends.
+const CEIL_OPEN = '# >>> clawdline compile ceiling >>>';
+const CEIL_CLOSE = '# <<< clawdline compile ceiling <<<';
+const jobsBlockStart = script.indexOf(CEIL_OPEN);
+assert.notEqual(jobsBlockStart, -1, 'build.sh no longer carries the compile-ceiling markers; update this check');
+assert.equal(script.split('\n').filter((l) => l === CEIL_OPEN).length, 1,
+  'build.sh must carry exactly one compile-ceiling opening marker');
 const jobsBlock = script.slice(jobsBlockStart,
-  jobsBlockStart + script.slice(jobsBlockStart).indexOf('\nfi\n') + 4);
+  script.indexOf(CEIL_CLOSE) + CEIL_CLOSE.length);
 const jobsExpansion = script.split('\n').find(
   (line) => line.includes('compile_jobs[@]') && !line.includes('compile_jobs=('));
 assert.ok(jobsExpansion, 'build.sh no longer expands compile_jobs into the compiler invocation');
@@ -108,15 +117,42 @@ function expandsCleanly(block, expansion) {
 const noBudget = expandsCleanly(jobsBlock, jobsExpansion);
 assert.equal(noBudget.status, 0,
   `build.sh must reach swiftc with no parallelism budget granted: ${noBudget.stderr}`);
-assert.match(noBudget.stdout, /\[swiftc\] \[-o\] \[bin\]/,
-  `an unset budget must add no flag at all: ${noBudget.stdout}`);
+// An unset budget used to add no flag at all, which on this machine meant one job — measured, not
+// assumed. It now derives `min(8, hw.ncpu)`: 103 sources with `-O` took 169 s at one job and 37 s
+// at eight, at 0.40 GiB per frontend and 1.34 GiB for all of them together. See
+// `docs/suite-runtime.md`.
+const derivedCeiling = Math.min(8, cpus().length);
+assert.match(noBudget.stdout, new RegExp(`\\[swiftc\\] \\[-j\\] \\[${derivedCeiling}\\] \\[-o\\] \\[bin\\]`),
+  `an unset budget must derive a ceiling and pass it: ${noBudget.stdout}`);
 
-// Mutation proof, and it is the mutation that actually happened: put the unguarded expansion back
-// and this must go red while `bash -n` above stays green.
-const unguarded = expandsCleanly(jobsBlock, '"${compile_jobs[@]}"');
+// **The mutation proof below needs an empty array, and the block no longer produces one.** That is
+// worth saying rather than quietly dropping: this guard exists because `./build.sh` once died with
+// `compile_jobs[@]: unbound variable` before `swiftc` ran, and it only ever caught that because the
+// default happened to leave the array empty. Resting a guard on an incidental property of the
+// default is how it stops guarding — so the array is now emptied on purpose, and what is pinned is
+// the expansion form itself, which is the thing that was wrong.
+function expandsWithEmptyArray(expansion) {
+  const harness = [
+    'set -euo pipefail',
+    'compile_jobs=()',
+    `printf ' [%s]' swiftc ${expansion.trim().replace(/\\$/, '')} -o bin`,
+    'printf "\\n"',
+  ].join('\n');
+  return spawnSync('/bin/bash', ['-c', harness], { encoding: 'utf8' });
+}
+
+const guardedEmpty = expandsWithEmptyArray(jobsExpansion);
+assert.equal(guardedEmpty.status, 0,
+  `the guarded expansion must survive an empty array under set -u: ${guardedEmpty.stderr}`);
+assert.match(guardedEmpty.stdout, /\[swiftc\] \[-o\] \[bin\]/,
+  `and must add nothing when there is nothing to add: ${guardedEmpty.stdout}`);
+
+// The mutation that actually happened: put the unguarded expansion back and this must go red while
+// `bash -n` above stays green.
+const unguarded = expandsWithEmptyArray('"${compile_jobs[@]}"');
 assert.notEqual(unguarded.status, 0,
   'the unguarded expansion must fail here, or this check is not testing anything');
 assert.match(unguarded.stderr, /unbound variable/,
   `the mutation must fail for the reason this guards: ${unguarded.stderr}`);
 
-console.log('restart rollout contract: POST/ready/replace/complete, abort, exact-404 bootstrap, and a compile line that runs with no budget');
+console.log('restart rollout contract: POST/ready/replace/complete, abort, exact-404 bootstrap, and a compile line that derives its own ceiling');

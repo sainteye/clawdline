@@ -756,6 +756,35 @@ try {
     // that separates "the derivation works" from "the derivation is dead code".
     check("and the fake sysctl is really the one being read",
           cores("seven", "echo 7").all.includes("flags=[-j 7]"));
+
+    // **The same rule lives in `build.sh`, and this is what keeps the two copies one rule.**
+    // Not a textual comparison: the blocks print different sentences and always will, so what is
+    // compared is what they answer. Both are lifted and driven against the same five stand-in
+    // `sysctl` readings, and a build.sh that capped at twelve, or floored at zero, or stopped
+    // reading `sysctl` at all, disagrees here on the reading that separates them.
+    const buildLines = buildScript.split("\n");
+    const bOpen = buildLines.indexOf(CEIL_OPEN);
+    const bClose = buildLines.indexOf(CEIL_CLOSE);
+    check("build.sh carries the compile-ceiling markers too, once each",
+          bOpen >= 0 && bClose > bOpen
+            && buildLines.filter((l) => l === CEIL_OPEN).length === 1
+            && buildLines.filter((l) => l === CEIL_CLOSE).length === 1);
+    if (bOpen >= 0 && bClose > bOpen) {
+        const buildCeiling = buildLines.slice(bOpen, bClose + 1).join("\n");
+        const buildJobs = shell("s12b.sh", buildCeiling,
+                                'echo "flags=[${compile_jobs[@]+${compile_jobs[@]}}]"');
+        const bCores = (name, body) => run(buildJobs, fakeSysctlDir(`b-${name}`, body));
+        for (const [name, body, want] of [["many", "echo 64", 8], ["one", "echo 1", 1],
+                                          ["garbage", "echo many", 1], ["broken", "exit 1", 1],
+                                          ["seven", "echo 7", 7]]) {
+            check(`build.sh's ceiling answers ${want} where test.sh's does, for ${name}`,
+                  bCores(name, body).all.includes(`flags=[-j ${want}]`));
+        }
+        check("and an explicit ceiling reaches build.sh's compiler unchanged",
+              run(buildJobs, { CLAWDLINE_SUITE_JOBS: "3" }).all.includes("flags=[-j 3]"));
+        check("while one that is not a positive whole number is refused there too",
+              run(buildJobs, { CLAWDLINE_SUITE_JOBS: "00" }).code === 2);
+    }
     check("a ceiling from the environment reaches the compiler, and the run says where it came from",
           r12b.code === 0 && /flags=\[-j 1\]/.test(r12b.all) && /from CLAWDLINE_SUITE_JOBS/.test(r12b.all));
     check("a ceiling that is not a number is refused rather than quietly ignored",

@@ -32,15 +32,11 @@ CLAWDLINE_LEASE_LAST_COMPILING="never"
 CLAWDLINE_LEASE_OWNER_STARTED=""
 CLAWDLINE_LEASE_BEATING=1
 CLAWDLINE_SUITE_JOBS="${CLAWDLINE_SUITE_JOBS:-}"
-# Where the ceiling came from, said out loud below so a slow build is explained rather than
-# mysterious. There is one source now. While the broker lease existed there were two, and a grant
-# could hand a number down; the line that printed it took its answer from whichever branch of the
-# acquire ran, which is why it went on saying "unset" for a ceiling the environment had set.
-if [ -n "$CLAWDLINE_SUITE_JOBS" ]; then
-  CLAWDLINE_SUITE_JOBS_SOURCE="CLAWDLINE_SUITE_JOBS"
-else
-  CLAWDLINE_SUITE_JOBS_SOURCE="unset"
-fi
+# Where the ceiling came from is decided by the marked compile-ceiling block further down, beside
+# the invocation it feeds, because that block is the only thing that knows what it settled on.
+# Deciding it up here was how this line came to say "unset" for a ceiling the environment had set:
+# it took its answer from whichever branch of the acquire ran rather than from the ceiling itself.
+CLAWDLINE_SUITE_JOBS_SOURCE="not settled yet"
 CLAWDLINE_LEASE_WAIT_SECONDS="${CLAWDLINE_LEASE_WAIT_SECONDS:-1800}"
 # The same number `test.sh` uses. A reader prefers the deadline the holder recorded to its own, so
 # a record that does not carry one leaves every reader guessing on this run's behalf.
@@ -411,16 +407,54 @@ mkdir -p "$(dirname "$BIN")" "$RES"
 
 clawdline_lease_acquire || exit 1
 
-# Say which ceiling was used and where the number came from, so a slow build is explained rather
-# than mysterious. `-j` is what decides how many `swift-frontend` processes exist at once, which
-# is the quantity that reboots this Mac.
+# >>> clawdline compile ceiling >>>
+# How many compiler jobs this build may have, and where that number came from.
+#
+# **The same rule `test.sh` uses, deliberately duplicated rather than shared.** Both marked blocks
+# are lifted and driven against the same fake `sysctl` readings by `Tests/test-sh-lock.mjs`, which
+# asserts they answer with the same numbers — a behavioural identity, which survives the two
+# scripts printing different sentences, where a textual one would not. Sourcing one file from both
+# was the other option and it was rejected: the guard machinery here runs a lifted block from a
+# temporary directory, where a relative `.` would find nothing, and a block that cannot be run on
+# its own is a block nothing checks.
+#
+# **This compile is not `test.sh`'s and has its own readings.** 103 production sources with `-O`,
+# which is where the LLVM pass pipeline runs — the phase that reached 46 GiB on the old
+# `CloudAccountTests`. Measured 2026-09-03 on a detached worktree, machine lock held, footprint
+# from `proc_pid_rusage(RUSAGE_INFO_V4)`:
+#
+#     -j  1   169 s    one frontend's peak 0.430 GiB    most alive together 0.445 GiB
+#     -j  4    54 s                        0.408                            0.837
+#     -j  8    37 s                        0.400                            1.336
+#     -j 14    33 s                        0.410                            2.064
+#
+# Every frontend here is about half of what one costs in `test.sh`, and that is not a property of
+# `-O`: the expensive files are the test suites, and this compile has none of them. Fourteen buys
+# four seconds over eight and spends every core to do it.
 compile_jobs=()
-if [ -n "$CLAWDLINE_SUITE_JOBS" ]; then
-  compile_jobs=(-j "$CLAWDLINE_SUITE_JOBS")
-  echo "→ compiling with -j $CLAWDLINE_SUITE_JOBS, from $CLAWDLINE_SUITE_JOBS_SOURCE"
-else
-  echo "→ compiling with swiftc's own default parallelism ($CLAWDLINE_SUITE_JOBS_SOURCE)"
-fi
+case "${CLAWDLINE_SUITE_JOBS:-}" in
+  "")
+    # `sysctl` failing, or answering something that is not a count, reads as one job rather than as
+    # no ceiling. The floor is the safe direction and it is also what this line did before.
+    clawdline_compile_jobs=$(sysctl -n hw.ncpu 2>/dev/null) || clawdline_compile_jobs=""
+    case "$clawdline_compile_jobs" in
+      "" | *[!0-9]* | 0*) clawdline_compile_jobs=1 ;;
+    esac
+    if [ "$clawdline_compile_jobs" -gt 8 ]; then clawdline_compile_jobs=8; fi
+    CLAWDLINE_SUITE_JOBS_SOURCE="min(8, hw.ncpu); CLAWDLINE_SUITE_JOBS unset" ;;
+  # `0*` and not just `0`: `00` is all digits, so it would slip past `*[!0-9]*` and reach `swiftc`
+  # as `-j 00`. The contract is "a positive whole number", and `00` and `007` are not that however
+  # they behave downstream.
+  *[!0-9]* | 0*)
+    echo "build.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
+    exit 2 ;;
+  *)
+    clawdline_compile_jobs=$CLAWDLINE_SUITE_JOBS
+    CLAWDLINE_SUITE_JOBS_SOURCE="CLAWDLINE_SUITE_JOBS" ;;
+esac
+compile_jobs=(-j "$clawdline_compile_jobs")
+echo "→ compiling with -j $clawdline_compile_jobs, from $CLAWDLINE_SUITE_JOBS_SOURCE"
+# <<< clawdline compile ceiling <<<
 
 swiftc \
   -swift-version 5 \
