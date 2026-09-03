@@ -204,7 +204,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # wrote down was that focused count added to the seal *its own* base carried, and that base is not
 # this one: `main` has moved to 8,549 since. The number below is what the merged tree's full run
 # reported, measured rather than computed. 8,549 + 34 = 8,583.
-expected_swift_receipt='8583 checks passed'
+expected_swift_receipt='8585 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
