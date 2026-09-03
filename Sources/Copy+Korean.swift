@@ -46,6 +46,8 @@ struct Korean: Copy {
     let imageExpired = "이미지가 만료되었습니다"
     let imagePreview = "이미지 미리보기"
     let imageClose = "미리보기 닫기"
+    let imageTooLarge = "너무 커서 보낼 수 없습니다 ({mb} MB)"
+    let imageUnavailable = "이미지가 도착하지 않았습니다"
     func outputSize(_ pt: Int) -> String { "출력 글자 크기 \(pt)pt — ⌘J로 보기" }
     func foldedTools(_ count: Int) -> String { "\(count)단계" }
     func outputOrder(newestFirst: Bool) -> String {

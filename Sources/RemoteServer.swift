@@ -5426,6 +5426,11 @@ extension RemoteServer {
                 path = "/v1/sessions/\(segment)/skills"
             case .git:
                 path = "/v1/sessions/\(segment)/git"
+            case .image(_, let id):
+                // The same route the direct path's `<img>` asks for, and the same encoding a URL
+                // would have carried, so an id that is not an opaque artifact name meets the
+                // store's own refusal rather than a second spelling of it.
+                path = "/v1/artifacts/images/\(CloudAppBridge.channelSegment(id))"
             }
         }
 

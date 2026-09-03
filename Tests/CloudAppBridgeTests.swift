@@ -848,6 +848,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "concrete-reconnect": return try await runCloudAppBridgeConcreteReconnectTests()
     case "aba": return try await runCloudAppBridgeABATests()
     case "reads": return try await runCloudAppBridgeReadTests()
+    case "images": return try await runCloudAppBridgeImageTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
         let lifecycle = try await runCloudAppBridgeLifecycleTests()
@@ -857,8 +858,9 @@ func runCloudAppBridgeTests() async throws -> Int {
         let concreteReconnect = try await runCloudAppBridgeConcreteReconnectTests()
         let aba = try await runCloudAppBridgeABATests()
         let reads = try await runCloudAppBridgeReadTests()
+        let images = try await runCloudAppBridgeImageTests()
         return base + lifecycle + transitiveLifecycle + publicationLifecycle
-            + reconnect + concreteReconnect + aba + reads
+            + reconnect + concreteReconnect + aba + reads + images
     }
 }
 
@@ -1248,6 +1250,217 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         try require(!RemoteServer.isTranscriptReading(path) && !RemoteServer.isSlowReading(path),
                     "\(path) is not a lane read here, because it is not one on the direct path")
     }
+
+    return checks
+}
+
+/// A picture crossing the transport, and one that could not.
+///
+/// Row 19 of the Cloud enumeration, and the only one whose failure was in the transport itself:
+/// `transcript-images.js` builds `<img src="/v1/artifacts/images/:id">`, which is same-origin and
+/// relative, and on this path the origin is a hosted console with no such route. So every image in
+/// every transcript was a broken-image icon — the worst answer available, because it looks like
+/// the reader's own fault.
+///
+/// What is proved here, in order: the bound is arithmetic rather than a preference; the real route
+/// answers a cloud image read with the stored bytes; those bytes reach the session's own channel
+/// as base64 under the picture's own name; and a picture over the bound is published as a typed
+/// refusal carrying both numbers, with the bytes left at home.
+private func runCloudAppBridgeImageTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    // The bound, which is the only genuinely new decision in this feature. The relay caps one
+    // envelope's ciphertext at 16 MiB on every tier; AES-GCM adds a tag, base64 costs four bytes
+    // for three, and the JSON around it is measured rather than guessed. Everything else follows.
+    let ceiling = CloudAppBridge.cloudImageMaxEncodedBytes
+    try require(ceiling == 12_582_132,
+                "the image ceiling is derived from the relay's envelope cap, not chosen")
+    let sealed = ((ceiling + 2) / 3) * 4 + CloudAppBridge.cloudImageAnswerOverhead
+        + CloudEnvelope.tagByteCount
+    try require(sealed <= CloudAppBridge.cloudEnvelopeCiphertextLimit,
+                "a picture at the ceiling still seals inside one envelope")
+    let storeCeiling = SessionImageArtifactStore.productionPolicy.maxEncodedBytes
+    try require(storeCeiling - ceiling == 780,
+                "and it sits 780 bytes under the store's own, so all but the last kilobyte of "
+                + "what this Mac will ever hold does cross")
+
+    // The Mac side with nothing faked: a real artifact in the real store, read through the real
+    // route by the Request the closed enum builds.
+    let directory = isolatedTestSessionImagesDirectory
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let source = directory.appendingPathComponent("cloud-image-source.png")
+    guard let fixture = exactPixelPNG(width: 6, height: 4, rgba: (200, 40, 90, 255)) else {
+        throw CloudAppBridgeTestFailure(description: "the PNG fixture encodes")
+    }
+    try fixture.write(to: source)
+    guard let stored = try SessionImageArtifactStore().importPaths([source.path]).first else {
+        throw CloudAppBridgeTestFailure(description: "the PNG fixture is stored as an artifact")
+    }
+    let served = await RemoteServer.shared.routeVerifiedCloudRead(
+        .image(session: "plain", id: stored.artifact.id), sender: "viewer")
+    try require(served.status == 200, "a stored artifact answers a verified cloud image read")
+    try require(served.headers["Content-Type"] == "image/png",
+                "the route names the media type, which is the only place the bridge learns it")
+    try require(served.body.starts(with: [0x89, 0x50, 0x4e, 0x47])
+                    && served.body.count == stored.artifact.byteCount,
+                "the answer is the stored PNG itself and all of it")
+    let absent = await RemoteServer.shared.routeVerifiedCloudRead(
+        .image(session: "plain", id: "99999999-8888-4777-8666-555555555555"), sender: "viewer")
+    try require(absent.status == 404,
+                "an id nothing stored meets the same typed refusal the direct path meets")
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x69, count: 32))
+    let transport = CloudAppBridgeTestTransport()
+    let router = CloudAppBridgeTestRouter()
+    let gate = CloudAppBridgeTestGate()
+    let results = CloudAppBridgeTestResults()
+    let bridge = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "Mac / 台灣", deviceID: "machine-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey
+        ),
+        sequencing: CloudAppBridgeTestSequence(),
+        allowCloudCommands: { gate.get() },
+        commandRouter: router,
+        nowMilliseconds: { 1_787_740_000_000 },
+        commandResult: { results.append($0) }
+    )
+    try await bridge.start()
+    defer { CloudAppBridge.cloudImageMaxEncodedBytesForTesting = nil }
+
+    func opened(_ envelope: CloudEnvelope) throws -> [String: Any] {
+        let clear = try envelope.open(masterSecret: masterSecret, publicKeyForSender: {
+            $0 == "machine-device" ? signingKey.publicKeyRaw : nil
+        })
+        return (try JSONSerialization.jsonObject(with: clear)) as? [String: Any] ?? [:]
+    }
+
+    // A picture crossing. The write switch is off throughout, exactly as it is for the other two
+    // reads: looking at a picture somebody already sent types into nothing.
+    try require(gate.get() == false, "the write switch is off for every image read below")
+    let first = "11111111-2222-4333-8444-555555555555"
+    let second = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: fixture, contentType: "image/png"))
+    transport.yield(#"{"type":"image","session":"plain","id":"\#(first)"}"#, sequence: 40)
+    try await waitForCloudAppBridge("the picture to be published") {
+        !transport.envelopes().isEmpty
+    }
+    let imageReads = await router.recordedReads()
+    try require(imageReads.first?.read == .image(session: "plain", id: first),
+                "the image read reaches the broker naming the artifact the transcript named")
+    let carried = transport.envelopes()[0]
+    try require(carried.ch == "t/Mac%20%2F%20%E5%8F%B0%E7%81%A3/plain",
+                "a picture comes back on the session's own channel, which the viewer is on")
+    let payload = try opened(carried)
+    try require(payload["read"] as? String == "image." + first,
+                "the answer is named for this picture, so a transcript's images cannot cross-settle")
+    try require(payload["status"] as? Int == 200, "a picture that crossed says 200")
+    let body = payload["body"] as? [String: Any]
+    try require(body?["media_type"] as? String == "image/png",
+                "the media type crosses in a payload field, an envelope having no headers")
+    try require(body?["byte_count"] as? Int == fixture.count,
+                "the count crosses beside the bytes so a truncated answer is visible as one")
+    try require(Data(base64Encoded: (body?["data"] as? String) ?? "") == fixture,
+                "and the bytes themselves are the picture, base64 and unchanged")
+
+    // Two pictures asked for together come back under two names. A transcript holds up to six per
+    // message across two hundred messages, and they are answered in whatever order the disk gives.
+    transport.yield(#"{"type":"image","session":"plain","id":"\#(second)"}"#, sequence: 41)
+    try await waitForCloudAppBridge("the second picture") { transport.envelopes().count == 2 }
+    let secondPayload = try opened(transport.envelopes()[1])
+    try require(secondPayload["read"] as? String == "image." + second,
+                "the second picture answers under its own name rather than settling the first")
+
+    // The refusal, which is the half that matters more: whatever the bound is, a picture that
+    // cannot cross says so. The ceiling is forced here because the real one sits 780 bytes under
+    // the largest artifact this Mac stores — the right number, and an impossible fixture.
+    CloudAppBridge.cloudImageMaxEncodedBytesForTesting = fixture.count - 1
+    transport.yield(#"{"type":"image","session":"plain","id":"\#(first)"}"#, sequence: 42)
+    try await waitForCloudAppBridge("the refusal to be published") {
+        transport.envelopes().count == 3
+    }
+    let refusal = try opened(transport.envelopes()[2])
+    try require(refusal["status"] as? Int == 413, "an oversized picture is refused, not dropped")
+    let error = refusal["error"] as? [String: Any]
+    try require(error?["code"] as? String == "image_too_large_for_cloud",
+                "in a code of its own, so the tile can name the size rather than say 'expired'")
+    try require(error?["byte_count"] as? Int == fixture.count
+                    && error?["limit_bytes"] as? Int == fixture.count - 1,
+                "and carrying both numbers, so the page writes its own sentence")
+    try require(!refusal.keys.contains("body"),
+                "the bytes it refused to carry are not carried anyway")
+    try require(results.all().contains(where: { $0.code == "image_too_large_for_cloud" }),
+                "the refusal is observable at the bridge as well as on the channel")
+    CloudAppBridge.cloudImageMaxEncodedBytesForTesting = nil
+
+    // A route that answered with something that is not a PNG never becomes a blob URL.
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data("<svg/>".utf8), contentType: "image/svg+xml"))
+    transport.yield(#"{"type":"image","session":"plain","id":"\#(second)"}"#, sequence: 43)
+    try await waitForCloudAppBridge("the wrong media type to be refused") {
+        transport.envelopes().count == 4
+    }
+    let wrongType = try opened(transport.envelopes()[3])
+    try require(wrongType["status"] as? Int == 415
+                    && (wrongType["error"] as? [String: Any])?["code"] as? String
+                        == "image_media_type_unsupported",
+                "only a PNG crosses, because only a PNG is what this store writes")
+
+    // The route's own refusal is forwarded rather than restated, so an expired picture reads the
+    // same word on both transports.
+    await router.answerReadsWith(CloudReadResult(
+        status: 410,
+        body: Data(#"{"error":{"code":"artifact_expired","message":"gone"}}"#.utf8),
+        contentType: "application/json; charset=utf-8"))
+    transport.yield(#"{"type":"image","session":"plain","id":"\#(first)"}"#, sequence: 44)
+    try await waitForCloudAppBridge("the expired picture") { transport.envelopes().count == 5 }
+    let expired = try opened(transport.envelopes()[4])
+    try require(expired["status"] as? Int == 410
+                    && (expired["error"] as? [String: Any])?["code"] as? String
+                        == "artifact_expired",
+                "expiry crosses as the route's own code, which the tile already has words for")
+
+    // Strictness, in the shape the other reads already have.
+    let before = await router.recordedReads().count
+    let malformed = [
+        #"{"type":"image","session":"plain"}"#,
+        #"{"type":"image","session":"plain","id":""}"#,
+        #"{"type":"image","session":"","id":"\#(first)"}"#,
+        #"{"type":"image","session":"plain","id":"\#(first)","extra":1}"#,
+        #"{"type":"image","session":"plain","id":7}"#,
+    ]
+    var sequence: UInt64 = 50
+    for line in malformed {
+        transport.yield(line, sequence: sequence)
+        sequence += 1
+    }
+    try await waitForCloudAppBridge("every malformed image read to be refused") {
+        results.all().filter { $0.code == "malformed_read" }.count == malformed.count
+    }
+    let after = await router.recordedReads().count
+    try require(after == before, "no malformed image read reaches the broker")
+    try require(transport.envelopes().count == 5,
+                "and none of them publishes an answer, having none to publish")
+
+    await bridge.stop()
+
+    // What a viewer may reach, built from the closed enum rather than sent.
+    let request = RemoteServer.Request(
+        verifiedCloudRead: .image(session: "plain", id: "a/../b"), sender: "viewer")
+    try require(request.method == "GET" && request.query.isEmpty,
+                "an image read is the bare artifact route, as the direct path asks for it")
+    try require(request.path == "/v1/artifacts/images/a%2F..%2Fb",
+                "an id that is not an opaque name cannot become a path segment of its own")
+    try require(!RemoteServer.isTranscriptReading(request.path)
+                    && !RemoteServer.isSlowReading(request.path),
+                "a picture queues where the direct path's own <img> queues, not in a read lane")
 
     return checks
 }

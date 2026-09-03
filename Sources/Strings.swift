@@ -55,6 +55,13 @@ protocol Copy {
     var imageExpired: String { get }
     var imagePreview: String { get }
     var imageClose: String { get }
+    /// Shown on a tile whose picture is over the size one cloud envelope can carry. `{mb}` is
+    /// the image's own size in mebibytes, to one decimal place, so the reader can see that the
+    /// picture is what is too big rather than their connection being at fault.
+    var imageTooLarge: String { get }
+    /// Shown on a tile whose picture did not cross for any other reason — the connection dropped,
+    /// the Mac did not answer, or this device may read but not ask.
+    var imageUnavailable: String { get }
     func outputSize(_ pt: Int) -> String
     func foldedTools(_ count: Int) -> String
     func outputOrder(newestFirst: Bool) -> String

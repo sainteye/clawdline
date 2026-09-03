@@ -69,6 +69,47 @@ const AGENT_LIMIT = 200;
  */
 const SHELL_BYTES = 64 * 1024;
 
+/**
+ * How many pictures may be in the air at once.
+ *
+ * A transcript holds up to six images per message across a two-hundred-message window, and the
+ * renderer connects every fresh tile in one pass — so without a cap, opening a session with forty
+ * screenshots in it asks for forty envelopes at once. Each one is the PNG plus a third for base64
+ * plus the frame around it, so forty one-megabyte pictures is something like a hundred and sixty
+ * megabytes of strings alive together in a phone browser, for a screenful of pictures of which
+ * two are on screen.
+ *
+ * Three is the number a browser would have chosen for us on the direct path: same-origin `<img>`
+ * requests queue behind a per-host connection limit of six, and half of that is the right side of
+ * it to be on when each request is a megabyte rather than a header. Nothing is refused here and
+ * nothing needs saying in the interface — the fourth picture waits, it does not fail.
+ */
+const IMAGE_READS_IN_FLIGHT = 3;
+
+/**
+ * The bytes of one picture, checked before anything renders them.
+ *
+ * `media_type` is pinned rather than trusted: the store only ever writes PNG, and a blob URL
+ * built from whatever a payload claimed would be a second, quieter place to decide what a
+ * document is. `byte_count` is checked against the bytes it counts because base64 that decodes
+ * to the wrong length is a truncated answer, and a truncated PNG renders as the broken-image
+ * icon this whole path exists to remove.
+ */
+function imageAnswerBytes(id, body) {
+    if (!body || typeof body !== "object" || Array.isArray(body) || body.id !== id ||
+        body.media_type !== "image/png" || typeof body.data !== "string" || !body.data) {
+        throw cloudError("bad_payload", "the image answer is not this image");
+    }
+    var bytes;
+    try { bytes = base64Bytes(body.data, "image data"); }
+    catch (e) { throw cloudError("bad_payload", "the image answer is not base64"); }
+    if (!bytes.length ||
+        (Number.isSafeInteger(body.byte_count) && body.byte_count !== bytes.length)) {
+        throw cloudError("bad_payload", "the image answer does not carry the bytes it counts");
+    }
+    return { id: id, media_type: body.media_type, bytes: bytes };
+}
+
 function cloudError(code, message) {
     var error = new Error(message || code);
     error.code = code;
@@ -155,6 +196,9 @@ export class CloudClient {
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
         this.readWaiters = new Map();
+        this.imageReadsInFlight = options.imageReadsInFlight || IMAGE_READS_IN_FLIGHT;
+        this.imageReadQueue = [];
+        this.imageReadsRunning = 0;
         this.readTimeoutMs = options.readTimeoutMs || READ_TIMEOUT_MS;
         this.setTimeout = options.setTimeout || globalThis.setTimeout.bind(globalThis);
         this.clearTimeout = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
@@ -412,6 +456,66 @@ export class CloudClient {
     /** Transcript-derived facts only, the same subset the direct path asks for by query. */
     infoSummary(value) {
         return this._read(value, "info", { parts: "summary" }, "info.summary");
+    }
+
+    /**
+     * One picture out of a transcript, as bytes.
+     *
+     * **Why the bytes and not a URL.** On the direct path a tile is `<img
+     * src="/v1/artifacts/images/:id">` — relative and same-origin, which was the right decision
+     * and is still the right decision there. Here the origin is the hosted console, which serves
+     * no such route and never will: the Mac is not reachable from it, and a console that could
+     * fetch the picture would be a console that had it in the clear. So there is no shorter thing
+     * to send than the picture, and no ticket to redeem it with that would not itself be an
+     * envelope. What is left to decide is only how big a picture may be, which the Mac decides
+     * from the relay's per-envelope cap and answers `image_too_large_for_cloud` above.
+     *
+     * The answer arrives named `image.<id>`, not `image`: a transcript's pictures are asked for
+     * together and come back on one channel in whatever order the disk gives them.
+     */
+    image(value, id) {
+        var identity = sessionIdentity(value);
+        var artifact = String(id == null ? "" : id);
+        if (!artifact) return Promise.reject(new TypeError("image() needs an artifact id"));
+        var self = this;
+        return this._whenImageSlotFree(function () {
+            return self._read(identity, "image", { id: artifact }, "image." + artifact)
+                .then(function (body) { return imageAnswerBytes(artifact, body); });
+        });
+    }
+
+    /**
+     * Pace the picture reads without refusing any of them.
+     *
+     * A queued read has not been published, so it holds no envelope sequence and no waiter; when
+     * the socket drops, the reads in flight are failed by `_failAllReads` and the ones still here
+     * fail the moment they try to publish. Either way each caller is rejected with a code rather
+     * than left holding a promise.
+     */
+    _whenImageSlotFree(start) {
+        var self = this;
+        return new Promise(function (resolve, reject) {
+            self.imageReadQueue.push(function () {
+                var settled;
+                try { settled = Promise.resolve(start()); }
+                catch (error) { settled = Promise.reject(error); }
+                settled.then(resolve, reject);
+                return settled.catch(function () { });
+            });
+            self._startQueuedImageReads();
+        });
+    }
+
+    _startQueuedImageReads() {
+        var self = this;
+        while (this.imageReadsRunning < this.imageReadsInFlight && this.imageReadQueue.length) {
+            var next = this.imageReadQueue.shift();
+            this.imageReadsRunning += 1;
+            next().then(function () {
+                self.imageReadsRunning -= 1;
+                self._startQueuedImageReads();
+            });
+        }
     }
 
     /**

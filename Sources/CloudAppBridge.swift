@@ -48,6 +48,15 @@ enum CloudHeadlessRead: Equatable, Sendable {
     case shell(session: String, shell: String, bytes: Int)
     case skills(session: String)
     case git(session: String)
+    /// One image already referenced by a message in that session's transcript.
+    ///
+    /// The reference — id, media type, byte count, pixel size, expiry — has always crossed,
+    /// because it travels inside the transcript body. What could not cross was the picture: the
+    /// browser turns that reference into `<img src="/v1/artifacts/images/:id">`, a *same-origin
+    /// relative* URL, and on this path the origin is the hosted console rather than this Mac. The
+    /// console serves no such route, so every image in every transcript was a broken-image icon —
+    /// the one failure in this transport that looked like the reader's own fault.
+    case image(session: String, id: String)
 
     /// The session this read is about — also the channel its answer is published on.
     var session: String {
@@ -58,6 +67,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .shell(let session, _, _): return session
         case .skills(let session): return session
         case .git(let session): return session
+        case .image(let session, _): return session
         }
     }
 
@@ -74,6 +84,11 @@ enum CloudHeadlessRead: Equatable, Sendable {
     /// first settled by the second's conversation, with nothing in either answer able to tell
     /// them apart. `skills` and `git` need no id: there is one of each per session, exactly as
     /// there is one transcript.
+    ///
+    /// An image's own id is part of its word for the same reason: a transcript holds many
+    /// pictures, they are asked for together, and they come back on one channel in whatever
+    /// order the disk gives them. A bare `"image"` would let the second answer settle the
+    /// first tile.
     var name: String {
         switch self {
         case .transcript: return "transcript"
@@ -82,6 +97,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .shell(_, let shell, _): return "shell:" + shell
         case .skills: return "skills"
         case .git: return "git"
+        case .image(_, let id): return "image." + id
         }
     }
 }
@@ -97,6 +113,19 @@ struct CloudCommandResult: Equatable, Sendable {
 struct CloudReadResult: Equatable, Sendable {
     let status: Int
     let body: Data
+    /// What those bytes are, when they are not JSON.
+    ///
+    /// Only the image read needs it: its route answers with the PNG itself and says so in a
+    /// header, and the bridge has to name the media type in a payload field because an envelope
+    /// has no headers. Every other read forwards JSON and leaves this nil rather than restating
+    /// `application/json` in a second place.
+    let contentType: String?
+
+    init(status: Int, body: Data, contentType: String? = nil) {
+        self.status = status
+        self.body = body
+        self.contentType = contentType
+    }
 }
 
 /// Both cloud and HTTP commands enter this door. The production implementation below converts a
@@ -129,7 +158,8 @@ struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable 
 
     func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
         let response = await server.routeVerifiedCloudRead(read, sender: sender)
-        return CloudReadResult(status: response.status, body: response.body)
+        return CloudReadResult(status: response.status, body: response.body,
+                               contentType: response.headers["Content-Type"])
     }
 }
 
@@ -527,7 +557,7 @@ actor CloudAppBridge {
     }
 
     /// The reads a viewer may name. A closed set, checked before the write gate, so that adding
-    /// a seventh is a deliberate edit here rather than a spelling that slipped past.
+    /// an eighth is a deliberate edit here rather than a spelling that slipped past.
     ///
     /// This and the switch in `serveRead` are two lists that have to agree, which is why that
     /// switch ends in a `default` that refuses rather than in the last read: a word admitted here
@@ -535,8 +565,36 @@ actor CloudAppBridge {
     /// the bottom. `every read type this bridge admits also parses` walks this set and asks each
     /// member for a well-formed body, so the two cannot come apart quietly.
     static let readTypes: Set<String> = [
-        "transcript", "info", "agent", "shell", "skills", "git",
+        "transcript", "info", "agent", "shell", "skills", "git", "image",
     ]
+
+    /// The relay's per-account ciphertext cap, which every tier shares (`max_envelope_bytes`).
+    static let cloudEnvelopeCiphertextLimit = 16 << 20
+
+    /// The JSON around one image's base64: the two answer fields, the id, the media type, the
+    /// byte count and the quoting. Measured at 228 bytes with every field at its maximum, so a
+    /// kibibyte here is slack rather than an estimate waiting to be tightened — the same shape as
+    /// the relay's own 4 KiB frame allowance.
+    static let cloudImageAnswerOverhead = 1 << 10
+
+    /// The largest PNG this transport carries in one answer. **Derived, not chosen.**
+    ///
+    /// The relay caps the ciphertext of one envelope at 16 MiB, AES-GCM adds a 16-byte tag to the
+    /// plaintext, base64 costs four bytes for every three, and the JSON above wraps it. Rounding
+    /// the base64 budget down to a multiple of four keeps the encoded length exact rather than
+    /// approximately right: 12,582,132 bytes, which is 780 bytes below the *store's* own 12 MiB
+    /// ceiling on an encoded artifact. So all but the last kilobyte of what this Mac will ever
+    /// hold does cross, and what does not is refused in a sentence instead of a broken icon.
+    static var cloudImageMaxEncodedBytes: Int {
+        if let forced = cloudImageMaxEncodedBytesForTesting { return forced }
+        let budget = cloudEnvelopeCiphertextLimit - CloudEnvelope.tagByteCount
+            - cloudImageAnswerOverhead
+        return (budget / 4) * 3
+    }
+
+    /// A seam so the refusal above can be seen happening. The real ceiling sits 780 bytes under
+    /// the largest artifact this Mac stores, which is the right number and an impossible fixture.
+    static var cloudImageMaxEncodedBytesForTesting: Int?
 
     /// Answer one read: parse it strictly, route it through the door local HTTP already uses, and
     /// publish the answer on the session's own transcript channel.
@@ -622,6 +680,19 @@ actor CloudAppBridge {
                 return
             }
             read = .git(session: session)
+        case "image":
+            // The id is the opaque one the transcript already published, and it is checked by the
+            // store rather than here: this bridge knows what a read looks like, not what an
+            // artifact id looks like. An id that is not one reaches the same 404 it reaches on the
+            // direct path.
+            guard Set(body.keys) == ["type", "session", "id"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let id = body["id"] as? String, !id.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .image(session: session, id: id)
         default:
             // `readTypes` admitted a word this switch does not know, which means the two lists
             // have come apart. Fail closed rather than reading it as whichever case sits last —
@@ -631,17 +702,15 @@ actor CloudAppBridge {
         }
 
         let answer = await commandRouter.read(read, sender: inbound.sender)
-        commandResult(CloudCommandResult(status: answer.status,
-                                         code: Self.errorCode(in: answer.body)))
+        let outcome = Self.outcome(of: read, answer: answer)
+        commandResult(CloudCommandResult(status: outcome.status, code: outcome.code))
         guard running, lifecycleGeneration == ownedGeneration else { return }
-        let parsedAnswer = (try? JSONSerialization.jsonObject(with: answer.body)) as? [String: Any]
-        var payload: [String: Any] = ["read": read.name, "status": answer.status]
-        if answer.status == 200, let parsedAnswer {
-            payload["body"] = parsedAnswer
+        var payload: [String: Any] = ["read": read.name, "status": outcome.status]
+        if let body = outcome.body {
+            payload["body"] = body
         } else {
             // Whatever went wrong, the viewer gets a code it can branch on rather than silence.
-            payload["error"] = (parsedAnswer?["error"] as? [String: Any])
-                ?? ["code": "read_failed", "message": "This read could not be answered."]
+            payload["error"] = outcome.error
         }
         guard JSONSerialization.isValidJSONObject(payload),
               let bytes = try? JSONSerialization.data(
@@ -667,8 +736,70 @@ actor CloudAppBridge {
         }
     }
 
-    private static func errorCode(in body: Data) -> String? {
-        let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
-        return (object?["error"] as? [String: Any])?["code"] as? String
+    /// One answered read, resolved into the two things the payload can hold.
+    ///
+    /// It replaces the older pair of "parse the body, or lift its `error`" lines because a
+    /// picture is neither: its route answers with the PNG and a header, and turning that into
+    /// something an envelope can carry — or refusing it — is a decision, not a forward.
+    private struct ReadOutcome {
+        let status: Int
+        let code: String?
+        let body: [String: Any]?
+        let error: [String: Any]?
+
+        static func refused(_ status: Int, _ code: String, _ message: String,
+                            _ extra: [String: Any] = [:]) -> ReadOutcome {
+            var error: [String: Any] = ["code": code, "message": message]
+            extra.forEach { error[$0.key] = $0.value }
+            return ReadOutcome(status: status, code: code, body: nil, error: error)
+        }
+    }
+
+    private static func outcome(of read: CloudHeadlessRead,
+                                answer: CloudReadResult) -> ReadOutcome {
+        if answer.status == 200, case .image(_, let id) = read {
+            return imageOutcome(id: id, answer: answer)
+        }
+        let parsed = (try? JSONSerialization.jsonObject(with: answer.body)) as? [String: Any]
+        if answer.status == 200, let parsed {
+            return ReadOutcome(status: 200, code: nil, body: parsed, error: nil)
+        }
+        let error = (parsed?["error"] as? [String: Any])
+            ?? ["code": "read_failed", "message": "This read could not be answered."]
+        return ReadOutcome(status: answer.status, code: error["code"] as? String,
+                           body: nil, error: error)
+    }
+
+    /// The picture itself, base64 in a payload field, or the sentence saying why it stayed home.
+    ///
+    /// **The bytes are the answer and there is nothing shorter to send.** A URL cannot be: this
+    /// Mac is not reachable from the console, which is the entire reason a relay exists. A
+    /// redemption ticket cannot be either — redeeming it would need the same envelope this one
+    /// already is. So the only question left is how large a picture may be, and that is the
+    /// relay's per-envelope cap arithmetic and nothing else.
+    ///
+    /// The size is checked after the route has read the file rather than before. It costs one
+    /// discarded read of at most 12 MiB, in the 780-byte band where a stored artifact is too
+    /// large to cross — and buying it back would mean this bridge asking the artifact store its
+    /// own questions, which is a layer it does not otherwise know exists.
+    private static func imageOutcome(id: String, answer: CloudReadResult) -> ReadOutcome {
+        guard let mediaType = answer.contentType, mediaType == "image/png" else {
+            return .refused(415, "image_media_type_unsupported",
+                            "That artifact is not a PNG and does not cross this connection.")
+        }
+        guard !answer.body.isEmpty else {
+            return .refused(502, "image_empty", "That image arrived with no bytes in it.")
+        }
+        let limit = cloudImageMaxEncodedBytes
+        guard answer.body.count <= limit else {
+            return .refused(413, "image_too_large_for_cloud",
+                            "That image is larger than one cloud envelope can carry.",
+                            ["byte_count": answer.body.count, "limit_bytes": limit])
+        }
+        return ReadOutcome(
+            status: 200, code: nil,
+            body: ["id": id, "media_type": mediaType, "byte_count": answer.body.count,
+                   "data": answer.body.base64EncodedString()],
+            error: nil)
     }
 }

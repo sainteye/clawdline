@@ -150,6 +150,8 @@ enum RemotePage {
             "webImageExpired": t.imageExpired,
             "webImagePreview": t.imagePreview,
             "webImageClose": t.imageClose,
+            "webImageTooLarge": t.imageTooLarge,
+            "webImageUnavailable": t.imageUnavailable,
             "webWhoYou": t.webWhoYou,
             "webWhoTool": t.webWhoTool,
             "webNoticeTask": t.webNoticeTask,

@@ -163,7 +163,15 @@ fi
 #                                          policy nobody measured. No new routing code: the
 #                                          classification written for the first two already sends
 #                                          everything that is neither lane to `dispatch`.)
-remote_server_ceiling=5532
+#   5,537  transcript images cross            (+5, one hunk: the `.image` case of the same
+#                                          `Request` initializer, which builds the artifact route
+#                                          the direct path's `<img>` already asks for. Three of the
+#                                          five lines are the comment saying why the id is encoded
+#                                          rather than validated a second time here. The picture's
+#                                          own bound, its base64 and its refusal live in
+#                                          `CloudAppBridge.swift`, which is where an envelope's
+#                                          size limit belongs — this file only names the route.)
+remote_server_ceiling=5537
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"

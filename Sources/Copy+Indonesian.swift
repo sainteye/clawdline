@@ -48,6 +48,8 @@ struct Indonesian: Copy {
     let imageExpired = "Gambar kedaluwarsa"
     let imagePreview = "Pratinjau gambar"
     let imageClose = "Tutup pratinjau"
+    let imageTooLarge = "Terlalu besar untuk dikirim ({mb} MB)"
+    let imageUnavailable = "Gambar tidak sampai"
     func outputSize(_ pt: Int) -> String { "Ukuran teks keluaran \(pt) pt — ⌘J untuk melihat" }
     func foldedTools(_ count: Int) -> String { "\(count) langkah" }
     func outputOrder(newestFirst: Bool) -> String {

@@ -52,6 +52,8 @@ struct Hindi: Copy {
     let imageExpired = "छवि की समय-सीमा समाप्त हो गई"
     let imagePreview = "छवि पूर्वावलोकन"
     let imageClose = "पूर्वावलोकन बंद करें"
+    let imageTooLarge = "भेजने के लिए बहुत बड़ी ({mb} MB)"
+    let imageUnavailable = "छवि नहीं पहुँची"
     func outputSize(_ pt: Int) -> String { "आउटपुट का अक्षर आकार \(pt)pt — देखने के लिए ⌘J" }
     func foldedTools(_ count: Int) -> String { "\(count) चरण" }
     func outputOrder(newestFirst: Bool) -> String {

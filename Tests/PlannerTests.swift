@@ -784,7 +784,8 @@ group("every word the page can draw is a word the page is sent") {
     // second time rather than a string nobody can change.
     let derived: Set<String> = ["webOrderNewest", "webOrderOldest",  // t.outputOrder(newestFirst:)
                                 "webScheduleNext",                  // t.settingsScheduleNext
-                                "webImageExpired", "webImagePreview", "webImageClose"]
+                                "webImageExpired", "webImagePreview", "webImageClose",
+                                "webImageTooLarge", "webImageUnavailable"]
 
     var missing: [String] = []
     for child in Mirror(reflecting: English()).children {

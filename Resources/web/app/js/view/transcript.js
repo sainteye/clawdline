@@ -15,6 +15,7 @@ import { SessionActions } from "../input/detail-actions.js";
 import { coordinatorForSession } from "../input/coordinator-actions.js";
 import { GitPanel } from "../input/git-panel.js";
 import { ShellPanel } from "../input/shell-panel.js";
+import { api } from "../net/api.js";
 import {
     connectArtifactTile, createImageLightbox, reconcileArtifactTiles
 } from "./transcript-images.js";
@@ -25,6 +26,10 @@ import {
 /* ---- the transcript ------------------------------------------------------ */
 
 var artifactRenderQueue = [];
+// Whose pictures are in that queue. Hydration happens after meaningful paint, which is long
+// enough for the open session to have changed; asking the Mac for an artifact belonging to a
+// session nobody is looking at would be asking the wrong session for it.
+var artifactRenderSession = null;
 var transcriptRenderTicket = 0;
 var paintTicket = 0;
 var imageLightbox = createImageLightbox(
@@ -115,6 +120,7 @@ export function renderTranscript() {
     });
     setOptimisticSpinners([]);
     artifactRenderQueue = [];
+    artifactRenderSession = S.openId;
     // Blank rather than the home screen while the list is still on its way — see `listUnknown`.
     // A pane that says "pick a session" and then opens one on its own is a pane that changed its
     // mind in front of the reader; a pane that is briefly empty is a pane that is loading.
@@ -893,6 +899,44 @@ export function entryHTML(e) {
         '<div class="body">' + body + "</div></div>";
 }
 
+/**
+ * How a picture reaches this page when its own origin cannot be asked for one.
+ *
+ * `typeof api.image === "function"` is the same question six other call sites ask of this
+ * transport, and it is the whole switch: the local client and the fixtures have no `image`, so
+ * they keep the same-origin `<img src>` they have always had, byte for byte. The cloud client
+ * has one, because on that path the origin is a hosted console with no artifact route — so the
+ * bytes come down the session's own channel and are held here as an object URL.
+ */
+function carriedArtifactSource(session) {
+    if (typeof api.image !== "function" || !session) return null;
+    return function (artifact) {
+        return api.image(session, artifact.id).then(function (answer) {
+            var url = URL.createObjectURL(
+                new Blob([answer.bytes], { type: answer.media_type }));
+            return { url: url, release: function () { URL.revokeObjectURL(url); } };
+        });
+    };
+}
+
+/**
+ * The words a tile shows when the picture did not come.
+ *
+ * Expiry keeps its own sentence and its own state, because "this image is gone" is a different
+ * fact from "this image did not cross" — returning nothing here hands those two codes back to
+ * the expired branch. Everything else says so, and the one limit worth naming is named: an
+ * image too large for a cloud envelope shows its own size, so the reader can see the picture is
+ * the problem rather than their connection.
+ */
+function describeArtifactFailure(code, artifact) {
+    if (code === "artifact_expired" || code === "artifact_not_found") return "";
+    if (code === "image_too_large_for_cloud") {
+        var bytes = artifact && artifact.byte_count ? artifact.byte_count : 0;
+        return fill(T.webImageTooLarge, { mb: (bytes / 1048576).toFixed(1) });
+    }
+    return T.webImageUnavailable;
+}
+
 /** Static markup only. Artifact fields go into a private queue and are assigned as DOM
  *  properties after parsing, so an attachment can never add HTML, an action or a URL. */
 function artifactTilesHTML(artifacts) {
@@ -909,12 +953,15 @@ function artifactTilesHTML(artifacts) {
 }
 
 function hydrateArtifactImages(tiles) {
+    var source = carriedArtifactSource(artifactRenderSession);
     for (var i = 0; i < tiles.length; i++) {
         var tile = tiles[i];
         var artifact = artifactRenderQueue[Number(tile.dataset.artifactSlot)];
         connectArtifactTile(tile, artifact, {
             loadingLabel: T.webLoading,
             expiredLabel: T.webImageExpired,
+            source: source,
+            describeFailure: describeArtifactFailure,
             open: function (trigger, src, expire) {
                 imageLightbox.open(trigger, src, expire);
             }

@@ -174,6 +174,8 @@ export var T = {
     webImageExpired: "Image expired",
     webImagePreview: "Image preview",
     webImageClose: "Close preview",
+    webImageTooLarge: "Too large to send ({mb} MB)",
+    webImageUnavailable: "Image did not arrive",
     webWhoYou: "you",
     webWhoTool: "tool",
     webNoticeTask: "task",

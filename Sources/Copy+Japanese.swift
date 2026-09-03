@@ -46,6 +46,8 @@ struct Japanese: Copy {
     let imageExpired = "画像の有効期限が切れました"
     let imagePreview = "画像プレビュー"
     let imageClose = "プレビューを閉じる"
+    let imageTooLarge = "大きすぎて送信できません（{mb} MB）"
+    let imageUnavailable = "画像が届きませんでした"
     func outputSize(_ pt: Int) -> String { "出力の文字サイズ \(pt)pt — ⌘J で表示" }
     func foldedTools(_ count: Int) -> String { "\(count) ステップ" }
     func outputOrder(newestFirst: Bool) -> String {

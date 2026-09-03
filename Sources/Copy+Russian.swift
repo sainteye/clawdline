@@ -48,6 +48,8 @@ struct Russian: Copy {
     let imageExpired = "Срок действия изображения истёк"
     let imagePreview = "Предпросмотр изображения"
     let imageClose = "Закрыть предпросмотр"
+    let imageTooLarge = "Слишком большое для отправки ({mb} МБ)"
+    let imageUnavailable = "Изображение не получено"
     func outputSize(_ pt: Int) -> String { "Размер текста вывода \(pt) pt — ⌘J, чтобы посмотреть" }
     func foldedTools(_ count: Int) -> String { "шагов: \(count)" }
     func outputOrder(newestFirst: Bool) -> String {

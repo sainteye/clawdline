@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
-    artifactPresentation, connectArtifactTile, createImageLightbox, reconcileArtifactTiles
+    artifactPresentation, connectArtifactTile, createImageLightbox, reconcileArtifactTiles,
+    releaseArtifactTile
 } from "../Resources/web/app/js/view/transcript-images.js";
 
 class FakeElement {
@@ -220,4 +221,126 @@ assert.equal(previewFailures, 1, "a failed enlarged request expires its source t
 assert.equal(dialog.hidden, true, "a failed enlarged request closes the lightbox");
 assert.equal(trigger.focuses, 4, "request failure restores focus to the source tile");
 
-console.log("web-message-images: ok");
+/* ---- a picture that has to be carried ------------------------------------
+   On the cloud path this page is served by a hosted console, whose origin has no artifact route
+   and cannot have one — the Mac is not reachable from it. So the transport hands the bytes over
+   itself, and the tile has to be able to say why when it cannot. ------------------------- */
+
+function carriedFixture(source, describeFailure) {
+    const tile = tileFixture();
+    const connected = connectArtifactTile(tile, liveArtifact, {
+        now: 1_800_000_000, loadingLabel: "Loading…", expiredLabel: "Image expired",
+        source: source, describeFailure: describeFailure
+    });
+    return { tile, connected, image: tile.children[".message-image"],
+        status: tile.children[".message-image-state"] };
+}
+
+let released = 0;
+const carried = carriedFixture(function (artifact) {
+    assert.equal(artifact.id, liveArtifact.id,
+        "the transport is asked for the artifact this tile is bound to");
+    return Promise.resolve({ url: "blob:carried-1",
+        release: function () { released += 1; } });
+});
+assert.equal(carried.tile.dataset.imageState, "loading",
+    "a carried picture announces itself as loading, not as absent");
+assert.equal(carried.image.src, "", "and nothing has been requested from this page's own origin");
+await carried.connected.carried;
+assert.equal(carried.image.src, "blob:carried-1",
+    "the transport's own URL is what the tile renders");
+assert.notEqual(carried.image.src, live.url,
+    "the same-origin route is never built on a transport that supplies its own bytes");
+carried.image.emit("load");
+assert.equal(carried.tile.dataset.imageState, "live");
+assert.equal(carried.tile.disabled, false, "a carried picture opens in the lightbox like any other");
+
+// The whole point of the exercise: a picture that cannot cross says so, in words, where a
+// broken-image icon would have said "you did something wrong".
+const refused = carriedFixture(
+    function () {
+        return Promise.reject(Object.assign(new Error("too big"),
+            { code: "image_too_large_for_cloud" }));
+    },
+    function (code, artifact) {
+        assert.equal(code, "image_too_large_for_cloud");
+        assert.equal(artifact.byte_count, liveArtifact.byte_count,
+            "the sentence is given the picture, so it can name its size");
+        return "Too large to send (12.0 MB)";
+    });
+await refused.connected.carried;
+assert.equal(refused.tile.dataset.imageState, "unavailable",
+    "a picture that did not cross is its own state, distinct from an expired one");
+assert.equal(refused.status.textContent, "Too large to send (12.0 MB)");
+assert.equal(refused.status.attributes.role, "status",
+    "and it is announced rather than only drawn");
+assert.equal(refused.image.src, "",
+    "no src is left behind for the browser to draw its broken-image icon from");
+assert.equal(refused.image.hidden, true);
+assert.equal(refused.tile.disabled, true, "there is nothing to enlarge");
+
+// Expiry keeps its own wording. A code the page has no sentence for falls back to it rather than
+// printing an English identifier onto a page in one of thirteen other languages.
+const fellBack = carriedFixture(
+    function () {
+        return Promise.reject(Object.assign(new Error("gone"), { code: "artifact_expired" }));
+    },
+    function () { return ""; });
+await fellBack.connected.carried;
+assert.equal(fellBack.tile.dataset.imageState, "expired");
+assert.equal(fellBack.status.textContent, "Image expired");
+
+const unnamed = carriedFixture(function () { return Promise.resolve({ }); },
+    function () { return "Image did not arrive"; });
+await unnamed.connected.carried;
+assert.equal(unnamed.tile.dataset.imageState, "unavailable",
+    "a delivery with no URL in it is a failure, not a blank tile");
+
+// Carried bytes are this page's to give back. A tile the next render had no use for is about to
+// be removed, and its object URL would otherwise hold the picture until a reload.
+released = 0;
+const holder = carriedFixture(function () {
+    return Promise.resolve({ url: "blob:carried-2", release: function () { released += 1; } });
+});
+await holder.connected.carried;
+const keptTiles = reconcileArtifactTiles([holder.tile],
+    [Object.assign(tileFixture(), { dataset: { artifactSlot: "0" } })],
+    [liveArtifact], { now: 1_800_000_001 });
+assert.equal(keptTiles.reused[0], holder.tile, "an unchanged picture keeps its tile");
+assert.equal(released, 0, "and keeps its bytes, because it is still on screen");
+const droppedTiles = reconcileArtifactTiles([holder.tile], [], [], { now: 1_800_000_001 });
+assert.deepEqual(droppedTiles.dropped, [holder.tile]);
+assert.equal(released, 1, "a tile the next render did not want hands its picture back");
+releaseArtifactTile(holder.tile);
+assert.equal(released, 1, "and releasing twice is not two revocations");
+
+released = 0;
+const expiring = carriedFixture(function () {
+    return Promise.resolve({ url: "blob:carried-3", release: function () { released += 1; } });
+});
+await expiring.connected.carried;
+expiring.connected.expire();
+assert.equal(released, 1, "an expiring tile hands its picture back on the way out");
+
+// And the wiring in the view above it, which decides *whether* to carry at all.
+const hydrationSource = transcriptSource.split("function carriedArtifactSource")[1]
+    .split("function artifactTilesHTML")[0];
+assert.ok(hydrationSource.includes('typeof api.image !== "function"'),
+    "the direct path is chosen by asking the transport, not by guessing at the URL");
+assert.ok(hydrationSource.includes("URL.createObjectURL"),
+    "carried bytes become an object URL rather than a data: URL four thirds their size");
+assert.ok(hydrationSource.includes("URL.revokeObjectURL"),
+    "and the tile is given the way to hand them back");
+assert.ok(hydrationSource.includes("T.webImageTooLarge")
+    && hydrationSource.includes("T.webImageUnavailable"),
+    "both sentences come from the string table, never from a literal on this page");
+assert.ok(/artifact_expired[\s\S]*return ""/.test(hydrationSource),
+    "expiry is handed back to the expired branch instead of being renamed");
+const hydrator = transcriptSource.split("function hydrateArtifactImages")[1]
+    .split("\n}")[0];
+assert.ok(hydrator.includes("source: source") && hydrator.includes("describeFailure:"),
+    "every fresh tile is given the transport's delivery and its vocabulary together");
+assert.ok(transcriptSource.includes("artifactRenderSession = S.openId"),
+    "and the pictures are asked of the session whose transcript is on screen");
+
+console.log("web-message-images: ok, including pictures carried over a transport of their own");

@@ -48,6 +48,8 @@ struct Turkish: Copy {
     let imageExpired = "Görselin süresi doldu"
     let imagePreview = "Görsel önizlemesi"
     let imageClose = "Önizlemeyi kapat"
+    let imageTooLarge = "Gönderilemeyecek kadar büyük ({mb} MB)"
+    let imageUnavailable = "Görsel ulaşmadı"
     func outputSize(_ pt: Int) -> String { "Çıktı yazı boyutu \(pt) pt — görmek için ⌘J" }
     func foldedTools(_ count: Int) -> String { "\(count) adım" }
     func outputOrder(newestFirst: Bool) -> String {

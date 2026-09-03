@@ -48,6 +48,8 @@ struct Italian: Copy {
     let imageExpired = "Immagine scaduta"
     let imagePreview = "Anteprima immagine"
     let imageClose = "Chiudi anteprima"
+    let imageTooLarge = "Troppo grande da inviare ({mb} MB)"
+    let imageUnavailable = "Immagine non arrivata"
     func outputSize(_ pt: Int) -> String { "Testo dell'output \(pt) pt — ⌘J per vederlo" }
     func foldedTools(_ count: Int) -> String { "\(count) passaggi" }
     func outputOrder(newestFirst: Bool) -> String {

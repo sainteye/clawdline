@@ -50,6 +50,8 @@ struct TraditionalChinese: Copy {
     let imageExpired = "圖片已過期"
     let imagePreview = "圖片預覽"
     let imageClose = "關閉預覽"
+    let imageTooLarge = "太大無法傳送（{mb} MB）"
+    let imageUnavailable = "圖片沒有送達"
     func outputSize(_ pt: Int) -> String { "輸出字級 \(pt)pt——按 ⌘J 看" }
     func foldedTools(_ count: Int) -> String { "\(count) 個動作" }
     func outputOrder(newestFirst: Bool) -> String {
@@ -911,6 +913,8 @@ struct SimplifiedChinese: Copy {
     let imageExpired = "图片已过期"
     let imagePreview = "图片预览"
     let imageClose = "关闭预览"
+    let imageTooLarge = "太大无法发送（{mb} MB）"
+    let imageUnavailable = "图片没有送达"
     func outputSize(_ pt: Int) -> String { "输出字号 \(pt)pt——按 ⌘J 看" }
     func foldedTools(_ count: Int) -> String { "\(count) 个动作" }
     func outputOrder(newestFirst: Bool) -> String {

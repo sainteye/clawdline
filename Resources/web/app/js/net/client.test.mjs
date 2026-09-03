@@ -608,7 +608,11 @@ const readOnlyCloud = new CloudClient({
 for (const [name, call] of [
     ["transcript", () => readOnlyCloud.transcript({ machine: "mac-01", session: "session-01" })],
     ["info", () => readOnlyCloud.info({ machine: "mac-01", session: "session-01" })],
-    ["infoSummary", () => readOnlyCloud.infoSummary({ machine: "mac-01", session: "session-01" })]
+    ["infoSummary", () => readOnlyCloud.infoSummary({ machine: "mac-01", session: "session-01" })],
+    // A picture asks on `ctl/` like everything else, so a device that may read but not publish
+    // cannot ask for one. It is refused in the same word rather than left to draw a broken icon.
+    ["image", () => readOnlyCloud.image({ machine: "mac-01", session: "session-01" },
+                                        "11111111-2222-4333-8444-555555555555")]
 ]) {
     await assert.rejects(call(), function (error) {
         return error.code === "cloud_read_needs_send_prompt";
@@ -895,5 +899,118 @@ assert.equal(strictErrors.at(-1) && strictErrors.at(-1).code, "bad_payload",
     "a t/ envelope that names no read is a protocol error rather than a stored transcript");
 strictCloud.stop();
 
-console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam, cloud reads");
+/* ---- and the pictures inside a transcript ---------------------------------
+   The one read whose failure was in the transport rather than in this client: a tile's `<img
+   src>` is same-origin and relative, and on this path the origin is a hosted console with no
+   artifact route. So the bytes come down the session's own channel instead. --------------- */
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
+/** Two pictures are answered back to back with no read starting in between, and an envelope
+ *  whose sequence does not advance is a replay. `answerRead` derives its own from `readTimers`,
+ *  which only grows when a read starts, so these answers count for themselves. */
+let pictureSequence = 5000;
+async function answerPicture(client, socket, payload, session = "session-01") {
+    pictureSequence += 1;
+    const envelope = await sealEnvelope({
+        ch: "t/mac-01/" + session, seq: pictureSequence, ts: 1787817600000,
+        class: "stream", key_id: "ms-1", sender: "device-vector-01"
+    }, JSON.stringify(payload), masterKey, signingKey);
+    socket.receive({ type: "envelope", envelope: envelope });
+    await client.messageChain;
+}
+const FIRST = "11111111-2222-4333-8444-555555555555";
+const SECOND = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+function pngAnswer(id, bytes = PNG) {
+    return { read: "image." + id, status: 200,
+        body: { id: id, media_type: "image/png", byte_count: bytes.length,
+            data: Buffer.from(bytes).toString("base64") } };
+}
+
+const imageCloud = makeReadingCloud();
+const imageSocket = await becomeReady(imageCloud);
+const firstPicture = imageCloud.image({ machine: "mac-01", session: "session-01" }, FIRST);
+const secondPicture = imageCloud.image({ machine: "mac-01", session: "session-01" }, SECOND);
+await until(function () { return publishedReads(imageSocket).length === 2; },
+    "both picture requests to leave");
+const pictureRequests = await Promise.all(publishedReads(imageSocket)
+    .map(async (frame) => JSON.parse(new TextDecoder().decode(
+        await openEnvelope(frame.envelope, masterKey, senderKey)))));
+assert.deepEqual(pictureRequests.map((request) => request.id).sort(), [SECOND, FIRST].sort(),
+    "each picture is asked for by the opaque id the transcript already published");
+assert.deepEqual(pictureRequests.map((request) => [request.type, request.session]),
+    [["image", "session-01"], ["image", "session-01"]],
+    "a picture is an image read for the session whose transcript holds it");
+assert.equal(publishedReads(imageSocket)[0].envelope.ch, "ctl/mac-01",
+    "a picture is asked for on the only channel a viewer may publish on");
+
+// The second answer settles the second tile. Named `image` alone, it would settle whichever
+// request was still waiting — which, for a transcript of screenshots, is the wrong picture in
+// the wrong message.
+await answerPicture(imageCloud, imageSocket, pngAnswer(SECOND));
+const secondBytes = await secondPicture;
+assert.deepEqual(Array.from(secondBytes.bytes), Array.from(PNG),
+    "a picture arrives as its own bytes, ready for a blob URL");
+assert.equal(secondBytes.media_type, "image/png");
+assert.equal(secondBytes.id, SECOND);
+
+await answerPicture(imageCloud, imageSocket, pngAnswer(FIRST));
+assert.equal((await firstPicture).id, FIRST,
+    "and the first tile is settled by the first picture, whenever it arrives");
+
+// The bound, said in a code the tile can turn into a sentence. This is the whole difference
+// between "too large to send (14.2 MB)" and a broken-image icon that reads as the reader's fault.
+const oversized = imageCloud.image({ machine: "mac-01", session: "session-01" }, FIRST);
+await until(function () { return publishedReads(imageSocket).length === 3; },
+    "the oversized picture request to leave");
+await answerPicture(imageCloud, imageSocket, { read: "image." + FIRST, status: 413,
+    error: { code: "image_too_large_for_cloud", message: "over one envelope",
+        byte_count: 14_000_000, limit_bytes: 12_582_132 } });
+await assert.rejects(oversized, function (error) {
+    return error.code === "image_too_large_for_cloud";
+}, "a picture over the envelope bound refuses in its own word rather than half-arriving");
+
+// A truncated answer is a broken PNG, which renders as exactly the icon this path exists to
+// remove. It is refused here instead, where there is still a code to say it with.
+const truncated = imageCloud.image({ machine: "mac-01", session: "session-01" }, SECOND);
+await until(function () { return publishedReads(imageSocket).length === 4; },
+    "the truncated picture request to leave");
+const short = pngAnswer(SECOND);
+short.body.byte_count = PNG.length + 1;
+await answerPicture(imageCloud, imageSocket, short);
+await assert.rejects(truncated, function (error) { return error.code === "bad_payload"; },
+    "base64 that decodes to the wrong length is a truncated picture, not a picture");
+
+const wrongType = imageCloud.image({ machine: "mac-01", session: "session-01" }, FIRST);
+await until(function () { return publishedReads(imageSocket).length === 5; },
+    "the wrong-media-type request to leave");
+const svg = pngAnswer(FIRST);
+svg.body.media_type = "image/svg+xml";
+await answerPicture(imageCloud, imageSocket, svg);
+await assert.rejects(wrongType, function (error) { return error.code === "bad_payload"; },
+    "the media type is pinned here too, so a blob URL is never built from a claim");
+imageCloud.stop();
+
+// Pacing, which is what keeps "a transcript holds many" from meaning "forty envelopes at once".
+// Nothing is refused: the fourth picture waits for a slot and then goes.
+const pacedCloud = makeReadingCloud();
+pacedCloud.imageReadsInFlight = 2;
+const pacedSocket = await becomeReady(pacedCloud);
+const paced = ["11111111-2222-4333-8444-555555555551",
+    "11111111-2222-4333-8444-555555555552",
+    "11111111-2222-4333-8444-555555555553"]
+    .map((id) => pacedCloud.image({ machine: "mac-01", session: "session-01" }, id));
+await until(function () { return publishedReads(pacedSocket).length === 2; },
+    "the first two pictures to leave");
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.equal(publishedReads(pacedSocket).length, 2,
+    "a third picture waits for a slot rather than adding a third envelope to the air");
+await answerPicture(pacedCloud, pacedSocket, pngAnswer("11111111-2222-4333-8444-555555555551"));
+await until(function () { return publishedReads(pacedSocket).length === 3; },
+    "the third picture to leave once a slot frees");
+await answerPicture(pacedCloud, pacedSocket, pngAnswer("11111111-2222-4333-8444-555555555552"));
+await answerPicture(pacedCloud, pacedSocket, pngAnswer("11111111-2222-4333-8444-555555555553"));
+assert.equal((await Promise.all(paced)).length, 3, "and every picture is delivered in the end");
+pacedCloud.stop();
+
+console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam, cloud reads, transcript images");
 process.exit(0);

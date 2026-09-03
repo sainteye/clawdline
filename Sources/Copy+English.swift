@@ -47,6 +47,8 @@ struct English: Copy {
     let imageExpired = "Image expired"
     let imagePreview = "Image preview"
     let imageClose = "Close preview"
+    let imageTooLarge = "Too large to send ({mb} MB)"
+    let imageUnavailable = "Image did not arrive"
     func outputSize(_ pt: Int) -> String { "Output text \(pt)pt — ⌘J to see it" }
     func foldedTools(_ count: Int) -> String { "\(count) steps" }
     func outputOrder(newestFirst: Bool) -> String {
