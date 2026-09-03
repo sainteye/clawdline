@@ -94,3 +94,56 @@ start of every conversation, including the ones that would never land anything.
   assistant_exhausted`'s `alternatives` before retrying the same assistant. This closure still
   applies when a child dies mid-task because its assistant ran out of quota: whatever it had not
   committed is root's to recover or discard, exactly as with any other child that never reported.
+
+## The landing queue, when more than one line is waiting
+
+The obligation above is per-root. When several roots are landing into one shared checkout, somebody
+also has to say who goes first — and on 2026-09-03 that somebody was a coordinator keeping the
+order in messages, over seven lines. **It worked, and it worked because seven lines were unusually
+cooperative rather than because it was reliable.** Four things went wrong, all recorded: two roots
+working in that checkout were not in the list at all and were found by accident; one slot was filed
+under the wrong line and both lines spent time correcting it; a wait's message foregrounded one of
+its four correctly-listed `paths`, and the waiting line believed the conflict surface was one file
+until it attempted the merge three hours later; and the one real ordering constraint — three lines
+changing the same line of the same file, two upward and one downward, where the downward one in the
+middle costs an extra re-measure — was discovered by a line that tripped over it.
+
+`GET /v1/orchestrator/landing-queue?project=<dir>` is where that answer lives now, and the shape of
+the fix is that **nobody writes membership**. A root is in its repository's queue when it has live
+work there, a delivery on an unmerged branch, or a declared `landing: pending` — derived on every
+read from the registry, through the same rule `GET /v1/orchestrator/inflight` uses. There is no add
+call, so there is nothing to forget; and the two roots that vanished from the hand-kept list were
+exactly the case a derived queue keeps, because their children were still working.
+
+- **Order is the only thing a coordinator writes.** `POST /v1/orchestrator/landing-queue/order`
+  takes root keys already in the queue. It cannot add a member (`409 not_queued`) and it cannot
+  remove one: an entry the order does not name keeps its row, at the end, as `placement:
+  "unplaced"`. A wrong order therefore puts somebody in the wrong place, which is visible, rather
+  than out of the queue, which was not.
+- **The contended-path answer is computed, not remembered.** Each entry's write set is its tasks'
+  declared `claims` plus what each delivery branch changed against its own base, and
+  `contended_paths` names every path more than one entry writes. That constraint is now readable
+  before the order is set instead of after somebody has re-measured.
+- **The slot hands itself on.** The holder is the first entry still in the queue, so a landing
+  recorded above moves it with no second write.
+  `POST /v1/orchestrator/landing-queue/advance` is what reaches the next root's session, once per
+  holder per order generation, with a broker-composed message that prints the whole write set and
+  names the route as the authority over its own prose.
+
+**This does not replace a file wait and must not be described as replacing one.** A wait is
+path-level and is registered between two named sessions about specific files; the queue is
+slot-level and is about whole lines of work. A queue entry may well register a wait; neither is the
+other's substitute.
+
+**And one thing this cannot do, said out loud because the whole point is that it cannot be
+incomplete:** a person working in the shared checkout with no Clawdline task at all is invisible to
+the broker, so they are invisible here too. That is a boundary of what the broker can see rather
+than of this queue, and it is the only way a line can still be absent from it.
+
+**`claims: []` no longer reads as a promise.** For an isolated task the broker discards the
+declared paths — correctly, because the child writes its own checkout at a different spelling — and
+the dispatch contract says an empty declared set positively declares a task read-only. So a
+delivery that went on to write twenty-six files read exactly like a review that wrote nothing. The
+discarded list is now kept as that task's landing-time write set and answered back as
+`landing_paths`, beside a `claims_declared` that says whether anything was declared at all; both
+task projections emit them together, so the empty lease is never printed alone.

@@ -38,6 +38,12 @@ func makeLandingQueueDelivery(in repository: URL, taskID: String, base: String,
     return head
 }
 
+/// The one spelling of the root digest in this suite. `rootKeyDigest` is one of the thirty-seven
+/// statics `d2f25d29` moved from `Orchestrator` to `OrchestratorDraft` after this branch's base,
+/// and that move produces no merge conflict and no warning — only a compiler error on the merged
+/// tree. One call site is one line to repair.
+func landingQueueDigest(_ rootKey: String) -> String { Orchestrator.rootKeyDigest(rootKey) }
+
 func landingQueueTask(id: String, title: String, state: Orchestrator.State, root: String,
                       label: String?, projectDir: String, created: TimeInterval,
                       claims: [String] = [], landing: Orchestrator.Landing? = nil,
@@ -127,8 +133,8 @@ group("the landing queue derives its own membership from work nobody wrote down"
         let reply = OrchestratorLandingQueue.queueReply(project: repository.path, now: now)
         let rows = landingQueueRows(reply)
         expect("both roots are in the queue although nobody added either", rows.count, 2)
-        let workingDigest = Orchestrator.rootKeyDigest(working)
-        let deliveredDigest = Orchestrator.rootKeyDigest(delivered)
+        let workingDigest = landingQueueDigest(working)
+        let deliveredDigest = landingQueueDigest(delivered)
         check("the root that was only working is a member",
               landingQueueRow(reply, digest: workingDigest)?["reasons"] as? [String]
                   == ["live_work"],
@@ -196,7 +202,7 @@ group("a coordinator sets position and cannot set membership") {
                 projectDir: repository.path, created: Double(1_000 * (index + 1)),
                 claims: ["tools/check-architecture-boundaries.sh"]))
         }
-        let digests = [first, second, third].map(Orchestrator.rootKeyDigest)
+        let digests = [first, second, third].map(landingQueueDigest)
 
         let placed = OrchestratorLandingQueue.setOrder(
             project: repository.path, keys: [digests[2], digests[0]], ifGeneration: nil,
@@ -294,7 +300,7 @@ group("two entries writing one path are told they are writing one path") {
             .compactMap { $0["root_key"] as? String }
         expect("every entry on that path is named", holders.count, 3)
         check("including the one that declared nothing and only its branch diff shows it",
-              holders.contains(Orchestrator.rootKeyDigest("ceiling-silent")))
+              holders.contains(landingQueueDigest("ceiling-silent")))
         let sources = (contended.first?["entries"] as? [[String: Any]] ?? [])
             .compactMap { $0["source"] as? String }
         check("a declared path reads as claims and a branch-only one as its diff",
@@ -374,10 +380,10 @@ group("the landing slot is handed on by the broker, once, and re-armed by a re-o
               landingQueueBody(handed)?["delivered"] as? Bool == true)
         expect("and it is the line that was behind", typed.last?.session, behind)
         check("the notice says who it is after",
-              typed.last?.text.contains(Orchestrator.rootKeyDigest(ahead)) == true)
+              typed.last?.text.contains(landingQueueDigest(ahead)) == true)
 
         let reordered = OrchestratorLandingQueue.setOrder(
-            project: repository.path, keys: [Orchestrator.rootKeyDigest(behind)],
+            project: repository.path, keys: [landingQueueDigest(behind)],
             ifGeneration: nil, setBy: "clawdfather", now: now)
         check("re-ordering is accepted", landingQueueBody(reordered) != nil)
         let rearmed = OrchestratorLandingQueue.advance(project: repository.path, now: now,
@@ -386,16 +392,14 @@ group("the landing slot is handed on by the broker, once, and re-armed by a re-o
               landingQueueBody(rearmed)?["delivered"] as? Bool == true)
         expect("so the holder hears it again", typed.count, 3)
 
-        check("a delivery this side could not complete is a typed refusal, not a receipt",
-              landingQueueRefusal(OrchestratorLandingQueue.advance(
+        // The receipt is checked before anything is delivered, so a transport that has since
+        // broken cannot turn an answered handoff back into an unanswered one.
+        check("with a receipt standing, a broken transport is not even reached",
+              landingQueueBody(OrchestratorLandingQueue.advance(
                   project: repository.path, now: now,
-                  deliver: { _, _ in "No session named that." }))?.code
-                  == "handoff_delivery_failed")
-        check("a busy holder is refused before anything is typed",
-              landingQueueRefusal(OrchestratorLandingQueue.advance(
-                  project: repository.path, now: now,
-                  readiness: { _ in "That session is showing a permission prompt." },
-                  deliver: { _, _ in "should not be reached" }))?.code == "holder_busy")
+                  deliver: { _, _ in "No session named that." }))?["reason"] as? String
+                  == "already_notified")
+        expect("and still nothing more was typed", typed.count, 3)
 
         Orchestrator.forget()
         check("an empty repository has no slot to hand on",
@@ -424,7 +428,7 @@ group("the landing-time write set survives the isolation that empties the edit-t
         Orchestrator.holdScheduleTaskForTesting(task)
         let row = landingQueueRow(
             OrchestratorLandingQueue.queueReply(project: repository.path, now: now),
-            digest: Orchestrator.rootKeyDigest("isolated-root"))
+            digest: landingQueueDigest("isolated-root"))
         check("so the queue can still say what this delivery will write",
               row?["paths"] as? [String]
                   == ["Sources/Orchestrator.swift", "tools/check-architecture-boundaries.sh"],

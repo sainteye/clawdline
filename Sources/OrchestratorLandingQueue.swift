@@ -177,10 +177,10 @@ enum OrchestratorLandingQueue {
                 since: task.landing?.since ?? task.created,
                 branch: branch, base: task.worktree?.base,
                 head: branch.flatMap { branches.heads[$0] } ?? task.worktree?.head)
-            byRoot[Orchestrator.rootKey(of: task, among: indexed), default: []]
+            byRoot[rootKey(of: task, among: indexed), default: []]
                 .append((task, member))
         }
-        return byRoot.map { rootKey, rows in
+        return byRoot.map { key, rows in
             let sorted = rows.sorted { $0.member.since < $1.member.since }
             var paths: [String: PathSource] = [:]
             for row in sorted {
@@ -199,7 +199,7 @@ enum OrchestratorLandingQueue {
             }
             let root = sorted.first { $0.task.rootSessionId != nil }?.task
             return Member(
-                rootKey: rootKey, digest: Orchestrator.rootKeyDigest(rootKey),
+                rootKey: key, digest: rootKeyDigest(key),
                 label: sorted.compactMap { $0.task.rootLabel }.first,
                 sessionID: root?.rootSessionId,
                 reasons: reasons,
@@ -300,7 +300,7 @@ enum OrchestratorLandingQueue {
     @discardableResult
     static func retainLandingPaths(_ task: inout Orchestrator.Task) -> [[String: Any]] {
         let declared = task.claims
-        let warnings = Orchestrator.prepareClaimsForIsolation(&task)
+        let warnings = prepareClaimsForIsolation(&task)
         guard !warnings.isEmpty, !declared.isEmpty else { return warnings }
         storeLock.lock()
         loadLocked()
@@ -460,10 +460,9 @@ enum OrchestratorLandingQueue {
             for task in member.tasks {
                 guard let branch = task.branch, let base = task.base,
                       branches.heads[branch] != nil, out[branch] == nil,
-                      let answer = Orchestrator.git(["diff", "--name-only", "\(base)...\(branch)"],
-                                                    cwd: repository),
-                      answer.status == 0 else { continue }
-                out[branch] = answer.output.split(whereSeparator: \.isNewline).map(String.init)
+                      let changed = gitOutput(["diff", "--name-only", "\(base)...\(branch)"],
+                                              cwd: repository) else { continue }
+                out[branch] = changed.split(whereSeparator: \.isNewline).map(String.init)
                     .filter { !$0.isEmpty }
             }
         }
@@ -500,7 +499,7 @@ enum OrchestratorLandingQueue {
             "holder": entry.holder,
             "reasons": entry.member.reasons.map(\.rawValue),
             "since": Int(entry.member.since.timeIntervalSince1970),
-            "age_seconds": Orchestrator.ageSeconds(since: entry.member.since, now: now),
+            "age_seconds": ageSeconds(since: entry.member.since, now: now),
             "paths": entry.member.sortedPaths,
         ]
         row["tasks"] = entry.member.tasks.map { task -> [String: Any] in
@@ -722,6 +721,44 @@ enum OrchestratorLandingQueue {
             "repository": repository, "holder": holder.member.digest, "result": "delivered",
         ])
         return answer(true, "delivered")
+    }
+
+    // MARK: - Five names that are moving out of `Orchestrator`, in one place
+
+    /// `d2f25d29` moved thirty-seven statics — `git`, `rootKey`, `rootKeyDigest`, `ageSeconds`
+    /// and `prepareClaimsForIsolation` among them — from `Orchestrator` into `OrchestratorDraft`,
+    /// after this branch's base. **The two edits touch no common line, so `git merge` says nothing
+    /// at all** and the first thing that mentions it is `swiftc`: `type 'Orchestrator' has no
+    /// member 'isTaskID'`. That has already cost one line a green child and a red merge, and it is
+    /// invisible in a staged diff because the only difference from the code around it is a type
+    /// name — which is the one thing a reader does not compare.
+    ///
+    /// So every use in this file goes through here. On a tree that already has the extraction, the
+    /// repair is `Orchestrator` → `OrchestratorDraft` on these five lines and nothing else.
+    /// Returns output only on a zero status, so the `GitAnswer` type stays out of this file
+    /// entirely — it moved with the function, and a type name in a signature is one more thing a
+    /// merge would not mention.
+    static func gitOutput(_ arguments: [String], cwd: String) -> String? {
+        guard let answer = Orchestrator.git(arguments, cwd: cwd), answer.status == 0
+        else { return nil }
+        return answer.output
+    }
+
+    static func rootKey(of task: Orchestrator.Task,
+                        among existing: [String: Orchestrator.Task]) -> String {
+        Orchestrator.rootKey(of: task, among: existing)
+    }
+
+    static func rootKeyDigest(_ canonicalRootKey: String) -> String {
+        Orchestrator.rootKeyDigest(canonicalRootKey)
+    }
+
+    static func ageSeconds(since: Date, now: Date) -> Int {
+        Orchestrator.ageSeconds(since: since, now: now)
+    }
+
+    static func prepareClaimsForIsolation(_ task: inout Orchestrator.Task) -> [[String: Any]] {
+        Orchestrator.prepareClaimsForIsolation(&task)
     }
 
     private static func resolveRepository(_ project: String) -> String? {

@@ -888,6 +888,33 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
 
   <p>If the root must stop first, its handoff package names the delivery branch, base and head, the target branch and its current head, the verdict and test receipts, the overlapping paths and known owner, and exactly one next landing action. <strong>The original root remains responsible until the handoff receipt confirms that the first line reached the named receiving root</strong> — and even then the receipt transfers ownership, not completion.</p>
 
+  <h3 id="landing-queue">When more than one line is waiting: the queue</h3>
+
+  <p>The obligation above is per-root. When several roots land into one shared checkout, somebody also has to say who goes first — and that used to be a coordinator keeping the order in messages. Over seven lines it worked, <strong>and it worked because seven lines were unusually cooperative rather than because it was reliable.</strong> Two roots working in that checkout were not in the list at all and were found by accident; one slot was filed under the wrong line; a wait's message foregrounded one of its four correctly-listed <code>paths</code> and the waiting line believed the conflict surface was one file for three hours; and the one real ordering constraint — three lines changing the same line, two upward and one downward, where the downward one in the middle costs an extra re-measure — was discovered by a line that tripped over it.</p>
+
+  <p><code>GET /v1/orchestrator/landing-queue?project=&lt;dir&gt;</code> is where that answer lives, and the whole shape of it is that <strong>nobody writes membership.</strong> A root is in its repository's queue when it has live work there, a delivery on an unmerged branch, or a declared <code>landing: pending</code> — derived on every read from the registry, through the same rule <a href="#inflight">§13</a> uses. There is no add call, so there is nothing to forget, and the two roots that vanished are exactly the case a derived queue keeps: their children were still working.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Piece</th><th>Who owns it</th><th>What it cannot do</th></tr></thead>
+    <tbody>
+      <tr><td>membership</td><td>derived from the registry</td><td>be written, so it cannot be forgotten</td></tr>
+      <tr><td><code>position</code></td><td>a coordinator, through <code>POST /v1/orchestrator/landing-queue/order</code></td><td>add a member (<code>409 not_queued</code>) or remove one — an unnamed entry keeps its row as <code>placement: "unplaced"</code></td></tr>
+      <tr><td><code>contended_paths</code></td><td>computed from claims and delivery-branch diffs</td><td>need anybody to notice the collision first</td></tr>
+      <tr><td>the slot</td><td>arithmetic: the first entry still in the queue</td><td>need a second write when the entry in front lands</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><code>POST /v1/orchestrator/landing-queue/advance</code> reaches the root that is now at the front, once per holder per order generation, with a message the broker composes rather than a person types. <strong>It prints the whole write set and then says the route wins</strong> — prose summarising a list is the defect that cost three hours, so this prose does not summarise.</p>
+
+  <div class="note">
+    <span class="tag">Not a replacement for a file wait</span>
+    <p>A wait is path-level and registered between two named sessions about specific files. The queue is slot-level and about whole lines of work. A queue entry may register a wait; neither is the other's substitute. And one line can still be absent from the queue: <strong>a person working in the checkout with no Clawdline task at all is invisible to the broker</strong>, so they are invisible here. That is a boundary of what the broker can see, and it is the only one.</p>
+  </div>
+
+  <p><strong><code>claims: []</code> is a sentence, not a blank.</strong> For an isolated task the broker discards the declared paths — correctly, because the child writes its own checkout at a different spelling — while <a href="#taskjson">§03</a> says an empty declared set positively declares the task read-only. So a delivery that went on to write twenty-six files read exactly like a review that wrote nothing. The discarded list is now kept as that task's landing-time write set and answered as <code>landing_paths</code>, beside a <code>claims_declared</code> saying whether anything was declared at all. Both task projections emit them together, so the empty lease is never printed on its own.</p>
+
   <!-- 13 -->
   <h2 id="inflight"><span class="n">13</span>What is still outstanding</h2>
   <p class="sub">Including the work a private checkout hides.</p>
