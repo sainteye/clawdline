@@ -34,25 +34,32 @@ running the installer from inside a Clawdline task worktree installs the hook fo
 and for every other worktree at the same moment. Install it deliberately, from the checkout itself,
 rather than as a side effect of a task. Once installed, worktrees are covered too, which is
 harmless: in an isolated worktree the claims check finds no task whose `projectDir` is that
-worktree and passes silently, and the merge check below is worth having everywhere.
+worktree and passes silently, and the sequencer check below is worth having everywhere.
 
-The hook reads `git rev-parse --git-dir` rather than assuming `.git`, so the merge check looks at
-the right `MERGE_HEAD` in a linked worktree.
+The hook reads `git rev-parse --git-dir` rather than assuming `.git`, so the sequencer check looks
+at the right `MERGE_HEAD` in a linked worktree.
 
 ## What the guard refuses
 
 Two checks, chosen to fail differently from each other.
 
-### 1. A merge is in progress — local, **fails closed**
+### 1. A sequencer operation is in progress — local, **fails closed**
 
-If `.git/MERGE_HEAD` exists, `git commit` concludes somebody's merge. In a shared checkout the
-somebody and the committer are not reliably the same person, and the 2026-09-03 casualty was exactly
-this: six conflicts resolved by hand in a tree four sessions can reach.
+If `MERGE_HEAD`, `CHERRY_PICK_HEAD` or `REVERT_HEAD` exists in the git directory, or a rebase state
+directory (`rebase-merge` / `rebase-apply`) does, then `git commit` concludes somebody's operation.
+In a shared checkout the somebody and the committer are not reliably the same person, and the
+2026-09-03 casualty was exactly this: six conflicts resolved by hand in a tree four sessions can
+reach.
 
-This check reads one file. It has no dependency to be down, so there is nothing to fail open for,
-and it refuses whether or not Clawdline is running. A conflict-free `git merge` makes its commit
-without calling `pre-commit` at all (verified on git 2.38.1), so reaching this check means the
-conflicts were resolved by hand.
+All four are the same hazard, and only the first was originally looked at. `git cherry-pick
+--continue` and `git revert --continue` do call `pre-commit`, and so does a plain `git commit`
+typed while a rebase is stopped on a conflict — so a stranger's half-finished cherry-pick used to
+be yours to commit without a word.
+
+This check reads the filesystem and nothing else. It has no dependency to be down, so there is
+nothing to fail open for, and it refuses whether or not Clawdline is running. A conflict-free
+`git merge` makes its commit without calling `pre-commit` at all (verified on git 2.38.1), so
+reaching this check means the conflicts were resolved by hand.
 
 ### 2. A staged path is claimed by another root's live task — broker, **fails open**
 
@@ -61,7 +68,7 @@ repository-relative paths and the identity of the root that dispatched it, and t
 from `GET /v1/orchestrator/tasks` on `127.0.0.1` with the `X-Clawdline-Orchestrator` token. A staged
 path covered by a claim held by a **live** task belonging to a **different root** is refused.
 
-Three narrowings, each of which matters:
+Three narrowings and one widening, each of which matters:
 
 - **Live only.** A task is live when it has no `finishedAt` *and* its state is not one of
   `success`, `failure`, `cancelled`, `timeout`, `spawn_failed`, `expired`, `abandoned`,
@@ -74,26 +81,81 @@ Three narrowings, each of which matters:
   names the shared checkout and an isolated child cannot touch it at that spelling — and honouring
   them anyway would refuse the root's own landing commit, which stages precisely the paths its child
   claimed. A guard that refuses landings is a guard that gets uninstalled.
+- **Matched case-insensitively.** A claim is a string somebody typed into a dispatch, and this
+  repository lives on a case-insensitive APFS volume where `sources/foo.swift` *is*
+  `Sources/Foo.swift`. Comparing byte-for-byte let that typo through in silence. On a
+  case-sensitive filesystem the same rule can over-refuse two files that genuinely differ only in
+  case; the refusal says when the match was case-insensitive, and `--no-verify` is the way past it.
 
-**Ownership is the root, not the session.** A claim is *yours* if this terminal is the task's
-`child.terminalId` or its `root.terminalId`. That means a root may commit over its own child's
-claims: at landing it has to, and the root that dispatched a task is the one accountable for it.
-What is refused is one line of work committing another line's. The terminal is read from
-`CLAWDLINE_TERMINAL_ID`, else `ITERM_SESSION_ID` / `TERM_SESSION_ID` (both the whole
-`w0t12p0:<UUID>` value and the half after the colon), else `TMUX_PANE`. A session the broker has
-never heard of owns nothing, so every live claim is foreign to it — which is the right answer for a
-person typing into the shared tree by hand.
+**Ownership is the root, not the session.** A claim is *yours* if one of this session's identities
+is the task's `child.terminalId`, `child.sessionId`, `root.terminalId` or `root.sessionId`. That
+means a root may commit over its own child's claims: at landing it has to, and the root that
+dispatched a task is the one accountable for it. What is refused is one line of work committing
+another line's.
+
+There are two channels, because neither one is always there:
+
+- **`CLAWDLINE_TERMINAL_ID`**, when it is set, is an explicit statement of identity, and it
+  **replaces** everything below rather than joining it. A session that has said who it is must not
+  additionally answer to an ambient `%N` tmux pane id, because every tmux server starts numbering
+  at `%0` again and pane ids collide across servers. Nothing in the app exports this variable; it
+  is for a person, a script, or the test suite to state an identity by hand.
+- Otherwise the union of **`CLAUDE_CODE_SESSION_ID`**, `CLAWDLINE_SESSION_ID`, `ITERM_SESSION_ID`,
+  `TERM_SESSION_ID` (both the whole `w0t12p0:<UUID>` value and the half after the colon) and
+  `TMUX_PANE`. It is a union rather than a fallback chain: more identities means fewer false
+  refusals, and a false refusal is the failure this design cannot afford.
+
+**`CLAUDE_CODE_SESSION_ID` is the one that decides a landing**, and it is worth saying why. Claude
+Code sets it in every session, and its value is exactly what Clawdline records as `child.sessionId`
+and what a root passes as `root.sessionId` when it dispatches. `root.terminalId` looks like the
+obvious field and is not a stored one: `Orchestrator.record(of:)` recomputes it from the
+SessionWatch inventory on every response and omits the key entirely when that lookup misses — and
+that inventory is the component this repository has already recorded as needing ten minutes to
+rebind after a crash. A guard reading terminals alone therefore refused a root landing its own
+child's work for as long as the inventory was cold, and refused it with a message that named the
+committer's own root as the owner in the same breath. `root.sessionId` is always on the record.
+
+**A session this guard cannot identify is warned, not refused.** If none of those variables is set
+— a script, a cron job, a terminal that exports nothing — or if the task holding the claim carries
+no session or terminal of its own, then the hook cannot tell whether the claim is the committer's.
+That is the *identity* half of the broker-dependent check failing, so it takes that check's
+direction: it prints the loud warning, names the claim and the task holding it, says how to state
+an identity next time, and allows the commit. The alternative is a refusal aimed at somebody the
+hook cannot see, which is how a guard whose one false refusal lands on the legitimate landing gets
+uninstalled by lunchtime.
 
 ## The failure mode, and why
 
 **The claims check fails open, loudly.** Clawdline is not always running, and a hook that refuses
 every commit while the app is down does not survive the morning: the first thing anybody does with
-it is uninstall it, and an uninstalled hook guards nothing. So when the broker does not answer, the
-token cannot be read, the answer arrives in an unexpected shape, or `python3` is missing, the hook
-prints a warning that says in as many words that **this commit was NOT checked**, lists the staged
-paths it cannot vouch for, and exits 0.
+it is uninstall it, and an uninstalled hook guards nothing. So whenever it loses its answer, the
+hook prints a warning that says in as many words that **this commit was NOT checked**, lists the
+staged paths it cannot vouch for, and exits 0.
 
-**The merge check fails closed**, because it depends on nothing.
+**Every way of losing that answer says which one it was.** They used to share one sentence —
+`Clawdline is not answering` — and two of them were lies. An orchestrator token that has been
+rotated produces an HTTP 401 from an app that is answering perfectly well, and the person reading
+that warning goes to check whether the app is running while every commit in between passes
+unchecked. So:
+
+| What happened | What the warning says |
+| --- | --- |
+| nothing is listening, or the broker is too slow | `Clawdline is not answering at <url> (<reason>)` |
+| an HTTP error status | `Clawdline answered at <url> with HTTP <code> <reason>` — and for 401/403, that the token this hook read is not the one Clawdline expects |
+| a body that is not JSON | `Clawdline answered at <url> with a body this hook could not read as JSON` |
+| valid JSON that is not a task list | `Clawdline answered at <url> in a shape this hook does not understand` |
+| the token file cannot be read, or is empty | the path it tried, and which of the two it was |
+| no `python3` | that, and that the commit was not checked |
+
+All six are exercised by `Tests/git-hooks.mjs`; three of them used to be claims about untested
+code paths.
+
+**The sequencer check fails closed**, because it depends on nothing.
+
+**Identity failure takes the claims check's direction, not the sequencer check's** — see *A session
+this guard cannot identify is warned, not refused* above. It is a broker-dependent answer: it rests
+on what Clawdline recorded about a session, so when it is missing the hook warns rather than
+refuses.
 
 That split is the whole design decision. Coverage is not the scarce thing here — a guard that is
 still installed next month is.
@@ -130,6 +192,16 @@ a conflict-free `git merge` writes its commit without calling it.
 So this guard could have stopped the two 2026-08-28 incidents, and the 2026-09-03 03:30 incident
 **could not have** been stopped by it. Nothing in the hook or the installer claims otherwise, and
 neither should anything built on top of it.
+
+**`git commit --amend` carries what is already in HEAD through unchecked.** An amend is read
+against the commit it replaces, so a foreign path that commit already held does not appear in the
+diff the hook sees. This was left open on purpose rather than closed: `pre-commit` is handed no
+arguments and runs before `prepare-commit-msg`, so the only way to know an amend from an ordinary
+commit is to read the parent process's `argv` — a guess that is wrong in both directions, and one
+that would put a heuristic in the one check that has to be trustworthy. The hole makes no new
+damage either, because that path was already in that commit; a path the amend *newly* stages is
+refused like any other. What it means in practice is narrow and worth knowing: something swept in
+by `--no-verify` or by a conflict-free merge is not looked at again by a later amend.
 
 There is also no local per-path attribution. Git records *what* is staged, never *who* staged it, so
 with the broker unreachable there is nothing in `.git` that can tell your `git add` from somebody
@@ -173,3 +245,14 @@ checkout and requiring it to refuse.
 Its final check is the one that keeps the rest honest: the refusal scenario is replayed against a
 stubbed hook that always exits 0, and the commit has to succeed. If it were refused there, something
 other than the hook was doing the refusing and every check above it would be worthless.
+
+**Both directions have a control group.** That stub is the control for every refusal. The control
+for every *allow* is the request log: a commit the hook let through has to have asked the broker
+exactly once first, or the allow proves nothing that a hook which had stopped running would not
+also produce. Each ownership rule that allows is additionally paired with the same scenario, one
+identity changed, which has to refuse — identity is the most intricate part of this guard, and it
+was the part with the thinnest assertions.
+
+The file also runs *itself* once, in an abort mode, to prove that an early stop takes its sandbox
+and its stand-in broker with it. `stop()` exits the process and `process.exit()` skips `finally`,
+so every early abort used to leave a `mkdtemp` directory and a live node process behind.
