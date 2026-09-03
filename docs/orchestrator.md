@@ -159,8 +159,9 @@ The floor is enforced twice, and the two fail differently.
 
 **The briefing says so.** `CHILD.md` tells every child, in the same paragraph for all of them, that
 it is the bottom of the tree, that a dispatch it attempts is refused, and what to use instead.
-[`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) carries the same rule for a root. A
-child that follows its instructions never has to find the limit by hitting it.
+[`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) routes a root to the same rule, which
+now ships in the guide beside the build rather than in the installed stub. A child that follows its
+instructions never has to find the limit by hitting it.
 
 **The app refuses.** A dispatch names who is asking — the task it hangs under, the session id, or
 both — and the new task lands one level below whatever that turns out to be. Past the floor it is
@@ -2507,7 +2508,9 @@ producer exists; neither is inferred from a root Session or a successful termina
 
 Feature is mutable knowledge rather than mutable accounting. Project/Feature decisions therefore
 live in an append-only attribution event table with source, decision, confidence,
-classifier/version, evidence digest, time and supersession. A small LLM may append a proposal; only
+classifier/version, evidence digest, time and supersession. A local deterministic classifier appends
+the proposal — source `heuristic`, no model and no network — and a deterministic policy appends the
+acceptance above a configured threshold; only
 one unambiguous active accepted head enters analytics. The token interval never changes. See
 [`usage-attribution.md`](usage-attribution.md) for the recording and privacy contract.
 
@@ -2548,6 +2551,18 @@ dispatch:
 mkdir -p ~/.claude/skills/clawdline
 cp skills/clawdline/SKILL.md ~/.claude/skills/clawdline/SKILL.md      # or SKILL.zh-TW.md
 ```
+
+**What that copies is a discovery stub, and that is the point.** A file installed into a skills
+directory is a copy, and a copy never updates, so the routes and fields it must not go stale on are
+not in it. They ship with the app instead, and the stub says how to read them from the build that
+will actually broker the dispatch:
+
+```bash
+/Applications/Clawdline.app/Contents/Resources/clawdline-skill.sh get clawdline
+```
+
+That is a local file read. It needs no running app, so it answers the same over SSH and while
+Clawdline is closed — which is when an assistant most needs to know what this build supports.
 
 There is an English `SKILL.md` and a Traditional Chinese `SKILL.zh-TW.md` of the same text. Install
 one of them, not both — they declare the same `name:`. Seven sections:
