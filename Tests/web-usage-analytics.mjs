@@ -99,7 +99,38 @@ class FakeDocument {
   addEventListener(name, handler) { (this.listeners[name] ||= []).push(handler); }
 }
 
-function portfolioPayload() {
+// The Feature block the payload carries when nothing produces attribution: §4.5 of the design
+// emits `classifier: {configured: false}`, and rows written before the classifier existed carry
+// no `classifier` key at all. Both must read as "not configured".
+function unconfiguredFeatures() {
+  return {
+    status: "no_accepted_attribution", automaticAttribution: false,
+    groups: [], unknown: { runs: 2 },
+  };
+}
+
+// Every field here differs from every other field in this payload, so no assertion can pass by
+// reading the wrong one: a green "every field survives" over coincident values proves nothing.
+function classifiedFeatures() {
+  return {
+    status: "available",
+    automaticAttribution: true,
+    policy: "one_unambiguous_accepted_head",
+    classifier: {
+      configured: true, id: "clawdline-local-feature-merger", version: "7", threshold: 0.75,
+    },
+    groups: [
+      { id: "feature-4a2b", label: "Ledger repair", runs: 9, output: 41000,
+        coverage: { status: "complete" } },
+      { id: "feature-7c9d", label: "Schedule identity", runs: 4, output: 17500,
+        coverage: { status: "partial", unknownOutputRuns: 3 } },
+    ],
+    unknown: { label: "Unknown Feature", runs: 13, output: 6200, unknownOutputRuns: 6,
+               reason: "no_unambiguous_accepted_head" },
+  };
+}
+
+function portfolioPayload(features) {
   const project = (id, label, output, rank) => ({
     id, label, output, rank, runs: 1, scheduledRuns: 0, unknownOutputRuns: 0,
     cost: { status: "unavailable", reason: "no_cost_series" },
@@ -134,10 +165,7 @@ function portfolioPayload() {
                       coverage: { status: "partial", unknownOutputRuns: 1 } }],
         unknownSchedule: { runs: 0 },
       },
-      features: {
-        status: "no_accepted_attribution", automaticAttribution: false,
-        groups: [], unknown: { runs: 2 },
-      },
+      features: features || unconfiguredFeatures(),
       insights: [],
     },
     rows: [], pagination: { hasMore: false, nextCursor: null },
@@ -243,6 +271,90 @@ async function exerciseRealModule(usage, mainSource) {
   ]).map((item) => item.id), ["first", "late", "unknown"]);
 }
 
+function renderPortfolio(usage, mainSource, features) {
+  const doc = new FakeDocument();
+  const elements = fakeElements(doc, mainSource);
+  const controller = usage.bindUsagePortfolio(elements, {
+    document: doc,
+    fetch: () => Promise.reject(new Error("unexpected request")),
+  });
+  controller.render(portfolioPayload(features), false);
+  return elements;
+}
+
+function featureRows(elements) {
+  return elements["usage-feature-body"].children.map((row) => row.children.map((cell) => ({
+    label: cell.dataset.label, text: cell.textContent,
+  })));
+}
+
+// Scenario: not configured keeps the honest sentence and never a table pretending
+function exerciseUnconfiguredFeatures(usage, mainSource) {
+  const honest = "Automatic Feature attribution is not configured."
+    + " Accepted manual or external assignments appear here.";
+  for (const [name, features] of [["absent classifier object", undefined],
+                                  ["classifier.configured false", unconfiguredFeatures()]]) {
+    const elements = renderPortfolio(usage, mainSource, features);
+    verify.equal(elements["usage-feature-summary"].textContent, honest,
+                 `${name} must keep the unconfigured Feature sentence byte for byte`);
+    const rows = featureRows(elements);
+    verify.equal(rows.length, 1, `${name} must render exactly the empty-table row`);
+    verify.deepEqual(rows[0], [{ label: "Features",
+                                 text: "No accepted Feature attribution in this range" }],
+                     `${name} must keep the unconfigured empty-table cell byte for byte`);
+    verify.equal(elements["usage-unknown-feature"].textContent,
+                 "2 runs remain Unknown Feature. Proposals, rejections,"
+                 + " and conflicting accepted heads never enter a named total.",
+                 `${name} must still report its Unknown Feature runs`);
+  }
+}
+
+// Scenario: configured renders the real Feature table and keeps Unknown
+function exerciseConfiguredFeatures(usage, mainSource) {
+  const elements = renderPortfolio(usage, mainSource, classifiedFeatures());
+  const summary = elements["usage-feature-summary"].textContent;
+  verify.match(summary, /clawdline-local-feature-merger/,
+               "a configured summary must name the classifier id");
+  verify.match(summary, /\bv7\b/, "a configured summary must name the classifier version");
+  verify.match(summary, /≥ 0\.75\b/, "a configured summary must name the acceptance threshold");
+  verify.equal(summary,
+               "Local classifier clawdline-local-feature-merger v7 proposes;"
+               + " the policy accepts at confidence ≥ 0.75."
+               + " Only one unambiguous accepted head enters a named total.",
+               "a configured summary must not fall back to the unconfigured sentence");
+  verify.deepEqual(featureRows(elements), [
+    [{ label: "Feature", text: "Ledger repair" },
+     { label: "Agent work", text: "9" },
+     { label: "Generated output", text: "41,000" },
+     { label: "Coverage", text: "Complete" }],
+    [{ label: "Feature", text: "Schedule identity" },
+     { label: "Agent work", text: "4" },
+     { label: "Generated output", text: "17,500" },
+     { label: "Coverage", text: "Partial · 3 unknown output" }],
+  ], "two accepted Features with different labels, runs and outputs must both render");
+  verify.equal(elements["usage-unknown-feature"].textContent,
+               "13 runs remain Unknown Feature. Proposals, rejections,"
+               + " and conflicting accepted heads never enter a named total.",
+               "Unknown Feature must report its own runs, never zero and never suppressed");
+
+  // An empty table under a configured classifier is a different statement from an empty table
+  // under no classifier, so it must not borrow the unconfigured sentence.
+  const barren = classifiedFeatures();
+  barren.status = "no_accepted_attribution";
+  barren.groups = [];
+  barren.unknown = { label: "Unknown Feature", runs: 21, output: 8300, unknownOutputRuns: 5,
+                     reason: "no_unambiguous_accepted_head" };
+  const empty = renderPortfolio(usage, mainSource, barren);
+  verify.deepEqual(featureRows(empty),
+                   [[{ label: "Features",
+                       text: "No Feature reached the acceptance threshold in this range" }]],
+                   "a configured classifier with no accepted head must say so in its own words");
+  verify.equal(empty["usage-unknown-feature"].textContent,
+               "21 runs remain Unknown Feature. Proposals, rejections,"
+               + " and conflicting accepted heads never enter a named total.",
+               "an empty configured table must still report its Unknown Feature runs");
+}
+
 function guard(tool, options = {}) {
   return spawnSync("python3", [tool], {
     cwd: root, encoding: "utf8",
@@ -331,6 +443,8 @@ async function main() {
   verify.match(missingJS.stdout + missingJS.stderr, /missing: .*usage\.js/);
 
   await exerciseRealModule(usage, mainSource);
+  exerciseUnconfiguredFeatures(usage, mainSource);
+  exerciseConfiguredFeatures(usage, mainSource);
 
   const stub = join(work, "usage-stub.mjs");
   writeFileSync(stub, `

@@ -133,7 +133,19 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
 # step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
 # 165 -> 150, counted by that file itself.
-expected_swift_receipt='8093 checks passed'
+# The local Feature classifier adds 125: six groups in `Tests/UsageLedgerTests.swift` — the rung
+# ladder and its decline reasons, the acceptance policy's threshold, the conflicting-head refusal,
+# the backfill dry run, the payload's statement of whether a producer is configured, and the Project
+# scope a Feature and the Projects table now resolve by one shared rule.
+#
+# **8101 -> 8226, and the base moved after this line was first written.** The delivery measured
+# 8218 four times, and that number was right about the tree it was measured on and wrong about this
+# one: `a4ed9edb` added four checks inside a two-variant loop and did not re-seal, so `main` itself
+# read 8101 against a seal of 8093 before this landed. Both numbers here are what a run reported —
+# 8226 from the exact candidate tree below, 8101 from `main` — rather than either being 8218 + 8.
+# **The arithmetic would have produced the same answer and could not have told anyone the base was
+# wrong**, which is the whole reason this line is set from a run.
+expected_swift_receipt='8226 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

@@ -311,10 +311,16 @@ function renderScheduledWork(context, scheduled) {
 
 function renderFeatures(context, features) {
     var doc = context.document, elements = context.elements, body = elements["usage-feature-body"];
+    /* An absent classifier object is "not configured", never a throw and never a fuller table:
+       an empty table under a configured classifier means something different from an empty table
+       under no classifier at all, so the two states never share a sentence. */
+    var classifier = features.classifier || {}, configured = classifier.configured === true;
     clear(body);
-    elements["usage-feature-summary"].textContent = features.automaticAttribution === false
-        ? "Automatic Feature attribution is not configured. Accepted manual or external assignments appear here."
-        : "A Feature appears only with one unambiguous accepted attribution head.";
+    elements["usage-feature-summary"].textContent = configured
+        ? "Local classifier " + classifier.id + " v" + classifier.version
+            + " proposes; the policy accepts at confidence ≥ " + classifier.threshold
+            + ". Only one unambiguous accepted head enters a named total."
+        : "Automatic Feature attribution is not configured. Accepted manual or external assignments appear here.";
     (features.groups || []).forEach(function (item) {
         var row = doc.createElement("tr");
         row.setAttribute("role", "row");
@@ -325,7 +331,10 @@ function renderFeatures(context, features) {
         body.appendChild(row);
     });
     if (!body.firstChild) {
-        var empty = doc.createElement("tr"), cell = tableCell(doc, empty, "Features", "No accepted Feature attribution in this range", "usage-empty");
+        var emptyText = configured
+            ? "No Feature reached the acceptance threshold in this range"
+            : "No accepted Feature attribution in this range";
+        var empty = doc.createElement("tr"), cell = tableCell(doc, empty, "Features", emptyText, "usage-empty");
         empty.setAttribute("role", "row");
         cell.colSpan = 4;
         body.appendChild(empty);

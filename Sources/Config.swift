@@ -483,6 +483,21 @@ final class Config {
     /// (`c = "\x1b[31m" if pct >= 85 else …`), so the color somebody sees in a terminal and the
     /// word this API gives about the same account agree rather than disagreeing by a few points.
     var assistantQuotaLowThreshold: Double = 85
+    /// Whether the local Feature classifier runs. See `Sources/UsageFeatureClassifier.swift`.
+    ///
+    /// **Off by default, deliberately.** Until somebody turns it on, the usage dashboard keeps
+    /// saying that automatic Feature attribution is not configured, which is the truth — and an
+    /// empty Feature table under a producer nobody asked for would be a different, worse lie.
+    /// Nothing about the classifier is remote: it reads durable task records already on this Mac
+    /// and writes a digest, never the evidence.
+    var usageFeatureClassifier = false
+    /// The confidence at or above which the policy appends an `accepted` event over a proposal.
+    ///
+    /// 0.80 by default, which sits just under the declared-work-line rung at 0.82 — so the three
+    /// rungs that name a work line are accepted and lineage at 0.66 is left as a proposal for a
+    /// person to look at. Values outside `0.5 ... 1.0` are ignored rather than clamped: a
+    /// threshold of 0 would accept everything the classifier ever guessed.
+    var usageFeatureAcceptanceThreshold: Double = 0.80
     /// Where the project status files are read from, and where the icon registry lives.
     ///
     /// Both default to what claude-bestiary writes, because that is what most people reading this
@@ -645,6 +660,10 @@ final class Config {
         if let v = obj["assistant_quota_low_threshold"] as? Double, v > 0, v < 100 {
             assistantQuotaLowThreshold = v
         }
+        if let v = obj["usage_feature_classifier"] as? Bool { usageFeatureClassifier = v }
+        if let v = obj["usage_feature_acceptance_threshold"] as? Double, v >= 0.5, v <= 1 {
+            usageFeatureAcceptanceThreshold = v
+        }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
@@ -715,6 +734,8 @@ final class Config {
             "orchestrator_work_grace_minutes": orchestratorWorkGraceMinutes,
             "orchestrator_build_grace_minutes": orchestratorBuildGraceMinutes,
             "assistant_quota_low_threshold": assistantQuotaLowThreshold,
+            "usage_feature_classifier": usageFeatureClassifier,
+            "usage_feature_acceptance_threshold": usageFeatureAcceptanceThreshold,
             "status_dir": statusDir,
             "icons_file": iconsFile,
             "output_height": Double(outputHeight),

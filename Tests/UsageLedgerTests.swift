@@ -894,4 +894,716 @@ group("usage analytics uses one requested timezone for day grouping and trend") 
            "2026-08-29")
 }
 
+
+// MARK: - The local Feature classifier and its acceptance policy
+
+/// One evidence item with every field it does not care about left out. The fixtures below give
+/// every field a *different* value on purpose: on 2026-09-02 an assertion in this repository named
+/// `every field survives` stayed green while three fields were dropped, because two timestamps in
+/// its fixture happened to be equal. Values that coincide cannot tell two fields apart.
+func featureEvidence(_ key: String, project: String? = nil, task: String? = nil,
+                     durable: Bool = true, kind: String? = nil, title: String? = nil,
+                     line: String? = nil, plan: String? = nil, schedule: String? = nil,
+                     scheduleTitle: String? = nil, parent: String? = nil,
+                     retryOf: String? = nil) -> UsageFeatureClassifier.Evidence {
+    UsageFeatureClassifier.Evidence(
+        intervalKey: key, projectKey: project, taskID: task, hasDurableTaskRecord: durable,
+        taskKind: kind, taskTitle: title, declaredWorkLine: line, planHeadline: plan,
+        scheduleID: schedule, scheduleTitle: scheduleTitle, parentTaskID: parent,
+        retryOf: retryOf)
+}
+
+/// Three stored intervals: two tasks of one declared work line, and one task carrying a label
+/// nobody else does. No two share an interval key, a task id, a session, a timestamp or any
+/// token count.
+func featureFixtureIntervals(at: Date) -> [String] {
+    let rows: [(name: String, task: String, seconds: Double, project: String,
+                counts: [String: Any])] = [
+        ("ladder-alpha", "task-ladder-alpha", 0, "/private/acme/ladder",
+         ["input": 3, "output": 11, "cache_read": 19, "cache_write": 29, "total": 62]),
+        ("ladder-bravo", "task-ladder-bravo", 90, "/private/acme/ladder",
+         ["input": 5, "output": 13, "cache_read": 23, "cache_write": 31, "total": 72]),
+        ("solo-charlie", "task-solo-charlie", 210, "/private/acme/solo",
+         ["input": 7, "output": 17, "cache_read": 37, "cache_write": 41, "total": 102]),
+    ]
+    return rows.map { row in
+        var sample = ledgerSample(.claude, session: "feature-session-\(row.name)",
+                                  boundary: .task, id: row.task, origin: .dispatch,
+                                  usage: row.counts, model: "claude-opus-5",
+                                  at: at.addingTimeInterval(row.seconds))
+        sample.taskID = row.task
+        sample.projectKey = row.project
+        sample.depth = 1
+        sample.seal = true
+        return UsageLedger.shared.observeNow(sample)!
+    }
+}
+
+/// The durable records behind those three intervals. Two carry one work line, the third carries a
+/// label of its own — which is the difference between a Feature and a one-off task.
+func featureFixtureFacts() -> [String: UsageLedger.TaskFacts] {
+    ["task-ladder-alpha": UsageLedger.TaskFacts(
+        title: "Ladder alpha title", declaredWorkLine: "Attribution ladder",
+        planHeadline: "alpha plan headline", kind: "code"),
+     "task-ladder-bravo": UsageLedger.TaskFacts(
+        title: "Ladder bravo title", declaredWorkLine: "Attribution ladder",
+        planHeadline: "bravo plan headline", kind: "code-review"),
+     "task-solo-charlie": UsageLedger.TaskFacts(
+        title: "Solo charlie title", declaredWorkLine: "Solitary sweep",
+        planHeadline: "charlie plan headline", kind: "custom")]
+}
+
+/// The bytes a reader would render for one stored row. Compared before and after a classification
+/// pass, this is what "the token row never moves" means: attribution is a second table, and
+/// nothing on this path opens `usage_intervals` for writing at all.
+func featureMeasurementBytes(_ row: UsageLedger.Row) -> Data {
+    let measurement = row.measurement
+    let payload: [String: Any] = [
+        "inputNew": measurement.counts.inputNew as Any? ?? NSNull(),
+        "output": measurement.counts.output as Any? ?? NSNull(),
+        "cacheRead": measurement.counts.cacheRead as Any? ?? NSNull(),
+        "cacheWrite": measurement.counts.cacheWrite as Any? ?? NSNull(),
+        "total": measurement.total as Any? ?? NSNull(),
+        "measured": measurement.measured,
+        "unknownParts": measurement.unknownParts.map(\.rawValue),
+        "reasons": measurement.reasons,
+    ]
+    return (try? JSONSerialization.data(withJSONObject: payload,
+                                        options: [.sortedKeys])) ?? Data()
+}
+
+func featurePortfolio(_ payload: [String: Any]) -> [String: Any] {
+    ((payload["portfolio"] as? [String: Any])?["features"] as? [String: Any]) ?? [:]
+}
+
+group("the local Feature classifier proposes only from durable evidence") {
+    // One interval per rung, one per decline reason, and one pair that proves Feature identity is
+    // scoped to a Project: the same label under two Project keys is two Features, not one.
+    let evidence = [
+        featureEvidence("iv-hint", project: "/private/acme/alpha", task: "task-hint",
+                        kind: "code", title: "a title the hint outranks",
+                        plan: "Feature: \u{201c}Ledger receipts\u{201d} for the whole range"),
+        featureEvidence("iv-schedule", project: "/private/acme/bravo", task: "task-schedule",
+                        kind: "custom", title: "Nightly title", schedule: "schedule-nightly",
+                        scheduleTitle: "Nightly sweep"),
+        featureEvidence("iv-line-one", project: "/private/acme/charlie", task: "task-line-one",
+                        kind: "code-review", title: "Line one title", line: "Attribution ladder"),
+        featureEvidence("iv-line-two", project: "/private/acme/charlie", task: "task-line-two",
+                        kind: "docs", title: "Line two title", line: "attribution   LADDER"),
+        featureEvidence("iv-lineage", project: "/private/acme/charlie", task: "task-lineage",
+                        kind: "correction", title: "Lineage title", parent: "task-line-one"),
+        featureEvidence("iv-delta-one", project: "/private/acme/delta", task: "task-delta-one",
+                        kind: "research", title: "Delta one title", line: "Attribution ladder"),
+        featureEvidence("iv-delta-two", project: "/private/acme/delta", task: "task-delta-two",
+                        kind: "plan", title: "Delta two title", line: "Attribution ladder"),
+        featureEvidence("iv-no-task", project: "/private/acme/echo", task: nil, durable: false),
+        featureEvidence("iv-no-record", project: "/private/acme/foxtrot", task: "task-orphan",
+                        durable: false, kind: "shell", title: "Orphan title"),
+        featureEvidence("iv-solitary", project: "/private/acme/golf", task: "task-solitary",
+                        kind: "review", title: "Solitary title", line: "Solitary sweep"),
+        featureEvidence("iv-bare", project: "/private/acme/hotel", task: "task-bare",
+                        kind: "chore", title: "A bare title with no Feature prefix"),
+        // A plan headline that exists and names no Feature: the title is still read.
+        featureEvidence("iv-title-hint", project: "/private/acme/kilo", task: "task-title-hint",
+                        kind: "audit", title: "Feature: \u{300c}Title rung\u{300d}",
+                        plan: "a plan headline that names no Feature"),
+        // One work line, two spellings, and the lower-case one first — the opposite order to
+        // charlie's pair above, so the stored label cannot be "whichever arrived first" in either
+        // direction.
+        featureEvidence("iv-india-one", project: "/private/acme/india", task: "task-india-one",
+                        kind: "sweep", title: "India one title", line: "zebra   crossing"),
+        featureEvidence("iv-india-two", project: "/private/acme/india", task: "task-india-two",
+                        kind: "triage", title: "India two title", line: "Zebra Crossing"),
+        // One task owning two rows, carrying one declared label. Rung 3 counts distinct *tasks*,
+        // so this is a one-off however many intervals it spans. Everything else in this fixture
+        // gives every field a different value; these two deliberately share a task, a title and a
+        // label, because that sharing is the thing under test.
+        featureEvidence("iv-twin-one", project: "/private/acme/juliet", task: "task-twin",
+                        kind: "verify", title: "Twin title", line: "Twin rows"),
+        featureEvidence("iv-twin-two", project: "/private/acme/juliet", task: "task-twin",
+                        kind: "seal", title: "Twin title", line: "Twin rows"),
+    ]
+    let outcome = UsageFeatureClassifier.classify(evidence)
+    var proposals: [String: UsageFeatureClassifier.Proposal] = [:]
+    for proposal in outcome.proposals { proposals[proposal.intervalKey] = proposal }
+    expect("every classified interval leaves as a proposal", outcome.proposals.count, 10)
+
+    expect("an explicit Feature hint is the first rung", proposals["iv-hint"]?.rung,
+           .explicitFeatureHint)
+    expect("and it is the most confident one", proposals["iv-hint"]?.confidence, 0.95)
+    expect("the hint's own words become the label, without either half of its quotation",
+           proposals["iv-hint"]?.featureLabel, "Ledger receipts for the whole range")
+    expect("a headline that names no Feature still lets the title name one",
+           proposals["iv-title-hint"]?.rung, .explicitFeatureHint)
+    expect("and that title's quotation is stripped in the same pair",
+           proposals["iv-title-hint"]?.featureLabel, "Title rung")
+    expect("a schedule identity is the second rung", proposals["iv-schedule"]?.rung,
+           .scheduleIdentity)
+    expect("at 0.88", proposals["iv-schedule"]?.confidence, 0.88)
+    expect("labelled by the schedule's title rather than its id",
+           proposals["iv-schedule"]?.featureLabel, "Nightly sweep")
+    expect("a label two tasks carry is a declared work line", proposals["iv-line-one"]?.rung,
+           .declaredWorkLine)
+    expect("at 0.82", proposals["iv-line-one"]?.confidence, 0.82)
+    expect("labelled as the root wrote it", proposals["iv-line-one"]?.featureLabel,
+           "Attribution ladder")
+    check("normalization merges spacing and case into one work line",
+          proposals["iv-line-one"]?.featureID == proposals["iv-line-two"]?.featureID)
+    expect("lineage is the last rung", proposals["iv-lineage"]?.rung, .lineage)
+    expect("at 0.66", proposals["iv-lineage"]?.confidence, 0.66)
+    check("and it inherits its parent's Feature verbatim rather than inventing one",
+          proposals["iv-lineage"]?.featureID == proposals["iv-line-one"]?.featureID
+            && proposals["iv-lineage"]?.featureLabel == proposals["iv-line-one"]?.featureLabel)
+
+    check("normalization keeps one label for one work line, whichever spelling arrived first",
+          proposals["iv-india-one"]?.featureLabel == "Zebra Crossing"
+            && proposals["iv-india-two"]?.featureLabel == "Zebra Crossing"
+            && proposals["iv-line-one"]?.featureLabel == proposals["iv-line-two"]?.featureLabel)
+
+    check("every digest is 64 lowercase hex characters",
+          outcome.proposals.allSatisfy { proposal in
+              proposal.evidenceDigest.count == 64
+                  && proposal.evidenceDigest.allSatisfy { character in
+                      character.isNumber || ("a"..."f").contains(character)
+                  }
+          })
+    // What the digest is over, asserted in both directions. `no two intervals share a digest`
+    // used to stand here and could not fail: the interval key is a digest input and every fixture
+    // key differs, so it held for any recipe whatsoever.
+    let digestSubject = featureEvidence("iv-digest", project: "/private/acme/digest",
+                                        task: "task-digest", kind: "code", title: "Digest title",
+                                        plan: "Feature: Digest hint")
+    var digestOtherTask = digestSubject
+    digestOtherTask.taskID = "task-digest-other"
+    var digestOtherKind = digestSubject
+    digestOtherKind.taskKind = "a kind the hint rung never consumed"
+    func digest(_ item: UsageFeatureClassifier.Evidence) -> String? {
+        UsageFeatureClassifier.classify([item]).proposals.first?.evidenceDigest
+    }
+    check("a field the rung consumed changes the digest",
+          digest(digestSubject) != nil && digest(digestSubject) != digest(digestOtherTask))
+    check("and a field it did not consume leaves the digest alone",
+          digest(digestSubject) == digest(digestOtherKind))
+
+    // A golden vector, computed by an independent implementation of the recipe — SHA-256 over the
+    // scope, the rung and the normalized grouping key, joined by U+001F — rather than by asking
+    // this code what it thinks. Every other identity assertion here compares the classifier with
+    // itself, so none of them can notice a change to `normalizedKey`, to the scope, to the
+    // U+001F field order, to the 32/40-character prefixes or to the digest's own prefix string —
+    // which is the exact set of changes that orphans every event already in a real ledger.
+    let golden = UsageFeatureClassifier.classify([
+        featureEvidence("iv-golden", project: "/private/acme/golden", task: "task-golden",
+                        kind: "docs", title: "Golden title", plan: "Feature:  Golden   hint"),
+    ]).proposals.first
+    expect("the Feature id recipe is the documented one", golden?.featureID,
+           "feature-4aef34c26a966067604adf70e9fd5ba6")
+    expect("so is the evidence digest recipe", golden?.evidenceDigest,
+           "c82e12b250984aaacdd35c3201bccf9d0cb915be6f5781735e1f919ee146a3ef")
+    expect("and so is the event id seed", golden?.proposalEventID,
+           "feature-proposal-v1-f167d0e8b4c9c30246f4a17fa852c5a76342a3a5")
+    expect("whose acceptance shares that seed and nothing else", golden?.acceptanceEventID,
+           "feature-accepted-v1-f167d0e8b4c9c30246f4a17fa852c5a76342a3a5")
+
+    check("every event id is one the ledger will accept", outcome.proposals.allSatisfy {
+        $0.proposalEventID.hasPrefix("feature-proposal-v1-") && $0.proposalEventID.count <= 128
+            && $0.acceptanceEventID.hasPrefix("feature-accepted-v1-")
+            && $0.acceptanceEventID != $0.proposalEventID
+    })
+    check("classifying the same batch twice is the same answer",
+          UsageFeatureClassifier.classify(evidence) == outcome)
+    check("the same label in two Projects is two Features, never one",
+          proposals["iv-line-one"]?.featureID != proposals["iv-delta-one"]?.featureID
+            && proposals["iv-delta-one"]?.featureID == proposals["iv-delta-two"]?.featureID)
+
+    var declines: [String: UsageFeatureClassifier.DeclineReason] = [:]
+    for decline in outcome.declined { declines[decline.intervalKey] = decline.reason }
+    expect("a row with no task identity says so", declines["iv-no-task"], .noTaskIdentity)
+    expect("so does one no durable record confirms", declines["iv-no-record"],
+           .noDurableTaskRecord)
+    expect("a label one task carries is a one-off, not a work line", declines["iv-solitary"],
+           .solitaryDeclaredLabel)
+    check("and two intervals of that one task are still one task, not two",
+          declines["iv-twin-one"] == .solitaryDeclaredLabel
+            && declines["iv-twin-two"] == .solitaryDeclaredLabel
+            && proposals["iv-twin-one"] == nil && proposals["iv-twin-two"] == nil)
+    expect("and evidence with nothing to group on says that instead", declines["iv-bare"],
+           .noGroupingEvidence)
+    expect("every interval leaves exactly once", outcome.proposals.count + outcome.declined.count,
+           evidence.count)
+}
+
+group("the acceptance policy promotes only above its configured threshold") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let at = ISO8601DateFormatter().date(from: "2026-08-21T09:15:00Z")!
+    let keys = featureFixtureIntervals(at: at)
+    let evidence = UsageLedger.featureEvidence(rows: UsageLedger.shared.rows(),
+                                               taskFacts: featureFixtureFacts(),
+                                               scheduleTitles: [:])
+    let proposal = UsageFeatureClassifier.classify(evidence).proposals
+        .first { $0.intervalKey == keys[0] }
+    let before = UsageLedger.shared.rows().first { $0.intervalKey == keys[0] }!
+
+    let run = UsageLedger.shared.runFeatureAttribution(evidence: evidence, now: at,
+                                                       threshold: 0.80, accepting: true)
+    expect("the work line's two intervals are proposed", run.proposed, 2)
+    expect("and accepted at 0.80", run.accepted, 2)
+    expect("with nothing left below the threshold", run.belowThreshold, 0)
+    expect("the solitary label is declined rather than proposed",
+           run.declined[UsageFeatureClassifier.DeclineReason.solitaryDeclaredLabel.rawValue], 1)
+    let head = UsageLedger.shared.resolvedAttribution(intervalKey: keys[0], dimension: .feature)
+    expect("the accepted head is the policy's", head?.source, .policy)
+    expect("the proposal it superseded was the classifier's own", head?.supersedesEventID,
+           proposal?.proposalEventID)
+    expect("and it carries that proposal's value id", head?.valueID, proposal?.featureID)
+    expect("under the deterministic acceptance id", head?.eventID, proposal?.acceptanceEventID)
+    expect("naming the policy that decided", head?.decisionSource, "confidence-threshold-v1")
+    expect("the work line's other interval resolves the same Feature",
+           UsageLedger.shared.resolvedAttribution(intervalKey: keys[1],
+                                                  dimension: .feature)?.valueID,
+           proposal?.featureID)
+    // The classifier's own source is held to the same evidence bar as `llm` and `policy`: an
+    // event calling itself a heuristic without a classifier, a version, a 64-hex digest and a
+    // confidence is not an attribution, it is an assertion.
+    func heuristicEvent(_ id: String, digest: String?, confidence: Double?)
+        -> UsageLedger.AttributionEvent {
+        UsageLedger.AttributionEvent(
+            eventID: id, intervalKey: keys[2], dimension: .feature,
+            valueID: "feature-unproven", valueLabel: "Unproven Feature", source: .heuristic,
+            confidence: confidence, classifierID: UsageFeatureClassifier.classifierID,
+            classifierVersion: UsageFeatureClassifier.classifierVersion, evidenceDigest: digest,
+            decision: .proposed, decisionSource: "focused-test", assignedAt: at,
+            supersedesEventID: nil)
+    }
+    check("a heuristic event with no evidence digest is refused",
+          !UsageLedger.shared.record(heuristicEvent("heuristic-no-digest", digest: nil,
+                                                    confidence: 0.71)))
+    check("and one with no confidence is refused too",
+          !UsageLedger.shared.record(heuristicEvent("heuristic-no-confidence",
+                                                    digest: String(repeating: "b", count: 64),
+                                                    confidence: nil)))
+    check("while one carrying both is accepted by the store",
+          UsageLedger.shared.record(heuristicEvent("heuristic-with-evidence",
+                                                   digest: String(repeating: "c", count: 64),
+                                                   confidence: 0.71)))
+
+    let again = UsageLedger.shared.runFeatureAttribution(
+        evidence: evidence, now: at.addingTimeInterval(600), threshold: 0.80, accepting: true)
+    expect("a second pass proposes nothing new", again.proposed, 0)
+    expect("and accepts nothing new", again.accepted, 0)
+    expect("the proposals are already present instead", again.proposalsAlreadyPresent, 2)
+    expect("and so are the acceptances", again.acceptancesAlreadyPresent, 2)
+    let after = UsageLedger.shared.rows().first { $0.intervalKey == keys[0] }!
+    check("the token row never moves: the measurement is byte-identical",
+          featureMeasurementBytes(before) == featureMeasurementBytes(after))
+    check("and no other column of that row moved either", before == after)
+
+    let stricter = freshUsageLedger()
+    defer { forgetUsageLedger(stricter) }
+    let strictKeys = featureFixtureIntervals(at: at)
+    let strictEvidence = UsageLedger.featureEvidence(rows: UsageLedger.shared.rows(),
+                                                      taskFacts: featureFixtureFacts(),
+                                                      scheduleTitles: [:])
+    let strict = UsageLedger.shared.runFeatureAttribution(evidence: strictEvidence, now: at,
+                                                          threshold: 0.85, accepting: true)
+    expect("the same evidence proposes the same two intervals", strict.proposed, 2)
+    expect("but 0.82 is below 0.85, so the policy accepts none of it", strict.accepted, 0)
+    expect("both are left for a person to look at", strict.belowThreshold, 2)
+    check("and no interval resolves a Feature at all",
+          strictKeys.allSatisfy {
+              UsageLedger.shared.resolvedAttribution(intervalKey: $0, dimension: .feature) == nil
+          })
+
+    // A refusal is not "already present". `record(_:)` returns false for a duplicate event id and
+    // for an event the store will not take at all, and a receipt that spells those the same way
+    // reads a pass that wrote nothing exactly like a clean idempotent re-run — which is the one
+    // statement this receipt exists to make.
+    let refusing = freshUsageLedger()
+    defer { forgetUsageLedger(refusing) }
+    let overlongKey = String(repeating: "iv-refused-", count: 12)
+    let refused = UsageLedger.shared.runFeatureAttribution(
+        evidence: [featureEvidence(overlongKey, project: "/private/acme/refused",
+                                   task: "task-refused", kind: "audit", title: "Refused title",
+                                   plan: "Feature: Refused hint")],
+        now: at, threshold: 0.80, accepting: true)
+    check("an interval key the ledger will not accept is a refusal, not an absence",
+          overlongKey.count > 128)
+    expect("counted as refused", refused.proposalsRefused, 1)
+    expect("never as already present", refused.proposalsAlreadyPresent, 0)
+    expect("with nothing written", refused.proposed, 0)
+    expect("and no acceptance attempted on a predecessor that is not there",
+           refused.accepted + refused.acceptancesAlreadyPresent + refused.acceptancesRefused, 0)
+    // A bounded reader that came back full has dropped its oldest rows, and rung 3 asks about
+    // *this batch*, so the receipt has to be able to say so.
+    expect("a receipt says its window was not truncated", refused.windowTruncated, false)
+    expect("and says so when the reader that filled it was",
+           UsageLedger.shared.runFeatureAttribution(evidence: [], now: at, threshold: 0.80,
+                                                    accepting: false, windowTruncated: true)
+               .windowTruncated, true)
+
+    // The second opinion a hand-built rival head cannot produce: the classifier's own next pass,
+    // after the evidence under one interval moved. Nothing here is manual.
+    let moved = freshUsageLedger()
+    defer { forgetUsageLedger(moved) }
+    let movedKeys = featureFixtureIntervals(at: at)
+    UsageLedger.shared.runFeatureAttribution(
+        evidence: UsageLedger.featureEvidence(rows: UsageLedger.shared.rows(),
+                                              taskFacts: featureFixtureFacts(),
+                                              scheduleTitles: [:]),
+        now: at, threshold: 0.80, accepting: true)
+    let settledHead = UsageLedger.shared.resolvedAttribution(intervalKey: movedKeys[0],
+                                                             dimension: .feature)
+    // The durable record gains the plan headline it did not have when it was first classified, so
+    // the row moves from rung 3 to rung 1: the Feature id, the rung and therefore the event id
+    // seed all change. A `classifierVersion` bump — which §3.2 *mandates* for any change to a
+    // rung, a confidence, a normalization rule or the digest recipe — moves the same seed the
+    // same way, and this is the half of it a test can reach.
+    var movedFacts = featureFixtureFacts()
+    movedFacts["task-ladder-alpha"]?.planHeadline = "Feature: Ladder alpha, named at last"
+    let movedEvidence = UsageLedger.featureEvidence(rows: UsageLedger.shared.rows(),
+                                                    taskFacts: movedFacts, scheduleTitles: [:])
+    let movedProposal = UsageFeatureClassifier.classify(movedEvidence).proposals
+        .first { $0.intervalKey == movedKeys[0] }
+    let second = UsageLedger.shared.runFeatureAttribution(
+        evidence: movedEvidence, now: at.addingTimeInterval(900), threshold: 0.80,
+        accepting: true)
+    check("the moved interval really did change Feature",
+          movedProposal != nil && movedProposal?.rung == .explicitFeatureHint
+            && movedProposal?.featureID != settledHead?.valueID)
+    expect("its new proposal is written", second.proposed, 1)
+    expect("and no acceptance is appended beside the head already there", second.accepted, 0)
+    expect("the receipt says so in one field", second.heldExistingAcceptedHead, 1)
+    check("so the interval keeps the Feature it had instead of silently becoming Unknown",
+          UsageLedger.shared.resolvedAttribution(intervalKey: movedKeys[0],
+                                                 dimension: .feature)?.eventID
+            == settledHead?.eventID && settledHead != nil)
+    check("with the disagreement on the record for a person to settle",
+          movedProposal.map { UsageLedger.shared.containsAttributionEvent($0.proposalEventID) }
+            == true)
+    expect("while the interval whose evidence did not move is untouched",
+           second.acceptancesAlreadyPresent, 1)
+}
+
+group("a conflicting accepted Feature head stays Unknown") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let at = ISO8601DateFormatter().date(from: "2026-08-22T14:45:00Z")!
+    // Four intervals, four tasks, four hints, four different output totals — so each one is a
+    // Feature of its own and no two rows can be confused for each other.
+    let fixtures: [(name: String, seconds: Double, output: Int, hint: String)] = [
+        ("settled", 0, 101, "Settled receipts"),
+        ("conflict", 120, 211, "Conflicted receipts"),
+        ("rejected", 240, 307, "Rejected receipts"),
+        ("plain", 360, 401, "Plain receipts"),
+    ]
+    var keys: [String: String] = [:]
+    var facts: [String: UsageLedger.TaskFacts] = [:]
+    for fixture in fixtures {
+        var sample = ledgerSample(.claude, session: "conflict-session-\(fixture.name)",
+                                  boundary: .task, id: "task-\(fixture.name)", origin: .dispatch,
+                                  usage: ["input": fixture.output + 1, "output": fixture.output,
+                                          "cache_read": fixture.output + 2,
+                                          "cache_write": fixture.output + 3,
+                                          "total": fixture.output * 4 + 6],
+                                  model: "claude-opus-5", at: at.addingTimeInterval(fixture.seconds))
+        sample.taskID = "task-\(fixture.name)"
+        sample.projectKey = "/private/acme/conflict"
+        sample.depth = 1
+        sample.seal = true
+        keys[fixture.name] = UsageLedger.shared.observeNow(sample)!
+        facts["task-\(fixture.name)"] = UsageLedger.TaskFacts(
+            title: "\(fixture.name) title", planHeadline: "Feature: \(fixture.hint)",
+            kind: fixture.name)
+    }
+    let evidence = UsageLedger.featureEvidence(rows: UsageLedger.shared.rows(), taskFacts: facts,
+                                               scheduleTitles: [:])
+    let classified = UsageFeatureClassifier.classify(evidence)
+    var byInterval: [String: UsageFeatureClassifier.Proposal] = [:]
+    for proposal in classified.proposals { byInterval[proposal.intervalKey] = proposal }
+
+    func query() -> [String: Any] {
+        featurePortfolio(UsageQueryService().query(
+            .init(from: "2026-08-22", to: "2026-08-22", timezoneID: "UTC"), now: at).payload)
+    }
+    func groupIDs(_ features: [String: Any]) -> [String] {
+        (features["groups"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+    }
+
+    // A proposal nobody accepted is not an attribution. This is the sibling assertion for
+    // proposal-only, and it runs before the policy does.
+    UsageLedger.shared.backfillFeatureProposals(evidence: evidence, now: at)
+    let proposedOnly = query()
+    check("four proposals resolve no Feature at all", fixtures.allSatisfy {
+        UsageLedger.shared.resolvedAttribution(intervalKey: keys[$0.name]!,
+                                               dimension: .feature) == nil
+    })
+    check("so the Portfolio names no group", groupIDs(proposedOnly).isEmpty)
+    expect("and says why every run is Unknown",
+           (proposedOnly["unknown"] as? [String: Any])?["reason"] as? String,
+           "no_unambiguous_accepted_head")
+    expect("counting all four of them",
+           (proposedOnly["unknown"] as? [String: Any])?["runs"] as? Int, 4)
+
+    UsageLedger.shared.runFeatureAttribution(evidence: evidence, now: at, threshold: 0.80,
+                                             accepting: true)
+    // A second, disagreeing accepted head arrives — a person's assignment beside the policy's.
+    // Neither supersedes the other, which is exactly the case analytics must refuse to guess at.
+    let rival = UsageLedger.AttributionEvent(
+        eventID: "conflict-manual-head", intervalKey: keys["conflict"]!, dimension: .feature,
+        valueID: "feature-manual-rival", valueLabel: "Manual rival Feature", source: .manual,
+        confidence: nil, classifierID: nil, classifierVersion: nil, evidenceDigest: nil,
+        decision: .accepted, decisionSource: "focused-test", assignedAt: at,
+        supersedesEventID: nil)
+    check("the rival head records", UsageLedger.shared.record(rival))
+    // And one interval's only head is withdrawn, which is a third, different way to be Unknown.
+    check("a rejection supersedes the accepted head it names", UsageLedger.shared.record(
+        UsageLedger.AttributionEvent(
+            eventID: "rejected-withdrawal", intervalKey: keys["rejected"]!, dimension: .feature,
+            valueID: byInterval[keys["rejected"]!]!.featureID,
+            valueLabel: byInterval[keys["rejected"]!]!.featureLabel, source: .manual,
+            confidence: nil, classifierID: nil, classifierVersion: nil, evidenceDigest: nil,
+            decision: .rejected, decisionSource: "focused-test", assignedAt: at,
+            supersedesEventID: byInterval[keys["rejected"]!]!.acceptanceEventID)))
+
+    let conflicted = query()
+    check("two accepted heads resolve to none",
+          UsageLedger.shared.resolvedAttribution(intervalKey: keys["conflict"]!,
+                                                 dimension: .feature) == nil)
+    check("the conflicted interval is in no named group",
+          !groupIDs(conflicted).contains(byInterval[keys["conflict"]!]!.featureID)
+            && !groupIDs(conflicted).contains("feature-manual-rival"))
+    check("neither is the one whose head was rejected",
+          !groupIDs(conflicted).contains(byInterval[keys["rejected"]!]!.featureID))
+    expect("both sit in Unknown Feature",
+           (conflicted["unknown"] as? [String: Any])?["runs"] as? Int, 2)
+    expect("for the one reason the Portfolio has",
+           (conflicted["unknown"] as? [String: Any])?["reason"] as? String,
+           "no_unambiguous_accepted_head")
+    check("while the settled interval is a named group",
+          groupIDs(conflicted).contains(byInterval[keys["settled"]!]!.featureID))
+
+    // The same fixture, one head withdrawn: it is the *conflict* that excluded the interval and
+    // nothing else about it, which is the assertion this group exists for.
+    check("withdrawing one of the two rival heads records", UsageLedger.shared.record(
+        UsageLedger.AttributionEvent(
+            eventID: "conflict-manual-withdrawal", intervalKey: keys["conflict"]!,
+            dimension: .feature, valueID: "feature-manual-rival",
+            valueLabel: "Manual rival Feature", source: .manual, confidence: nil,
+            classifierID: nil, classifierVersion: nil, evidenceDigest: nil, decision: .rejected,
+            decisionSource: "focused-test", assignedAt: at,
+            supersedesEventID: "conflict-manual-head")))
+    let settled = query()
+    expect("one unambiguous head is now resolvable",
+           UsageLedger.shared.resolvedAttribution(intervalKey: keys["conflict"]!,
+                                                  dimension: .feature)?.valueID,
+           byInterval[keys["conflict"]!]!.featureID)
+    check("and the same interval is a named group at last",
+          groupIDs(settled).contains(byInterval[keys["conflict"]!]!.featureID))
+    expect("leaving only the withdrawn one Unknown",
+           (settled["unknown"] as? [String: Any])?["runs"] as? Int, 1)
+}
+
+group("Feature backfill proposes without accepting") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let at = ISO8601DateFormatter().date(from: "2026-08-24T11:30:00Z")!
+    let keys = featureFixtureIntervals(at: at)
+    let evidence = UsageLedger.featureEvidence(rows: UsageLedger.shared.rows(),
+                                               taskFacts: featureFixtureFacts(),
+                                               scheduleTitles: [:])
+    let run = UsageLedger.shared.backfillFeatureProposals(evidence: evidence, now: at)
+    check("a backfill never takes a policy decision", !run.accepting)
+    expect("it writes the proposals", run.proposed, 2)
+    expect("and no acceptance at all", run.accepted, 0)
+    expect("so nothing is counted as below a threshold nobody applied", run.belowThreshold, 0)
+    expect("its receipt still names every decline",
+           run.declined[UsageFeatureClassifier.DeclineReason.solitaryDeclaredLabel.rawValue], 1)
+    check("no historical row resolves a Feature", keys.allSatisfy {
+        UsageLedger.shared.resolvedAttribution(intervalKey: $0, dimension: .feature) == nil
+    })
+    let features = featurePortfolio(UsageQueryService().query(
+        .init(from: "2026-08-24", to: "2026-08-24", timezoneID: "UTC"), now: at).payload)
+    check("and the Portfolio table is unchanged by a dry run",
+          (features["groups"] as? [[String: Any]])?.isEmpty == true)
+    expect("every run staying Unknown", (features["unknown"] as? [String: Any])?["runs"] as? Int, 3)
+    expect("a second backfill writes nothing twice",
+           UsageLedger.shared.backfillFeatureProposals(evidence: evidence, now: at).proposed, 0)
+}
+
+group("the analytics payload states whether a Feature classifier is configured") {
+    let at = ISO8601DateFormatter().date(from: "2026-08-25T08:05:00Z")!
+    let row = analyticsRow("feature-classifier-state", at: at)
+    func features(_ state: UsageLedger.FeatureClassifierState) -> [String: Any] {
+        featurePortfolio(UsageQueryService(rows: { [row] }, featureClassifier: { state })
+            .query(.init(from: "2026-08-25", to: "2026-08-25", timezoneID: "UTC"),
+                   now: at).payload)
+    }
+    let off = features(.notConfigured)
+    let offClassifier = off["classifier"] as? [String: Any] ?? [:]
+    expect("with no producer, attribution is not automatic",
+           off["automaticAttribution"] as? Bool, false)
+    expect("and the classifier says so in one word", offClassifier["configured"] as? Bool, false)
+    check("reporting no threshold, because nothing is applying one",
+          offClassifier["threshold"] == nil && offClassifier["id"] == nil
+            && offClassifier["version"] == nil)
+
+    let on = features(UsageLedger.FeatureClassifierState(
+        configured: true, classifierID: "fixture-feature-merger", classifierVersion: "7",
+        threshold: 0.91))
+    let onClassifier = on["classifier"] as? [String: Any] ?? [:]
+    expect("a configured producer is stated as one", on["automaticAttribution"] as? Bool, true)
+    expect("by the id that is actually configured", onClassifier["id"] as? String,
+           "fixture-feature-merger")
+    expect("at the version that is actually configured", onClassifier["version"] as? String, "7")
+    expect("and the threshold that is actually applied", onClassifier["threshold"] as? Double, 0.91)
+    check("while the policy and the Unknown reason are the same either way",
+          on["policy"] as? String == "one_unambiguous_accepted_head"
+            && off["policy"] as? String == "one_unambiguous_accepted_head"
+            && (on["unknown"] as? [String: Any])?["reason"] as? String
+                == "no_unambiguous_accepted_head")
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-feature-classifier-config-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    func stored(_ json: String) -> Config {
+        try! Data(json.utf8).write(to: directory.appendingPathComponent("config.json"))
+        return Config(directoryForTesting: directory)
+    }
+    let untouched = stored("{}")
+    expect("a config file that says nothing leaves the classifier off",
+           untouched.usageFeatureClassifier, false)
+    expect("with the documented default threshold",
+           untouched.usageFeatureAcceptanceThreshold, 0.80)
+    let asked = stored("{\"usage_feature_classifier\":true,"
+        + "\"usage_feature_acceptance_threshold\":0.93}")
+    expect("a file can turn the classifier on", asked.usageFeatureClassifier, true)
+    expect("and move the threshold inside its range",
+           asked.usageFeatureAcceptanceThreshold, 0.93)
+    expect("a threshold below 0.5 is ignored rather than clamped, because 0 accepts everything",
+           stored("{\"usage_feature_acceptance_threshold\":0.2}")
+               .usageFeatureAcceptanceThreshold, 0.80)
+    expect("and what a reader is told is what that file asked for",
+           UsageLedger.featureClassifierState(config: asked).threshold, 0.93)
+}
+
+group("a Feature is scoped by the Project rule the Portfolio uses") {
+    // The rule itself, first. A Clawdline-managed worktree path ends in a task UUID, so its
+    // basename is a disposable task id and not a repository — the Projects table refuses to make
+    // a Project of it, and the Feature scope has to refuse it in the same place.
+    let worktree = "/Users/tester/Library/Application Support/Clawdline/worktrees/"
+    let repository = "/private/acme/november"
+    let missing = UsageFeatureClassifier.resolveProject(projectKey: "   ")
+    expect("a row with no Project key names no Project", missing.identity, nil)
+    expect("and says which refusal that was", missing.refusal, .missingProjectKey)
+    let disposable = UsageFeatureClassifier.resolveProject(
+        projectKey: worktree + "11111111-2222-4333-8444-555555555555")
+    expect("neither does a disposable managed worktree", disposable.identity, nil)
+    expect("and it says which refusal it was", disposable.refusal, .legacyManagedWorktree)
+    let canonical = UsageFeatureClassifier.resolveProject(projectKey: repository + "/./")
+    expect("a canonical key is the standardized path", canonical.identity, repository)
+    expect("with nothing to refuse", canonical.refusal, nil)
+    expect("and an accepted Project head outranks the stored key",
+           UsageFeatureClassifier.resolveProject(
+               projectKey: worktree + "11111111-2222-4333-8444-555555555555",
+               acceptedProjectIdentity: repository).identity,
+           repository)
+
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let at = ISO8601DateFormatter().date(from: "2026-08-26T13:20:00Z")!
+    // Two tasks of one declared work line, each recorded inside its own disposable worktree.
+    // Split by the raw `project_key`, they are two Features carrying one label — which is what
+    // real data showed on 2026-09-03: three work lines arriving as six rows on the Feature table
+    // with nothing on screen to explain why.
+    let rows: [(name: String, task: String, seconds: Double, worktreeID: String, output: Int)] = [
+        ("scope-one", "task-scope-one", 0, "11111111-2222-4333-8444-555555555555", 131),
+        ("scope-two", "task-scope-two", 180, "66666666-7777-4888-8999-aaaaaaaaaaaa", 227),
+    ]
+    var keys: [String: String] = [:]
+    for row in rows {
+        var sample = ledgerSample(.claude, session: "scope-session-\(row.name)", boundary: .task,
+                                  id: row.task, origin: .dispatch,
+                                  usage: ["input": row.output + 1, "output": row.output,
+                                          "cache_read": row.output + 2,
+                                          "cache_write": row.output + 3,
+                                          "total": row.output * 4 + 6],
+                                  model: "claude-opus-5", at: at.addingTimeInterval(row.seconds))
+        sample.taskID = row.task
+        sample.projectKey = worktree + row.worktreeID
+        sample.depth = 1
+        sample.seal = true
+        keys[row.name] = UsageLedger.shared.observeNow(sample)!
+    }
+    let facts: [String: UsageLedger.TaskFacts] = [
+        "task-scope-one": UsageLedger.TaskFacts(
+            title: "Scope one title", declaredWorkLine: "November ladder",
+            planHeadline: "one plan headline naming nothing", kind: "code"),
+        "task-scope-two": UsageLedger.TaskFacts(
+            title: "Scope two title", declaredWorkLine: "November ladder",
+            planHeadline: "another plan headline naming nothing", kind: "review"),
+    ]
+    func classify(_ acceptedProjects: [String: UsageLedger.AcceptedAttribution])
+        -> [String: UsageFeatureClassifier.Proposal] {
+        let evidence = UsageLedger.featureEvidence(rows: UsageLedger.shared.rows(),
+                                                   taskFacts: facts, scheduleTitles: [:],
+                                                   acceptedProjects: acceptedProjects)
+        var byInterval: [String: UsageFeatureClassifier.Proposal] = [:]
+        for proposal in UsageFeatureClassifier.classify(evidence).proposals {
+            byInterval[proposal.intervalKey] = proposal
+        }
+        return byInterval
+    }
+    func projects() -> [[String: Any]] {
+        ((UsageQueryService().query(.init(from: "2026-08-26", to: "2026-08-26",
+                                          timezoneID: "UTC"), now: at)
+            .payload["portfolio"] as? [String: Any])?["projects"] as? [[String: Any]]) ?? []
+    }
+
+    let suppressed = classify([:])
+    check("two disposable worktrees carrying one label are one Feature",
+          suppressed[keys["scope-one"]!]?.featureID != nil
+            && suppressed[keys["scope-one"]!]?.featureID
+                == suppressed[keys["scope-two"]!]?.featureID)
+    expect("scoped where the Projects table put them, which is nowhere",
+           suppressed[keys["scope-one"]!]?.featureID,
+           UsageFeatureClassifier.featureID(
+               projectScope: UsageFeatureClassifier.unknownProjectScope,
+               rung: .declaredWorkLine, groupingKey: "November ladder"))
+    let suppressedProjects = projects()
+    check("and the Projects table says exactly that about the same two rows",
+          suppressedProjects.count == 1
+            && suppressedProjects.first?["label"] as? String == "Unknown Project"
+            && suppressedProjects.first?["runs"] as? Int == 2)
+    expect("in the classifier's own word for the refusal",
+           (suppressedProjects.first?["identity"] as? [String: Any])?["reasons"] as? [String],
+           [UsageFeatureClassifier.ProjectScopeRefusal.legacyManagedWorktree.rawValue])
+
+    // The migration's own remedy, applied: one accepted Project head per interval naming the
+    // repository. The Projects table names it, and the Feature scope moves with it.
+    for name in rows.map(\.name) {
+        let key = keys[name]!
+        check("an accepted Project head records for \(name)", UsageLedger.shared.record(
+            UsageLedger.AttributionEvent(
+                eventID: "scope-project-head-\(name)", intervalKey: key, dimension: .project,
+                valueID: repository, valueLabel: "november", source: .manual, confidence: nil,
+                classifierID: nil, classifierVersion: nil, evidenceDigest: nil,
+                decision: .accepted, decisionSource: "focused-test", assignedAt: at,
+                supersedesEventID: nil)))
+    }
+    let accepted = classify(
+        UsageLedger.shared.analyticsRead(UsageLedger.AnalyticsFilter(limit: 500)).acceptedProjects)
+    expect("the Projects table now names the repository",
+           projects().first?["label"] as? String, "november")
+    expect("and the Feature is scoped to that same accepted Project",
+           accepted[keys["scope-one"]!]?.featureID,
+           UsageFeatureClassifier.featureID(projectScope: repository, rung: .declaredWorkLine,
+                                            groupingKey: "November ladder"))
+    check("still one Feature, and not the one the suppressed scope produced",
+          accepted[keys["scope-one"]!]?.featureID == accepted[keys["scope-two"]!]?.featureID
+            && accepted[keys["scope-one"]!]?.featureID
+                != suppressed[keys["scope-one"]!]?.featureID)
+}
+
 }

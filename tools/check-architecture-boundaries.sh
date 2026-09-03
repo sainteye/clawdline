@@ -96,11 +96,24 @@ manifest_group_count=$(awk '
   END { print count + 0 }
 ' Tests/TestGroupManifest.swift)
 # 510 until the compile lease's second correction round, which added the group for a refusal
-# counting as a waiter's ask, then 511; 498 once that lease's thirteen groups were removed with it.
+# counting as a waiter's ask, then 511; 498 once that lease's thirteen groups were removed with it;
+# 503 once the local Feature classifier landed its five — the classifier's own rung ladder, its
+# acceptance policy, the conflicting-head refusal, the backfill dry run, and the payload's statement
+# of whether a producer is configured; 504 when that classifier's correction round added the sixth,
+# for the Project scope a Feature and the Projects table now resolve by one shared rule.
 # A number that only ever rises silently is not a ratchet, so both directions are named here the
 # way the `Orchestrator.swift` ceiling's are.
-[ "$manifest_group_count" -eq 498 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 498"
+#
+# **This number and the manifest it counts moved apart once, and the guard stayed green.** On
+# 2026-09-03 a root took its own manifest edit back out of the shared tree while the lease removal
+# merged, and afterwards the manifest held 498 and this line expected 498 — they agreed with each
+# other and were wrong together, while `Tests/UsageLedgerTests.swift` still declared five groups
+# neither of them listed. Nothing here can see that: what catches it is
+# `validateExecutedTestGroupManifest()`, which needs a whole suite run, and
+# `verify_swift_source_manifest`, which refuses to start one. **A green light that two edited
+# numbers produced by agreeing with each other looks exactly like a correct one.**
+[ "$manifest_group_count" -eq 504 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 504"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

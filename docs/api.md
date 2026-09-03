@@ -3372,9 +3372,10 @@ Authentication is identical on all three routes: an orchestrator token or a pair
 assistant/model/origin, final project name and usage metadata; it contains no prompt text or raw
 filesystem path.
 
-The future Project/Feature recording contract and the append-only small-LLM merge boundary are in
-[`docs/usage-attribution.md`](usage-attribution.md). An LLM may propose a label; only one
-unambiguous accepted head enters Feature totals, and no attribution event can rewrite tokens.
+The Project/Feature recording contract and the append-only classifier boundary are in
+[`docs/usage-attribution.md`](usage-attribution.md). What proposes a label today is a local
+deterministic classifier, source `heuristic`, and no model participates; only one unambiguous
+accepted head enters Feature totals, and no attribution event can rewrite tokens.
 
 ### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
 

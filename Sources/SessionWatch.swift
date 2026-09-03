@@ -684,6 +684,12 @@ final class SessionWatch {
             // five minutes; see `UsageLedger.checkpoint(sessions:now:)`.
             UsageLedger.checkpoint(sessions: sessions)
 
+            // And who that cost belongs to, when this Mac has been told to work it out. Off by
+            // default, throttled to the same five-minute cadence inside the callee, and here
+            // rather than inside the ledger's own queue because the pass reads rows and appends
+            // events — both of which take `UsageLedger.queue`, and re-entering it deadlocks.
+            UsageLedger.classifyFeaturesIfConfigured()
+
             // Only the ones nothing is known about yet.
             var grids: [String: ProjectIcon.Grid] = [:]
             for session in sessions where self.grids[session.id] == nil {

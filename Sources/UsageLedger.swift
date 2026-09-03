@@ -230,7 +230,14 @@ final class UsageLedger {
         + "or task success."
 
     enum AttributionDimension: String, CaseIterable { case project, feature }
-    enum AttributionSource: String, CaseIterable { case explicit, inherited, manual, llm, policy }
+    /// Who made the assignment. `heuristic` is the local Feature classifier in
+    /// `Sources/UsageFeatureClassifier.swift`: it is not `llm`, because there is no model in it
+    /// and saying otherwise would be a lie about provenance, and it is not `policy`, because a
+    /// policy decides while this observes evidence. `valid(_:)` holds it to the same evidence
+    /// requirements as the other two machine sources.
+    enum AttributionSource: String, CaseIterable {
+        case explicit, inherited, manual, llm, policy, heuristic
+    }
     enum AttributionDecision: String, CaseIterable { case proposed, accepted, rejected }
 
     /// One append-only classification decision. A small LLM may write `proposed`; analytics uses
@@ -1091,13 +1098,18 @@ final class UsageLedger {
         }
     }
 
+    /// Every accepted decision nothing has superseded. `acceptedHead(from:)` collapses "none" and
+    /// "two of them" into the same nil, and a producer deciding whether it may append another
+    /// acceptance has to tell those two apart.
+    static func activeAcceptedHeads(from events: [AttributionEvent]) -> [AttributionEvent] {
+        let superseded = Set(events.compactMap(\.supersedesEventID))
+        return events.filter { $0.decision == .accepted && !superseded.contains($0.eventID) }
+    }
+
     /// Only a single active accepted head is usable. A proposal, rejection, or two conflicting
     /// accepted heads returns nil, so a classifier disagreement cannot silently split totals.
     static func acceptedHead(from events: [AttributionEvent]) -> AttributionEvent? {
-        let superseded = Set(events.compactMap(\.supersedesEventID))
-        let accepted = events.filter {
-            $0.decision == .accepted && !superseded.contains($0.eventID)
-        }
+        let accepted = activeAcceptedHeads(from: events)
         return accepted.count == 1 ? accepted[0] : nil
     }
 
@@ -1110,12 +1122,11 @@ final class UsageLedger {
         URL(fileURLWithPath: raw).standardizedFileURL.path
     }
 
+    /// One implementation, in `Sources/UsageFeatureClassifier.swift`, because the Feature scope
+    /// and the Projects table have to refuse the same paths — see
+    /// ``UsageFeatureClassifier/resolveProject(projectKey:acceptedProjectIdentity:)``.
     static func legacyManagedWorktreeTaskID(_ raw: String) -> String? {
-        let path = migrationPath(raw)
-        guard path.contains("/Clawdline/worktrees/"),
-              let leaf = path.split(separator: "/").last,
-              UUID(uuidString: String(leaf)) != nil else { return nil }
-        return String(leaf)
+        UsageFeatureClassifier.legacyManagedWorktreeTaskID(raw)
     }
 
     private static func gitCommonDirectory(_ directory: String) -> String? {
@@ -1256,7 +1267,11 @@ final class UsageLedger {
         return LegacyProjectMigrationPlan(events: events, audit: audit)
     }
 
-    private func containsAttributionEvent(_ eventID: String) -> Bool {
+    /// Whether the store already holds this event id. It is the second half of the only honest
+    /// reading of `record(_:)` returning false: a duplicate id, or a refusal. The Feature
+    /// attribution run in `Sources/UsageFeatureAttribution.swift` asks it for the same reason the
+    /// legacy Project migration below does.
+    func containsAttributionEvent(_ eventID: String) -> Bool {
         queue.sync {
             guard let db = database() else { return false }
             var statement: OpaquePointer?
@@ -1322,6 +1337,19 @@ final class UsageLedger {
         }
     }
 
+    /// The accepted heads this interval already carries, superseded ones excluded. A machine
+    /// about to append another acceptance reads this first: appending beside an existing head
+    /// makes the interval resolve to nothing, which is how an interval silently leaves its
+    /// Feature for `Unknown`.
+    func activeAcceptedAttribution(intervalKey: String, dimension: AttributionDimension)
+        -> [AttributionEvent] {
+        queue.sync {
+            guard let db = database() else { return [] }
+            return Self.activeAcceptedHeads(
+                from: attributionEvents(db, intervalKey: intervalKey, dimension: dimension))
+        }
+    }
+
     private func valid(_ event: AttributionEvent) -> Bool {
         func short(_ text: String, _ limit: Int) -> Bool {
             !text.isEmpty && text.count <= limit
@@ -1332,7 +1360,7 @@ final class UsageLedger {
               short(event.decisionSource, 120), event.assignedAt.timeIntervalSince1970.isFinite,
               event.confidence.map({ $0.isFinite && (0...1).contains($0) }) ?? true
         else { return false }
-        if event.source == .llm || event.source == .policy {
+        if event.source == .llm || event.source == .policy || event.source == .heuristic {
             guard let classifier = event.classifierID, short(classifier, 120),
                   let version = event.classifierVersion, short(version, 120),
                   let digest = event.evidenceDigest, digest.count == 64,
@@ -3102,11 +3130,15 @@ final class UsageQueryService {
 
     private let readRows: (UsageLedger.AnalyticsFilter) -> UsageLedger.AnalyticsRead
     private let readScheduleLabels: () -> [String: String]
+    /// Whether a Feature producer is configured, injected the way `readScheduleLabels` is: a test
+    /// says what the setting is without reaching for the person's own config file.
+    private let readFeatureClassifier: () -> UsageLedger.FeatureClassifierState
     private let encodeJSON: ([String: Any]) -> Data?
 
     init() {
         readRows = { UsageLedger.shared.analyticsRead($0) }
         readScheduleLabels = { Orchestrator.usageScheduleLabels() }
+        readFeatureClassifier = { UsageLedger.featureClassifierState() }
         encodeJSON = Self.jsonEncoderForTesting ?? {
             try? JSONSerialization.data(withJSONObject: $0,
                                         options: [.sortedKeys, .withoutEscapingSlashes])
@@ -3119,6 +3151,9 @@ final class UsageQueryService {
          acceptedFeatures: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          acceptedProjects: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          scheduleLabels: @escaping () -> [String: String] = { [:] },
+         featureClassifier: @escaping () -> UsageLedger.FeatureClassifierState = {
+             .notConfigured
+         },
          jsonEncoder: @escaping ([String: Any]) -> Data? = {
              try? JSONSerialization.data(withJSONObject: $0,
                                          options: [.sortedKeys, .withoutEscapingSlashes])
@@ -3131,6 +3166,7 @@ final class UsageQueryService {
                 acceptedFeatures: acceptedFeatures(), acceptedProjects: acceptedProjects())
         }
         readScheduleLabels = scheduleLabels
+        readFeatureClassifier = featureClassifier
         encodeJSON = jsonEncoder
     }
 
@@ -3323,6 +3359,7 @@ final class UsageQueryService {
             acceptedProjects: reading.acceptedProjects,
             previousAcceptedProjects: previousAcceptedProjects, calendar: calendar,
             scheduleLabels: readScheduleLabels(),
+            featureClassifier: readFeatureClassifier(),
             query: query, priorRange: priorRange,
             comparisonTruncated: truncated || previousTruncated)
         if truncated {
@@ -3521,9 +3558,6 @@ final class UsageQueryService {
 
     // MARK: - Project Portfolio projection
 
-    private static let legacyManagedWorktreeProjectReason =
-        "legacy_managed_worktree_project_key"
-
     private struct ProjectIdentityEvidence {
         var identity: String?
         var reason: String?
@@ -3536,24 +3570,19 @@ final class UsageQueryService {
     /// Rows recorded before canonical Project keys landed may already contain a Clawdline-managed
     /// worktree path ending in a task UUID. Until the user chooses an append-only migration policy,
     /// this read seam suppresses that disposable label into Unknown without rewriting the ledger.
+    ///
+    /// **The rule itself lives in ``UsageFeatureClassifier/resolveProject(projectKey:
+    /// acceptedProjectIdentity:)``**, because the Feature scope has to reach the same answer for
+    /// the same row. Two copies of it split three work lines into six Features.
     private static func projectIdentity(
         _ row: UsageLedger.Row,
         acceptedProjects: [String: UsageLedger.AcceptedAttribution]
     ) -> ProjectIdentityEvidence {
-        if let accepted = acceptedProjects[row.intervalKey] {
-            return ProjectIdentityEvidence(
-                identity: accepted.id, reason: nil)
-        }
-        guard let raw = row.projectKey?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else {
-            return ProjectIdentityEvidence(identity: nil, reason: "project_key_missing")
-        }
-        let path = URL(fileURLWithPath: raw).standardizedFileURL.path
-        if UsageLedger.legacyManagedWorktreeTaskID(path) != nil {
-            return ProjectIdentityEvidence(identity: nil,
-                                           reason: legacyManagedWorktreeProjectReason)
-        }
-        return ProjectIdentityEvidence(identity: path, reason: nil)
+        let resolution = UsageFeatureClassifier.resolveProject(
+            projectKey: row.projectKey,
+            acceptedProjectIdentity: acceptedProjects[row.intervalKey]?.id)
+        return ProjectIdentityEvidence(identity: resolution.identity,
+                                       reason: resolution.refusal?.rawValue)
     }
 
     private static func projectID(_ identity: String?) -> String {
@@ -3817,7 +3846,8 @@ final class UsageQueryService {
     }
 
     private static func featureWork(_ rows: [UsageLedger.Row],
-                                    accepted: [String: UsageLedger.AcceptedAttribution])
+                                    accepted: [String: UsageLedger.AcceptedAttribution],
+                                    classifier: UsageLedger.FeatureClassifierState)
         -> [String: Any] {
         var groups: [String: (label: String, rows: [UsageLedger.Row])] = [:]
         var unknown: [UsageLedger.Row] = []
@@ -3845,8 +3875,13 @@ final class UsageQueryService {
         return [
             "status": payload.isEmpty && !rows.isEmpty
                 ? "no_accepted_attribution" : "available",
-            "automaticAttribution": false,
+            // What the producer situation actually is, rather than the literal `false` this
+            // carried while no producer existed. An empty table under a configured classifier
+            // and an empty table under none are different facts, and the surface has to be able
+            // to tell them apart.
+            "automaticAttribution": classifier.configured,
             "policy": "one_unambiguous_accepted_head",
+            "classifier": classifier.payload,
             "groups": payload,
             "unknown": [
                 "label": "Unknown Feature", "runs": Set(unknown.map(runID)).count,
@@ -3929,6 +3964,7 @@ final class UsageQueryService {
                                   acceptedProjects: [String: UsageLedger.AcceptedAttribution],
                                   previousAcceptedProjects: [String: UsageLedger.AcceptedAttribution],
                                   calendar: Calendar, scheduleLabels: [String: String],
+                                  featureClassifier: UsageLedger.FeatureClassifierState,
                                   query: Query, priorRange: PreviousRange?,
                                   comparisonTruncated: Bool) -> [String: Any] {
         let currentGroups = groupedProjects(rows, acceptedProjects: acceptedProjects)
@@ -3966,7 +4002,8 @@ final class UsageQueryService {
             "projects": projects,
             "scheduledWork": scheduledWork(rows, calendar: calendar,
                                            labels: scheduleLabels),
-            "features": featureWork(rows, accepted: acceptedFeatures),
+            "features": featureWork(rows, accepted: acceptedFeatures,
+                                    classifier: featureClassifier),
             "insights": portfolioInsights(projects: projects, rows: rows,
                                            previousRows: previousRows),
         ]
