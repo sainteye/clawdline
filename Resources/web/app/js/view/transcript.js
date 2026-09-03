@@ -909,7 +909,10 @@ export function entryHTML(e) {
  * bytes come down the session's own channel and are held here as an object URL.
  */
 function carriedArtifactSource(session) {
-    if (typeof api.image !== "function" || !session) return null;
+    // `api` is a live binding that starts null, and `typeof null.image` throws rather than
+    // answering "undefined". Every other transport question on this page is asked after the
+    // entry point has installed one; this one is asked from a render, so it asks safely.
+    if (!api || typeof api.image !== "function" || !session) return null;
     return function (artifact) {
         return api.image(session, artifact.id).then(function (answer) {
             var url = URL.createObjectURL(

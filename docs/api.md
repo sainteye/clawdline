@@ -585,7 +585,7 @@ Everything above is the direct path: a browser on this Mac's own network, or thr
 Cloudflare tunnel, holding a paired-device token. A browser on the **Cloud** path holds no such
 token and speaks no HTTP to this Mac at all — it publishes one encrypted envelope to the relay,
 and the Mac publishes one back. So the routes above are not reachable from there by definition,
-and what is reachable is a closed list of six, named in `CloudHeadlessRead`:
+and what is reachable is a closed list of seven, named in `CloudHeadlessRead`:
 
 | asked as | answered by | the direct route it stands for |
 |---|---|---|

@@ -926,6 +926,23 @@ function pngAnswer(id, bytes = PNG) {
             data: Buffer.from(bytes).toString("base64") } };
 }
 
+// The one thing neither half's own suite can see: the Mac writes these four field names and
+// this client reads them, and a rename on either side would leave both suites green while every
+// picture on the cloud path came back `bad_payload`.
+const bridgeSource = await readFile(
+    new URL("../../../../../Sources/CloudAppBridge.swift", import.meta.url), "utf8");
+const imageOutcome = bridgeSource.split("private static func imageOutcome")[1]
+    .split("\n    }")[0];
+for (const field of ['"id"', '"media_type"', '"byte_count"', '"data"']) {
+    assert.ok(imageOutcome.includes(field),
+        "the Mac's image answer carries " + field + ", which this client reads by that name");
+}
+assert.ok(imageOutcome.includes("base64EncodedString()"),
+    "and carries the picture base64, which is what `imageAnswerBytes` decodes");
+assert.ok(imageOutcome.includes("image_too_large_for_cloud")
+    && imageOutcome.includes("image_media_type_unsupported"),
+    "and refuses in the two codes the tile has sentences for");
+
 const imageCloud = makeReadingCloud();
 const imageSocket = await becomeReady(imageCloud);
 const firstPicture = imageCloud.image({ machine: "mac-01", session: "session-01" }, FIRST);

@@ -467,8 +467,9 @@ export class CloudClient {
      * no such route and never will: the Mac is not reachable from it, and a console that could
      * fetch the picture would be a console that had it in the clear. So there is no shorter thing
      * to send than the picture, and no ticket to redeem it with that would not itself be an
-     * envelope. What is left to decide is only how big a picture may be, which the Mac decides
-     * from the relay's per-envelope cap and answers `image_too_large_for_cloud` above.
+     * envelope. What is left to decide is only how big a picture may be, and the Mac decides that
+     * from the relay's per-envelope cap: over it, the answer is `image_too_large_for_cloud` with
+     * both numbers in it, and the tile says the size rather than drawing a broken image.
      *
      * The answer arrives named `image.<id>`, not `image`: a transcript's pictures are asked for
      * together and come back on one channel in whatever order the disk gives them.
