@@ -301,7 +301,7 @@ group("dispatch answers an immediate tab refusal; the later pump finalizes its r
     reclaim.serialize = ["pump-reclaim-deadlines"]
     reclaim.queuedSecret = Orchestrator.sealQueuedSecret(reclaimSecret)!
     reclaim.isolation = .worktree
-    let fakePath = Orchestrator.worktreePath(project: "/tmp", taskID: reclaimID)!
+    let fakePath = OrchestratorDraft.worktreePath(project: "/tmp", taskID: reclaimID)!
     reclaim.worktree = Orchestrator.Worktree(
         path: fakePath, branch: "clawdline/task/\(reclaimID)", base: "deadbeef",
         repository: "/tmp", cwd: fakePath)
@@ -370,7 +370,7 @@ group("a tab that never opened is retried from its own task file, twice and no f
     // Never `appendingPathComponent("")`: that names the task root itself, and this group's
     // `defer` deletes what it is given.
     func sweep(_ candidate: String?) {
-        guard let candidate, Orchestrator.isTaskID(candidate) else { return }
+        guard let candidate, OrchestratorDraft.isTaskID(candidate) else { return }
         made.append(Orchestrator.root.appendingPathComponent(candidate, isDirectory: true))
     }
 
@@ -403,7 +403,7 @@ group("a tab that never opened is retried from its own task file, twice and no f
           copied?.contains("the instructions nothing else wrote down") == true
             && copied?.contains("\"task_id\"") == true && copied?.contains(firstID) == true)
     check("the secret is fresh, and handed back so the caller has what a dispatch would give it",
-          (first?["secret"] as? String).map(Orchestrator.isTaskSecret) == true
+          (first?["secret"] as? String).map(OrchestratorDraft.isTaskSecret) == true
             && first?["secret"] as? String != originalSecret)
     check("and the chain is visible in the registry rather than three unrelated tasks",
           firstRecord?["respawn_of"] as? String == originalID
@@ -461,7 +461,8 @@ group("a tab that never opened is retried from its own task file, twice and no f
     let loopedSecond = record(payload(Orchestrator.respawn(taskID: loopedID)))?["id"] as? String
     sweep(loopedSecond)
     check("two retries may descend from one original by asking that original twice",
-          Orchestrator.isTaskID(loopedFirst ?? "") && Orchestrator.isTaskID(loopedSecond ?? "")
+          OrchestratorDraft.isTaskID(loopedFirst ?? "")
+            && OrchestratorDraft.isTaskID(loopedSecond ?? "")
             && loopedFirst != loopedSecond)
     let looped = refusal(Orchestrator.respawn(taskID: loopedID))
     expect("and a third from that same original is refused", looped?.0, 409)

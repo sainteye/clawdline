@@ -451,7 +451,7 @@ enum Coordinator {
     /// label. It returns no evidence for absent, corrupt or unsupported records; callers must
     /// leave unknown identities alone.
     static func rootIdentityEvidence(claimed: String?)
-        -> [Orchestrator.RootIdentityEvidence] {
+        -> [OrchestratorDraft.RootIdentityEvidence] {
         guard let claimed, case .valid(let record) = load(), record.sessionID == claimed,
               let actualAssistant = Assistant(rawValue: record.assistant) else { return [] }
         return [.init(source: "coordinator_binding", terminalID: record.sessionID,
@@ -1098,7 +1098,7 @@ enum CoordinatorSuccession {
         ]
         guard Set(obj.keys) == expectedTop,
               let requestID = obj["request_id"] as? String,
-              Orchestrator.isTaskID(requestID),
+              OrchestratorDraft.isTaskID(requestID),
               let coordinatorID = obj["expected_coordinator_id"] as? String,
               UUID(uuidString: coordinatorID)?.uuidString.lowercased() == coordinatorID,
               let expectedGeneration = obj["expected_generation"] as? Int,
@@ -1114,7 +1114,7 @@ enum CoordinatorSuccession {
         guard Set(handoff.keys).isSubset(of: allowedHandoff),
               ["handoff_id", "project_dir", "assistant"].allSatisfy({ handoff[$0] != nil }),
               let handoffID = handoff["handoff_id"] as? String,
-              Orchestrator.isTaskID(handoffID),
+              OrchestratorDraft.isTaskID(handoffID),
               let projectDir = handoff["project_dir"] as? String,
               StartPoints.usable(projectDir), StartPoints.isDirectory(projectDir),
               let assistantName = handoff["assistant"] as? String,
@@ -1456,10 +1456,10 @@ enum CoordinatorSuccession {
     }
 
     private static func valid(_ record: Record) -> Bool {
-        record.version == recordVersion && Orchestrator.isTaskID(record.requestID)
+        record.version == recordVersion && OrchestratorDraft.isTaskID(record.requestID)
             && UUID(uuidString: record.coordinatorID) != nil
             && record.expectedGeneration > 0 && !record.senderSessionID.isEmpty
-            && Orchestrator.isTaskID(record.handoffID) && StartPoints.usable(record.projectDir)
+            && OrchestratorDraft.isTaskID(record.handoffID) && StartPoints.usable(record.projectDir)
             && Assistant(rawValue: record.assistant) != nil && record.createdAt.isFinite
             && record.createdAt > 0 && record.acceptedAt.isFinite && record.acceptedAt > 0
             && record.revision > 0 && !record.state.isEmpty

@@ -187,7 +187,7 @@ enum Orchestrator {
         validation["clawdline_protocol"] = 1
         validation["task_id"] = id
         validation["root"] = ["session_id": NSNull(), "label": title]
-        if case .bad(let why) = draft(from: validation, expecting: id,
+        if case .bad(let why) = OrchestratorDraft.draft(from: validation, expecting: id,
                                       isDirectory: isDirectory) {
             return .bad("task.\(why)")
         }
@@ -596,7 +596,7 @@ enum Orchestrator {
     /// most wants the schedule gone, and would send them back to the Mac and a text editor —
     /// which is the thing this route exists to end.
     static func deleteSchedule(id: String) -> Reply {
-        guard isTaskID(id) else {
+        guard OrchestratorDraft.isTaskID(id) else {
             return .refused(404, "not_found", "No schedule named that")
         }
         let filename = "\(id).json"
@@ -652,7 +652,8 @@ enum Orchestrator {
     /// a row, and the wrong amount for the only screen where somebody can check what they just
     /// made, which is why this exists and why it is the same read-level door the list is behind.
     static func scheduleRecord(id: String, now: Date = Date()) -> [String: Any]? {
-        guard isTaskID(id), let schedule = schedules().first(where: { $0.id == id }) else {
+        guard OrchestratorDraft.isTaskID(id),
+              let schedule = schedules().first(where: { $0.id == id }) else {
             return nil
         }
         var out: [String: Any] = ["id": schedule.id, "title": schedule.title,
@@ -750,7 +751,8 @@ enum Orchestrator {
     private static func availableScheduledSessionID(of task: Task) -> String? {
         guard task.scheduleID != nil, let path = task.transcriptPath,
               FileManager.default.fileExists(atPath: path) else { return nil }
-        guard let session = provenChildSessionID(of: task), isTaskID(session) else { return nil }
+        guard let session = provenChildSessionID(of: task),
+              OrchestratorDraft.isTaskID(session) else { return nil }
         return session
     }
 
@@ -940,7 +942,7 @@ enum Orchestrator {
     }
 
     private static func scheduleNamed(_ id: String) -> Schedule? {
-        guard isTaskID(id) else { return nil }
+        guard OrchestratorDraft.isTaskID(id) else { return nil }
         return schedules().first { $0.id == id }
     }
 
@@ -2305,9 +2307,10 @@ enum Orchestrator {
     static var childIdentityRefreshForTesting: ((TargetSession, inout Task) -> Bool)?
     /// Overrides only the positive ingress evidence. Nil uses current process-bound terminal and
     /// Coordinator facts; an empty array is a deliberate unknown/offline fixture.
-    static var rootIdentityEvidenceForTesting: [RootIdentityEvidence]?
+    static var rootIdentityEvidenceForTesting: [OrchestratorDraft.RootIdentityEvidence]?
     /// Test seam: observes the warning decision before optional terminal delivery.
-    static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
+    static var workspaceOverlapObserverForTesting:
+        ((Task, [OrchestratorDraft.WorkspaceOverlap]) -> Void)?
     /// Test receipt for the semantic root-notification boundary. The terminal transport itself
     /// is exercised elsewhere; this proves a terminal path reached finalization and its notice.
     static var rootNotificationObserverForTesting: ((Task) -> Void)?
@@ -2318,7 +2321,8 @@ enum Orchestrator {
     /// dispatch uses.
     ///
     /// Production reads `SessionWatch` and opens a real terminal; a suite can do neither, which
-    /// is how everything past ``attachmentDecision(sessionID:assistant:sessions:states:tasks:roles:isChoosing:excluding:)``
+    /// is how everything past
+    /// ``OrchestratorDraft/attachmentDecision(sessionID:assistant:sessions:states:tasks:roles:isChoosing:excluding:)``
     /// — `spawnAttached`, `502 attach_delivery_failed`, the single-flight check the serialize
     /// pump re-runs, and every tab-opening failure at dispatch — came to have no test that could
     /// go red. Both are cleared by ``forget()``.
@@ -4000,1213 +4004,38 @@ enum Orchestrator {
         return String(data: clear, encoding: .utf8)
     }
 
-    // MARK: - Reading the task a root wrote
+    // MARK: - Reading the task a root wrote — the three readings that hold the registry
 
-    /// Everything a task.json has to say before anything is spawned from it. Pure, so a test can
-    /// hand it a dictionary and a pretend filesystem.
-    struct Draft: Equatable {
-        var id = ""
-        var kind = "custom"
-        var assistant = Assistant.claude
-        var model: String?
-        /// A per-dispatch Codex override. Nil deliberately means no CLI config flag, preserving
-        /// both Codex's model default and the user's own configuration.
-        var reasoningEffort: ReasoningEffort?
-        /// What the task asked for, before the ceiling. Nil means it did not ask, and takes the
-        /// ceiling itself — the setting is the default as well as the limit.
-        var permission: Permission?
-        var projectDir = ""
-        var title = ""
-        var instructions = ""
-        var timeoutMinutes = 30
-        var rootSessionId: String?
-        var rootAssistant: Assistant?
-        var rootLabel: String?
-        var parentTaskId: String?
-        /// An explicit detached API dispatch. Without this opt-in, a root-less HTTP request is
-        /// almost certainly a caller that forgot to identify itself and would never receive the
-        /// completion notice or own the child row.
-        var pollOnly = false
-        var plan: String?
-        var graph: PlanningGraph?
-        var serialize: [String] = []
-        var claims: [String] = []
-        var claimsDeclared = false
-        var isolation = Isolation.none
-        var isolationBase: String?
-        /// The Q1 design's §D.3 override: send this task even though the assistant it named
-        /// reads `exhausted`. A reading can be stale, wrong, or about to be moot — a task whose
-        /// window opens after the account's own reset has nothing to lose. Never widens anything
-        /// else: `unknown` and `ok` already dispatch without this, and `low` only ever warns.
-        var ignoreQuota = false
-        var attachSessionId: String?
-    }
-
-    /// Positive evidence that a caller put a physical terminal id where the task protocol needs
-    /// the assistant process's conversation id. Its assistant is an observed fact, not filtered
-    /// through the caller's label. Empty or conflicting evidence is deliberately inconclusive;
-    /// the owned-child HTTP boundary refuses an unresolved owner rather than changing modes.
-    struct RootIdentityEvidence: Equatable {
-        let source: String
-        let terminalID: String
-        let canonicalSessionID: String
-        let assistant: Assistant
-    }
-
-    static func rootIdentityRefusal(claimed: String?, evidence: [RootIdentityEvidence]) -> Reply? {
-        guard let claimed, !claimed.isEmpty else { return nil }
-        let matching = evidence.filter {
-            $0.terminalID == claimed && $0.canonicalSessionID != claimed
-        }
-        let tuples = Set(matching.map {
-            $0.canonicalSessionID + "\u{0}" + $0.assistant.rawValue
-        })
-        guard tuples.count == 1, let proof = matching.first else { return nil }
-        return .refused(
-            status: 422, code: "root_identity_is_terminal",
-            message: "root.session_id is a physical terminal id; use the assistant process-bound "
-                + "conversation id returned as canonical_root_session_id, verify it through "
-                + "GET /v1/orchestrator/whoami, and resend the owned child dispatch.",
-            extra: [
-                "supplied_root_session_id": claimed,
-                "canonical_root_session_id": proof.canonicalSessionID,
-                "canonical_root_assistant": proof.assistant.rawValue,
-                "evidence": matching.map(\.source).sorted(),
-            ])
-    }
-
-    /// After the ingress door selects owned-child or detached mode, enforce the remaining owner
-    /// requirement. Kept pure so refusal is proved without registration or terminal open.
-    static func rootSessionRequirementRefusal(sessionID: String?, pollOnly: Bool) -> Reply? {
-        guard sessionID == nil, !pollOnly else { return nil }
-        return .refused(
-            status: 422, code: "root_session_required",
-            message: "root.session_id is required for API dispatch so the child can be "
-                + "grouped, closed and reported back to its owner. Resolve this interactive "
-                + "Root with GET /v1/orchestrator/whoami, then resend with its current "
-                + "process-bound conversation id and assistant.",
-            extra: [:])
-    }
-
-    /// Interactive ownership and unattended automation are different ingress primitives. A
-    /// generic `poll_only` switch on the ordinary child route made an identity lookup failure look
-    /// like a valid detached decision; by the time the caller noticed, a real executor was already
-    /// working with no completion owner. The route selects the mode now, before registration or a
-    /// terminal starter can run.
-    static func dispatchDoorRefusal(sessionID: String?, pollOnly: Bool,
-                                    allowDetachedAutomation: Bool) -> Reply? {
-        if allowDetachedAutomation {
-            guard sessionID != nil || !pollOnly else { return nil }
-            return .refused(
-                status: 422, code: "detached_task_required",
-                message: "The detached automation route requires root.session_id null and "
-                    + "root.poll_only true. Owned Root-to-Child work belongs on "
-                    + "POST /v1/orchestrator/tasks after resolving the Root with "
-                    + "GET /v1/orchestrator/whoami.",
-                extra: [:])
-        }
-        guard pollOnly else { return nil }
-        return .refused(
-            status: 422, code: "detached_route_required",
-            message: "POST /v1/orchestrator/tasks creates an owned Child and never accepts "
-                + "root.poll_only. Resolve this interactive Root with "
-                + "GET /v1/orchestrator/whoami and resend with root.session_id plus "
-                + "root.assistant. Only unattended automation may use poll-only, through "
-                + "POST /v1/orchestrator/detached-tasks.",
-            extra: [:])
-    }
-
-    /// New ordinary HTTP dispatch must bind both halves of its owner tuple. A missing assistant
-    /// used to fall through ``canonicalRootSession``'s historical Claude default, silently
-    /// turning an omitted wire field into ownership. Persisted rows keep that compatibility;
-    /// this is an ingress-only refusal and detached polling remains explicitly ownerless.
-    static func rootAssistantRequirementRefusal(sessionID: String?, pollOnly: Bool,
-                                                 assistant: Assistant?) -> Reply? {
-        guard sessionID != nil, !pollOnly, assistant == nil else { return nil }
-        return .refused(
-            status: 422, code: "root_assistant_required",
-            message: "root.assistant is required when root.session_id names an owner; send "
-                + "claude or codex. The historical Claude fallback exists only in persisted "
-                + "legacy compatibility readers, not ownership decisions.",
-            extra: [:])
-    }
-
-    /// A live task whose working directory intersects the one being dispatched. The task is a
-    /// value snapshot: warning is advisory, so a task finishing while the new tab opens does not
-    /// turn a truthful observation at dispatch time into a reason to change the reply.
-    struct WorkspaceOverlap {
-        let task: Task
-        let sharedDir: String
-
-        func warning(for newTaskID: String) -> [String: Any] {
-            [
-                "code": "workspace_overlap",
-                "task": task.id,
-                "dir": sharedDir,
-                "message": "Task \(newTaskID) overlaps active task \(task.id) at \(sharedDir).",
-            ]
-        }
-    }
-
-    /// One live task whose declared write set intersects the candidate's. Claim paths are
-    /// absolute here so nested project directories compare in one namespace. `paths` names the
-    /// shared descendant for each conflicting pair, deduplicated in declaration order.
-    struct ClaimsOverlap {
-        let task: Task
-        let paths: [String]
-        let sameRoot: Bool
-        let rootsKnown: Bool
-        let rootLabel: String?
-        /// The blocking task's own canonical root key, before hashing — nil exactly when that
-        /// task's root could not itself be resolved, independent of whether the *pair* counts
-        /// as `rootsKnown`. See `Orchestrator.rootKeyDigest`.
-        let rootKey: String?
-
-        var blocks: Bool { rootsKnown && !sameRoot }
-
-        func warning(for newTaskID: String, now: Date = Date()) -> [String: Any] {
-            [
-                "code": rootsKnown ? "claims_overlap" : "claims_overlap_unknown_root",
-                "task": task.id,
-                "paths": paths,
-                "message": "Task \(newTaskID) shares claimed paths with task \(task.id): "
-                    + paths.joined(separator: ", ") + ".",
-                "age_seconds": max(0, Int(now.timeIntervalSince(task.created))),
-                "root_key": rootKey.map(Orchestrator.rootKeyDigest) as Any? ?? NSNull(),
-            ]
-        }
-    }
-
-    /// One best-effort terminal delivery, separated from the AppleScript side so aggregation and
-    /// missing-root decisions can be tested without a live terminal.
-    struct WorkspaceOverlapNotice {
-        let rootSessionID: String
-        let taskID: String
-        let line: String
-    }
-
-    enum DraftOutcome: Equatable {
-        case ok(Draft)
-        case bad(String)
-    }
-
-    enum AttachmentDecision: Equatable {
-        case accepted(TargetSession, depth: Int)
-        case refused(status: Int, code: String, message: String)
-    }
-
-    /// Resolve against the full watched Session inventory, which is intentionally wider than the
-    /// terminal-neutral address book published by the orchestrator route. Every refusal happens
-    /// before registration or terminal input.
-    ///
-    /// `excluding` is the id of the task this decision is *for*. Single-flight is a rule about
-    /// two tasks, and a task is not the other one: the serialize queue writes a task into the
-    /// registry as `spawning` before it opens anything, so re-resolving without this made every
-    /// attached task that also named a `serialize` token refuse itself with
-    /// `attach_session_occupied` — at a moment when the HTTP response that would have carried
-    /// the error was already sent.
-    static func attachmentDecision(
-        sessionID: String, assistant: Assistant,
-        sessions: [TargetSession], states: [String: SessionState],
-        tasks: [Task], roles: [String: Role],
-        isChoosing: (TargetSession) -> Bool,
-        excluding excludedTaskID: String? = nil
-    ) -> AttachmentDecision {
-        guard let session = sessions.first(where: { $0.id == sessionID }) else {
-            return .refused(status: 404, code: "attach_session_not_found",
-                            message: "No session named by attach_session is currently available.")
-        }
-        guard let resident = session.assistant else {
-            return .refused(status: 409, code: "attach_unsupported",
-                            message: "attach_session names a plain shell with no assistant.")
-        }
-        // A standing host needs two launch-time facts: Clawdline opened its tab for a task, and
-        // that process was given the whole task root. A leaf gets only its original task
-        // directory, so it cannot read a new follow-up's sibling CHILD.md even though Clawdline
-        // opened it. Persist the actual grant instead of inferring it from depth: the configured
-        // floor can change while a tab remains standing, but a process's `--add-dir` cannot.
-        guard let role = roles[sessionID], role.taskRootAccess else {
-            return .refused(status: 409, code: "attach_not_managed",
-                            message: "attach_session names a session without Clawdline's "
-                                   + "launch-time task-root access; it cannot read a new "
-                                   + "follow-up task's CHILD.md.")
-        }
-        guard resident == assistant else {
-            return .refused(status: 409, code: "attach_assistant_mismatch",
-                            message: "The task assistant differs from the attached session's assistant.")
-        }
-        if tasks.contains(where: {
-            $0.id != excludedTaskID && !$0.state.isTerminal
-                && ($0.childTerminalId == sessionID || $0.attachSessionId == sessionID)
-        }) {
-            return .refused(status: 409, code: "attach_session_occupied",
-                            message: "That session already has a live Clawdline task.")
-        }
-        if states[sessionID] == .waiting, isChoosing(session) {
-            return .refused(status: 409, code: "attach_session_busy",
-                            message: "That session is showing a menu; no briefing was typed.")
-        }
-        return .accepted(session, depth: role.depth)
-    }
-
-    static func draft(from obj: [String: Any], expecting id: String,
-                      isDirectory: (String) -> Bool = StartPoints.isDirectory) -> DraftOutcome {
-        guard obj["clawdline_protocol"] as? Int == 1 else {
-            return .bad("clawdline_protocol must be 1")
-        }
-        guard isTaskID(id), obj["task_id"] as? String == id else {
-            return .bad("task_id must be a lowercase UUID and match the dispatch")
-        }
-        guard let name = obj["assistant"] as? String, let assistant = Assistant(rawValue: name) else {
-            return .bad("assistant must be claude or codex")
-        }
-        guard let dir = obj["project_dir"] as? String, StartPoints.usable(dir),
-              isDirectory(dir) else {
-            return .bad("project_dir must be an absolute path to a directory")
-        }
-        guard let instructions = obj["instructions"] as? String, !instructions.isEmpty,
-              instructions.utf8.count <= 16_384 else {
-            return .bad("instructions must be non-empty and at most 16 KiB")
-        }
-        // Loud here, quiet at the tab. `StartPoints.modelName` runs again on the way to the
-        // command line and answers "no flag" — but somebody is still holding this request, and a
-        // typo they can be told about is worth more than a session quietly on the wrong model.
-        var model: String?
-        if let named = obj["model"] as? String, !named.isEmpty {
-            guard let ok = StartPoints.modelName(named) else {
-                return .bad("model must be a model name: lower-case letters, digits, . _ -, "
-                          + "at most 64 characters")
-            }
-            model = ok
-        }
-        var reasoningEffort: ReasoningEffort?
-        if let raw = obj["reasoning_effort"] {
-            guard assistant == .codex else {
-                return .bad("reasoning_effort is only valid when assistant is codex")
-            }
-            guard let name = raw as? String,
-                  let value = ReasoningEffort(rawValue: name) else {
-                return .bad("reasoning_effort must be one of: "
-                          + ReasoningEffort.allCases.map(\.rawValue).joined(separator: ", "))
-            }
-            reasoningEffort = value
-        }
-        if let plan = obj["plan"] as? String, plan.utf8.count > planLimit {
-            return .bad("plan must be at most \(planLimit / 1024) KiB")
-        }
-        var graph: PlanningGraph?
-        if let rawGraph = obj["graph"] {
-            let parsed = planningGraph(from: rawGraph)
-            if let error = parsed.error { return .bad(error) }
-            graph = parsed.graph
-        }
-        var isolation = Isolation.none
-        if let raw = obj["isolation"] {
-            guard let name = raw as? String, let value = Isolation(rawValue: name) else {
-                return .bad("isolation must be one of: none, worktree")
-            }
-            isolation = value
-        }
-        var isolationBase: String?
-        if let raw = obj["isolation_base"] {
-            guard isolation == .worktree else {
-                return .bad("isolation_base is only valid when isolation is worktree")
-            }
-            guard let name = raw as? String, validIsolationBase(name) else {
-                return .bad("isolation_base must be a 1–200 character Git revision using "
-                          + "letters, digits, . _ / - or ~; it cannot begin with - or contain ..")
-            }
-            isolationBase = name
-        }
-        var serialize: [String] = []
-        if let raw = obj["serialize"] {
-            guard let values = raw as? [Any] else {
-                return .bad("serialize must be an array of at most 4 tokens")
-            }
-            var errors: [String] = []
-            if values.count > 4 { errors.append("serialize must contain at most 4 tokens") }
-            var seen: Set<String> = []
-            for (index, value) in values.enumerated() {
-                guard let token = value as? String else {
-                    errors.append("serialize[\(index)] must be a string")
-                    continue
-                }
-                let duplicate = !seen.insert(token).inserted
-                if StartPoints.modelName(token) != token {
-                    errors.append("serialize[\(index)] must be 1–64 lower-case letters, digits, "
-                                + ". _ -, and not begin with -")
-                }
-                if duplicate {
-                    errors.append("serialize[\(index)] duplicates \(token)")
-                }
-                serialize.append(token)
-            }
-            if !errors.isEmpty { return .bad(errors.joined(separator: "; ")) }
-        }
-        var claims: [String] = []
-        var claimsDeclared = false
-        if let raw = obj["claims"] {
-            guard let values = raw as? [Any] else {
-                return .bad("claims must be an array of 0–32 relative POSIX paths")
-            }
-            var errors: [String] = []
-            if values.count > 32 {
-                errors.append("claims must contain 0–32 paths")
-            }
-            var seen: Set<String> = []
-            for (index, value) in values.enumerated() {
-                guard let path = value as? String else {
-                    errors.append("claims[\(index)] must be a string")
-                    continue
-                }
-                let duplicate = !seen.insert(path).inserted
-                if path.isEmpty || path.count > 1_024 {
-                    errors.append("claims[\(index)] must be 1–1024 characters")
-                }
-                if path.hasPrefix("/") {
-                    errors.append("claims[\(index)] must be relative to project_dir")
-                }
-                if path.split(separator: "/", omittingEmptySubsequences: false)
-                    .contains(where: { $0 == ".." }) {
-                    errors.append("claims[\(index)] must not contain a .. component")
-                }
-                if path.unicodeScalars.contains(where: { $0.value == 0 }) {
-                    errors.append("claims[\(index)] must be a POSIX path without NUL")
-                }
-                if duplicate {
-                    errors.append("claims[\(index)] duplicates \(path)")
-                }
-                claims.append(path)
-            }
-            if !errors.isEmpty { return .bad(errors.joined(separator: "; ")) }
-            claimsDeclared = true
-        }
-        var permission: Permission?
-        if let named = obj["permission_mode"] as? String, !named.isEmpty {
-            guard let ok = Permission(rawValue: named) else {
-                return .bad("permission_mode must be one of: "
-                          + Permission.allCases.map(\.rawValue).joined(separator: ", "))
-            }
-            permission = ok
-        }
-        var attachSessionId: String?
-        if let raw = obj["attach_session"] {
-            guard let id = raw as? String, !id.isEmpty, id.count <= 512 else {
-                return .bad("attach_session must be a non-empty session id of at most 512 characters")
-            }
-            attachSessionId = id
-        }
-        var made = Draft()
-        made.id = id
-        made.assistant = assistant
-        made.model = model
-        made.reasoningEffort = reasoningEffort
-        made.permission = permission
-        made.serialize = serialize
-        made.claims = claims
-        made.claimsDeclared = claimsDeclared
-        made.isolation = isolation
-        made.isolationBase = isolationBase
-        made.ignoreQuota = obj["ignore_quota"] as? Bool ?? false
-        made.attachSessionId = attachSessionId
-        made.plan = (obj["plan"] as? String).flatMap {
-            let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? nil : text
-        }
-        made.graph = graph
-        made.projectDir = dir
-        made.instructions = instructions
-        made.kind = (obj["kind"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(40)) } ?? "custom"
-        made.title = String(((obj["title"] as? String) ?? "task").prefix(200))
-        if let minutes = obj["timeout_minutes"] as? Int {
-            guard (1...240).contains(minutes) else { return .bad("timeout_minutes must be 1…240") }
-            made.timeoutMinutes = minutes
-        }
-        let rootObj = obj["root"] as? [String: Any] ?? [:]
-        made.rootSessionId = (rootObj["session_id"] as? String).flatMap {
-            $0.isEmpty ? nil : $0
-        }
-        if let rawAssistant = rootObj["assistant"], !(rawAssistant is NSNull) {
-            guard let name = rawAssistant as? String,
-                  let assistant = Assistant(rawValue: name) else {
-                return .bad("root.assistant must be claude or codex")
-            }
-            made.rootAssistant = assistant
-        }
-        made.rootLabel = (rootObj["label"] as? String).map { String($0.prefix(120)) }
-        if let raw = rootObj["poll_only"] {
-            guard let pollOnly = raw as? Bool else {
-                return .bad("root.poll_only must be true or false")
-            }
-            made.pollOnly = pollOnly
-        }
-        if made.pollOnly, made.rootSessionId != nil {
-            return .bad("root.poll_only is only valid when root.session_id is null")
-        }
-        // A child knows its own task id — it is in the first line it was ever sent — long before
-        // this app has worked out what the session inside that tab calls itself. Naming it here
-        // is how a dispatch from one level down is recognised as such on the first try, and for
-        // a Codex child it is the only way: its session id lives in a rollout file rather than in
-        // the hook notes `rootSessionId` is matched against.
-        made.parentTaskId = (rootObj["parent_task"] as? String).flatMap { isTaskID($0) ? $0 : nil }
-        return .ok(made)
-    }
-
-    /// Lowercase UUID, which is also the directory name — so the id can never carry a path.
-    static func isTaskID(_ id: String) -> Bool {
-        guard id.count == 36 else { return false }
-        return id.allSatisfy { ("a"..."f").contains($0) || $0.isNumber || $0 == "-" }
-    }
-
-    /// 32 bytes written as lower-case hex, which is what every task secret on this Mac is —
-    /// `openssl rand -hex 32` in the briefing, `freshTaskSecret()` when the broker mints one.
-    static func isTaskSecret(_ secret: String) -> Bool {
-        secret.count == 64 && secret.allSatisfy { ("a"..."f").contains($0) || $0.isNumber }
-    }
-
-    static func validIsolationBase(_ value: String) -> Bool {
-        guard !value.isEmpty, value.count <= 200, !value.hasPrefix("-"), !value.contains("..")
-        else { return false }
-        return value.allSatisfy {
-            ("a"..."z").contains($0) || ("A"..."Z").contains($0)
-                || ("0"..."9").contains($0) || $0 == "." || $0 == "_" || $0 == "/"
-                || $0 == "-" || $0 == "~"
-        }
-    }
-
-    static func worktreeBranch(for taskID: String) -> String? {
-        isTaskID(taskID) ? "clawdline/task/\(taskID)" : nil
-    }
-
-    /// The same identity spelling used by frozen claims: standardise, then follow symlinks once
-    /// while the repository exists. Every worktree path and stored repository value starts here.
-    static func canonicalFilesystemPath(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
-    }
-
-    private static func worktreeRepositorySlug(_ project: String) -> String {
-        let canonical = canonicalFilesystemPath(project)
-        let basename = URL(fileURLWithPath: canonical).lastPathComponent.lowercased()
-        var readable = String(basename.unicodeScalars.map { scalar -> Character in
-            let value = scalar.value
-            if (97...122).contains(value) || (48...57).contains(value) {
-                return Character(String(scalar))
-            }
-            return "-"
-        }.prefix(32))
-        if readable.isEmpty { readable = "repo" }
-        let digest = SHA256.hash(data: Data(canonical.utf8))
-            .map { String(format: "%02x", $0) }.joined()
-        return readable + "-" + String(digest.prefix(8))
-    }
-
-    static var worktreeRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Clawdline/worktrees",
-                                    isDirectory: true)
-    }
-
-    static func worktreePath(project: String, taskID: String) -> String? {
-        guard isTaskID(taskID) else { return nil }
-        return worktreeRoot
-            .appendingPathComponent(worktreeRepositorySlug(project), isDirectory: true)
-            .appendingPathComponent(taskID, isDirectory: true).path
-    }
-
-    private struct GitAnswer {
-        var output: String
-        var status: Int32
-    }
-
-    /// The only git execution seam for worktree lifecycle operations. Arguments never pass
-    /// through a shell, optional locks are disabled, and a wedged repository cannot hold the
-    /// broker queue indefinitely.
-    private static func git(_ arguments: [String], cwd: String,
-                            gitDirectory: String? = nil,
-                            timeout: TimeInterval = 15) -> GitAnswer? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = gitDirectory.map { ["--git-dir", $0] + arguments } ?? arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-        var environment = ProcessInfo.processInfo.environment
-        environment["GIT_OPTIONAL_LOCKS"] = "0"
-        process.environment = environment
-        let pipe = Pipe()
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = pipe
-        process.standardError = pipe
-        do { try process.run() } catch { return nil }
-        let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout,
-                                                       execute: killer)
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitQuietly()
-        killer.cancel()
-        return GitAnswer(output: String(data: data, encoding: .utf8) ?? "",
-                         status: process.terminationStatus)
-    }
-
-    /// Stable repository identity for linked worktrees. The returned path is Git's common
-    /// directory, not whichever disposable checkout happened to be the caller's cwd.
-    private static func gitCommonDirectory(at cwd: String) -> String? {
-        guard let answer = git(["rev-parse", "--git-common-dir"], cwd: cwd),
-              answer.status == 0 else { return nil }
-        let raw = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return nil }
-        let absolute = raw.hasPrefix("/") ? raw
-            : URL(fileURLWithPath: cwd, isDirectory: true).appendingPathComponent(raw).path
-        let canonical = canonicalFilesystemPath(absolute)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: canonical, isDirectory: &isDirectory),
-              isDirectory.boolValue else { return nil }
-        return canonical
-    }
-
-    private static func usableGitDirectory(_ stored: String) -> String? {
-        let canonical = canonicalFilesystemPath(stored)
-        guard git(["rev-parse", "--git-dir"], cwd: "/",
-                  gitDirectory: canonical)?.status == 0 else { return nil }
-        return canonical
-    }
-
-    /// A deleted legacy project_dir may still name one of the broker's own worktree slots. Only
-    /// that exact bounded shape is eligible for migration; an arbitrary missing path is not.
-    private static func brokerWorktreeRepositorySlug(containing path: String) -> String? {
-        let root = canonicalFilesystemPath(worktreeRoot.path)
-        let candidate = canonicalFilesystemPath(path)
-        let rootParts = URL(fileURLWithPath: root).pathComponents
-        let parts = URL(fileURLWithPath: candidate).pathComponents
-        guard parts.count >= rootParts.count + 2,
-              Array(parts.prefix(rootParts.count)) == rootParts else { return nil }
-        let suffix = parts.dropFirst(rootParts.count)
-        guard let slug = suffix.first, !slug.isEmpty,
-              let taskID = suffix.dropFirst().first, isTaskID(String(taskID)) else { return nil }
-        return String(slug)
-    }
-
-    /// Independently re-derive repository identities from still-readable local evidence in the
-    /// same 0600 registry. The broker slug binds a deleted worktree path to the canonical
-    /// repository path that created it; collisions or contradictory candidates fail closed.
-    private static func legacyRepositoryCommonDirectory(
-        forDeletedProjectDir projectDir: String, among evidence: [Task]
-    ) -> String? {
-        guard let wantedSlug = brokerWorktreeRepositorySlug(containing: projectDir) else {
-            return nil
-        }
-        var candidates: Set<String> = []
-        for peer in evidence {
-            guard let worktree = peer.worktree,
-                  worktree.path == worktreePath(project: worktree.repository, taskID: peer.id),
-                  worktree.branch == worktreeBranch(for: peer.id),
-                  worktreeRepositorySlug(worktree.repository) == wantedSlug,
-                  let derived = gitCommonDirectory(at: worktree.repository) else { continue }
-            let stored = peer.repositoryCommonDir ?? worktree.repositoryCommonDir
-            if let stored, let usable = usableGitDirectory(stored), usable != derived { return nil }
-            candidates.insert(derived)
-        }
-        guard candidates.count == 1 else { return nil }
-        return candidates.first
-    }
-
-    /// Select the repository identity that a landing may trust. New tasks persist one receipt
-    /// regardless of isolation. Live project/worktree paths and the bounded legacy derivation are
-    /// independent evidence: every available source must agree, and an obsolete stored absolute
-    /// path may fall back only when one of those sources proves the same repository locally.
-    private static func landingGitDirectory(for task: Task, among evidence: [Task]) -> String? {
-        var projectIsDirectory: ObjCBool = false
-        let projectExists = FileManager.default.fileExists(
-            atPath: task.projectDir, isDirectory: &projectIsDirectory)
-        let projectCommon = projectExists && projectIsDirectory.boolValue
-            ? gitCommonDirectory(at: task.projectDir) : nil
-        if projectExists, projectCommon == nil { return nil }
-
-        var derived: Set<String> = []
-        if let projectCommon { derived.insert(projectCommon) }
-
-        if task.isolation == .worktree {
-            guard let worktree = task.worktree,
-                  worktree.path == worktreePath(project: worktree.repository, taskID: task.id),
-                  worktree.branch == worktreeBranch(for: task.id) else { return nil }
-            var repositoryIsDirectory: ObjCBool = false
-            let repositoryExists = FileManager.default.fileExists(
-                atPath: worktree.repository, isDirectory: &repositoryIsDirectory)
-            let repositoryCommon = repositoryExists && repositoryIsDirectory.boolValue
-                ? gitCommonDirectory(at: worktree.repository) : nil
-            if repositoryExists, repositoryCommon == nil { return nil }
-            if let repositoryCommon { derived.insert(repositoryCommon) }
-        }
-
-        if !projectExists,
-           let legacy = legacyRepositoryCommonDirectory(
-                forDeletedProjectDir: task.projectDir, among: evidence) {
-            derived.insert(legacy)
-        }
-
-        guard derived.count <= 1 else { return nil }
-        let independentlyDerived = derived.first
-        let storedPath = task.repositoryCommonDir ?? task.worktree?.repositoryCommonDir
-        let stored = storedPath.flatMap(usableGitDirectory)
-        if let stored, let independentlyDerived, stored != independentlyDerived { return nil }
-        if let stored { return stored }
-        // A stale absolute receipt is not itself fallback evidence. Reaching this return requires
-        // a live project/repository or the uniquely matched broker-owned legacy slug above.
-        return independentlyDerived
-    }
-
-    /// Resolve a landing inside the task's own repository and prove that the named commit is in
-    /// the named *local* target branch. All arguments reach git without a shell; canonical object
-    /// ids are what survive into the registry, not caller-supplied revision expressions.
-    static func verifyTargetLanding(projectDir: String, target: String,
-                                    commit: String) -> LandingVerification? {
-        guard let common = gitCommonDirectory(at: projectDir) else { return nil }
-        return verifyTargetLanding(gitDirectory: common, target: target, commit: commit)
-    }
-
-    private static func verifyTargetLanding(gitDirectory: String, target: String,
-                                            commit: String) -> LandingVerification? {
-        guard let branchCheck = git(["check-ref-format", "--branch", target], cwd: "/",
-                                    gitDirectory: gitDirectory),
-              branchCheck.status == 0 else { return nil }
-        let targetRef = "refs/heads/\(target)"
-        guard let resolvedCommit = git(
-                ["rev-parse", "--verify", "--end-of-options", "\(commit)^{commit}"],
-                cwd: "/", gitDirectory: gitDirectory), resolvedCommit.status == 0,
-              let resolvedTarget = git(
-                ["rev-parse", "--verify", "--end-of-options", "\(targetRef)^{commit}"],
-                cwd: "/", gitDirectory: gitDirectory), resolvedTarget.status == 0 else { return nil }
-        let commitID = resolvedCommit.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetID = resolvedTarget.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard [commitID, targetID].allSatisfy({ id in
-            (id.count == 40 || id.count == 64)
-                && id.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
-        }) else { return nil }
-        guard let contained = git(["merge-base", "--is-ancestor", commitID, targetID],
-                                  cwd: "/", gitDirectory: gitDirectory),
-              contained.status == 0 else { return nil }
-        return LandingVerification(origin: "local_target_branch", commit: commitID,
-                                   targetCommit: targetID)
-    }
-
-    private enum WorktreePreparation {
-        case ready(Worktree, warnings: [[String: Any]])
-        case bad(String)
-        case unavailable(String)
-    }
-
-    private static func filesystemFreeBytes(at path: String) -> Int64? {
-        if let value = try? URL(fileURLWithPath: path).resourceValues(
-            forKeys: [.volumeAvailableCapacityForImportantUsageKey]
-        ).volumeAvailableCapacityForImportantUsage {
-            return value
-        }
-        let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path)
-        return (attributes?[.systemFreeSize] as? NSNumber)?.int64Value
-    }
-
-    static func relativePath(from root: String, to child: String) -> String? {
-        let rootParts = URL(fileURLWithPath: canonicalFilesystemPath(root)).pathComponents
-        let childParts = URL(fileURLWithPath: canonicalFilesystemPath(child)).pathComponents
-        guard childParts.count >= rootParts.count,
-              Array(childParts.prefix(rootParts.count)) == rootParts else { return nil }
-        return childParts.dropFirst(rootParts.count).joined(separator: "/")
-    }
-
-    private static func prepareWorktree(for draft: Draft, taskID: String,
-                                        queued: Bool) -> WorktreePreparation {
-        guard let top = git(["rev-parse", "--show-toplevel"], cwd: draft.projectDir),
-              top.status == 0 else {
-            return .bad("isolation:\"worktree\" needs project_dir to be inside a Git repository.")
-        }
-        let repository = top.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard StartPoints.usable(repository) else {
-            return .bad("isolation:\"worktree\" could not resolve the repository containing project_dir.")
-        }
-        let requested = draft.isolationBase ?? "HEAD"
-        guard let resolved = git(["rev-parse", "--verify", "\(requested)^{commit}"], cwd: repository),
-              resolved.status == 0 else {
-            if draft.isolationBase == nil {
-                return .unavailable("This repository has no commit to use as a worktree base.")
-            }
-            return .bad("isolation_base does not resolve to a commit in project_dir.")
-        }
-        let base = resolved.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let branch = worktreeBranch(for: taskID),
-              let path = worktreePath(project: repository, taskID: taskID) else {
-            return .bad("task_id cannot name a worktree branch or path.")
-        }
-        let canonicalProject = canonicalFilesystemPath(draft.projectDir)
-        let canonicalRepository = canonicalFilesystemPath(repository)
-        guard let relative = relativePath(from: canonicalRepository, to: canonicalProject) else {
-            return .bad("project_dir is not inside its resolved Git repository.")
-        }
-        let childCwd = relative.isEmpty ? path
-            : URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent(relative).path
-
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        guard let free = filesystemFreeBytes(at: home), free >= 2_000_000_000 else {
-            return .unavailable("The worktree volume needs at least 2 GB of available space.")
-        }
-        let status = git(["status", "--porcelain", "--untracked-files=all"], cwd: repository)
-        let dirty = status?.status == 0
-            ? status!.output.split(whereSeparator: \.isNewline).count : 0
-        var warnings: [[String: Any]] = []
-        if dirty > 0 {
-            let message = queued
-                ? "The base tree currently has \(dirty) uncommitted files; the clean checkout "
-                    + "created when this queued task starts will not contain them."
-                : "The base tree has \(dirty) uncommitted files; the worktree starts from commit "
-                    + "\(String(base.prefix(7))) and does not contain them."
-            warnings.append([
-                "code": "dirty_worktree_base",
-                "message": message,
-            ])
-        }
-        let gitDirectory = git(["rev-parse", "--git-dir"], cwd: repository)?.output
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let gitDirectory, !gitDirectory.isEmpty {
-            let absoluteGit = gitDirectory.hasPrefix("/") ? gitDirectory
-                : URL(fileURLWithPath: repository).appendingPathComponent(gitDirectory).path
-            let markers = ["MERGE_HEAD", "rebase-merge", "rebase-apply", "BISECT_LOG"]
-            let inProgress = markers.filter {
-                FileManager.default.fileExists(atPath:
-                    URL(fileURLWithPath: absoluteGit).appendingPathComponent($0).path)
-            }
-            if !inProgress.isEmpty {
-                warnings.append([
-                    "code": "git_operation_in_progress",
-                    "message": "The base repository has an operation in progress ("
-                        + inProgress.joined(separator: ", ") + "); integrating the branch may wait.",
-                ])
-            }
-        }
-        guard let repositoryCommonDir = gitCommonDirectory(at: canonicalRepository) else {
-            return .bad("isolation:\"worktree\" could not resolve the repository's durable "
-                + "Git identity.")
-        }
-        var worktree = Worktree(path: path, branch: branch, base: base,
-                                repository: canonicalRepository, cwd: childCwd)
-        worktree.repositoryCommonDir = repositoryCommonDir
-        worktree.baseDirty = dirty
-        worktree.requestedBase = requested
-        return .ready(worktree, warnings: warnings)
-    }
-
-    private static func resolveSpawnBase(in worktree: Worktree) -> Worktree? {
-        guard let answer = git(["rev-parse", "--verify",
-                                "\(worktree.requestedBase)^{commit}"],
-                               cwd: worktree.repository), answer.status == 0 else { return nil }
-        var resolved = worktree
-        resolved.base = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return resolved
-    }
-
-    private static func pruneWorktrees(in repository: String) {
-        _ = git(["worktree", "prune"], cwd: repository)
-    }
-
-    /// Materialise only when the task is actually leaving the queue. A prepared task holds no
-    /// checkout and no branch while a serialization token is busy; spawn resolves its base again
-    /// and the resulting SHA becomes the immutable receipt.
-    private static func addWorktree(_ worktree: Worktree, taskID: String) -> String? {
-        let parent = URL(fileURLWithPath: worktree.path, isDirectory: true)
-            .deletingLastPathComponent()
-        do {
-            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-            try FileManager.default.setAttributes([.posixPermissions: 0o700],
-                                                   ofItemAtPath: worktreeRoot.path)
-            try FileManager.default.setAttributes([.posixPermissions: 0o700],
-                                                   ofItemAtPath: parent.path)
-        } catch {
-            return "Could not create the private worktree directory: \(error.localizedDescription)"
-        }
-        guard let answer = git(["worktree", "add", "-b", worktree.branch,
-                                worktree.path, worktree.base], cwd: worktree.repository,
-                               timeout: 60) else {
-            pruneWorktrees(in: worktree.repository)
-            return "git worktree add could not be started"
-        }
-        guard answer.status == 0 else {
-            pruneWorktrees(in: worktree.repository)
-            let detail = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            return String((detail.isEmpty ? "git worktree add failed" : detail).prefix(500))
-        }
-        let currentStatus = git(["status", "--porcelain", "--untracked-files=all"],
-                                cwd: worktree.repository)
-        let dirty = currentStatus?.status == 0
-            ? currentStatus!.output.split(whereSeparator: \.isNewline).count
-            : worktree.baseDirty
-        RemoteAuth.audit("orchestrator.worktree.add", [
-            "task": taskID, "base": worktree.base, "branch": worktree.branch,
-            "path": worktree.path, "dirty": String(dirty),
-        ])
-        guard FileManager.default.fileExists(atPath: worktree.cwd) else {
-            disposeWorktree(worktree, taskID: taskID, why: "spawn_failed")
-            return "The requested project_dir does not exist in base commit \(worktree.base)."
-        }
-        return nil
-    }
-
-    private struct WorktreeFacts {
-        var head: String?
-        var commits: Int?
-        var dirty: Bool?
-        var headOnBranch: Bool?
-        var branchExists: Bool
-    }
-
-    private static func inspectWorktree(_ worktree: Worktree) -> WorktreeFacts {
-        let branchRef = "refs/heads/\(worktree.branch)"
-        let branchAnswer = git(["rev-parse", "--verify", "\(branchRef)^{commit}"],
-                               cwd: worktree.repository)
-        let branchExists = branchAnswer?.status == 0
-        let head = branchExists
-            ? branchAnswer?.output.trimmingCharacters(in: .whitespacesAndNewlines) : nil
-        let countAnswer = branchExists
-            ? git(["rev-list", "--count", "\(worktree.base)..\(branchRef)"],
-                  cwd: worktree.repository) : nil
-        let commits = countAnswer?.status == 0
-            ? Int(countAnswer!.output.trimmingCharacters(in: .whitespacesAndNewlines)) : nil
-        guard FileManager.default.fileExists(atPath: worktree.path) else {
-            return WorktreeFacts(head: head, commits: commits, dirty: nil,
-                                 headOnBranch: nil, branchExists: branchExists)
-        }
-        let status = git(["status", "--porcelain", "--untracked-files=all"], cwd: worktree.path)
-        let dirty = status?.status == 0 ? !status!.output.isEmpty : nil
-        let symbolic = git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd: worktree.path)
-        let headOnBranch = symbolic?.status == 0
-            ? symbolic!.output.trimmingCharacters(in: .whitespacesAndNewlines) == worktree.branch
-            : false
-        return WorktreeFacts(head: head, commits: commits, dirty: dirty,
-                             headOnBranch: headOnBranch, branchExists: branchExists)
-    }
-
-    private static func refreshedWorktree(_ original: Worktree) -> Worktree {
-        var worktree = original
-        let facts = inspectWorktree(worktree)
-        worktree.head = facts.head
-        worktree.commits = facts.commits
-        worktree.dirty = facts.dirty
-        return worktree
-    }
-
-    /// Remove through git or not at all. Even failed removals are followed by prune, while branch
-    /// deletion happens only after git removed a provably empty checkout successfully.
-    private static func disposeWorktree(_ worktree: Worktree, taskID: String, why: String,
-                                        allowCommitted: Bool = true) {
-        let facts = inspectWorktree(worktree)
-        let decision = worktreeDisposal(commits: facts.commits, dirty: facts.dirty,
-                                        headOnBranch: facts.headOnBranch,
-                                        branchExists: facts.branchExists)
-        guard decision != .keepEverything else {
-            let keptWhy: String
-            if facts.dirty == true { keptWhy = "dirty" }
-            else if facts.commits == 0 && facts.headOnBranch == false { keptWhy = "head_moved" }
-            else { keptWhy = "unreadable" }
-            RemoteAuth.audit("orchestrator.worktree.kept", [
-                "task": taskID, "branch": worktree.branch, "why": keptWhy,
-            ])
-            return
-        }
-        if decision == .removeTreeKeepBranch && !allowCommitted { return }
-        guard FileManager.default.fileExists(atPath: worktree.path) else {
-            // The checkout is already gone. The branch remains the delivery; never infer that a
-            // missing directory authorizes deleting it.
-            pruneWorktrees(in: worktree.repository)
-            return
-        }
-        let removed = git(["worktree", "remove", worktree.path], cwd: worktree.repository,
-                          timeout: 60)
-        pruneWorktrees(in: worktree.repository)
-        guard removed?.status == 0 else {
-            RemoteAuth.audit("orchestrator.worktree.kept", [
-                "task": taskID, "branch": worktree.branch, "why": "remove_failed",
-            ])
-            return
-        }
-        if decision == .removeAll {
-            let deleted = git(["branch", "-D", worktree.branch], cwd: worktree.repository)
-            guard deleted?.status == 0 else {
-                RemoteAuth.audit("orchestrator.worktree.kept", [
-                    "task": taskID, "branch": worktree.branch, "why": "remove_failed",
-                ])
-                return
-            }
-        }
-        RemoteAuth.audit("orchestrator.worktree.remove", [
-            "task": taskID, "branch": worktree.branch, "why": why,
-            "commits": String(facts.commits ?? 0),
-        ])
-    }
-
-    /// Enqueue only; callers on the main thread never execute a git subprocess themselves.
-    private static func scheduleWorktreeDisposal(_ worktree: Worktree, taskID: String,
-                                                 why: String,
-                                                 allowCommitted: Bool = true) {
-        worktreeQueue.async {
-            disposeWorktree(worktree, taskID: taskID, why: why,
-                            allowCommitted: allowCommitted)
-        }
-    }
-
-    /// Current holders followed by older waiters entitled to a shared token first. Roots are
-    /// deliberately absent from this comparison: the namespace covers the whole machine. Every
-    /// token in a request is considered together, so a queued multi-token task holds none of them.
-    static func serializeBlockers(for candidate: Task, among existing: [Task]) -> [Task] {
-        guard candidate.state == .queued, !candidate.serialize.isEmpty else { return [] }
-        let wanted = Set(candidate.serialize)
-        func earlier(_ task: Task) -> Bool {
-            task.created < candidate.created
-                || (task.created == candidate.created && task.id < candidate.id)
-        }
-        return existing.filter { task in
-            guard task.id != candidate.id,
-                  !wanted.isDisjoint(with: task.serialize) else { return false }
-            if task.state == .spawning || task.state == .briefed { return true }
-            return task.state == .queued && earlier(task)
-        }.sorted { left, right in
-            if left.created == right.created { return left.id < right.id }
-            return left.created < right.created
-        }
-    }
+    // The pure half of this section is `OrchestratorDraft`: the draft a dispatch body decodes
+    // into, the four ingress refusals, the worktree lifecycle, and the claim and workspace scans
+    // over a table of tasks handed to them. What is left here are the three declarations that
+    // fail that file's mechanical test, because each one reads `tasks` — two under the
+    // `…Locked()` contract, one taking `lock` itself. Ownership stays with the owner.
 
     private static func serializeBlockersLocked(for candidate: Task) -> [Task] {
-        serializeBlockers(for: candidate, among: Array(tasks.values))
+        OrchestratorDraft.serializeBlockers(for: candidate, among: Array(tasks.values))
     }
 
-    /// Freeze claims into one namespace while the validated project directory exists. Only the
-    /// root touches the filesystem; relative claims are then normalised and joined literally so
-    /// creating a target (or a symlink below the root) can never change a lease's identity.
-    static func freezeClaims(_ claims: [String], projectDir: String) -> [String] {
-        guard !claims.isEmpty else { return [] }
-        let root = canonicalFilesystemPath(projectDir)
-        let separator = root == "/" ? "" : "/"
-        return claims.map { claim in
-            let relative = claim.split(separator: "/", omittingEmptySubsequences: true)
-                .filter { $0 != "." }.joined(separator: "/")
-            return relative.isEmpty ? root : root + separator + relative
-        }
+    private static func claimsOverlapsLocked(for candidate: Task)
+        -> [OrchestratorDraft.ClaimsOverlap] {
+        OrchestratorDraft.claimsOverlaps(for: candidate, among: Array(tasks.values))
     }
 
-    /// Relative claims name the shared checkout. An isolated child cannot touch those paths at
-    /// that spelling, so retaining the lease would only block useful work in the base tree.
-    static func prepareClaimsForIsolation(_ task: inout Task) -> [[String: Any]] {
-        guard task.isolation == .worktree, !task.claims.isEmpty else { return [] }
-        let ignored = task.claims
-        task.claims = []
-        task.claimKeys = []
-        return [[
-            "code": "claims_ignored_for_worktree",
-            "paths": ignored,
-            "message": "Claims inside project_dir were ignored because this task uses an isolated worktree.",
-        ]]
-    }
-
-    /// The shared descendant of two already-frozen claim keys. This is deliberately only string
-    /// work: dispatch holds the global orchestrator lock while it compares every live lease.
-    private static func sharedClaimPath(_ first: String, _ second: String) -> String? {
-        if first == second { return first }
-        let firstPrefix = first == "/" ? "/" : first + "/"
-        if second.hasPrefix(firstPrefix) { return second }
-        let secondPrefix = second == "/" ? "/" : second + "/"
-        if first.hasPrefix(secondPrefix) { return first }
-        return nil
-    }
-
-    /// Two explicit write declarations make L1 redundant when their frozen scopes do not meet.
-    /// The empty declaration is the useful edge: it positively says the task is read-only.
-    private static func declaredClaimsAreDisjoint(_ first: Task, _ second: Task) -> Bool {
-        guard first.claimsDeclared, second.claimsDeclared else { return false }
-        return !first.activeClaimKeys.contains { claimed in
-            second.activeClaimKeys.contains { sharedClaimPath(claimed, $0) != nil }
-        }
-    }
-
-    /// Pure dispatch-time claims scan. Unlike L1, queued tasks participate: a claim is a
-    /// reservation made at dispatch, not evidence that a tab has started touching files.
-    /// Compares `activeClaimKeys` rather than `claimKeys` so a path either side already gave
-    /// back through `claims/release` no longer conflicts.
-    static func claimsOverlaps(for newTask: Task, among existing: [Task]) -> [ClaimsOverlap] {
-        guard !newTask.activeClaimKeys.isEmpty, !newTask.state.isTerminal else { return [] }
-        let indexed = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
-        let newRoot = resolvedRootKey(of: newTask, among: indexed)
-        return existing.compactMap { task -> ClaimsOverlap? in
-            guard task.id != newTask.id, !task.state.isTerminal, !task.activeClaimKeys.isEmpty
-            else {
-                return nil
-            }
-            var paths: [String] = []
-            var seen: Set<String> = []
-            for claimed in newTask.activeClaimKeys {
-                for other in task.activeClaimKeys {
-                    if let shared = sharedClaimPath(claimed, other),
-                       seen.insert(shared).inserted {
-                        paths.append(shared)
-                    }
-                }
-            }
-            guard !paths.isEmpty else { return nil }
-            let root = rootTask(of: task, among: indexed)
-            let otherRoot = resolvedRootKey(of: task, among: indexed)
-            let rootsKnown = newRoot != nil && otherRoot != nil
-            return ClaimsOverlap(task: task, paths: paths,
-                                 sameRoot: rootsKnown && otherRoot == newRoot,
-                                 rootsKnown: rootsKnown,
-                                 rootLabel: root.rootLabel ?? task.rootLabel,
-                                 rootKey: otherRoot)
-        }.sorted { left, right in
-            if left.task.created == right.task.created { return left.task.id < right.task.id }
-            return left.task.created < right.task.created
-        }
-    }
-
-    private static func claimsOverlapsLocked(for candidate: Task) -> [ClaimsOverlap] {
-        claimsOverlaps(for: candidate, among: Array(tasks.values))
-    }
-
-    /// The directory both tasks may write, or nil when their paths are merely string prefixes.
-    ///
-    /// Paths are resolved the way the rest of the project resolves working directories:
-    /// standardise first, then follow symlinks, and compare the resulting spelling exactly.
-    /// Comparing components is what keeps `/a/b` separate from `/a/bc`, and also handles `/`
-    /// without a special string-prefix case.
-    static func sharedWorkspaceDirectory(_ first: String, _ second: String) -> String? {
-        let first = canonicalFilesystemPath(first)
-        let second = canonicalFilesystemPath(second)
-        let firstParts = URL(fileURLWithPath: first).pathComponents
-        let secondParts = URL(fileURLWithPath: second).pathComponents
-        let common = min(firstParts.count, secondParts.count)
-        for index in 0..<common where firstParts[index] != secondParts[index] { return nil }
-        if firstParts.count == common { return second }
-        if secondParts.count == common { return first }
-        return nil
-    }
-
-    /// The root key used throughout the orchestrator, with the task table supplied explicitly so
-    /// the dispatch-time overlap rules remain a pure unit-test seam.
-    private static func rootTask(of task: Task, among existing: [String: Task]) -> Task {
-        var at = task
-        var hops = 0
-        while let parentID = at.parentTaskId, let above = existing[parentID], hops < depthFloor {
-            at = above
-            hops += 1
-        }
-        return at
-    }
-
-    private static func rootKey(of task: Task, among existing: [String: Task]) -> String {
-        let at = rootTask(of: task, among: existing)
-        return at.rootSessionId ?? "task:\(at.id)"
-    }
-
-    /// Claims are a hard gate only when both trees can actually be identified. A task with an
-    /// unresolved parent and no independently supplied root session is unknown, not a new root.
-    private static func resolvedRootKey(of task: Task,
-                                        among existing: [String: Task]) -> String? {
-        var at = task
-        var hops = 0
-        while let parentID = at.parentTaskId {
-            guard hops < depthFloor, let above = existing[parentID] else {
-                return at.rootSessionId
-            }
-            at = above
-            hops += 1
-        }
-        return at.rootSessionId ?? "task:\(at.id)"
-    }
-
-    /// The stable short identifier for a root tree, independent of its self-reported label:
-    /// SHA-256 of the canonical root key — a live root's session id, or `task:<id>` for a task
-    /// resolved back to itself — truncated to its first 8 hex characters. Two roots that both
-    /// call themselves the same thing still hash differently, because the input is the session
-    /// identity underneath the label rather than the label itself; the same tree always hashes
-    /// the same way.
-    static func rootKeyDigest(_ canonicalRootKey: String) -> String {
-        String(RemoteAuth.hex(SHA256.hash(data: Data(canonicalRootKey.utf8))).prefix(8))
-    }
-
-    /// Pure half of the dispatch-time scan, kept visible to the unit suite so path boundaries,
-    /// root identity and terminal-state filtering do not need a live terminal to exercise them.
-    static func workspaceOverlaps(for newTask: Task,
-                                  among existing: [Task]) -> [WorkspaceOverlap] {
-        let indexed = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
-        let newRoot = rootKey(of: newTask, among: indexed)
-        let rooted = existing.map { (task: $0, rootKey: rootKey(of: $0, among: indexed)) }
-        return workspaceOverlaps(for: newTask, rootKey: newRoot, among: rooted)
-    }
-
-    private static func workspaceOverlaps(for newTask: Task, rootKey newRoot: String,
-                                          among existing: [(task: Task, rootKey: String)])
-        -> [WorkspaceOverlap] {
-        guard newTask.state == .spawning || newTask.state == .briefed else { return [] }
-        return existing.compactMap { item -> WorkspaceOverlap? in
-            let task = item.task
-            guard task.id != newTask.id,
-                  task.state == .spawning || task.state == .briefed,
-                  item.rootKey != newRoot,
-                  !declaredClaimsAreDisjoint(newTask, task),
-                  let shared = sharedWorkspaceDirectory(cwd(of: newTask), cwd(of: task))
-            else { return nil }
-            return WorkspaceOverlap(task: task, sharedDir: shared)
-        }.sorted { left, right in
-            if left.task.created == right.task.created { return left.task.id < right.task.id }
-            return left.task.created < right.task.created
-        }
-    }
-
-    private static func workspaceOverlaps(for newTask: Task) -> [WorkspaceOverlap] {
+    private static func workspaceOverlaps(for newTask: Task)
+        -> [OrchestratorDraft.WorkspaceOverlap] {
         lock.lock()
         let newRoot = rootKeyLocked(of: newTask)
         let existing = tasks.values.map { (task: $0, rootKey: rootKeyLocked(of: $0)) }
         lock.unlock()
-        return workspaceOverlaps(for: newTask, rootKey: newRoot, among: existing)
-    }
-
-    /// Wire payload shared by first dispatches and idempotent retries. Keeping the optional field
-    /// here makes "absent, not an empty array" explicit and independently testable.
-    static func dispatchPayload(record: [String: Any], taskID: String,
-                                overlaps: [WorkspaceOverlap],
-                                claimsOverlaps: [ClaimsOverlap] = [],
-                                additionalWarnings: [[String: Any]] = [],
-                                now: Date = Date()) -> [String: Any] {
-        var reply: [String: Any] = ["ok": true, "task": record]
-        let warnings = overlaps.map { $0.warning(for: taskID) }
-            + claimsOverlaps.filter { !$0.blocks }.map { $0.warning(for: taskID, now: now) }
-            + additionalWarnings
-        if !warnings.isEmpty {
-            reply["warnings"] = warnings
-        }
-        return reply
-    }
-
-    /// The one age formula used by workspace conflicts and landing records alike. A wall clock
-    /// moving backwards never turns an API duration negative.
-    static func ageSeconds(since: Date, now: Date) -> Int {
-        max(0, Int(now.timeIntervalSince(since)))
-    }
-
-    /// The actionable context returned when another root already reserved a write path.
-    /// `age_seconds` and `root_key` make the error self-sufficient without a follow-up GET:
-    /// `root_label` is self-reported prose that can be stale or shared by two unrelated roots
-    /// (two different trees both calling themselves "clawdline schedules" is a real case), while
-    /// `root_key` is the same tree's identity every time, hashed rather than handed over raw.
-    static func workspaceBusyExtra(_ overlap: ClaimsOverlap, now: Date = Date()) -> [String: Any] {
-        let extra: [String: Any] = [
-            "blocking_task": overlap.task.id,
-            "title": overlap.task.title,
-            "root_label": overlap.rootLabel as Any? ?? NSNull(),
-            "created": Int(overlap.task.created.timeIntervalSince1970),
-            "conflict_paths": overlap.paths,
-            "retry_after": 60,
-            "age_seconds": ageSeconds(since: overlap.task.created, now: now),
-            "root_key": overlap.rootKey.map(rootKeyDigest) as Any? ?? NSNull(),
-        ]
-        return extra
+        return OrchestratorDraft.workspaceOverlaps(for: newTask, rootKey: newRoot, among: existing)
     }
 
     // MARK: - Assistant quota at the dispatch gate — Q1 design §D
 
-    /// `age_seconds` for an `AssistantQuota`, in the identical shape `ClaimsOverlap.warning(for:)`
-    /// and `workspaceBusyExtra` above already use: an integer number of seconds, `max(0, now -
+    /// `age_seconds` for an `AssistantQuota`, in the identical shape
+    /// `OrchestratorDraft.ClaimsOverlap.warning(for:)` and
+    /// `OrchestratorDraft.workspaceBusyExtra` already use: an integer number of seconds,
+    /// `max(0, now -
     /// observed)`. Not a second formula for the same idea.
     private static func assistantAgeSeconds(_ quota: AssistantQuota, now: Date) -> Int? {
         quota.observedAt.map { max(0, Int(now.timeIntervalSince1970) - $0) }
@@ -5275,7 +4104,8 @@ enum Orchestrator {
     }
 
     /// §D.6: `low` never refuses, only warns — reusing the same `warnings` array
-    /// `dispatchPayload(record:taskID:overlaps:)` already fills with `workspace_overlap` and
+    /// `OrchestratorDraft.dispatchPayload(record:taskID:overlaps:)` already fills with
+    /// `workspace_overlap` and
     /// `claims_overlap` rows, so a root reading that one array sees every reason to be careful in
     /// one place.
     static func assistantLowWarning(_ quota: AssistantQuota, now: Date = Date()) -> [String: Any] {
@@ -5332,7 +4162,7 @@ enum Orchestrator {
                              isDirectory: (String) -> Bool = StartPoints.isDirectory,
                              packageIsReady: ((String) -> Bool)? = nil)
         -> HandoffDraftOutcome {
-        guard let id = obj["handoff_id"] as? String, isTaskID(id) else {
+        guard let id = obj["handoff_id"] as? String, OrchestratorDraft.isTaskID(id) else {
             return .bad("handoff_id must be a lowercase UUID")
         }
         guard let projectDir = obj["project_dir"] as? String,
@@ -5437,7 +4267,7 @@ enum Orchestrator {
             return .refused(403, "orchestrator_disabled",
                             "Task dispatch is switched off in Settings.")
         }
-        guard let id = obj["handoff_id"] as? String, isTaskID(id) else {
+        guard let id = obj["handoff_id"] as? String, OrchestratorDraft.isTaskID(id) else {
             return .refused(422, "bad_task", "handoff_id must be a lowercase UUID.")
         }
         if let existing = heldHandoff(id) { return successfulHandoffReply(for: existing) }
@@ -5499,9 +4329,10 @@ enum Orchestrator {
 
     // MARK: - Root Assignment / Feature Launch
 
-    static func rootAssignmentDraft(from obj: [String: Any],
-                                    isDirectory: (String) -> Bool = StartPoints.isDirectory,
-                                    canonicalize: (String) -> String = canonicalFilesystemPath)
+    static func rootAssignmentDraft(
+        from obj: [String: Any],
+        isDirectory: (String) -> Bool = StartPoints.isDirectory,
+        canonicalize: (String) -> String = OrchestratorDraft.canonicalFilesystemPath)
         -> RootAssignmentDraftOutcome {
         let topKeys: Set<String> = ["request_id", "assistant", "model", "project_dir",
                                     "label", "assignment"]
@@ -5509,7 +4340,8 @@ enum Orchestrator {
             return .bad("request must contain only request_id, assistant, model, project_dir, "
                       + "label, and assignment")
         }
-        guard let requestID = obj["request_id"] as? String, isTaskID(requestID) else {
+        guard let requestID = obj["request_id"] as? String,
+              OrchestratorDraft.isTaskID(requestID) else {
             return .bad("request_id must be a lowercase UUID")
         }
         guard let assistantName = obj["assistant"] as? String,
@@ -5810,7 +4642,7 @@ enum Orchestrator {
 
     private static func resolveAttachment(sessionID: String, assistant: Assistant,
                                           excluding excludedTaskID: String? = nil)
-        -> AttachmentDecision {
+        -> OrchestratorDraft.AttachmentDecision {
         let inventory: ([TargetSession], [String: SessionState])
         if let supplied = attachmentInventoryForTesting {
             inventory = supplied
@@ -5823,7 +4655,7 @@ enum Orchestrator {
         let live = Array(tasks.values)
         let roles = OrchestratorRegistry.withTransactionOnHeldLock { $0.roles() }
         lock.unlock()
-        return attachmentDecision(sessionID: sessionID, assistant: assistant,
+        return OrchestratorDraft.attachmentDecision(sessionID: sessionID, assistant: assistant,
                                   sessions: inventory.0, states: inventory.1,
                                   tasks: live, roles: roles,
                                   isChoosing: Targets.isChoosing,
@@ -5847,13 +4679,13 @@ enum Orchestrator {
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
         }
-        guard isTaskID(taskID) else {
+        guard OrchestratorDraft.isTaskID(taskID) else {
             return .refused(422, "bad_task", "task_id must be a lowercase UUID.")
         }
         // Same task again is the same answer again: the root retrying a dispatch that already
         // landed must not spawn a second child.
         if let existing = held(taskID) { return successfulDispatchReply(for: existing) }
-        guard isTaskSecret(secret) else {
+        guard OrchestratorDraft.isTaskSecret(secret) else {
             return .refused(422, "bad_task", "secret must be 64 hex characters.")
         }
         guard let rateTicket = takeDispatchRate() else {
@@ -5866,26 +4698,26 @@ enum Orchestrator {
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return .refused(422, "bad_task", "No readable task.json under /tmp/.clawdline/<task_id>/.")
         }
-        var made: Draft
-        switch draft(from: obj, expecting: taskID) {
+        var made: OrchestratorDraft.Draft
+        switch OrchestratorDraft.draft(from: obj, expecting: taskID) {
         case .bad(let why): return .refused(422, "bad_task", why)
         case .ok(let ok): made = ok
         }
         if requireRootSession || allowDetachedAutomation,
-           let refusal = dispatchDoorRefusal(
+           let refusal = OrchestratorDraft.dispatchDoorRefusal(
                 sessionID: made.rootSessionId, pollOnly: made.pollOnly,
                 allowDetachedAutomation: allowDetachedAutomation) {
             refundDispatchRate(rateTicket)
             return refusal
         }
         if requireRootSession,
-           let refusal = rootSessionRequirementRefusal(
+           let refusal = OrchestratorDraft.rootSessionRequirementRefusal(
                 sessionID: made.rootSessionId, pollOnly: made.pollOnly) {
             refundDispatchRate(rateTicket)
             return refusal
         }
         if requireRootSession,
-           let refusal = rootAssistantRequirementRefusal(
+           let refusal = OrchestratorDraft.rootAssistantRequirementRefusal(
                 sessionID: made.rootSessionId, pollOnly: made.pollOnly,
                 assistant: made.rootAssistant) {
             refundDispatchRate(rateTicket)
@@ -5894,7 +4726,7 @@ enum Orchestrator {
         let identityEvidence = rootIdentityEvidenceForTesting
             ?? activeRootIdentityEvidence(claimed: made.rootSessionId)
                 + Coordinator.rootIdentityEvidence(claimed: made.rootSessionId)
-        if let refusal = rootIdentityRefusal(claimed: made.rootSessionId,
+        if let refusal = OrchestratorDraft.rootIdentityRefusal(claimed: made.rootSessionId,
                                              evidence: identityEvidence) {
             refundDispatchRate(rateTicket)
             return refusal
@@ -5992,7 +4824,7 @@ enum Orchestrator {
         var preparedWorktree: Worktree?
         var worktreeWarnings: [[String: Any]] = []
         if made.isolation == .worktree {
-            switch prepareWorktree(for: made, taskID: taskID,
+            switch OrchestratorDraft.prepareWorktree(for: made, taskID: taskID,
                                    queued: !made.serialize.isEmpty) {
             case .ready(let worktree, let warnings):
                 preparedWorktree = worktree
@@ -6025,7 +4857,7 @@ enum Orchestrator {
                         claimsDeclared: made.claimsDeclared,
                         secretHash: hash(ofSecret: secret))
         task.repositoryCommonDir = preparedWorktree?.repositoryCommonDir
-            ?? gitCommonDirectory(at: made.projectDir)
+            ?? OrchestratorDraft.gitCommonDirectory(at: made.projectDir)
         task.scheduleID = schedule?.id
         task.scheduleCloseTab = schedule?.closeTab ?? .onSuccess
         task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
@@ -6037,8 +4869,8 @@ enum Orchestrator {
         // `resolveAttachment` accepts only a host whose launch-time grant covers the task root.
         // A guest inherits that property while it temporarily supplies the session's live role.
         task.childTaskRootAccess = made.attachSessionId != nil
-        worktreeWarnings += prepareClaimsForIsolation(&task)
-        task.claimKeys = freezeClaims(task.claims, projectDir: task.projectDir)
+        worktreeWarnings += OrchestratorDraft.prepareClaimsForIsolation(&task)
+        task.claimKeys = OrchestratorDraft.freezeClaims(task.claims, projectDir: task.projectDir)
         if !task.serialize.isEmpty {
             guard let sealed = sealQueuedSecret(secret) else {
                 return .refused(500, "internal", "Could not protect the queued task secret.")
@@ -6072,7 +4904,7 @@ enum Orchestrator {
             ])
             return .refused(status: 409, code: "workspace_busy",
                             message: "Another dispatch tree has reserved a path this task claims.",
-                            extra: workspaceBusyExtra(blocker))
+                            extra: OrchestratorDraft.workspaceBusyExtra(blocker))
         }
         tasks[taskID] = task
         secrets[taskID] = secret
@@ -6172,7 +5004,7 @@ enum Orchestrator {
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
         }
-        guard isTaskID(taskID) else {
+        guard OrchestratorDraft.isTaskID(taskID) else {
             return .refused(422, "bad_task", "task_id must be a lowercase UUID.")
         }
         guard let origin = held(taskID) else {
@@ -6199,7 +5031,7 @@ enum Orchestrator {
                                     "respawns": family.descendants,
                                     "limit": respawnLimit])
         }
-        if let supplied, !isTaskSecret(supplied) {
+        if let supplied, !OrchestratorDraft.isTaskSecret(supplied) {
             return .refused(422, "bad_task", "secret must be 64 hex characters.")
         }
         guard let data = try? Data(contentsOf: origin.dir.appendingPathComponent("task.json")),
@@ -6305,7 +5137,8 @@ enum Orchestrator {
     }
 
     private static func successfulDispatchReply(for task: Task, notify: Bool = false,
-                                                claimsOverlaps: [ClaimsOverlap]? = nil,
+                                                claimsOverlaps:
+                                                    [OrchestratorDraft.ClaimsOverlap]? = nil,
                                                 additionalWarnings: [[String: Any]] = []) -> Reply {
         guard let record = existingRecord(task.id) else {
             return .refused(500, "internal", "The task was lost while being made.")
@@ -6317,7 +5150,7 @@ enum Orchestrator {
             : additionalWarnings + [claimsMissingWarning()]
         let overlaps = workspaceOverlaps(for: task)
         if notify { notifyWorkspaceOverlaps(newTask: task, overlaps: overlaps) }
-        let claimWarnings: [ClaimsOverlap]
+        let claimWarnings: [OrchestratorDraft.ClaimsOverlap]
         if let claimsOverlaps {
             claimWarnings = claimsOverlaps
         } else {
@@ -6325,9 +5158,9 @@ enum Orchestrator {
             claimWarnings = claimsOverlapsLocked(for: task)
             lock.unlock()
         }
-        return .ok(dispatchPayload(record: record, taskID: task.id, overlaps: overlaps,
-                                   claimsOverlaps: claimWarnings,
-                                   additionalWarnings: additionalWarnings))
+        return .ok(OrchestratorDraft.dispatchPayload(
+            record: record, taskID: task.id, overlaps: overlaps,
+            claimsOverlaps: claimWarnings, additionalWarnings: additionalWarnings))
     }
 
     typealias TaskStarter = (StartPoints.Place, Assistant, String?, ReasoningEffort?,
@@ -6349,14 +5182,14 @@ enum Orchestrator {
             return spawnAttached(task, resolvedSession: attachedSession)
         }
         if let prepared = task.worktree {
-            guard let worktree = resolveSpawnBase(in: prepared) else {
+            guard let worktree = OrchestratorDraft.resolveSpawnBase(in: prepared) else {
                 task.state = .spawnFailed
                 task.summary = "The worktree base no longer resolves to a commit."
                 task.finishedAt = Date()
                 return task
             }
             task.worktree = worktree
-            if let failure = addWorktree(worktree, taskID: task.id) {
+            if let failure = OrchestratorDraft.addWorktree(worktree, taskID: task.id) {
                 task.state = .spawnFailed
                 task.summary = String(failure.prefix(500))
                 task.finishedAt = Date()
@@ -6378,7 +5211,8 @@ enum Orchestrator {
         // handed a second task.** A child dispatches nothing now, so the wider grant is no
         // longer about opening sessions: it is what lets a standing session read the sibling
         // `CHILD.md` of a follow-up task whose directory did not exist when this tab opened —
-        // see `attachmentDecision`, which refuses a session that was launched without it, and
+        // see `OrchestratorDraft.attachmentDecision`, which refuses a session that was
+        // launched without it, and
         // `--add-dir` cannot be added to a running process. A task deeper than the floor never
         // opens a tab at all, so it never reaches this line with anything to grant.
         let taskRootGrant = depthIsAllowed(task.depth)
@@ -6389,7 +5223,7 @@ enum Orchestrator {
             task.summary = "\(code): \(message)"
             task.finishedAt = Date()
             if let worktree = task.worktree {
-                disposeWorktree(worktree, taskID: task.id, why: "spawn_failed")
+                OrchestratorDraft.disposeWorktree(worktree, taskID: task.id, why: "spawn_failed")
             }
         case .started(let id, let backend):
             task.state = .spawning
@@ -6773,7 +5607,7 @@ enum Orchestrator {
         let indexed = tasks
         return tasks.values.compactMap { task -> [String: Any]? in
             guard let landing = task.landing, landing.state == .pending else { return nil }
-            let root = rootTask(of: task, among: indexed)
+            let root = OrchestratorDraft.rootTask(of: task, among: indexed)
             return [
                 "id": task.id,
                 "title": task.title,
@@ -6781,7 +5615,7 @@ enum Orchestrator {
                 "root_label": (root.rootLabel ?? task.rootLabel) as Any? ?? NSNull(),
                 "paths": task.claims,
                 "since": Int(landing.since.timeIntervalSince1970),
-                "age_seconds": ageSeconds(since: landing.since, now: now),
+                "age_seconds": OrchestratorDraft.ageSeconds(since: landing.since, now: now),
                 "target": landing.target as Any? ?? NSNull(),
                 "note": landing.note as Any? ?? NSNull(),
                 "ownership": landingOwnershipRecord(
@@ -7173,7 +6007,8 @@ enum Orchestrator {
     /// declarations to give back; empty or omitted releases everything still held. Idempotent: a
     /// path already released, or one this task never declared, is silently a no-op rather than
     /// an error, so a retried release cannot fail on its own success. Comparison is ancestor and
-    /// descendant, exactly the way dispatch-time arbitration compares claims (`sharedClaimPath`):
+    /// descendant, exactly the way dispatch-time arbitration compares claims
+    /// (`OrchestratorDraft.sharedClaimPath`):
     /// releasing `Sources` frees every declared claim key under it, and naming a path inside a
     /// directory-shaped claim frees that whole claim key, because a directory claim is one atomic
     /// reservation rather than a set of the files under it. `queued` refuses: that task has not
@@ -7200,9 +6035,9 @@ enum Orchestrator {
         if paths.isEmpty {
             requested = Set(task.claimKeys)
         } else {
-            let frozen = freezeClaims(paths, projectDir: task.projectDir)
+            let frozen = OrchestratorDraft.freezeClaims(paths, projectDir: task.projectDir)
             requested = Set(task.claimKeys.filter { key in
-                frozen.contains { sharedClaimPath($0, key) != nil }
+                frozen.contains { OrchestratorDraft.sharedClaimPath($0, key) != nil }
             })
         }
         let newlyReleased = requested.subtracting(alreadyReleased).sorted()
@@ -7314,7 +6149,8 @@ enum Orchestrator {
                 state: requestedState,
                 target: target,
                 delivery: fields["delivery"] ?? existing?.delivery,
-                ownerRootKey: existing?.ownerRootKey ?? rootKeyDigest(rootKeyLocked(of: current)),
+                ownerRootKey: existing?.ownerRootKey
+                    ?? OrchestratorDraft.rootKeyDigest(rootKeyLocked(of: current)),
                 since: existing?.since ?? now,
                 commit: nil,
                 note: fields["note"] ?? existing?.note,
@@ -7342,9 +6178,9 @@ enum Orchestrator {
         let requestedTarget = target!
         lock.unlock()
 
-        guard let repositoryIdentity = landingGitDirectory(
+        guard let repositoryIdentity = OrchestratorDraft.landingGitDirectory(
                 for: repositoryTask, among: repositoryEvidence),
-              let verification = verifyTargetLanding(
+              let verification = OrchestratorDraft.verifyTargetLanding(
                 gitDirectory: repositoryIdentity,
                 target: requestedTarget, commit: requestedCommit) else {
             RemoteAuth.audit("orchestrator.landing", [
@@ -7377,7 +6213,7 @@ enum Orchestrator {
             target: requestedTarget,
             delivery: fields["delivery"] ?? existing?.delivery,
             ownerRootKey: existing?.ownerRootKey
-                ?? rootKeyDigest(rootKeyLocked(of: verifiedCurrent)),
+                ?? OrchestratorDraft.rootKeyDigest(rootKeyLocked(of: verifiedCurrent)),
             since: existing?.since ?? now,
             commit: verification.commit,
             note: fields["note"] ?? existing?.note,
@@ -7502,7 +6338,7 @@ enum Orchestrator {
                 "bytes": bytes as Any? ?? NSNull(),
                 "state": decision.state.rawValue,
                 "why": decision.why,
-                "age_seconds": ageSeconds(since: finished, now: now),
+                "age_seconds": OrchestratorDraft.ageSeconds(since: finished, now: now),
                 "eligible_at": decision.eligibleAt.map {
                     Int($0.timeIntervalSince1970)
                 } as Any? ?? NSNull(),
@@ -7609,8 +6445,9 @@ enum Orchestrator {
 
     static func repositoryBranches(in repository: String) -> RepositoryBranches {
         var found = RepositoryBranches()
-        guard let listed = git(["for-each-ref", "--format=%(refname:short) %(objectname)",
-                                "refs/heads/clawdline/task/"], cwd: repository),
+        guard let listed = OrchestratorDraft.git(
+                ["for-each-ref", "--format=%(refname:short) %(objectname)",
+                 "refs/heads/clawdline/task/"], cwd: repository),
               listed.status == 0 else { return found }
         found.known = true
         for line in listed.output.split(separator: "\n") {
@@ -7618,8 +6455,9 @@ enum Orchestrator {
             guard parts.count == 2 else { continue }
             found.heads[String(parts[0])] = String(parts[1])
         }
-        guard let contained = git(["for-each-ref", "--format=%(refname:short)", "--merged", "HEAD",
-                                   "refs/heads/clawdline/task/"], cwd: repository),
+        guard let contained = OrchestratorDraft.git(
+                ["for-each-ref", "--format=%(refname:short)", "--merged", "HEAD",
+                 "refs/heads/clawdline/task/"], cwd: repository),
               contained.status == 0 else { return found }
         for line in contained.output.split(separator: "\n") where !line.isEmpty {
             found.merged.insert(String(line))
@@ -7630,7 +6468,7 @@ enum Orchestrator {
     /// The repository a project directory belongs to, or nothing when it is not in one. The
     /// caller never writes this path: it is resolved here from what the task already said.
     static func inflightRepository(_ project: String) -> String? {
-        guard let answer = git(["rev-parse", "--show-toplevel"], cwd: project),
+        guard let answer = OrchestratorDraft.git(["rev-parse", "--show-toplevel"], cwd: project),
               answer.status == 0 else { return nil }
         let path = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
         return path.hasPrefix("/") ? URL(fileURLWithPath: path).standardizedFileURL.path : nil
@@ -7679,11 +6517,13 @@ enum Orchestrator {
             "assistant": task.assistant.rawValue,
             "project_dir": task.projectDir,
             "created": Int(task.created.timeIntervalSince1970),
-            "age_seconds": ageSeconds(since: task.created, now: now),
+            "age_seconds": OrchestratorDraft.ageSeconds(since: task.created, now: now),
             "claims": task.claims,
         ]
         if let label = task.rootLabel { row["root_label"] = label }
-        if let session = task.rootSessionId { row["root_key"] = rootKeyDigest(session) }
+        if let session = task.rootSessionId {
+            row["root_key"] = OrchestratorDraft.rootKeyDigest(session)
+        }
         if !task.progress.isEmpty {
             row["progress"] = task.progress.map {
                 ["note": $0.note, "at": Int($0.at.timeIntervalSince1970)] as [String: Any]
@@ -7906,8 +6746,8 @@ enum Orchestrator {
                         save(); RemoteServer.shared.broadcastOrchestrator()
                     }
                 } else if let worktree = task.worktree {
-                    scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
-                                             allowCommitted: false)
+                    OrchestratorDraft.scheduleWorktreeDisposal(
+                        worktree, taskID: task.id, why: "empty", allowCommitted: false)
                 }
             }
         }
@@ -9617,7 +8457,7 @@ enum Orchestrator {
         save()
         RemoteServer.shared.broadcastOrchestrator()
         if let worktree = current.worktree {
-            scheduleWorktreeDisposal(worktree, taskID: current.id, why: "empty",
+            OrchestratorDraft.scheduleWorktreeDisposal(worktree, taskID: current.id, why: "empty",
                                      allowCommitted: false)
         }
     }
@@ -9639,7 +8479,7 @@ enum Orchestrator {
         save()
         RemoteServer.shared.broadcastOrchestrator()
         if intervention == nil, let worktree = current.worktree {
-            scheduleWorktreeDisposal(worktree, taskID: current.id, why: "empty",
+            OrchestratorDraft.scheduleWorktreeDisposal(worktree, taskID: current.id, why: "empty",
                                      allowCommitted: false)
         }
         SessionWatch.shared.nudge()
@@ -9853,9 +8693,9 @@ enum Orchestrator {
         // decision resurrected by this older snapshot.
         let removeEmpty = reclaimsEmptyWorktree(task, outcome: outcome)
         worktreeQueue.async {
-            let refreshed = refreshedWorktree(worktree)
+            let refreshed = OrchestratorDraft.refreshedWorktree(worktree)
             if removeEmpty {
-                disposeWorktree(refreshed, taskID: task.id, why: "empty",
+                OrchestratorDraft.disposeWorktree(refreshed, taskID: task.id, why: "empty",
                                 allowCommitted: false)
             }
             DispatchQueue.main.async {
@@ -10782,7 +9622,7 @@ enum Orchestrator {
 
     static func reconcileCompletions(taskID: String?, includeDeadLetters: Bool,
                                      now: Date = Date()) -> Reply {
-        if let taskID, !isTaskID(taskID) {
+        if let taskID, !OrchestratorDraft.isTaskID(taskID) {
             return .refused(400, "bad_request", "task_id must be a lowercase UUID.")
         }
         if let taskID, held(taskID) == nil {
@@ -10828,7 +9668,7 @@ enum Orchestrator {
     /// like completion notification, a missing root, a menu, or a failed send leaves the API
     /// record as the durable answer and never changes the dispatch outcome.
     private static func notifyWorkspaceOverlaps(newTask: Task,
-                                                overlaps: [WorkspaceOverlap]) {
+                                                overlaps: [OrchestratorDraft.WorkspaceOverlap]) {
         workspaceOverlapObserverForTesting?(newTask, overlaps)
         guard Config.shared.orchestratorNotifyRoot else { return }
         let notices = workspaceOverlapNotices(newTask: newTask, overlaps: overlaps)
@@ -10844,9 +9684,10 @@ enum Orchestrator {
     /// The pure notification decision. The new task gets one aggregate line; each identifiable
     /// opposing root gets the one overlap that concerns it. Nil root ids produce no delivery.
     static func workspaceOverlapNotices(newTask: Task,
-                                        overlaps: [WorkspaceOverlap]) -> [WorkspaceOverlapNotice] {
+                                        overlaps: [OrchestratorDraft.WorkspaceOverlap])
+        -> [OrchestratorDraft.WorkspaceOverlapNotice] {
         guard !overlaps.isEmpty else { return [] }
-        var notices: [WorkspaceOverlapNotice] = []
+        var notices: [OrchestratorDraft.WorkspaceOverlapNotice] = []
         if let root = newTask.rootSessionId {
             let details = overlaps.map { overlap in
                 let other = overlap.task
@@ -10865,8 +9706,9 @@ enum Orchestrator {
                 ),
                 body: line
             )
-            notices.append(WorkspaceOverlapNotice(rootSessionID: root, taskID: newTask.id,
-                                                   line: ClawdlineMessage.encode(semantic)))
+            notices.append(OrchestratorDraft.WorkspaceOverlapNotice(
+                rootSessionID: root, taskID: newTask.id,
+                line: ClawdlineMessage.encode(semantic)))
         }
         for overlap in overlaps {
             let other = overlap.task
@@ -10882,8 +9724,9 @@ enum Orchestrator {
                 ),
                 body: line
             )
-            notices.append(WorkspaceOverlapNotice(rootSessionID: root, taskID: other.id,
-                                                   line: ClawdlineMessage.encode(semantic)))
+            notices.append(OrchestratorDraft.WorkspaceOverlapNotice(
+                rootSessionID: root, taskID: other.id,
+                line: ClawdlineMessage.encode(semantic)))
         }
         return notices
     }
@@ -10930,7 +9773,7 @@ enum Orchestrator {
     /// A task that named nobody gets a key of its own rather than sharing one with every other
     /// anonymous dispatch — the alternative is two unrelated fan-outs waiting for each other.
     private static func rootKeyLocked(of task: Task) -> String {
-        rootKey(of: task, among: tasks)
+        OrchestratorDraft.rootKey(of: task, among: tasks)
     }
 
     /// Main thread, from ``finalize(_:as:summary:artifacts:)``. This counts endings for work that
@@ -12763,17 +11606,18 @@ enum Orchestrator {
     // MARK: - Cleanup
 
     private static func orphanWorktree(at path: String, taskID: String) -> Worktree? {
-        guard isTaskID(taskID), let branch = worktreeBranch(for: taskID),
-              let common = git(["rev-parse", "--git-common-dir"], cwd: path),
+        guard OrchestratorDraft.isTaskID(taskID),
+              let branch = OrchestratorDraft.worktreeBranch(for: taskID),
+              let common = OrchestratorDraft.git(["rev-parse", "--git-common-dir"], cwd: path),
               common.status == 0 else { return nil }
         let rawCommon = common.output.trimmingCharacters(in: .whitespacesAndNewlines)
         let commonPath = rawCommon.hasPrefix("/") ? rawCommon
             : URL(fileURLWithPath: path).appendingPathComponent(rawCommon).standardizedFileURL.path
-        let repository = canonicalFilesystemPath(
+        let repository = OrchestratorDraft.canonicalFilesystemPath(
             URL(fileURLWithPath: commonPath).deletingLastPathComponent().path)
         guard StartPoints.usable(repository),
-              let reflog = git(["reflog", "show", "--format=%H", branch],
-                               cwd: repository), reflog.status == 0,
+              let reflog = OrchestratorDraft.git(["reflog", "show", "--format=%H", branch],
+                                                 cwd: repository), reflog.status == 0,
               // `git reflog show` is newest first. The branch-creation entry is the oldest and
               // its new value is the commit from which `worktree add -b` created the branch.
               let base = reflog.output.split(whereSeparator: \.isNewline).last.map(String.init)
@@ -12786,7 +11630,8 @@ enum Orchestrator {
     /// cannot prove the same disposal facts as a live row, the orphan is deliberately retained.
     private static func cleanupOrphanWorktrees(knownTaskIDs: Set<String>, olderThan cutoff: Date) {
         let manager = FileManager.default
-        guard let repositories = try? manager.contentsOfDirectory(at: worktreeRoot,
+        guard let repositories = try? manager.contentsOfDirectory(
+            at: OrchestratorDraft.worktreeRoot,
             includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
             return
         }
@@ -12797,18 +11642,18 @@ enum Orchestrator {
             }
             for directory in tasks {
                 let id = directory.lastPathComponent
-                guard isTaskID(id), !knownTaskIDs.contains(id) else { continue }
+                guard OrchestratorDraft.isTaskID(id), !knownTaskIDs.contains(id) else { continue }
                 let modified = try? directory.resourceValues(
                     forKeys: [.contentModificationDateKey]).contentModificationDate
                 guard let modified, modified < cutoff else { continue }
                 guard let worktree = orphanWorktree(at: directory.path, taskID: id) else {
                     RemoteAuth.audit("orchestrator.worktree.kept", [
-                        "task": id, "branch": worktreeBranch(for: id) ?? "?",
+                        "task": id, "branch": OrchestratorDraft.worktreeBranch(for: id) ?? "?",
                         "why": "unreadable",
                     ])
                     continue
                 }
-                disposeWorktree(worktree, taskID: id, why: "swept")
+                OrchestratorDraft.disposeWorktree(worktree, taskID: id, why: "swept")
             }
         }
     }
@@ -12831,7 +11676,7 @@ enum Orchestrator {
         for task in done {
             if let worktree = task.worktree,
                FileManager.default.fileExists(atPath: worktree.path) {
-                disposeWorktree(worktree, taskID: task.id, why: "swept")
+                OrchestratorDraft.disposeWorktree(worktree, taskID: task.id, why: "swept")
             }
             try? FileManager.default.removeItem(at: task.dir)
         }
@@ -12978,16 +11823,16 @@ enum Orchestrator {
     }
 
     private static func activeRootIdentityEvidence(claimed: String?)
-        -> [RootIdentityEvidence] {
+        -> [OrchestratorDraft.RootIdentityEvidence] {
         guard let claimed, !claimed.isEmpty else { return [] }
         return rootTargets().compactMap { target in
             guard target.id == claimed, let actualAssistant = target.assistant,
                   let canonical = Transcript.sessionID(of: target), !canonical.isEmpty else {
                 return nil
             }
-            return RootIdentityEvidence(source: "active_terminal", terminalID: target.id,
-                                        canonicalSessionID: canonical,
-                                        assistant: actualAssistant)
+            return OrchestratorDraft.RootIdentityEvidence(
+                source: "active_terminal", terminalID: target.id,
+                canonicalSessionID: canonical, assistant: actualAssistant)
         }
     }
 

@@ -1236,7 +1236,7 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     // `attach_session` is parsed out of task.json at all — every existing test built the field
     // by hand on an `Orchestrator.Task`, so the parser could be deleted without a red.
     let parsedID = UUID().uuidString.lowercased()
-    switch Orchestrator.draft(from: [
+    switch OrchestratorDraft.draft(from: [
         "clawdline_protocol": 1, "task_id": parsedID, "assistant": "codex",
         "project_dir": "/tmp", "instructions": "read", "attach_session": standing.id,
     ], expecting: parsedID, isDirectory: { _ in true }) {

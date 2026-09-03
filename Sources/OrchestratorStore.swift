@@ -663,7 +663,7 @@ enum OrchestratorStore {
     }
 
     static func coordinationWait(from obj: [String: Any]) -> Orchestrator.CoordinationWait? {
-        guard let id = obj["id"] as? String, Orchestrator.isTaskID(id),
+        guard let id = obj["id"] as? String, OrchestratorDraft.isTaskID(id),
               let repositoryRaw = obj["repository"] as? String,
               let repository = Orchestrator.canonicalCoordinationRepository(repositoryRaw),
               let pathsRaw = obj["paths"] as? [String],
@@ -743,7 +743,7 @@ enum OrchestratorStore {
     }
 
     static func handoff(from obj: [String: Any]) -> Orchestrator.HandoffEnvelope? {
-        guard let id = obj["handoff_id"] as? String, Orchestrator.isTaskID(id),
+        guard let id = obj["handoff_id"] as? String, OrchestratorDraft.isTaskID(id),
               let projectDir = obj["project_dir"] as? String, StartPoints.usable(projectDir),
               let created = obj["created"] as? Double,
               let state = (obj["state"] as? String).flatMap(Orchestrator.HandoffState.init(rawValue:))
@@ -761,8 +761,8 @@ enum OrchestratorStore {
                   value.utf8.count <= limit else { return nil }
             return value
         }
-        guard let id = text("id", 64), Orchestrator.isTaskID(id),
-              let requestID = text("request_id", 64), Orchestrator.isTaskID(requestID),
+        guard let id = text("id", 64), OrchestratorDraft.isTaskID(id),
+              let requestID = text("request_id", 64), OrchestratorDraft.isTaskID(requestID),
               let digest = text("request_digest", 128), digest.count == 64,
               let assistant = text("assistant", 16).flatMap(Assistant.init(rawValue:)),
               let model = text("model", 64),
@@ -824,7 +824,7 @@ enum OrchestratorStore {
     }
 
     static func task(from obj: [String: Any]) -> Orchestrator.Task? {
-        guard let id = obj["id"] as? String, Orchestrator.isTaskID(id),
+        guard let id = obj["id"] as? String, OrchestratorDraft.isTaskID(id),
               let state = (obj["state"] as? String).flatMap(Orchestrator.State.init(rawValue:)),
               let assistant = (obj["assistant"] as? String).flatMap(Assistant.init(rawValue:)),
               let projectDir = obj["project_dir"] as? String,
@@ -847,13 +847,14 @@ enum OrchestratorStore {
         task.rootLabel = obj["root_label"] as? String
         if let common = obj["repository_common_dir"] as? String {
             guard StartPoints.usable(common) else { return nil }
-            task.repositoryCommonDir = Orchestrator.canonicalFilesystemPath(common)
+            task.repositoryCommonDir = OrchestratorDraft.canonicalFilesystemPath(common)
         }
         task.parentTaskId = obj["parent_task"] as? String
         // A chain position is only meaningful beside the task it descends from, so a row missing
         // one is missing both: a generation with no origin would count against a cap for a chain
         // nothing can name.
-        task.respawnOf = (obj["respawn_of"] as? String).flatMap { Orchestrator.isTaskID($0) ? $0 : nil }
+        task.respawnOf = (obj["respawn_of"] as? String)
+            .flatMap { OrchestratorDraft.isTaskID($0) ? $0 : nil }
         task.respawnGeneration = task.respawnOf == nil
             ? 0
             : min(max(obj["respawn_generation"] as? Int ?? 1, 1), Orchestrator.respawnLimit)
@@ -866,7 +867,8 @@ enum OrchestratorStore {
         if let rawGraph = obj["graph"] {
             task.graph = Orchestrator.planningGraph(from: rawGraph).graph
         }
-        task.scheduleID = (obj["schedule_id"] as? String).flatMap { Orchestrator.isTaskID($0) ? $0 : nil }
+        task.scheduleID = (obj["schedule_id"] as? String)
+            .flatMap { OrchestratorDraft.isTaskID($0) ? $0 : nil }
         task.scheduleCloseTab = (obj["schedule_close_tab"] as? String)
             .flatMap(Orchestrator.ScheduleCloseTab.init(rawValue:)) ?? .onSuccess
         task.scheduleNotifyFailure = obj["schedule_notify_failure"] as? Bool ?? true
@@ -886,7 +888,7 @@ enum OrchestratorStore {
         }
         task.claimKeys = storedClaimKeys.count == task.claims.count
             ? storedClaimKeys
-            : Orchestrator.freezeClaims(task.claims, projectDir: task.projectDir)
+            : OrchestratorDraft.freezeClaims(task.claims, projectDir: task.projectDir)
         task.releasedClaims = (obj["released_claims"] as? [[String: Any]] ?? []).compactMap { row in
             guard let path = row["path"] as? String, path.hasPrefix("/"),
                   let releasedAt = row["released_at"] as? Double else { return nil }
@@ -910,14 +912,14 @@ enum OrchestratorStore {
             guard let raw = obj["worktree"] as? [String: Any],
                   let path = raw["path"] as? String, StartPoints.usable(path),
                   let branch = raw["branch"] as? String,
-                  branch == Orchestrator.worktreeBranch(for: task.id),
+                  branch == OrchestratorDraft.worktreeBranch(for: task.id),
                   let base = raw["base"] as? String, !base.isEmpty,
                   let repository = raw["repository"] as? String, StartPoints.usable(repository),
-                  path == Orchestrator.worktreePath(project: repository, taskID: task.id),
+                  path == OrchestratorDraft.worktreePath(project: repository, taskID: task.id),
                   let cwd = raw["cwd"] as? String, StartPoints.usable(cwd),
-                  Orchestrator.relativePath(from: path, to: cwd) != nil else { return nil }
+                  OrchestratorDraft.relativePath(from: path, to: cwd) != nil else { return nil }
             let requestedBase = raw["requested_base"] as? String ?? "HEAD"
-            guard Orchestrator.validIsolationBase(requestedBase),
+            guard OrchestratorDraft.validIsolationBase(requestedBase),
                   (base.count == 40 || base.count == 64),
                   base.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) })
             else { return nil }
@@ -925,7 +927,7 @@ enum OrchestratorStore {
                                     repository: repository, cwd: cwd)
             if let common = raw["repository_common_dir"] as? String {
                 guard StartPoints.usable(common) else { return nil }
-                worktree.repositoryCommonDir = Orchestrator.canonicalFilesystemPath(common)
+                worktree.repositoryCommonDir = OrchestratorDraft.canonicalFilesystemPath(common)
             }
             worktree.head = raw["head"] as? String
             worktree.commits = raw["commits"] as? Int

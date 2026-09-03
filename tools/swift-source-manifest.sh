@@ -59,6 +59,7 @@ clawdline_production_sources=(
   Sources/NotchIsland.swift
   Sources/Onboarding.swift
   Sources/Orchestrator.swift
+  Sources/OrchestratorDraft.swift
   Sources/OrchestratorLease.swift
   Sources/OrchestratorPlanning.swift
   Sources/OrchestratorRegistry.swift
