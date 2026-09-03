@@ -329,6 +329,15 @@ commits later, on a run that had zero failures and all twelve cloud suites prese
 nothing red is exactly where a stale seal hides**, because every other signal on the page reads as
 success.
 
+Hours later the same row produced its other face. A pre-integration merge left the governance table
+saying 8250 while the seal said 8226, and `compare_documented "Swift checks"` went red at once —
+correctly, and usefully. **Both outcomes on one row in one day is the whole of what a record-against-
+record comparison can do:** it sees the two records diverge, and it is blind to both of them
+drifting from the tree together. Which face it shows depends only on whether the two were edited in
+the same commit, never on whether either matches what the suite runs. The comparison is worth
+keeping — it caught a real inconsistency the same afternoon — as long as nobody reads its green as a
+statement about the tree.
+
 Deriving the drift a second way nearly went wrong in a way worth recording. Counting assertion lines
 added since the seal was last set gives four for `a4ed9edb`, zero for the barrier fix — and **one
 hundred** for `c7eac595`, which would have broken the arithmetic. They net to zero: that commit split
