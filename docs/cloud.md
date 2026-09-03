@@ -354,18 +354,28 @@ SecurityTool invocation.
   `/v1/strings` is a follow-up that must touch that file.
 - **Push.** Web push needs the Mac's VAPID keys and does not work through the relay, so the hosted
   console registers no service worker.
-- **The reads that still do not cross.** A session's messages and its Info do now: the viewer asks
-  on `ctl/<machine>` and the Mac answers on `t/<machine>/<session>`, which is the channel the
-  viewer had always subscribed to and nothing had ever published on. The route table and the typed
-  refusals are in
-  [`docs/api.md`](api.md#the-two-reads-a-browser-on-the-cloud-path-may-ask-for). Four reads behind
-  unguarded call sites — one background agent's conversation, a background command's output, a
-  session's skills and its Git panel — now answer `cloud_read_unavailable` instead of throwing
-  `api.git is not a function`, and everything else the Web UI reads is guarded by
-  `typeof api.X === "function"` and draws no control at all. `CloudClient.schedules()` is the one
-  exception and is a live defect rather than a policy: it reads a `schedules` key out of the
-  `orch/` snapshot, and `RemoteServer.broadcastOrchestrator` publishes only `tasks`, so the
-  Schedules screen on the hosted console is silently and permanently empty.
+- **The reads that still do not cross.** Six do now: a session's messages, both tiers of its Info,
+  one background agent's conversation, one background command's output, its skills menu and its
+  Git panel. The viewer asks on `ctl/<machine>` and the Mac answers on `t/<machine>/<session>`,
+  which is the channel the viewer had always subscribed to and nothing had ever published on. The
+  route table, the bounds and the typed refusals are in
+  [`docs/api.md`](api.md#the-six-reads-a-browser-on-the-cloud-path-may-ask-for).
+  `cloud_read_unavailable` was the answer for the last four and is now the answer for nothing:
+  when the Mac cannot serve one of them it says so in its own word — `not_found`, `not_a_repo`,
+  `git_failed`, `429 busy` — which is what lets `git-panel.js` keep the branch it already had.
+  Everything else the Web UI reads is guarded by `typeof api.X === "function"` and draws no
+  control at all. `CloudClient.schedules()` is the one exception and is a live defect rather than
+  a policy: it reads a `schedules` key out of the `orch/` snapshot, and
+  `RemoteServer.broadcastOrchestrator` publishes only `tasks`, so the Schedules screen on the
+  hosted console is silently and permanently empty.
+- **A read an older Mac has never heard of ends in a timeout, not in a refusal.** A malformed or
+  unknown read is answered to the bridge and published to nobody — before it is parsed there is
+  neither a body to send nor a name to send it under — so a hosted console that knows a read the
+  paired Mac does not will wait out its sixty seconds and see `cloud_read_timeout`. On a matched
+  pair this is invisible, because the client never sends a read it cannot spell. It is a real
+  minute across a version gap, and the thing that would let a console see the gap coming is the
+  build stamp, which this path still does not carry: `_becameReady` sends `handlers.hello({write})`
+  with no `build`, `version` or `protocol`, so the "this page is behind" banner can never fire.
 - **`/v1/strings` for the hosted console.** There is no such route on the control plane, so the
   fetch fails and the page falls back to English inside its two-second budget. It is a 404 in the
   console and nothing else.

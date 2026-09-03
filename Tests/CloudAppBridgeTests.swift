@@ -1028,6 +1028,101 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(results.all().contains(where: { $0.code == "not_found" }),
                 "the refusal is observable at the bridge as well as on the channel")
 
+    // And the other four, which were `cloud_read_unavailable` — a typed refusal, and not an
+    // answer. The Git panel first, because it is the one the person opens most and the one whose
+    // page already branches on a code of the Mac's.
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data(#"{"git":{"branch":"main","clean":true,"files":[]}}"#.utf8)
+    ))
+    transport.yield(#"{"type":"git","session":"plain"}"#, sequence: 23)
+    try await waitForCloudAppBridge("the Git answer") { transport.envelopes().count == 4 }
+    let gitReads = await router.recordedReads()
+    try require(gitReads.last?.read == .git(session: "plain"),
+                "the Git panel reaches the broker as a read of its own, with no window to name")
+    let gitPayload = try opened(transport.envelopes()[3])
+    try require(gitPayload["read"] as? String == "git", "the Git answer names itself")
+    try require(((gitPayload["body"] as? [String: Any])?["git"] as? [String: Any])?["branch"]
+                    as? String == "main",
+                "and carries the route's own body, which is what lets git-panel.js keep its shape")
+
+    // A refusal the Git panel already has a sentence for. `not_a_repo` is not a cloud word and is
+    // not translated into one: the page branches on it over the tunnel and branches on it here.
+    await router.answerReadsWith(CloudReadResult(
+        status: 404,
+        body: Data(#"{"error":{"code":"not_a_repo","message":"Not inside a Git repository"}}"#.utf8)
+    ))
+    transport.yield(#"{"type":"git","session":"plain"}"#, sequence: 24)
+    try await waitForCloudAppBridge("the refused Git answer") { transport.envelopes().count == 5 }
+    let notARepo = try opened(transport.envelopes()[4])
+    try require((notARepo["error"] as? [String: Any])?["code"] as? String == "not_a_repo",
+                "a session outside a repository crosses as the route's own code")
+
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data(#"{"skills":[{"name":"/run"}]}"#.utf8)
+    ))
+    transport.yield(#"{"type":"skills","session":"plain"}"#, sequence: 25)
+    try await waitForCloudAppBridge("the skills answer") { transport.envelopes().count == 6 }
+    try require(await router.recordedReads().last?.read == .skills(session: "plain"),
+                "the composer's menu is a read of the session and nothing else")
+    try require(try opened(transport.envelopes()[5])["read"] as? String == "skills",
+                "the skills answer names itself")
+
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data(#"{"text":"building","ended":false}"#.utf8)
+    ))
+    transport.yield(#"{"type":"shell","session":"plain","shell":"sh-9","bytes":65536}"#,
+                    sequence: 26)
+    try await waitForCloudAppBridge("the shell answer") { transport.envelopes().count == 7 }
+    try require(await router.recordedReads().last?.read
+                    == .shell(session: "plain", shell: "sh-9", bytes: 65536),
+                "a command's tail reaches the broker with the bound it was asked for")
+    try require(try opened(transport.envelopes()[6])["read"] as? String == "shell:sh-9",
+                "and its answer names the command, not the kind")
+
+    // The decisive one, and the reason `name` carries an id at all. Two agents in one session
+    // answer on that session's single channel; a viewer waiting on both can only tell the answers
+    // apart by the name, so the name has to be the agent and not the word "agent".
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data(#"{"agent":{"id":"a-1"},"entries":[]}"#.utf8)
+    ))
+    transport.yield(#"{"type":"agent","session":"plain","agent":"a-1","limit":200}"#, sequence: 27)
+    try await waitForCloudAppBridge("the first agent answer") { transport.envelopes().count == 8 }
+    transport.yield(#"{"type":"agent","session":"plain","agent":"a-2","limit":200}"#, sequence: 28)
+    try await waitForCloudAppBridge("the second agent answer") { transport.envelopes().count == 9 }
+    let agentNames = try [8, 9].map { try opened(transport.envelopes()[$0 - 1])["read"] as? String }
+    try require(agentNames == ["agent:a-1", "agent:a-2"],
+                "two agents in one session are two names, so neither settles the other's waiter")
+    try require(await router.recordedReads().last?.read
+                    == .agent(session: "plain", agent: "a-2", limit: 200),
+                "and the second reaches the broker as its own agent with its own window")
+
+    // The two lists that have to agree: `readTypes` admits a word, and the switch in `serveRead`
+    // has to know it. A member of the set with no case would be refused by the `default` rather
+    // than read as the last one, and this is what would say so.
+    let wellFormed: [String: String] = [
+        "transcript": #"{"type":"transcript","session":"typed","limit":200}"#,
+        "info": #"{"type":"info","session":"typed","parts":"full"}"#,
+        "agent": #"{"type":"agent","session":"typed","agent":"a","limit":200}"#,
+        "shell": #"{"type":"shell","session":"typed","shell":"s","bytes":1024}"#,
+        "skills": #"{"type":"skills","session":"typed"}"#,
+        "git": #"{"type":"git","session":"typed"}"#,
+    ]
+    try require(Set(wellFormed.keys) == CloudAppBridge.readTypes,
+                "every read type this bridge admits has a body written for it here")
+    let readsBeforeTyped = await router.recordedReads().count
+    var typedSequence: UInt64 = 40
+    for type in CloudAppBridge.readTypes.sorted() {
+        transport.yield(wellFormed[type]!, sequence: typedSequence)
+        typedSequence += 1
+    }
+    try await waitForCloudAppBridge("every admitted read type to parse and route") {
+        await router.recordedReads().count == readsBeforeTyped + wellFormed.count
+    }
+    let typedReads = await router.recordedReads().suffix(wellFormed.count)
+    try require(Set(typedReads.map(\.read.name))
+                    == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git"],
+                "and each parses into the read it names rather than into the switch's last case")
+
     // Strictness, in the same shape the commands already have: an exact key set, a bounded
     // window, a session that is really there, a tier that is one of two, and the command class
     // the relay bills. None of them may reach the broker.
@@ -1041,6 +1136,29 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         #"{"type":"transcript","session":"","limit":200}"#,
         #"{"type":"info","session":"plain","parts":"everything"}"#,
         #"{"type":"info","session":"plain"}"#,
+        // An agent is a transcript with a name on it, so it is refused everywhere a transcript
+        // is and once more besides: without the name there is nothing to read and nothing to
+        // publish the answer under.
+        #"{"type":"agent","session":"plain","limit":200}"#,
+        #"{"type":"agent","session":"plain","agent":"","limit":200}"#,
+        #"{"type":"agent","session":"plain","agent":"a-1"}"#,
+        #"{"type":"agent","session":"plain","agent":"a-1","limit":0}"#,
+        #"{"type":"agent","session":"plain","agent":"a-1","limit":1001}"#,
+        #"{"type":"agent","session":"plain","agent":"a-1","limit":200,"parts":"full"}"#,
+        // A command's tail is bounded where its route bounds it — 1 KiB to 1 MiB — so a viewer
+        // cannot ask this Mac for more of a build log than a phone on the tunnel can.
+        #"{"type":"shell","session":"plain","shell":"sh-9"}"#,
+        #"{"type":"shell","session":"plain","shell":"","bytes":65536}"#,
+        #"{"type":"shell","session":"plain","bytes":65536}"#,
+        #"{"type":"shell","session":"plain","shell":"sh-9","bytes":1023}"#,
+        #"{"type":"shell","session":"plain","shell":"sh-9","bytes":1048577}"#,
+        #"{"type":"shell","session":"plain","shell":"sh-9","bytes":65536.5}"#,
+        // Neither of the last two takes a window, and a field they do not read is a field
+        // somebody believed they read.
+        #"{"type":"skills","session":"plain","limit":200}"#,
+        #"{"type":"skills","session":""}"#,
+        #"{"type":"git","session":"plain","parts":"summary"}"#,
+        #"{"type":"git","session":""}"#,
     ]
     var sequence: UInt64 = 30
     for body in malformed {
@@ -1055,7 +1173,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let readsAfterMalformed = await router.recordedReads().count
     try require(readsAfterMalformed == readsBeforeMalformed,
                 "no malformed read reaches the broker")
-    try require(transport.envelopes().count == 3,
+    try require(transport.envelopes().count == 9,
                 "a refused-before-routing read publishes nothing, having no answer to publish")
 
     await bridge.stop()
@@ -1086,6 +1204,42 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
                 "a cloud transcript read is classified into the transcript lane")
     try require(RemoteServer.isSlowReading(fullInfoRequest.path),
                 "a cloud Info read is classified into the bounded reading lane")
+
+    // The other four, built from the same closed enum. Their ids are escaped the way the direct
+    // path's own call sites escape them, so an id holding a slash is one path segment on both.
+    let agentRequest = RemoteServer.Request(
+        verifiedCloudRead: .agent(session: "plain", agent: "bg/一", limit: 200), sender: "viewer"
+    )
+    try require(agentRequest.path == "/v1/sessions/plain/agents/bg%2F%E4%B8%80",
+                "an agent id is one path segment however it is spelled")
+    try require(agentRequest.query == ["limit": "200"],
+                "and travels with the window the direct path asks for")
+    let shellRequest = RemoteServer.Request(
+        verifiedCloudRead: .shell(session: "plain", shell: "sh-9", bytes: 65536), sender: "viewer"
+    )
+    try require(shellRequest.path == "/v1/sessions/plain/shells/sh-9"
+                    && shellRequest.query == ["bytes": "65536"],
+                "a command's tail names its bound in the query the route reads it from")
+    let skillsRequest = RemoteServer.Request(
+        verifiedCloudRead: .skills(session: "plain"), sender: "viewer"
+    )
+    try require(skillsRequest.path == "/v1/sessions/plain/skills" && skillsRequest.query.isEmpty,
+                "skills is the bare route, exactly as the composer asks for it")
+    let gitRequest = RemoteServer.Request(
+        verifiedCloudRead: .git(session: "plain"), sender: "viewer"
+    )
+    try require(gitRequest.path == "/v1/sessions/plain/git" && gitRequest.query.isEmpty,
+                "and so is the Git panel")
+    try require(gitRequest.method == "GET" && gitRequest.headers["idempotency-key"] == nil,
+                "none of the four mints an idempotency key, because none of them makes anything happen")
+
+    // Where they queue, which is the shared queue — and that is not this door's decision, it is
+    // the direct path's. Both lane predicates refuse these four paths over HTTP too, so sending
+    // them to a lane here would be a second policy nobody measured.
+    for path in [agentRequest.path, shellRequest.path, skillsRequest.path, gitRequest.path] {
+        try require(!RemoteServer.isTranscriptReading(path) && !RemoteServer.isSlowReading(path),
+                    "\(path) is not a lane read here, because it is not one on the direct path")
+    }
 
     return checks
 }

@@ -579,19 +579,38 @@ a card is opened; not something to do on every beat of the stream. Everything he
 nothing is written — the `git` runs with `GIT_OPTIONAL_LOCKS=0` and a deadline, and nothing is
 asked of GitHub that `/links` did not already ask.
 
-### The two reads a browser on the Cloud path may ask for
+### The six reads a browser on the Cloud path may ask for
 
 Everything above is the direct path: a browser on this Mac's own network, or through its
 Cloudflare tunnel, holding a paired-device token. A browser on the **Cloud** path holds no such
 token and speaks no HTTP to this Mac at all — it publishes one encrypted envelope to the relay,
 and the Mac publishes one back. So the routes above are not reachable from there by definition,
-and what is reachable is a closed list of two, named in `CloudHeadlessRead`:
+and what is reachable is a closed list of six, named in `CloudHeadlessRead`:
 
 | asked as | answered by | the direct route it stands for |
 |---|---|---|
 | `{"type":"transcript","session":"…","limit":1‑1000}` | `read: "transcript"` | [`GET /v1/sessions/:id/transcript`](#get-v1sessionsidtranscriptlimit200) |
 | `{"type":"info","session":"…","parts":"full"}` | `read: "info.full"` | [`GET /v1/sessions/:id/info`](#get-v1sessionsidinfo) |
 | `{"type":"info","session":"…","parts":"summary"}` | `read: "info.summary"` | `GET /v1/sessions/:id/info?parts=summary` |
+| `{"type":"agent","session":"…","agent":"…","limit":1‑1000}` | `read: "agent:<agent>"` | [`GET /v1/sessions/:id/agents/:agentId`](#get-v1sessionsidagentsagentidlimit200) |
+| `{"type":"shell","session":"…","shell":"…","bytes":1024‑1048576}` | `read: "shell:<shell>"` | [`GET /v1/sessions/:id/shells/:shellId`](#get-v1sessionsidshellsshellidbytes65536) |
+| `{"type":"skills","session":"…"}` | `read: "skills"` | [`GET /v1/sessions/:id/skills`](#get-v1sessionsidskills) |
+| `{"type":"git","session":"…"}` | `read: "git"` | [`GET /v1/sessions/:id/git`](#get-v1sessionsidgit) |
+
+**An agent and a shell name themselves in the answer; the other four do not have to.** A session
+has one transcript, one Info, one skills menu and one Git panel, but many agents and many
+commands — and every one of them answers on that session's single channel. A reader with two
+agents open, which is the ordinary case because the strip lists them side by side, would have the
+first settled by the second's conversation if both answers were called `agent`.
+
+**Where each bound comes from, and it is the route's own in every case.** `limit` on an agent is
+the transcript window, 1–1000, because an agent's file is read by the same parser. `bytes` on a
+shell is the tail, 1 KiB to 1 MiB, because a command has no turns and the only honest bound on it
+is how much of the end to take — and here the viewer states the direct path's own default of
+64 KiB rather than omitting the field, because a read's key set is checked exactly and an omitted
+field is `malformed_read` rather than a default. `skills` and `git` take no bound at all: the
+first answers a menu as long as that assistant has skills, and the second answers file rows with
+counts and **no diff text**, so neither has a size a caller could name.
 
 The request rides `ctl/<machine>` with class `ctl`, the channel a viewer already publishes
 commands on; the answer rides `t/<machine>/<session>` with class `stream`, the channel a viewer
@@ -619,7 +638,10 @@ device sees through the tunnel, for no reason anybody chose. `send`, `answer` an
 **They queue where a phone queues.** A cloud transcript read enters the same serial transcript
 worker and a cloud Info read the same eight-place reading lane, so both can come back
 `429 transcript_busy` or `429 busy` with the same fields as above. A second door that skipped
-those lanes would put back the exclusivity they were built to remove.
+those lanes would put back the exclusivity they were built to remove. The other four take the
+shared queue, and that is the same rule and not an exception to it: `isTranscriptReading` and
+`isSlowReading` both say no to `agents`, `shells`, `skills` and `git` arriving over HTTP too, so a
+lane for them here would be a second policy nobody measured.
 
 **What a viewer cannot ask for.** The refusals below are the deliberate ones, and each has a code
 of its own so a page can say which it hit rather than showing the same empty view for all three:
@@ -627,8 +649,24 @@ of its own so a page can say which it hit rather than showing the same empty vie
 | code | what it means | whose decision |
 |---|---|---|
 | `cloud_read_needs_send_prompt` | this device may read but may not publish on `ctl/`, so it cannot ask | the relay's: PROTOCOL §12 requires `send_prompt` to publish on `ctl/` in either class |
-| `cloud_read_unavailable` | `agents`, `shells`, `skills` and `git` do not cross yet | this repository's, and a gap rather than a policy |
+| `malformed_read` | the request had a missing, extra or wrongly typed field, or arrived with class `dispatch` | the bridge's, before anything reaches a route — and the viewer's for the one case it can see first, an `agent` or `shell` read with no id |
 | `cloud_read_timeout` | nothing answered within the client's window | the client's, and the honest end of a read nobody will answer |
+
+**`cloud_read_unavailable` is gone, and its absence is the point.** It meant *this transport has
+no method for it*, and it was the answer for exactly these four; now that they cross, no read
+answers it, and what a viewer gets when the Mac cannot serve one is the Mac's own word instead —
+`not_found` for an agent or command that is not there, `not_a_repo` or `git_failed` from the Git
+panel, `429 busy` from a lane. `git-panel.js` already branched on `not_a_repo` and needed no
+change to keep doing so on this path.
+
+**A malformed read is refused and not published, so there is one shape that ends in a timeout.**
+`serveRead` answers `malformed_read` to the bridge and publishes nothing — before it has parsed,
+it has neither a body to send nor a name to send it under. That is invisible on a matched pair,
+because this client never sends a read it cannot spell. It is visible across a version gap: a
+hosted console that knows a read an older Mac does not will have the request dropped in silence
+and see `cloud_read_timeout` sixty seconds later. That is bounded and typed rather than a
+skeleton, but it is a minute, and closing it needs the build stamp the Cloud path still does not
+carry — see [`docs/cloud.md`](cloud.md).
 
 Every other read the Web UI performs — `/v1/places`, `/v1/places/:id/sessions`,
 `GET /v1/orchestrator/schedules/:id`, `/v1/orchestrator/coordinator/bearings`, `/v1/push/key` —

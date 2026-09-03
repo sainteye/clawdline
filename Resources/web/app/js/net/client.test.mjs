@@ -617,11 +617,34 @@ for (const [name, call] of [
 assert.equal(readOnlyCloud.readWaiters.size, 0,
     "a refused read registers no waiter and spends no envelope sequence");
 
-for (const missing of ["agent", "shell", "skills", "git"]) {
-    await assert.rejects(readOnlyCloud[missing]({ machine: "mac-01", session: "session-01" }),
-        function (error) { return error.code === "cloud_read_unavailable"; },
-        missing + "() answers a typed refusal instead of throwing 'is not a function'");
+// The other four are reads now and not stubs, so they meet the same relay rule the first two
+// do. `cloud_read_unavailable` has to be gone as well as `is not a function`: a word that still
+// answered here would be a gap that had been closed and not said so.
+for (const [name, call] of [
+    ["agent", () => readOnlyCloud.agent({ machine: "mac-01", session: "session-01" }, "agent-1")],
+    ["shell", () => readOnlyCloud.shell({ machine: "mac-01", session: "session-01" }, "shell-1")],
+    ["skills", () => readOnlyCloud.skills({ machine: "mac-01", session: "session-01" })],
+    ["git", () => readOnlyCloud.git({ machine: "mac-01", session: "session-01" })]
+]) {
+    await assert.rejects(call(), function (error) {
+        return error.code === "cloud_read_needs_send_prompt";
+    }, name + " is a read the relay may refuse, not a reading this transport lacks");
 }
+// An agent or shell read with no id is refused here rather than at the Mac, in the Mac's own
+// word: `serveRead` would call it `malformed_read` and publish nothing, so a request sent anyway
+// would be dropped in silence and end sixty seconds later as a timeout.
+for (const [name, call] of [
+    ["agent", (id) => readOnlyCloud.agent({ machine: "mac-01", session: "session-01" }, id)],
+    ["shell", (id) => readOnlyCloud.shell({ machine: "mac-01", session: "session-01" }, id)]
+]) {
+    for (const empty of [undefined, null, ""]) {
+        await assert.rejects(call(empty), function (error) {
+            return error.code === "malformed_read";
+        }, name + "() with no id is refused before the relay rule, in the Mac's own word");
+    }
+}
+assert.equal(readOnlyCloud.readWaiters.size, 0,
+    "and neither refusal leaves a waiter behind to be settled by somebody else's answer");
 
 const readTimers = [];
 /** Sealing an envelope is real WebCrypto, so a published read is several turns away, not two. */
@@ -780,6 +803,88 @@ assert.equal(deferredCloud.readWaiters.size, 0,
     "stop() settles its reads before returning, without waiting for onclose to be scheduled");
 await assert.rejects(acrossRefresh, function (error) { return error.code === "offline"; },
     "and the read it settled says the connection went, not that the Mac refused");
+
+/* ---- and the other four, which used to be a TypeError -------------------------------------
+   The Git panel is the one the person opens most, so it is the one carried furthest here: its
+   body, its typed refusal, and the branch `git-panel.js` already takes on that refusal. The
+   decisive check is the pair of agents: one session, one answer channel, two open conversations,
+   which is the ordinary case rather than the contrived one. ---------------------------------- */
+
+const panelCloud = makeReadingCloud();
+const panelSocket = await becomeReady(panelCloud);
+async function requestBody(frame) {
+    return JSON.parse(new TextDecoder().decode(
+        await openEnvelope(frame.envelope, masterKey, senderKey)));
+}
+
+const gitAnswer = panelCloud.git({ machine: "mac-01", session: "session-01" });
+await until(function () { return publishedReads(panelSocket).length === 1; },
+    "the Git request to leave");
+assert.deepEqual(await requestBody(publishedReads(panelSocket)[0]),
+    { type: "git", session: "session-01" },
+    "the Git panel asks for a route with no window, because its route answers rows and no diff");
+await answerRead(panelCloud, panelSocket, { read: "git", status: 200,
+    body: { git: { branch: "main", head: "abc1234", clean: true, files: [] } } });
+assert.deepEqual((await gitAnswer).git.branch, "main",
+    "the Git panel gets the same body it gets over the tunnel, so it needs no cloud branch");
+
+const notARepo = panelCloud.git({ machine: "mac-01", session: "plain" });
+await until(function () { return publishedReads(panelSocket).length === 2; },
+    "the second Git request to leave");
+await answerRead(panelCloud, panelSocket, { read: "git", status: 404,
+    error: { code: "not_a_repo", message: "That session is not inside a Git repository" } },
+    "plain");
+await assert.rejects(notARepo, function (error) { return error.code === "not_a_repo"; },
+    "and the code git-panel.js already branches on arrives as the Mac's own word");
+
+const skillsAnswer = panelCloud.skills({ machine: "mac-01", session: "session-01" });
+await until(function () { return publishedReads(panelSocket).length === 3; },
+    "the skills request to leave");
+assert.deepEqual(await requestBody(publishedReads(panelSocket)[2]),
+    { type: "skills", session: "session-01" }, "skills is the session and nothing else");
+await answerRead(panelCloud, panelSocket, { read: "skills", status: 200,
+    body: { skills: [{ name: "/run", description: "run it", source: "project" }] } });
+assert.deepEqual((await skillsAnswer).skills[0].name, "/run",
+    "the composer reads answer.skills exactly as it does on the direct path");
+
+const shellAnswer = panelCloud.shell({ machine: "mac-01", session: "session-01" }, "shell-9");
+await until(function () { return publishedReads(panelSocket).length === 4; },
+    "the shell request to leave");
+assert.deepEqual(await requestBody(publishedReads(panelSocket)[3]),
+    { type: "shell", session: "session-01", shell: "shell-9", bytes: 65536 },
+    "a command's tail names its bound, because the direct path's omitted default is a "
+    + "malformed read here");
+await answerRead(panelCloud, panelSocket, { read: "shell:shell-9", status: 200,
+    body: { text: "building…", ended: false, at: 1787817600, signature: "12-34" } });
+assert.equal((await shellAnswer).text, "building…",
+    "and the shell panel is handed the bytes in the order they were written");
+
+// The decisive one. Two agents in one session answer on one channel, so the only thing that can
+// tell their answers apart is the name — and `agent` is not a name, it is a kind.
+const firstAgent = panelCloud.agent({ machine: "mac-01", session: "session-01" }, "agent-1");
+// `_read` registers its clock synchronously, so the timer this read will die by is the last one
+// pushed — captured before the second agent pushes its own on top of it.
+const firstAgentTimer = readTimers.length - 1;
+const secondAgent = panelCloud.agent({ machine: "mac-01", session: "session-01" }, "agent-2");
+await until(function () { return publishedReads(panelSocket).length === 6; },
+    "both agent requests to leave");
+const agentRequests = await Promise.all(
+    publishedReads(panelSocket).slice(4).map(requestBody));
+assert.deepEqual(agentRequests.map((request) => request.agent).sort(), ["agent-1", "agent-2"],
+    "two agents are two requests, each naming the agent it is about");
+assert.deepEqual(agentRequests.map((request) => [request.type, request.session, request.limit]),
+    [["agent", "session-01", 200], ["agent", "session-01", 200]],
+    "and both ask for the window the direct path asks for");
+await answerRead(panelCloud, panelSocket, { read: "agent:agent-2", status: 200,
+    body: { agent: { id: "agent-2" }, entries: [{ role: "user", text: "second" }],
+        signature: "9-9" } });
+assert.equal((await secondAgent).agent.id, "agent-2",
+    "the answer that names an agent settles that agent");
+readTimers[firstAgentTimer]();
+await assert.rejects(firstAgent, function (error) {
+    return error.code === "cloud_read_timeout";
+}, "and it does not settle the other one, whose conversation it is not");
+panelCloud.stop();
 
 const strictCloud = makeReadingCloud();
 const strictSocket = await becomeReady(strictCloud);
