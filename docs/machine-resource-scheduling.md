@@ -338,10 +338,14 @@ additions beside a hundred deletions. Counting only the `+` side is a query abou
 derivation and the measurement agree at 8101 — but only after the deletions were counted too.
 
 **An instance gets written down as a rule, and nobody checks the step in between.** Three of this
-page's mistakes have the same shape and none of them is carelessness. A coordination wait's
-structured `paths` field listed four files; the prose reason beside it named the one that had
-actually blocked a fast-forward, and every reader — including the line that had registered it —
-took the scope to be one file until a trial merge showed all four. A guard's calibration positive
+page's mistakes have the same shape and none of them is carelessness. A coordination wait recorded its
+scope three times: a structured `paths` field with four files, the owner's release condition saying
+in plain words *or explicitly releases these four paths*, and the waiter's own one-line reason,
+which named the single file that had actually blocked a fast-forward. **Two of the three said four,
+one of them in prose.** The waiter read their own sentence three hours later and took the scope to
+be one file, until a trial merge showed all four. The correct scope was not missing, and it was not
+buried in a field nobody reads — it was written twice, in ordinary language, immediately above the
+line that displaced it. A guard's calibration positive
 was specified as "plant `-j 8` in one of the .mjs files", a shape that has never occurred in this
 repository; what occurs is `["-j", ceiling]`, a variable, and the person who proposed the literal
 was the one person who had read the real line, because they were editing it. And the coverage check
@@ -354,6 +358,10 @@ the sentence is already careful, and it is already accurate about the thing it w
 What reaches it is a second reader, or the discipline of running the rule against an input that was
 not the one that prompted it. **Both of those are ways of asking whether the rule outlives the
 example.**
+
+And where a structured field exists, read it instead. The wait above is the case: anything deciding
+an order from a wait reads `paths`, never the reason. A field has a subject; a sentence about why
+someone is waiting has only the moment it was written in.
 
 ### Two checks this page specifies but the tree does not yet carry
 
