@@ -133,7 +133,15 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
 # step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
 # 165 -> 150, counted by that file itself.
-expected_swift_receipt='8093 checks passed'
+# The durable handoff label adds 26, counted from the diff and confirmed against the run that this
+# line now guards: 8093 -> 8119, on this branch's tree with `CLAWDLINE_SUITE_JOBS=1`. No new group,
+# because `Tests/TestGroupManifest.swift` is sealed at 498 and was held by another session — so all
+# 26 are inside groups that already existed and the ordered manifest does not move. 15 are in the
+# handoff registration group, walking one label from the tab opening through a restart to a reused
+# terminal id and a different conversation; 6 are in the envelope group, which now also proves the
+# label is on the tab's clock rather than the letter's; 5 are in the registry transaction table,
+# where the suppressed handoff labels are a sixth collection beside the five already there.
+expected_swift_receipt='8119 checks passed'
 
 count_exact_receipt_lines() {
   local receipt=$1

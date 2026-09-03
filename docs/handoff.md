@@ -342,7 +342,7 @@ what the table above says it does not do.
 
 Two things follow, and both are the point of keeping it apart:
 
-- **A terminal id is reusable, so the label is bound to more than one.** Once a reading has matched
+- **A terminal id is reusable, so the label is bound to more than a terminal id.** Once a reading has matched
   the assistant, the pid, the process start and the conversation, that is what the label is for; a
   reading that finds something else in the tab suppresses the label rather than handing the next
   session a stranger's job name. The label is rung 2 of

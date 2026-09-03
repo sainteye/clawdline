@@ -303,10 +303,22 @@ group("handoff registration opens once and shares the dispatch brake") {
             identities: [receiver]))
     check("so the record is still the terminal id it was opened with",
           Orchestrator.handoffLabelForTesting(titledID)?.identity.pid == nil)
+    // A Claude tab has a pid before its transcript has a name, so the first reading binds a record
+    // that is bound and still incomplete — which is the only state in which the equality guard,
+    // rather than the completeness one, is what stops the next beat writing the store again.
+    let halfNamed = Orchestrator.SessionWorkIdentity(
+        terminalID: "%titled", assistant: .claude, tty: "/dev/ttys031", pid: 4711,
+        processStart: Date(timeIntervalSince1970: 1_788_397_479), conversationID: nil)
     check("the first complete inventory binds the label to the process now in that tab",
           Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
+                                                             identities: [halfNamed]))
+    check("reading that same half-named tab again writes nothing",
+          !Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
+                                                              identities: [halfNamed]))
+    check("the conversation arriving later completes the record",
+          Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
                                                              identities: [receiver]))
-    check("a second reading of the same process writes nothing again",
+    check("after which a further reading of the same process changes nothing",
           !Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
                                                               identities: [receiver]))
     Orchestrator.saveForTesting()
