@@ -466,12 +466,27 @@ assert.match(recipe, /expected_generation/);
 assert.match(recipe, /coordinator_online/,
     "the refusal that says a live coordinator is not to be taken over");
 
-for (const skill of ["../skills/clawdline/SKILL.md", "../skills/clawdline/SKILL.zh-TW.md"]) {
-    const text = await readFile(new URL(skill, import.meta.url), "utf8");
-    assert.match(text, /Clawdfather/, `${skill} carries the procedure`);
-    assert.match(text, /CODEX_THREAD_ID/, `${skill} names the wrong id`);
-    assert.match(text, /expected_generation/, `${skill} names the compare-and-swap value`);
-    assert.match(text, /docs\/orchestrator\.md/, `${skill} points at the long form`);
+// The procedure moved into the shipped guide when SKILL.md became a discovery stub: an env var
+// name and a compare-and-swap field are exactly the detail a copied skill file goes stale on, so
+// they are asserted where they now live, beside the build that serves them.
+for (const guide of ["../Resources/skill-guides/clawdline.md",
+                     "../Resources/skill-guides/clawdline.zh-TW.md"]) {
+    const text = await readFile(new URL(guide, import.meta.url), "utf8");
+    assert.match(text, /Clawdfather/, `${guide} carries the procedure`);
+    assert.match(text, /CODEX_THREAD_ID/, `${guide} names the wrong id`);
+    assert.match(text, /expected_generation/, `${guide} names the compare-and-swap value`);
+    assert.match(text, /docs\/orchestrator\.md/, `${guide} points at the long form`);
+}
+
+// What the stub itself still owes: it must route a reader to that guide rather than teach the
+// procedure, and it must not have quietly grown the detail back.
+for (const stub of ["../skills/clawdline/SKILL.md", "../skills/clawdline/SKILL.zh-TW.md"]) {
+    const text = await readFile(new URL(stub, import.meta.url), "utf8");
+    assert.match(text, /clawdline-skill\.sh/, `${stub} names the reader`);
+    assert.match(text, /CLAWDLINE_SKILL_READER/, `${stub} honours the reader override`);
+    assert.match(text, /get clawdline/, `${stub} shows how to load the guide`);
+    assert.doesNotMatch(text, /CODEX_THREAD_ID/,
+        `${stub} must not re-absorb guide detail that goes stale in a copied file`);
 }
 
 // Phase A2's preview-only command list is a separate, still-unresolved feature.

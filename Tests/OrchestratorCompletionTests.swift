@@ -705,9 +705,15 @@ group("completion HTTP schemas are closed and machine-authenticated") {
 }
 
 group("both shipped skills teach the durable completion contract") {
+    // These read the shipped guide rather than `skills/clawdline/SKILL.md`, which is now a
+    // discovery stub. The distinction the stub draws is the one this group has to follow: a route,
+    // a field name and an ACK snippet are exactly what a copied skill file goes stale on, so they
+    // ship beside the build that serves them and are asserted there. What the stub still owes is
+    // asserted below, and what neither may lose — the trigger frontmatter — is asserted by the
+    // group after that, against the stub, because that is the copy an assistant actually routes on.
     let variants = [
-        ("English", "skills/clawdline/SKILL.md"),
-        ("Traditional Chinese", "skills/clawdline/SKILL.zh-TW.md"),
+        ("English", "Resources/skill-guides/clawdline.md"),
+        ("Traditional Chinese", "Resources/skill-guides/clawdline.zh-TW.md"),
     ]
     for (language, path) in variants {
         let skill = try! String(contentsOfFile: path, encoding: .utf8)
@@ -726,6 +732,24 @@ group("both shipped skills teach the durable completion contract") {
         check("the \(language) ACK call consumes its uppercase task and notice ids",
               skill.contains("tasks/$TASK_ID/completion/ack")
                 && skill.contains(#"{\"notice_id\":\"$NOTICE_ID\"}"#))
+        // The stub half of the same split. Keeping it in this group rather than its own holds the
+        // ordered-manifest count steady, which matters while another line is mid-landing against
+        // the same governance number; the assertions are the ratchet, not the group boundary.
+        let stubPath = path.contains("zh-TW")
+            ? "skills/clawdline/SKILL.zh-TW.md" : "skills/clawdline/SKILL.md"
+        let stub = try! String(contentsOfFile: stubPath, encoding: .utf8)
+        check("the \(language) stub names the reader that serves this guide",
+              stub.contains("clawdline-skill.sh") && stub.contains("CLAWDLINE_SKILL_READER")
+                && stub.contains("get clawdline"))
+        check("the \(language) stub resolves an installed bundle before any bare path",
+              stub.contains("/Applications/Clawdline.app/Contents/Resources/clawdline-skill.sh"))
+        check("the \(language) stub keeps the closed dispatch-role contract, a role boundary "
+              + "rather than a route detail",
+              stub.contains("clawdline-dispatch-role-contract:v1")
+                && stub.contains("/clawdline-dispatch-role-contract:v1"))
+        check("the \(language) stub has not re-absorbed the perishable detail this guide owns",
+              !stub.contains("completion/ack") && !stub.contains("CODEX_THREAD_ID")
+                && !stub.contains("canonical_root_session_id"))
         check("the \(language) skill explains bounded dead-letter reconciliation",
               skill.contains("dead_letter") && skill.contains("completions/reconcile")
                 && skill.contains("include_dead_letter"))

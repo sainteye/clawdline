@@ -524,10 +524,13 @@ Saying which one it is, out loud, is the sender's job and nobody else's.
 ## The skill
 
 A session does not build this by hand. [`skills/clawdline/`](../skills/clawdline/) — the same skill
-that dispatches — carries a **Handoff** section that turns *"use Clawdline Handoff"* into a package
+that dispatches — routes to a **Handoff** section that turns *"use Clawdline Handoff"* into a package
 and a call: write the document to the eight headings, durably archive anything volatile it cites,
-`uuidgen` and `umask 077` and a directory, then the route. There is an English `SKILL.md` and a
-Traditional Chinese `SKILL.zh-TW.md` of the same text; install one, not both.
+`uuidgen` and `umask 077` and a directory, then the route. What installs is a discovery stub, in an
+English `SKILL.md` or a Traditional Chinese `SKILL.zh-TW.md`; install one, not both. The section
+itself ships with the app rather than with the stub, because a file copied into a skills directory
+never updates while these routes and fields do — the stub says how to read it from the build that
+will actually broker the handoff.
 
 What lives there and not here is the recipe; what lives here and not there is why each step is shaped
 the way it is. Neither repeats the other, which is the same rule the documents themselves are asked

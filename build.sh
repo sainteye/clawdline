@@ -480,6 +480,13 @@ cp Resources/clawdline-hook.sh "$RES/"
 # The default dispatch policy. It is a document people read and edit, so it ships as a file rather
 # than as a string literal in the source; Orchestrator writes it out once if the machine has none.
 cp Resources/dispatch-policy.md "$RES/"
+# The agent guide, and the reader the installed SKILL.md stub points at. The stub is a copy in
+# somebody's skills directory and never updates, so the routes and fields it must not go stale on
+# ship here instead, beside the build that serves them. Reading one is a local file read: it needs
+# no running app, which is why it still answers over SSH and while Clawdline is closed.
+cp Resources/clawdline-skill.sh "$RES/"
+chmod +x "$RES/clawdline-skill.sh"
+cp -R Resources/skill-guides "$RES/"
 cp -R Resources/mascots "$RES/"
 # The web interface, served by RemoteServer when it is switched on.
 [ -d Resources/web ] && cp -R Resources/web "$RES/"
