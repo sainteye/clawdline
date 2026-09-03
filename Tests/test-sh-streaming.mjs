@@ -70,6 +70,17 @@ try {
     // unchecked `.replace` quietly does nothing and every assertion below then tests the real
     // binary's absence instead of the block. Silent wrong-thing-tested is the failure this whole
     // file exists to prevent.
+    // The lifted block calls `report_receipt_direction`, defined far above it in test.sh. A lifted
+    // block carries no definitions, so the harness supplies it the way it supplies $BIN and $LOG —
+    // lifted, never retyped. Checked rather than assumed: under `set -e` a missing function ends the
+    // run at 127, and the status assertion below would then read as a defect in the block instead of
+    // in this harness. That is exactly how it presented when the call was first added.
+    const directionStart = script.indexOf("# >>> clawdline receipt direction >>>");
+    const directionEnd = script.indexOf("# <<< clawdline receipt direction <<<");
+    check("the guard found the receipt-direction block the lifted block calls",
+        directionStart >= 0 && directionEnd > directionStart);
+    const receiptDirection = script.slice(directionStart, directionEnd)
+        + "expected_swift_receipt='0 checks passed'\nexpected_cloud_receipt=''\n";
     const rewritten = block.replace(/"\$BIN" Resources\/mascots/, '"$BIN"');
     check("the guard rewrote the suite invocation to its stand-in", rewritten !== block);
     const harness = join(dir, "harness.sh");
@@ -80,6 +91,7 @@ try {
         `STORE=${JSON.stringify(dir)}`,
         `LOG=${JSON.stringify(log)}`,
         `CLAWDLINE_REMOTE_DIR=""`,
+        receiptDirection,
         rewritten,
         'echo "reached the end without exiting"',
         "",
