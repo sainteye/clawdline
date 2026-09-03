@@ -114,6 +114,29 @@ Where no rung fires, the classifier says why: `no_task_identity`, `no_durable_ta
 a run receipt. They are not written into the ledger, and they are not the Portfolio's
 `no_unambiguous_accepted_head`, which is a different statement about a different thing.
 
+**What it reached on this Mac's own ledger, measured 2026-09-03 by a read-only dry run of
+`tools/usage-feature-backfill.swift`** — a reading of one ledger copy on one day, not a property of
+the producer, and the shape a different history would give is a different number:
+
+| | rows | runs |
+|---|---:|---:|
+| classified | 213 of 605 | 128 of 424 |
+| left Unknown | 392 | 296 |
+
+Thirty Features, every proposal at or above the 0.80 default, so an accepting pass would have
+accepted all 213 and left none for review. The rungs that fired were `explicit_feature_hint` 18
+rows, `schedule_identity` 15, `declared_work_line` 176, `lineage` 0. The 392 that stayed Unknown
+each said why: `no_task_identity` 136 — Session-boundary rows carry no task at all —
+`no_durable_task_record` 149, `solitary_declared_label` 103, `no_grouping_evidence` 4.
+
+**Two thirds of the ledger stays Unknown, and that is the design working rather than falling
+short.** `no_task_identity` and `no_durable_task_record` are absent evidence, and the rule against
+guessing from a directory basename, a root Session or a successful task state is what keeps them
+absent instead of invented. `solitary_declared_label` is the one that could be widened by dropping
+rung 3's "two or more distinct tasks", and dropping it would raise the classified rows to 285 and
+the Feature count to 67 — a table of one-off tasks wearing Feature names, which is the failure the
+rule exists to prevent.
+
 A match appends a `proposed` attribution event whose source is `heuristic` — not `llm`, because no
 model participates, and not `policy`, because a policy decides where this only observes evidence.
 It carries the confidence, the classifier id, the classifier/prompt version and a SHA-256 evidence
