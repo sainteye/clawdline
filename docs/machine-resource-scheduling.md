@@ -320,6 +320,20 @@ world.
 repaired by its context: a reader who runs `git show` on it gets an error and then does not know
 which half of the message to trust. Paste a SHA from the output of the command that produced it.
 
+**A red run's check count is also a coverage number, and nothing says so.** On 2026-09-03 three runs
+each reported `1 of 7716 checks failed`. The tree they ran was reported to total 8,218 — so five
+hundred-odd checks never executed, because the failure was a bare error escaping an unwrapped `try
+await` and it aborted its whole group, taking the three cloud suites after it with it. `test.sh`'s
+own cloud receipt names their sizes: `CloudCommandLedger:101, CloudOutboundSpool:141,
+CloudPairing:172, CloudLifecycle:87`. **`1 of 7716 failed` and `1 of 8218 failed` read identically —
+both look like one small problem** — and the first hides five hundred checks that were never run.
+The receipt guard that would notice is never reached, because a red suite exits on the binary's
+status several lines before it (`test.sh`, the `status -ne 0` branch).
+
+`AGENTS.md` already says *assert on the check count, not the exit code*, against reading a zero
+status as green. This is its other half: when a run is red, the count is the second question. **Not
+only "which check failed" but "did the total come out right".**
+
 **The second row is worth its own sentence because it is a fix people trust.** Bracketing a letter
 is the standard answer to `grep` finding its own process, and it does solve that — so it gets used
 as though it solved the class. It does not touch the other half: a command listing carries every
