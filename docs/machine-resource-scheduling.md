@@ -337,6 +337,25 @@ additions beside a hundred deletions. Counting only the `+` side is a query abou
 *contains*, not about what it *changed*, and the two differ by exactly the amount of moved code. The
 derivation and the measurement agree at 8101 — but only after the deletions were counted too.
 
+**A right answer from a wrong method is the one variant with no natural detector.** Everything else
+on this page was caught by somebody: a second reader, a contradicting measurement, an output that
+did not look like the world it claimed to describe. A wrong answer runs into the next person's spot
+check. A *right* answer does not — it becomes their baseline, and nobody has a reason to look at how
+it was reached.
+
+The audit of the seal drift is an instance. Counting `+` lines in a commit gave four for
+`a4ed9edb`, which is correct, and the derivation built on it landed on 8101 and matched a measured
+run. The method was unsound the whole time: it asks what a commit contains, not what it changed, so
+a pure re-indentation reads as new assertions. It was caught only because a second commit in the
+same range, `c7eac595`, had moved a hundred of them and produced a number that could not be true.
+**The unsound method was exposed by a commit it happened to be applied to, not by anyone examining
+it** — and had that commit not been in range, the same reasoning would have shipped with a correct
+result and become the basis for the seal.
+
+The durable form is to compare the two trees rather than read the diff's plus side:
+`git show <rev>~1:<file>` against `git show <rev>:<file>`. It cannot be fooled by movement, because
+it never looks at movement.
+
 **An instance gets written down as a rule, and nobody checks the step in between.** Three of this
 page's mistakes have the same shape and none of them is carelessness. A coordination wait recorded its
 scope three times: a structured `paths` field with four files, the owner's release condition saying
