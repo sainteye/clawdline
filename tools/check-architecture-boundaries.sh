@@ -236,4 +236,24 @@ compare_documented "Swift checks" "$documented_swift_receipt"
 compare_documented '`Orchestrator.swift` ceiling' "$orchestrator_ceiling"
 compare_documented '`RemoteServer.swift` ceiling' "$remote_server_ceiling"
 
+# The two ceilings above are the only rows here whose left-hand side is also a record: both are
+# constants in this script, compared against constants in a document. Everything else on that list
+# is derived from the thing it describes on every run, so it cannot agree with a stale copy.
+#
+# That matters because the check which reads the real file is `-le`, a bound, and a bound cannot
+# see slack. A ceiling set too high passes it, passes the table row if both records were edited
+# together, and silently licenses the growth it was supposed to stop. This line shipped that
+# mistake once: an extraction measured 11,932 on a base that still had the lease, the merged tree
+# was 11,678, and 254 lines of headroom nobody granted survived every check but one — and that one
+# only fired because the script and the table had been edited separately.
+#
+# So the ceilings are pinned to the file as well. A ceiling more than 200 lines above what it
+# guards is not a ceiling, it is a budget nobody approved.
+orchestrator_slack=$(( orchestrator_ceiling - orchestrator_lines ))
+[ "$orchestrator_slack" -le 200 ] \
+  || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines under a ceiling of $orchestrator_ceiling; $orchestrator_slack lines of unearned headroom. Lower the ceiling to what the tree measures."
+remote_server_slack=$(( remote_server_ceiling - remote_server_lines ))
+[ "$remote_server_slack" -le 200 ] \
+  || architecture_guard_fail "Sources/RemoteServer.swift is $remote_server_lines lines under a ceiling of $remote_server_ceiling; $remote_server_slack lines of unearned headroom. Lower the ceiling to what the tree measures."
+
 echo "architecture boundaries: main=$main_lines lines, runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table agrees, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
