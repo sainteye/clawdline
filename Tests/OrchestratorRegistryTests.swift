@@ -85,6 +85,12 @@ func runOrchestratorRegistryTests() {
             write: { $0.suppressRootAssignmentLabel("assignment-1") },
             read: { String($0.isRootAssignmentLabelSuppressed("assignment-1")) },
             want: "true"),
+        RegistryFact(
+            name: "a suppressed handoff label",
+            empty: "false",
+            write: { $0.suppressHandoffLabel("handoff-1") },
+            read: { String($0.isHandoffLabelSuppressed("handoff-1")) },
+            want: "true"),
     ]
 
     group("a registry transaction reads back what it wrote, and the next one still sees it") {
@@ -191,6 +197,25 @@ func runOrchestratorRegistryTests() {
         }
         check("unsuppressing releases it, and releasing an absent one is not an error",
               !stillSuppressed)
+
+        // Two sets, one shape, and an id that means different things in each: a handoff id and an
+        // assignment id are drawn from the same alphabet, so a single set would let one primitive
+        // hide the other's label.
+        OrchestratorRegistry.withTransaction {
+            $0.suppressRootAssignmentLabel("shared-id")
+            $0.unsuppressHandoffLabel("shared-id")
+        }
+        let handoffFollowed = OrchestratorRegistry.withTransaction {
+            $0.isHandoffLabelSuppressed("shared-id")
+        }
+        check("suppressing an assignment label does not suppress a handoff's", !handoffFollowed)
+        OrchestratorRegistry.withTransaction { $0.suppressHandoffLabel("shared-id") }
+        let assignmentStillSuppressed = OrchestratorRegistry.withTransaction {
+            $0.isRootAssignmentLabelSuppressed("shared-id")
+                && $0.isHandoffLabelSuppressed("shared-id")
+        }
+        check("and the two are suppressed independently under the same id",
+              assignmentStillSuppressed)
 
         // `forget()` clears each of the five separately and in the order it always did; what this
         // asks is that none of those five calls reaches past its own collection.

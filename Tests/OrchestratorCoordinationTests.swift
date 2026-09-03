@@ -134,8 +134,22 @@ group("handoff envelopes survive restart and terminal ones are swept as one unit
          "from_session": "sender", "created": old, "state": "delivered"],
         ["handoff_id": opening, "project_dir": "/tmp", "created": old, "state": "opening"],
     ]
+    // The label rows are a separate durable record with their own key, and the second one has no
+    // envelope at all: what a label is bound to is a tab, not a letter.
+    let orphanLabel = UUID().uuidString.lowercased()
+    let liveStart = 1_788_397_479.0
+    let labelRows: [[String: Any]] = [
+        ["handoff_id": id, "label": "Old line",
+         "identity": ["terminal_id": "%live", "assistant": "claude", "tty": "/dev/ttys021",
+                      "pid": 4242, "process_start": liveStart,
+                      "conversation_id": "a9618310-4114-4906-aeea-6a7f226db119"]],
+        ["handoff_id": orphanLabel, "label": "A tab that closed",
+         "identity": ["terminal_id": "%gone", "assistant": "claude", "pid": 4243,
+                      "process_start": liveStart]],
+    ]
     let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [],
-                                                              "handoffs": rows])
+                                                              "handoffs": rows,
+                                                              "handoff_labels": labelRows])
     try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
     try! data.write(to: store, options: .atomic)
@@ -150,13 +164,37 @@ group("handoff envelopes survive restart and terminal ones are swept as one unit
     check("the registry did not read and remember the letter",
           !saved.contains("the app must never persist these words"))
 
+    let restoredLabel = Orchestrator.handoffLabelForTesting(id)
+    expect("a durable handoff label comes back off disk with its job title",
+           restoredLabel?.label, "Old line")
+    check("and with the whole process tuple it was bound to",
+          restoredLabel?.identity == Orchestrator.RootAssignmentIdentity(
+            terminalID: "%live", assistant: .claude, tty: "/dev/ttys021", pid: 4242,
+            processStart: liveStart,
+            conversationID: "a9618310-4114-4906-aeea-6a7f226db119"))
+    expect("so the tab wears the job title again in a process that never opened it",
+           Orchestrator.title(forTerminal: "%live"), "Old line")
+    let liveIdentity = Orchestrator.SessionWorkIdentity(
+        terminalID: "%live", assistant: .claude, tty: "/dev/ttys021", pid: 4242,
+        processStart: Date(timeIntervalSince1970: liveStart),
+        conversationID: "a9618310-4114-4906-aeea-6a7f226db119")
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%live"], identities: [liveIdentity])
+
     Orchestrator.cleanup()
     check("a day-old terminal envelope is removed", Orchestrator.handoffRecord(id: id) == nil)
     check("its package goes with it", !FileManager.default.fileExists(atPath: directory.path))
     check("an old opening envelope is retained", Orchestrator.handoffRecord(id: opening) != nil)
+    // The two halves of the lifetime decision, taken together so neither can pass alone: the
+    // envelope's 24-hour clock does not reach the label, and the reading of this machine does.
+    check("the label of a tab that is still open outlives the envelope it came from",
+          Orchestrator.handoffLabelForTesting(id)?.label == "Old line")
+    check("while the label of a tab no reading can find is reclaimed",
+          Orchestrator.handoffLabelForTesting(orphanLabel) == nil)
     Orchestrator.forget()
     Orchestrator.load(force: true)
     check("the removal itself survives restart", Orchestrator.handoffRecord(id: id) == nil)
+    check("and so does the label that outlived it",
+          Orchestrator.handoffLabelForTesting(id)?.label == "Old line")
 }
 
 group("handoff registration opens once and shares the dispatch brake") {
@@ -231,6 +269,70 @@ group("handoff registration opens once and shares the dispatch brake") {
         return .refused(status: 500, code: "internal", message: "should not run", app: nil)
     }
     expect("nor does the same id after a registry reload", opens, 1)
+
+    // The durable label, from the tab opening to the restart that used to lose it. The fallback
+    // above — `handoff <first eight>` — is deliberately not part of this: it says less than the
+    // name the conversation generates for itself, so it stays a fact about this process only.
+    Orchestrator.forget()
+    let titledID = UUID().uuidString.lowercased()
+    var titledRequest = envelope(titledID)
+    titledRequest["title"] = "接手成為 Clawdfather"
+    titledRequest["assistant"] = "claude"
+    _ = Orchestrator.handoff(titledRequest) { _, _, _, _ in .started(id: "%titled", backend: .tmux) }
+    let untitledID = UUID().uuidString.lowercased()
+    _ = Orchestrator.handoff(envelope(untitledID)) { _, _, _, _ in
+        .started(id: "%untitled", backend: .tmux)
+    }
+    check("an untitled handoff stores no durable placeholder",
+          Orchestrator.handoffLabelForTesting(untitledID) == nil)
+    expect("a named one is bound to the exact tab it was delivered into",
+           Orchestrator.handoffLabelForTesting(titledID)?.identity.terminalID, "%titled")
+    check("and it holds no process tuple yet, because nothing has looked at that tab",
+          Orchestrator.handoffLabelForTesting(titledID)?.identity.pid == nil)
+    let receivingSnapshot = SessionWatch.IdentitySnapshot(
+        targets: [], generation: 7, complete: true, observedAt: Date(), epoch: "handoff-label")
+    let receiver = Orchestrator.SessionWorkIdentity(
+        terminalID: "%titled", assistant: .claude, tty: "/dev/ttys031", pid: 4711,
+        processStart: Date(timeIntervalSince1970: 1_788_397_479),
+        conversationID: "f7e2716a-0000-4000-8000-000000000001")
+    check("an incomplete reading of the machine is never allowed to seed one",
+          !Orchestrator.adoptHandoffLabelIdentitiesForTesting(
+            snapshot: SessionWatch.IdentitySnapshot(
+                targets: [], generation: 6, complete: false, observedAt: Date(),
+                epoch: "handoff-label"),
+            identities: [receiver]))
+    check("so the record is still the terminal id it was opened with",
+          Orchestrator.handoffLabelForTesting(titledID)?.identity.pid == nil)
+    check("the first complete inventory binds the label to the process now in that tab",
+          Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
+                                                             identities: [receiver]))
+    check("a second reading of the same process writes nothing again",
+          !Orchestrator.adoptHandoffLabelIdentitiesForTesting(snapshot: receivingSnapshot,
+                                                              identities: [receiver]))
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    Orchestrator.load(force: true)
+    expect("a restart gives the handed-off tab its job title back",
+           Orchestrator.title(forTerminal: "%titled"), "接手成為 Clawdfather")
+    check("while an untitled one is left to whatever the conversation calls itself",
+          Orchestrator.title(forTerminal: "%untitled") == nil)
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%titled"], identities: [receiver])
+    let sameProcessKept = Orchestrator.title(forTerminal: "%titled")
+    var reusedTab = receiver
+    reusedTab.pid = 909
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%titled"], identities: [reusedTab])
+    let reusedForgot = Orchestrator.title(forTerminal: "%titled") == nil
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%titled"], identities: [receiver])
+    var otherConversation = receiver
+    otherConversation.conversationID = "11111111-2222-3333-4444-555555555555"
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%titled"], identities: [otherConversation])
+    let otherConversationForgot = Orchestrator.title(forTerminal: "%titled") == nil
+    expect("the same terminal running the same process keeps the restored title",
+           sameProcessKept, "接手成為 Clawdfather")
+    check("a reused terminal id does not inherit a stranger's job name", reusedForgot)
+    check("nor does a different conversation in the same tab", otherConversationForgot)
+    check("and the durable record is still there to give it back when the process returns",
+          Orchestrator.handoffLabelForTesting(titledID)?.label == "接手成為 Clawdfather")
 
     Orchestrator.forget()
     for _ in 0..<max(10, Config.shared.orchestratorMaxDescendants) {

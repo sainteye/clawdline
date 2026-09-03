@@ -1618,6 +1618,34 @@ enum Orchestrator {
         }
     }
 
+    /// Which tab a handoff was delivered into, and the job title it was opened under.
+    ///
+    /// Deliberately *not* a field on ``HandoffEnvelope``. The envelope carries no terminal id
+    /// because that is a protocol statement about what the registry may remember of a letter,
+    /// not an oversight — so the binding lives beside the envelopes in the same file instead,
+    /// under its own key, with its own codec.
+    ///
+    /// **Its lifetime is the tab's, not the envelope's, and that is the whole of the boundary.**
+    /// ``cleanup()`` drops an envelope 24 hours after the handoff reaches a terminal state, which
+    /// is a clock on the *delivery*: it stops when the first line is confirmed, minutes after the
+    /// tab opened. The session that tab holds routinely works for days afterwards, so a label
+    /// reclaimed on the envelope's clock would rename a live root on its second morning — which
+    /// is the defect this record exists to fix, arriving a day later instead of at the next
+    /// restart. The label is therefore reclaimed on the identity below: once a scan of the
+    /// machine has failed to find the process it names, it has stopped meaning anything, and
+    /// ``pruneClosedHandoffTitles(visible:identities:)`` has already stopped showing it.
+    ///
+    /// The identity is a ``RootAssignmentIdentity`` because that is the executor-identity record
+    /// this app already compares with ``rootAssignmentIdentityMatches(_:observed:)``: an
+    /// all-optional tuple that begins as the terminal a tab was opened in and gains its process
+    /// fields from the first complete inventory that can see them. The type's name says where it
+    /// was introduced, not who is allowed to hold one.
+    struct HandoffLabel {
+        let handoffID: String
+        let label: String
+        var identity: RootAssignmentIdentity
+    }
+
     struct HandoffDraft: Equatable {
         let id: String
         let projectDir: String
@@ -2253,6 +2281,9 @@ enum Orchestrator {
     static var tasks: [String: Task] = [:]
     static var restartReceipt: RestartReceipt?
     private static var handoffs: [String: HandoffEnvelope] = [:]
+    /// Handoff id → the tab that handoff was delivered into and what it is called. Durable, and
+    /// the only thing that gives a handed-off root its job title back after a restart.
+    private static var handoffLabels: [String: HandoffLabel] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     private static var rootAssignments: [String: RootAssignment] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
@@ -3827,6 +3858,15 @@ enum Orchestrator {
     private static func reindex() {
         OrchestratorRegistry.withTransactionOnHeldLock { registry in
             var found = registry.handoffTitles()
+            // The durable half of the same answer, and the only half a fresh process has: the
+            // map above is written when a tab opens and is empty after a restart. Read before
+            // the assignment and task rows below, so the precedence between the three sources is
+            // exactly what it was — this changes when a handoff label is *known*, never where it
+            // ranks against anything else.
+            for label in handoffLabels.values
+            where !registry.isHandoffLabelSuppressed(label.handoffID) {
+                found[label.identity.terminalID] = label.label
+            }
             var roles: [String: Role] = [:]
             // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
             // putting an assignment in it would make a fourth primitive a disguised task.
@@ -3888,9 +3928,61 @@ enum Orchestrator {
                         registry.suppressRootAssignmentLabel(assignment.id)
                     }
                 }
+                // A durable handoff label answers the same question and therefore takes the same
+                // answer. A caller with no identities has no evidence either way and leaves the
+                // suppression alone: an absent reading is not a closed tab.
+                for label in handoffLabels.values {
+                    if identities.contains(where: {
+                        rootAssignmentIdentityMatches(label.identity, observed: $0)
+                    }) {
+                        registry.unsuppressHandoffLabel(label.handoffID)
+                    } else {
+                        registry.suppressHandoffLabel(label.handoffID)
+                    }
+                }
             }
         }
         reindex()
+    }
+
+    /// Complete a durable handoff label's identity from the first inventory that can see the
+    /// process, so that a terminal id stops being the whole of what the label is bound to.
+    ///
+    /// A tab is opened before anything is known about what will run in it, so the record written
+    /// at ``handoff(_:start:)`` carries a terminal id and an assistant and nothing else — and a
+    /// terminal id is reused the moment that tab closes and another opens in its place. This is
+    /// the cheap form of the first-identity reconciliation
+    /// ``reconcileRootAssignment(_:snapshot:identities:)`` does: only a complete inventory is
+    /// believed, only the exact terminal the handoff was delivered into may seed the record, and
+    /// the process tuple is adopted whole, so the stored identity is either the opening record or
+    /// one real process and never a mixture of two.
+    ///
+    /// Under the lock. True when a record changed and the store owes a write.
+    private static func adoptHandoffLabelIdentitiesLocked(
+        snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
+        guard snapshot.complete else { return false }
+        var changed = false
+        for id in Array(handoffLabels.keys) {
+            guard let label = handoffLabels[id] else { continue }
+            let incomplete = label.identity.pid == nil || label.identity.processStart == nil
+                || label.identity.conversationID == nil
+            guard incomplete else { continue }
+            let onThatTab = identities.filter {
+                $0.terminalID == label.identity.terminalID
+                    && $0.assistant == label.identity.assistant
+            }
+            guard onThatTab.count == 1, let only = onThatTab.first,
+                  let pid = only.pid, let start = only.processStart else { continue }
+            let adopted = RootAssignmentIdentity(
+                terminalID: only.terminalID, assistant: label.identity.assistant, tty: only.tty,
+                pid: pid, processStart: start.timeIntervalSince1970,
+                conversationID: only.conversationID)
+            guard adopted != label.identity else { continue }
+            handoffLabels[id] = HandoffLabel(handoffID: label.handoffID, label: label.label,
+                                             identity: adopted)
+            changed = true
+        }
+        return changed
     }
 
     /// Commit a value copy only while the record is still the state the caller worked from.
@@ -5476,11 +5568,24 @@ enum Orchestrator {
                                            backend: backend, spawnedAt: Date())
             lock.lock()
             handoffDeliveries[id] = delivery
+            // Only a title the sender actually supplied earns a durable record. `place.label`
+            // falls back to `handoff <first eight of the id>`, which says less about the work
+            // than the name the conversation will generate for itself, so storing that would
+            // cost the tab a better name at every restart from here to the sweep. The iTerm
+            // place label is unchanged either way; this is about what outlives the process.
+            if let title = draft.title {
+                handoffLabels[id] = HandoffLabel(
+                    handoffID: id, label: title,
+                    identity: RootAssignmentIdentity(
+                        terminalID: terminalID, assistant: draft.assistant, tty: nil, pid: nil,
+                        processStart: nil, conversationID: nil))
+            }
             OrchestratorRegistry.withTransactionOnHeldLock {
                 $0.setHandoffTitle(place.label, forTerminal: terminalID)
             }
             reindex()
             lock.unlock()
+            if draft.title != nil { save() }
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return successfulHandoffReply(for: envelope, draft: draft,
                                           terminalID: terminalID, backend: backend)
@@ -8389,6 +8494,8 @@ enum Orchestrator {
         SessionNaming.forget(closedFrom: visibleTerminals)
         lock.lock()
         pruneClosedHandoffTitles(visible: visibleTerminals, identities: executorIdentities)
+        let handoffLabelsAdopted = adoptHandoffLabelIdentitiesLocked(
+            snapshot: watchSnapshot, identities: executorIdentities)
         beatSequence += 1
         let sequence = beatSequence
         let overlapping = beatsInFlight > 0
@@ -8407,6 +8514,11 @@ enum Orchestrator {
         defer {
             lock.lock(); beatsInFlight -= 1; lock.unlock()
         }
+        // A tab that has just been seen for the first time is a durable fact, and it is the one
+        // that turns a reusable terminal id into an identity. It is written here rather than
+        // folded into the `changed` save below, because that one is behind `liveIDs` and a
+        // handed-off root is not a task.
+        if handoffLabelsAdopted { save() }
         if overlapping {
             RemoteAuth.audit("orchestrator.beat_overlap",
                              ["beat": String(sequence),
@@ -11808,6 +11920,21 @@ enum Orchestrator {
         return rootAssignments[id]
     }
 
+    /// The durable handoff→tab binding as it stands on this process's own records. Deliberately
+    /// not a public route: what the outside world may see of a handoff is its envelope.
+    static func handoffLabelForTesting(_ id: String) -> HandoffLabel? {
+        load(); lock.lock(); defer { lock.unlock() }
+        return handoffLabels[id]
+    }
+
+    /// The beat's identity adoption, without a beat. Everything else on that path needs a live
+    /// terminal; this step needs only a reading, so it is the one a test can hold still.
+    static func adoptHandoffLabelIdentitiesForTesting(
+        snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return adoptHandoffLabelIdentitiesLocked(snapshot: snapshot, identities: identities)
+    }
+
     /// The stored fields only — safe off the main thread, used where a route already holds the
     /// answer and only needs its shape.
     private static func existingRecord(_ id: String) -> [String: Any]? {
@@ -12362,6 +12489,11 @@ enum Orchestrator {
             guard let envelope = OrchestratorStore.handoff(from: row) else { continue }
             foundHandoffs[envelope.id] = envelope
         }
+        var foundLabels: [String: HandoffLabel] = [:]
+        for row in obj["handoff_labels"] as? [[String: Any]] ?? [] {
+            guard let label = OrchestratorStore.handoffLabel(from: row) else { continue }
+            foundLabels[label.handoffID] = label
+        }
         var foundRootAssignments: [String: RootAssignment] = [:]
         for row in obj["root_assignments"] as? [[String: Any]] ?? [] {
             guard let assignment = OrchestratorStore.rootAssignment(from: row) else { continue }
@@ -12412,6 +12544,7 @@ enum Orchestrator {
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
+        handoffLabels = foundLabels
         rootAssignments = foundRootAssignments
         coordinationWaits = foundWaits
         sessionDeliveries = foundSessionDeliveries
@@ -12450,6 +12583,8 @@ enum Orchestrator {
             .map { OrchestratorStore.stored($0) }
         let handoffRows = handoffs.values.sorted { $0.created < $1.created }
             .map { OrchestratorStore.stored($0) }
+        let handoffLabelRows = handoffLabels.values.sorted { $0.handoffID < $1.handoffID }
+            .map { OrchestratorStore.stored($0) }
         let rootAssignmentRows = rootAssignments.values.sorted { $0.created < $1.created }
             .map { OrchestratorStore.stored($0) }
         let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
@@ -12471,6 +12606,7 @@ enum Orchestrator {
         let restart = restartReceipt.map(stored)
         lock.unlock()
         var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
+                                  "handoff_labels": handoffLabelRows,
                                   "root_assignments": rootAssignmentRows,
                                   "coordination_waits": waitRows,
                                   "session_deliveries": sessionDeliveryRows,
@@ -12568,6 +12704,15 @@ enum Orchestrator {
     static func cleanup() {
         load()
         let cutoff = Date().addingTimeInterval(-24 * 3600)
+        // Read before the region below, because this one acquires the lock for itself. A handoff
+        // label is reclaimed on the tab rather than on its envelope's 24-hour clock: suppressed
+        // means a beat holding a live reading of this machine could not find the process the
+        // label names, which is the moment the label stopped describing anything. Nothing here
+        // is on the envelope's timetable — a delivered handoff's letter goes a day after it
+        // lands, and the session it opened is usually still working then.
+        let forgottenLabels = OrchestratorRegistry.withTransaction { registry in
+            handoffLabels.keys.filter { registry.isHandoffLabelSuppressed($0) }
+        }
         lock.lock()
         let done = tasks.values.filter { task in
             task.state.isTerminal && task.landing?.state != .pending
@@ -12606,9 +12751,15 @@ enum Orchestrator {
         }
         for id in oldSessionDeliveryIDs { sessionDeliveries.removeValue(forKey: id) }
         for id in oldRootAssignmentIDs { rootAssignments.removeValue(forKey: id) }
+        for id in forgottenLabels { handoffLabels.removeValue(forKey: id) }
         lock.unlock()
+        if !forgottenLabels.isEmpty {
+            OrchestratorRegistry.withTransaction { registry in
+                for id in forgottenLabels { registry.unsuppressHandoffLabel(id) }
+            }
+        }
         if !removable.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty
-            || !oldRootAssignmentIDs.isEmpty {
+            || !oldRootAssignmentIDs.isEmpty || !forgottenLabels.isEmpty {
             save()
         }
         let retained = Set(all.filter { !removedIDs.contains($0.id) }.map(\.id))
@@ -12747,6 +12898,7 @@ enum Orchestrator {
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllGraphAdmissions() }
         restartReceipt = nil
         handoffs = [:]
+        handoffLabels = [:]
         handoffDeliveries = [:]
         rootAssignments = [:]
         coordinationWaits = [:]
@@ -12787,6 +12939,7 @@ enum Orchestrator {
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllTerminalTitles() }
         OrchestratorRegistry.withTransactionOnHeldLock {
             $0.removeAllSuppressedRootAssignmentLabels()
+            $0.removeAllSuppressedHandoffLabels()
         }
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllRoles() }
         loaded = false
