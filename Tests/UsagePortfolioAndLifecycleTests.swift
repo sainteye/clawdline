@@ -41,6 +41,18 @@ private func analyticsRow(_ key: String, at: Date, assistant: String = "claude",
     return row
 }
 
+/// Who is in the shared ledger right now, said in the failure rather than left to be guessed.
+/// `UsageLedger.shared` is process-wide, so a group asserting on `rows()` or on an unfiltered
+/// portfolio is asserting about every writer in the process. When one of those assertions goes
+/// red the only question worth answering is *whose row is this*, and a bare check name cannot.
+private func ledgerWitness() -> String {
+    UsageLedger.shared.rows().map {
+        "[\($0.assistant) session=\($0.sessionID) boundary=\($0.boundaryKind):\($0.boundaryID) "
+            + "origin=\($0.origin) project=\($0.projectKey ?? "?") "
+            + "output=\($0.counts.output ?? -1) coverage=\($0.coverage)]"
+    }.joined(separator: " ")
+}
+
 func runUsagePortfolioAndLifecycleTests() {
 group("usage portfolio ranks canonical projects and keeps every unavailable dimension honest") {
     let current = ISO8601DateFormatter().date(from: "2026-08-20T12:00:00Z")!
@@ -228,11 +240,32 @@ group("legacy managed-worktree Projects migrate through auditable append-only ev
           git(["-C", repository.path, "worktree", "add", "-q", "-b", "migration-fixture",
                worktree.path]))
 
+    // **This group's three portfolio assertions used to be about the whole process.** They read
+    // `projects.first` out of an unranged query, and `UsageLedger.shared` is process-wide: what
+    // that returned was whichever project had generated the most output anywhere in this binary,
+    // not this fixture's. A row left in the store by another writer between `freshUsageLedger()`
+    // and the query took first place and all three went red — the same shape as
+    // `B-LEDGER-QUIET-WINDOW-IS-NOT-QUIET`, and measured the same way: on one binary, four full
+    // runs, two red and two green, with nothing changed between them.
+    //
+    // The subject is pinned instead of the window widened. A legacy row *is* historical, so the
+    // fixture observes on a fixed day and every read below asks for that closed range. Rows any
+    // other writer leaves behind are written at `Date()` and fall outside it, so the answer no
+    // longer depends on the process being quiet — and the assertions say `count == 1`, which is
+    // that isolation asserting itself rather than being assumed.
+    let observedAt = ISO8601DateFormatter().date(from: "2026-08-20T12:00:00Z")!
+    func migrationDay(project: String? = nil) -> [String: Any] {
+        UsageQueryService().query(.init(from: "2026-08-19", to: "2026-08-21",
+                                        timezoneID: "UTC", project: project)).payload
+    }
+    func migrationProjects(_ payload: [String: Any]) -> [[String: Any]] {
+        (payload["portfolio"] as? [String: Any])?["projects"] as? [[String: Any]] ?? []
+    }
     var sample = ledgerSample(.codex, session: "migration-session", boundary: .task,
                               id: "migration-task", origin: .dispatch,
                               usage: ["input_tokens": 1, "output_tokens": 12,
                                       "cached_input_tokens": 0],
-                              model: "gpt-5.6-sol", at: Date())
+                              model: "gpt-5.6-sol", at: observedAt)
     sample.taskID = "migration-task"
     sample.projectKey = worktree.path
     sample.depth = Orchestrator.depthFloor
@@ -274,12 +307,13 @@ group("legacy managed-worktree Projects migrate through auditable append-only ev
             && plan.events.last?.decision == .accepted
             && plan.events.last?.supersedesEventID == plan.events.first?.eventID
             && JSONSerialization.isValidJSONObject(plan.payload))
-    let before = UsageQueryService().query(.init(timezoneID: "UTC")).payload
-    let beforeProjects = (before["portfolio"] as? [String: Any])?["projects"]
-        as? [[String: Any]] ?? []
+    let beforeProjects = migrationProjects(migrationDay())
     check("before apply the disposable UUID is suppressed into Unknown Project",
-          beforeProjects.first?["label"] as? String == "Unknown Project"
-            && !String(describing: beforeProjects).contains(taskID))
+          beforeProjects.count == 1
+            && beforeProjects.first?["label"] as? String == "Unknown Project"
+            && !String(describing: beforeProjects).contains(taskID),
+          "projects \(beforeProjects.map { ($0["label"] ?? "?", $0["output"] ?? "?") }) "
+            + "— ledger \(ledgerWitness())")
 
     let backup = String(repeating: "a", count: 64)
     let first = UsageLedger.shared.applyLegacyProjectMigration(plan, backupDigest: backup)
@@ -288,16 +322,16 @@ group("legacy managed-worktree Projects migrate through auditable append-only ev
           first == .init(applied: 2, alreadyPresent: 0, failed: 0, backupDigest: backup)
             && second == .init(applied: 0, alreadyPresent: 2, failed: 0,
                               backupDigest: backup))
-    let after = UsageQueryService().query(.init(timezoneID: "UTC")).payload
-    let afterProjects = (after["portfolio"] as? [String: Any])?["projects"]
-        as? [[String: Any]] ?? []
+    let afterProjects = migrationProjects(migrationDay())
     check("accepted migration attribution changes Project identity without rewriting tokens",
-          afterProjects.first?["label"] as? String == repository.lastPathComponent
+          afterProjects.count == 1
+            && afterProjects.first?["label"] as? String == repository.lastPathComponent
             && afterProjects.first?["output"] as? Int == 12
             && UsageLedger.shared.rows(taskID: "migration-task").first?.projectKey
-                == worktree.path)
-    let filteredAfter = UsageQueryService().query(.init(
-        timezoneID: "UTC", project: repository.lastPathComponent)).payload
+                == worktree.path,
+          "projects \(afterProjects.map { ($0["label"] ?? "?", $0["output"] ?? "?") }) "
+            + "— ledger \(ledgerWitness())")
+    let filteredAfter = migrationDay(project: repository.lastPathComponent)
     check("the bounded Project filter sees accepted migration identity instead of the legacy key",
           (filteredAfter["rowCount"] as? Int) == 1
             && ((filteredAfter["portfolio"] as? [String: Any])?["projects"]
@@ -306,12 +340,14 @@ group("legacy managed-worktree Projects migrate through auditable append-only ev
 
     let rollback = UsageLedger.shared.rollbackLegacyProjectMigration(
         plan, backupDigest: backup, assignedAt: Date())
-    let rolledBack = UsageQueryService().query(.init(timezoneID: "UTC")).payload
-    let rolledProjects = (rolledBack["portfolio"] as? [String: Any])?["projects"]
-        as? [[String: Any]] ?? []
+    let rolledProjects = migrationProjects(migrationDay())
     check("append-only rollback returns the legacy row to Unknown",
           rollback.applied == 1
-            && rolledProjects.first?["label"] as? String == "Unknown Project")
+            && rolledProjects.count == 1
+            && rolledProjects.first?["label"] as? String == "Unknown Project",
+          "applied \(rollback.applied) — projects "
+            + "\(rolledProjects.map { ($0["label"] ?? "?", $0["output"] ?? "?") }) "
+            + "— ledger \(ledgerWitness())")
 
     var unresolved = row!
     unresolved.intervalKey = "unresolved-legacy-row"
@@ -1461,10 +1497,24 @@ group("the watcher decides when to read, and what a session leaves behind when i
     let shell = TargetSession(backend: .iterm, id: "TERM-SHELL", name: "zsh",
                               tty: "/dev/ttys099", windowIndex: 0, tabIndex: 0, assistant: nil,
                               cwd: store.path)
+    // **Not `eventually`, because there is nothing here to wait for.** `checkpoint` skips a tab
+    // with no assistant before it opens anything, and `departed` returns synchronously when the
+    // terminal was never remembered — the subject's whole effect on the ledger has happened by
+    // the time these two calls return. The 0.4-second window that used to stand here was not a
+    // wait: `eventually` pumps `RunLoop.main`, so the group spent 0.4 s running every other
+    // writer's pending main-queue work and then asserted that nobody had written anything.
+    // `UsageLedger.shared` is process-wide, so `rows().isEmpty` was never this subject's
+    // question. What is asked now is the delta across this subject's own two calls, which is.
+    // Widening the timeout would have moved the coin flip; removing the window removes it.
+    // See `B-LEDGER-QUIET-WINDOW-IS-NOT-QUIET`.
+    func ledgerIntervals() -> Set<String> {
+        Set(UsageLedger.shared.rows().map(\.intervalKey))
+    }
+    let beforeShell = ledgerIntervals()
     UsageLedger.checkpoint(sessions: [shell], now: now)
     UsageLedger.departed([shell.id], now: now)
     check("an ordinary shell leaves the ledger alone",
-          !eventually(timeout: 0.4) { !UsageLedger.shared.rows().isEmpty })
+          ledgerIntervals() == beforeShell, ledgerWitness())
 
     // An assistant tab whose record cannot be found is the documented blind spot: no ranked
     // guess at which transcript belongs to it, so no row rather than somebody else's tokens.
@@ -1472,10 +1522,11 @@ group("the watcher decides when to read, and what a session leaves behind when i
                                    tty: "/dev/ttys098", windowIndex: 0, tabIndex: 1,
                                    assistant: .claude,
                                    cwd: store.appendingPathComponent("nowhere").path)
+    let beforeUnfindable = ledgerIntervals()
     UsageLedger.checkpoint(sessions: [unfindable], now: now)
     UsageLedger.departed([unfindable.id], now: now)
     check("and neither does a session whose transcript nothing can name",
-          !eventually(timeout: 0.4) { !UsageLedger.shared.rows().isEmpty })
+          ledgerIntervals() == beforeUnfindable, ledgerWitness())
 
     // The close. A process that has gone is one of the three forced checkpoints, and it is the
     // one that decides `complete` against `source_missing` — so the record is read once more.
