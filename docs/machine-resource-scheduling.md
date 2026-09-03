@@ -252,11 +252,23 @@ in a file — is somewhere else. So: when a guard is green, ask whether its numb
 against a *thing* or against another *record of the thing*. Only the second kind can be unanimously
 wrong.
 
-**The ceilings look anchored and are not, and the reason is worth its own sentence.** Each is also
-checked against the file it governs — but as a **bound**, `lines -le ceiling`, which can only refuse
-a ceiling that is too *low*. A ceiling set too high passes it for ever. **Slack is invisible to the
-check that looks at the real thing, and visible only to the one that compares two documents** — so
-it is caught only while somebody edits one of them and not the other.
+**The ceilings looked anchored and were not, and the reason is worth its own sentence.** Each is
+also checked against the file it governs — but as a **bound**, `lines -le ceiling`, which can only
+refuse a ceiling that is too *low*. A ceiling set too high passes it for ever. **Slack was invisible
+to the check that looks at the real thing, and visible only to the one that compares two
+documents** — so it was caught only while somebody edited one of them and not the other, which is
+not what happens when a ceiling is legitimately raised: then both get the same new number in one
+gesture, and both checks stay green over invented headroom.
+
+`d3489587` closes that, and closes it with structure rather than with care: the ceiling is now also
+compared to the file as a **slack** figure, and more than two hundred lines of unreviewed headroom
+fails with the number named. The threshold is derived rather than ratcheted — it has to admit an
+ordinary landing (the growth measured on this file over four days was +57, +53, 0 and +269) and
+refuse a delivery-sized mismatch (the 254 that prompted it) — because a ratchet at today's value
+would go red on any fifty-line addition and teach people to raise the number instead of lowering
+the ceiling, which is the lesson the suspension-point guard had already paid for. It was proved
+against the real mistake rather than a synthetic one: set the script and the table both back to
+11,932, the shape that used to be green, and it refuses.
 
 **And a third shape, which is neither, and is the one that actually happened.** A guard can compare
 a thing against a record, get the right answer on both sides, and still miss the defect — because
