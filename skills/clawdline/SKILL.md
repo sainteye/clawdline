@@ -1181,6 +1181,21 @@ live: that is what makes the receiver walk the chain, and a question it cannot a
 at the cheapest possible moment. Check those pointers once before handing over — a wrong pointer looks
 exactly like a broken chain.
 
+**And end `OBJECTIVE` with the one line that tells the receiver to name itself.** Write it into the
+document — not here, not in a covering message. The receiver is reached by one sentence, that
+sentence names `handoff.md` and nothing else, and the session picking this up is usually in another
+project where this skill is not installed: an instruction that lives only in this file is one the
+sender reads and the receiver never sees. The line, near enough verbatim:
+
+> Before anything else, name this session after the job: `POST /v1/sessions/<your session id>/title`
+> with `{"title":"<the job>"}`, `Authorization: Bearer $(cat ~/.config/clawdline/remote-token)` and a
+> fresh `Idempotency-Key`. It syncs downstream into the assistant's own name, so the job reaches
+> `/rename` and every surface Clawdline does not draw. A person's later `/rename` still wins.
+
+Clawdline already labels the tab it opened with your `title` and now remembers that across a
+restart, so this is not a rescue — it is reach, and it is **the receiver's move, not yours**: you do
+not have its session id, and a name it typed itself is one it can keep true as the work changes.
+
 **2. Durably archive anything volatile you cite, before citing it.** A design document living in a
 session scratchpad, an artifact that exists only as a URL, a file under `/tmp`: copy it into the
 repository — `artifacts/` for a record, `docs/` for a standing answer — and cite the copy. References

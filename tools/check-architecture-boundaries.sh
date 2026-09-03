@@ -28,6 +28,7 @@ main_lines=$(line_count Tests/main.swift)
 #   13,123  the broker lease moved in            (2eef7bb6 / 15924b14, +307)
 #   13,085  the lease's projection moved out     (correction round, -38)
 #   12,831  the broker lease was removed         (-254)
+#   12,984  the handoff label became durable     (+153)
 #
 # The raise to 13,123 was legitimate and reviewed at the time — a landed, green feature's code has
 # to live somewhere — and of those 307 lines roughly 250 were registry ownership, store wiring and
@@ -41,9 +42,16 @@ main_lines=$(line_count Tests/main.swift)
 # diff, on purpose" — a different guarantee, still worth having, and one a reader who assumes the
 # first will misread every number above.
 #
+# The +153 is one durable record and the four seams it needs: `HandoffLabel` and its collection, the
+# rehydration in `reindex()`, the suppress/unsuppress pass in `pruneClosedHandoffTitles`, the
+# first-identity adoption a beat does, the reclaim in `cleanup()`, and two test seams. Roughly sixty
+# of it is comment, because the lifetime decision — the label is reclaimed on the tab and the
+# identity, never on the envelope's 24-hour clock — is the half of this that cannot be read off the
+# code. It is a feature's code arriving, not a refactor: nothing left the file.
+#
 # Set to the measured value with no headroom, on purpose: a ceiling with room in it is permission
 # to grow that nobody reviewed. Anyone raising it again adds the line, the commit and the reason.
-orchestrator_ceiling=12831
+orchestrator_ceiling=12984
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ "$orchestrator_lines" -le "$orchestrator_ceiling" ] \
   || architecture_guard_fail "Sources/Orchestrator.swift is $orchestrator_lines lines against a ceiling of $orchestrator_ceiling, and the ceiling is set to the measured value with no headroom on purpose — so one added line lands here. That is the ratchet working, not a mistake: take an equal amount out of the file, or raise the number and add your line to the history above it saying which commit raised it and why."

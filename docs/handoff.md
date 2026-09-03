@@ -187,7 +187,9 @@ is a worked one: 70 lines, standing on five numbered reference entries and three
 
 **`OBJECTIVE`** — what this line of work is, and what the receiver's first hour looks like. One
 paragraph. The receiver reads this before it knows anything, so it is the only section that may
-assume nothing.
+assume nothing. It is also where the sender writes the one housekeeping line the receiver owes on
+arrival — [name the session after the job](#what-the-receiving-session-owes) — because the first
+hour begins with it and because this document is the only thing the receiver is pointed at.
 
 **`KEY DECISIONS`** — what is settled, marked plainly as *do not reopen*. Number them, so later
 sections and later conversations can name one. **Date each decision, and where you can, say where it
@@ -243,18 +245,40 @@ Not a report to the sender — there is no channel back and none is needed. What
 person in front of it, and it is a sequence:
 
 1. **Read `handoff.md` first, before touching anything.**
-2. **Walk `REFERENCES`.** Actually open them. This is the step that costs ten minutes and saves the
+2. **Name this session after the job.** Once the document has said what the job is, the receiver
+   names its own session for it through
+   [`POST /v1/sessions/:id/title`](api.md#post-v1sessionsidtitle) — the device token from
+   `~/.config/clawdline/remote-token`, an `Idempotency-Key`, and `{"title":"…"}`. It is one call,
+   and what it buys is reach: the app already labels the tab it opened with the handoff's `title`
+   and remembers that across a restart, but that label is Clawdline's, so it stops at the surfaces
+   Clawdline draws. This route also syncs downstream into the assistant's own name — for Claude it
+   is a `/rename` — so the job name reaches the places the app does not own. **It is the
+   receiver's move, not the sender's**: the sender does not have the receiver's session id, and a
+   name typed on arrival is one the session can keep true as the work changes shape.
+   **A person's later `/rename` still wins**, for Claude by exactly the rule
+   [`api.md`](api.md#post-v1sessionsidtitle) gives — the newer of the two human names is the one
+   the label shows.
+3. **Walk `REFERENCES`.** Actually open them. This is the step that costs ten minutes and saves the
    afternoon.
-3. **Answer `VERIFICATION` from those sources**, not from the handoff document. Say the answers out
+4. **Answer `VERIFICATION` from those sources**, not from the handoff document. Say the answers out
    loud in the tab; they are the receipt.
-4. **Say plainly what could not be reached.** A source that is gone, a URL that fails, a pointer that
+5. **Say plainly what could not be reached.** A source that is gone, a URL that fails, a pointer that
    leads nowhere: that is a finding, and reporting it is the job. **Do not fill the gap with a
    plausible answer** — an invented one costs more than a missing one, because it stops anybody
    looking.
-5. **Continue from `OPEN THREADS`**, starting at `IMMEDIATE NEXT STEP` unless the person says
+6. **Continue from `OPEN THREADS`**, starting at `IMMEDIATE NEXT STEP` unless the person says
    otherwise.
-6. **Keep `CURRENT STATE` true.** The document is now this session's, and a handoff that stops being
+7. **Keep `CURRENT STATE` true.** The document is now this session's, and a handoff that stops being
    updated is a handoff that can only be made once.
+
+**Step 2 has to be written into `handoff.md`, and that is not a formality.** A receiver is reached
+by exactly one sentence — [the line](#the-line) the app types — and that sentence names
+`handoff.md` and nothing else. It does not name this page, and the receiving session is usually in
+somebody else's project, where neither this file nor the skill exists. So an instruction that lives
+only in [the skill](#the-skill) is an instruction the sender reads and the receiver never sees: the
+skill is the *sending* recipe. The sender therefore writes the naming step into the document, as a
+line under `OBJECTIVE` — the one heading whose job already includes what the receiver's first hour
+looks like — and that is what makes it arrive.
 
 A receiving session that also intends to hand on later should keep the document under
 `OPEN THREADS` discipline as it works, rather than reconstructing it at the end from a context that
@@ -302,10 +326,32 @@ contents**:
 | `created` | when the call was accepted |
 | `state` | `opening` while the line is being typed, then `delivered` or `spawn_failed` |
 
-That is the whole of it. No path into `handoff.md`, no summary of it, not a byte of what the two
-sessions are saying to each other: **the app remembers the envelope and forgets what was in it.** The
-postman rule survives being able to answer *did this one already go?*, which is the one question a
-postman is allowed to have an answer to.
+That is the whole of the envelope. No path into `handoff.md`, no summary of it, not a byte of what
+the two sessions are saying to each other: **the app remembers the envelope and forgets what was in
+it.** The postman rule survives being able to answer *did this one already go?*, which is the one
+question a postman is allowed to have an answer to.
+
+**The tab the letter was delivered into is a second row, and deliberately not a field above.** A
+`title` names a tab, and until it was durable it named one until the next restart — which on a tree
+rebuilt several times a day is hours, after which a handed-off root quietly fell back to the name
+its conversation had generated for itself. So the binding lives beside the envelopes under
+`handoff_labels`, holding the handoff id, the title as given, and the identity of the process the
+first complete reading of this Mac found in that tab. It is a separate record because putting a
+terminal id inside the envelope would make the envelope carry delivery mechanics, which is exactly
+what the table above says it does not do.
+
+Two things follow, and both are the point of keeping it apart:
+
+- **A terminal id is reusable, so the label is bound to more than one.** Once a reading has matched
+  the assistant, the pid, the process start and the conversation, that is what the label is for; a
+  reading that finds something else in the tab suppresses the label rather than handing the next
+  session a stranger's job name. The label is rung 2 of
+  [`TargetSession.preferredDisplayLabel`](../Sources/ITerm.swift) and does not move: a name a
+  person set still wins, and the conversation's own generated name is still below it.
+- **It is not on the envelope's clock.** The sweep below expires a letter 24 hours after it was
+  written, which measures the delivery; the session that letter opened is usually still working
+  then. A label is reclaimed when a reading of this Mac can no longer find the process it names —
+  from the tab and the identity, never from the letter.
 
 The row is what the idempotency above answers from, so it **holds across a restart** — the registry
 is a file, the way a dispatch's is. `opening` is in that set for the same reason: a retry arriving
@@ -325,7 +371,7 @@ storage](#transport-is-not-storage) would be a promise nothing implements.
 | `project_dir` | required. Absolute, exists, and is a directory — checked now, not when the package was written |
 | `assistant` | optional. `claude` or `codex`. Absent is `claude`, the same default [`POST /v1/places/:id/start`](api.md#post-v1placesidstart-post-v1placesidstartassistant) has |
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
-| `title` | optional, ≤ 200 characters. What the tab is called and what the receipt line says. Absent, the tab is `handoff` and the first eight characters of the id, and the receipt drops its bracket |
+| `title` | optional, ≤ 200 characters. What the tab is called, what the receipt line says, and the only spelling that earns a [durable label](#what-the-app-remembers). Absent, the tab is `handoff` and the first eight characters of the id, the receipt drops its bracket, and nothing durable is stored — that fallback says less about the work than the name the conversation will generate for itself, so it is a fact about this process only |
 | `from_session` | optional, ≤ 200 characters, free-form. Whatever the sending assistant calls the session it is in — it is looked up among the running sessions, not parsed, so no shape is assumed and none is required. Best-effort exactly as `root.session_id` is: absent, unrecognised, or an assistant that has no such id at all, and the handoff runs with nobody getting a typed receipt |
 
 `title` and `from_session` are optional for one reason between them: **the app will not open
