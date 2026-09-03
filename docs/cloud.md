@@ -354,15 +354,19 @@ SecurityTool invocation.
   `/v1/strings` is a follow-up that must touch that file.
 - **Push.** Web push needs the Mac's VAPID keys and does not work through the relay, so the hosted
   console registers no service worker.
-- **The reads that still do not cross.** Six do now: a session's messages, both tiers of its Info,
-  one background agent's conversation, one background command's output, its skills menu and its
-  Git panel. The viewer asks on `ctl/<machine>` and the Mac answers on `t/<machine>/<session>`,
-  which is the channel the viewer had always subscribed to and nothing had ever published on. The
-  route table, the bounds and the typed refusals are in
-  [`docs/api.md`](api.md#the-six-reads-a-browser-on-the-cloud-path-may-ask-for).
+- **The reads that still do not cross.** Seven do now: a session's messages, both tiers of its
+  Info, one background agent's conversation, one background command's output, its skills menu, its
+  Git panel and the pictures inside its transcript. The viewer asks on `ctl/<machine>` and the Mac
+  answers on `t/<machine>/<session>`, which is the channel the viewer had always subscribed to and
+  nothing had ever published on. The route table, the bounds and the typed refusals are in
+  [`docs/api.md`](api.md#the-reads-a-browser-on-the-cloud-path-may-ask-for).
   `cloud_read_unavailable` was the answer for the last four and is now the answer for nothing:
   when the Mac cannot serve one of them it says so in its own word — `not_found`, `not_a_repo`,
   `git_failed`, `429 busy` — which is what lets `git-panel.js` keep the branch it already had.
+  A picture crosses as bytes rather than as a URL, because the console's own origin has no artifact
+  route and this Mac is not reachable from it; the bound on one is the relay's 16 MiB envelope cap
+  turned into 12,582,132 bytes of PNG, and a picture over it is drawn as a stated size rather than
+  as the broken-image icon it used to be.
   Everything else the Web UI reads is guarded by `typeof api.X === "function"` and draws no
   control at all. `CloudClient.schedules()` is the one exception and is a live defect rather than
   a policy: it reads a `schedules` key out of the `orch/` snapshot, and

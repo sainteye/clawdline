@@ -572,9 +572,10 @@ actor CloudAppBridge {
     static let cloudEnvelopeCiphertextLimit = 16 << 20
 
     /// The JSON around one image's base64: the two answer fields, the id, the media type, the
-    /// byte count and the quoting. Measured at 228 bytes with every field at its maximum, so a
-    /// kibibyte here is slack rather than an estimate waiting to be tightened — the same shape as
-    /// the relay's own 4 KiB frame allowance.
+    /// byte count and the quoting. Measured at 176 bytes with every field at its maximum — the
+    /// serialization itself, counted, not an allowance reasoned about — so a kibibyte here is
+    /// slack rather than an estimate waiting to be tightened, the same shape as the relay's own
+    /// 4 KiB frame allowance. At the ceiling the sealed answer leaves 848 bytes under the cap.
     static let cloudImageAnswerOverhead = 1 << 10
 
     /// The largest PNG this transport carries in one answer. **Derived, not chosen.**

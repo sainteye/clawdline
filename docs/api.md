@@ -579,7 +579,7 @@ a card is opened; not something to do on every beat of the stream. Everything he
 nothing is written — the `git` runs with `GIT_OPTIONAL_LOCKS=0` and a deadline, and nothing is
 asked of GitHub that `/links` did not already ask.
 
-### The six reads a browser on the Cloud path may ask for
+### The reads a browser on the Cloud path may ask for
 
 Everything above is the direct path: a browser on this Mac's own network, or through its
 Cloudflare tunnel, holding a paired-device token. A browser on the **Cloud** path holds no such
@@ -596,12 +596,15 @@ and what is reachable is a closed list of six, named in `CloudHeadlessRead`:
 | `{"type":"shell","session":"…","shell":"…","bytes":1024‑1048576}` | `read: "shell:<shell>"` | [`GET /v1/sessions/:id/shells/:shellId`](#get-v1sessionsidshellsshellidbytes65536) |
 | `{"type":"skills","session":"…"}` | `read: "skills"` | [`GET /v1/sessions/:id/skills`](#get-v1sessionsidskills) |
 | `{"type":"git","session":"…"}` | `read: "git"` | [`GET /v1/sessions/:id/git`](#get-v1sessionsidgit) |
+| `{"type":"image","session":"…","id":"…"}` | `read: "image.<id>"` | `GET /v1/artifacts/images/:id` |
 
-**An agent and a shell name themselves in the answer; the other four do not have to.** A session
-has one transcript, one Info, one skills menu and one Git panel, but many agents and many
-commands — and every one of them answers on that session's single channel. A reader with two
-agents open, which is the ordinary case because the strip lists them side by side, would have the
-first settled by the second's conversation if both answers were called `agent`.
+**An agent, a shell and an image name themselves in the answer; the other four do not have to.** A
+session has one transcript, one Info, one skills menu and one Git panel, but many agents, many
+commands and many pictures — and every one of them answers on that session's single channel. A
+reader with two agents open, which is the ordinary case because the strip lists them side by side,
+would have the first settled by the second's conversation if both answers were called `agent`; a
+transcript's pictures are asked for together and come back in whatever order the disk gives them,
+which is the same problem arriving all at once.
 
 **Where each bound comes from, and it is the route's own in every case.** `limit` on an agent is
 the transcript window, 1–1000, because an agent's file is read by the same parser. `bytes` on a
@@ -610,7 +613,10 @@ is how much of the end to take — and here the viewer states the direct path's 
 64 KiB rather than omitting the field, because a read's key set is checked exactly and an omitted
 field is `malformed_read` rather than a default. `skills` and `git` take no bound at all: the
 first answers a menu as long as that assistant has skills, and the second answers file rows with
-counts and **no diff text**, so neither has a size a caller could name.
+counts and **no diff text**, so neither has a size a caller could name. An image names no bound
+either, and for the opposite reason: its size is the file's, so the limit is the transport's rather
+than the caller's — the relay's 16 MiB envelope cap, minus the tag and the JSON around the base64,
+comes to 12,582,132 bytes of PNG, and a picture over it is refused in a sentence.
 
 The request rides `ctl/<machine>` with class `ctl`, the channel a viewer already publishes
 commands on; the answer rides `t/<machine>/<session>` with class `stream`, the channel a viewer
@@ -627,6 +633,35 @@ route's own JSON, unchanged — or `error`, the route's own typed refusal, uncha
 `permission`, `files`, `links` and `deploy`, and a full request settled by a summary would be
 cached as complete while missing exactly those.
 
+**A picture is a read too, and the only one that answers with something other than a route's
+JSON.** On the direct path a transcript's images are `<img src="/v1/artifacts/images/:id">` —
+relative and same-origin, which is right when the origin is this Mac. On the Cloud path the origin
+is the hosted console, which serves no such route and cannot: this Mac is not reachable from it,
+which is the whole reason a relay exists. So the bytes travel in the answer, base64 in `data`,
+alongside the `id` and `media_type` and `byte_count` that let the page check it got the picture it
+asked for. The answer is named `image.<id>` rather than `image` because a transcript holds up to
+six images per message across a two-hundred-message window; they are asked for together and come
+back in whatever order the disk gives them, and a shared name would let the second answer settle
+the first tile.
+
+**How large a picture may be is arithmetic, not a preference.** The relay caps one envelope's
+ciphertext at 16 MiB on every tier (`max_envelope_bytes`, PROTOCOL §D17). AES-GCM adds a 16-byte
+tag; base64 costs four bytes for every three; the JSON around the base64 measures 176 bytes with
+every field at its maximum, and a kibibyte is kept as slack. What is left is **12,582,132 bytes** —
+780 bytes below the 12 MiB ceiling `SessionImageArtifactStore` already puts on a stored artifact,
+so all but the last kilobyte of what this Mac will ever hold does cross. A picture over it is
+`413 image_too_large_for_cloud`, whose `error` carries `byte_count` and `limit_bytes` so a page can
+write its own sentence; the bytes are not sent and the envelope is not built. An artifact that is
+not a PNG — which the store does not produce — is `415 image_media_type_unsupported`.
+
+The cost of carrying one is **about 1.78 times the PNG on the wire**, because the bytes are base64
+twice: once into the answer payload, once as the envelope's `ct` inside the relay frame. A 1 MiB
+screenshot is a 1,864,906-byte frame; a picture at the ceiling is a 22,369,003-byte one, which is
+the ~21 MiB frame the relay sized its own isolate for. The viewer therefore asks for pictures
+lazily — only for tiles a render actually created — and keeps at most three in the air at once, so
+a transcript with forty screenshots in it is forty requests paced three at a time rather than
+forty envelopes together. Nothing is refused by that pacing; the fourth picture waits.
+
 **Reads do not consult the remote-write switch, and commands still do.** `Settings → Remote`'s
 write switch is the answer to "may a remote device type into a session on this Mac"; a transcript
 read types into nothing, and on the direct path a paired device reads one whatever that switch
@@ -638,10 +673,12 @@ device sees through the tunnel, for no reason anybody chose. `send`, `answer` an
 **They queue where a phone queues.** A cloud transcript read enters the same serial transcript
 worker and a cloud Info read the same eight-place reading lane, so both can come back
 `429 transcript_busy` or `429 busy` with the same fields as above. A second door that skipped
-those lanes would put back the exclusivity they were built to remove. The other four take the
+those lanes would put back the exclusivity they were built to remove. The other five take the
 shared queue, and that is the same rule and not an exception to it: `isTranscriptReading` and
 `isSlowReading` both say no to `agents`, `shells`, `skills` and `git` arriving over HTTP too, so a
-lane for them here would be a second policy nobody measured.
+lane for them here would be a second policy nobody measured. An image is in neither lane for the
+same reason and by the same precedent: `/v1/artifacts/images/:id` is a bounded read of one
+already-validated file, and it goes on the shared queue on the direct path too.
 
 **What a viewer cannot ask for.** The refusals below are the deliberate ones, and each has a code
 of its own so a page can say which it hit rather than showing the same empty view for all three:
@@ -651,6 +688,7 @@ of its own so a page can say which it hit rather than showing the same empty vie
 | `cloud_read_needs_send_prompt` | this device may read but may not publish on `ctl/`, so it cannot ask | the relay's: PROTOCOL §12 requires `send_prompt` to publish on `ctl/` in either class |
 | `malformed_read` | the request had a missing, extra or wrongly typed field, or arrived with class `dispatch` | the bridge's, before anything reaches a route — and the viewer's for the one case it can see first, an `agent` or `shell` read with no id |
 | `cloud_read_timeout` | nothing answered within the client's window | the client's, and the honest end of a read nobody will answer |
+| `image_too_large_for_cloud` | this picture is over one envelope's ciphertext cap | the relay's cap, this repository's arithmetic — and the tile says it in words with the size in it |
 
 **`cloud_read_unavailable` is gone, and its absence is the point.** It meant *this transport has
 no method for it*, and it was the answer for exactly these four; now that they cross, no read
