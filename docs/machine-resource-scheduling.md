@@ -320,6 +320,23 @@ world.
 repaired by its context: a reader who runs `git show` on it gets an error and then does not know
 which half of the message to trust. Paste a SHA from the output of the command that produced it.
 
+**The record-against-record row got its first real instance, and both records were wrong together.**
+`a4ed9edb` added four `check(` calls inside a loop over two language variants — eight checks — and
+did not touch `test.sh`. `compare_documented "Swift checks"` compares the seal in `test.sh` against
+the governance table in `docs/architecture-refactor.md`; both still said 8093, so they agreed, and
+the guard stayed green while the tree ran 8101. What caught it was a full suite's own receipt, three
+commits later, on a run that had zero failures and all twelve cloud suites present. **A run with
+nothing red is exactly where a stale seal hides**, because every other signal on the page reads as
+success.
+
+Deriving the drift a second way nearly went wrong in a way worth recording. Counting assertion lines
+added since the seal was last set gives four for `a4ed9edb`, zero for the barrier fix — and **one
+hundred** for `c7eac595`, which would have broken the arithmetic. They net to zero: that commit split
+the ledger tests into groups and re-indented the same hundred assertions, so the diff shows a hundred
+additions beside a hundred deletions. Counting only the `+` side is a query about what a commit
+*contains*, not about what it *changed*, and the two differ by exactly the amount of moved code. The
+derivation and the measurement agree at 8101 — but only after the deletions were counted too.
+
 ### Two checks this page specifies but the tree does not yet carry
 
 Both were built and proved on 2026-09-03 and are waiting for `test.sh` and
