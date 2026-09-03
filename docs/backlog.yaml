@@ -1069,3 +1069,31 @@ items:
       computed and treat a missing directory as not dirty; the durable one is for worktree disposal
       to write back to the record it is evidence for.
     opened: 2026-09-03
+
+  - id: B-LEDGER-QUIET-WINDOW-IS-NOT-QUIET
+    title: Two ledger assertions ask that nobody else wrote, and the suite decides whether that is true
+    problem: >-
+      Two checks in `Tests/UsagePortfolioAndLifecycleTests.swift` — that an ordinary shell and a
+      session whose transcript nothing can name each leave the ledger alone — are written as
+      `!eventually(timeout: 0.4) { !UsageLedger.shared.rows().isEmpty }`. `UsageLedger.shared` is
+      process-wide, so the assertion is not "my subject wrote nothing"; it is "nothing at all
+      arrived in this window". Whether that holds depends on what an earlier group left in flight
+      and how the machine was loaded, neither of which the group controls. The group's own setup is
+      clean — `freshUsageLedger()`, `Orchestrator.forget()`, `forgetWatchedForTesting()` — which is
+      why this reads as a solid test right up until it does not.
+    evidence: >-
+      2026-09-03, one tree: the re-seal run reported `2 of 8549 checks failed` naming exactly those
+      two; the confirming run on the same tree reported `8549 checks passed` with zero. Running that
+      group alone with `CLAWDLINE_TEST_GROUPS` passed 16 of 16. The tree had just gained a test group
+      from another branch, which changes group order and therefore which work is still settling when
+      this group's 0.4 s window opens — but the second run being green says the ordering is not the
+      whole story either, so this is filed as a race and not as an order dependency.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      The next landing whose receipt has to be taken twice. The fix is to make the assertion about
+      its own subject rather than about a quiet window — assert on rows for these session ids, or
+      drain the ledger's pending work before opening the window — and never to widen the timeout,
+      which only moves the coin flip.
+    opened: 2026-09-03
