@@ -19,7 +19,7 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 
 let failures = 0;
@@ -703,7 +703,27 @@ try {
     // 12. The compile-job ceiling, and where the number came from. Unset, the compile line below
     //     the block is byte-identical to what it has always been.
     rmSync(lockDir, { recursive: true, force: true });
-    const jobs = shell("s12.sh", ceiling, 'echo "flags=[${clawdline_suite_jobs_flags[@]+${clawdline_suite_jobs_flags[@]}}]"');
+    // The second line reads the ceiling back **from a child process**, and that is the whole point
+    // of it. Read in this same shell, a variable that was merely set looks exactly like one that
+    // was exported: the first draft of this probe did that, the mutation that deleted `export`
+    // passed every check in this file, and the reader it was written for — a typecheck in a child
+    // process — would have got nothing.
+    const jobs = shell("s12.sh", ceiling,
+                       'echo "flags=[${clawdline_suite_jobs_flags[@]+${clawdline_suite_jobs_flags[@]}}]"\n'
+                       + 'bash -c \'echo "exported=[${CLAWDLINE_COMPILE_JOBS:-}]"\'');
+    // A `sysctl` of this test's own, so the derivation can be driven against a machine that says
+    // one core, a machine that says sixty-four, a machine whose answer is not a number, and a
+    // machine that will not answer at all. Without these the only reading available is this Mac's,
+    // and a rule measured on one machine is exactly what the `hw.ncpu` term exists to avoid.
+    const fakeSysctlDir = (name, body) => {
+        const d = join(dir, `sysctl-${name}`);
+        mkdirSync(d, { recursive: true });
+        const f = join(d, "sysctl");
+        writeFileSync(f, `#!/bin/bash\n${body}\n`);
+        chmodSync(f, 0o755);
+        return { PATH: `${d}:${process.env.PATH}` };
+    };
+    const cores = (name, body) => run(jobs, fakeSysctlDir(name, body));
     const r12a = run(jobs);
     const r12b = run(jobs, { CLAWDLINE_SUITE_JOBS: "1" });
     const r12c = run(jobs, { CLAWDLINE_SUITE_JOBS: "lots" });
@@ -714,9 +734,28 @@ try {
     // asserts what the line has to carry rather than the clause it carried first: that no ceiling
     // was set, and which variable would set one. A run that printed nothing, or printed a number it
     // had invented, still fails.
-    check("with no ceiling set, no flag is added and the run says none was set",
-          r12a.code === 0 && /flags=\[\]/.test(r12a.all)
-          && /none set/.test(r12a.all) && /CLAWDLINE_SUITE_JOBS unset/.test(r12a.all));
+    const derived = Math.min(8, cpus().length);
+    check("with no ceiling set, the default is derived from this machine and the run says so",
+          r12a.code === 0 && r12a.all.includes(`flags=[-j ${derived}]`)
+          && /min\(8, hw\.ncpu\)/.test(r12a.all) && /CLAWDLINE_SUITE_JOBS unset/.test(r12a.all));
+    // Exported rather than merely set, because the typecheck it also governs is a child process.
+    check("the settled ceiling is exported, so a child process can read what this run decided",
+          r12a.all.includes(`exported=[${derived}]`)
+          && run(jobs, { CLAWDLINE_SUITE_JOBS: "3" }).all.includes("exported=[3]"));
+    // The cap and the floor, each driven from the reading rather than from this machine's own.
+    check("a machine with more cores than the cap is capped at eight",
+          cores("many", "echo 64").all.includes("flags=[-j 8]"));
+    check("a machine with one core gets one job, not the cap",
+          cores("one", "echo 1").all.includes("flags=[-j 1]"));
+    check("a core count that is not a number reads as one job rather than as no ceiling",
+          cores("garbage", "echo many").all.includes("flags=[-j 1]"));
+    check("a sysctl that will not answer reads as one job too",
+          cores("broken", "exit 1").all.includes("flags=[-j 1]"));
+    // The control for the four above: they would all pass against a block that ignored `sysctl`
+    // entirely and always printed 1, on any machine whose cap happens to be 1. This is the reading
+    // that separates "the derivation works" from "the derivation is dead code".
+    check("and the fake sysctl is really the one being read",
+          cores("seven", "echo 7").all.includes("flags=[-j 7]"));
     check("a ceiling from the environment reaches the compiler, and the run says where it came from",
           r12b.code === 0 && /flags=\[-j 1\]/.test(r12b.all) && /from CLAWDLINE_SUITE_JOBS/.test(r12b.all));
     check("a ceiling that is not a number is refused rather than quietly ignored",

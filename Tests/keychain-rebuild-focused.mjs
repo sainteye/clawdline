@@ -954,10 +954,26 @@ print("\\(checks) settings checks passed")
   check(settingsProbe.status === 0 && /10 settings checks passed/.test(settingsProbe.stdout),
     "sign-out is bounded, generation-checked and never removes on the main thread");
 
-  const productionTypecheck = run("xcrun", ["swiftc", "-swift-version", "5", "-target",
-    "arm64-apple-macos13.0", "-typecheck", ...swiftSources("Sources")]);
+  // This is the second-most expensive thing in ./test.sh after the suite compile itself: a
+  // whole-`Sources/` typecheck, 104 files, measured at 34 s single-job and 7 s at eight. It ran
+  // at one job because nothing passed it a `-j`, and unlike the compile at the bottom of test.sh
+  // it is not even inside the machine lock. `CLAWDLINE_COMPILE_JOBS` is the ceiling that run
+  // settled, exported by test.sh's compile-ceiling block; running this file by hand leaves it
+  // unset and gets the driver's own default, which is what it always had.
+  const ceiling = process.env.CLAWDLINE_COMPILE_JOBS ?? "";
+  const ceilingFlags = /^[1-9][0-9]*$/.test(ceiling) ? ["-j", ceiling] : [];
+  const typecheckArgs = ["swiftc", "-swift-version", "5", "-target",
+    "arm64-apple-macos13.0", "-typecheck", ...ceilingFlags, ...swiftSources("Sources")];
+  const productionTypecheck = run("xcrun", typecheckArgs);
   check(productionTypecheck.status === 0,
     `production wiring compiles only through the asynchronous reader: ${productionTypecheck.stderr}`);
+  // Asserted against the argument vector that was actually handed to `xcrun`, not against the
+  // array it was built from. The failure being guarded is silent — a ceiling that is computed
+  // correctly and then never spread into the arguments costs 27 s a run and reads as success —
+  // and a check on `ceilingFlags` alone would pass straight through it.
+  const jFlag = typecheckArgs.indexOf("-j");
+  check(ceiling === "" ? jFlag < 0 : jFlag > 0 && typecheckArgs[jFlag + 1] === ceiling,
+    `the typecheck really runs at the ceiling this run settled (CLAWDLINE_COMPILE_JOBS=${JSON.stringify(ceiling)})`);
 
   const fakeBin = join(work, "fake-bin");
   mkdirSync(fakeBin);

@@ -174,6 +174,88 @@ cd "$(dirname "$0")"
 verify_swift_source_manifest full
 bash tools/check-architecture-boundaries.sh
 
+# >>> clawdline compile ceiling >>>
+# How many compiler jobs this run may have, and where that number came from.
+#
+# `CLAWDLINE_SUITE_JOBS` is the injection point: a ceiling, floor of one, so low headroom means a
+# slower compile rather than a slot that never comes. It governs **both** compiles this script
+# pays for — the whole-`Sources/` typecheck inside `Tests/keychain-rebuild-focused.mjs`, a few
+# dozen lines below, and the `swiftc` at the bottom — which is why the block sits up here instead
+# of beside the invocation it used to be next to. The number it settles on is exported as
+# `CLAWDLINE_COMPILE_JOBS` so a child reads what this run decided; `CLAWDLINE_SUITE_JOBS` stays
+# input-only, so a test can still ask what happens when nobody set one.
+#
+# **Unset used to add no flag at all, and that was deliberate** — the driver's own default here is
+# one job, measured twice against this exact invocation: 7,479 samples at 54 ms from a
+# `proc_listpids` walker over the driver's own descendants, and 426 independent
+# `ps -Ao pid=,ppid=,ucomm=` samples at 250 ms. The same instruments read 8 when `-j 8` was
+# passed, so they can count above one. That measurement still holds. What made one job the right
+# *default* was a memory limit that has since gone: `Tests/CloudAccountTests.swift` reached
+# 46.06 GiB in a single frontend, multiplying that by N was not survivable on a 24 GB machine, and
+# Jetsam force-rebooted this Mac twice on 2026-09-03 proving it. `a97fb176` split that function
+# into twenty-eight coroutines and took the file to 0.83 GiB. The limit went and the decision it
+# justified stayed, which is the only reason this line was still one job.
+#
+# Re-measured on 2026-09-03 after the split. All five values on one detached worktree pinned at
+# `d97d0afb` so every N compiled identical bytes, `/tmp/clawdline-suite.lock` held across the whole
+# sweep, 152 files, footprint from `proc_pid_rusage(RUSAGE_INFO_V4)`'s
+# `ri_lifetime_max_phys_footprint` with `/usr/bin/time -l` beside it as a second reading:
+#
+#     -j  1   102 s    one frontend's peak 0.845 GiB    most alive together 0.861 GiB
+#     -j  2    53 s                        0.822                            0.949
+#     -j  4    34 s                        0.852                            1.028
+#     -j  8    24 s                        0.835                            1.181
+#     -j 14    18 s                        0.833                            2.012
+#
+# **The per-frontend peak does not move with N.** It is one file and it costs what it costs
+# whoever compiles it. What grows is how many are alive at once, and it grows far slower than N,
+# because the driver hands each frontend a batch and the expensive file is only ever in one of
+# them: eight jobs cost 1.18 GiB together, not eight times 0.85.
+#
+# So the default is derived rather than absent: `min(8, hw.ncpu)`, floor one. **Both terms carry
+# weight, and both stand on the table above rather than on anything elsewhere in the tree.**
+#
+# 8 rather than 14, for two reasons and neither is taste. Fourteen buys six seconds over eight and
+# spends every core on the machine to do it, which is the difference between a compile somebody can
+# work through and one they cannot. And the safety margin is not the same: headroom here with
+# nothing compiling — `vm_stat` free plus file-backed — was 4,485 MB, against which eight jobs'
+# worst case of 2.52 GiB clears by 1.9 GiB and fourteen's 3.53 GiB clears by under one. That worst
+# case is the N largest lifetime maxima summed as though they had all been alive at the same
+# instant, which the batching makes impossible; it is the number to plan against precisely because
+# it is the one that does not depend on the batching continuing to behave.
+#
+# `hw.ncpu` rather than a constant, because CI is a `macos-14` runner with a fraction of this Mac's
+# cores, and a number measured on one machine is not a constant. This file has been wrong about
+# that before: `getconf PAGESIZE` here is 16,384, and reasoning from Intel's 4,096 turned one page
+# into four blocks and voided a day of arithmetic.
+clawdline_suite_jobs_flags=()
+case "${CLAWDLINE_SUITE_JOBS:-}" in
+  "")
+    # `sysctl` failing, or answering something that is not a count, reads as one job rather than
+    # as no ceiling. The floor is the safe direction and it is also the old behaviour.
+    clawdline_compile_jobs=$(sysctl -n hw.ncpu 2>/dev/null) || clawdline_compile_jobs=""
+    case "$clawdline_compile_jobs" in
+      "" | *[!0-9]* | 0*) clawdline_compile_jobs=1 ;;
+    esac
+    if [ "$clawdline_compile_jobs" -gt 8 ]; then clawdline_compile_jobs=8; fi
+    clawdline_compile_jobs_source="min(8, hw.ncpu); CLAWDLINE_SUITE_JOBS unset" ;;
+  # `0*` and not just `0`: `00` is all digits, so it slipped past `*[!0-9]*` and reached `swiftc` as
+  # `-j 00`. The contract this guard states is "a positive whole number", and `00` and `007` are not
+  # that however they behave downstream. The three patterns are: anything with a non-digit in it, a
+  # leading zero of any length, and nothing at all.
+  *[!0-9]* | 0*)
+    echo "test.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
+    exit 2 ;;
+  *)
+    clawdline_compile_jobs=$CLAWDLINE_SUITE_JOBS
+    clawdline_compile_jobs_source="from CLAWDLINE_SUITE_JOBS" ;;
+esac
+clawdline_suite_jobs_flags=(-j "$clawdline_compile_jobs")
+# Exported, not merely set: the typecheck this ceiling now also governs runs in a child process.
+export CLAWDLINE_COMPILE_JOBS="$clawdline_compile_jobs"
+echo "test.sh: compile job ceiling: ${clawdline_compile_jobs}, ${clawdline_compile_jobs_source}"
+# <<< clawdline compile ceiling <<<
+
 # Trailing commas in an argument list are Swift 6.1 syntax. The toolchain here is usually
 # newer than CI's, so code that compiles locally can fail to parse on the runner — and the
 # error arrives ten minutes later, in a log, attached to a push that is already public.
@@ -1163,52 +1245,14 @@ for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
   fi
 done
 
-# >>> clawdline compile ceiling >>>
-# How many compiler jobs this run may have, and where that number came from.
-#
-# There is no injection point for this today, so a line that needs to compile with one job has to
-# edit the invocation below by hand — which is how a temporary measurement becomes a permanent
-# diff. `CLAWDLINE_SUITE_JOBS` is that injection point: a ceiling, floor of one, so low headroom
-# means a slower compile rather than a slot that never comes.
-#
-# **Unset adds no flag at all, and that is deliberate** — but not because the default is unknown.
-# It is known, and it is one. Measured twice on this Mac (swift-driver 1.127.15 / Swift 6.2.4,
-# 14 logical cores, `ProcessInfo.activeProcessorCount` 14) against this exact invocation —
-# `-c -o "$BIN"` over this file list, not `-typecheck` — the driver never had more than one
-# `swift-frontend` alive: 7,479 samples at 54 ms from a `proc_listpids` walker filtering on the
-# driver's own descendants, and 426 independent `ps -Ao pid=,ppid=,ucomm=` samples at 250 ms.
-# The same instruments read 8 when `-j 8` was passed, so they can count above one.
-#
-# Two-wide readings taken from outside a run are real and mean something else: a second
-# `swift-driver` runs on this machine that this ceiling does not govern at all, spawned by
-# `node Tests/keychain-rebuild-focused.mjs` further down this very script. Its pid was 94224,
-# parent 93172, observed alongside the measured compile at 02:38. Counting `swift-frontend`
-# machine-wide therefore counts other people's compilers; counting the descendants of *this*
-# driver is the only reading that answers "how parallel is this compile".
-#
-# So the flag is still omitted when unset, and the command line stays byte-identical to what it
-# has always been — but a reader deciding a parallelism budget should know that granting `-j 1`
-# grants what already happens, and that raising it is the only direction this knob moves.
-clawdline_suite_jobs_flags=()
-case "${CLAWDLINE_SUITE_JOBS:-}" in
-  "")
-    echo "test.sh: compile job ceiling: none set (CLAWDLINE_SUITE_JOBS unset); the driver's own default, measured on this Mac, is one job" ;;
-  # `0*` and not just `0`: `00` is all digits, so it slipped past `*[!0-9]*` and reached `swiftc` as
-  # `-j 00`. The contract this guard states is "a positive whole number", and `00` and `007` are not
-  # that however they behave downstream. The three patterns are: anything with a non-digit in it, a
-  # leading zero of any length, and nothing at all.
-  *[!0-9]* | 0*)
-    echo "test.sh: CLAWDLINE_SUITE_JOBS='${CLAWDLINE_SUITE_JOBS}' is not a positive whole number of jobs." >&2
-    exit 2 ;;
-  *)
-    clawdline_suite_jobs_flags=(-j "$CLAWDLINE_SUITE_JOBS")
-    echo "test.sh: compile job ceiling: ${CLAWDLINE_SUITE_JOBS}, from CLAWDLINE_SUITE_JOBS" ;;
-esac
-# <<< clawdline compile ceiling <<<
-
 # From here to the end of the test-binary run is what the lock is for, and the record says so while
 # it happens: a waiter reading `phase=compiling` knows the lock is protecting something, and one
 # reading `phase=idle-holding` knows to go and ask rather than to guess.
+#
+# `clawdline_suite_jobs_flags` is settled far above, in the marked compile-ceiling block near the
+# top of this script — it moved there when it became the ceiling for the typecheck inside
+# `Tests/keychain-rebuild-focused.mjs` as well as for this line, and one ceiling with two readers
+# has to be decided before the first of them runs.
 clawdline_suite_lock_phase compiling
 swiftc \
   -swift-version 5 \
