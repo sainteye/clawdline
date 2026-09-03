@@ -365,12 +365,15 @@ func runCloudCommandLedgerTests() async throws -> Int {
         func runCoalescedDuplicate() async throws {
             let group = "coalesced_duplicate"
             let clock = CloudLedgerTestClock(wall: base)
-            let store = InMemoryCloudCommandLedgerStore()
+            let store = SignallingCloudCommandLedgerStore()
             let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "coalesce", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
             let duplicate = Task { try await ledger.reserve(request) }
-            await Task.yield()
+            // Wait for the duplicate to reach the store, not for one turn of the executor:
+            // `clock.advance(wall: 61)` below crosses this request's deadline, and a duplicate
+            // that has not yet read `wallNow()` reads the advanced value and throws.
+            await store.waitUntilTransactionCount(3)
             try await ledger.beginEffect(request, epochState: .ready, latestRosterAndGateAllow: true)
             let outcome = CloudCommandNormalizedOutcome(code: .succeeded, payload: Data("one-effect".utf8))
             clock.advance(wall: 61)
