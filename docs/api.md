@@ -529,7 +529,7 @@ property, so what replaces it is a boundary:
 secret that authenticates its completion, and by protocol its `result.json` repeats that secret
 back. Neither is under the root a path can name, and `..` is refused before the filesystem is
 touched. The redacted half of a result — its summary, artifacts and verification — is already
-published by [`GET /v1/orchestrator/tasks`](#get-v1orchestratortasks), which is where a phone
+published by [`GET /v1/orchestrator/tasks`](#get-v1orchestratortasks-get-v1orchestratortasksid), which is where a phone
 should read it.
 
 **How far a hostile `:path` gets: nowhere outside those two directories.** It is refused before
