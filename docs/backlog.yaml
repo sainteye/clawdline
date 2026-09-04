@@ -1379,3 +1379,55 @@ items:
       never says whose. Any commit to this file that adds entries its message does not account for
       is the trigger.
     opened: 2026-09-04
+
+  - id: B-MAC-APP-HAS-NO-WINDOW-OF-ITS-OWN
+    title: The Mac app has no window a person can open and read; the phone has the whole product
+    problem: >-
+      Everything this machine can show — sessions, transcripts, usage, settings, and now Projects
+      and their worktrees — is drawn by the web UI and reached through a browser. The Mac app that
+      owns all of it has no equivalent surface of its own: the thing a person opens when they want
+      to *look*, rather than to type into a terminal.
+
+
+      The shape the user asked for is one window with two halves: the pages the web already draws,
+      beside the command input that is Clawdline's own. Keeping the terminal pop-out is not
+      negotiable — it is what the app is for — so this is an addition, not a replacement.
+    evidence: >-
+      2026-09-04, `docs/mac-app-shell.md`, written by a read-only design node against `f94e07aa`
+      and preserved in full because its reasoning is the part that expires last. Three candidates
+      were costed rather than one recommended:
+
+
+      **(A) Rewrite natively** — 21,848 lines of JS and 4,066 of CSS to re-implement, against
+      13,681 lines of existing native UI. Larger than everything the app already draws, it voids
+      41 `.mjs` suites, and it leaves two implementations of one product forever.
+
+
+      **(B) `WKWebView` at `127.0.0.1`** — needs the user to turn on two switches that are off by
+      default (`Config.swift:293` `remote`, `:355` `remoteWrite`), and `RemoteServer.swift:3366`
+      gates writes on `request.source` rather than on capabilities, so a token does not open that
+      door. **Both switches are already true on the machine this was designed on**, which is
+      exactly the shape of defect that works perfectly for its author and answers 403 for everyone
+      else.
+
+
+      **(B′) An in-process custom scheme** — `WKURLSchemeHandler` calling `RemoteServer.route()`
+      directly, which `RemoteServer.swift:750-753` says in its own words was split out so the
+      server could be asked a question without opening a socket, and `Request.Source`
+      (`:5386`) already carries `verifiedCloud` as the in-process precedent. Its known hole is
+      that five families of route bypass `route()` — SSE among them, and SSE is what keeps the
+      page alive (`live.js:112`). Whether `EventSource` can speak a custom scheme was **not
+      verified**; the design carries the thirty-line experiment that would settle it.
+    severity: degrades
+    cost: weeks
+    who_hurts: user
+    trigger: >-
+      The design's own cut list puts this last on purpose: B′ embeds the web, so the web has to
+      grow the shape first or the window embeds today's. Cuts one through five landed on
+      2026-09-04 — the sidebar and pages, the Project data route, the Project view — and **each of
+      them was worth having on the phone even if this entry is never done**, which is the whole
+      argument for that order. What remains is `Request.Source` gaining a third case, the scheme
+      handler, and an event bridge. The user chose scope B on 2026-09-04 and deferred this; the
+      trigger is that choice changing, and the first thing to run is the SSE experiment, because a
+      no there changes the shape rather than the schedule.
+    opened: 2026-09-04
