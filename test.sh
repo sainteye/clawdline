@@ -447,6 +447,13 @@ node Tests/git-hooks.mjs
 # recompile of everything.
 node Tests/app-onboarding-focused.mjs
 node Tests/keychain-rebuild-focused.mjs
+# The install path the website and both READMEs recommend, which runs on a Mac this project has
+# never seen and had nothing exercising it: that the release reply is read without an interpreter
+# that is really an xcselect shim, that a reply this script cannot read says so instead of ending
+# the install in silence, and that the ad-hoc legacy branch verifies the bundle before it takes
+# macOS's last guard off it. Stand-ins on PATH for every command it reaches out with, and a
+# temporary DEST — nothing here downloads a release or touches an installed app.
+node Tests/install-focused.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
@@ -517,7 +524,14 @@ node Tests/test-sh-lock.mjs
 
 # Everything the tests must vary is an environment variable, so `Tests/test-sh-lock.mjs` can drive
 # this block without ever going near the real lock or the real compiler.
-CLAWDLINE_SUITE_LOCK_DIR="${CLAWDLINE_SUITE_LOCK_DIR:-/tmp/clawdline-suite.lock}"
+# **The dials are shared, because the lock is.** `build.sh` used to read its own spelling of these
+# — `CLAWDLINE_LEASE_DIR`, `CLAWDLINE_LEASE_DEADLINE_SECONDS`, `CLAWDLINE_LEASE_WAIT_SECONDS` — and
+# the defaults agreed, so the ordinary path was right and nothing ever said otherwise. What the
+# ordinary path hides is `heartbeat_deadline`: a *record* field both writers fill in and every
+# reader prefers to its own, so tuning one spelling put two different numbers in one field. The
+# `CLAWDLINE_SUITE_LOCK_*` name is canonical and wins when both are set; the `CLAWDLINE_LEASE_*`
+# one keeps working here as well as there, so tuning either spelling reaches both writers.
+CLAWDLINE_SUITE_LOCK_DIR="${CLAWDLINE_SUITE_LOCK_DIR:-${CLAWDLINE_LEASE_DIR:-/tmp/clawdline-suite.lock}}"
 # `pgrep -x` matches the executable's own name. Measured against a live compile here rather than
 # assumed: a running `swiftc` shows up as `swift-frontend` under `pgrep -x`, while `ps -A -o comm=`
 # prints the whole toolchain path and matches no bare name at all.
@@ -525,8 +539,8 @@ CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN="${CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN:-
 CLAWDLINE_SUITE_LOCK_RENEW_SECONDS="${CLAWDLINE_SUITE_LOCK_RENEW_SECONDS:-20}"
 # Three renewals of slack. A reader prefers the deadline the holder recorded in its own record, so a
 # holder that renews more slowly than this reader expects is never declared dead by that reader.
-CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS="${CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS:-60}"
-CLAWDLINE_SUITE_LOCK_WAIT_SECONDS="${CLAWDLINE_SUITE_LOCK_WAIT_SECONDS:-3600}"
+CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS="${CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS:-${CLAWDLINE_LEASE_DEADLINE_SECONDS:-60}}"
+CLAWDLINE_SUITE_LOCK_WAIT_SECONDS="${CLAWDLINE_SUITE_LOCK_WAIT_SECONDS:-${CLAWDLINE_LEASE_WAIT_SECONDS:-3600}}"
 CLAWDLINE_SUITE_LOCK_POLL_SECONDS="${CLAWDLINE_SUITE_LOCK_POLL_SECONDS:-5}"
 CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS="${CLAWDLINE_SUITE_LOCK_NOTICE_SECONDS:-30}"
 CLAWDLINE_SUITE_LOCK_DONE_FLAG="${CLAWDLINE_SUITE_LOCK_DONE_FLAG:-$CLAWDLINE_SUITE_LOCK_DIR/done}"

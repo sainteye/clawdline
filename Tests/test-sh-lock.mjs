@@ -88,8 +88,12 @@ const ceiling = lines.slice(ceilFirst, ceilLast + 1).join("\n");
 // ---------------------------------------------------------------------------------------------
 // What the block promises about itself, read off test.sh rather than off this file's memory of it.
 
+// The default is asserted as a default rather than as a spelling: the assignment now falls through
+// `build.sh`'s old name before it reaches the literal, so pinning the two as adjacent text would
+// have gone red for the right code. Scenario 25e runs both blocks with nothing set and compares
+// what they actually resolve to, which is the question — one lock, or two.
 check("the lock is the machine-wide directory, by default",
-      /CLAWDLINE_SUITE_LOCK_DIR:-\/tmp\/clawdline-suite\.lock/.test(block));
+      /CLAWDLINE_SUITE_LOCK_DIR="\$\{CLAWDLINE_SUITE_LOCK_DIR:-[^\n]*\/tmp\/clawdline-suite\.lock/.test(block));
 check("and staleness looks for the real compiler by default, not for whatever these tests use",
       /CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN:-swift-frontend/.test(block));
 // `mkdir` is the acquisition because it is atomic; `rename` is the takeover for the same reason.
@@ -1207,7 +1211,18 @@ try {
     //     build-written record that compare was `"" = ""`, always true, with the re-read beside it
     //     carrying the whole swap alone. In the other direction `test.sh` wrote `working=` and the
     //     Swift reader read `work=`, so each side showed an empty working list for the other.
-    const buildKeys = [...buildScript.matchAll(/^\s*printf '([a-z_]+)=%s\\n'/gm)].map((m) => m[1]);
+    //
+    //     **Read out of the record writer, not out of the whole file.** It used to scan every
+    //     `printf 'key=%s\n'` in `build.sh`, which is a claim about the file rather than about the
+    //     writer: the takeover gate writes `pid=` into its own little marker file, and that one
+    //     line arriving anywhere in the script would have been read as a nineteenth record field
+    //     in the wrong place. The function is named and its body is what is scanned.
+    const recordWriterAt = buildScript.indexOf("\nclawdline_lease_record() {\n");
+    const recordWriter = recordWriterAt < 0 ? ""
+        : buildScript.slice(recordWriterAt, buildScript.indexOf("\n}\n", recordWriterAt));
+    check("build.sh's record writer was found, so what follows is not scanning an empty string",
+          recordWriter.length > 500 && /printf 'holder=/.test(recordWriter));
+    const buildKeys = [...recordWriter.matchAll(/^\s*printf '([a-z_]+)=%s\\n'/gm)].map((m) => m[1]);
     check("build.sh writes the record contract, in the contract's order",
           buildKeys.join(",") === RECORD_CONTRACT.join(","));
     // A guard nobody has seen refuse is not a guard: the reading above has to be able to find
@@ -1286,7 +1301,7 @@ try {
         '[ -d "$CLAWDLINE_LEASE_DIR" ] && echo "lock=left" || echo "lock=removed"',
         'rm -rf "$CLAWDLINE_LEASE_DIR"',
     ].join("\n"));
-    const r19 = run(build19, { CLAWDLINE_LEASE_DIR: join(dir, "build.lock") });
+    const r19 = run(build19, { CLAWDLINE_SUITE_LOCK_DIR: join(dir, "build.lock") });
     const buildRecord = readIf(join(dir, "build-record.txt"));
     check("build.sh writes a full record on its first write and refreshes it while it holds",
           /first=0/.test(r19.all) && /again=0/.test(r19.all));
@@ -1481,9 +1496,22 @@ try {
         'sed "s/^token=.*/token=somebody-elses-token/" "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt" > "$LOCK_SCRATCH/r23.txt"',
         'mv "$LOCK_SCRATCH/r23.txt" "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt"',
         'sleep 2.2',
-        '[ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ] && echo "note=written" || echo "note=missing"',
+        // **Three answers, not two, and the file's absence is not one of them on its own.**
+        // This read the note's existence once, after the confirmation, and called it `read` when
+        // the file was gone — which is the same answer a note that was *never written* produces.
+        // A renewer that stopped writing the note would have left this check green while the
+        // check above it went red, and a check that can pass for the wrong reason looks exactly
+        // like one that passed. So `before` is recorded and the pair is what is reported.
+        'if [ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ]; then before=written; else before=missing; fi',
+        'echo "note=$before"',
         'st=0; clawdline_confirm_suite_lock || st=$?; echo "confirm=$st"',
-        '[ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ] && echo "note_after=kept" || echo "note_after=read"',
+        'if [ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ]; then after=kept; else after=gone; fi',
+        'case "$before/$after" in',
+        '  written/gone) echo "note_after=consumed" ;;',
+        '  written/kept) echo "note_after=kept" ;;',
+        '  missing/gone) echo "note_after=never_written" ;;',
+        '  *) echo "note_after=appeared" ;;',
+        'esac',
         'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR"',
     ].join("\n"));
     const r23b = run(note23);
@@ -1492,8 +1520,11 @@ try {
     check("the confirmation repeats it to the run and refuses the second expensive thing",
           /confirm=75/.test(r23b.all)
             && /renewal loop stopped during the guarded section — .*changed hands/.test(r23b.all));
-    check("and the note is consumed, so a later run cannot inherit somebody else's stop reason",
-          /note_after=read/.test(r23b.all));
+    // The verdict is in the line so the reading is visible in a green run too: `consumed` and
+    // `never_written` are different sentences on the screen, where the old `read` was one.
+    const noteVerdict = /note_after=(\S+)/.exec(r23b.all)?.[1] ?? "nothing reported";
+    check(`and the note is consumed, so a later run cannot inherit somebody else's stop reason (read: ${noteVerdict})`,
+          noteVerdict === "consumed");
     check("the note lives outside the lock, which is the directory two of the stop reasons are about",
           /CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE:-\$\{TMPDIR:-\/tmp\}\//.test(block));
 
@@ -1533,7 +1564,7 @@ try {
         'echo "good_mode=[${CLAWDLINE_LEASE_MODE}]"',
         'rm -rf "$CLAWDLINE_LEASE_DIR"',
     ].join("\n"));
-    const r24 = run(build24, { CLAWDLINE_LEASE_DIR: join(dir, "build24.lock") });
+    const r24 = run(build24, { CLAWDLINE_SUITE_LOCK_DIR: join(dir, "build24.lock") });
     check("a build whose first record could not be written refuses rather than compiling",
           /first=1/.test(r24.all) && /refusing to compile behind a lock/.test(r24.all));
     check("and gives the directory back, so no unclearable lock is left on the machine",
@@ -1552,6 +1583,191 @@ try {
           directTakes.length === 1
             && directTakes.every((m) => /clawdline_lease_first_record/.test(m[1])
                                         && !/clawdline_lease_record analysing/.test(m[1])));
+
+    // -----------------------------------------------------------------------------------------
+    // 25. **`build.sh` can take a dead holder's lock, under exactly the rules `test.sh` uses.**
+    //
+    //     It could not. `grep -c 'takeover\|stale\|reclaim'` answered 1 for `build.sh` and 25 for
+    //     `test.sh`, and the two words in `build.sh` were in a comment. Its acquire loop had two
+    //     outcomes: `mkdir` succeeds, or wait out `CLAWDLINE_LEASE_WAIT_SECONDS` — 1800 by
+    //     default — and refuse. So a `./test.sh` killed with SIGKILL, or a Mac force-rebooted by
+    //     Jetsam mid-suite (which is the event this whole lock exists for), left
+    //     `/tmp/clawdline-suite.lock` behind; the next `./test.sh` reclaimed it after one 60s
+    //     renewal deadline and the next `./build.sh` printed the holder, waited half an hour and
+    //     declined to build. "The machine crashed and needs rebuilding" is the path
+    //     `docs/machine-resource-scheduling.md` names as the one that has to work.
+    //
+    //     The takeover is `test.sh`'s, copied rather than reinvented, so what is checked here is
+    //     the same four things: it reclaims a dead holder's lock, it never reclaims one while a
+    //     compiler is running, it never reclaims one that is still beating, and two waiters cannot
+    //     both reclaim the same one.
+    const buildWaiter = shell("s25-waiter.sh", buildBlock, [
+        'st=0',
+        'clawdline_lease_acquire || st=$?',
+        'echo "acquire=$st"',
+        'if [ "$st" = 0 ]; then',
+        '  echo "enter ${LOCK_ID:-build}" >> "$LOCK_EVENTS"',
+        '  sleep "${LOCK_HOLD:-0.4}"',
+        '  echo "leave ${LOCK_ID:-build}" >> "$LOCK_EVENTS"',
+        '  echo "ENTERED"',
+        '  clawdline_lease_release',
+        'fi',
+        'exit "$st"',
+    ].join("\n"));
+
+    // 25a. The crash the lock exists for: a holder that will never renew again, and a clear machine.
+    const lock25 = join(dir, "build25.lock");
+    const orch25 = shell("s25.sh", PRELUDE, [
+        'craft_lock "$CLAWDLINE_SUITE_LOCK_DIR" "$(dead_pid)" "$(( $(date +%s) - 600 ))" crafted-token-25 2',
+        `capture "$LOCK_SCRATCH/b25.log" build env CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=4 "${buildWaiter}"`,
+        '[ -d "$CLAWDLINE_SUITE_LOCK_DIR" ] && echo "lock=present" || echo "lock=gone"',
+        '[ -d "$CLAWDLINE_SUITE_LOCK_DIR.takeover" ] && echo "gate=left" || echo "gate=cleared"',
+    ].join("\n"));
+    const r25 = run(orch25, { CLAWDLINE_SUITE_LOCK_DIR: lock25, LOCK_EVENTS: join(dir, "e25") });
+    const b25 = readIf(join(dir, "b25.log"));
+    check("build.sh takes over a lock whose holder stopped renewing and compiles",
+          /build=0/.test(b25) && /took over/.test(b25) && /ENTERED/.test(b25));
+    check("and it says what it read before it did, rather than removing a directory in silence",
+          /past its own 2s deadline, and no lockprobe\d+ is running anywhere/.test(b25));
+    check("and the takeover gate is not left behind for the next waiter to trip over",
+          /gate=cleared/.test(r25.all));
+    check("and the lock it then took is given back when the build ends",
+          /lock=gone/.test(r25.all));
+
+    // 25b. The physical backstop, which is never waived — the half a `stale` record cannot supply.
+    //      A holder that has stopped renewing while its compiler is still orphaned on the machine
+    //      is still spending the 46 GB this lock rations.
+    const lock25b = join(dir, "build25b.lock");
+    const orch25b = shell("s25b.sh", PRELUDE, [
+        'c=$(fake_compiler 30)',
+        'sleep 0.3',
+        'craft_lock "$CLAWDLINE_SUITE_LOCK_DIR" "$(dead_pid)" "$(( $(date +%s) - 600 ))" crafted-token-25b 2',
+        `capture "$LOCK_SCRATCH/b25b.log" build env CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=2 "${buildWaiter}"`,
+        'echo "orphan_pid=$c"',
+        'ps -p "$c" -o pid= >/dev/null 2>&1 && echo "orphan=alive" || echo "orphan=gone"',
+        '[ -d "$CLAWDLINE_SUITE_LOCK_DIR" ] && echo "lock=present" || echo "lock=gone"',
+        'kill "$c" 2>/dev/null || true; wait "$c" 2>/dev/null || true',
+    ].join("\n"));
+    const r25b = run(orch25b, { CLAWDLINE_SUITE_LOCK_DIR: lock25b, LOCK_EVENTS: join(dir, "e25b") });
+    const b25b = readIf(join(dir, "b25b.log"));
+    const orphan25b = /^orphan_pid=(\d+)$/m.exec(r25b.all);
+    check("a dead holder with a live compiler is not stale to build.sh either, and it refuses",
+          /build=1/.test(b25b) && !/ENTERED/.test(b25b) && !/took over/.test(b25b)
+            && /lock=present/.test(r25b.all));
+    check("the refusal names the orphan by pid, so a person can deal with it",
+          orphan25b !== null && b25b.includes(orphan25b[1]));
+    check("and nothing was killed to make room",
+          /orphan=alive/.test(r25b.all));
+
+    // 25c. The mirror image, across the two writers: a `test.sh` that is alive and renewing between
+    //      two compiles has no compiler running at that moment, and `build.sh` must read its record
+    //      and wait. This is the one scenario where the record is written by one script and judged
+    //      by the other, which is the whole reason the contract is a contract.
+    const lock25c = join(dir, "build25c.lock");
+    const holder25c = holderScript("s25c-holder.sh", [
+        'clawdline_suite_lock_phase idle-holding',
+        'touch "$LOCK_SCRATCH/held25c"',
+        'while [ ! -f "$LOCK_SCRATCH/go25c" ]; do sleep 0.05; done',
+    ].join("\n"));
+    const orch25c = shell("s25c.sh", PRELUDE, [
+        `"${holder25c}" > "$LOCK_SCRATCH/holder25c.log" 2>&1 &`,
+        'h=$!',
+        'while [ ! -f "$LOCK_SCRATCH/held25c" ]; do sleep 0.05; done',
+        'pgrep -x "$LOCK_PATTERN" >/dev/null 2>&1 && echo "compilers=some" || echo "compilers=none"',
+        `capture "$LOCK_SCRATCH/b25c.log" build env CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=4 "${buildWaiter}"`,
+        'touch "$LOCK_SCRATCH/go25c"',
+        'wait "$h"',
+    ].join("\n"));
+    const r25c = run(orch25c, { CLAWDLINE_SUITE_LOCK_DIR: lock25c, LOCK_EVENTS: join(dir, "e25c") });
+    const b25c = readIf(join(dir, "b25c.log"));
+    check("a test.sh holder that is alive and renewing keeps the lock against build.sh, with no compiler running",
+          /compilers=none/.test(r25c.all) && /build=1/.test(b25c) && !/ENTERED/.test(b25c)
+            && !/took over/.test(b25c));
+    check("and build.sh waited long enough for a renewal deadline to have expired had renewal not happened",
+          /gave up waiting 4s/.test(b25c));
+    check("and it reads the other writer's phase and compile clock rather than guessing from the machine",
+          /phase idle-holding for \d+s/.test(b25c)
+            && /(last compiling \d+s|nothing has compiled under this lock yet)/.test(b25c));
+
+    // 25d. Two builds that judge the same lock stale must not both walk in. `rename` picks one; the
+    //      gate and the re-read are what stop a judgement older than a whole takeover from renaming
+    //      away a lock somebody has since acquired legitimately.
+    const lock25d = join(dir, "build25d.lock");
+    const events25d = join(dir, "e25d");
+    const orch25d = shell("s25d.sh", PRELUDE, [
+        'craft_lock "$CLAWDLINE_SUITE_LOCK_DIR" "$(dead_pid)" "$(( $(date +%s) - 600 ))" crafted-token-25d 2',
+        `capture "$LOCK_SCRATCH/b25d-a.log" a env LOCK_ID=A CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=6 "${buildWaiter}" &`,
+        'p1=$!',
+        `capture "$LOCK_SCRATCH/b25d-b.log" b env LOCK_ID=B CLAWDLINE_SUITE_LOCK_WAIT_SECONDS=6 "${buildWaiter}" &`,
+        'p2=$!',
+        'wait "$p1"; wait "$p2"',
+    ].join("\n"));
+    run(orch25d, { CLAWDLINE_SUITE_LOCK_DIR: lock25d, LOCK_EVENTS: events25d, LOCK_HOLD: "0.6" });
+    const log25d = readIf(events25d);
+    check("two builds that both judge one lock stale are still serialised",
+          /enter /.test(log25d) && !overlapped(log25d));
+    check("and both of them get in, one after the other, rather than one being refused outright",
+          (log25d.match(/^enter /gm) || []).length === 2);
+
+    // 25e. **One lock, one set of dials.** `build.sh` read `CLAWDLINE_LEASE_DIR` and
+    //      `CLAWDLINE_LEASE_DEADLINE_SECONDS`; `test.sh` read `CLAWDLINE_SUITE_LOCK_*`. The
+    //      defaults agreed, so nothing ever said otherwise — and `heartbeat_deadline` is a record
+    //      field *both* writers fill in and every reader prefers to its own, so tuning one spelling
+    //      put two different numbers in one field. What is checked is the resolution, by running
+    //      it: the ambient values this file pins are removed so the blocks answer for themselves.
+    const runBare = (file, env = {}) => {
+        const bare = { ...baseEnv, ...env };
+        for (const key of Object.keys(bare)) {
+            if (/^CLAWDLINE_(SUITE_LOCK|LEASE)_(DIR|DEADLINE_SECONDS|WAIT_SECONDS)$/.test(key)
+                && !(key in env)) delete bare[key];
+        }
+        const r = spawnSync("/bin/bash", [file], { encoding: "utf8", env: bare, cwd: dir });
+        return `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    };
+    const askTest = shell("s25e-test.sh", functionsOnly,
+        'echo "dir=$CLAWDLINE_SUITE_LOCK_DIR"; echo "deadline=$CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS"');
+    const askBuild = shell("s25e-build.sh", buildBlock,
+        'echo "dir=$CLAWDLINE_LEASE_DIR"; echo "deadline=$CLAWDLINE_LEASE_DEADLINE_SECONDS"');
+    const bareTest = runBare(askTest);
+    const bareBuild = runBare(askBuild);
+    check("told nothing, both scripts point at the same machine-wide lock and the same deadline",
+          /dir=\/tmp\/clawdline-suite\.lock/.test(bareTest) && /deadline=60/.test(bareTest)
+            && /dir=\/tmp\/clawdline-suite\.lock/.test(bareBuild) && /deadline=60/.test(bareBuild));
+    const legacy = { CLAWDLINE_LEASE_DIR: join(dir, "alias.lock"), CLAWDLINE_LEASE_DEADLINE_SECONDS: "37" };
+    check("told only build.sh's old names, both scripts follow them — which is what closes the field",
+          new RegExp(`dir=${join(dir, "alias.lock")}`).test(runBare(askTest, legacy))
+            && /deadline=37/.test(runBare(askTest, legacy))
+            && new RegExp(`dir=${join(dir, "alias.lock")}`).test(runBare(askBuild, legacy))
+            && /deadline=37/.test(runBare(askBuild, legacy)));
+    const both = { ...legacy, CLAWDLINE_SUITE_LOCK_DIR: join(dir, "canonical.lock"),
+                   CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS: "41" };
+    check("and when both spellings are set the canonical one wins, on both sides",
+          new RegExp(`dir=${join(dir, "canonical.lock")}`).test(runBare(askTest, both))
+            && /deadline=41/.test(runBare(askTest, both))
+            && new RegExp(`dir=${join(dir, "canonical.lock")}`).test(runBare(askBuild, both))
+            && /deadline=41/.test(runBare(askBuild, both)));
+    // The field itself, written by each writer in turn against one directory. This is the check the
+    // rename exists for: a reader prefers `heartbeat_deadline` to its own number, so two writers
+    // disagreeing here is two runs with different ideas of when the other has died.
+    const aliasLock = join(dir, "alias-record.lock");
+    const aliasTest = holderScript("s25e-test-record.sh",
+        'cp "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt" "$LOCK_SCRATCH/alias-test.txt"');
+    runBare(aliasTest, { CLAWDLINE_LEASE_DIR: aliasLock, CLAWDLINE_LEASE_DEADLINE_SECONDS: "37" });
+    const aliasBuild = shell("s25e-build-record.sh", buildBlock, [
+        'CLAWDLINE_LEASE_STARTED=$(date +%s)',
+        'CLAWDLINE_LEASE_ID="build-alias-25e"',
+        'CLAWDLINE_LEASE_DONE="$LOCK_SCRATCH/done25e"',
+        'mkdir -p "$CLAWDLINE_LEASE_DIR"',
+        'clawdline_lease_first_record',
+        'cp "$CLAWDLINE_LEASE_DIR/holder.txt" "$LOCK_SCRATCH/alias-build.txt"',
+        'rm -rf "$CLAWDLINE_LEASE_DIR"',
+    ].join("\n"));
+    runBare(aliasBuild, { CLAWDLINE_LEASE_DIR: aliasLock, CLAWDLINE_LEASE_DEADLINE_SECONDS: "37" });
+    const aliasTestRecord = readIf(join(dir, "alias-test.txt"));
+    const aliasBuildRecord = readIf(join(dir, "alias-build.txt"));
+    check("and the record both of them write carries one heartbeat_deadline, not one each",
+          /^heartbeat_deadline=37$/m.test(aliasTestRecord)
+            && /^heartbeat_deadline=37$/m.test(aliasBuildRecord));
 
     if (failures > 0) {
         console.log("    last orchestrator stderr:", JSON.stringify(r13.err.slice(0, 400)));
