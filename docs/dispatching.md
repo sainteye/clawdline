@@ -176,12 +176,39 @@ is invisible to every safety mechanism in this file, which is worse than a sessi
 That is also the boundary of what a standing session may touch: **with no follow-up task carrying
 `claims`, it must not write to the shared tree at all.** A review session satisfies that by
 construction, because a reviewer produces findings and not bytes. An odd-jobs session does not,
-which is the whole reason the attached-task mechanism has to exist before one is kept alive.
+which is the whole reason it may only be kept alive where the attached-task mechanism can carry its
+work.
 
-Until that mechanism is in `HEAD`, the honest approximation is the batch above: one ordinary task
-per emptied pool, one ordinary task per review round. Do not describe a session kept alive by hand
-as a standing session, and do not claim Clawdline can reattach work to an existing session before
-the field that does it has landed.
+<!-- clawdline-attached-follow-up:v1 -->
+
+**That mechanism is in `HEAD`, and has been since 2026-08-28** — `2f6f0a1a`, `26388e3f` and
+`1b7406e5`. `task.json` takes an optional `attach_session`: the terminal-neutral id of a Session
+Clawdline itself opened for a task, with launch-time access to the whole task root. The dispatch is
+ordinary in every other respect — a fresh id and secret, its own task directory and `CHILD.md`,
+`claims`, `serialize`, `timeout_minutes`, usage, `result.json`, a landing record and `inflight`
+visibility — and Clawdline types its first line into that existing session instead of opening a
+tab. The public record carries `attached: true` and the `attach_session` it went to.
+
+Attachment fails closed, before a character is typed, and every refusal is typed:
+`attach_session_not_found` (404), `attach_unsupported` (409 — the id resolves to a plain shell with
+no assistant to read a briefing), `attach_not_managed` (409 — the Session has no task role, or its
+recorded launch grant covers only its own task directory, so it cannot read a new follow-up's
+sibling `CHILD.md`), `attach_assistant_mismatch` (409), `attach_session_occupied` (409 — one live
+Clawdline task per attached session), `attach_session_busy` (409 — a confirmed menu; nothing was
+typed and the same body can be retried) and `attach_delivery_failed` (502 — registered, but the
+first line could not be typed, and the record exists in `spawn_failed`). The full table is in
+[`docs/api.md`](api.md#post-v1orchestratortasks); the mechanism is in
+[`docs/orchestrator.md`](orchestrator.md#attached-follow-up-tasks).
+
+So the approximation this paragraph used to prescribe — one ordinary task per emptied pool, one per
+review round — is no longer the honest answer, and the sentence prescribing it outlived the thing it
+was waiting for by seven days: it told every root to avoid a shipped feature from 2026-08-28 until
+2026-09-04, because a paragraph describing an absence has nothing in it that goes red when the
+absence ends. What survives that sentence is its other half. **A tab you keep alive by typing into
+it is not a standing session** — it holds no task record, no claims and no completion signal — and a
+session Clawdline never opened for a task is refused `attach_not_managed` rather than becoming one.
+
+<!-- /clawdline-attached-follow-up:v1 -->
 
 Declare every path a task may write in `claims`, relative to `project_dir`:
 

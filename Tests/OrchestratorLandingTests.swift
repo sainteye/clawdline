@@ -1260,6 +1260,151 @@ group("only broker-verified target landing evidence can produce the double check
           Orchestrator.isBrokerVerifiedTargetLanding(verified))
 }
 
+// The last box of the delivery loop had never once been `done` on this machine: 23 landing nodes,
+// none of them with a task, because landing belongs to the root and a root does not dispatch
+// itself — while 66 landing receipts sat on the delivery tasks beside them. These read the receipt
+// where the root writes it, and say what still must not count as one.
+group("a landing node reads the receipt the root actually wrote, on the delivery beside it") {
+    func node(_ id: String, _ kind: Orchestrator.GraphNodeKind,
+              _ dependsOn: [String]) -> Orchestrator.GraphNode {
+        Orchestrator.GraphNode(id: id, title: id, kind: kind, dependsOn: dependsOn,
+                               acceptance: ["\(id) is done"])
+    }
+    func graph(_ id: String, _ nodes: [Orchestrator.GraphNode],
+               current: String) -> Orchestrator.PlanningGraph {
+        Orchestrator.PlanningGraph(id: id, destination: "Landed on main", currentNode: current,
+                                   nodes: nodes, unknowns: [], outOfScope: [])
+    }
+    func landedReceipt(_ commit: String) -> Orchestrator.Landing {
+        Orchestrator.Landing(state: .landed, target: "main", delivery: "branch",
+                             ownerRootKey: "00000000", since: Date(timeIntervalSince1970: 1),
+                             commit: commit, note: nil,
+                             landedAt: Date(timeIntervalSince1970: 2),
+                             verificationOrigin: "local_target_branch",
+                             verifiedCommit: commit, verifiedTargetCommit: commit)
+    }
+    var serial = 0
+    func hold(_ nodeID: String, in planningGraph: Orchestrator.PlanningGraph,
+              state: Orchestrator.State = .success,
+              landing: Orchestrator.Landing? = nil,
+              review: Orchestrator.ReviewReceipt? = nil,
+              verification: Orchestrator.Verification? = nil) {
+        serial += 1
+        let hex = String(format: "%012x", serial)
+        var task = Orchestrator.Task(
+            id: "00000000-0000-4000-8000-\(hex)", state: state, kind: nodeID, title: nodeID,
+            assistant: .claude, projectDir: "/repo", timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: TimeInterval(serial)),
+            graph: graph(planningGraph.id, planningGraph.nodes, current: nodeID),
+            secretHash: String(repeating: "0", count: 64))
+        task.landing = landing
+        task.review = review
+        task.verification = verification
+        Orchestrator.holdScheduleTaskForTesting(task)
+    }
+    func state(of nodeID: String, in planningGraph: Orchestrator.PlanningGraph) -> String {
+        let record = Orchestrator.planningGraphRecord(planningGraph,
+                                                      taskIndex: Orchestrator.graphTaskIndex())
+        let rows = record["nodes"] as? [[String: Any]] ?? []
+        return rows.first(where: { $0["id"] as? String == nodeID })?["state"] as? String ?? ""
+    }
+
+    // The ordinary shape, and the one every graph on this machine was stuck in: delivery, review,
+    // verification, landing. Nothing depends on the landing node directly, so the receipt has to
+    // be found through two nodes that never carry one.
+    Orchestrator.forget()
+    let ordinaryNodes = [node("build", .delivery, []), node("review", .review, ["build"]),
+                         node("verify", .verification, ["review"]),
+                         node("land", .landing, ["verify"])]
+    let ordinary = graph("11111111-1111-4111-8111-111111111111", ordinaryNodes, current: "land")
+    hold("build", in: ordinary)
+    check("a delivery with no landing receipt leaves the landing node where it was",
+          state(of: "land", in: ordinary) == "blocked")
+    Orchestrator.forget()
+    hold("build", in: ordinary, landing: landedReceipt(String(repeating: "a", count: 40)))
+    check("the landing node is done once the delivery it lands carries a landed receipt",
+          state(of: "land", in: ordinary) == "done")
+    check("finding it through a review and a verification needs neither to have passed",
+          state(of: "review", in: ordinary) == "ready"
+              && state(of: "verify", in: ordinary) == "blocked")
+
+    // What a landed receipt on the delivery must not be allowed to say.
+    Orchestrator.forget()
+    let pairNodes = [node("swift-core", .delivery, []), node("web-surface", .delivery, []),
+                     node("land", .landing, ["swift-core", "web-surface"])]
+    let pair = graph("22222222-2222-4222-8222-222222222222", pairNodes, current: "land")
+    hold("swift-core", in: pair, landing: landedReceipt(String(repeating: "b", count: 40)))
+    check("a second declared delivery that never ran is not landed by the first one's receipt",
+          state(of: "land", in: pair) == "blocked")
+    hold("web-surface", in: pair)
+    check("a second delivery that ran and was never landed leaves the node dispatchable, not done",
+          state(of: "land", in: pair) == "ready")
+    hold("web-surface", in: pair, landing: landedReceipt(String(repeating: "c", count: 40)))
+    check("both deliveries landed is what closes a graph that declared two",
+          state(of: "land", in: pair) == "done")
+
+    // A correction is contingent — a review demands one or it does not — so an undispatched
+    // correction node is nothing to land. Treating it as missing evidence would reproduce the
+    // original bug one node further along, in every graph whose review found nothing.
+    Orchestrator.forget()
+    let repairNodes = [node("build", .delivery, []), node("review", .review, ["build"]),
+                       node("correct", .correction, ["review"]),
+                       node("land", .landing, ["correct"])]
+    let repair = graph("33333333-3333-4333-8333-333333333333", repairNodes, current: "land")
+    hold("build", in: repair, landing: landedReceipt(String(repeating: "d", count: 40)))
+    check("a correction the review never demanded does not hold the landing node open",
+          state(of: "land", in: repair) == "done")
+    hold("correct", in: repair)
+    check("a correction that did run and was not landed takes the node back off done",
+          state(of: "land", in: repair) == "ready")
+
+    // Two graphs in the record reach their landing node through a review and nothing else. An
+    // "every producer landed" rule is vacuously true there, and would report a landing that has
+    // no evidence at all behind it.
+    Orchestrator.forget()
+    let emptyNodes = [node("review", .review, []), node("land", .landing, ["review"])]
+    let empty = graph("44444444-4444-4444-8444-444444444444", emptyNodes, current: "land")
+    hold("review", in: empty)
+    check("a landing node with nothing that produces bytes under it is not done",
+          state(of: "land", in: empty) == "blocked")
+
+    // Three landed receipts in the record belong to tasks that timed out or failed after a root
+    // had already integrated their work. The receipt is the assertion that the bytes are on the
+    // target; the producing task's own exit is a different fact.
+    Orchestrator.forget()
+    hold("build", in: ordinary, state: .timeout,
+         landing: landedReceipt(String(repeating: "e", count: 40)))
+    check("a landed receipt still counts when the task that produced it timed out",
+          state(of: "land", in: ordinary) == "done" && state(of: "build", in: ordinary) == "failed")
+
+    // The published control sheet and the admission gate read the same derivation, so a landed
+    // graph refuses a second landing dispatch instead of inviting one.
+    var completeCode = ""
+    if case .refused(_, let code, _, _) = Orchestrator.graphAdmissionRefusal(
+        graph(ordinary.id, ordinaryNodes, current: "land"),
+        taskID: "55555555-5555-4555-8555-555555555555") {
+        completeCode = code
+    }
+    expect("admission calls a landed landing node complete rather than dispatchable",
+           completeCode, "graph_node_complete")
+
+    // The review threshold is not what this change touches, and this is the check that says so.
+    Orchestrator.forget()
+    let findings = Orchestrator.ReviewAxisName.allCases.map {
+        Orchestrator.ReviewAxis(
+            axis: $0, status: .findings,
+            findings: [Orchestrator.ReviewFinding(id: "f1", severity: .minor,
+                                                  summary: "one finding", evidence: ["line 1"])])
+    }
+    hold("build", in: ordinary, landing: landedReceipt(String(repeating: "f", count: 40)))
+    hold("review", in: ordinary,
+         review: Orchestrator.ReviewReceipt(verdict: .changesRequired, axes: findings))
+    check("a changes_required review is still failed beneath a landed landing node",
+          state(of: "review", in: ordinary) == "failed"
+              && state(of: "land", in: ordinary) == "done")
+    Orchestrator.forget()
+}
+
 group("the in-flight list answers what a worktree hides") {
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)

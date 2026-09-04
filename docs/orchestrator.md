@@ -543,12 +543,25 @@ destination, nodes, unknowns and scope while that graph remains in the bounded r
 with dependencies is dispatchable only when each
 dependency has durable completion evidence: ordinary nodes need task `success`, review nodes need
 a `safe_to_land` review receipt, verification nodes need `verification.last == pass`, and landing
-nodes need a verified `landed` receipt. The caller
+nodes need a `landed` receipt. The caller
 cannot send a `ready` flag. The broker derives `ready`, `blocked`, `active`, `done`, `failed`, and
 `awaiting_landing`, publishes the current `frontier`, and fails closed with
 `graph_frontier_blocked`, `graph_dependency_failed`, `graph_definition_conflict`,
 `graph_node_active`, or `graph_node_complete`. A completed node cannot be replayed into `active`;
 model a correction as a separate node.
+
+**A landing node's receipt is on the delivery, not on the landing node.** Landing is the root's, and
+a root does not dispatch a task to itself, so that node normally holds no task at all — which is why
+it read `planned` forever while the landing it was waiting for was already recorded a node away. It
+reaches `done` when every `delivery` node it transitively depends on has a task carrying
+`landing.state == landed`, and `correction` nodes count the same way once they have a task; a
+correction that was never dispatched is a repair no review demanded, not evidence that is missing.
+The derivation needs at least one such receipt, so a landing node with nothing under it that
+produces bytes stays `blocked` instead of being satisfied by an empty conjunction, and it does not
+consult the producing task's own outcome — a root records the receipt after proving the commit is
+contained by the named local target, and work has been landed after the task that produced it timed
+out. A landing node that does have a task of its own reads that task's `landed` receipt first and
+falls back to the same derivation, so `awaiting_landing` now means neither record exists.
 
 Both forms go near the top of `CHILD.md`, above even the language rule, because they are context
 for every other line. A child that knows what its output feeds writes something joinable; a child

@@ -157,8 +157,23 @@ context 也會滿。所以會跑很久、或會動到好幾個檔的一片，要
 `POST /v1/sessions/:id/send` 不算：那是配對裝置的路由，不會產生任何 task 記錄，用它餵進去的工作
 沒有 claims、沒有完成訊號、不會出現在 `inflight`、也不算進任何用量。所以**沒有帶 `claims` 的
 follow-up task，常駐 session 就完全不能寫共享 tree**——review session 天生符合（它只產出 findings
-不產出 bytes），odd-jobs session 不符合。在那個機制進 `HEAD` 之前，誠實的近似作法是「一批出清派
-一件 task、一輪 review 派一件 task」；用手打字餵著的分頁不是常駐 session，也不要這樣講。
+不產出 bytes），odd-jobs session 不符合。
+
+<!-- clawdline-attached-follow-up:v1 -->
+**那個機制 2026-08-28 就落地了，所以直接用它，不要再用近似作法。** `task.json` 可以帶
+`attach_session`：一個 Clawdline 自己為某個 task 開、而且啟動時就拿到整個 task root 存取權的
+terminal-neutral session id。那筆 task 其他地方完全一樣——全新的 id 與 secret、自己的 task 目錄與
+`CHILD.md`、`claims`、`serialize`、`timeout_minutes`、用量、`result.json`、landing 記錄、以及
+`inflight` 可見度——只是第一句被打進那個既有 session，而不是開一個新分頁；公開記錄會帶
+`attached: true`。它在打出任何一個字之前就 fail closed，而且每一種拒絕都是 typed：
+`attach_session_not_found`（404）、`attach_unsupported`（那個 id 是沒有 assistant 的純 shell）、
+`attach_not_managed`（那個 session 沒有 task 角色，或它被記錄下來的啟動授權只涵蓋自己那個 task
+目錄，因此讀不到新 follow-up task 隔壁的 `CHILD.md`）、`attach_assistant_mismatch`、
+`attach_session_occupied`（一個 attached session 同時只能有一筆 live task）、
+`attach_session_busy`（確認過它正在顯示選單——什麼都沒打，同一份 body 可以重送）、
+`attach_delivery_failed`（已登記，但第一句打不進去）。完整的表在 `docs/api.md`。
+用手打字餵著的分頁仍然不是常駐 session——Clawdline 會以 `attach_not_managed` 拒絕它——也不要這樣講。
+<!-- /clawdline-attached-follow-up:v1 -->
 
 **訊息不是派工。** 一個 live assistant 只是要向另一個回報狀態、finding 或協調事項，而且沒有附帶
 新工作或共享 tree 所有權時，用 `POST /v1/orchestrator/messages`。不要手寫 sender 前綴再走
