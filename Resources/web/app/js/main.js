@@ -37,6 +37,7 @@ import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
 import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
+import { bindProjectsPage } from "./view/projects.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import "./view/markdown.js";
 import "./view/composer.js";
@@ -203,6 +204,46 @@ var byId = function (id) { return document.getElementById(id); };
 // `usage-open` is not in this table any more. It is the drawer's Usage row now, and reaching the
 // page is the drawer's business; the portfolio module stopped having an opinion about how somebody
 // got to it. The id stays on that row — `usage.css` styles it and the Usage guard looks for it.
+/* The Projects page. Two reads, and both of them are absent on the Cloud path — `/v1/places`
+   already was, and the worktree join is deliberately not in the paired viewer's read vocabulary
+   because its subject is a Project and every read there carries a session. So the transport is
+   handed over as thunks and a `carries` question, all three asked when the page is used: `api` is
+   a live binding the entry point fills in, and on the Cloud path it is filled in twice. */
+var projects = bindProjectsPage({
+    "projects": byId("projects"), "sidebar": byId("sidebar"),
+    "projects-list-view": byId("projects-list-view"),
+    "projects-detail-view": byId("projects-detail-view"),
+    "projects-title": byId("projects-title"), "projects-count": byId("projects-count"),
+    "projects-status": byId("projects-status"), "projects-rows": byId("projects-rows"),
+    "projects-back": byId("projects-back"),
+    "project-mark": byId("project-mark"), "project-name": byId("project-name"),
+    "project-path": byId("project-path"), "project-status": byId("project-status"),
+    "project-truncated": byId("project-truncated"),
+    "project-delivered": byId("project-delivered"),
+    "project-delivered-count": byId("project-delivered-count"),
+    "project-delivered-title": byId("project-delivered-title"),
+    "project-delivered-say": byId("project-delivered-say"),
+    "project-delivered-list": byId("project-delivered-list"),
+    "project-delivered-none": byId("project-delivered-none"),
+    "project-none": byId("project-none"), "project-groups": byId("project-groups"),
+    "project-excluded": byId("project-excluded"),
+    "project-unattributed": byId("project-unattributed"),
+    "project-unattributed-title": byId("project-unattributed-title"),
+    "project-unattributed-say": byId("project-unattributed-say"),
+    "project-read": byId("project-read")
+}, {
+    carries: function () {
+        return typeof api.places === "function" && typeof api.projectWorktrees === "function";
+    },
+    places: function () { return api.places(); },
+    projectWorktrees: function (path) { return api.projectWorktrees(path); },
+    // The same seam the Feature table uses, and for the same reason: `view/projects.js` imports
+    // nothing but the words, because `core/pixels.js` reaches `window` while it is being
+    // evaluated and this module is exercised whole in Node by Tests/web-projects.mjs.
+    drawIcon: drawIcon, tint: tint,
+    navigate: function (name) { Pages.go(name); }
+});
+
 var usage = bindUsagePortfolio({
     "usage-analytics": byId("usage-analytics"),
     "usage-close": byId("usage-close"), "usage-overview": byId("usage-overview"),
@@ -259,6 +300,8 @@ Pages.bind({
     focusFallback: "brand",
     pages: [
         { name: "sessions", element: byId("app") },
+        { name: "projects", element: byId("projects"), focus: "projects-title",
+          enter: function () { projects.enter(); }, leave: function () { projects.leave(); } },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",
           enter: function () { usage.enter(); }, leave: function () { usage.leave(); } },
         { name: "settings", element: byId("settings"), focus: "settings-close",

@@ -85,6 +85,13 @@ export function paintStatic() {
     text(els["nav-sessions"], T.webSessions);
     text(els["usage-open"], T.webUsage);
     text(els["nav-settings"], T.webSettings);
+    // The Projects page's own furniture: the two lines that are there before any answer is, and
+    // the way back out of a Project. The chevron is drawn rather than typed, the way the
+    // transcript's back button does it — it points the way back whichever language is beside it.
+    text(els["nav-projects"], T.webProjects);
+    text(els["projects-title"], T.webProjects);
+    text(els["projects-lede"], T.webProjectsLede);
+    text(els["projects-back"], "\u2039 " + T.webProjects);
     text(els["settings-title"], T.webSettings);
     text(els["settings-notify-title"], T.webSettingsNotify);
     text(els["settings-assistant-icons-title"], T.webSettingsAssistantIcons);

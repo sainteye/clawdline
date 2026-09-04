@@ -475,6 +475,59 @@ export var Mock = (function () {
         { id: "7a2c9e46b1d05f38", label: "website", path: "/Users/you/code/website", icon: null },
         { id: "e51b7d02c4a86f19", label: "notes", path: "/Users/you/tmp/notes", icon: null }
     ];
+    /* What one Project's worktrees look like once the ledger is joined at read time: only the
+       ones carrying an accepted Feature head, which is why there are eight here and thirty-one
+       more counted in `excluded` below. The proportions are the ones measured on the machine
+       this was written on — delivered is the largest group, and it is the whole reason the page
+       has a shape. Ids are the task UUIDs that name the checkouts; there is no path in this
+       payload and no branch either, by design. */
+    function feature(id, label, outcome, runs, first, last) {
+        return { id: id, label: label, outcome: outcome, runs: runs, tasks: [], liveTasks: [],
+                 taskStates: [], landingStates: [], firstSeenAt: first, lastSeenAt: last };
+    }
+    function worktree(id, outcome, runs, label, first, last, states, landings) {
+        return { id: id, outcome: outcome, runs: runs, tasks: [id], liveTasks: [],
+                 taskStates: states, landingStates: landings || [],
+                 firstSeenAt: first, lastSeenAt: last,
+                 features: [feature("feature-" + id.slice(0, 8), label, outcome, runs, first, last)] };
+    }
+    var worktreesByPath = {
+        "/Users/you/code/clawdline": [
+            worktree("b1103ab1-6f2c-41d8-9a70-3e5c17d0ba49", "delivered", 2,
+                     "Clawdfather: machine coordinator", "2026-09-01T09:08:09Z", "2026-09-01T09:13:12Z",
+                     ["spawning", "success"]),
+            worktree("4d92c7e0-1b53-4a86-b2f1-7c08e5d41a63", "delivered", 5,
+                     "The schedules page", "2026-08-28T02:41:00Z", "2026-08-29T18:02:44Z",
+                     ["success"]),
+            worktree("7a15fe38-90c4-4d21-8e07-2b6491cf0d55", "delivered", 3,
+                     "Push, and the one lever that reaches a stale page", "2026-08-24T11:20:05Z",
+                     "2026-08-24T15:44:19Z", ["success"], ["pending"]),
+            worktree("2ef96bc1-13ac-41c9-9cdb-b709b3b56d09", "delivered", 1,
+                     "Review the close confirmation", "2026-08-19T07:02:31Z", "2026-08-19T07:58:00Z",
+                     ["failure"], ["abandoned"]),
+            worktree("9c077b24-67a1-4a93-ac34-40fee4c97851", "landed", 4,
+                     "The sidebar, and which page", "2026-09-04T03:10:00Z", "2026-09-04T11:35:00Z",
+                     ["success"], ["landed"]),
+            worktree("f0eedc18-2a77-4b90-8c31-5d0ae6b2f947", "landed", 6,
+                     "Usage Portfolio", "2026-08-11T05:00:00Z", "2026-08-13T21:30:00Z",
+                     ["success"], ["landed"]),
+            worktree("3f9a21bc-88d0-4e57-9b12-6ca4de70f381", "active", 1,
+                     "The Projects page", "2026-09-04T11:50:54Z", "2026-09-04T12:04:00Z",
+                     ["briefed"]),
+            worktree("b57fc96f-4e10-42a3-95d8-0c1b7e6a2f84", "abandoned", 1,
+                     "Read the delivery logs", "2026-07-30T22:14:00Z", "2026-07-30T22:41:00Z",
+                     ["briefed"]),
+            worktree("e4402d71-5c88-4b06-a3e9-71fd0b62c95a", "unknown", 1,
+                     "Rewrite the README around what it is for", "2026-07-02T13:00:00Z",
+                     "2026-07-02T13:26:00Z", [])
+        ],
+        "/Users/you/code/atrium": [
+            worktree("c0aa5f92-7b31-4d68-8e02-45cb1d907e36", "landed", 2,
+                     "The greenhouse view", "2026-08-02T08:00:00Z", "2026-08-02T19:12:00Z",
+                     ["success"], ["landed"])
+        ]
+    };
+
     // What the selected assistant has already recorded in a place. Enough on the first that the
     // filter is on screen and there is something to type into it, one on the second so the
     // sheet's short case is reachable, and nothing at all on the rest. An empty answer is a
@@ -1220,6 +1273,66 @@ export var Mock = (function () {
                         })
                     });
                 }, 260);
+            });
+        },
+
+        /* Which of a Project's worktrees finished a Feature, and whether it landed.
+           The shape is the real route's, cut down to a screenful: `?projects=` walks the states
+           that are otherwise only reachable on a Mac with the right history on it.
+
+             (unset)     the ordinary answer — every rung of the ladder occupied
+             empty       worktrees: [], with the read receipt that says the query ran
+             missing     404 project_not_found
+             ambiguous   409 ambiguous_project
+             partial     the scan hit its ceiling: status "partial", read.truncated true
+             busy        429 usage_analytics_busy
+
+           A place this fixture has nothing for answers with the empty shape rather than a
+           refusal, because that is what a real Project nobody has finished anything in returns:
+           a query that ran, a receipt, and no rows. */
+        projectWorktrees: function (project) {
+            var mode = params.get("projects") || "";
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (mode === "missing") {
+                        fail(Object.assign(new Error("No Project resolves to that, in 726 rows read"),
+                                           { code: "project_not_found" }));
+                        return;
+                    }
+                    if (mode === "ambiguous") {
+                        fail(Object.assign(new Error("Two Projects are called that: project-9c1f… and project-4b0d…"),
+                                           { code: "ambiguous_project" }));
+                        return;
+                    }
+                    if (mode === "busy") {
+                        fail(Object.assign(new Error("Usage Analytics is busy"),
+                                           { code: "usage_analytics_busy" }));
+                        return;
+                    }
+                    var worktrees = mode === "empty" ? [] : (worktreesByPath[project] || []);
+                    done({
+                        projectWorktrees: {
+                            schemaVersion: 1,
+                            status: mode === "partial" ? "partial" : "available",
+                            policy: "one_unambiguous_accepted_head",
+                            outcomeRule: "landed_then_delivered_then_live_then_abandoned",
+                            generatedAt: new Date().toISOString(),
+                            range: { from: null, to: null, timezone: "Asia/Taipei" },
+                            project: { id: "project-9c1f2e7a4b0d8e35", label: project },
+                            read: {
+                                rows: 726, projectRows: 237,
+                                worktreeRows: worktrees.length ? 240 : 0,
+                                featureRows: worktrees.length ? 190 : 0,
+                                truncated: mode === "partial", maxScannedRows: 100000
+                            },
+                            worktrees: worktrees,
+                            excluded: { worktreesWithoutFeature: worktrees.length ? 31 : 0,
+                                        reason: "no_unambiguous_accepted_head" },
+                            unattributed: { worktrees: 13,
+                                            reasons: { legacy_managed_worktree_project_key: 13 } }
+                        }
+                    });
+                }, 320);
             });
         },
 

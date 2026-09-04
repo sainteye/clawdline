@@ -1387,6 +1387,60 @@ protocol Copy {
     var webStale: String { get }
     var webStaleGo: String { get }
 
+    // The Projects page — see `Resources/web/app/js/view/projects.js`.
+    //
+    // Two questions on one screen. The first is where a session could be started, which is
+    // `/v1/places`; the second is asked in front of one of those directories and is the point of
+    // the page: **which of this Project's worktrees finished a Feature, and did that delivery
+    // reach the branch.** The four outcome names below are the rungs of that ladder, and each
+    // sentence beside one says what the rung rests on rather than describing it — every one of
+    // them is a stored fact, and a reader deciding whether to go and merge something is entitled
+    // to know which fact.
+    var webProjects: String { get }
+    var webProjectsLede: String { get }
+    var webProjectsEmpty: String { get }
+    /// Neither read exists on the Cloud path: every read a paired viewer may name carries a
+    /// session, and this one's subject is a Project. Said once, rather than drawn as a
+    /// control that fails when pressed.
+    var webProjectsUnavailable: String { get }
+    var webProjectsLoading: String { get }
+    var webProjectOpenLabel: String { get }
+    var webProjectReading: String { get }
+    /// **The heading this page was built around.** Thirty-eight of one repository's
+    /// seventy-nine Feature-carrying worktrees are in this state — finished, and never
+    /// merged — and it is the first number anybody has had for it.
+    var webProjectDelivered: String { get }
+    var webProjectDeliveredSay: String { get }
+    var webProjectDeliveredNone: String { get }
+    var webProjectLanded: String { get }
+    var webProjectLandedSay: String { get }
+    var webProjectActive: String { get }
+    var webProjectActiveSay: String { get }
+    var webProjectAbandoned: String { get }
+    var webProjectAbandonedSay: String { get }
+    var webProjectUnknownOutcome: String { get }
+    var webProjectUnknownSay: String { get }
+    /// The payload carries no branch: the ledger stores none and the registry that does is
+    /// swept, so a field present only for recent tasks would read as an old one's absence.
+    /// `clawdline/task/<worktree id>` is the convention, and this label says so.
+    var webProjectBranch: String { get }
+    var webProjectRuns: String { get }
+    var webProjectSeen: String { get }
+    /// The query ran and matched nothing, which is not the same as a query that never
+    /// answered — the receipt beside this sentence is what tells them apart.
+    var webProjectNoWorktrees: String { get }
+    var webProjectExcluded: String { get }
+    var webProjectUnattributed: String { get }
+    var webProjectUnattributedSay: String { get }
+    /// The receipt. On screen whenever the route answered and absent whenever it did not,
+    /// so that an empty answer cannot be mistaken for a failed one.
+    var webProjectRead: String { get }
+    var webProjectTruncated: String { get }
+    var webProjectNotFound: String { get }
+    var webProjectAmbiguous: String { get }
+    var webProjectBusy: String { get }
+    var webProjectFailed: String { get }
+
     // Menu bar
     var menuOpen: String { get }
     var menuReveal: String { get }

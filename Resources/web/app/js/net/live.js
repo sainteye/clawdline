@@ -550,6 +550,23 @@ export var LocalClient = {
 
     places: function () { return jsonFetch("/v1/places"); },
 
+    /// Which worktrees under one Project finished a Feature, and whether that delivery reached
+    /// the branch. Not `git worktree list`: that answers a different question, and most of the
+    /// managed checkouts on a Mac produced nothing anybody kept.
+    ///
+    /// The Project is named by its absolute path, because a place is the only Project identity
+    /// this page holds — the route also takes the Portfolio's opaque id and the Project's final
+    /// name, and refuses rather than guessing when a name is carried by two of them.
+    ///
+    /// **There is no such method on the Cloud client and that is deliberate**: every read a
+    /// paired viewer may name carries a session, and this one's subject is a Project. The page
+    /// asks `typeof api.projectWorktrees === "function"` and says so rather than drawing a
+    /// control the transport cannot answer — see `docs/api.md`.
+    projectWorktrees: function (project) {
+        return jsonFetch("/v1/orchestrator/usage/project-worktrees?project="
+                         + encodeURIComponent(project));
+    },
+
     /// The id, the assistant and now the model are the whole request, and **all three are in the
     /// path**. There is no body on this route — not "an optional body", none is read — so there
     /// is nothing this page could send that would widen what gets started, and the command at

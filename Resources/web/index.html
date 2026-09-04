@@ -143,6 +143,7 @@ document.documentElement.className = "booting";
      say some of the same things; the Usage sheet is the older and more particular of the two, so
      it goes last and wins where they overlap. -->
 <link rel="stylesheet" href="/app/css/pages.css">
+<link rel="stylesheet" href="/app/css/projects.css">
 <link rel="stylesheet" href="/app/css/usage.css">
 
 <!-- Every module, named here so that all forty are asked for at once.
@@ -181,10 +182,10 @@ document.documentElement.className = "booting";
 <nav class="sidebar" id="sidebar" hidden aria-label="Pages">
     <div class="sidebar-panel" id="sidebar-panel">
         <button class="sidebar-item" id="nav-sessions" type="button" data-page-to="sessions">Sessions</button>
-        <!-- The Projects page goes here, between Sessions and Usage: it is a way *into* the
-             sessions rather than a reading about them. It needs a `<section class="page"
-             data-page-view="projects">` in this document, an entry in the array `main.js` hands to
-             `Pages.bind`, and this row. Nothing else. -->
+        <!-- Between Sessions and Usage, because it is a way *into* the sessions rather than a
+             reading about them. Three things and no new mechanism, exactly as `docs/web-pages.md`
+             says: the section below, the line in `main.js`'s registry, and this row. -->
+        <button class="sidebar-item" id="nav-projects" type="button" data-page-to="projects">Projects</button>
         <!-- `usage-open` keeps its name from the days when it was a button at the bottom of the
              settings sheet. The name is what `usage.css` styles and what the Usage guard looks for;
              what it does is now the same as every other row here. -->
@@ -500,6 +501,90 @@ document.documentElement.className = "booting";
         </footer>
     </section>
 </main>
+
+<!-- The Projects page. Two questions on one screen, and the second one is the point.
+
+     The first is "where could I start a session", which is `/v1/places` — directories an
+     assistant has actually been run in and that are still on the disk. The second is asked in
+     front of one of them: which of this Project's worktrees finished a Feature, and did it reach
+     the branch. That is `/v1/orchestrator/usage/project-worktrees`, and it is deliberately not
+     `git worktree list`: this Mac carries 58 managed checkouts and the ledger remembers 150.
+
+     The Project detail is a view inside this page rather than an address of its own. `#page=` is
+     the whole fragment — a page is not a session — so a second key here would be inventing an
+     addressing scheme next to one that has just been agreed. -->
+<section class="page projects" id="projects" data-page-view="projects"
+         aria-labelledby="projects-title" hidden>
+    <div class="projects-shell">
+        <div id="projects-list-view">
+            <div class="projects-heading">
+                <div>
+                    <!-- `tabindex="-1"` so the keyboard can be given the heading on arrival and
+                         on the way back from a Project: it is the one thing on this page that is
+                         always there and always says where you are. -->
+                    <h1 id="projects-title" tabindex="-1">Projects</h1>
+                    <p class="projects-lede" id="projects-lede">Directories an assistant has actually been run in, and that are still there.</p>
+                </div>
+                <span class="projects-stat" id="projects-count"></span>
+            </div>
+            <p class="projects-status" id="projects-status" role="status" aria-live="polite"></p>
+            <ol class="projects-rows" id="projects-rows"></ol>
+        </div>
+
+        <div id="projects-detail-view" hidden>
+            <button class="projects-back" id="projects-back" type="button">‹ Projects</button>
+            <div class="projects-heading project-identity">
+                <canvas class="project-mark none" id="project-mark" width="0" height="0" aria-hidden="true"></canvas>
+                <div>
+                    <h1 id="project-name">Project</h1>
+                    <p class="projects-path" id="project-path"></p>
+                </div>
+            </div>
+            <p class="projects-status" id="project-status" role="status" aria-live="polite"></p>
+            <p class="projects-warning" id="project-truncated" role="alert" hidden></p>
+
+            <!-- The one block on this page that is open by default, and the reason the page
+                 exists. Thirty-eight of this repository's seventy-nine Feature-carrying
+                 worktrees are in this state: the work finished and no landing record says it
+                 reached a branch. It is drawn as the subject rather than as one row of a table
+                 of five equal outcomes. -->
+            <section class="project-delivered" id="project-delivered"
+                     aria-labelledby="project-delivered-title" hidden>
+                <div class="project-delivered-head">
+                    <strong class="project-delivered-count" id="project-delivered-count">—</strong>
+                    <div>
+                        <h2 id="project-delivered-title">Delivered, not landed</h2>
+                        <p class="project-delivered-say" id="project-delivered-say"></p>
+                    </div>
+                </div>
+                <ol class="project-worktrees" id="project-delivered-list"></ol>
+            </section>
+            <p class="project-good" id="project-delivered-none" hidden></p>
+
+            <!-- The query ran and matched nothing. Said out loud, and beside the receipt below
+                 rather than instead of it: an empty answer and an answer that never arrived are
+                 different facts, and the route already refuses rather than returning a blank. -->
+            <p class="project-none" id="project-none" hidden></p>
+
+            <div class="project-groups" id="project-groups"></div>
+
+            <p class="project-note" id="project-excluded" hidden></p>
+
+            <!-- Not this Project's, and not dropped either. Rows written before canonical Project
+                 keys existed carry a checkout path as their own key, so they belong under no
+                 Project a surface may name. Counting them here is what keeps that absence
+                 visible — see docs/usage-attribution.md for the migration that would end it. -->
+            <section class="project-unattributed" id="project-unattributed"
+                     aria-labelledby="project-unattributed-title" hidden>
+                <h2 id="project-unattributed-title">Unattributed worktrees</h2>
+                <p id="project-unattributed-say"></p>
+            </section>
+
+            <!-- The receipt. Present whenever the route answered, empty whenever it did not. -->
+            <p class="project-read" id="project-read"></p>
+        </div>
+    </div>
+</section>
 
 <!-- The Usage page. It was already the shape of one — a fixed panel below the header that hid the
      session list by hand when it opened — and becoming a page took nothing off it: the same markup,

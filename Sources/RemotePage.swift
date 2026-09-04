@@ -700,6 +700,41 @@ enum RemotePage {
             "webCoordScopeDevice": t.webCoordScopeDevice,
         ])
 
+        // The Projects page, and one Project's finished-Feature worktrees.
+        add([
+            "webProjects": t.webProjects,
+            "webProjectsLede": t.webProjectsLede,
+            "webProjectsEmpty": t.webProjectsEmpty,
+            "webProjectsUnavailable": t.webProjectsUnavailable,
+            "webProjectsLoading": t.webProjectsLoading,
+            "webProjectOpenLabel": t.webProjectOpenLabel,
+            "webProjectReading": t.webProjectReading,
+            "webProjectDelivered": t.webProjectDelivered,
+            "webProjectDeliveredSay": t.webProjectDeliveredSay,
+            "webProjectDeliveredNone": t.webProjectDeliveredNone,
+            "webProjectLanded": t.webProjectLanded,
+            "webProjectLandedSay": t.webProjectLandedSay,
+            "webProjectActive": t.webProjectActive,
+            "webProjectActiveSay": t.webProjectActiveSay,
+            "webProjectAbandoned": t.webProjectAbandoned,
+            "webProjectAbandonedSay": t.webProjectAbandonedSay,
+            "webProjectUnknownOutcome": t.webProjectUnknownOutcome,
+            "webProjectUnknownSay": t.webProjectUnknownSay,
+            "webProjectBranch": t.webProjectBranch,
+            "webProjectRuns": t.webProjectRuns,
+            "webProjectSeen": t.webProjectSeen,
+            "webProjectNoWorktrees": t.webProjectNoWorktrees,
+            "webProjectExcluded": t.webProjectExcluded,
+            "webProjectUnattributed": t.webProjectUnattributed,
+            "webProjectUnattributedSay": t.webProjectUnattributedSay,
+            "webProjectRead": t.webProjectRead,
+            "webProjectTruncated": t.webProjectTruncated,
+            "webProjectNotFound": t.webProjectNotFound,
+            "webProjectAmbiguous": t.webProjectAmbiguous,
+            "webProjectBusy": t.webProjectBusy,
+            "webProjectFailed": t.webProjectFailed,
+        ])
+
         var response = RemoteServer.Response.json(out)
         // The answer depends on a request header, so a cache that keyed on the URL alone would
         // hand the next reader somebody else's language.
