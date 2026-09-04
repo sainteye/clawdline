@@ -266,11 +266,11 @@ group("handoff registration opens once and shares the dispatch brake") {
     let id = UUID().uuidString.lowercased()
     var opens = 0
     var grantedDirectory: String?
-    let first = Orchestrator.handoff(envelope(id)) { _, _, _, addDir in
+    let first = Orchestrator.handoff(envelope(id), start: { _, _, _, addDir in
         opens += 1
         grantedDirectory = addDir
         return .started(id: "%handoff", backend: .tmux, attach: nil)
-    }
+    })
     guard case .ok(let payload) = first,
           let handoff = payload["handoff"] as? [String: Any] else {
         check("a valid handoff opens", false); return
@@ -298,17 +298,17 @@ group("handoff registration opens once and shares the dispatch brake") {
     check("a closed handed-off root forgets its title",
           Orchestrator.title(forTerminal: "%handoff") == nil)
 
-    _ = Orchestrator.handoff(envelope(id)) { _, _, _, _ in
+    _ = Orchestrator.handoff(envelope(id), start: { _, _, _, _ in
         opens += 1
         return .refused(status: 500, code: "internal", message: "should not run", app: nil)
-    }
+    })
     expect("an in-process retry does not open another tab", opens, 1)
     Orchestrator.forget()
     Orchestrator.load(force: true)
-    _ = Orchestrator.handoff(envelope(id)) { _, _, _, _ in
+    _ = Orchestrator.handoff(envelope(id), start: { _, _, _, _ in
         opens += 1
         return .refused(status: 500, code: "internal", message: "should not run", app: nil)
-    }
+    })
     expect("nor does the same id after a registry reload", opens, 1)
 
     // The durable label, from the tab opening to the restart that used to lose it. The fallback
@@ -319,11 +319,12 @@ group("handoff registration opens once and shares the dispatch brake") {
     var titledRequest = envelope(titledID)
     titledRequest["title"] = "接手成為 Clawdfather"
     titledRequest["assistant"] = "claude"
-    _ = Orchestrator.handoff(titledRequest) { _, _, _, _ in .started(id: "%titled", backend: .tmux, attach: nil) }
+    _ = Orchestrator.handoff(titledRequest, start: { _, _, _, _ in
+        .started(id: "%titled", backend: .tmux, attach: nil) })
     let untitledID = UUID().uuidString.lowercased()
-    _ = Orchestrator.handoff(envelope(untitledID)) { _, _, _, _ in
+    _ = Orchestrator.handoff(envelope(untitledID), start: { _, _, _, _ in
         .started(id: "%untitled", backend: .tmux, attach: nil)
-    }
+    })
     check("an untitled handoff stores no durable placeholder",
           Orchestrator.handoffLabelForTesting(untitledID) == nil)
     expect("a named one is bound to the exact tab it was delivered into",
@@ -408,9 +409,9 @@ group("handoff registration opens once and shares the dispatch brake") {
     var rebindRequest = envelope(rebindID)
     rebindRequest["title"] = "not this stranger's job"
     rebindRequest["assistant"] = "claude"
-    _ = Orchestrator.handoff(rebindRequest) { _, _, _, _ in
+    _ = Orchestrator.handoff(rebindRequest, start: { _, _, _, _ in
         .started(id: "%rebind", backend: .tmux, attach: nil)
-    }
+    })
     let firstProcess = Orchestrator.SessionWorkIdentity(
         terminalID: "%rebind", assistant: .claude, tty: "/dev/ttys041", pid: 100,
         processStart: Date(timeIntervalSince1970: 1_788_398_100), conversationID: nil)
@@ -452,9 +453,9 @@ group("handoff registration opens once and shares the dispatch brake") {
     Orchestrator.forget()
     for _ in 0..<max(10, Config.shared.orchestratorMaxDescendants) {
         let next = UUID().uuidString.lowercased()
-        _ = Orchestrator.handoff(envelope(next)) { _, _, _, _ in
+        _ = Orchestrator.handoff(envelope(next), start: { _, _, _, _ in
             .refused(status: 409, code: "terminal_closed", message: "closed", app: "iTerm2")
-        }
+        })
     }
     check("terminal refusals still spend the shared ticket", Orchestrator.takeDispatchRate() == nil)
 }

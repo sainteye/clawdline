@@ -1687,44 +1687,90 @@ $ # write a non-empty handoff.md, then:
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/handoffs \
     -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
     -H 'Content-Type: application/json' \
-    -d "{\"handoff_id\":\"$H\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\"}"
+    -d "{\"handoff_id\":\"$H\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\",\"from_session\":\"$MY_SESSION\"}"
 {"ok":true,"handoff":{"id":"7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","state":"opening","projectDir":"/Users/you/code/clawdline","assistant":"codex","dir":"/tmp/.clawdline/handoffs/7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","opened":{"terminalId":"9A1F…","backend":"iterm"}}}
 ```
 
 `handoff_id` is a 36-character lowercase UUID in the same `[a-f0-9-]` shape as `task_id`.
 `project_dir` is required, absolute, and an existing directory. Optional `assistant` is `claude`
 (the default) or `codex`; optional `model` is 1…64 lower-case letters, digits, `.`, `_`, or `-`,
-and cannot begin with `-`. Optional `title` and free-form `from_session` are each at most 200
-characters. `title` labels the tab; `from_session`, when it identifies a watched session, receives
-one best-effort version-2 `handoff_receipt` notice. Its state is `picked_up` when the first line was
-confirmed or `first_line_failed` when the tab opened but the line did not land; both are one kind
-because they are outcomes of the same delivery attempt. This is intentionally the loose resolver:
-a conversation id or the watched terminal's own id may identify the sender. Task `root.session_id`
-does not have that terminal-id shortcut.
+and cannot begin with `-`. Optional `title` is at most 200 characters and labels the tab.
+
+**`from_session` is required and must resolve.** It is the session this handoff is sent *from*, in
+either of the two namespaces this machine indexes: the watched terminal-neutral id, or the
+process-bound conversation id. Both are compared whole — no prefix, title or tty matching — and
+anything but exactly one live assistant session is a refusal with its own code rather than a
+guess. `GET /v1/orchestrator/whoami` resolves the calling session's own pair; `$ITERM_SESSION_ID`
+is a cached terminal hint and is not an input here. The resolved sender receives one best-effort
+version-2 `handoff_receipt` notice, whose state is `picked_up` when the first line was confirmed or
+`first_line_failed` when the tab opened but the line did not land; both are one kind because they
+are outcomes of the same delivery attempt. Task `root.session_id` takes the conversation id only
+and does not have the terminal-id spelling.
+
+**A plain handoff from this machine's coordinator is refused.** When the resolved sender is the
+session the coordinator record is currently bound to and online, the answer is
+`409 succession_required`, naming `POST /v1/orchestrator/coordinator/successions` and carrying
+`coordinator_id`, `expected_generation` and `sender_session_id` under the exact key names that
+request reads — so the caller builds it without a second round trip. That sequence exists to open
+the receiver, prove the sender drained, prove the old binding offline and commit the coordinator
+compare-and-swap; a plain handoff skips all four, which is what happened on 2026-09-04 when the
+sender named nobody.
+
+Optional **`coordinator_plain_handoff`** waives that one refusal and nothing else. Use it when the
+Clawdfather is handing a *different* line of work to somebody and the coordinator role stays where
+it is — not when the role itself is moving, which is the succession route. It must be exactly
+`true`; `false` is refused rather than read as absent, because a field whose meaning is *I decided
+this* has no useful false. It is recorded on the durable envelope and echoed as
+`coordinatorPlainHandoff` in the reply, so the record can afterwards say a plain handoff from the
+coordinator was a decision rather than an accident. It never waives resolution: a coordinator that
+sets it and names no sender is still refused. Sent by an ordinary sender it waives nothing and is
+recorded as what it is — the caller's assertion that the crown is not moving, never evidence about
+who the sender was.
+
+**Cannot tell is a third answer, and it refuses.** If the machine has no complete current reading
+of its sessions, or the coordinator record cannot be read, or a coordinator is registered and this
+reading cannot say which process holds it, the handoff is refused with its own code and the caller
+retries. A guard that allows when it cannot see is the hole this contract closes. An *offline*
+coordinator is not that case — it is a fact from a current reading, its process is gone, and an
+ordinary handoff proceeds.
 
 Opening the terminal is synchronous and is named in `opened`; composer waiting, trust confirmation,
 typing, and transcript confirmation happen after this response. The durable registry stores only
-`handoff_id`, `project_dir`, optional `title` and `from_session`, `created`, and `state`. Repeating an
+`handoff_id`, `project_dir`, optional `title` and `from_session`, `coordinator_plain_handoff` when
+it was set, `created`, and `state`. Repeating an
 id replays that envelope and opens no second tab, including after restart. A replay contains neither
 `opened` nor `assistant`, because only the envelope is stored. Terminal envelopes and their package
 directories are removed `orchestrator_task_dir_retention_hours` (24 by default) after `created` —
 the same clock as a task directory, in the same sweep. There is no GET, cancel, or completion
 route.
 
-The route uses the same orchestrator switch and ten-minute brake as dispatch. Replays do not take a
-ticket; every new call that gets past its id does, including a refusal. Errors are decided in this
-order:
+The route uses the same orchestrator switch and ten-minute brake as dispatch. **An idempotent
+replay is answered before the sender is checked at all**: a `handoff_id` already in the registry is
+a repeat of a decision rather than a new one, its sender was proved when the envelope was written,
+and a retry after a dropped connection must not become a refusal. Replays do not take a ticket;
+every new call that gets past its id does, including a refusal. A sender refusal is decided before
+the ticket, so it costs no slot of the brake. Errors are decided in this order:
 
-| `code` | status | |
-|---|---|---|
-| `forbidden` | 403 | the orchestrator header is missing or wrong; a device token never reaches the body |
-| `bad_request` | 400 | the body is not a JSON object or has no `handoff_id` |
-| `orchestrator_disabled` | 403 | the shared orchestrator switch is off |
-| `bad_task` | 422 | an invalid field, project directory, package directory, or empty/missing `handoff.md` |
-| `rate_limited` | 429 | the shared dispatch-and-handoff brake is full |
-| `terminal_closed` / `terminal_unsupported` | 409 | the selected terminal cannot be opened; `app` names it |
-| `internal` | 500 or 502 | terminal automation failed |
-| `not_found` | 404 | this build has no handoff route |
+| `code` | status | | what to do next |
+|---|---|---|---|
+| `forbidden` | 403 | the orchestrator header is missing or wrong; a device token never reaches the body | |
+| `bad_request` | 400 | the body is not a JSON object or has no `handoff_id` | |
+| `orchestrator_disabled` | 403 | the shared orchestrator switch is off | |
+| `bad_task` | 422 | an invalid `handoff_id` | |
+| `from_session_required` | 400 | no `from_session`, or an empty one | send the sending session's own id; `GET /v1/orchestrator/whoami` resolves it |
+| `from_session_invalid` | 400 | present but not a string, or longer than 200 characters | send the id itself, not a label or an object |
+| `from_session_wrong_namespace` | 404 | an Anthropic cloud session id (`session_01…`) | that names a conversation on claude.ai, not a session here; send the terminal id or the conversation id |
+| `sender_not_found` | 404 | a well-shaped id no current assistant session answers to | the sending session has gone, or the id is stale; re-prove it |
+| `sender_ambiguous` | 409 | more than one live session answers to it, and none was chosen | name the terminal-neutral id, which is unique; `matches` counts them |
+| `sender_unverifiable` | 409 | no complete current reading of this Mac's sessions | retry after the next scan; nothing about the request is wrong |
+| `coordinator_store_unreadable` | 409 | the coordinator record is unreadable or from an unknown version | `GET /v1/orchestrator/coordinator` says which; a person repairs the store |
+| `coordinator_liveness_unknown` | 409 | a coordinator is registered and this reading cannot place its process | retry after a complete scan |
+| `succession_required` | 409 | the sender is the current online coordinator | use the succession route the body names, or set `coordinator_plain_handoff` if the role is staying put |
+| `bad_task` | 422 | an invalid field, project directory, package directory, or empty/missing `handoff.md` | |
+| `rate_limited` | 429 | the shared dispatch-and-handoff brake is full | |
+| `terminal_closed` / `terminal_unsupported` | 409 | the selected terminal cannot be opened; `app` names it | |
+| `internal` | 500 or 502 | terminal automation failed | |
+| `not_found` | 404 | this build has no handoff route | |
 
 ### `POST /v1/orchestrator/root-assignments`
 
