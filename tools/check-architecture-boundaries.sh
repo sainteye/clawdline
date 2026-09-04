@@ -181,7 +181,17 @@ fi
 #                                          `streams` and `enqueueCloudPublication` are all
 #                                          `private` to this type, and both callers of the new
 #                                          body are methods on it.)
-remote_server_ceiling=5570
+#   5,571  the documents route arrived        (+6, one hunk and no more: the `case` and the three
+#                                          lines of comment saying that both roots are computed
+#                                          here rather than named by the caller. The route's whole
+#                                          body — the boundary, the listing, the refusals and the
+#                                          response — is in `Sources/ProjectArtifact.swift`,
+#                                          beside `projectArtifactResponse`, whose slot-not-path
+#                                          safety argument it is the successor to. A new file was
+#                                          not worth it for that: this one already holds the two
+#                                          named artifact slots and `linksPayload`, and a document
+#                                          route is the same subject.)
+remote_server_ceiling=5571
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -193,8 +203,13 @@ if grep -q 'group(' Tests/main.swift; then
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 31 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 31"
+# 32 once the document route got a suite of its own. It was written into
+# `Tests/MarkdownTests.swift` first, beside the two named artifact slots it succeeds, and that
+# file came out at 2,005 lines against the 2,000-line stop-growth limit below — which is the
+# limit doing exactly what it is for, so the group moved into its own file rather than being
+# trimmed to fit under a wall it would have left the next person standing at.
+[ "$runner_count" -eq 32 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 32"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -237,8 +252,11 @@ manifest_group_count=$(awk '
 # 521 once a Feature row could name its Project: one group, and it is the first test in this tree
 # to assert that two of the Portfolio's tables carry the *same* id for the same Project rather
 # than each carrying one of its own.
-[ "$manifest_group_count" -eq 521 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 521"
+# 522 once documents could be read from a phone: one group, and it is the first test in this tree
+# that asserts a route refuses a caller-supplied *path* rather than a caller-supplied name — the
+# two named artifact slots before it could not be asked for a path at all.
+[ "$manifest_group_count" -eq 522 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 522"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -312,8 +330,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 44 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 44"
+[ "$suite_count" -eq 45 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 45"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

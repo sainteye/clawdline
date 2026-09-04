@@ -87,6 +87,10 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `GET` | `/v1/sessions/:id/agents/:agentId` | token | `read` |
 | `GET` | `/v1/sessions/:id/shells/:shellId` | token | `read` |
 | `GET` | `/v1/sessions/:id/links` | token | `read` |
+| `GET` | `/v1/sessions/:id/artifacts/:kind` | token | `read` |
+| `GET` | `/v1/sessions/:id/documents` | token | `read` |
+| `GET` | `/v1/sessions/:id/documents/project/:path` | token | `read` |
+| `GET` | `/v1/sessions/:id/documents/task/:taskId/:path` | token | `read` |
 | `GET` | `/v1/sessions/:id/info` | token | `read` |
 | `GET` | `/v1/sessions/:id/skills` | token | `read` |
 | `GET` | `/v1/sessions/:id/git` | token | `read` |
@@ -484,6 +488,71 @@ project's status file, then serves it only when it is a regular `.html` file ins
 working directory. Symlink escapes, caller-supplied paths, non-HTML files and files over 2 MiB are
 refused. Responses are `private, no-store`, `noindex`, and carry a CSP that disables scripts,
 forms, embedding and external resources.
+
+### `GET /v1/sessions/:id/documents`
+
+The documents this project has produced, and the address of each. This is the route that exists
+so a long working document written on this Mac can be read on a phone without being read aloud or
+published to somebody else's service.
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/documents
+{"documents":[
+  {"source":"project","path":"inventory.md","label":"inventory.md","bytes":41822,
+   "modified":1788500000,"url":"/v1/sessions/27439AEE-.../documents/project/inventory.md"},
+  {"source":"task","task":{"id":"2b98bed4-...","title":"the document route"},
+   "path":"report.md","label":"report.md","bytes":3140,"modified":1788510000,
+   "url":"/v1/sessions/27439AEE-.../documents/task/2b98bed4-.../report.md"}
+]}
+```
+
+Newest first, at most 200 rows, and **every row is one the byte route would serve**: the listing
+is built by asking the same resolver the read asks, so a page can turn each row into a link
+without discovering that half of them 404.
+
+### `GET /v1/sessions/:id/documents/project/:path` · `.../documents/task/:taskId/:path`
+
+One document's bytes, as `text/markdown` or `text/plain`, `private, no-store`, `nosniff`,
+`noindex`, and under a CSP that permits nothing.
+
+**Two roots, both computed by the server; the caller's string only chooses inside one.** The
+artifact route above is safe because `kind` is a slot rather than a path — there is no string that
+names a third file. A route whose purpose is to serve a document the caller names cannot keep that
+property, so what replaces it is a boundary:
+
+| root | what it is | why it is that directory |
+|---|---|---|
+| `project` | `<session cwd>/artifacts`, with that one symlink followed | in this repository the path is a symlink into a private sibling checkout. It is followed *first*, before any caller string exists, and what it resolves to **becomes** the root |
+| `task/:taskId` | `<task directory>/artifacts`, for a task the registry says belongs to this project | the child's deliverables, and **only** those: `task.json` and `result.json` sit one level above and are therefore outside the root |
+
+**The task secret is not filtered out — it is out of reach.** A child's `task.json` holds the
+secret that authenticates its completion, and by protocol its `result.json` repeats that secret
+back. Neither is under the root a path can name, and `..` is refused before the filesystem is
+touched. The redacted half of a result — its summary, artifacts and verification — is already
+published by [`GET /v1/orchestrator/tasks`](#get-v1orchestratortasks), which is where a phone
+should read it.
+
+**How far a hostile `:path` gets: nowhere outside those two directories.** It is refused before
+any filesystem call if it is absolute, holds an empty segment, or holds a segment beginning with
+`.` — which is `..`, `.` and every dotfile in one clause. Percent-decoding happens after the
+split, and the joined path is split and re-checked by the resolver, so `..%2F..` is refused by the
+clause that refuses `../..`. What survives that must still resolve to a path beginning with the
+resolved root, which is what refuses a symlink pointing out of it, then be a regular file, then
+carry one of three extensions — `md`, `markdown`, `txt` — then be at most 2 MiB. HTML is
+deliberately not on that list: the two named slots above serve it under a CSP chosen for one known
+producer, and a directory anybody may drop a file into is not that.
+
+| refusal | status | code |
+|---|---|---|
+| unknown session, no such root, escaped or malformed path, unlisted extension, not a regular file, unknown task | 404 | `document_not_found` |
+| a document over 2 MiB | 413 | `document_too_large` |
+
+**Absent on the Cloud path, deliberately.** By the rule the Cloud section below states, a read the
+hosted console does not have is guarded at its call site by `typeof api.X === "function"` and the
+control it belongs to is not drawn. There is no document view yet, so there is no control and no
+Cloud read; the slice that draws the page adds both together. For the same reason no row for this
+appears on `/v1/sessions/:id/links`: a `/links` row is an address something already knows how to
+draw, and a row the client cannot render is a control whose read this transport does not carry.
 
 ### `GET /v1/sessions/:id/info`
 
