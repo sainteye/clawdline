@@ -234,6 +234,30 @@ export function coordinatorPresenceText(coordinator, context) {
                 { name: coordinator && coordinator.label || "Clawdfather" });
 }
 
+/**
+ * What to do about a crown that has fallen off, for the one screen that can see it fall.
+ *
+ * The Mac computes `offline` correctly and has all along — a binding whose process is gone stops
+ * matching the live row, on the existing `sessionsObservedAt >= bindingChangedAt` criterion and
+ * no clock of its own. What that word did not carry was a next step, so the single surface it
+ * reaches said the coordinator was offline and stopped there, and on 2026-09-04 the machine ran
+ * for hours with nobody able to tell from any screen that a rebind was owed.
+ *
+ * **The Mac's own word, and never this browser's connection.** `coordinatorPresenceState`
+ * deliberately downgrades an online reading to offline while the socket is down, which is right
+ * for a presence dot and wrong for advice: telling somebody to reconnect Clawdfather because
+ * their own phone dropped off the network is instruction about the wrong end of the wire. So
+ * this reads `status` directly and takes no connection context at all.
+ *
+ * The words are the panel's own — the label of the reconnect command, and the sentence that
+ * already says what reconnecting needs — so this says it in the reader's language rather than
+ * shipping a fifteenth English string or naming an HTTP route only this repository knows.
+ */
+export function coordinatorOfflineAdvice(coordinator) {
+    if (!coordinator || coordinator.status !== "offline") return "";
+    return T.webCoordCmdReconnect + " · " + T.webCoordWhyMachineTokenOnly;
+}
+
 /** The one route selector used by the row. Only the authenticated optional record changes it. */
 export function coordinatorRoute(session, target) {
     return target === "mark" && coordinatorForSession(session) ? "controls" : "session";

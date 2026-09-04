@@ -16,7 +16,7 @@ import {
     createClawdfatherAssignmentState,
     createClawdfatherCoordinatorLoader
 } from "./clawdfather.js";
-import { coordinatorPresenceText } from "./coordinator-actions.js";
+import { coordinatorOfflineAdvice, coordinatorPresenceText } from "./coordinator-actions.js";
 
 /* ---- starting a session -------------------------------------------------- */
 
@@ -349,6 +349,11 @@ export var Start = (function () {
         } else if (choice.state === "assigned") {
             var coordinator = choice.coordinator || {};
             words = coordinatorPresenceText(coordinator);
+            // This is the one screen that can see the crown fall off, so it is the one that
+            // owes the next step. A status word on its own is what let a machine run for hours
+            // with an offline coordinator and nothing anywhere saying a rebind was owed.
+            var advice = coordinatorOfflineAdvice(coordinator);
+            if (advice) words = words + " · " + advice;
         }
         state.textContent = words;
         button.title = words;

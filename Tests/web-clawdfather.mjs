@@ -13,6 +13,7 @@ import {
     createClawdfatherAssignmentState,
     createClawdfatherCoordinatorLoader
 } from "../Resources/web/app/js/input/clawdfather.js";
+import { coordinatorOfflineAdvice } from "../Resources/web/app/js/input/coordinator-actions.js";
 
 /* --------------------------------------------------------------------------
    Choosing Clawdfather while starting a session
@@ -800,6 +801,40 @@ assert.match(liveClient, /coordinatorBearings:\s*function/,
 assert.match(mockClient, /coordinatorBearings:\s*function/,
     "and so do the fixtures, or the offline flow would lose the row it is supposed to keep");
 
+/* ---- an offline crown says what puts it back ------------------------------ */
+
+/*
+   `Sources/Coordinator.swift` computes this correctly and has done all along: a binding whose
+   process is gone reads `status`/`lifecycle` `offline`, on the existing criterion
+   (`sessionsObservedAt >= bindingChangedAt`) and no invented time threshold. What was missing is
+   downstream of that word. It reached exactly one screen — this sheet — and arrived as a status
+   and nothing else, so the one place that could have said the crown had fallen said it in two
+   words and named no repair. On 2026-09-04 that cost hours: the coordinator was offline, the
+   binding needed a rebind, and nothing anywhere said so.
+
+   The advice is a fact about the Mac's own word and never about this browser's connection. A
+   disconnected phone downgrades presence to offline for the reader's sake — see
+   `coordinatorPresenceState` — and telling somebody to reconnect Clawdfather because their own
+   socket dropped would be advice about the wrong end of the wire.
+*/
+
+const offlineAdvice = coordinatorOfflineAdvice({ status: "offline", label: "Clawdfather" });
+assert.ok(offlineAdvice, "an offline coordinator is told how it is reconnected");
+assert.ok(offlineAdvice.includes(T.webCoordCmdReconnect),
+    "the advice names the action — reconnecting the binding — rather than restating the status");
+assert.ok(offlineAdvice.includes(T.webCoordWhyMachineTokenOnly),
+    "and what that action needs, which is the Mac's own orchestrator token");
+assert.ok(!/rebind/i.test(offlineAdvice),
+    "said in the page's own translated words, never in a route name only this repository knows");
+
+for (const quiet of [{ status: "online" }, { status: "unknown" }, { status: "unregistered" },
+                     {}, null, undefined]) {
+    assert.equal(coordinatorOfflineAdvice(quiet), "",
+        "nothing but the Mac's own offline word puts repair advice on screen");
+}
+assert.equal(coordinatorOfflineAdvice({ status: "online" }, { connected: false }), "",
+    "a browser that lost its own connection is not a coordinator that lost its binding");
+
 /* ---- the two rows as the phone actually got them -------------------------- */
 
 /*
@@ -963,8 +998,11 @@ if (process.env.CLAWDLINE_CLAWDFATHER_SHEET_BEHAVIOR === "1") {
     assert.equal(row.hidden, false, "the direct path still offers the row");
     assert.equal(elementWithID("start-clawdfather").disabled, true,
         "a configured coordinator, offline included, still closes the switch");
-    assert.equal(line.textContent, fill(T.webCoordOffline, { name: "Clawdfather" }),
-        "the sheet says the Mac's own word for a coordinator whose process is gone");
+    assert.ok(line.textContent.includes(T.webCoordCmdReconnect),
+        "an offline crown is not left as a status word: the line says what puts it back. Got: "
+        + line.textContent);
+    assert.ok(line.textContent.includes(T.webCoordWhyMachineTokenOnly),
+        "and what reconnecting needs, which is the whole of the next step from a phone");
     Start.close();
 
     // Online is the case that must not grow the sentence: advice nobody needs is noise, and
@@ -982,8 +1020,8 @@ if (process.env.CLAWDLINE_CLAWDFATHER_SHEET_BEHAVIOR === "1") {
     Start.open();
     await settle();
     assert.equal(row.hidden, false);
-    assert.equal(line.textContent, fill(T.webCoordOnline, { name: "Clawdfather" }),
-        "and its own word for one that is still there");
+    assert.ok(!line.textContent.includes(T.webCoordCmdReconnect),
+        "an online Clawdfather is told nothing about reconnecting");
 
     console.log("web clawdfather creation sheet behavior passed");
     process.exit(0);
