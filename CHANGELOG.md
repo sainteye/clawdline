@@ -74,10 +74,12 @@ characters — about 7,081 tokens — in every direct child's briefing, and **no
 dispatched anything**. The teaching is not wrong; it was addressed to the rare session that would
 use it and charged to all of them.
 
-It now lives in `DISPATCHING.md`, written into the task's own directory beside `CHILD.md` and only
-when that task may actually hand work on. The briefing keeps one line naming it. The credential
-path, the `parent_task` rule and the `curl` are only in that file, so the briefing no longer hands
-the credential over to a session that skipped the pointer.
+It was moved out into a `DISPATCHING.md` written into the task's own directory beside `CHILD.md`,
+and then the second level of the tree came out and there was nobody left to write it for: nothing
+this app opens may dispatch, so no such file is produced at all. A task directory briefed by an
+older build has its `DISPATCHING.md` **removed** rather than merely not rewritten, because a
+re-briefed child would otherwise sit there reading a recipe it is no longer allowed to follow. The
+credential path, the `parent_task` rule and the `curl` are in no briefing this app writes.
 
 `CHILD.md` also asks for something in return: one `/progress` note within about three minutes of
 starting, saying what the session has decided to do now it has read the briefing — and says why, so
@@ -444,30 +446,28 @@ and Codex, which writes nothing of the kind, was never anywhere near this path. 
 rather it did not read them at all, `session_registry` in `~/.config/clawdline/config.json` turns
 it off in one word.
 
-### Added: a child can hand work on, one level further
+### Changed: five children belong to a session rather than to the Mac, and the tree has a bottom
 
-A session dispatched a task and that was the end of the line — the child it opened was refused if
-it tried to dispatch anything itself. That floor is now one step lower. A session may have **five**
-children out at once, and each of those may have **three** of its own. What *they* open, nothing
-opens under.
+How many dispatched sessions may be out at once is now counted **per session** rather than per
+Mac, which is the part worth knowing if you had ever raised it: five is what one conversation may
+have out, not what the machine may. Several conversations share this Mac, so over all of them
+there is a ceiling nobody sets — twenty by default, four roots' worth — because the per-session
+cap is the one a caller could sidestep by claiming to be somebody else. `orchestrator_max_children`
+in Settings → Remote is the number you set; there is no second row under it.
 
-Both numbers are yours: `orchestrator_max_children` and `orchestrator_max_grandchildren` in
-Settings → Remote, or in `~/.config/clawdline/config.json`. Setting the second to zero is the rule
-this app had before — a child that tries is refused at the door — and it is a stop on the same
-list rather than a switch of its own.
+**A child still opens nothing.** A second level was built during this cycle and taken out again
+before it shipped, so the tree is one deep exactly as it was in 0.6.0 — and the depth is now a
+constant in the code rather than a number in a file. `orchestrator_max_grandchildren` is still
+sitting in every `config.json` this app has ever seeded, saying `3`, and is read by nothing: the
+file is written once and never migrated, so a changed default would have reached none of them, and
+a rule a hand-edit can undo is a preference rather than a rule. An unknown key is preserved when
+the file is saved, so an old config keeps loading exactly as it did. A dispatch from a child is
+refused with `depth_exceeded`, and `CHILD.md` tells each child plainly that it is the bottom and
+that work too big for one session belongs to its own assistant's subagents — spelled out rather
+than pointed at a skill, since half of these sessions are Codex and Codex has no skills.
 
-The first number is now counted **per session** rather than per Mac, which is the part worth
-knowing if you had raised it: five is what one conversation may have out, not what the machine may.
-Over both there is a ceiling nobody sets — one full tree, twenty by default — because the
-per-session caps are the ones a caller could sidestep by claiming to be somebody else.
-
-Everything downstream follows the shape. The list on the Mac and on the phone indents twice, so a
-grandchild sits under its parent rather than beside it. Closing a session takes both levels with
-it, deepest first, including work handed on by a child that has already reported. Cancelling one
-task does the same on a smaller scale. And `CHILD.md` now tells each child which level it is on:
-one with room under it gets the whole recipe for dispatching, one standing on the floor is told
-plainly not to — spelled out rather than pointed at a skill, since half of these sessions are Codex
-and Codex has no skills.
+Closing a session still takes the work it dispatched with it, deepest first, including work from a
+child that had already reported; cancelling one task does the same on a smaller scale.
 
 ### Changed: a child no longer stops at every permission prompt
 
@@ -502,21 +502,16 @@ screening, which refuses a `jq -n '{…}'` line on its shape alone and offers no
 briefing a child reads was itself telling it to write files in the refused shape; it now says to
 use the file tool and a heredoc.
 
-### Fixed: a dispatched task that ended left the work it had handed on running
+### Fixed: a failed spawn used to leave a live assistant sitting in a tab
 
-Closing a session cascaded and cancelling a task cascaded, but a task simply *finishing* did not.
-A child that timed out, failed, or reported before its own children were done left grandchildren
-running for a session that no longer existed — and on the list, a row with a `Child` chip and
-nothing above it.
+A `spawn_failed` that never reached briefing now closes its tab at once, where before every failed
+spawn kept one. That was not free: each is a live assistant holding a slot, and the usual reason a
+tab fails to reach a prompt is that too many sessions were starting at once — so the failure fed
+itself. A `timeout` still keeps its screen, which is the case where something is written on it.
 
-A `spawn_failed` that never reached briefing now also closes its tab at once, where before every
-failed spawn kept one. That was not free: each is a live assistant holding a slot, and the usual
-reason a tab fails to reach a prompt is that too many sessions were starting at once — so the
-failure fed itself. A `timeout` still keeps its screen, which is the case where something is
-written on it.
-
-The window for reaching a prompt is four minutes rather than two. Two was measured against one
-session starting; a two-level dispatch starts three at once by definition.
+The window for reaching a prompt is four minutes rather than two. Two was measured against a
+single session starting on a warm Mac; several starting within seconds of each other is the
+ordinary case, and each of them is a real assistant cold-starting on the same machine.
 
 ### Added: a task can name its model, and this Mac can say how work should be handed out
 
@@ -526,11 +521,14 @@ every child's briefing, leaves included: a child that knows what its answer feed
 something joinable, one that does not writes a report.
 
 `~/.config/clawdline/dispatch-policy.md` is the house rules — which assistant, which model, what
-shape the graph should be, and how to dispatch it. Read fresh on every dispatch and copied into
-the briefing of every child that may dispatch in turn, which is the audience that needs it: a
-root has a person nearby, a dispatching child has nobody. It arrives with opinions in it and
-Settings → Remote has a button that opens it; delete the contents and the whole paragraph
-disappears from every briefing.
+shape the graph should be, and how work gets handed out here. Its optional sibling
+`dispatch-policy.local.md` beside it holds the facts that are true only on this machine, and the
+app never seeds, writes or syncs that one. Both are read fresh on every dispatch, so an edit
+reaches the next task rather than the next launch, and both are composed into the briefing of
+**every** child rather than only the ones that could hand work on: a sentence saying what this
+machine's sandbox can and cannot reach is what stops a leaf spending a turn on a call that could
+never have connected. The first file arrives with opinions in it and Settings → Remote has a
+button that opens it; delete the contents and the whole section disappears from every briefing.
 
 The mechanics in there were each paid for. Stagger dispatches by 30–45 seconds, because every
 child is a real assistant cold-starting on this Mac and four of them started together compete
