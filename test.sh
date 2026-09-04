@@ -648,6 +648,12 @@ node Tests/git-hooks.mjs
 # recompile of everything.
 node Tests/app-onboarding-focused.mjs
 node Tests/keychain-rebuild-focused.mjs
+# What Clawdline tells `codex app-server` it is, on the same terms: the identity block is lifted out
+# of Sources/CodexNaming.swift by its marker comments and compiled against the real Sources/Compat.swift,
+# because the rest of that file names half the app and compiling it means compiling the module. The
+# version in that payload was a typed string that went on naming an old release for two releases
+# after it, with nothing in this suite comparing it to anything.
+node Tests/codex-client-identity.mjs
 # The install path the website and both READMEs recommend, which runs on a Mac this project has
 # never seen and had nothing exercising it: that the release reply is read without an interpreter
 # that is really an xcselect shim, that a reply this script cannot read says so instead of ending
@@ -695,7 +701,8 @@ node Tests/test-sh-lock.mjs
 # end of the script leaves through `exit`, and EXIT is the one path all of them share.
 #
 # **And what it does not cover, which somebody should decide about rather than discover.**
-# `Tests/app-onboarding-focused.mjs` and `Tests/keychain-rebuild-focused.mjs` run above this line and
+# `Tests/app-onboarding-focused.mjs`, `Tests/keychain-rebuild-focused.mjs` and
+# `Tests/codex-client-identity.mjs` run above this line and
 # each invoke `swiftc` on a file or two of their own. Those compiles are seconds rather than the
 # whole of `Sources/`, so they are outside this boundary as the protocol defines it — but they are
 # real compiles happening without the lock, and a machine-wide probe will see them. Moving the lock

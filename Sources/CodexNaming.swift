@@ -887,6 +887,57 @@ final class CodexNaming {
     }
 }
 
+// >>> clawdline client identity >>>
+// How Clawdline introduces itself to `codex app-server` in `initialize`, and the only place these
+// three values are written. Bounded by these two markers so `Tests/codex-client-identity.mjs` can
+// lift the block out and compile it against the real `Sources/Compat.swift` in under a second,
+// rather than behind the whole-module compile the Swift suite pays for. Rename a marker and that
+// suite fails loudly rather than quietly scanning nothing.
+//
+// **Why the version is derived rather than typed.** It used to be a typed string, and it went on
+// naming the release it was written for long after that release stopped being current: on
+// 2026-09-04 this file was telling Codex a version the app had left behind, and nothing in the
+// repository could see it. No test tied the string to the app's version, so the drift was invisible
+// to everything except somebody reading this line and remembering what release they were on. The
+// commit that replaced it names both numbers; this comment does not, because a version typed here
+// is the defect. `tools/check-version-strings.py` now refuses one.
+//
+// Both sources below are the app's own record of what it is: the bundle it is running out of, and,
+// where there is no bundle to ask, the newest row of the compatibility table — which
+// `tools/check-version-strings.py` holds against `build.sh`, so the fallback cannot drift either.
+enum ClawdlineClientIdentity {
+    static let name = "clawdline"
+    static let title = "Clawdline"
+
+    /// What `build.sh` stamped into the bundle this process is running out of, when there is one.
+    static func bundleShortVersion() -> String? {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    }
+
+    /// The bundle's version where there is a bundle, the table's newest release where there is not.
+    ///
+    /// Empty is treated as absent rather than as a version. Outside an app bundle
+    /// `Bundle.main.infoDictionary` answers with a dictionary that simply has no version key in it,
+    /// and a plain `nil` check would let an empty string through to Codex as this client's version.
+    static func version(bundleVersion: String?) -> String {
+        if let bundleVersion,
+           !bundleVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return bundleVersion
+        }
+        return Compat.releases.first?.clawdline ?? ""
+    }
+
+    static func clientInfo(bundleVersion: String?) -> [String: String] {
+        ["name": name, "title": title, "version": version(bundleVersion: bundleVersion)]
+    }
+
+    /// The whole `params` object of the `initialize` request.
+    static func initializeParams(bundleVersion: String? = bundleShortVersion()) -> [String: Any] {
+        ["clientInfo": clientInfo(bundleVersion: bundleVersion)]
+    }
+}
+// <<< clawdline client identity <<<
+
 /// One short-lived JSONL connection to `codex app-server`.
 private final class CodexNameServer {
     private let process = Process()
@@ -920,9 +971,8 @@ private final class CodexNameServer {
             self?.received(data)
         }
 
-        guard request(method: "initialize", params: [
-            "clientInfo": ["name": "clawdline", "title": "Clawdline", "version": "0.6.0"],
-        ], id: 0) != nil else {
+        guard request(method: "initialize",
+                      params: ClawdlineClientIdentity.initializeParams(), id: 0) != nil else {
             stop()
             return nil
         }
