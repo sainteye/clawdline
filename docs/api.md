@@ -510,6 +510,13 @@ Newest first, at most 200 rows, and **every row is one the byte route would serv
 is built by asking the same resolver the read asks, so a page can turn each row into a link
 without discovering that half of them 404.
 
+**That holds in one direction only — the list is a subset of what reads, not the whole of it.**
+A document inside a package directory (`bundle.rtfd`, `notes.pages`) is skipped by the walk and
+still reads 200 at its own address, and the 200-row cut is applied to the project's rows and every
+task's rows *together*, so a project with 200 documents of its own leaves no room for a task's and
+those deliverables are readable without being listed. A page drawing this list is drawing a menu;
+it is not an inventory of the two directories.
+
 ### `GET /v1/sessions/:id/documents/project/:path` · `.../documents/task/:taskId/:path`
 
 One document's bytes, as `text/markdown` or `text/plain`, `private, no-store`, `nosniff`,
@@ -522,8 +529,8 @@ property, so what replaces it is a boundary:
 
 | root | what it is | why it is that directory |
 |---|---|---|
-| `project` | `<session cwd>/artifacts`, with that one symlink followed | in this repository the path is a symlink into a private sibling checkout. It is followed *first*, before any caller string exists, and what it resolves to **becomes** the root |
-| `task/:taskId` | `<task directory>/artifacts`, for a task the registry says belongs to this project | the child's deliverables, and **only** those: `task.json` and `result.json` sit one level above and are therefore outside the root |
+| `project` | `<session cwd>/artifacts`, with that one symlink followed | in this repository the path is a symlink into a private sibling checkout. It is followed *first*, before any caller string exists, and what it resolves to **becomes** the root. It is the only root a symlink may move |
+| `task/:taskId` | `<task directory>/artifacts`, for a task the registry says belongs to this project | the child's deliverables, and **only** those: `task.json` and `result.json` sit one level above and are therefore outside the root. **A symlink that leaves the task directory is not followed here** — that root is absent instead, because the child writing there is the party the boundary bounds, not a person saying where documents are kept |
 
 **The task secret is not filtered out — it is out of reach.** A child's `task.json` holds the
 secret that authenticates its completion, and by protocol its `result.json` repeats that secret
@@ -532,20 +539,29 @@ touched. The redacted half of a result — its summary, artifacts and verificati
 published by [`GET /v1/orchestrator/tasks`](#get-v1orchestratortasks-get-v1orchestratortasksid), which is where a phone
 should read it.
 
-**How far a hostile `:path` gets: nowhere outside those two directories.** It is refused before
-any filesystem call if it is absolute, holds an empty segment, or holds a segment beginning with
-`.` — which is `..`, `.` and every dotfile in one clause. Percent-decoding happens after the
-split, and the joined path is split and re-checked by the resolver, so `..%2F..` is refused by the
-clause that refuses `../..`. What survives that must still resolve to a path beginning with the
-resolved root, which is what refuses a symlink pointing out of it, then be a regular file, then
-carry one of three extensions — `md`, `markdown`, `txt` — then be at most 2 MiB. HTML is
-deliberately not on that list: the two named slots above serve it under a CSP chosen for one known
-producer, and a directory anybody may drop a file into is not that.
+**How far a hostile `:path` gets, for a caller who can only send a path: nowhere outside those two
+directories.** It is refused before any filesystem call if it is absolute, holds an empty segment,
+or holds a segment beginning with `.` — which is `..`, `.` and every dotfile in one clause.
+Percent-decoding happens after the split, and the joined path is split and re-checked by the
+resolver, so `..%2F..` is refused by the clause that refuses `../..`. What survives that must still
+resolve to a path beginning with the resolved root, which is what refuses a symlink pointing out of
+it, then be a regular file, then carry one of three extensions — `md`, `markdown`, `txt` — then be
+at most 2 MiB. HTML is deliberately not on that list: the two named slots above serve it under a
+CSP chosen for one known producer, and a directory anybody may drop a file into is not that.
 
 | refusal | status | code |
 |---|---|---|
 | unknown session, no such root, escaped or malformed path, unlisted extension, not a regular file, unknown task | 404 | `document_not_found` |
 | a document over 2 MiB | 413 | `document_too_large` |
+
+**That premise is load-bearing, and somebody who can write inside a root is outside it.** A hard
+link in the root to a file outside it is a regular file at a contained path, and no comparison of
+paths can see one; and between the check and the read the settled name can be replaced, which is
+the same window that makes the size cap a statement about the file that was measured rather than
+the bytes that are sent. Both cost a local write into a directory this route exists to publish, so
+what they change is a *local* read into one from a paired device rather than how far a path
+reaches. Closing them means carrying a descriptor from the check to the read, which is the day a
+root stops being a directory this Mac's own agents write into.
 
 **Absent on the Cloud path, deliberately.** By the rule the Cloud section below states, a read the
 hosted console does not have is guarded at its call site by `typeof api.X === "function"` and the

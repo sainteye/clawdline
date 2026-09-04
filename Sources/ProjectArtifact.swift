@@ -96,10 +96,11 @@ extension RemoteServer {
 ///
 /// - `<session cwd>/artifacts` — where the long working documents live. In this repository that
 ///   path is a symlink into a private sibling checkout, and it is the one symlink this code
-///   follows. It is followed *first*, before any caller string exists: somebody put it there to
-///   say "my documents live over there", so what it resolves to **becomes the root**, and
-///   containment is judged against that. Every other symlink is an escape as far as this is
-///   concerned, including one inside the root pointing back out.
+///   follows out of the directory it was computed from. It is followed *first*, before any
+///   caller string exists: somebody put it there to say "my documents live over there", so what
+///   it resolves to **becomes the root**, and containment is judged against that. Every other
+///   symlink is an escape as far as this is concerned, including one inside the root pointing
+///   back out.
 /// - `<task directory>/artifacts` — a dispatched child's deliverables. Note which directory that
 ///   is. The task directory itself holds `task.json`, whose secret authenticates that child's
 ///   completion, and `result.json`, which by protocol repeats that secret back. **Neither is
@@ -107,14 +108,29 @@ extension RemoteServer {
 ///   subdirectory, so both are outside it, and `..` is refused before the filesystem is touched.
 ///   The redacted half of a child's result — its summary, its artifacts, its verification — is
 ///   already published by `GET /v1/orchestrator/tasks`, so the file itself has no reason to go.
+///   **This root does not follow a symlink out of its task directory**, and the sentence above
+///   is why: the child that writes there is the party the boundary bounds, not a person saying
+///   where their documents are kept. `taskRoot(under:)` carries the argument in full.
 ///
-/// **How far a hostile path gets: nowhere outside those two directories.** A caller's string is
-/// refused before any filesystem call if it is absolute, holds an empty segment, or holds a
-/// segment beginning with `.` — which covers `..`, `.` and every dotfile. Then the resolved path
-/// must still begin with the resolved root, which is what refuses a symlink pointing out of it.
-/// Then the file must be a regular file whose extension is one of three that carry no active
-/// content, and under the size cap. The worst a name can do is read one of this project's own
-/// markdown documents, which is what the route is for.
+/// **How far a hostile path gets, for a caller who can only send one: nowhere outside those two
+/// directories.** A caller's string is refused before any filesystem call if it is absolute,
+/// holds an empty segment, or holds a segment beginning with `.` — which covers `..`, `.` and
+/// every dotfile. Then the resolved path must still begin with the resolved root, which is what
+/// refuses a symlink pointing out of it. Then the file must be a regular file whose extension is
+/// one of three that carry no active content, and under the size cap. The worst a name can do is
+/// read one of this project's own markdown documents, which is what the route is for.
+///
+/// **The premise in that sentence is load-bearing.** Somebody who can also *write* inside a root
+/// is not bounded by any of it, and two ways of that were measured rather than argued: a hard
+/// link in the root to a file outside it is a regular file at a contained path, which no
+/// comparison of paths can see; and between `file(in:at:)` returning and `documentResponse`
+/// reading, the name it settled on can be replaced by a symlink, which is the same window that
+/// makes the size cap a statement about the file that was measured rather than the bytes that
+/// are sent. Both cost a local write into a directory whose contents this route exists to
+/// publish, so what they change is *local read* into *read from a paired device* — not a path
+/// that reaches further. Closing them means holding a descriptor from the check to the read
+/// (open-then-`fstat`, with the link count looked at), which is worth doing when a root stops
+/// being a directory this Mac's own agents write.
 enum ProjectDocuments {
     /// Text, and nothing a browser will execute. HTML is deliberately absent: the two named
     /// slots above serve it under a CSP chosen for one known producer, and a directory anybody
@@ -158,21 +174,63 @@ enum ProjectDocuments {
     /// One place a path is normalised, so both sides of a containment test are normalised the
     /// same way.
     ///
-    /// **It does not need a fixed point, and an earlier version carried a `/private` fix-up that
-    /// assumed it did.** Foundation documents `resolvingSymlinksInPath()` as stripping a leading
-    /// `/private` when the receiver already carries one, which would make it alternate on a
-    /// temporary directory; that reasoning was written into a comment, and then a run with the
-    /// fix-up removed passed all sixty checks, so this tree does not do it. What makes the
-    /// comparison safe is structural rather than a property of this call: a candidate is always
-    /// built by appending to the root, so whatever this does to the root it does to the
-    /// candidate too.
+    /// **It is a fixed point, and an earlier version carried a `/private` fix-up that assumed it
+    /// was not.** Foundation documents `resolvingSymlinksInPath()` as stripping a leading
+    /// `/private`, and this tree does strip it: asked directly, `/private/tmp` comes back as
+    /// `/tmp`. The fix-up put the `/private` back, reasoning that a call which strips it must
+    /// alternate on a temporary directory — and that inference is the part that was wrong.
+    /// Stripping is *why* this is a fixed point: `/tmp` resolves to `/tmp` again and
+    /// `/var/folders/…` to itself, so a second pass changes nothing and the fix-up could never
+    /// fire. The run that took it out passed every check, and the call was then measured rather
+    /// than read.
+    ///
+    /// **Being a fixed point is load-bearing, so do not make it stop being one.**
+    /// `file(in:at:)` does not depend on it — a candidate is built by appending to the root, so
+    /// whatever this does to the root it does to the candidate too. `documents(in:)` does: it
+    /// resolves the root once and then resolves every entry the walk hands back, one
+    /// normalisation more than the base got, so against an alternating call no entry would begin
+    /// with its own root and the listing would come back empty. `the listing found the project's
+    /// documents` is the check that goes red for that.
     static func resolvedPath(_ url: URL) -> String {
         url.resolvingSymlinksInPath().path
     }
 
-    /// A root, with its one symlink followed and everything about it settled before a caller's
-    /// string is looked at. `nil` when there is no such directory, which is the ordinary case.
-    static func root(under directory: String) -> URL? {
+    /// Whether one already-resolved path is *below* another. The trailing separator is the whole
+    /// of it: without it `…/artifacts-elsewhere` passes as being inside `…/artifacts`.
+    static func isInside(_ path: String, _ base: String) -> Bool {
+        path.hasPrefix(base.hasSuffix("/") ? base : base + "/")
+    }
+
+    /// The project's root: `<session cwd>/artifacts`, **with its symlink followed**, settled
+    /// before a caller's string is looked at. `nil` when there is no such directory, which is
+    /// the ordinary case.
+    ///
+    /// Following it is the point. A person put that symlink there to say "my documents live over
+    /// there", so what it resolves to *becomes* the root and containment is judged against that.
+    static func projectRoot(under directory: String) -> URL? {
+        root(under: directory, mustStayUnder: nil)
+    }
+
+    /// A task's root: `<task directory>/artifacts`, and **a symlink that leaves the task
+    /// directory is not followed** — that root is `nil` instead.
+    ///
+    /// The two roots are otherwise the same directory name resolved the same way, and for a
+    /// while they were the same call. They are not the same claim. Nobody puts the symlink
+    /// here: the task directory is `/tmp/.clawdline/<task id>`, computed by the broker from an
+    /// id that cannot hold a dot, and the `artifacts` directory inside it is created by the
+    /// child whose deliverables it holds, because the briefing tells it to. So
+    /// `artifacts -> /somewhere/else` under a task directory is not a person saying where their
+    /// documents are kept; it is the one party this boundary exists to bound choosing a new
+    /// root, after which every `md`, `markdown` and `txt` beneath whatever it names is readable
+    /// by any paired device. The extension allowlist is what stopped that being worse, and an
+    /// allowlist is not where "the root does not move" belongs.
+    static func taskRoot(under directory: String) -> URL? {
+        root(under: directory, mustStayUnder: directory)
+    }
+
+    /// Both roots, with the one clause that separates them: `enclosure` non-`nil` means the
+    /// resolved root must still be inside that resolved directory.
+    private static func root(under directory: String, mustStayUnder enclosure: String?) -> URL? {
         guard !directory.isEmpty else { return nil }
         let candidate = URL(fileURLWithPath: directory, isDirectory: true)
             .appendingPathComponent("artifacts", isDirectory: true)
@@ -180,6 +238,10 @@ enum ProjectDocuments {
         let path = resolvedPath(candidate)
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
               isDirectory.boolValue else { return nil }
+        if let enclosure {
+            let base = resolvedPath(URL(fileURLWithPath: enclosure, isDirectory: true))
+            guard isInside(path, base) else { return nil }
+        }
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
@@ -201,9 +263,7 @@ enum ProjectDocuments {
         for segment in segments { candidate.appendPathComponent(String(segment)) }
         let base = resolvedPath(root)
         let resolved = resolvedPath(candidate)
-        guard resolved.hasPrefix(base.hasSuffix("/") ? base : base + "/") else {
-            return .failure(.notFound)
-        }
+        guard isInside(resolved, base) else { return .failure(.notFound) }
         let url = URL(fileURLWithPath: resolved)
         guard let values = try? url.resourceValues(
                 forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
@@ -227,9 +287,17 @@ enum ProjectDocuments {
 
     /// What is in a root, newest first.
     ///
+    /// **The listing is a subset of what the read will serve, and only that direction holds.**
     /// Every candidate goes back through `file(in:at:)`, so a listing cannot offer a document the
     /// read would then refuse — which is the property that makes the list safe to hand to a page
-    /// that turns each row into a link.
+    /// that turns each row into a link. The other direction is deliberately false, and reading
+    /// this as "the listing is what there is" is the mistake it invites: a listing is a menu, and
+    /// a menu is allowed to be shorter than the kitchen. Two ways it is strictly shorter, both
+    /// measured rather than reasoned: a document inside a package directory — `bundle.rtfd`,
+    /// `notes.pages` — is skipped by the walk below and still reads 200 at its own address, and
+    /// past `maximumListed` the rows are cut while the documents behind them stay readable. So a
+    /// page that draws only this list is drawing the menu; a page that says "these are your
+    /// documents" is saying something this call does not promise.
     static func documents(in root: URL) -> [Document] {
         let base = resolvedPath(root)
         let prefix = base.hasSuffix("/") ? base : base + "/"
@@ -287,7 +355,7 @@ extension RemoteServer {
         let decoded = parts.map { $0.removingPercentEncoding ?? $0 }
         switch decoded[0] {
         case "project":
-            guard let root = ProjectDocuments.root(under: cwd) else {
+            guard let root = ProjectDocuments.projectRoot(under: cwd) else {
                 return .error(404, "document_not_found", "No document named that.")
             }
             return Self.documentResponse(root: root,
@@ -295,7 +363,7 @@ extension RemoteServer {
         case "task":
             guard decoded.count >= 3,
                   let directory = taskDocumentDirectory(id: decoded[1], cwd: cwd),
-                  let root = ProjectDocuments.root(under: directory) else {
+                  let root = ProjectDocuments.taskRoot(under: directory) else {
                 return .error(404, "document_not_found", "No document named that.")
             }
             return Self.documentResponse(root: root,
@@ -353,14 +421,14 @@ extension RemoteServer {
                 out.append(row)
             }
         }
-        if let root = ProjectDocuments.root(under: cwd) {
+        if let root = ProjectDocuments.projectRoot(under: cwd) {
             rows(ProjectDocuments.documents(in: root), under: "project",
                  source: "project", task: nil)
         }
         for record in Self.documentTaskRecords(cwd: cwd) {
             guard let id = record["id"] as? String,
                   let directory = record["dir"] as? String,
-                  let root = ProjectDocuments.root(under: directory) else { continue }
+                  let root = ProjectDocuments.taskRoot(under: directory) else { continue }
             rows(ProjectDocuments.documents(in: root), under: "task/\(id)", source: "task",
                  task: ["id": id, "title": record["title"] as? String ?? ""])
         }

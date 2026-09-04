@@ -60,14 +60,27 @@ group("documents leave one of two roots and a path chooses only inside one") {
     try! Data("# what the child found\n".utf8)
         .write(to: taskArtifacts.appendingPathComponent("report.md"))
 
-    guard let root = ProjectDocuments.root(under: project.path) else {
+    guard let root = ProjectDocuments.projectRoot(under: project.path) else {
         check("the project's document root resolves through its symlink", false)
         return
     }
     expect("the symlink's target is what becomes the root",
            ProjectDocuments.resolvedPath(root), ProjectDocuments.resolvedPath(published))
     check("a project with no artifacts directory has no root",
-          ProjectDocuments.root(under: elsewhere.path) == nil)
+          ProjectDocuments.projectRoot(under: elsewhere.path) == nil)
+
+    // Normalising is relied on to be a fixed point, and only in one place: the listing resolves
+    // its root once and every entry the walk hands back a second time, so a call that alternated
+    // would leave no entry beginning with its own root and the listing would come back empty.
+    // `/private/tmp` is here because it is the one input Foundation documents as changing —
+    // stripping is what makes it a fixed point, not what threatens it — and because the fixtures
+    // live under `/var/folders` while a real task root lives under `/tmp`, so the strip is a
+    // path these tests would otherwise never take.
+    for path in ["/tmp", "/private/tmp", "/var/folders", published.path, taskDirectory.path] {
+        let once = ProjectDocuments.resolvedPath(URL(fileURLWithPath: path))
+        expect("normalising \(path) twice is normalising it once",
+               ProjectDocuments.resolvedPath(URL(fileURLWithPath: once)), once)
+    }
 
     let served = RemoteServer.documentResponse(root: root, path: "inventory.md")
     expect("a document in the root is served", served.status, 200)
@@ -134,9 +147,50 @@ group("documents leave one of two roots and a path chooses only inside one") {
     check("a row says how big it is", listed.first { $0.path == "inventory.md" }
             .map { $0.bytes > 0 } == true)
 
+    // ...and only in that direction. The sentence above used to read as an equality, and a page
+    // that believed it would be drawing an inventory of the root rather than a menu. Both ways
+    // the listing is strictly smaller are pinned here, so that either one changing is a red
+    // check and not a surprise on a phone.
+    let package = published.appendingPathComponent("bundle.rtfd", isDirectory: true)
+    try! FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+    try! Data("# inside a package\n".utf8)
+        .write(to: package.appendingPathComponent("inside.md"))
+    let withPackage = ProjectDocuments.documents(in: root).map { $0.path }
+    check("a document inside a package directory is not listed",
+          !withPackage.contains("bundle.rtfd/inside.md"))
+    expect("and it reads at its own address anyway",
+           RemoteServer.documentResponse(root: root, path: "bundle.rtfd/inside.md").status, 200)
+    check("the package directory itself is not offered either",
+          !withPackage.contains("bundle.rtfd"))
+
+    // The cut is the second way. It is taken after the walk, so what it removes is rows and not
+    // reachability.
+    let overflow = fixture.appendingPathComponent("overflow", isDirectory: true)
+    let crowdedFiles = overflow.appendingPathComponent("artifacts", isDirectory: true)
+    try! FileManager.default.createDirectory(at: crowdedFiles, withIntermediateDirectories: true)
+    let overflowing = ProjectDocuments.maximumListed + 5
+    let names = (0..<overflowing).map { String(format: "doc-%04d.md", $0) }
+    for name in names {
+        try! Data("# \(name)\n".utf8).write(to: crowdedFiles.appendingPathComponent(name))
+    }
+    guard let crowded = ProjectDocuments.projectRoot(under: overflow.path) else {
+        check("a root with more documents than the cap is still a root", false)
+        return
+    }
+    let crowdedRows = ProjectDocuments.documents(in: crowded)
+    expect("a root of \(overflowing) documents lists the cap and no more",
+           crowdedRows.count, ProjectDocuments.maximumListed)
+    let listedNames = Set(crowdedRows.map { $0.path })
+    guard let cut = names.first(where: { !listedNames.contains($0) }) else {
+        check("the cap left something out", false)
+        return
+    }
+    expect("a document past the cut still reads at its own address",
+           RemoteServer.documentResponse(root: crowded, path: cut).status, 200)
+
     // The task half. The root is the deliverables directory, so the secret is not filtered
     // out — it is outside the only place a path can name.
-    guard let deliveries = ProjectDocuments.root(under: taskDirectory.path) else {
+    guard let deliveries = ProjectDocuments.taskRoot(under: taskDirectory.path) else {
         check("a task's deliverables directory is a root", false)
         return
     }
@@ -155,6 +209,37 @@ group("documents leave one of two roots and a path chooses only inside one") {
     let delivered = ProjectDocuments.documents(in: deliveries)
     expect("a task listing holds only its deliverables", delivered.count, 1)
     expect("and names the one file that is there", delivered.first?.path, "report.md")
+
+    // The root itself is the other thing a caller never names, and the two roots do not follow a
+    // symlink for the same reason. A person puts the project's there; nobody puts this one there
+    // — the child whose deliverables these are creates the directory, and it is the party the
+    // boundary bounds. So it may not move the root.
+    let movedTask = fixture.appendingPathComponent("task-moved", isDirectory: true)
+    try! FileManager.default.createDirectory(at: movedTask, withIntermediateDirectories: true)
+    try! FileManager.default.createSymbolicLink(
+        at: movedTask.appendingPathComponent("artifacts"), withDestinationURL: elsewhere)
+    check("a task's artifacts pointing out of its task directory is not a root",
+          ProjectDocuments.taskRoot(under: movedTask.path) == nil)
+    check("that one really does reach the outside document when the root is allowed to move",
+          FileManager.default.contents(
+            atPath: movedTask.appendingPathComponent("artifacts/private.md").path) != nil)
+    check("while the project root, which a person places, still follows its own symlink",
+          ProjectDocuments.projectRoot(under: project.path) != nil)
+
+    // It refuses leaving, not symlinks: one that stays inside the task directory is a root, so
+    // a child is free to keep its deliverables under another name of its own.
+    let linkedTask = fixture.appendingPathComponent("task-linked", isDirectory: true)
+    let inside = linkedTask.appendingPathComponent("delivered", isDirectory: true)
+    try! FileManager.default.createDirectory(at: inside, withIntermediateDirectories: true)
+    try! Data("# delivered\n".utf8).write(to: inside.appendingPathComponent("inner.md"))
+    try! FileManager.default.createSymbolicLink(
+        at: linkedTask.appendingPathComponent("artifacts"), withDestinationURL: inside)
+    guard let linked = ProjectDocuments.taskRoot(under: linkedTask.path) else {
+        check("a task's artifacts symlinked inside its own directory is still a root", false)
+        return
+    }
+    expect("and the deliverable behind it is served",
+           RemoteServer.documentResponse(root: linked, path: "inner.md").status, 200)
 
     // The address a listing row hands to a page. An ordinary name has to survive it, or the
     // link the page draws is uglier than the file it points at.
