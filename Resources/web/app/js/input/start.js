@@ -10,6 +10,7 @@ import { renderComposer } from "../view/composer.js";
 import { Waits } from "../view/waits.js";
 import { openSession } from "../session/open.js";
 import {
+    clawdfatherChoiceSupported,
     clawdfatherCreationChoice,
     clawdfatherCreationLabel,
     createClawdfatherAssignmentState,
@@ -115,7 +116,18 @@ export var Start = (function () {
             toast(error && error.message ? error.message : T.webCoordReadFailed, true);
         }
     });
-    var coordinatorLoader = createClawdfatherCoordinatorLoader(api, function (state) {
+    // The getter, not `api` itself. This IIFE runs while `main.js` is still resolving its own
+    // static imports, which is long before it calls `useApi` — so handing the value over here
+    // hands over `null`, and `null` has no `coordinatorBearings` on it. The sheet then said
+    // *Could not read Clawdfather's bearings* on every path, for the life of the page, without
+    // ever having asked anybody. Both orderings of this one call were run against the same
+    // transport and nothing else was changed: constructed after `useApi` the row read
+    // "Clawdfather offline"; constructed before it, which is what the page really does, it read
+    // the failed-read sentence. `createClawdfatherCoordinatorLoader` takes a getter for exactly
+    // this, and the creation-sheet fixture in `Tests/web-clawdfather.mjs` opens the sheet in the
+    // page's own order so a snapshot put back here goes red.
+    var coordinatorLoader = createClawdfatherCoordinatorLoader(function () { return api; },
+                                                              function (state) {
         coordinatorPayload = state.payload;
         coordinatorFailed = state.failed === true;
         draw();
@@ -309,6 +321,13 @@ export var Start = (function () {
         var row = els["start-clawdfather-row"];
         var button = els["start-clawdfather"];
         var state = els["start-clawdfather-state"];
+        // A transport with no Bearings read has no choice to offer, and the row is not drawn —
+        // the rule `docs/api.md` already states for the other four reads the Cloud path does not
+        // carry. Asked here of the transport rather than of an answer, because a read that does
+        // not exist and a read that failed are different facts and only one of them is about
+        // this Mac. The hosted console drew this row greyed, saying it could not read a
+        // coordinator whose record was `configured` the whole time.
+        if (!clawdfatherChoiceSupported(api)) { row.hidden = true; return; }
         var choice = clawdfatherCreationChoice(
             coordinatorPayload, assignmentState.selected(), !resume && !at);
         row.hidden = !choice.shown;

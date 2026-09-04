@@ -75,6 +75,25 @@ export function clawdfatherCreationChoice(payload, selected, fresh) {
     };
 }
 
+/**
+ * Whether this transport carries the read the whole choice is built on.
+ *
+ * `docs/api.md` states the rule once for all five reads the Cloud path does not carry: each is
+ * guarded at its call site by `typeof api.X === "function"`, *so the control it belongs to is
+ * not drawn at all* — "a quieter answer than a button that fails when pressed, and it is the
+ * deliberate one for a feature that is missing rather than refused". This control was the one
+ * that did not follow it. On a phone the row appeared, greyed, saying *Could not read
+ * Clawdfather's bearings* — a sentence that is true of the hop and false of the Mac, whose
+ * record was `configured` throughout.
+ *
+ * The question is asked of the **transport**, never of an answer, which is what tells *there is
+ * no such read here* apart from *the read failed*. A Cloud `coordinatorBearings` is deliberately
+ * absent and is not to be written; the row simply is not part of that page.
+ */
+export function clawdfatherChoiceSupported(client) {
+    return !!(client && typeof client.coordinatorBearings === "function");
+}
+
 /* --------------------------------------------------------------------------
    The words, and the two that are kept here as well
 

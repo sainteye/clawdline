@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 import { T, fill } from "../Resources/web/app/js/core/i18n.js";
 import {
     attemptClawdfatherAssignment,
+    clawdfatherChoiceSupported,
     clawdfatherCreationChoice,
     clawdfatherCreationLabel,
     clawdfatherInstruction,
@@ -752,6 +755,249 @@ for (const key of ["webClawdfatherRegisterSent", "webClawdfatherRegisterLate",
 // one merge away from being the only sentence a non-English reader got.
 assert.match(index, /<span id="start-clawdfather-label"><\/span>/,
     "the creation chip ships empty and is filled from /v1/strings, never from markup English");
+
+/* ---- a transport with no Bearings read draws no row ----------------------- */
+
+/*
+   `docs/api.md` writes the rule down once for all five reads the Cloud path does not carry:
+   each is guarded at its call site by `typeof api.X === "function"`, "so the control it belongs
+   to is not drawn at all. That is a quieter answer than a button that fails when pressed, and
+   it is the deliberate one for a feature that is missing rather than refused."
+
+   This control was the exception, and it was visible on a phone: the row was drawn, greyed, with
+   *Could not read Clawdfather's bearings* under it. The sentence is true of the hop and false of
+   the machine — the Mac's record was `configured` the whole time, and this page has a correct
+   word for that. What it did not have was a way to tell *this transport has no such read* from
+   *the read failed*, so it said the second about the first.
+
+   The question is asked of the transport, never of an answer, which is what makes it different
+   from every other state on this sheet.
+*/
+
+assert.equal(clawdfatherChoiceSupported({ coordinatorBearings: function () { } }), true,
+    "a transport that carries the Bearings read may draw the creation choice");
+assert.equal(clawdfatherChoiceSupported({}), false,
+    "a transport with no Bearings read carries no creation choice to draw");
+assert.equal(clawdfatherChoiceSupported({ coordinatorBearings: true }), false,
+    "a truthy non-function is not a read; missing is not permission here either");
+for (const absent of [null, undefined, 0, "", "coordinatorBearings"]) {
+    assert.equal(clawdfatherChoiceSupported(absent), false,
+        "no client at all is no read either");
+}
+
+/* And the shapes are the real transports', not this file's idea of them. A fixture that has
+   drifted from the client it stands for proves the guard against nothing. */
+const cloudClient = await readFile(
+    new URL("../Resources/web/app/js/net/cloud-client.js", import.meta.url), "utf8");
+const liveClient = await readFile(
+    new URL("../Resources/web/app/js/net/live.js", import.meta.url), "utf8");
+const mockClient = await readFile(
+    new URL("../Resources/web/app/js/net/mock.js", import.meta.url), "utf8");
+assert.ok(!cloudClient.includes("coordinatorBearings"),
+    "the cloud client has no Bearings read — that absence is deliberate and is what this guards");
+assert.match(liveClient, /coordinatorBearings:\s*function/,
+    "the direct client does carry it, so the guard is not simply always false");
+assert.match(mockClient, /coordinatorBearings:\s*function/,
+    "and so do the fixtures, or the offline flow would lose the row it is supposed to keep");
+
+/* ---- the two rows as the phone actually got them -------------------------- */
+
+/*
+   Both facts above are decisions about a row on a screen, and a scan of the source cannot see a
+   row. What went wrong was that a control *appeared*, greyed, with the wrong reason under it —
+   a shape every unit assertion in this file was happy with.
+
+   So `start.js` is loaded against the smallest DOM that will hold it, the technique
+   `Tests/web-session-resilience.mjs` uses for the Codex resume path, and the sheet is opened once
+   per transport. What is asserted is what the phone showed: whether the row is there at all, and
+   what the line under it says.
+*/
+
+if (process.env.CLAWDLINE_CLAWDFATHER_SHEET_BEHAVIOR === "1") {
+    const noop = function () { };
+    const canvas = {
+        clearRect: noop, fillRect: noop, beginPath: noop, moveTo: noop, lineTo: noop,
+        stroke: noop, save: noop, restore: noop, imageSmoothingEnabled: false,
+        fillStyle: "", strokeStyle: ""
+    };
+    function testElement(tag) {
+        const children = [];
+        const attributes = new Map();
+        const classes = new Set();
+        const descendants = new Map();
+        const target = {
+            tagName: String(tag || "div").toUpperCase(), children, childNodes: children,
+            style: {}, dataset: {}, hidden: false, disabled: false, value: "", title: "",
+            textContent: "", className: "", placeholder: "",
+            scrollHeight: 0, scrollTop: 0, clientHeight: 0, parentNode: null,
+            appendChild: function (child) {
+                child.parentNode = proxy; children.push(child); return child;
+            },
+            removeChild: function (child) {
+                const at = children.indexOf(child);
+                if (at >= 0) children.splice(at, 1);
+                child.parentNode = null; return child;
+            },
+            setAttribute: function (name, value) { attributes.set(name, String(value)); },
+            getAttribute: function (name) {
+                return attributes.has(name) ? attributes.get(name) : null;
+            },
+            removeAttribute: function (name) { attributes.delete(name); },
+            toggleAttribute: function (name, force) {
+                const on = force === undefined ? !attributes.has(name) : !!force;
+                if (on) attributes.set(name, ""); else attributes.delete(name);
+                return on;
+            },
+            addEventListener: function (name, fn) { target["on" + name] = fn; },
+            querySelector: function (selector) {
+                if (!descendants.has(selector)) descendants.set(selector, testElement("span"));
+                return descendants.get(selector);
+            },
+            querySelectorAll: function () { return []; },
+            closest: function () { return proxy; },
+            focus: noop,
+            animate: function () { return { cancel: noop, onfinish: null }; },
+            getBoundingClientRect: function () {
+                return { top: 0, left: 0, width: 0, height: 0, bottom: 0, right: 0 };
+            },
+            getContext: function () { return canvas; }
+        };
+        Object.defineProperty(target, "innerHTML", {
+            get: function () { return target._innerHTML || ""; },
+            set: function (value) {
+                target._innerHTML = value; children.splice(0); descendants.clear();
+            }
+        });
+        target.classList = {
+            add: function (...names) { names.forEach(function (n) { classes.add(n); }); },
+            remove: function (...names) { names.forEach(function (n) { classes.delete(n); }); },
+            toggle: function (name, force) {
+                const on = force === undefined ? !classes.has(name) : !!force;
+                if (on) classes.add(name); else classes.delete(name);
+                return on;
+            },
+            contains: function (name) { return classes.has(name); }
+        };
+        const proxy = new Proxy(target, {
+            get: function (object, key) {
+                if (key === Symbol.iterator) return function* () { yield* children; };
+                if (key === "content") return { cloneNode: function () { return testElement(); } };
+                if (key in object) return object[key];
+                return undefined;
+            }
+        });
+        return proxy;
+    }
+
+    const root = testElement();
+    const elements = new Map();
+    function elementWithID(id) {
+        if (!elements.has(id)) {
+            elements.set(id, testElement(id.includes("filter") ? "input" : "div"));
+        }
+        return elements.get(id);
+    }
+    globalThis.localStorage = { getItem: function () { return null; }, setItem: noop };
+    globalThis.location = { search: "", protocol: "http:", hostname: "localhost", pathname: "/" };
+    globalThis.history = { replaceState: noop };
+    globalThis.getComputedStyle = function () { return { opacity: "1", marginLeft: "0" }; };
+    Object.defineProperty(globalThis, "navigator", {
+        value: { userAgent: "node", maxTouchPoints: 0 }, configurable: true
+    });
+    globalThis.window = root;
+    window.devicePixelRatio = 1;
+    window.innerHeight = 800;
+    window.visualViewport = { height: 800, offsetTop: 0, addEventListener: noop };
+    window.matchMedia = function () { return { matches: false, addEventListener: noop }; };
+    globalThis.document = root;
+    document.documentElement = { lang: "en", style: { setProperty: noop, removeProperty: noop } };
+    document.getElementById = elementWithID;
+    document.querySelector = function () { return root; };
+    document.querySelectorAll = function () { return []; };
+    document.createElement = function (tag) { return testElement(tag); };
+    document.body = root;
+    globalThis.MutationObserver = class { observe() { } disconnect() { } };
+    globalThis.ResizeObserver = MutationObserver;
+    globalThis.IntersectionObserver = MutationObserver;
+
+    const { useApi } = await import("../Resources/web/app/js/net/api.js");
+    const { S } = await import("../Resources/web/app/js/core/state.js");
+    const { Start } = await import("../Resources/web/app/js/input/start.js");
+
+    const places = function () {
+        return Promise.resolve({
+            places: [{ id: "place-one", path: "/repo/one", label: "one" }],
+            assistants: [{ id: "claude", label: "Claude" }]
+        });
+    };
+    const row = elementWithID("start-clawdfather-row");
+    const line = elementWithID("start-clawdfather-state");
+    const settle = function () {
+        return new Promise(function (resolve) { setTimeout(resolve, 0); });
+    };
+    S.write = true;
+
+    // The hosted console, exactly: everything the sheet needs except this one read.
+    useApi({ places: places, startPlace: noop });
+    Start.open();
+    await settle();
+    assert.equal(row.hidden, true,
+        "a transport with no Bearings read draws no Clawdfather row, per docs/api.md");
+    assert.equal(line.textContent, "",
+        "and says nothing about a read it never attempted — least of all that one failed");
+    Start.close();
+
+    // The same sheet on the direct path, over a Mac whose crown has fallen off.
+    useApi({
+        places: places, startPlace: noop,
+        coordinatorBearings: function () {
+            return Promise.resolve({
+                registration: { state: "configured" },
+                coordinator: { configured: true, status: "offline", lifecycle: "offline",
+                               scope: "machine", label: "Clawdfather" }
+            });
+        }
+    });
+    Start.open();
+    await settle();
+    assert.equal(row.hidden, false, "the direct path still offers the row");
+    assert.equal(elementWithID("start-clawdfather").disabled, true,
+        "a configured coordinator, offline included, still closes the switch");
+    assert.equal(line.textContent, fill(T.webCoordOffline, { name: "Clawdfather" }),
+        "the sheet says the Mac's own word for a coordinator whose process is gone");
+    Start.close();
+
+    // Online is the case that must not grow the sentence: advice nobody needs is noise, and
+    // noise on a status line is how the one that mattered stopped being read.
+    useApi({
+        places: places, startPlace: noop,
+        coordinatorBearings: function () {
+            return Promise.resolve({
+                registration: { state: "configured" },
+                coordinator: { configured: true, status: "online", lifecycle: "standby",
+                               scope: "machine", label: "Clawdfather" }
+            });
+        }
+    });
+    Start.open();
+    await settle();
+    assert.equal(row.hidden, false);
+    assert.equal(line.textContent, fill(T.webCoordOnline, { name: "Clawdfather" }),
+        "and its own word for one that is still there");
+
+    console.log("web clawdfather creation sheet behavior passed");
+    process.exit(0);
+}
+
+const sheetBehavior = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    cwd: process.cwd(), encoding: "utf8",
+    env: { ...process.env, CLAWDLINE_CLAWDFATHER_SHEET_BEHAVIOR: "1" }
+});
+assert.equal(sheetBehavior.status, 0,
+    "the isolated creation-sheet fixture passes: "
+    + (sheetBehavior.stderr || sheetBehavior.stdout));
+assert.match(sheetBehavior.stdout, /creation sheet behavior passed/,
+    "the behavior fixture reached the end of all three transports");
 
 console.log("web clawdfather tests passed");
 process.exit(0);
