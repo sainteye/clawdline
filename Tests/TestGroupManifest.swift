@@ -107,6 +107,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the transcript behind the README pictures",
     "newest first",
     "the transcript pane's text view",
+    "documents leave one of two roots and a path chooses only inside one",
     "devstack: a project describes its stack",
     "devstack: a file with nothing but a name still works",
     "devstack: tier 0 declares ports and nothing else",

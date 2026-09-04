@@ -1089,6 +1089,12 @@ final class RemoteServer: @unchecked Sendable {
             }
             return Self.projectArtifactResponse(cwd: cwd, artifact: artifact)
 
+        // The documents this project has produced. Two roots, both computed here rather than
+        // named by the caller, whose string may only choose within one; `ProjectArtifact.swift`
+        // states the boundary and how far a hostile path gets.
+        case ("GET", let path) where Self.isDocumentsReading(path):
+            return documentsRoute(path)
+
         // Everything about this project that has an address.
         //
         // **A route rather than a field on the session.** The session list goes out on the event

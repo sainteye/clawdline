@@ -198,7 +198,22 @@ fi
 #                                          its own: it is the same bounded scan of the same store.
 #                                          The projection, its ladder and its refusals are all in
 #                                          `UsageLedger.swift`; what landed here is the door.)
-remote_server_ceiling=5670
+#   5,571  the documents route arrived        (+6, one hunk and no more: the `case` and the three
+#                                          lines of comment saying that both roots are computed
+#                                          here rather than named by the caller. The route's whole
+#                                          body — the boundary, the listing, the refusals and the
+#                                          response — is in `Sources/ProjectArtifact.swift`,
+#                                          beside `projectArtifactResponse`, whose slot-not-path
+#                                          safety argument it is the successor to. A new file was
+#                                          not worth it for that: this one already holds the two
+#                                          named artifact slots and `linksPayload`, and a document
+#                                          route is the same subject.)
+#   5,676  the documents route joined it      (the ceiling is the file measured: 5,676. 5,670 plus
+#                                          the branch's six is the same number, and that agreement
+#                                          is not the reason it is written here — a receipt that
+#                                          was added to instead of taken is a receipt about a tree
+#                                          nobody looked at.)
+remote_server_ceiling=5676
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -210,8 +225,13 @@ if grep -q 'group(' Tests/main.swift; then
 fi
 
 runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
-[ "$runner_count" -eq 31 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 31"
+# 32 once the document route got a suite of its own. It was written into
+# `Tests/MarkdownTests.swift` first, beside the two named artifact slots it succeeds, and that
+# file came out at 2,005 lines against the 2,000-line stop-growth limit below — which is the
+# limit doing exactly what it is for, so the group moved into its own file rather than being
+# trimmed to fit under a wall it would have left the next person standing at.
+[ "$runner_count" -eq 32 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 32"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -287,8 +307,13 @@ manifest_group_count=$(awk '
 # branch brought, met by a merge that touched neither manifest. Adding would have given 531 too,
 # and that is the point rather than a reprieve — the two numbers agreeing is not what makes either
 # right, and the paragraph above is about the day two branches agreed and were wrong together.
-[ "$manifest_group_count" -eq 531 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 531"
+# 522 once documents could be read from a phone: one group, and it is the first test in this tree
+# that asserts a route refuses a caller-supplied *path* rather than a caller-supplied name — the
+# two named artifact slots before it could not be asked for a path at all.
+# 532 is this merged tree counted with the awk above: 531 was counted on the tree the Projects
+# page landed on, and the documents group is the one this branch brought.
+[ "$manifest_group_count" -eq 532 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 532"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -362,8 +387,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 44 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 44"
+[ "$suite_count" -eq 45 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 45"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
