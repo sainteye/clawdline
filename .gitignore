@@ -31,3 +31,9 @@ __pycache__/
 
 # Personal Claude Code skills for this checkout, not part of the app.
 .claude/skills/
+
+# Wrangler's local cache. It is written by any `wrangler pages` invocation whose working directory
+# happens to be this checkout, and `cache/pages.json` carries the Cloudflare account id and project
+# name — not a secret, but not this repository's to publish either. The private sibling repo has
+# ignored this since 2026-08-31; this one had not, so a broad `git add` here would have committed it.
+.wrangler/
