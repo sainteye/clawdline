@@ -12,6 +12,7 @@ There is a place to *be* now. This page is how it works and what adding the next
 - [The drawer](#the-drawer)
 - [The address](#the-address)
 - [Adding a page](#adding-a-page)
+- [Three things a browser found and no suite did](#three-things-a-browser-found-and-no-suite-did)
 - [What deliberately did not change](#what-deliberately-did-not-change)
 
 ## What a page is
@@ -131,6 +132,34 @@ holds `T.<name>` in the modules, the fallback in `core/i18n.js` and the `/v1/str
 compiler starts. The drawer's own labels reuse strings that already existed — `webBack` is
 "Sessions", `webSettings` is "Settings" — and the wordmark's `Menu` is written in the markup in
 English, which is what the untranslated half of the Usage page does too.
+
+## Three things a browser found and no suite did
+
+All three were green in Node, in a fake document, at the moment they were broken. The page was
+served with `python3 -m http.server` from `Resources/web` and opened at `?mock=1`; that is fifteen
+seconds of setup and it is the difference between a suite that agrees with itself and a page that
+works.
+
+**The drawer swallowed its own clicks.** Every sheet in this app closes on a tap outside by putting
+`stopPropagation` on the sheet, so the drawer was built the same way — and every page link in it
+is answered by *one delegated listener on the document*, which that swallows too. Pressing Settings
+lit the row and did nothing, with nothing in the console. It tells a tap on the scrim from a tap on
+a row by comparing `ev.target` now, and `Tests/web-pages.mjs` refuses a `stopPropagation` in that
+file (with the pattern calibrated against `input/command.js`, which really does have one).
+
+**The first list took a deep link away.** Opening `#page=usage` in a fresh tab came up on Usage and
+then, about a second later, went back to the session list and rewrote the address on the way —
+`view/list.js` opens the top session when the first list arrives on a desk, and opening a session
+means being on the sessions page. It now leaves that courtesy alone unless the app is actually on
+the home page. Measured both ways on two ports, because Chrome's module cache will happily serve
+the old `list.js` under an unchanged URL and tell you your fix did nothing.
+
+**The drawer did not slide in, in the end.** A `translateX` entrance sits at its first keyframe for
+as long as the animation is `running`, and a renderer that throttles animations — measured here in
+an iframe Chrome had decided not to animate — leaves the drawer open, `hidden === false`, and
+entirely off the left edge with its scrim over the page. `responsive.css` reached the same
+conclusion about the detail pane for a different reason two months earlier. The scrim keeps its
+`fade`, because an undimmed page is a look rather than a trap.
 
 ## What deliberately did not change
 

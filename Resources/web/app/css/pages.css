@@ -51,6 +51,12 @@
     border-top: 1px solid var(--line);
 }
 .page-settings .sheet .foot { margin-top: 18px; }
+/* A control row in a sheet has carried the session list's `.row` fill since the day it was
+   written — `.sheet .block .row` overrides that selector's box and not its background — and
+   nobody has ever seen it, because `--card` on a `--card` sheet is `--card`. Take the card away
+   and it appears: a rounded panel the width of the column with one chip sitting in it. So the
+   page says out loud what the sheet was saying by accident. */
+.page-settings .sheet .block .row { background: none; }
 
 /* ==========================================================================
    The drawer
@@ -65,6 +71,9 @@
     background: rgba(6, 6, 8, 0.58);
     -webkit-backdrop-filter: blur(2px);
     backdrop-filter: blur(2px);
+    /* The same `fade` every sheet in this app comes up with, kept here and not on the panel
+       below: an animation that never runs leaves this at `opacity: 0`, and an undimmed page
+       behind a drawer that is otherwise entirely there is a look, not a trap. */
     animation: fade 140ms var(--ease);
 }
 .sidebar[hidden] { display: none; }
@@ -82,11 +91,18 @@
     background: var(--card);
     border-right: 1px solid var(--line);
     box-shadow: 12px 0 40px rgba(0, 0, 0, 0.45);
-    animation: sidebar-in 160ms var(--ease);
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* **It does not slide in, and that is the second time this app has decided that.**
+       `responsive.css` took the transform off the detail pane because iOS could lose the fixed
+       compositor layer as it finished sliding, leaving a black page under the header — "this
+       screen change is navigation, and reliability is worth more than its 260ms decoration".
+       A `translateX` entrance has a second failure with the same ending: an animation is stuck at
+       its first keyframe for as long as it is `running`, so a renderer that throttles animations
+       leaves the drawer open, `hidden === false`, and entirely off the left edge with its scrim
+       over the page. Measured here, in an iframe Chrome had decided not to animate: `playState`
+       stayed `running` and the panel sat at `x: -272` for as long as it was watched. */
 }
-@keyframes sidebar-in { from { transform: translateX(-100%); } to { transform: none; } }
 
 .sidebar-item {
     display: flex;

@@ -3,6 +3,7 @@ import { esc } from "../core/esc.js";
 import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
+import { Pages } from "../core/pages.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
 import { byId, featureRootChip, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
@@ -113,7 +114,13 @@ export function onSessions() {
         // theirs a moment later is two screens for one tap, and the first of them is wrong.
         // A Mac with nothing running is where this matters: the first list to arrive there can
         // be the one carrying the session that was just started from this page.
-        if (!routed && !wantedSession && !started) {
+        //
+        // **And not when they asked for a particular page.** Opening a session means being on
+        // the sessions page — see `openSession` — so this courtesy, arriving a second after a
+        // `#page=usage` was opened in a fresh tab, would quietly answer a different question
+        // than the one in the address. Measured in a browser: the page came up on Usage and
+        // the first list took it back to the list, rewriting the address on the way out.
+        if (!routed && !wantedSession && !started && Pages.current() === Pages.home()) {
             var top = ordered()[0];
             if (top) { if (phone()) { S.selectedId = top.id; render(); } else { openSession(top.id, true); } }
         }

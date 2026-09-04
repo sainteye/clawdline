@@ -52,9 +52,19 @@ export var Sidebar = (function () {
 })();
 
 els.brand.addEventListener("click", function () { Sidebar.toggle(); });
-// The dark half of the drawer is the way out, the way a tap outside a sheet is.
-els.sidebar.addEventListener("click", function () { Sidebar.close(); });
-els["sidebar-panel"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+
+/* The dark half of the drawer is the way out, the way a tap outside a sheet is —
+   and it is told from a tap on a row by asking what was hit, not by having the
+   panel swallow its own clicks.
+   **The sheets in this app do it the other way round**, with a `stopPropagation`
+   on the sheet, and copying that here cost an afternoon: every page link in this
+   drawer is answered by one delegated listener on the document, so a panel that
+   stops propagation stops the navigation as well. Pressing Settings lit the row
+   and did nothing at all, in a browser, with nothing in the console — the fake
+   document a suite drives has no scrim over it to swallow anything. */
+els.sidebar.addEventListener("click", function (ev) {
+    if (ev.target === els.sidebar) Sidebar.close();
+});
 
 /**
  * Which row is lit, and the drawer closing behind a choice.

@@ -262,6 +262,25 @@ check(/id="brand"[\s\S]{0,400}?aria-controls="sidebar"/.test(page),
 check(/id="brand"[\s\S]{0,400}?aria-expanded="false"/.test(page),
       "and that it is closed to begin with");
 
+/* Found in a browser and nowhere else, which is why it is written down here.
+   The sheets in this app close on a tap outside by putting `stopPropagation` on the sheet, and
+   the drawer was built the same way — but every page link in it is answered by one delegated
+   listener on the document, so the panel swallowing its own clicks swallowed the navigation with
+   them. Pressing Settings lit the row and did nothing, with nothing in the console. No fake
+   document catches it, because a fake document has no scrim over it to swallow anything. */
+const sidebarSource = read("Resources/web/app/js/input/sidebar.js");
+const swallows = /\.stopPropagation\s*\(/;
+// Calibrated against a known positive first. A zero from a pattern nobody has seen match is a
+// statement about the pattern, and this one has to survive the comment above it in `sidebar.js`
+// naming the very thing it forbids — a pattern cannot tell doing from mentioning unless it is
+// written to.
+check(swallows.test(read("Resources/web/app/js/input/command.js")),
+      "the pattern finds a swallowed click where there really is one");
+check(!swallows.test(sidebarSource),
+      "the drawer must not swallow clicks inside itself — the delegated page links travel through it");
+check(/ev\.target === els\.sidebar/.test(sidebarSource),
+      "it tells a tap on the scrim from a tap on a row by asking what was hit");
+
 /* ---- Settings is a page, not a sheet ------------------------------------- */
 
 const settingsMarkup = /<section class="page page-settings" id="settings"[\s\S]*?\n<\/section>/.exec(page);
