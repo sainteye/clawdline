@@ -835,6 +835,10 @@ group("the coalescing window is what stops a signal becoming a nine-hertz sample
     check("which is a state the caller can ask about", window.isScheduled("%1"))
     window.captured("%1", at: 0.15)
     check("and stops being one once that capture has happened", !window.isScheduled("%1"))
+    // Asked of the coalescer that has just captured `%1`, and inside the window that capture
+    // opened. A fresh coalescer would answer `.now` for any pane and prove nothing about whether
+    // the two share a clock; this one answers `.now` only because they do not.
+    expect("panes do not share a window", window.signal("%2", at: 0.16), .now)
     expect("a redraw a whole window later is captured immediately again",
            window.signal("%1", at: 0.31), .now)
 
@@ -842,7 +846,6 @@ group("the coalescing window is what stops a signal becoming a nine-hertz sample
     // is the point of the whole shape: a burst is bounded at one capture per window, while a
     // keystroke on a session that has been quiet is captured at once.
     var quiet = ScreenCoalescer(window: 0.15)
-    expect("panes do not share a window", quiet.signal("%2", at: 5), .now)
     quiet.captured("%2", at: 5)
     expect("a change after a long silence does not wait for anything",
            quiet.signal("%2", at: 90), .now)
