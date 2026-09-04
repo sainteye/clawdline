@@ -1731,12 +1731,13 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
     expect("the Project is the one the Portfolio names", project["label"] as? String, "widget")
     expect("under the id the Portfolio computes", project["id"] as? String,
            UsageQueryService.projectID(repository))
+    let byID = read(UsageQueryService.projectID(repository)).payload?["project"]
+        as? [String: Any]
     check("and asking by that id is the same answer",
-          (read(UsageQueryService.projectID(repository)).payload?["project"] as? [String: Any])?
-              ["id"] as? String == project["id"] as? String)
+          byID?["id"] as? String == project["id"] as? String)
+    let byPath = read(repository).payload?["project"] as? [String: Any]
     check("as is asking by its absolute canonical path",
-          (read(repository).payload?["project"] as? [String: Any])?["id"] as? String
-            == project["id"] as? String)
+          byPath?["id"] as? String == project["id"] as? String)
 
     let worktrees = byName["worktrees"] as? [[String: Any]] ?? []
     expect("only the worktrees that finished a Feature are listed", worktrees.count, 2)
@@ -1759,9 +1760,10 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
     let betaRow = worktrees.first { $0["id"] as? String == beta } ?? [:]
     expect("a worktree whose only task stalled is debris", betaRow["outcome"] as? String,
            "abandoned")
+    let whileLive = (read("widget", live: [beta]).payload?["worktrees"]
+        as? [[String: Any]]) ?? []
     expect("and the same worktree is active while that task runs",
-           (read("widget", live: [beta]).payload?["worktrees"] as? [[String: Any]])?
-               .first { $0["id"] as? String == beta }?["outcome"] as? String, "active")
+           whileLive.first { $0["id"] as? String == beta }?["outcome"] as? String, "active")
 
     let excluded = byName["excluded"] as? [String: Any] ?? [:]
     expect("the worktrees with no nameable Feature are counted",
