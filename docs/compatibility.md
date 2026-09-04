@@ -11,8 +11,8 @@ being true.
 
 ## The short version
 
-- Built and used against Claude Code **2.1.235**.
-- And against Codex **0.149.0**.
+- Built and used against Claude Code **2.1.260**.
+- And against Codex **0.151.0**.
 - The oldest that everything here works with is **2.1.224**. 4 rows below name a floor at all; the rest have none known.
 - Nothing refuses to run on an older one. What you lose is whichever of those rows names
   a floor you are under, and the second table below says which.
@@ -22,6 +22,7 @@ being true.
 
 | Clawdline | Claude Code | Codex | |
 |---|---|---|---|
+| 0.7.0 | 2.1.260 | 0.151.0 | Picking a recorded conversation back up, which depends on `claude --resume` taking a session id and on the names Claude Code writes for the conversations it has already recorded: if either moves, the list a project shows is empty or opens the wrong one. iTerm2 stops being the only terminal — everything else runs through tmux control mode, so a second program's shape now matters as much as an assistant's. And the Web transcript reads Codex's rollout item types directly, which are not the same list as its live events and are the half that changes without a version bump. |
 | 0.6.0 | 2.1.235 | 0.149.0 | Answering a session from a phone, which adds two dependencies of a different kind. The hook contract — nine matcher groups under eight event names, written into ~/.claude/settings.json — replaces reading the screen when it is installed. And answering a multiple-choice question sends the single byte its picker reads, so if that picker stops taking a bare digit the phone can still see the question and can no longer answer it. This is also the first release that can see Codex, which adds five shapes of its own — a rollout file, a live line, a dialog, a process name and the word that ends a session. |
 | 0.5.0 | 2.1.234 | not applicable | Reads every session's screen to say which is working, which has stopped and which is waiting — so it depends on the shape of the spinner line and of the box Claude Code asks a question in. |
 | 0.4.0 | 2.1.233 | not applicable | Images go over as [Image #3] rather than as paths, which adds the clipboard-on-Ctrl-V dependency. |
@@ -35,7 +36,7 @@ saying things that are not true. "Not applicable" is a release that predates thi
 able to see Codex at all, which is a different thing from nobody having written it down.
 
 **A newer Claude Code is the normal state of the world.** It updates itself and this does
-not, so nothing warns about it. Older than 2.1.235 does get a line in the menu bar, because
+not, so nothing warns about it. Older than 2.1.260 does get a line in the menu bar, because
 then a missing feature really is missing rather than broken here.
 
 ## What it depends on, and how you would know

@@ -308,6 +308,16 @@ enum Compat {
 
     /// Newest first.
     static let releases: [Release] = [
+        Release(clawdline: "0.7.0", claudeCode: "2.1.260", codex: "0.151.0",
+                notes: "Picking a recorded conversation back up, which depends on `claude "
+                     + "--resume` taking a session id and on the names Claude Code writes for "
+                     + "the conversations it has already recorded: if either moves, the list a "
+                     + "project shows is empty or opens the wrong one. iTerm2 stops being the "
+                     + "only terminal — everything else runs through tmux control mode, so a "
+                     + "second program's shape now matters as much as an assistant's. And the "
+                     + "Web transcript reads Codex's rollout item types directly, which are "
+                     + "not the same list as its live events and are the half that changes "
+                     + "without a version bump."),
         Release(clawdline: "0.6.0", claudeCode: "2.1.235", codex: "0.149.0",
                 notes: "Answering a session from a phone, which adds two dependencies of a "
                      + "different kind. The hook contract — nine matcher groups under eight "
