@@ -276,6 +276,57 @@ verify_test_completion_receipts() {
   fi
 }
 
+# >>> clawdline suite roster >>>
+# Every `.mjs` suite in this checkout is either named somewhere below or written down here as a
+# deliberate exception. Nothing else compares the roster with the directory, and that gap is not
+# hypothetical: `Tests/web-usage-analytics.mjs` and `Tests/web-close-confirm-explanation.mjs` were
+# committed, looked tested, and had never once been run when they were found on 2026-09-04.
+#
+# Naming each suite stays deliberate — a glob would run whatever happened to be in `Tests/` in an
+# order nobody chose, and would miss `Resources/web/app/js/net/client.test.mjs`, which lives beside
+# the source it tests. So the list stays hand-written and this check is what makes a hand-written
+# list answerable to the filesystem.
+#
+# The allowlist is empty today, which is a fact and not a placeholder: every `.mjs` in this
+# checkout runs. Add a path here only with the reason on the line above it, because an exception
+# with no reason is indistinguishable from the oversight this guard exists to catch.
+suite_roster_allowlist=''
+
+verify_suite_roster() {
+  local script on_disk registered allowed unregistered stale
+  script=$(basename "$0")
+  on_disk=$( { ls Tests/*.mjs 2>/dev/null; find Resources -name '*.test.mjs' 2>/dev/null; } \
+    | grep -v '^[[:space:]]*$' | sort -u)
+  # Registered means a whole line of this script that *is* the path, optionally preceded by `node`:
+  # an invocation, or an entry in the `browser_contract_suites` array. Matching the path anywhere in
+  # the file would count a mention in a comment as a registration — and the comment directly above
+  # names two suites, so that weaker pattern would report this checkout as fully registered on the
+  # day both of them were unregistered.
+  registered=$(grep -Eo '^[[:space:]]*(node[[:space:]]+)?"?[A-Za-z0-9._/-]+\.mjs"?[[:space:]]*$' "$script" \
+    | sed -E 's/^[[:space:]]*(node[[:space:]]+)?"?//; s/"?[[:space:]]*$//' | sort -u)
+  allowed=$(printf '%s\n' "$suite_roster_allowlist" | grep -v '^[[:space:]]*$' | sort -u || true)
+
+  unregistered=$(comm -23 <(printf '%s\n' "$on_disk") \
+    <(printf '%s\n%s\n' "$registered" "$allowed" | grep -v '^[[:space:]]*$' | sort -u))
+  if [ -n "$unregistered" ]; then
+    echo "These .mjs suites are in the checkout and nothing in $script runs them:" >&2
+    printf '  %s\n' $unregistered >&2
+    echo "Add a \`node <path>\` line for each, or name it in suite_roster_allowlist with its reason." >&2
+    return 1
+  fi
+
+  # An allowlist entry for a file that no longer exists is the same rot in the other direction: it
+  # reads as a considered exception and guards nothing.
+  stale=$(comm -13 <(printf '%s\n' "$on_disk") <(printf '%s\n' "$allowed" | grep -v '^[[:space:]]*$' | sort -u))
+  if [ -n "$stale" ]; then
+    echo "suite_roster_allowlist names files that are not in this checkout:" >&2
+    printf '  %s\n' $stale >&2
+    return 1
+  fi
+  return 0
+}
+# <<< clawdline suite roster <<<
+
 # This narrow mode exercises the full-suite completion guard without compiling or running the
 # suite. It never emits a completion receipt of its own and cannot be mistaken for a full run.
 if [ "${1:-}" = "--verify-completion-receipts" ]; then
@@ -288,6 +339,14 @@ if [ "${1:-}" = "--verify-completion-receipts" ]; then
 fi
 
 cd "$(dirname "$0")"
+
+# The roster check on its own, without compiling or running anything. It exists so the guard can be
+# proved to go red — a check nobody has seen fail is worth less than no check, because it makes
+# people believe somebody is looking.
+if [ "${1:-}" = "--verify-suite-roster" ]; then
+  verify_suite_roster
+  exit $?
+fi
 . tools/swift-source-manifest.sh
 verify_swift_source_manifest full
 bash tools/check-architecture-boundaries.sh
@@ -312,7 +371,22 @@ fi
 tools/build-compatibility.py --check
 tools/check-web-strings.py
 tools/check-web-ids.py
+verify_suite_roster
 node Tests/docs-ui-labels.mjs
+# The two READMEs are one document in two languages, and the file above pins eleven strings in
+# them by hand. That catches a pinned sentence disappearing and nothing else: on 2026-09-04 a
+# section deleted from either side, and a section added to one side only, were all green. This
+# compares their heading sequence instead — count and order — which is the most that can be
+# compared when the heading text is in two different languages.
+node Tests/docs-readme-parity.mjs
+# What `./test.sh` costs is quoted in three documents a contributor reads before running it, and
+# all three were wrong on 2026-09-04 with nothing to say so: `1567 checks, a couple of seconds`
+# against a sealed 8,660 and a measured 288 s. This compares the check count with the seal below
+# and the magnitude claim with `docs/suite-runtime.md`, which is where the seconds were measured.
+# **Moving `expected_swift_receipt` therefore means moving four things, not one**: the seal, its
+# witness, and the count quoted in `CONTRIBUTING.md` and in both READMEs. This suite is what says
+# so, before a compiler starts, and it names the file, the line and both numbers when it does.
+node Tests/docs-suite-facts.mjs
 node Tests/agent-attention-principle.mjs
 
 # The checked-in protocol fixture is the cross-runtime byte authority. Generate the expected
@@ -372,6 +446,15 @@ node Tests/keychain-rebuild-focused.mjs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
 node Resources/web/app/js/net/client.test.mjs
+# Two more of exactly the same, found the same way and registered on 2026-09-04. Neither had run
+# once since the day it was committed — `Tests/web-usage-analytics.mjs` at f0eedc18 and
+# `Tests/web-close-confirm-explanation.mjs` at 58386b07 — because nothing compares this hand-written
+# roster with the directory. The first guards the Usage Portfolio front end, which is the one panel
+# in the web app that does not go through the transport seam; the second guards the wording a person
+# reads before closing a session. Both were green the first time they were run, which is the less
+# useful of the two possible answers: a red would have been noticed, a green was never missed.
+node Tests/web-usage-analytics.mjs
+node Tests/web-close-confirm-explanation.mjs
 # These two are about this script rather than the app: that a crashed run still leaves its output,
 # and that the machine-wide suite lock below serialises the expensive half. Both run before the
 # lock is taken, so a machine that is already busy still gets told what is wrong with this checkout

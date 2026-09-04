@@ -841,10 +841,16 @@ link to them.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # a couple of seconds
+./test.sh     # 8660 checks, minutes rather than seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```
+
+That check count is the seal in `test.sh`, and how long the suite takes was measured — on a named
+machine, split into the four parts the seconds go to — in
+[docs/suite-runtime.md](docs/suite-runtime.md). `Tests/docs-suite-facts.mjs` fails if either stops
+matching its source; this block said "a couple of seconds" for a suite that takes minutes until
+2026-09-04.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rest: where things are, how to add a language or a
 mascot, and what a third way of sending text would look like. Corrections to any of the fourteen

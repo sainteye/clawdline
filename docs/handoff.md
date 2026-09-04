@@ -87,8 +87,9 @@ handoff must not strand a waiter inside the sending assistant's private message 
 
 ## When it is worth doing, and when `/compact` is the answer
 
-The research behind this page — [`artifacts/2026-08-26-handoff-demand-research.html`](../artifacts/2026-08-26-handoff-demand-research.html),
-four investigating agents and one reviewer checking 45 load-bearing claims against primary sources —
+The research behind this page — `artifacts/2026-08-26-handoff-demand-research.html`, which lives in
+the private sibling repository rather than this one (see below), four investigating agents and one
+reviewer checking 45 load-bearing claims against primary sources —
 found the technique widespread and entirely hand-rolled. No tool has become the default answer — the
 independent ones sit at single or low double-digit stars — and the word *handoff* does not appear
 once in the official best-practices documentation. What the ecosystem does have is a shape people keep
@@ -178,11 +179,20 @@ sender hid it, but because *marking a source as volatile is honesty, not a fix*.
 In this repository that means `artifacts/` for a document that records a decision and `docs/` for one
 that becomes the standing answer. In the package, put the pointer, not the copy.
 
+**`artifacts/` is not in this repository.** It is a symlink into a private sibling checkout, and it
+is in `.gitignore`, so every path in this page that starts with `artifacts/` resolves for whoever
+has that checkout and does not exist on GitHub at all. Until 2026-09-04 four of them were written as
+Markdown links, which is worse than a name: a link is a promise that clicking it will work, and for
+every reader outside this Mac it 404s. They are plain names now — enough to `open` if you have the
+private repo, and honest about being unreachable if you do not. `Tests/docs-ui-labels.mjs` fails if
+one of them becomes a link again, because the symlink means the mistake is invisible to the person
+making it: it resolves perfectly on the machine where the page is written.
+
 ---
 
 ## The document
 
-Eight headings, in this order. The shape is the trial's — [`artifacts/2026-08-26-cloud-architecture-handoff.md`](../artifacts/2026-08-26-cloud-architecture-handoff.md)
+Eight headings, in this order. The shape is the trial's — `artifacts/2026-08-26-cloud-architecture-handoff.md`
 is a worked one: 70 lines, standing on five numbered reference entries and three named commits.
 
 **`OBJECTIVE`** — what this line of work is, and what the receiver's first hour looks like. One
@@ -599,5 +609,6 @@ to follow.
 
 The dispatch side of this — tasks, children, claims, the state machine, what it costs — is
 [`docs/orchestrator.md`](orchestrator.md). Every route in full is [`docs/api.md`](api.md). The trial
-that produced the format is [`artifacts/2026-08-26-cloud-architecture-handoff.md`](../artifacts/2026-08-26-cloud-architecture-handoff.md)
-and the receiving session's report on it is [`artifacts/2026-08-26-handoff-verification.md`](../artifacts/2026-08-26-handoff-verification.md).
+that produced the format is `artifacts/2026-08-26-cloud-architecture-handoff.md` and the receiving
+session's report on it is `artifacts/2026-08-26-handoff-verification.md` — both in the private
+sibling repository, as above, and neither reachable from a clone of this one.

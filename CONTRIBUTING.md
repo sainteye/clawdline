@@ -3,12 +3,21 @@
 Plain AppKit. No dependencies, no Xcode project, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 1567 checks, a couple of seconds
+./test.sh     # 8660 checks, minutes rather than seconds
 ./build.sh    # builds the .app and relaunches it if it was running
 ```
 
 That is the whole loop. `./build.sh` writes to `~/Applications/Clawdline.app` and puts the app
 back the way it found it, so you can rebuild while using it.
+
+Neither half of that first comment is remembered. `Tests/docs-suite-facts.mjs` compares the check
+count with `expected_swift_receipt` in `test.sh`, which is set from a run and moves whenever the
+suite does; it read `1567 checks, a couple of seconds` until 2026-09-04, off by 5.5x and by two
+orders of magnitude, because nothing was comparing it with anything. The wall time is deliberately
+*not* a number here: [docs/suite-runtime.md](docs/suite-runtime.md) is where it was measured, on a
+machine that file names, split into the four parts it is actually spent on — and the same guard
+reads that measurement and fails if it ever falls back into seconds, which is the only part of it
+this repo can honestly promise you. The seconds you get are your machine's.
 
 ## Getting an editor to understand the code
 

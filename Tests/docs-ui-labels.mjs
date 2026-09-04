@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join, normalize, relative } from "node:path";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
 const english = read("Sources/Copy+English.swift");
@@ -64,6 +66,37 @@ for (const file of files) {
     check(!text.includes(label), `${file.pathname} still documents stale UI label ${JSON.stringify(label)}`);
   }
 }
+
+// `artifacts/` is a symlink into a private sibling checkout and is in `.gitignore`, so a link to a
+// path inside it resolves perfectly on the machine where the page is written and 404s for every
+// reader on GitHub — the mistake is invisible to the person making it, which is the only reason it
+// needs a guard rather than care. `docs/handoff.md` carried four such links, three distinct targets,
+// from the day `artifacts/` became a symlink until 2026-09-04.
+//
+// The general form of this check — every relative link target resolves to a file git tracks — was
+// measured over the 317 relative links in `docs/`, `skills/`, both READMEs and `CONTRIBUTING.md` on
+// 2026-09-04. It finds two more real dead links, both `docs/dispatching.md` writing
+// `](docs/orchestrator.md)` from inside `docs/`, which resolves to `docs/docs/…`. That file was
+// outside this change's claims, so the guard here is the narrow one; widen it once those are fixed.
+const linkScan = [...files, new URL("README.md", root), new URL("README.zh-TW.md", root), new URL("CONTRIBUTING.md", root)];
+const rootPath = fileURLToPath(root);
+let linksScanned = 0;
+for (const file of linkScan) {
+  const filePath = fileURLToPath(file);
+  const text = readFileSync(filePath, "utf8");
+  for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+    const target = match[1];
+    if (/^(?:https?:|mailto:|#)/.test(target)) continue;
+    linksScanned += 1;
+    const resolved = relative(rootPath, normalize(join(dirname(filePath), target.split("#")[0])));
+    check(
+      !resolved.startsWith("artifacts/") && resolved !== "artifacts",
+      `${relative(rootPath, filePath)} links to ${JSON.stringify(target)}, which is inside the git-ignored \`artifacts/\` symlink — it resolves here and 404s for everybody else. Name the file in plain text instead.`,
+    );
+  }
+}
+// A scan that matched nothing would pass every check above it and prove nothing at all.
+check(linksScanned > 0, "the relative-link scan found no links in any of the documents — the pattern stopped matching, not the documents");
 
 console.log(`${failed ? "not ok" : "ok"}: ${checks} documented UI-label checks`);
 if (failed) process.exit(1);
