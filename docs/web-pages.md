@@ -190,7 +190,10 @@ an accepted Feature head are listed; the rest are counted.
 
 **The screen has one subject and it is `delivered`.** Thirty-eight of this repository's
 seventy-nine Feature-carrying worktrees finished their work and have no landing record — the first
-number anybody has had for "it gets done and nobody merges it". So it is the open block at the
+number anybody has had for "it gets done and nobody merges it". That figure is not this page's
+reading: it was measured on 2026-09-04 by the route's own rules run over a copy of the production
+ledger, alongside 35 `landed` and 6 debris, out of 150 worktrees the ledger remembers and 58 still
+on the disk. Thirteen more resolved to no Project at all. So it is the open block at the
 top, with the branch each one is on. The payload carries no `branch` on purpose (the ledger stores
 none and the registry that does is swept), so what is drawn is the convention
 `clawdline/task/<worktree id>` under a label that says it is one. The other four rungs are closed

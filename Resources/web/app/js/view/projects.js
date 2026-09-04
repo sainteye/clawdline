@@ -14,8 +14,9 @@ import { T, fill } from "../core/i18n.js";
 
    **The screen has one subject and it is `delivered`.** Thirty-eight of this
    repository's seventy-nine Feature-carrying worktrees finished their work and
-   have no landing record — the first number anybody has had for "it gets done
-   and nobody merges it". So that outcome is not one of five equal rows in a
+   have no landing record — measured on 2026-09-04 over a copy of the
+   production ledger, and the first number anybody has had for "it gets done and
+   nobody merges it". So that outcome is not one of five equal rows in a
    table: it is the block at the top, open, with its worktrees listed and the
    branch each one is on. The other four rungs are `<details>` underneath,
    closed, because they are the answer to "and the rest?".
