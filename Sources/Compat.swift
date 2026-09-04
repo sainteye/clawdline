@@ -476,9 +476,9 @@ enum Compat {
     ///   reason than "there is nothing to be done": there is *provably* nothing to be done. The
     ///   drift is real, and the fix does not exist yet.
     /// - Ahead, **and a newer Clawdline is out.** That is the sentence this file could never say
-    ///   before: *your Claude Code is 2.1.280, this was built against 2.1.260, and 0.8.0 is out.*
-    ///   Three facts, one action, and the third is what turns the first two from trivia into a
-    ///   reason to click something.
+    ///   before: *your Claude Code is 2.1.280, this was built against 2.1.260, and the release
+    ///   that catches up with it is out.* Three facts, one action, and the third is what turns
+    ///   the first two from trivia into a reason to click something.
     ///
     /// **And it stays rare, which was the real objection.** It needs both halves at once — an
     /// assistant that has moved past the floor *and* a release waiting — so it cannot become the

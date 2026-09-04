@@ -5,8 +5,9 @@ import Foundation
 ///
 /// **Why this is here.** This app has no way of telling anybody it has moved on. It is installed
 /// by downloading a zip, it does not run out of a store, and `tools/release.sh` publishes a
-/// release without touching a single machine that already has one. So a person on 0.6.0 stays on
-/// 0.6.0 forever, and that is not merely stale: what this app reads is another program's screen —
+/// release without touching a single machine that already has one. So a person stays on whatever
+/// they installed, forever — and that is not merely stale: what this app reads is another
+/// program's screen —
 /// a spinner, a dialog, a tab title, none of them promised to stay still (see ``Compat``) — so an
 /// old build does not stop working loudly. It stops reading sessions correctly and says nothing,
 /// which looks exactly like the sessions being idle.
@@ -103,8 +104,8 @@ enum UpdateCheck {
     /// One look at the feed, and when it was taken.
     ///
     /// `installed` is written down beside the outcome on purpose: a reading kept for a day
-    /// outlives the app that took it, and a `current` recorded against 0.7.0 says nothing about
-    /// a 0.8.0 that has since been installed over it.
+    /// outlives the app that took it, and an offer recorded against one build says nothing once
+    /// the release it named has been installed over it.
     struct Reading: Equatable {
         let at: Date
         let installed: String

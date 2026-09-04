@@ -828,17 +828,44 @@ group("which versions this was run against") {
     expect("a missing part counts as zero", Compat.compare("2.1", "2.1.0"), .orderedSame)
     expect("and ten is after nine", Compat.compare("2.1.9", "2.1.10"), .orderedAscending)
 
-    // Only older gets a word. Newer is the normal state of the world — Claude Code updates
-    // itself and this does not — and a warning that fires every week is one nobody is reading
-    // by the time it means something.
-    check("older says so", Compat.note(installed: "2.0.1", builtAgainst: "2.1.233") != nil)
-    check("newer says nothing", Compat.note(installed: "2.9.0", builtAgainst: "2.1.233") == nil)
-    check("the same says nothing", Compat.note(installed: "2.1.233", builtAgainst: "2.1.233") == nil)
-    check("not knowing says nothing", Compat.note(installed: nil, builtAgainst: "2.1.233") == nil)
+    // Older always got a word and still does. Newer was silent, and the reason it was silent was
+    // "it updates itself, this does not" — which UpdateCheck.swift is exactly what stopped being
+    // true. So newer now speaks, and only with a release in hand: both halves at once, which is
+    // what keeps it from becoming the weekly notice the old rule was written against.
+    func standing(_ installed: String?, _ builtAgainst: String,
+                  release: String? = nil) -> Compat.Standing? {
+        Compat.standing(program: "Claude Code", installed: installed,
+                        builtAgainst: builtAgainst, newerRelease: release)
+    }
+    check("older says so", standing("2.0.1", "2.1.233") != nil)
+    check("and says so whether or not a release is waiting",
+          standing("2.0.1", "2.1.233", release: "9.9.9") != nil)
+    check("newer on its own still says nothing", standing("2.9.0", "2.1.233") == nil)
+    check("newer with a release waiting is the line this could not say before",
+          standing("2.9.0", "2.1.233", release: "9.9.9")
+            == .ahead(program: "Claude Code", installed: "2.9.0", builtAgainst: "2.1.233",
+                      release: "9.9.9"))
+    // Not knowing whether there is a release is not the same as there being one, and this line
+    // must never be conjured out of a check that failed. UpdateCheck.Outcome is where those two
+    // are told apart; here they are both simply nothing.
+    check("an empty release is not a release", standing("2.9.0", "2.1.233", release: "") == nil)
+    check("the same says nothing", standing("2.1.233", "2.1.233", release: "9.9.9") == nil)
+    check("not knowing what is installed says nothing",
+          standing(nil, "2.1.233", release: "9.9.9") == nil)
     // Every release before this was written has "not recorded" in that column rather than a
     // guess, and a table with no real version in it must not start warning about everything.
     check("and neither does a table with nothing recorded in it",
-          Compat.note(installed: "2.0.0", builtAgainst: "") == nil)
+          standing("2.0.0", "", release: "9.9.9") == nil)
+    let english = L.copy(preferring: ["en"])
+    expect("behind is worded exactly as it always was",
+           english.compatNote(.behind(program: "Claude Code", installed: "2.0.1",
+                                      builtAgainst: "2.1.233")),
+           "Claude Code 2.0.1; this was built against 2.1.233")
+    check("and ahead names all three versions, which is what makes it worth a row",
+          ["2.9.0", "2.1.233", "9.9.9"].allSatisfy {
+              english.compatNote(.ahead(program: "Claude Code", installed: "2.9.0",
+                                        builtAgainst: "2.1.233", release: "9.9.9")).contains($0)
+          })
 
     check("the table names a version somebody checked", !Compat.builtAgainst.isEmpty)
     check("every dependency says what you would see if it broke",
@@ -846,6 +873,95 @@ group("which versions this was run against") {
     check("and there is a release for the version being built",
           Compat.releases.contains { $0.clawdline == appVersion() },
           "Info.plist says \(appVersion()), the table's newest is \(Compat.releases[0].clawdline)")
+}
+
+// The decision this rests on — what a feed's answer means — is compiled and run on its own by
+// `Tests/update-check.mjs`, out of the marker-bounded block in the same file, in about a second.
+// What is here is the half that needs the module: the checker holding a reading between launches,
+// the file it keeps it in, and that a refusal reaches disk looking like a refusal.
+group("a newer Clawdline is a fact this app can find out, or say it could not") {
+    // A fake feed, for the reason CloudTransportFakes exists: a test that needs GitHub to be up
+    // goes red on an aeroplane, and one that needs GitHub to be *down* cannot be written at all.
+    final class StubFeed: UpdateFeed {
+        private var answers: [UpdateCheck.Answer]
+        private(set) var asked = 0
+        init(_ answers: [UpdateCheck.Answer]) { self.answers = answers }
+        func latestRelease(_ completion: @escaping (UpdateCheck.Answer) -> Void) {
+            asked += 1
+            completion(answers.isEmpty ? .unreachable("the stub had nothing left to say")
+                                       : answers.removeFirst())
+        }
+    }
+    func release(_ tag: String) -> UpdateCheck.Answer {
+        .http(status: 200, body: Data("{\"tag_name\": \"v\(tag)\"}".utf8))
+    }
+
+    let dir = isolatedTestStoreDirectory.appendingPathComponent("update-check", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    // Spelled out rather than read off the type under test: asking the code where its live file
+    // is would make this agree with any answer it gave.
+    check("the file the app itself keeps its reading in is not the one this suite writes",
+          UpdateReadingStore.appSupport.path
+            .hasSuffix("Library/Application Support/Clawdline/update-check.json")
+          && !UpdateReadingStore.appSupport.path.hasPrefix(dir.path))
+
+    let store = UpdateReadingStore(url: dir.appendingPathComponent("found.json"))
+    check("nothing stored is nothing read", store.load() == nil)
+    let feed = StubFeed([release("9.9.9")])
+    let checker = UpdateChecker(feed: feed, store: store, installed: "9.9.8")
+    var answered = false
+    checker.refreshIfDue { answered = true }
+    check("with nothing stored, the first launch asks", eventually { answered })
+    expect("and what comes back is a release to move to", checker.newerRelease, "9.9.9")
+    expect("asked once, not once per caller", feed.asked, 1)
+    check("and it is on disk, not only in this process",
+          store.load()?.outcome == .newer(latest: "9.9.9"))
+
+    // The launch after. Same file, a feed that would answer something else if it were asked.
+    let quiet = StubFeed([release("9.9.10")])
+    let relaunched = UpdateChecker(feed: quiet, store: store, installed: "9.9.8")
+    expect("the launch after reads the answer rather than asking again", relaunched.newerRelease,
+           "9.9.9")
+    var settled = false
+    relaunched.refreshIfDue { settled = true }
+    check("a check that is not due still answers its caller", eventually { settled })
+    expect("without asking anybody", quiet.asked, 0)
+    // Which is the whole of the frequency decision: ten launches in an afternoon cost GitHub one
+    // request, against a ceiling of sixty an hour shared by everything behind this address.
+    check("and a day later it does ask",
+          UpdateCheck.isDue(now: Date().addingTimeInterval(25 * 3600), last: store.load()))
+
+    // An offer must not outlive the install that answers it. This is the same stored file read by
+    // the version it told you to go and get.
+    let updated = UpdateChecker(feed: StubFeed([]), store: store, installed: "9.9.9")
+    check("once the release it named is the one running, the stored offer stops being one",
+          updated.newerRelease == nil)
+
+    // The third state, all the way to disk. `refused` and `nothing to report` are different
+    // files, which is the whole reason the outcome is a type rather than an optional string.
+    let refusedStore = UpdateReadingStore(url: dir.appendingPathComponent("refused.json"))
+    let refused = UpdateChecker(
+        feed: StubFeed([.http(status: 403,
+                              body: Data("{\"message\": \"API rate limit exceeded for 203.0.113.7.\"}".utf8))]),
+        store: refusedStore, installed: "9.9.8")
+    var told = false
+    refused.refreshIfDue { told = true }
+    check("a refused check finishes rather than hanging", eventually { told })
+    check("and offers nothing", refused.newerRelease == nil)
+    check("but says on disk which of the five ways it failed",
+          refusedStore.load()?.outcome == .unavailable(.rateLimited))
+    check("which is not what a check with nothing to report writes",
+          refusedStore.load()?.outcome != .current(latest: "9.9.8"))
+    check("and it is due again within the hour, not the day",
+          !UpdateCheck.isDue(now: Date().addingTimeInterval(30 * 60), last: refusedStore.load())
+          && UpdateCheck.isDue(now: Date().addingTimeInterval(61 * 60), last: refusedStore.load()))
+
+    // A store pointed at a directory that does not exist yet is the first launch on a new Mac.
+    let fresh = UpdateReadingStore(
+        url: dir.appendingPathComponent("new/deeper/reading.json"))
+    fresh.save(UpdateCheck.Reading(at: Date(), installed: "9.9.8",
+                                   outcome: .unavailable(.unreachable("offline"))))
+    check("a reading makes the directory it needs", fresh.load()?.installed == "9.9.8")
 }
 
 group("an image goes over as an image, not as a path") {

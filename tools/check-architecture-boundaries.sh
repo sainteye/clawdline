@@ -252,8 +252,13 @@ manifest_group_count=$(awk '
 # number is the manifest counted, not 521 plus five: the delivery was cut when the manifest also
 # held 521, and adding its increment to a number that had reached the same value by a different
 # road is how two edits agree with each other and are wrong together.
-[ "$manifest_group_count" -eq 526 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 526"
+# 527 with the update check's one: the checker holding a reading between launches, the file it
+# keeps it in, and a refusal reaching disk looking like a refusal rather than like an all-clear.
+# The decision that reading rests on is not in this number at all — it is compiled and run by
+# `Tests/update-check.mjs` out of a marker-bounded block, which takes a second instead of a
+# module. 527 is the manifest counted with the awk above, on this branch's tree, not 526 plus one.
+[ "$manifest_group_count" -eq 527 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 527"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

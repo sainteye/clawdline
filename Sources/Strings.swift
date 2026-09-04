@@ -1381,8 +1381,9 @@ protocol Copy {
     /// The one row that says a newer Clawdline exists.
     ///
     /// **It has to name both numbers.** "An update is available" is a sentence somebody has to
-    /// take on trust; "0.8.0 is out — this is 0.7.0" is one they can check against the release
-    /// page they are about to open, and it is the difference between a notice and a nag. The row
+    /// take on trust; one that names the release and the build in front of them is a sentence
+    /// they can check against the page they are about to open, and that is the difference
+    /// between a notice and a nag. The row
     /// is only ever there when there is something to move to, so it is not a status line: it is a
     /// thing to click.
     func updateAvailable(latest: String, installed: String) -> String

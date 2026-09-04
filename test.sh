@@ -669,6 +669,12 @@ node Tests/keychain-rebuild-focused.mjs
 # version in that payload was a typed string that went on naming an old release for two releases
 # after it, with nothing in this suite comparing it to anything.
 node Tests/codex-client-identity.mjs
+# Whether there is a newer Clawdline, on exactly the same terms and for a sharper reason: a check
+# that answers "nothing newer" when it was in fact rate-limited is a silence that reads as an
+# all-clear, and the person on the old build never finds out. The decision block is lifted out of
+# Sources/UpdateCheck.swift by its markers and compiled against the real Sources/Compat.swift, so
+# every way of failing is exercised without a single request leaving this Mac.
+node Tests/update-check.mjs
 # The install path the website and both READMEs recommend, which runs on a Mac this project has
 # never seen and had nothing exercising it: that the release reply is read without an interpreter
 # that is really an xcselect shim, that a reply this script cannot read says so instead of ending
