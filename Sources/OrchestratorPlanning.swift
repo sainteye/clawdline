@@ -336,7 +336,18 @@ extension Orchestrator {
                 if dependency.kind == .delivery { return false }
                 continue
             }
-            guard producer.landing?.state == .landed else { return false }
+            // `landed` alone is not the receipt. `OrchestratorStore.landing(from:)` deliberately
+            // accepts a row with no verification at all — an older build wrote landed rows before
+            // the broker's proof existed, and `OrchestratorStoreTests` pins that it still decodes.
+            // Decoding is not the same question as counting as evidence. One field settles it:
+            // that decoder refuses a *partial* verification, so a non-nil `verifiedCommit` means
+            // the origin, the commit and the target commit were all present and agreed. And
+            // nothing is refused that any store holds: `verifiedCommit` reached `Sources/` on
+            // 2026-08-27 and `PlanningGraph` did not exist until 2026-08-31, while a producer is
+            // resolved only through the graph task index — so every row reachable from here was
+            // written by a build that could not have omitted it.
+            guard producer.landing?.state == .landed,
+                  producer.landing?.verifiedCommit != nil else { return false }
             landed += 1
         }
         return landed > 0

@@ -1283,6 +1283,16 @@ group("a landing node reads the receipt the root actually wrote, on the delivery
                              verificationOrigin: "local_target_branch",
                              verifiedCommit: commit, verifiedTargetCommit: commit)
     }
+    // The same receipt with the broker's three verification fields left off. A row shaped like this
+    // decodes on purpose — `OrchestratorStoreTests` pins "a legacy landed row with no verification
+    // at all still decodes", because an older build wrote landed rows before the fact existed — and
+    // decoding is not the same question as counting as evidence.
+    func unverifiedReceipt(_ commit: String) -> Orchestrator.Landing {
+        Orchestrator.Landing(state: .landed, target: "main", delivery: "branch",
+                             ownerRootKey: "00000000", since: Date(timeIntervalSince1970: 1),
+                             commit: commit, note: nil,
+                             landedAt: Date(timeIntervalSince1970: 2))
+    }
     var serial = 0
     func hold(_ nodeID: String, in planningGraph: Orchestrator.PlanningGraph,
               state: Orchestrator.State = .success,
@@ -1327,6 +1337,16 @@ group("a landing node reads the receipt the root actually wrote, on the delivery
     check("finding it through a review and a verification needs neither to have passed",
           state(of: "review", in: ordinary) == "ready"
               && state(of: "verify", in: ordinary) == "blocked")
+
+    // Verification reached `Sources/` on 2026-08-27 (`verifiedCommit`) and the graph did not exist
+    // until 2026-08-31 (`PlanningGraph`), and a landing node resolves its producers only through
+    // the graph task index — so no row a graph node can reach was written by a build that could
+    // omit it. Requiring it here therefore refuses nothing any store on any machine holds, while
+    // leaving the decoder's legacy path exactly where it is.
+    Orchestrator.forget()
+    hold("build", in: ordinary, landing: unverifiedReceipt(String(repeating: "a", count: 40)))
+    check("a landed receipt the broker never verified is not evidence for a landing node",
+          state(of: "land", in: ordinary) == "blocked")
 
     // What a landed receipt on the delivery must not be allowed to say.
     Orchestrator.forget()

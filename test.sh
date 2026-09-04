@@ -204,14 +204,14 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # wrote down was that focused count added to the seal *its own* base carried, and that base is not
 # this one: `main` has moved to 8,549 since. The number below is what the merged tree's full run
 # reported, measured rather than computed. 8,549 + 34 = 8,583.
-expected_swift_receipt='8679 checks passed'
+expected_swift_receipt='8680 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=6839
+expected_swift_receipt_witness=6840
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -387,6 +387,13 @@ node Tests/docs-readme-parity.mjs
 # witness, and the count quoted in `CONTRIBUTING.md` and in both READMEs. This suite is what says
 # so, before a compiler starts, and it names the file, the line and both numbers when it does.
 node Tests/docs-suite-facts.mjs
+# And nothing at all watched `CHANGELOG.md`, the document that becomes the release notes. On
+# 2026-09-04 four of its forty entries still described `orchestrator_max_grandchildren` and a
+# dispatch tree two levels deep, long after the second level came out — the same shape as the 0.5.0
+# cut that `tools/release.sh`'s header exists because of. This asserts every HTTP route the
+# `## Unreleased` block names is still one the server answers. It cannot tell an entry that names a
+# dead key to bury it from one that names it as a live setting; that half stays a person's job.
+node Tests/changelog-facts.mjs
 node Tests/agent-attention-principle.mjs
 
 # The checked-in protocol fixture is the cross-runtime byte authority. Generate the expected
