@@ -104,6 +104,18 @@ try {
     }, null, 2));
     check("and so does one whose fields arrive in a different order",
           reordered.code === 0 && reordered.all.includes(`URL=${RELEASE}`));
+    // **A stronger reading than "the fields moved."** Moving fields around is survived by a reader
+    // that simply takes the last quoted string on the line, which is not what is wanted here — so
+    // another key on the same line carries a full https `.zip` URL of its own. A reader that takes
+    // the first `.zip`-looking string, or a position, answers with the decoy; one that looks the
+    // key up by name does not. Measured: without this case a `-F'"'` positional reader passed the
+    // reordering check above.
+    const decoy = "https://github.com/sainteye/clawdline/releases/download/v0.5.0/Clawdline-old.zip";
+    const decoyed = reply("decoy", JSON.stringify({
+        assets: [{ label: decoy, name: "Clawdline.zip", browser_download_url: RELEASE }],
+    }));
+    check("and a decoy .zip url under another key on the same line is not mistaken for the download",
+          decoyed.code === 0 && decoyed.all.includes(`URL=${RELEASE}`) && !decoyed.all.includes(decoy));
 
     // Compact JSON puts every asset on one line, which is the case a line-oriented reader gets
     // wrong by taking the whole line or by finding the last match instead of the first.
