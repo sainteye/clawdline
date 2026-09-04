@@ -1434,6 +1434,178 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
         target.id == "SENDER" ? sender.identity : receiver.identity
     }
 
+    // The sender contract that comes before any of this. `POST /v1/orchestrator/handoffs` used to
+    // take `from_session` as optional and free-form, so the route could not say who sent a
+    // handoff — which is how the Clawdfather handoff of 2026-09-04 skipped the whole sequence
+    // below without anything noticing. The fixture above is exactly the situation that matters:
+    // SENDER holds the coordinator binding at generation 1, RECEIVER is an ordinary session, and
+    // one complete observation covers both.
+    let handoffAuth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let liveEvidence = RemoteServer.coordinatorObservationEvidenceForTesting
+    func senderPackage(_ id: String) -> String {
+        let directory = handoffRoot.appendingPathComponent(id, isDirectory: true)
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? Data("# OBJECTIVE\nsender contract\n".utf8)
+            .write(to: directory.appendingPathComponent("handoff.md"), options: .atomic)
+        return id
+    }
+    func handoffBody(_ id: String, _ fields: String) -> String {
+        "{\"handoff_id\":\"\(id)\",\"project_dir\":\"/tmp\"\(fields)}"
+    }
+    func postHandoff(_ id: String, _ fields: String) -> RemoteServer.Response {
+        RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/orchestrator/handoffs", headers: handoffAuth,
+            body: handoffBody(id, fields)))
+    }
+    func verdict(_ id: String, _ fields: String) -> Orchestrator.HandoffSenderVerdict {
+        let request = (try? JSONSerialization.jsonObject(
+            with: Data(handoffBody(id, fields).utf8))) as? [String: Any] ?? [:]
+        return Orchestrator.handoffSenderVerdict(
+            request, evidence: RemoteServer.shared.handoffSenderEvidence())
+    }
+    let anonymousID = senderPackage("b0000001-0000-4000-8000-000000000001")
+    let anonymous = postHandoff(anonymousID, "")
+    expect("a handoff that names no sender is refused", anonymous.status, 400)
+    expect("and the refusal names the missing field",
+           remoteErrorCode(anonymous), "from_session_required")
+    expect("an empty sender is the same answer, not a different one",
+           verdict(anonymousID, ",\"from_session\":\"   \""), .missing)
+    expect("a sender that is not a string is its own refusal",
+           verdict(anonymousID, ",\"from_session\":{\"id\":\"SENDER\"}"), .malformed)
+    expect("and so is one past the length boundary",
+           verdict(anonymousID, ",\"from_session\":\"\(String(repeating: "s", count: 201))\""),
+           .malformed)
+    let stranger = postHandoff(anonymousID, ",\"from_session\":\"NOBODY\"")
+    expect("a sender nothing answers to is refused", stranger.status, 404)
+    expect("and is told the id resolved to nobody", remoteErrorCode(stranger), "sender_not_found")
+    let cloudID = postHandoff(anonymousID,
+                              ",\"from_session\":\"session_012m5AH5gSNtQ8mTzNRAzzS5\"")
+    expect("the older cloud-session spelling is refused", cloudID.status, 404)
+    expect("under its own code, because the next move is different",
+           remoteErrorCode(cloudID), "from_session_wrong_namespace")
+    check("the namespace hint is only ever a better message on a refusal",
+          Orchestrator.handoffSenderIsCloudSessionID("session_012m5AH5gSNtQ8mTzNRAzzS5")
+            && !Orchestrator.handoffSenderIsCloudSessionID("SENDER")
+            && !Orchestrator.handoffSenderIsCloudSessionID("session_"))
+    expect("the conversation namespace resolves as well as the terminal one",
+           verdict(anonymousID, ",\"from_session\":\"receiver-conversation\""),
+           .accepted(sessionID: "RECEIVER"))
+
+    // Ambiguity fails closed and never picks one. Two live sessions answering to one spelling is
+    // the shape the relay route already refuses; a handoff may not be more willing than a message.
+    let twin = coordinatorFixture(
+        "RECEIVER-TWIN", assistant: .claude, tty: "/dev/ttys303", pid: 3_003,
+        processStart: Date(timeIntervalSince1970: 1_780_003_003),
+        conversation: "receiver-conversation")
+    RemoteServer.coordinatorSessionsForTesting = [sender, receiver, twin]
+    let ambiguous = postHandoff(anonymousID, ",\"from_session\":\"receiver-conversation\"")
+    expect("two sessions answering to one id is refused", ambiguous.status, 409)
+    expect("and nothing is chosen between them", remoteErrorCode(ambiguous), "sender_ambiguous")
+    RemoteServer.coordinatorSessionsForTesting = [sender, receiver]
+
+    // The three answers that are neither allow nor refuse-for-cause. Each is a real projection of
+    // a real store or a real reading, because a guard that silently allows when it cannot see is
+    // the defect this contract exists to remove.
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_780_003_020), generation: 21, complete: false)
+    expect("an incomplete reading of the machine proves no sender",
+           verdict(anonymousID, ",\"from_session\":\"RECEIVER\""), .inventoryIncomplete)
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: nil, generation: nil, complete: true)
+    expect("and neither does a reading that never happened",
+           verdict(anonymousID, ",\"from_session\":\"RECEIVER\""), .inventoryIncomplete)
+    RemoteServer.coordinatorSessionsForTesting = [receiver]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_780_003_005), generation: 22, complete: true)
+    expect("a binding this reading cannot place is not permission to hand off",
+           verdict(anonymousID, ",\"from_session\":\"RECEIVER\""), .coordinatorLivenessUnknown)
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_780_003_030), generation: 23, complete: true)
+    expect("an offline coordinator is a fact, and an ordinary handoff proceeds",
+           verdict(anonymousID, ",\"from_session\":\"RECEIVER\""),
+           .accepted(sessionID: "RECEIVER"))
+    let corruptStore = directory.appendingPathComponent("coordinator-corrupt.json")
+    try! Data("{".utf8).write(to: corruptStore, options: .atomic)
+    Coordinator.storeURLOverrideForTesting = corruptStore
+    Coordinator.forgetForTesting()
+    expect("a coordinator record that cannot be read is not an absent one",
+           verdict(anonymousID, ",\"from_session\":\"RECEIVER\""), .coordinatorStoreUnreadable)
+    Coordinator.storeURLOverrideForTesting = directory
+        .appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    RemoteServer.coordinatorSessionsForTesting = [sender, receiver]
+    RemoteServer.coordinatorObservationEvidenceForTesting = liveEvidence
+
+    // The refusal this task exists for, and the one that proves it does not refuse everything.
+    let crownID = senderPackage("b0000002-0000-4000-8000-000000000002")
+    let crown = postHandoff(crownID, ",\"from_session\":\"SENDER\"")
+    expect("the coordinator's own plain handoff is refused", crown.status, 409)
+    expect("and is told which route replaces it", remoteErrorCode(crown), "succession_required")
+    let crownBody = (try? JSONSerialization.jsonObject(with: crown.body)) as? [String: Any]
+    let crownError = crownBody?["error"] as? [String: Any]
+    expect("the refusal names the succession route", crownError?["route"] as? String,
+           "POST /v1/orchestrator/coordinator/successions")
+    expect("and carries the compare-and-swap id the caller would have to look up",
+           crownError?["coordinator_id"] as? String, coordinatorID)
+    expect("and its current generation", crownError?["expected_generation"] as? Int, 1)
+    expect("and the sender id that request takes",
+           crownError?["sender_session_id"] as? String, "SENDER")
+
+    var senderContractOpens = 0
+    let ordinaryID = senderPackage("b0000003-0000-4000-8000-000000000003")
+    let ordinary = Orchestrator.handoff(
+        (try? JSONSerialization.jsonObject(
+            with: Data(handoffBody(ordinaryID, ",\"from_session\":\"RECEIVER\"").utf8)))
+            as? [String: Any] ?? [:],
+        sender: { RemoteServer.shared.handoffSenderEvidence() },
+        start: { _, _, _, _ in
+            senderContractOpens += 1
+            return .started(id: "ORDINARY", backend: .tmux, attach: nil)
+        })
+    var ordinaryRecord: [String: Any] = [:]
+    if case .ok(let payload) = ordinary,
+       let record = payload["handoff"] as? [String: Any] { ordinaryRecord = record }
+    expect("a handoff from an ordinary session still opens its tab", senderContractOpens, 1)
+    expect("and it records the sender it proved",
+           ordinaryRecord["fromSession"] as? String, "RECEIVER")
+    check("an ordinary handoff asserts nothing about the coordinator",
+          !ordinaryRecord.isEmpty && ordinaryRecord["coordinatorPlainHandoff"] == nil)
+
+    let waivedID = senderPackage("b0000004-0000-4000-8000-000000000004")
+    let waived = Orchestrator.handoff(
+        (try? JSONSerialization.jsonObject(with: Data(handoffBody(
+            waivedID,
+            ",\"from_session\":\"SENDER\",\"coordinator_plain_handoff\":true").utf8)))
+            as? [String: Any] ?? [:],
+        sender: { RemoteServer.shared.handoffSenderEvidence() },
+        start: { _, _, _, _ in
+            senderContractOpens += 1
+            return .started(id: "WAIVED", backend: .tmux, attach: nil)
+        })
+    var waivedRecord: [String: Any] = [:]
+    if case .ok(let payload) = waived,
+       let record = payload["handoff"] as? [String: Any] { waivedRecord = record }
+    expect("a deliberate plain handoff from the coordinator is allowed", senderContractOpens, 2)
+    check("and the envelope records that it was a decision",
+          waivedRecord["coordinatorPlainHandoff"] as? Bool == true)
+    check("the waiver survives the store round trip",
+          OrchestratorStore.handoff(from: OrchestratorStore.stored(
+            Orchestrator.HandoffEnvelope(
+                id: waivedID, projectDir: "/tmp", title: nil, fromSession: "SENDER",
+                coordinatorPlainHandoff: true, created: Date(timeIntervalSince1970: 1_780_003_040),
+                state: .opening)))?.coordinatorPlainHandoff == true)
+    check("and an envelope written before it existed reads as no assertion",
+          OrchestratorStore.handoff(from: [
+            "handoff_id": waivedID, "project_dir": "/tmp", "created": 1_780_003_040.0,
+            "state": "delivered"])?.coordinatorPlainHandoff == false)
+    check("the waiver never waives the resolution in front of it",
+          verdict(anonymousID, ",\"coordinator_plain_handoff\":true") == .missing)
+    check("and a field whose meaning is a decision has no false",
+          Orchestrator.handoffDraft(
+            from: ["handoff_id": anonymousID, "project_dir": "/tmp",
+                   "from_session": "SENDER", "coordinator_plain_handoff": false],
+            isDirectory: { _ in true }, packageIsReady: { _ in true }).isBad)
+
     let requestID = "88888888-9999-4aaa-8bbb-cccccccccccc"
     let handoffID = "99999999-aaaa-4bbb-8ccc-dddddddddddd"
     let package = handoffRoot.appendingPathComponent(handoffID, isDirectory: true)
