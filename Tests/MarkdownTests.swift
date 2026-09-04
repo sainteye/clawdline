@@ -1060,6 +1060,7 @@ group("the languages the interface speaks") {
         "it:stackActionLogs",   // as is "log"
         "id:stackActionLogs",   // and in Indonesian
         "de:settingsTunnelHostname", // "Hostname" is the German word for it as well
+        "de:webScreenLive",     // German borrowed "live" whole; `direkt` means *direct*, not this
         // A status label beside a green dot. French, German, Italian, Spanish and Portuguese
         // interfaces all say "ok" there — `bon`, `gut`, `bene`, `bien` and `certo` mean *good*,
         // which is a different claim and reads as a translation of a word nobody used. The
