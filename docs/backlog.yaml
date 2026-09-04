@@ -1094,6 +1094,22 @@ items:
       The retention change was not involved: it adds no `nudge`, no `eventually` and no ledger
       writer, and running all 519 groups through `CLAWDLINE_TEST_GROUPS` — which exits before the
       cloud tail — was green while the same binary in full mode was red.
+
+
+      **2026-09-03, later: the same seam with a worse symptom, and this time it named itself.**
+      A landing run reported `3 of 8632 checks failed`, all three in the 60k-row usage
+      performance group, and the line above them was `sqlite: database is locked` — printed by
+      `usageStoreExec` itself, which has always echoed SQLite's error and had simply never been
+      read. The fixture opens with `BEGIN IMMEDIATE`, so it asks for the write lock at once and
+      loses it to whatever else is writing that store. The same check was green in three other
+      runs of the same day, and the same binary re-run four times was green four times.
+
+
+      That matters more than a miscount. A concurrent writer that adds a row breaks assertions
+      about rows; a concurrent writer that holds the lock breaks **any** statement in that group,
+      including ones that never mention the ledger. The trigger this entry named — the next
+      assertion written against `UsageLedger.shared` without owning its subject — has therefore
+      already fired, and it fired on an assertion whose subject was correct.
     severity: degrades
     cost: hours
     who_hurts: us
@@ -1170,3 +1186,151 @@ items:
       failure naming the field that moved is cheaper still. The next commit that changes a Cloud
       suite's check count without touching `test.sh` is the trigger.
     opened: 2026-09-03
+
+  - id: B-THE-LOCK-NAMES-THE-WRONG-TAB
+    title: The suite lock's holder is whichever terminal's environment the run inherited
+    problem: >-
+      `test.sh:1320` builds the holder's identity from the environment — `if [ -n
+      "${ITERM_SESSION_ID:-}" ]; then where="iTerm2 ${ITERM_SESSION_ID#*:}"` — and a session the
+      app opens inherits the environment of whatever spawned it. So a run in a child's own
+      worktree can be recorded under an entirely different session's id, and the waiter is told
+      to watch a tab that is not running anything.
+
+
+      The field exists for exactly the use this breaks. `test.sh:543` says it is there so that
+      "a blocked run can then watch the run it is waiting for instead of guessing" — and when the
+      inherited id belongs to the waiter, the waiter is pointed at itself. The `pid` beside it is
+      correct, so the record is not useless; it is worse than useless in the one place a person
+      reads it, because the wrong half is the human-readable half.
+    evidence: >-
+      2026-09-04 09:38. Waiting for the lock, this run printed `suite lock: waiting 0s for
+      sainteye running ./test.sh (iTerm2 6B784A94-AE6E-4E57-A9D4-DE72C1EA9084) (run pid 59362,
+      working pid 7077…)`. That session id is the waiting root's own. `lsof -p 59362` puts the
+      holder's working directory in
+      `…/Clawdline/worktrees/clawdline-3b9e26c1/eb94fa3b-1900-4aac-94a2-1d33d6b4c071` — a child's
+      isolated worktree, a different session, a different tree. The lock itself behaved correctly
+      throughout: it serialised the two compiles and released after 31 s. Only the name was wrong.
+    severity: noise
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      The identity a lock records should come from what the run *is* rather than from what its
+      environment still remembers: the run's own working directory decides which checkout and
+      therefore which worktree it belongs to, and the broker already knows which task owns that
+      path. An environment variable survives a spawn; a working directory does not lie about it.
+      The next person who follows a `waiting for` line to a tab and finds it idle is the trigger.
+    opened: 2026-09-04
+
+  - id: B-A-CLAIM-ABOUT-CODE-NEEDS-THE-TEST-THAT-PINS-IT
+    title: Two roots read the same guard and disagreed; the deciding evidence was thirty lines below
+    problem: >-
+      `OrchestratorStore.swift:563` reads `!hasAnyVerification || (state == .landed && target !=
+      nil && hasCompleteVerification)`. Taken on its own, that admits a `landed` record with no
+      verification fields at all and refuses only a partly-verified one, which reads like a hole
+      in a receipt the documentation called verified.
+
+
+      It is not a hole. `Tests/OrchestratorStoreTests.swift:336-343` pins the behaviour — *a
+      legacy landed row with no verification at all still decodes* — under a comment that states
+      the intent: **the three verification fields are one fact, and a row carrying part of it is a
+      row an older build wrote before the fact existed.** The shape is deliberate: refuse the
+      half-written, admit the never-written.
+
+
+      What this entry records is not the guard but the reading. One root read the clause, then
+      widened to the whole of `landing(from:)` — all fifty lines, entry guard included — and
+      reported a hole. The widening was in the wrong dimension: more of the same file is not the
+      same as the assertion that owns the behaviour. **A function's contract is not always written
+      inside the function.**
+    evidence: >-
+      2026-09-04. One root reported the clause as a defect and argued the tightening was free
+      because 66 of 66 landed records on this machine carry verification. A sibling root answered
+      with the test and with a second correction: 66/66 is a property of *this machine's store
+      today*, while the compatibility path exists for the stores this machine has never seen — an
+      upgrade from an older build. Both halves of the first argument were wrong, and both were
+      wrong by naming the wrong subject.
+    severity: invisible
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Before calling a permissive guard a defect, find what asserts the behaviour: `git log -S`
+      on the clause, or a search of `Tests/` for the field it reads. A guard nobody pinned is a
+      candidate; a guard with a test and a comment explaining the intent is a decision, and
+      arguing with it means arguing with that comment. The open question the exchange left is
+      separate and real, and it is filed as
+      [B-GRAPH-LANDING-NODES-DO-NOT-ASK-FOR-VERIFICATION].
+    opened: 2026-09-04
+
+  - id: B-GRAPH-LANDING-NODES-DO-NOT-ASK-FOR-VERIFICATION
+    title: The graph reads `state == .landed` while its documentation says the receipt is verified
+    problem: >-
+      `OrchestratorPlanning.swift:304` decides a landing node's outcome with `task.landing?.state
+      == .landed ? "done" : "awaiting_landing"`. `docs/orchestrator.md:546` said landing nodes
+      need a **verified** `landed` receipt; a delivery on 2026-09-04 removed the word so the text
+      would match the code. That resolves the contradiction in the cheaper direction, and leaves
+      the graph accepting a receipt nobody verified.
+
+
+      The decoder's permissive path is not the place to fix this — it is a deliberate
+      compatibility route with a test on it. The graph is a different layer with a different
+      population.
+    evidence: >-
+      2026-09-04, measured rather than argued. `git log -S` in `Sources/` dates `verified_commit`
+      to `e9a9254a`, 2026-08-27 13:48, and the planning graph to `5c5edcdb`, 2026-08-31 00:43 —
+      **verification is four days older than graphs**. Both readings of a landing resolve through
+      `graphNodeTask(_:graphID:index:)`, which is `index[graphID]?[node.id]`: line 363 for the
+      node's own task and line 339 for each delivery or correction it depends on. A task
+      dispatched before graphs existed carries no graph id, cannot enter that index, and so cannot
+      appear at either. The legacy rows the decoder protects therefore cannot reach this layer,
+      and requiring verification here changes no behaviour any existing store can produce.
+
+
+      Boundaries, both real. The line numbers are from `94905f0d`, after `2ddb3a76` rewrote this
+      function on 2026-09-04 — an earlier draft of this entry cited `:304` in the version that
+      commit replaced, and the claim had to be re-derived rather than carried over. And the age
+      argument covers **only** the graph. A sibling root counted the consumers of
+      `landing?.state == .landed` in `Sources/` and found three, not one —
+      `Orchestrator.swift:5418`, `OrchestratorPlanning.swift`, and
+      `OrchestratorTaskShape.swift:74`. Each of the other two reads the state for its own purpose
+      and has its own population; neither inherits this entry's conclusion.
+    severity: invisible
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Requiring `hasCompleteVerification` at the graph layer would let the documentation say
+      `verified` again and be true, without touching the decoder. Whether to require it is a
+      design decision about what a landing node owes — the root owning `docs/orchestrator.md`
+      (Root Assignment 43e023cc) holds it as of 2026-09-04 and may put it to the user rather than
+      decide it. This entry exists so the question survives either answer.
+    opened: 2026-09-04
+
+  - id: B-THE-SAME-BINARY-IS-A-SHARED-PATH
+    title: "\"Re-run the same binary\" is only the same binary if nobody else compiled meanwhile"
+    problem: >-
+      `test.sh:1267` puts the test binary at `BIN="${TMPDIR:-/tmp}/clawdline-tests"` — one fixed
+      path, and `TMPDIR` is per-user, not per-session or per-worktree. Every session on this Mac
+      compiles to the same file. The suite lock serialises the compiles, so nothing is corrupted,
+      but the artefact left behind belongs to whoever ran last.
+
+
+      That matters because re-running that binary is the standard way here to separate "this tree
+      is red" from "this run lost a race" — it is the one measurement that holds the tree still.
+      If another session compiles between the runs, the technique silently compares two different
+      trees while reporting on one.
+    evidence: >-
+      2026-09-04. Five re-runs of "the same binary" were started at 09:56; the file's mtime
+      afterwards was 10:01:21, inside that window, with two other `test.sh` runs in flight and the
+      lock held. The totals disagreed with the tree's seal — 8,679 against 8,667 — which is what a
+      different tree looks like, and no conclusion from those five runs was usable. Earlier uses
+      of the technique the same day were sound only because the machine had been checked idle
+      first, which was luck rather than method: idle at launch does not stay idle.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      The cheap repair is to record the binary's mtime and size before the first re-run and
+      re-read them after the last, so a replaced artefact shows up as a fact rather than as a
+      confusing total; the honest repair is a per-run path, since the lock already prevents two
+      compiles at once and the shared name buys nothing. Any conclusion of the form "the same
+      binary N times" that did not check is the trigger.
+    opened: 2026-09-04
