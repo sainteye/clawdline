@@ -1160,6 +1160,11 @@ enum Orchestrator {
         let projectDir: String
         let title: String?
         let fromSession: String?
+        /// The sender's own statement that a plain handoff from the machine's coordinator was
+        /// deliberate — that this letter is ordinary work and the crown is not moving. Recorded
+        /// exactly as the request set it, including on a handoff from an ordinary session where
+        /// it waived nothing: the field says what the caller asserted, never who the sender was.
+        let coordinatorPlainHandoff: Bool
         let created: Date
         var state: HandoffState
 
@@ -1195,25 +1200,6 @@ enum Orchestrator {
         let handoffID: String
         let label: String
         var identity: RootAssignmentIdentity
-    }
-
-    struct HandoffDraft: Equatable {
-        let id: String
-        let projectDir: String
-        let assistant: Assistant
-        let model: String?
-        let title: String?
-        let fromSession: String?
-    }
-
-    enum HandoffDraftOutcome: Equatable {
-        case ok(HandoffDraft)
-        case bad(String)
-
-        var isBad: Bool {
-            if case .bad = self { return true }
-            return false
-        }
     }
 
     /// Everything needed only while the line is in flight. Losing this on restart is deliberate:
@@ -3354,54 +3340,6 @@ enum Orchestrator {
         return size.int64Value > 0
     }
 
-    static func handoffDraft(from obj: [String: Any],
-                             isDirectory: (String) -> Bool = StartPoints.isDirectory,
-                             packageIsReady: ((String) -> Bool)? = nil)
-        -> HandoffDraftOutcome {
-        guard let id = obj["handoff_id"] as? String, OrchestratorDraft.isTaskID(id) else {
-            return .bad("handoff_id must be a lowercase UUID")
-        }
-        guard let projectDir = obj["project_dir"] as? String,
-              StartPoints.usable(projectDir), isDirectory(projectDir) else {
-            return .bad("project_dir must be an absolute path to a directory")
-        }
-        let assistant: Assistant
-        if let raw = obj["assistant"] {
-            guard let name = raw as? String, let selected = Assistant(rawValue: name) else {
-                return .bad("assistant must be claude or codex")
-            }
-            assistant = selected
-        } else {
-            assistant = .claude
-        }
-        var model: String?
-        if let raw = obj["model"] {
-            guard let name = raw as? String, StartPoints.modelName(name) == name else {
-                return .bad("model must be a model name: lower-case letters, digits, . _ -, "
-                          + "at most 64 characters")
-            }
-            model = name
-        }
-        func optionalString(_ key: String) -> String?? {
-            guard let raw = obj[key] else { return .some(nil) }
-            guard let value = raw as? String, value.count <= 200 else { return nil }
-            return .some(.some(value))
-        }
-        guard let title = optionalString("title") else {
-            return .bad("title must be a string of at most 200 characters")
-        }
-        guard let fromSession = optionalString("from_session") else {
-            return .bad("from_session must be a string of at most 200 characters")
-        }
-        let ready = packageIsReady?(id) ?? handoffPackageReady(id: id)
-        guard ready else {
-            return .bad("No non-empty regular handoff.md under "
-                      + "/tmp/.clawdline/handoffs/<handoff_id>/")
-        }
-        return .ok(HandoffDraft(id: id, projectDir: projectDir, assistant: assistant,
-                                model: model, title: title, fromSession: fromSession))
-    }
-
     /// The one protocol sentence typed into every receiving assistant. Keep it assembled here so
     /// tests compare the exact bytes rather than searching for a convenient fragment.
     static func handoffLine(id: String) -> String {
@@ -3442,6 +3380,7 @@ enum Orchestrator {
         ]
         if let title = envelope.title { record["title"] = title }
         if let from = envelope.fromSession { record["fromSession"] = from }
+        if envelope.coordinatorPlainHandoff { record["coordinatorPlainHandoff"] = true }
         if let draft { record["assistant"] = draft.assistant.rawValue }
         if let terminalID, let backend {
             record["opened"] = ["terminalId": terminalID, "backend": backend.rawValue]
@@ -3454,7 +3393,21 @@ enum Orchestrator {
 
     /// Register and synchronously open one receiving tab. Waiting for a composer and confirming
     /// the first turn happen on the ordinary orchestrator beat after the HTTP connection closes.
+    ///
+    /// `sender` carries the contract of `POST /v1/orchestrator/handoffs` and of nothing else: a
+    /// reader of the machine, called at most once, whose verdict is in
+    /// ``handoffSenderVerdict(_:evidence:)``. It is optional because
+    /// `POST /v1/orchestrator/coordinator/successions` replays an ordinary handoff through this
+    /// same function, and *that* sender is the coordinator by construction — applying the
+    /// contract there would refuse the one sequence built to move the role properly. The two
+    /// callers are the route, which passes it, and the succession service, which does not.
+    ///
+    /// It is read after the idempotent replay, deliberately. A `handoff_id` already in the
+    /// registry is a repeat of a decision rather than a new one: the tab exists, the sender was
+    /// proved when the envelope was written, and refusing a retry after a dropped connection
+    /// would cost a delivery that has already happened.
     static func handoff(_ obj: [String: Any],
+                        sender: (() -> HandoffSenderEvidence)? = nil,
                         start: HandoffStarter = { place, assistant, model, addDir in
                             StartPoints.start(place, assistant: assistant, model: model,
                                               addDir: addDir)
@@ -3467,6 +3420,9 @@ enum Orchestrator {
             return .refused(422, "bad_task", "handoff_id must be a lowercase UUID.")
         }
         if let existing = heldHandoff(id) { return successfulHandoffReply(for: existing) }
+        if let sender, let refusal = handoffSenderVerdict(obj, evidence: sender()).refusal {
+            return refusal
+        }
         guard takeDispatchRate() != nil else {
             return .refused(429, "rate_limited", "Too many dispatches; wait a few minutes.")
         }
@@ -3477,6 +3433,7 @@ enum Orchestrator {
         }
         let envelope = HandoffEnvelope(id: draft.id, projectDir: draft.projectDir,
                                        title: draft.title, fromSession: draft.fromSession,
+                                       coordinatorPlainHandoff: draft.coordinatorPlainHandoff,
                                        created: Date(), state: .opening)
         lock.lock()
         // The server queue is serial, but the lock keeps direct test callers and any future
@@ -3535,6 +3492,7 @@ enum Orchestrator {
                                           terminalID: terminalID, backend: backend)
         }
     }
+
 
     // MARK: - Root Assignment / Feature Launch
 
