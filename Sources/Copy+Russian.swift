@@ -301,6 +301,10 @@ struct Russian: Copy {
 
     let webBack = "Сессии"
     let webBackLabel = "Назад к списку сессий"
+    let webMenu = "Меню"
+    let webPages = "Страницы"
+    let webSessions = "Сессии"
+    let webUsage = "Расход"
     let webNoSessionOpen = "Сессия не открыта"
     let webOrderTip = "Перевернуть расшифровку (r)"
     let webShowOnMac = "Показать на Mac"

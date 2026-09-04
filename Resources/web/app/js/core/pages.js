@@ -47,11 +47,29 @@ export var Pages = (function () {
     var current = "";
     var announce = null;
     var writeHash = null;
+    var fallback = "";
 
     /** The one control that took us here, so leaving can hand focus back to it. */
     function focusTarget(page) {
         if (!page || !page.focus || !doc) return null;
         return doc.getElementById(page.focus);
+    }
+
+    /* Where the keyboard goes when the page being arrived at names nothing — which the session
+       list does, because it is a list and not a form with a first field.
+
+       Leaving is the half that was missing. `hidden` takes the control focus is on out of the
+       document, and a browser answers that by putting focus on `<body>`: measured as `active=BODY`
+       after "Back to sessions", after Escape on Usage, and after Close on Settings. The Usage
+       panel used to hand focus back to the wordmark from its own `close()`, and nothing did once
+       that close became `Pages`' business. The wordmark is the one control on screen whatever page
+       this is, and it is what opens the way to the others.
+
+       Only on a real move. The first paint arrives from nowhere, and taking the keyboard on load
+       is a page announcing itself to somebody who has not asked it anything. */
+    function fallbackTarget(from) {
+        if (!from || !fallback || !doc) return null;
+        return doc.getElementById(fallback);
     }
 
     function show(page, on) {
@@ -86,6 +104,8 @@ export var Pages = (function () {
          *   `pages`     — `[{name, element, enter, leave, focus}]`, home first.
          *   `onChange`  — told after every move, so the shell can close the menu.
          *   `writeHash` — how a deliberate navigation reaches the address bar.
+         *   `focusFallback` — the id the keyboard lands on when a page names no control of
+         *                     its own; only ever on a move away from another page.
          */
         bind: function (config) {
             doc = config.document;
@@ -96,6 +116,7 @@ export var Pages = (function () {
             homeName = order.length ? order[0].name : "";
             announce = typeof config.onChange === "function" ? config.onChange : null;
             writeHash = typeof config.writeHash === "function" ? config.writeHash : null;
+            fallback = config.focusFallback || "";
             current = "";
             if (doc && doc.addEventListener) doc.addEventListener("click", delegate);
             // The document comes up with the home page's markup already visible and
@@ -131,7 +152,7 @@ export var Pages = (function () {
             if (from && typeof from.leave === "function") from.leave();
             if (root && root.setAttribute) root.setAttribute("data-page", name);
             if (typeof to.enter === "function") to.enter();
-            var landing = focusTarget(to);
+            var landing = focusTarget(to) || fallbackTarget(from);
             // `preventScroll`, because the page has just been shown and the browser
             // would otherwise scroll it to wherever the focused control happens to
             // be — a page that arrives already scrolled past its own heading.
@@ -141,8 +162,12 @@ export var Pages = (function () {
             return true;
         },
 
-        /** Back to the list. What every Close and every Escape on a page means. */
-        goHome: function () { return this.go(homeName); }
+        /**
+         * Back to the list. What every Close and every Escape on a page means — and what an
+         * address that has stopped naming a page means, which is why it takes the same options
+         * every other move does: that one must not write the address it was just read from.
+         */
+        goHome: function (options) { return this.go(homeName, options); }
     };
 
     return Pages;

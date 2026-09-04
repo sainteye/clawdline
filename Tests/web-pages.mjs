@@ -115,6 +115,9 @@ const rowLabel = doc.make("usage-open-label", row);
 row.setAttribute("data-page-to", "usage");
 const nowhere = doc.make("nav-nowhere");
 nowhere.setAttribute("data-page-to", "atlantis");
+// The wordmark. It is not on any page — it is in the header above all of them — which is what
+// makes it the one control focus can be handed back to whichever page has just been left.
+const brand = doc.make("brand");
 
 // Two pages start visible, which is what a document that has never been told looks like.
 usage.hidden = false;
@@ -126,6 +129,7 @@ const announced = [];
 Pages.bind({
     document: doc,
     root: doc.documentElement,
+    focusFallback: "brand",
     pages: [
         { name: "sessions", element: sessions },
         {
@@ -150,6 +154,9 @@ equal(doc.documentElement.getAttribute("data-page"), "sessions",
       "which page it is, written where anything can read it");
 equal(written.length, 0, "the first paint does not write to the address");
 equal(announced.join(","), "->sessions", "but it does say where it landed");
+// And the first paint does not take the keyboard either. The fallback below only answers a move
+// away from somewhere; a page arriving from nowhere is a page nobody has navigated to yet.
+equal(doc.activeElement, null, "the first paint leaves the keyboard where the document put it");
 
 check(Pages.knows("usage") && Pages.knows("settings") && Pages.knows("sessions"),
       "the registry knows the pages it was given");
@@ -201,6 +208,26 @@ Pages.go("sessions");
 const stray = doc.make("stray");
 doc.click(stray);
 equal(Pages.current(), "sessions", "and a click on anything else is not navigation");
+
+/* ---- the way out of a page ------------------------------------------------
+   Arriving was held here from the first day and leaving was not, which is where the keyboard was
+   being dropped: `go` moves focus to the page's own `focus` id, the session list names none, and
+   the control focus was on has just been hidden — a browser answers that by putting focus on
+   `<body>`, from where nothing can be given back. The Usage panel used to hand it to the wordmark
+   itself; nothing did once the panel became a page. Measured in a browser: `active=BODY` after
+   "Back to sessions", after Escape on Usage, and after Close on Settings. */
+Pages.go("usage");
+equal(doc.activeElement, usageClose, "arriving at a page still lands on the control it names");
+equal(Pages.goHome(), true, "goHome is a move like any other — and nothing here had ever called it");
+equal(Pages.current(), "sessions", "to the first page in the registry");
+equal(doc.activeElement, brand,
+      "and a page naming no control of its own hands the keyboard to the fallback rather than dropping it");
+
+written.length = 0;
+Pages.go("usage");
+equal(Pages.goHome({ hash: false }), true, "goHome takes the options every other move takes");
+equal(written.join(","), "#page=usage",
+      "so the address can ask for home without being written back to itself — which is what a fragment naming no page needs");
 
 /* ==========================================================================
    The document, `main.js`, and the registry — held against each other
@@ -281,12 +308,49 @@ check(!swallows.test(sidebarSource),
 check(/ev\.target === els\.sidebar/.test(sidebarSource),
       "it tells a tap on the scrim from a tap on a row by asking what was hit");
 
+/* ---- the drawer says its words in the reader's language --------------------
+   `tools/check-web-strings.py` crosses three places — `T.<name>` in the modules, the fallback in
+   `core/i18n.js`, the `/v1/strings` payload — and a label written straight into the markup is in
+   none of them. That is not a gap it can close: it reads JavaScript, and an English word in
+   `index.html` reads to it exactly like the English fallback that is supposed to be there. So the
+   markup keeps the English, as every other label in this document does, and this holds each one
+   against the paint in `view/static.js` that writes the translation over the top of it. Without it
+   a drawer in Chinese reads 清單 / Usage / 設定 and nothing anywhere goes red. */
+const staticSource = read("Resources/web/app/js/view/static.js");
+const i18nSource = read("Resources/web/app/js/core/i18n.js");
+const painted = [
+    ["brand", "webMenu", "the wordmark's accessible name"],
+    ["sidebar", "webPages", "the drawer's own landmark name"],
+    ["nav-sessions", "webSessions", "the row that leads back to the list"],
+    ["usage-open", "webUsage", "the Usage row"],
+    ["nav-settings", "webSettings", "the Settings row"],
+];
+for (const [id, name, what] of painted) {
+    check(new RegExp(`els(?:\\.${id}|\\["${id}"\\])[^\\n]*T\\.${name}\\b`).test(staticSource),
+          `${what} is painted from T.${name} rather than left as the English in the markup`);
+    check(new RegExp(`^ {4}${name}:`, "m").test(i18nSource),
+          `and T.${name} has its English fallback in core/i18n.js`);
+}
+check(/webSessions:/.test(i18nSource) && /webBack:/.test(i18nSource),
+      "the drawer's Sessions and the transcript's back button are two strings — one word in English, and the back button's is 清單 in Chinese, which is not what a navigation row says");
+
 /* ---- Settings is a page, not a sheet ------------------------------------- */
 
 const settingsMarkup = /<section class="page page-settings" id="settings"[\s\S]*?\n<\/section>/.exec(page);
 check(settingsMarkup, "Settings is a page section");
 check(settingsMarkup && !/role="dialog"/.test(settingsMarkup[0]),
       "and not a dialog — there is nothing behind it to be modal over");
+/* The name went with the role, and a `<section>` with no accessible name is not a landmark at all.
+   Usage is the control group in the same document: it kept `aria-labelledby`. The `aria-label`
+   that was left behind is worse than nothing — it is on `#settings-sheet`, which is a plain
+   `<div>` since the sheet stopped being one, and `aria-label` on a generic element names nothing.
+   A line that looks like it is doing the work is what keeps anybody from doing it. */
+check(settingsMarkup && /aria-labelledby="settings-title"/.test(settingsMarkup[0]),
+      "Settings names itself with the heading it already draws");
+check(/id="usage-analytics"[\s\S]{0,200}?aria-labelledby="usage-title"/.test(page),
+      "the way Usage does — the control group for that, in this same document");
+check(!/els\["settings-sheet"\][^\n]*aria-label/.test(staticSource),
+      "and nothing writes aria-label onto the generic <div> inside it, where it never became a name");
 check(!/<div class="overlay" id="settings"/.test(page),
       "the settings overlay is gone rather than left behind beside the page that replaced it");
 check(/id="settings-close"[^>]*data-page-to="sessions"/.test(page),
@@ -306,8 +370,8 @@ for (const reach of ["elements.app", "elements.settings", "elements.brand"]) {
     check(!usageSource.includes(reach),
           `view/usage.js no longer reaches for ${reach} — hiding the rest of the app was the part that moved out`);
 }
-check(/navigate:\s*function/.test(mainSource),
-      "main.js hands Usage the router, which is how Escape over that page still reaches the list");
+check(!/doc\.addEventListener\(\s*"keydown"/.test(usageSource),
+      "view/usage.js binds no keydown on the document — a second listener on one document is a second answer to one press");
 check(/enter:\s*enter,\s*leave:\s*leave/.test(usageSource),
       "and Usage hands back its arrival and departure for Pages to call");
 
@@ -318,6 +382,92 @@ check(/Pages\.go\(page,\s*\{\s*hash:\s*false\s*\}\)/.test(routeSource),
       "and applies it without writing the address it was just read from");
 check(page.indexOf("/app/css/pages.css") < page.indexOf("/app/css/usage.css"),
       "pages.css is linked before usage.css, so the older and more particular sheet wins where they overlap");
+
+/* The other half of the address: a fragment that stops naming a page. `routeTo` had no `else`, so
+   clearing the fragment left `data-page="usage"` on the root with `#app` hidden and nothing in the
+   address saying so — a reload from there landed on the session list instead. On a phone that is
+   what the back gesture does: `session/open.js` pushes one entry, the pop closes the session
+   underneath, and the hashchange that followed changed nothing. */
+const routeBody = /export function routeTo\(hash\) \{[\s\S]*?\n\}/.exec(routeSource);
+check(routeBody, "route.js has the fragment router this guards");
+check(/Pages\.goHome\(\{\s*hash:\s*false\s*\}\)/.test(routeBody ? routeBody[0] : ""),
+      "a fragment naming no page puts the home page back, without writing the address it was just read from");
+check(/Pages\.knows\(page\)/.test(routeBody ? routeBody[0] : ""),
+      "and a name this build has no page for still leaves you where you were rather than on a blank rectangle");
+
+/* ==========================================================================
+   Three fixes a browser found, and the guards they went without
+
+   All three of these were fixed in a browser and green in Node at the same moment, which is the
+   whole reason this section exists: each of them was re-broken on a copy of this tree and all 25
+   web suites plus both Python guards stayed green. A fix nothing can go red for is a fix that
+   comes back. Every pattern below is calibrated against a known positive first — a zero from a
+   pattern nobody has seen match is a statement about the pattern, not about the file.
+   ========================================================================== */
+
+/* ---- one press, one thing -------------------------------------------------
+   The drawer open over Usage, one Escape, and both the drawer and the page went. `input/keys.js`
+   orders the whole of Escape and `return`s when a layer takes it — but a `return` ends its own
+   listener and nothing else, and `view/usage.js` had a second `keydown` on the same document. The
+   same three steps over Settings were right, which is what said this was an edge that had not been
+   connected rather than a design. Nothing in `Tests/` had ever read `input/keys.js`. */
+const keysSource = read("Resources/web/app/js/input/keys.js");
+// The whole chain and not the confirmation's own Escape four lines above it: anchored on the
+// listener's own indent, because a pattern that finds the wrong block reads as a passing one.
+const escapeBlock = /\n {4}if \(key === "Escape"\) \{[\s\S]*?\n {4}\}/.exec(keysSource);
+check(escapeBlock, "input/keys.js has the one Escape chain");
+const escape = escapeBlock ? escapeBlock[0] : "";
+const layers = [...escape.matchAll(/!els(?:\.|\[")([a-z-]+)/g)].map((match) => match[1]);
+check(layers.length >= 5, `the pattern reads the chain in order: ${JSON.stringify(layers)}`);
+for (const over of ["info", "start", "command", "schedule-form", "sidebar", "keys"]) {
+    check(layers.includes(over), `Escape is offered to ${over} while it is open`);
+}
+const leaves = escape.indexOf("Pages.goHome()");
+check(leaves > 0, "leaving a page is one line in that chain rather than a listener somewhere else");
+for (const over of ["sidebar", "keys"]) {
+    const asked = escape.indexOf(`els.${over}.hidden`);
+    check(asked > 0 && asked < leaves,
+          `${over} is over whatever page you are on, so it takes the press first — closing both for one press would take somebody off the page when all they wanted was ${over} shut`);
+}
+check(/dialog\[open\]/.test(escape),
+      "and a dialog opened over a page answers its own Escape, so leaving as well would still be two things for one press");
+
+/* ---- the first list must not take a deep link away ------------------------
+   `#page=usage` in a fresh tab came up on Usage and then, a second later, went back to the list and
+   rewrote the address on the way out: the first list to arrive opens the top session on a desk, and
+   opening a session means being on the sessions page. Two ports and a control tree to find it.
+   Removing this one condition left all 25 suites and both Python guards green. */
+const listSource = read("Resources/web/app/js/view/list.js");
+const courtesy = /if \(firstList && S\.sessions\.length\) \{[\s\S]*?\n {4}\}/.exec(listSource);
+check(courtesy, "view/list.js has the first-list courtesy this guards");
+check(/Pages\.current\(\) === Pages\.home\(\)/.test(courtesy ? courtesy[0] : ""),
+      "which is offered only while the app is on the home page — a deep link asked a different question");
+
+/* ---- neither half of the drawer moves -------------------------------------
+   An animation sits at its first keyframe for as long as it is `running`, and a renderer that
+   throttles animations never runs it. The panel lost its `translateX` for that reason; the scrim
+   kept a `fade`, and `opacity` applies to the subtree — so the same throttle left the whole drawer
+   invisible, over the page, and still taking clicks. Worse than what was removed, not better. */
+const pagesCss = read("Resources/web/app/css/pages.css");
+const sheetsCss = read("Resources/web/app/css/sheets.css");
+const uncommented = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
+check(uncommented(pagesCss).length < pagesCss.length,
+      "the CSS comment strip removed something — the reasons in this sheet name the properties below by hand");
+const rule = (css, pattern) => {
+    const found = pattern.exec(uncommented(css));
+    return found ? found[1] : null;
+};
+const moves = /(?:^|[\s;])(?:transform|animation)\s*:/;
+const overlay = rule(sheetsCss, /(?:^|\})\s*\.overlay\s*\{([^}]*)\}/);
+check(overlay !== null && moves.test(overlay),
+      "the pattern finds an animated fixed layer where there is one — `.overlay` in sheets.css is this app's existing one");
+const scrim = rule(pagesCss, /(?:^|\})\s*\.sidebar\s*\{([^}]*)\}/);
+const panel = rule(pagesCss, /(?:^|\})\s*\.sidebar-panel\s*\{([^}]*)\}/);
+check(scrim !== null && panel !== null, "pages.css has both halves of the drawer");
+check(!moves.test(scrim || ""),
+      "the scrim is not animated: `opacity` applies to the subtree, so a fade that never runs hides the panel with it and leaves a fixed layer eating clicks");
+check(!moves.test(panel || ""),
+      "and the panel does not slide in — the same failure, found in an iframe Chrome had decided not to animate");
 
 console.log(`${failed ? "not ok" : "ok"}: web pages and sidebar, ${checks} checks`);
 if (failed) process.exit(1);

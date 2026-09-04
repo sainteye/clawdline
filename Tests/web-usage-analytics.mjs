@@ -537,7 +537,13 @@ async function main() {
   const script = readFileSync(scriptPath, "utf8");
   const diagnostics = readFileSync("Resources/web/app/js/core/layout-diagnostics.js", "utf8");
   const detailActions = readFileSync("Resources/web/app/js/input/detail-actions.js", "utf8");
-  verify.match(page, /id="usage-open"/, "the Logo settings menu must contain Usage");
+  /* The "Logo settings menu" this named was deleted on 2026-09-04: Usage is a row in the drawer
+     now, `#usage-open` kept its name because `usage.css` styles it by that name, and this check
+     went on passing without anybody looking. Output that did not move is the weakest of the
+     receipts — it says the count is the same, not that the same thing is being guarded. What is
+     worth holding is the reachability itself, so it says where the row is and what it leads to. */
+  verify.match(page, /<nav class="sidebar"[\s\S]*?id="usage-open"[^>]*data-page-to="usage"[\s\S]*?<\/nav>/,
+               "Usage is reached from the drawer, by the attribute every other page link uses");
   verify.match(page, /href="\/app\/css\/usage\.css"/);
   verify.match(mainSource, /from "\.\/view\/usage\.js"/,
                "Usage must load from the stamped main.js module graph");

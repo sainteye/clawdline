@@ -162,9 +162,8 @@ document.documentElement.className = "booting";
 
          It used to open the settings sheet directly, because settings was the only app-wide
          destination there was. Now it opens the list of them, and the settings page is one row of
-         that list. `Menu` is written here rather than painted from the strings: naming it would
-         mean a new member on the `Copy` protocol, and the Chinese half of that protocol belongs to
-         another line of work — see the note in `docs/web-pages.md`. -->
+         that list. The English here is the fallback, as it is everywhere else in this document:
+         `view/static.js` paints `T.webMenu` over it once the real strings arrive. -->
     <button class="brand" id="brand" type="button" aria-label="Menu" title="Menu"
             aria-controls="sidebar" aria-expanded="false"><canvas id="brand-mark" width="0" height="0"></canvas><b>clawdline</b></button>
     <div class="counts" id="counts"></div>
@@ -612,8 +611,15 @@ document.documentElement.className = "booting";
      card's border and shadow off rather than making a second set of rules that say the same thing.
 
      A page is not a dialog, so `role="dialog"` and `aria-modal` are gone, and so is the tap-outside
-     that closed it — there is no outside. Escape and Close still lead back to the list. -->
-<section class="page page-settings" id="settings" data-page-view="settings" hidden>
+     that closed it — there is no outside. Escape and Close still lead back to the list.
+
+     The name is not gone with the role. A `<section>` with no accessible name is not a landmark
+     at all, so it points at the heading it already draws — the same way the Usage page does. It
+     was on `#settings-sheet` for one commit, which is a plain `<div>`: `aria-label` on a generic
+     element names nothing, and a line that looks like it is doing the work is what stops anybody
+     from doing it. -->
+<section class="page page-settings" id="settings" data-page-view="settings"
+         aria-labelledby="settings-title" hidden>
     <div class="sheet" id="settings-sheet">
         <h2 id="settings-title">Settings</h2>
 

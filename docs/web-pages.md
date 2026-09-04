@@ -21,9 +21,9 @@ A page is a top-level section of `Resources/web/index.html` that fills the docum
 header. Exactly one is on screen; the rest carry `hidden`.
 
 `hidden` is the mechanism on purpose, because it is the one both of the surfaces being moved were
-already using — `input/keys.js` still asks `els.settings.hidden` whether the settings page is on
-screen and gets the same answer it always did, and Usage's own Escape still guards on
-`elements["usage-analytics"].hidden`. Nothing had to learn a new way of asking.
+already using — `input/keys.js` still asks `els.settings.hidden` whether a sheet is over the list
+before it lets a list shortcut through, and gets the same answer it always did. Nothing had to
+learn a new way of asking.
 
 `Resources/web/app/js/core/pages.js` is the whole of the deciding:
 
@@ -49,6 +49,14 @@ Each entry may carry `enter`, `leave` and `focus`:
 - **`focus`** is the id the keyboard lands on once the page is showing, focused with
   `preventScroll` — a page that arrives already scrolled past its own heading is worse than one
   that arrives with no focus at all.
+
+**Leaving needs an answer too, and it is not the page's.** `hidden` takes the focused control out
+of the document and the browser drops focus on `<body>`, from where nothing can be given back — so
+a page that names no `focus` of its own would strand the keyboard every time it was arrived at.
+The session list is exactly that page. `bind` takes a **`focusFallback`** id for it (`main.js`
+passes `brand`, the wordmark: the one control on screen whatever page this is), and it is used only
+on a move away from another page, because taking the keyboard on the first paint is a page
+announcing itself to somebody who has not asked it anything.
 
 `core/pages.js` **touches no document until `bind` is called**, and `go` before `bind` is a no-op
 rather than a throw. Several Node suites import modules that reach it, and a module that reads
@@ -101,6 +109,14 @@ button still means the screen before this app rather than three drawer presses a
 this off the one history entry that already means something: `session/open.js` pushes a state on a
 phone so the back gesture closes the transcript, and `input/action-confirm.js` pops it.
 
+**A fragment that names no page means the home page.** That is the return half, and it was missing
+for one commit: `routeTo` acted only when the fragment named a page, so clearing the fragment left
+`data-page="usage"` on the root with Usage drawn, `#app` hidden and nothing in the address saying
+so — one screen with no address, and a reload from there landing on the session list instead. On a
+phone that is what the back gesture does: `session/open.js` pushes one entry, the pop closes the
+session underneath it, and the hashchange that follows used to change nothing at all. It goes home
+with `{hash: false}`, because an address being obeyed must not be written back to itself.
+
 Opening a session goes home first. `#session=…` means the session list with that session open on
 it, and without that line a push arriving while somebody is reading Usage would load the
 transcript underneath a page that is still on screen.
@@ -118,20 +134,37 @@ Three things, and no new mechanism. The **Projects page** is the next one, and i
 2. **A row in the drawer**: `<button class="sidebar-item" id="nav-projects" type="button"
    data-page-to="projects">Projects</button>`. There is a comment in the markup marking the spot.
 3. **A line in the registry in `main.js`**, in the same order as the drawer, carrying `enter` if
-   arriving means loading something and `focus` if the page has an obvious first control.
+   arriving means loading something and `focus` if the page has an obvious first control. Leaving
+   is already answered by `focusFallback`; a page with no obvious first control needs no `focus`
+   and will not strand the keyboard for want of one.
+
+Nothing else. In particular **not a line in `input/keys.js`**: Escape asks `Pages.current() !==
+Pages.home()` rather than naming pages, so a new page leaves it through the same branch every other
+one does.
 
 `Tests/web-pages.mjs` holds those three against each other: a row naming a page nobody registered,
 or a section the router does not know, is red. Neither breaks anything at load time, and neither is
 visible in a diff that touches two files — which is why it is checked rather than remembered.
 
-If the new page has words of its own, note what this slice ran into: a **new visible string means a
-new member on the `Copy` protocol in `Sources/Strings.swift`, and every conformance has to define
-it** — `Copy+English.swift`, `Copy+Chinese.swift` and its simplified sibling. `tools/check-web-strings.py`
+If the new page has words of its own: a **new visible string means a new member on the `Copy`
+protocol in `Sources/Strings.swift`, and all fourteen conformances have to define it** — the
+thirteen `Copy+*.swift` files, with `Copy+Chinese.swift` carrying two. `tools/check-web-strings.py`
 holds `T.<name>` in the modules, the fallback in `core/i18n.js` and the `/v1/strings` payload in
 `Sources/RemotePage.swift` to each other, so a string added to two of the three is red before a
-compiler starts. The drawer's own labels reuse strings that already existed — `webBack` is
-"Sessions", `webSettings` is "Settings" — and the wordmark's `Menu` is written in the markup in
-English, which is what the untranslated half of the Usage page does too.
+compiler starts.
+
+**What that guard cannot see is a word written straight into `index.html`**, and it is not a gap it
+could close: it reads JavaScript, and an English literal in the markup looks to it exactly like the
+English fallback that is supposed to be there. This slice shipped four that way for one commit —
+`Menu` on the wordmark, `Pages` on the drawer, `Usage` on its row, and `webBack` reused for
+`Sessions` — and a Chinese reader's only navigation read 清單 / Usage / 設定 while the wordmark's
+accessible name went from 設定 to an untranslated `Menu`. The English stays in the markup as the
+fallback, as it does everywhere in this document; what closes the loop is that `view/static.js`
+paints each of them, and `Tests/web-pages.mjs` holds every id in the drawer against its paint.
+
+`webSessions` is a separate string from `webBack` on purpose. They are one word in English and two
+elsewhere: `webBack` is the chevron above a transcript — 「清單」in Chinese, with `webBackLabel`
+reading 「回到 session 清單」beside it — and a row in a navigation drawer is not that sentence.
 
 ## Three things a browser found and no suite did
 
@@ -139,6 +172,17 @@ All three were green in Node, in a fake document, at the moment they were broken
 served with `python3 -m http.server` from `Resources/web` and opened at `?mock=1`; that is fifteen
 seconds of setup and it is the difference between a suite that agrees with itself and a page that
 works.
+
+**And for one commit, two of the three could be undone in silence.** Each was re-broken on a copy
+of this tree — the deep-link condition deleted, the panel's `translateX` put back, the drawer and
+the page swapped in the Escape chain — and all 25 web suites and both Python guards stayed green
+for every one of them. A fix nothing can go red for is a fix that comes back, so each now has a
+guard in `Tests/web-pages.mjs`. None of the three can be held by driving the page in Node: there is
+no layout and no animation clock for the CSS, and `input/keys.js` and `view/list.js` both bind
+listeners at module scope and pull the whole app graph in behind them. They are held against the
+source instead, in the shape the `stopPropagation` check already had — **each pattern calibrated
+against a known positive first**, because a zero from a pattern nobody has seen match is a
+statement about the pattern rather than about the file.
 
 **The drawer swallowed its own clicks.** Every sheet in this app closes on a tap outside by putting
 `stopPropagation` on the sheet, so the drawer was built the same way — and every page link in it
@@ -158,8 +202,18 @@ the old `list.js` under an unchanged URL and tell you your fix did nothing.
 as long as the animation is `running`, and a renderer that throttles animations — measured here in
 an iframe Chrome had decided not to animate — leaves the drawer open, `hidden === false`, and
 entirely off the left edge with its scrim over the page. `responsive.css` reached the same
-conclusion about the detail pane for a different reason two months earlier. The scrim keeps its
-`fade`, because an undimmed page is a look rather than a trap.
+conclusion about the detail pane for a different reason two months earlier.
+
+**Neither does the scrim fade, and this page said the opposite for one commit.** The reason given
+was that an animation which never runs leaves an undimmed page behind an otherwise complete drawer
+— a look rather than a trap. It was wrong by one fact: `.sidebar-panel` is a child of `.sidebar`,
+and `opacity` applies to the subtree. The same throttled renderer therefore did not leave the page
+undimmed; it left the whole drawer invisible, and an element at `opacity: 0` still answers a hit
+test — so what sat over the page was a fixed layer covering everything below the header and eating
+the first click, with the same symptom as the swallowed clicks fixed the day before. That is one
+worse than the failure the `translateX` was removed for, in the same file, under a paragraph
+arguing for it. `sheets.css`'s `.overlay` is the same construction and is older than all of this;
+it is what the guard calibrates against rather than something this slice changed.
 
 ## What deliberately did not change
 
@@ -170,9 +224,17 @@ Two things went with the overlay, because they were the overlay rather than the 
 
 - **Tapping outside no longer closes Settings.** A page has no outside. Escape and Close both still
   lead back to the list, and `role="dialog"`/`aria-modal` are gone with the scrim they described.
-- **The wordmark's accessible name is `Menu` rather than `Settings`,** and it is in the markup
-  rather than painted from the strings — see the note above.
+- **The wordmark's accessible name is `Menu` rather than `Settings`,** which is what it opens now.
+  It is painted from `T.webMenu` like every other label here — see the note above.
 
-One thing arrived: **the drawer joins the Escape chain in `input/keys.js`, before the settings
-page**, and stands the list shortcuts down while it is open. Closing both the drawer and the page
-under it for one press would take somebody off Settings when all they wanted was the drawer shut.
+One thing arrived: **there is one Escape chain, in `input/keys.js`, and leaving a page is one line
+of it.** The drawer is offered the press before any page, because closing both for one press would
+take somebody off Settings when all they wanted was the drawer shut; the shortcuts card is offered
+it before that, for the same reason one layer up. Then `Pages.current() !== Pages.home()` goes
+home, once, for every page there is — unless a `dialog[open]` is over it, which answers its own
+Escape.
+
+That last branch replaced a second `keydown` listener inside `view/usage.js`. **A `return` ends its
+own listener and nothing else**, so with the drawer open over Usage one press closed the drawer
+*and* left the page, while the same three steps over Settings were right — an edge that had not
+been connected rather than an order that was wrong.

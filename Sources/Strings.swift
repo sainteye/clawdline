@@ -523,6 +523,25 @@ protocol Copy {
     /// word alone.
     var webBack: String { get }
     var webBackLabel: String { get }
+
+    /// The drawer behind the wordmark, and the wordmark that opens it.
+    ///
+    /// These four were written into `Resources/web/index.html` in English for one commit, because
+    /// a visible word costs a member here and fourteen conformances. What that bought was a
+    /// Chinese reader whose only navigation read 清單 / Usage / 設定, and a wordmark whose
+    /// accessible name went from 設定 to an untranslated `Menu` — a regression, not a gap left
+    /// open. Nothing could have gone red for it either: `tools/check-web-strings.py` crosses
+    /// `T.<name>`, the fallback in `core/i18n.js` and the `/v1/strings` payload, and a literal in
+    /// the markup is in none of the three.
+    ///
+    /// ``webSessions`` is not ``webBack``. They are one word in English and two everywhere the
+    /// question is asked differently: ``webBack`` is the chevron above a transcript, with
+    /// ``webBackLabel`` finishing the sentence beside it, and this is a destination in a menu.
+    var webMenu: String { get }
+    var webPages: String { get }
+    var webSessions: String { get }
+    /// The row that leads to the Project Portfolio page.
+    var webUsage: String { get }
     var webNoSessionOpen: String { get }
     var webOrderTip: String { get }
     /// The button that brings a session's terminal to the front **on the Mac**.

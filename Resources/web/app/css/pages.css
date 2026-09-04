@@ -71,10 +71,18 @@
     background: rgba(6, 6, 8, 0.58);
     -webkit-backdrop-filter: blur(2px);
     backdrop-filter: blur(2px);
-    /* The same `fade` every sheet in this app comes up with, kept here and not on the panel
-       below: an animation that never runs leaves this at `opacity: 0`, and an undimmed page
-       behind a drawer that is otherwise entirely there is a look, not a trap. */
-    animation: fade 140ms var(--ease);
+    /* **And the scrim does not fade in, for the same reason the panel below does not slide.**
+       It did, once, on the argument that an animation which never runs leaves an undimmed page
+       behind an otherwise complete drawer — a look rather than a trap. That argument was wrong by
+       one fact: `.sidebar-panel` is inside this element, and `opacity` applies to the subtree. So
+       a renderer that throttles animations did not leave the page undimmed, it left the whole
+       drawer invisible — and an element at `opacity: 0` still answers a hit test, so what was over
+       the page was a fixed layer covering everything below the header and eating the first click.
+       That is one worse than the failure the panel's `translateX` was removed for, and it has the
+       same symptom as the swallowed clicks removed the day before: press the logo, nothing seems
+       to happen, and the next press goes nowhere either.
+       `sheets.css`'s `.overlay` is the same construction and is older than any of this; it is not
+       this sheet's to change, and it is what `Tests/web-pages.mjs` calibrates the guard against. */
 }
 .sidebar[hidden] { display: none; }
 .sidebar-panel {

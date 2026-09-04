@@ -305,6 +305,10 @@ struct Hindi: Copy {
 
     let webBack = "सूची"
     let webBackLabel = "session की सूची पर लौटें"
+    let webMenu = "मेन्यू"
+    let webPages = "पेज"
+    let webSessions = "Session सूची"
+    let webUsage = "इस्तेमाल"
     let webNoSessionOpen = "कोई session खुला नहीं"
     let webOrderTip = "ट्रांसक्रिप्ट उलटें (r)"
     let webShowOnMac = "Mac पर दिखाएँ"

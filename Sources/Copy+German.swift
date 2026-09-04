@@ -301,6 +301,10 @@ struct German: Copy {
 
     let webBack = "Sitzungen"
     let webBackLabel = "Zurück zur Sitzungsliste"
+    let webMenu = "Menü"
+    let webPages = "Seiten"
+    let webSessions = "Sitzungen"
+    let webUsage = "Verbrauch"
     let webNoSessionOpen = "Keine Sitzung offen"
     let webOrderTip = "Verlauf umkehren (r)"
     let webShowOnMac = "Am Mac zeigen"

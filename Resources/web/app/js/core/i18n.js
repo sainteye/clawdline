@@ -46,6 +46,13 @@ export var T = {
     webStateWorking: "working",
     webBack: "Sessions",
     webBackLabel: "Back to the session list",
+    // The drawer behind the wordmark, and the wordmark itself. `webSessions` is the same word as
+    // `webBack` in English and a different one in most other languages: that one is the chevron
+    // above a transcript ("back to the list I came from"), this one is a destination in a menu.
+    webMenu: "Menu",
+    webPages: "Pages",
+    webSessions: "Sessions",
+    webUsage: "Usage",
     webNoSessionOpen: "No session open",
     webOrderTip: "Reverse the transcript (r)",
     webShowOnMac: "Show on Mac",

@@ -237,10 +237,7 @@ var usage = bindUsagePortfolio({
     // `drawIcon` rather than a second copy. It arrives through this seam rather than an import
     // because `view/usage.js` deliberately imports nothing: `core/pixels.js` reaches `window` at
     // module scope, and the Usage module is exercised whole in Node by Tests/web-usage-analytics.mjs.
-    drawIcon: drawIcon, tint: tint,
-    // And the way out of the page, for the same reason: Escape over the Usage page means the
-    // sessions page, which is a fact about the shell rather than about the portfolio.
-    navigate: function (name) { Pages.go(name); }
+    drawIcon: drawIcon, tint: tint
 });
 
 /**
@@ -256,6 +253,10 @@ var usage = bindUsagePortfolio({
 Pages.bind({
     document: document,
     root: document.documentElement,
+    // Where the keyboard goes when the page arrived at names no control of its own — the session
+    // list does not, and it is the page every Close and Escape leads to. The wordmark is on screen
+    // whatever page this is, and it is what opens the way to the others.
+    focusFallback: "brand",
     pages: [
         { name: "sessions", element: byId("app") },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",

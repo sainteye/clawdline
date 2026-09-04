@@ -685,12 +685,12 @@ export function bindUsagePortfolio(elements, environment) {
     /** Nothing to put back: the page that follows draws itself. Kept as the seam a page has. */
     function leave() { }
 
-    /* Escape stays here rather than moving in with the rest of it, because the question it has to
-       ask is about this page and not about pages: the detail dialog opens *over* Usage, and its
-       own Escape closes it. Leaving through this one as well would close two things for one press.
-       `navigate` is the page router; a harness that has none leaves the module inert rather than
-       reaching for a document it was never given. */
-    var navigate = environment.navigate || function () { };
+    /* Escape is not answered here at all any more. It used to be, on `document`, and a second
+       listener on one document is a second answer to one press: `input/keys.js` orders the whole
+       of Escape and returns when a layer takes it, but a `return` ends its own listener and
+       nothing else — so the drawer open over this page and one press closed the drawer *and* left
+       the page. The question this used to ask (is the detail dialog open?) is asked there now, of
+       the document rather than of this page's own id. */
 
     initializeControls();
     elements["usage-overview"].addEventListener("click", function () { selectView("overview"); });
@@ -723,10 +723,6 @@ export function bindUsagePortfolio(elements, environment) {
     elements["usage-export-json"].addEventListener("click", function () { downloadExport("json"); });
     elements["usage-detail-close"].addEventListener("click", function () {
         elements["usage-detail"].close();
-    });
-    doc.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && !elements["usage-analytics"].hidden
-            && !elements["usage-detail"].open) navigate("sessions");
     });
     return { load: load, render: render, selectView: selectView, enter: enter, leave: leave };
 }

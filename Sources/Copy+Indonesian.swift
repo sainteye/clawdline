@@ -301,6 +301,10 @@ struct Indonesian: Copy {
 
     let webBack = "Sesi"
     let webBackLabel = "Kembali ke daftar sesi"
+    let webMenu = "Menu"
+    let webPages = "Halaman"
+    let webSessions = "Sesi"
+    let webUsage = "Pemakaian"
     let webNoSessionOpen = "Tidak ada sesi terbuka"
     let webOrderTip = "Balik urutan transkrip (r)"
     let webShowOnMac = "Tampilkan di Mac"

@@ -300,6 +300,10 @@ struct English: Copy {
 
     let webBack = "Sessions"
     let webBackLabel = "Back to the session list"
+    let webMenu = "Menu"
+    let webPages = "Pages"
+    let webSessions = "Sessions"
+    let webUsage = "Usage"
     let webNoSessionOpen = "No session open"
     let webOrderTip = "Reverse the transcript (r)"
     let webShowOnMac = "Show on Mac"

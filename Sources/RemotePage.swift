@@ -114,6 +114,10 @@ enum RemotePage {
         add([
             "webBack": t.webBack,
             "webBackLabel": t.webBackLabel,
+            "webMenu": t.webMenu,
+            "webPages": t.webPages,
+            "webSessions": t.webSessions,
+            "webUsage": t.webUsage,
             "webNoSessionOpen": t.webNoSessionOpen,
             "webOrderTip": t.webOrderTip,
             "webShowOnMac": t.webShowOnMac,

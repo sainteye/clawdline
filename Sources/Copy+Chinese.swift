@@ -300,6 +300,10 @@ struct TraditionalChinese: Copy {
 
     let webBack = "清單"
     let webBackLabel = "回到 session 清單"
+    let webMenu = "選單"
+    let webPages = "頁面"
+    let webSessions = "Session 清單"
+    let webUsage = "用量"
     let webNoSessionOpen = "沒有打開的 session"
     let webOrderTip = "把對話記錄反過來（r）"
     let webShowOnMac = "在 Mac 上顯示"
@@ -1167,6 +1171,10 @@ struct SimplifiedChinese: Copy {
 
     let webBack = "列表"
     let webBackLabel = "回到 session 列表"
+    let webMenu = "菜单"
+    let webPages = "页面"
+    let webSessions = "Session 列表"
+    let webUsage = "用量"
     let webNoSessionOpen = "没有打开的 session"
     let webOrderTip = "把对话记录倒过来（r）"
     let webShowOnMac = "在 Mac 上显示"

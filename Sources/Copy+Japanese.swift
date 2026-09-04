@@ -299,6 +299,10 @@ struct Japanese: Copy {
 
     let webBack = "セッション"
     let webBackLabel = "セッション一覧に戻る"
+    let webMenu = "メニュー"
+    let webPages = "ページ"
+    let webSessions = "セッション"
+    let webUsage = "使用量"
     let webNoSessionOpen = "開いているセッションがありません"
     let webOrderTip = "トランスクリプトを逆順に（r）"
     let webShowOnMac = "Mac に表示"

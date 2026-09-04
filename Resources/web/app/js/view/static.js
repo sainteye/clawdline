@@ -66,14 +66,25 @@ export function paintStatic() {
     // The send button's words and its hover text belong to `renderComposer`: both of them change
     // while a message is in flight, and one owner for a thing that moves.
 
-    // The pages, and the menu that names them. `Sessions` is the word the transcript's back
-    // button already uses for the same destination, so it is the same string.
-    text(els["nav-sessions"], T.webBack);
+    /* The pages, the drawer that names them, and the wordmark that opens it.
+
+       Every one of these was English in the markup and nothing anywhere went red for it:
+       `tools/check-web-strings.py` crosses `T.<name>`, the fallback in `core/i18n.js` and the
+       `/v1/strings` payload, and a word written straight into `index.html` is in none of the
+       three — it cannot tell that literal from the English fallback that is supposed to be there.
+       So a Chinese reader's only navigation read 清單 / Usage / 設定, and the wordmark's
+       accessible name went from 設定 to an untranslated `Menu`. `Tests/web-pages.mjs` holds each
+       id against its paint here, which is the guard that boundary cannot have.
+
+       `webSessions` rather than `webBack`: one word in English, two jobs. `webBack` is the
+       chevron at the top of a transcript — 「清單」in Chinese, with `webBackLabel` reading
+       「回到 session 清單」beside it — and a row in a navigation drawer is not that sentence. */
+    attr(els.brand, "aria-label", T.webMenu);
+    attr(els.brand, "title", T.webMenu);
+    attr(els.sidebar, "aria-label", T.webPages);
+    text(els["nav-sessions"], T.webSessions);
+    text(els["usage-open"], T.webUsage);
     text(els["nav-settings"], T.webSettings);
-    // The wordmark itself is not painted here. It opens the menu now rather than the settings
-    // sheet, and `Menu` would be a new member on the `Copy` protocol whose Chinese half is not
-    // this change's to write — so it is in the markup, in English, and says so there.
-    attr(els["settings-sheet"], "aria-label", T.webSettings);
     text(els["settings-title"], T.webSettings);
     text(els["settings-notify-title"], T.webSettingsNotify);
     text(els["settings-assistant-icons-title"], T.webSettingsAssistantIcons);

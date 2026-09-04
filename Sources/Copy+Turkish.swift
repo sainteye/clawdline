@@ -301,6 +301,10 @@ struct Turkish: Copy {
 
     let webBack = "Oturumlar"
     let webBackLabel = "Oturum listesine dön"
+    let webMenu = "Menü"
+    let webPages = "Sayfalar"
+    let webSessions = "Oturumlar"
+    let webUsage = "Kullanım"
     let webNoSessionOpen = "Açık oturum yok"
     let webOrderTip = "Dökümü ters çevir (r)"
     let webShowOnMac = "Mac'te göster"

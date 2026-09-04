@@ -299,6 +299,10 @@ struct Korean: Copy {
 
     let webBack = "세션"
     let webBackLabel = "세션 목록으로 돌아가기"
+    let webMenu = "메뉴"
+    let webPages = "페이지"
+    let webSessions = "세션"
+    let webUsage = "사용량"
     let webNoSessionOpen = "열린 세션 없음"
     let webOrderTip = "트랜스크립트 뒤집기 (r)"
     let webShowOnMac = "Mac에 띄우기"

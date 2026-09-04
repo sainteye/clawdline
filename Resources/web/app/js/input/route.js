@@ -38,10 +38,20 @@ function sessionInHash(hash) {
  *
  * The page is applied before the session, because `#session=…` means the session list with that
  * session open on it, and `openSession` says so itself.
+ *
+ * **And a fragment that names no page means the home page**, which is the half this had no `else`
+ * for. Without it the address could stop saying where you are while the screen stayed put:
+ * measured in a browser as `page=usage`, `hash=""`, Usage still drawn and `#app` still hidden —
+ * one screen with no address, and a reload from there landing on the session list instead. On a
+ * phone that is the back gesture: `session/open.js` pushes one entry, the pop closes the session
+ * underneath, and the hashchange that followed used to change nothing at all.
  */
 export function routeTo(hash) {
     var page = pageInHash(hash);
-    if (page && Pages.knows(page)) Pages.go(page, { hash: false });
+    // A name this build has no page for is still ignored rather than obeyed — an old link leaves
+    // you where you were — so the two cases are "named one" and "named none", not "knows it".
+    if (page) { if (Pages.knows(page)) Pages.go(page, { hash: false }); }
+    else Pages.goHome({ hash: false });
     var id = sessionInHash(hash);
     if (!id) return;
     wantedSession = id;

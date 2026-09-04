@@ -1,6 +1,7 @@
 import { phone } from "../core/env.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
+import { Pages } from "../core/pages.js";
 import { freezeOrder, thawOrder } from "../view/derive.js";
 import { render } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
@@ -77,8 +78,24 @@ document.addEventListener("keydown", function (ev) {
         // both for one press would take somebody off Settings when all they wanted was the
         // drawer shut.
         if (!els.sidebar.hidden) { Sidebar.close(); return; }
-        if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
+        /* Leaving a page, once, for every page there is. This was `els.settings.hidden` and a
+           `Settings.close()` that is itself one line — `Pages.goHome()` — while the Usage page
+           answered Escape from a second `keydown` listener of its own inside `view/usage.js`.
+           **A `return` here ends this listener and nothing else**, so the drawer open over Usage
+           and one press closed the drawer *and* left the page; the same three steps over Settings
+           were right, which is what said the edge had not been connected rather than that the
+           order was wrong. One chain, and the next page needs no line here at all.
+
+           A dialog opened over a page answers its own Escape — the browser closes it — and going
+           home as well would be the two-things-for-one-press this whole order exists to prevent.
+           It is asked of the document rather than of `usage-detail` by name for the same reason
+           the rest of this is one branch: the Projects page's dialog will be a different id. */
+        if (Pages.current() !== Pages.home()) {
+            if (document.querySelector("dialog[open]")) return;
+            Pages.goHome();
+            return;
+        }
         if (document.activeElement === els.filter) {
             if (S.filter) { els.filter.value = ""; S.filter = ""; render(); }
             else { els.filter.blur(); els.rows.focus(); }
