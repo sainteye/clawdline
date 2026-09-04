@@ -765,6 +765,95 @@ try {
               r.status !== 0 && /rebase is in progress/.test(r.stderr));
     }
 
+    // ---- a sequencer operation in a linked worktree ----------------------------------------------
+    // The refusal above is about a checkout five sessions share one index in. A linked worktree is
+    // not that: it is created for one landing, by one session, and nobody else has a checkout of
+    // it, so a `MERGE_HEAD` sitting in `.git/worktrees/<name>/` has exactly one possible owner.
+    //
+    // Before this narrowing the hook refused those too, and the only regular caller of this guard
+    // was a root landing deliveries in exactly such a worktree — three of the four landings that
+    // followed the hook's own installation on 2026-09-03 were made with `--no-verify` because of
+    // it. An escape hatch typed several times a day is one nobody reads, which costs more than the
+    // refusal was worth.
+    //
+    // Both directions are in one fixture on purpose. The allow is only worth asserting beside the
+    // refusal it narrows, and the single thing that differs between them is which checkout the
+    // commit is typed in.
+    {
+        const repo = conflicted();
+
+        // The control, first, in the shared checkout.
+        const shared = runGit(repo, ["merge", "side"]);
+        check("the fixture conflicts in the shared checkout", shared.status !== 0
+              && existsSync(join(repo, ".git", "MERGE_HEAD")));
+        writeFileSync(join(repo, "a.txt"), "resolved\n");
+        runGit(repo, ["add", "--", "a.txt"]);
+        const refusedInShared = attemptCommit(repo);
+        check("and concluding it there is still refused, exactly as before",
+              refusedInShared.status !== 0 && /merge is in progress/.test(refusedInShared.stderr));
+        runGit(repo, ["merge", "--abort"]);
+
+        // The same merge, in a worktree linked to the same repository.
+        const worktree = join(sandbox, `worktree-${repoSerial}`);
+        const added = runGit(repo, ["worktree", "add", "-q", worktree, "side"]);
+        if (added.status !== 0) stop(`git worktree add failed: ${added.stderr}`);
+        const own = runGit(worktree, ["rev-parse", "--absolute-git-dir"]).stdout.trim();
+        const common = runGit(worktree, ["rev-parse", "--path-format=absolute",
+                                         "--git-common-dir"]).stdout.trim();
+        check("the fixture really is a linked worktree — its git dir is not the repository's",
+              own !== "" && common !== "" && own !== common);
+
+        const merged = runGit(worktree, ["merge", "main"]);
+        check("and the merge inside it conflicts and leaves MERGE_HEAD in that worktree's own "
+              + "git dir", merged.status !== 0 && existsSync(join(own, "MERGE_HEAD")));
+        writeFileSync(join(worktree, "a.txt"), "resolved\n");
+        runGit(worktree, ["add", "--", "a.txt"]);
+        const askedBefore = askedSoFar();
+        const r = attemptCommit(worktree);
+        check("concluding a merge in a linked worktree is allowed", r.status === 0);
+        // Not a commit count: concluding a merge makes `rev-list --count` jump by the whole of the
+        // side it just absorbed, so the number proves nothing about this one commit. The subject
+        // line and the marker being gone do.
+        check("and the commit was actually made, concluding that merge",
+              runGit(worktree, ["log", "-1", "--format=%s"]).stdout.trim() === "mine"
+              && !existsSync(join(own, "MERGE_HEAD")));
+        check("it says why it allowed rather than passing in silence",
+              /linked worktree/.test(r.stderr) && /can only be yours/.test(r.stderr));
+        // The teeth for this direction. An allow proves nothing unless the hook ran at all, and
+        // the narrowing is to the first check only: the staged paths still go to the broker.
+        check("and the hook ran — the claims check was still asked about those paths",
+              askedSoFar() > askedBefore);
+    }
+    {
+        // Not just MERGE_HEAD: the narrowing is the whole of check 1, so one of the other three is
+        // driven end to end too.
+        const repo = conflicted();
+        const worktree = join(sandbox, `worktree-pick-${repoSerial}`);
+        const added = runGit(repo, ["worktree", "add", "-q", worktree, "side"]);
+        if (added.status !== 0) stop(`git worktree add failed: ${added.stderr}`);
+        const own = runGit(worktree, ["rev-parse", "--absolute-git-dir"]).stdout.trim();
+        const picked = runGit(worktree, ["cherry-pick", "main"]);
+        check("a cherry-pick in a linked worktree conflicts and leaves CHERRY_PICK_HEAD",
+              picked.status !== 0 && existsSync(join(own, "CHERRY_PICK_HEAD")));
+        writeFileSync(join(worktree, "a.txt"), "resolved\n");
+        runGit(worktree, ["add", "--", "a.txt"]);
+        const r = attemptCommit(worktree);
+        check("and concluding it is allowed, with the same sentence", r.status === 0
+              && /cherry-pick is in progress, and this is a linked worktree/.test(r.stderr));
+    }
+    {
+        // And the refusal is not gone from the shared checkout for the other three either. The
+        // pair for the cherry-pick above, one checkout changed.
+        const repo = conflicted();
+        const picked = runGit(repo, ["cherry-pick", "side"]);
+        check("the same cherry-pick conflicts in the shared checkout", picked.status !== 0);
+        writeFileSync(join(repo, "a.txt"), "resolved\n");
+        runGit(repo, ["add", "--", "a.txt"]);
+        const r = attemptCommit(repo);
+        check("and there it is still refused", r.status !== 0
+              && /cherry-pick is in progress in this checkout/.test(r.stderr));
+    }
+
     // ---- `git commit --amend` --------------------------------------------------------------------
     // `pre-commit` is handed no arguments and runs before `prepare-commit-msg`, so the hook cannot
     // tell an amend from an ordinary commit without reading its parent process's argv — a guess

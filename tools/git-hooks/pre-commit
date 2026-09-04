@@ -19,7 +19,10 @@
 # Two checks, deliberately unlike each other in how they fail:
 #
 #   1. **A sequencer operation is in progress** (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
-#      a rebase state directory). Local, no dependencies, **fails closed**.
+#      a rebase state directory). Local, no dependencies, **fails closed** — in the shared
+#      checkout. In a **linked worktree** (`--git-dir` differs from `--git-common-dir`) it says so
+#      and allows: that checkout was made for one line of work, so the operation has one possible
+#      owner. See the block itself for why the narrowing is worth having.
 #   2. **A staged path is claimed by another root's live Clawdline task.** Needs the broker on
 #      127.0.0.1, so it **fails open with a loud warning** when Clawdline is not answering. A hook
 #      that refuses every commit whenever the app is down is uninstalled within the hour, and an
@@ -49,6 +52,24 @@ set -u
 
 git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 
+# A linked worktree keeps its own sequencer state under `.git/worktrees/<name>/` while sharing the
+# repository at `--git-common-dir`; in the shared checkout the two are the same directory. That
+# difference is the whole of the narrowing below, and it is resolved rather than compared as
+# printed, because git answers `.git` here and an absolute path there.
+#
+# Anything this cannot resolve leaves `linked_worktree` empty, which keeps the old behaviour: the
+# check below fails closed, and an unanswerable question is not a reason to stop refusing.
+linked_worktree=""
+git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || git_common_dir=""
+if [ -n "$git_common_dir" ]; then
+    resolved_git_dir=$(cd -- "$git_dir" 2>/dev/null && pwd -P) || resolved_git_dir=""
+    resolved_common_dir=$(cd -- "$git_common_dir" 2>/dev/null && pwd -P) || resolved_common_dir=""
+    if [ -n "$resolved_git_dir" ] && [ -n "$resolved_common_dir" ] \
+       && [ "$resolved_git_dir" != "$resolved_common_dir" ]; then
+        linked_worktree="yes"
+    fi
+fi
+
 # ---- 1. a sequencer operation in progress -----------------------------------------------------
 # Fails closed: it needs nothing but the filesystem, so there is no outage to fail open for. A
 # conflict-free merge or cherry-pick commits without calling this hook, so reaching here with one
@@ -58,6 +79,16 @@ git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 # `git cherry-pick --continue` and `git revert --continue` do call `pre-commit`, and so does a
 # plain `git commit` typed while a rebase is stopped on a conflict. Only `MERGE_HEAD` used to be
 # looked at, which left the other three carrying the same hazard unguarded.
+#
+# **In a linked worktree it says so and allows.** The hazard this refuses is *somebody else's*
+# hand-resolved conflicts, and it exists because the shared checkout has one index that five
+# sessions type into. A linked worktree has one — it is created for one landing, by one session,
+# and nobody else has a checkout of it — so the merge in it can only be the committer's. Landings
+# are conducted in exactly such a worktree here, so before this narrowing the only regular caller of
+# this hook met a refusal every time and answered it with `--no-verify`: three of the four landings
+# after the hook was installed on 2026-09-03 were made that way. The guard's value is that somebody
+# reads it, and an escape hatch typed by reflex is one nobody reads. Nothing about the shared
+# checkout changes, and that is what `Tests/git-hooks.mjs` pairs every one of these allows with.
 op=""
 op_marker=""
 op_ref=""
@@ -74,6 +105,24 @@ elif [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ]; then
     op="a rebase"; op_marker="a rebase state directory"
     op_ref=$(head -n 1 "$git_dir/rebase-merge/orig-head" 2>/dev/null \
              || head -n 1 "$git_dir/rebase-apply/original-commit" 2>/dev/null)
+fi
+
+if [ -n "$op" ] && [ -n "$linked_worktree" ]; then
+    cat >&2 <<EOF
+
+  ⚠ shared-tree guard: $op is in progress, and this is a linked worktree.
+
+    $op_marker is ${op_ref:-present}, under $git_dir
+    the repository itself is $git_common_dir
+
+    A linked worktree is created for one line of work and nobody else has a checkout of it, so
+    that $op can only be yours. Allowing the commit. In the shared checkout this is a refusal,
+    because there the same marker may be another session's hand-resolved conflicts.
+
+    Your staged paths are still checked against other sessions' live claims below.
+
+EOF
+    op=""
 fi
 
 if [ -n "$op" ]; then
