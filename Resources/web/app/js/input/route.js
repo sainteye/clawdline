@@ -1,3 +1,4 @@
+import { Pages, pageInHash } from "../core/pages.js";
 import { byId } from "../view/derive.js";
 import { openSession } from "../session/open.js";
 
@@ -27,7 +28,20 @@ function sessionInHash(hash) {
     try { return decodeURIComponent(found[1]); } catch (e) { return found[1]; }
 }
 
+/**
+ * A fragment can name a page as well as a session, and both are read here.
+ *
+ * `#page=usage` is what the menu writes when you press a row, so it is also what a bookmark, a
+ * reload and the browser's own Back are answering — one address for one screen. A name this build
+ * has no page for is ignored rather than obeyed: an old link, or a hand-typed one, leaves you
+ * where you were instead of in front of a blank rectangle.
+ *
+ * The page is applied before the session, because `#session=…` means the session list with that
+ * session open on it, and `openSession` says so itself.
+ */
 export function routeTo(hash) {
+    var page = pageInHash(hash);
+    if (page && Pages.knows(page)) Pages.go(page, { hash: false });
     var id = sessionInHash(hash);
     if (!id) return;
     wantedSession = id;

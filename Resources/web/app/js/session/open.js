@@ -3,6 +3,7 @@ import { Diagnostics } from "../core/layout-diagnostics.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
+import { Pages } from "../core/pages.js";
 import { api } from "../net/api.js";
 import { byId, revisionOf } from "../view/derive.js";
 import { closingID, render, rowNodes } from "../view/list.js";
@@ -197,6 +198,10 @@ export function toBottom() {
 export function openSession(id, keepFocus, forceRefresh) {
     var s = byId(id);
     if (!s || closingID === id) return;
+    // A session lives on the sessions page, so opening one means being there. It matters for the
+    // push that arrives while somebody is reading Usage: the fragment routes, the transcript
+    // loads, and without this line all of it happens underneath a page that is still on screen.
+    Pages.goHome();
     Diagnostics.note("session.open.begin", {
         switching: S.openId !== id, phone: phone(), view: els.app.dataset.view,
         forceRefresh: !!forceRefresh

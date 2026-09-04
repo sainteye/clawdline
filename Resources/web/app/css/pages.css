@@ -1,0 +1,117 @@
+/* ==========================================================================
+   Pages, and the drawer that names them
+
+   A page is the whole of the app below the header. There is exactly one on
+   screen; the rest are `hidden`, which is the same mechanism Usage and the
+   settings sheet were already using and the reason nothing had to be rewritten
+   to move them in here.
+
+   `display: none` is written out rather than left to the browser's own
+   `[hidden]` rule. That rule is the weakest thing in the cascade, and a page
+   only has to be given a `display` by one selector somewhere for `hidden` to
+   stop hiding it — which is exactly how a folded Usage row stayed on screen
+   below 1280px until `usage.css` learned to say the same thing.
+   ========================================================================== */
+.page {
+    position: fixed;
+    inset: var(--head-h, 52px) 0 0;
+    z-index: 35;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--bg);
+}
+.page[hidden] { display: none; }
+
+/* The settings page keeps the sheet's furniture — `.sheet .block` is what gives
+   its rows their type, and the alternative was a second set of rules saying the
+   same thing in a different place. What a page does not need is the card: no
+   border, no shadow, no radius, and a column wide enough to read rather than
+   one sized to float in the middle of a screen. */
+.page-settings .sheet {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    width: min(560px, 100%);
+    margin: 0 auto;
+    padding: clamp(14px, 3vw, 26px) 18px calc(40px + var(--indicator));
+}
+.page-settings .sheet h2 {
+    margin: 0 0 18px 0;
+    font-size: clamp(22px, 3.4vw, 30px);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+}
+/* A page has room the sheet did not, and rows that ran together in a 460px card
+   are the first thing to spend it on. */
+.page-settings .sheet .block {
+    margin-bottom: 0;
+    padding: 16px 0;
+    border-top: 1px solid var(--line);
+}
+.page-settings .sheet .foot { margin-top: 18px; }
+
+/* ==========================================================================
+   The drawer
+   ========================================================================== */
+/* Under the header, so the wordmark that opened it stays pressable. Above the
+   pages and below the sheets: this is navigation, and a confirmation asked over
+   the top of it is still the thing being answered. */
+.sidebar {
+    position: fixed;
+    inset: var(--head-h, 52px) 0 0;
+    z-index: 45;
+    background: rgba(6, 6, 8, 0.58);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+    animation: fade 140ms var(--ease);
+}
+.sidebar[hidden] { display: none; }
+.sidebar-panel {
+    position: absolute;
+    inset: 0 auto 0 0;
+    /* Never the whole width. The strip of page left showing is what says this is
+       a drawer over something rather than a screen you have arrived at, and it
+       is the thing a thumb reaches for to dismiss it. */
+    width: min(272px, 82vw);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 10px calc(10px + var(--indicator));
+    background: var(--card);
+    border-right: 1px solid var(--line);
+    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.45);
+    animation: sidebar-in 160ms var(--ease);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+@keyframes sidebar-in { from { transform: translateX(-100%); } to { transform: none; } }
+
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    /* A thumb's worth, on the screen this whole shape is for. */
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 10px;
+    color: var(--dim);
+    font-size: 14px;
+    text-align: left;
+}
+.sidebar-item:hover { background: var(--card-hi); color: var(--ink); }
+/* Where you are, said once. `aria-current` is the attribute a screen reader
+   reads and the selector this changes on, so there is no second place for the
+   two of them to disagree — the same argument the microphone's `aria-pressed`
+   makes in `shell.css`. */
+.sidebar-item[aria-current="page"] {
+    background: var(--accent-in);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* A phone has no cursor to aim with and the drawer is the whole of the
+   navigation, so the rows get the height a native list row has. */
+@media (pointer: coarse) {
+    .sidebar-item { min-height: 48px; font-size: 15px; }
+}

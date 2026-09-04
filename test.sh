@@ -621,8 +621,9 @@ browser_contract_suites=(
   Tests/web-row-gesture.mjs
   Tests/web-detached-attach.mjs
   Tests/web-terminal.mjs
+  Tests/web-pages.mjs
 )
-if [ "${#browser_contract_suites[@]}" -ne 17 ]; then
+if [ "${#browser_contract_suites[@]}" -ne 18 ]; then
   echo "browser contract roster changed without updating its sealed count" >&2
   exit 1
 fi

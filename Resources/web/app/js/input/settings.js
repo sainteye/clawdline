@@ -1,22 +1,28 @@
 import { T, fill } from "../core/i18n.js";
 import { S, storeBool } from "../core/state.js";
 import { els } from "../core/dom.js";
+import { Pages } from "../core/pages.js";
 import { assistantLogo } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { renderTranscript } from "../view/transcript.js";
 import { toggleOrder } from "./keys.js";
 import { Push } from "./push.js";
 
-/* ---- the settings sheet -------------------------------------------------- */
+/* ---- the settings page --------------------------------------------------- */
 
 /**
  * What is true of this browser on this device, which is a different question from anything in
- * the list behind it — so it is somewhere else rather than louder.
+ * the session list — so it is somewhere else rather than louder.
  *
  * It came out of a footer that held a "Stop" button and a sentence, permanently, on every screen.
  * Turning notifications off again is a once-a-year press and it was costing a row of a phone
  * display for ever; what stays in the flow is the one state that is asking to be pressed, and
  * everything else moved in here behind the wordmark.
+ *
+ * **It is a page now, and this is where that shows.** `open` no longer unhides anything: it asks
+ * `Pages` to go there, and `Pages` calls `enter` once it has. Everything `open` used to do apart
+ * from that one line is in `enter`, unchanged — which is why arriving by the address bar or by
+ * the back button draws exactly what pressing the row in the menu draws.
  */
 export var Settings = (function () {
     var testing = false;
@@ -31,19 +37,20 @@ export var Settings = (function () {
     return {
         busy: function () { return testing; },
 
-        open: function () {
-            els.settings.hidden = false;
+        /** Take me there. Whether it is already on screen is `Pages`' business. */
+        open: function () { Pages.go("settings"); },
+
+        /** Drawn on arrival, however the arrival happened. */
+        enter: function () {
             say("");
             els["settings-version"].textContent =
                 S.version ? fill(T.webSettingsVersion, { v: S.version }) : "";
             Push.redraw();
             this.drawAssistantIcons();
             this.drawOrder();
-            els["settings-close"].focus({ preventScroll: true });
         },
 
-        close: function () { els.settings.hidden = true; },
-        toggle: function () { if (els.settings.hidden) this.open(); else this.close(); },
+        close: function () { Pages.goHome(); },
 
         drawAssistantIcons: function () {
             var button = els["settings-assistant-icons"];
@@ -110,10 +117,10 @@ export var Settings = (function () {
     };
 })();
 
-els.brand.addEventListener("click", function () { Settings.toggle(); });
-els.settings.addEventListener("click", function () { Settings.close(); });
-els["settings-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
-els["settings-close"].addEventListener("click", function () { Settings.close(); });
+// The wordmark opens the menu (`input/sidebar.js`), the menu's Settings row and this page's own
+// Close both carry `data-page-to`, and `core/pages.js` answers all three. What used to be four
+// listeners here — the wordmark, the scrim, the sheet swallowing its own clicks, and Close — is
+// none: a page has no outside to tap, and its way out is the same attribute every other one uses.
 els["settings-notify-go"].addEventListener("click", function () { Push.toggle(); });
 els["settings-notify-test"].addEventListener("click", function () { Settings.test(); });
 els["settings-order"].addEventListener("click", toggleOrder);

@@ -139,6 +139,10 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/coordinator.css">
 <link rel="stylesheet" href="/app/css/door.css">
 <link rel="stylesheet" href="/app/css/responsive.css">
+<!-- Before `usage.css` on purpose. `.page` and `.usage-analytics` have the same specificity and
+     say some of the same things; the Usage sheet is the older and more particular of the two, so
+     it goes last and wins where they overlap. -->
+<link rel="stylesheet" href="/app/css/pages.css">
 <link rel="stylesheet" href="/app/css/usage.css">
 
 <!-- Every module, named here so that all forty are asked for at once.
@@ -151,14 +155,44 @@ document.documentElement.className = "booting";
 <!-- clawdline:modules -->
 
 <header class="top">
-    <!-- The wordmark is the way into the app's own settings. Tapping a product mark to reach
-         them is a shape people already know, and it is the highest-affordance thing in this
-         header — which is what the notifications control needed and did not have when it was a
-         permanent footer taking a row off every phone screen. -->
-    <button class="brand" id="brand" type="button"><canvas id="brand-mark" width="0" height="0"></canvas><b>clawdline</b></button>
+    <!-- The wordmark is the way to everywhere in this app that is not the session list. Tapping a
+         product mark to reach them is a shape people already know, and it is the highest-affordance
+         thing in this header — which is what the notifications control needed and did not have when
+         it was a permanent footer taking a row off every phone screen.
+
+         It used to open the settings sheet directly, because settings was the only app-wide
+         destination there was. Now it opens the list of them, and the settings page is one row of
+         that list. `Menu` is written here rather than painted from the strings: naming it would
+         mean a new member on the `Copy` protocol, and the Chinese half of that protocol belongs to
+         another line of work — see the note in `docs/web-pages.md`. -->
+    <button class="brand" id="brand" type="button" aria-label="Menu" title="Menu"
+            aria-controls="sidebar" aria-expanded="false"><canvas id="brand-mark" width="0" height="0"></canvas><b>clawdline</b></button>
     <div class="counts" id="counts"></div>
     <button class="conn" id="conn" data-state="connecting" title="Connection to the app"><span class="dot"></span><span id="conn-label">connecting</span></button>
 </header>
+
+<!-- Where the pages are. It is a drawer at every width rather than a column pinned open on a desk:
+     a phone is the screen this is mostly read on, one behaviour is cheaper to keep right than two,
+     and the desk pays one tap for the session list's full width.
+
+     It starts below the header so the wordmark that opened it stays pressable — pressing it again
+     is the shortest way out and the first thing anybody tries. Every row here names a page in
+     `data-page-to` and nothing else; `core/pages.js` answers all of them, which is what makes the
+     next page a line of markup rather than a line of JavaScript. -->
+<nav class="sidebar" id="sidebar" hidden aria-label="Pages">
+    <div class="sidebar-panel" id="sidebar-panel">
+        <button class="sidebar-item" id="nav-sessions" type="button" data-page-to="sessions">Sessions</button>
+        <!-- The Projects page goes here, between Sessions and Usage: it is a way *into* the
+             sessions rather than a reading about them. It needs a `<section class="page"
+             data-page-view="projects">` in this document, an entry in the array `main.js` hands to
+             `Pages.bind`, and this row. Nothing else. -->
+        <!-- `usage-open` keeps its name from the days when it was a button at the bottom of the
+             settings sheet. The name is what `usage.css` styles and what the Usage guard looks for;
+             what it does is now the same as every other row here. -->
+        <button class="sidebar-item" id="usage-open" type="button" data-page-to="usage">Usage</button>
+        <button class="sidebar-item" id="nav-settings" type="button" data-page-to="settings">Settings</button>
+    </div>
+</nav>
 
 <!-- One line, and only ever after the app on the Mac has been rebuilt under a page that was
      left open. Never a reload of its own: somebody may be halfway through a sentence in the
@@ -180,7 +214,10 @@ document.documentElement.className = "booting";
     <button class="x" id="starting-close" type="button" aria-label="Close">×</button>
 </div>
 
-<main class="app" id="app" data-view="list" data-pane="on">
+<!-- The sessions page: the one a bare URL means, and the one every Close and every Escape on
+     another page goes back to. `data-view` and `data-pane` are this page's own two-column
+     arrangement and have nothing to do with which page is showing. -->
+<main class="app" id="app" data-page-view="sessions" data-view="list" data-pane="on">
     <section class="pane pane-list">
         <div class="filter-row">
             <!-- Every one of these attributes is here to keep a password manager out of a box
@@ -465,12 +502,16 @@ document.documentElement.className = "booting";
     </section>
 </main>
 
-<section class="usage-analytics" id="usage-analytics" aria-labelledby="usage-title" hidden>
+<!-- The Usage page. It was already the shape of one — a fixed panel below the header that hid the
+     session list by hand when it opened — and becoming a page took nothing off it: the same markup,
+     the same module, the same `hidden`, with the deciding moved to `core/pages.js`. -->
+<section class="usage-analytics page" id="usage-analytics" data-page-view="usage"
+         aria-labelledby="usage-title" hidden>
     <div class="usage-shell">
         <div class="usage-heading">
             <div><p class="usage-eyebrow">Local usage ledger</p><h1 id="usage-title">Project Portfolio</h1>
                 <p>See where agent work is happening without turning token volume into a score.</p></div>
-            <button class="usage-close" id="usage-close" type="button">Back to sessions</button>
+            <button class="usage-close" id="usage-close" type="button" data-page-to="sessions">Back to sessions</button>
         </div>
         <div class="usage-tabs" role="tablist" aria-label="Usage views">
             <button id="usage-overview" type="button" role="tab" aria-selected="true"
@@ -562,29 +603,18 @@ document.documentElement.className = "booting";
     <h2 id="usage-detail-title">Usage detail</h2><dl id="usage-detail-list"></dl>
 </dialog>
 
-<div class="overlay" id="keys" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-        <h2>Keyboard</h2>
-        <dl>
-            <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move through the list — <kbd>j</kbd> and <kbd>k</kbd> do the same</dd>
-            <dt><kbd>⏎</kbd></dt><dd>Open the selected session</dd>
-            <dt><kbd>/</kbd></dt><dd>Filter the list</dd>
-            <dt><kbd>esc</kbd></dt><dd>Clear the filter, then step back</dd>
-            <dt><kbd>⌘K</kbd></dt><dd>Focus the session list</dd>
-            <dt><kbd>⌘J</kbd></dt><dd>Show or hide the transcript</dd>
-            <dt><kbd>⌘I</kbd></dt><dd>Session info</dd>
-            <dt><kbd>g</kbd> <kbd>G</kbd></dt><dd>Top or bottom of the transcript</dd>
-            <dt><kbd>r</kbd></dt><dd>Reverse the transcript order</dd>
-            <dt><kbd>?</kbd></dt><dd>This card</dd>
-        </dl>
-        <div class="foot">Anything typed into a text box stays in the text box — the shortcuts stand down while you write.</div>
-    </div>
-</div>
+<!-- The Settings page. What is true of this browser on this device — a different question from
+     anything in the session list, which is why it was somewhere else rather than louder.
 
-<!-- The app-level menu behind the wordmark. Browser settings stay here, and Usage is the one
-     app-wide destination rather than a permanent action taking space from the header. -->
-<div class="overlay" id="settings" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" id="settings-sheet">
+     It was a modal sheet over the list, reached by tapping the wordmark. It is now a page reached
+     from the menu the wordmark opens, and everything inside it is unchanged, down to the class on
+     the container: `.sheet .block` is what gives these rows their type, and `pages.css` takes the
+     card's border and shadow off rather than making a second set of rules that say the same thing.
+
+     A page is not a dialog, so `role="dialog"` and `aria-modal` are gone, and so is the tap-outside
+     that closed it — there is no outside. Escape and Close still lead back to the list. -->
+<section class="page page-settings" id="settings" data-page-view="settings" hidden>
+    <div class="sheet" id="settings-sheet">
         <h2 id="settings-title">Settings</h2>
 
         <div class="block">
@@ -621,10 +651,27 @@ document.documentElement.className = "booting";
             </div>
         </div>
 
-        <button class="chip wide" id="usage-open" type="button"
-                aria-controls="usage-analytics" aria-expanded="false">Usage</button>
         <div class="foot"><span id="settings-version"></span></div>
-        <button class="chip wide" id="settings-close" type="button">Close</button>
+        <button class="chip wide" id="settings-close" type="button" data-page-to="sessions">Close</button>
+    </div>
+</section>
+
+<div class="overlay" id="keys" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <h2>Keyboard</h2>
+        <dl>
+            <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move through the list — <kbd>j</kbd> and <kbd>k</kbd> do the same</dd>
+            <dt><kbd>⏎</kbd></dt><dd>Open the selected session</dd>
+            <dt><kbd>/</kbd></dt><dd>Filter the list</dd>
+            <dt><kbd>esc</kbd></dt><dd>Clear the filter, then step back</dd>
+            <dt><kbd>⌘K</kbd></dt><dd>Focus the session list</dd>
+            <dt><kbd>⌘J</kbd></dt><dd>Show or hide the transcript</dd>
+            <dt><kbd>⌘I</kbd></dt><dd>Session info</dd>
+            <dt><kbd>g</kbd> <kbd>G</kbd></dt><dd>Top or bottom of the transcript</dd>
+            <dt><kbd>r</kbd></dt><dd>Reverse the transcript order</dd>
+            <dt><kbd>?</kbd></dt><dd>This card</dd>
+        </dl>
+        <div class="foot">Anything typed into a text box stays in the text box — the shortcuts stand down while you write.</div>
     </div>
 </div>
 

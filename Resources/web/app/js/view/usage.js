@@ -668,27 +668,31 @@ export function bindUsagePortfolio(elements, environment) {
         load(null, false);
     }
 
-    function open() {
-        elements.settings.hidden = true;
-        elements["usage-analytics"].hidden = false;
-        elements.app.hidden = true;
-        elements["usage-open"].setAttribute("aria-expanded", "true");
-        doc.body.style.overflow = "hidden";
-        elements["usage-close"].focus();
-        load(null, false);
-    }
+    /* Arriving and leaving.
+     *
+     * These used to be `open` and `close`, and between them they hid `#app`, unhid this panel,
+     * hid the settings sheet, moved the focus and locked the body's scroll — the whole of "which
+     * screen am I on", written once here because there was nowhere else for it to live. All of
+     * that is `core/pages.js` now, for every page; what is left is what is actually about Usage,
+     * which is that arriving at it means asking for the portfolio.
+     *
+     * They are called by `Pages` rather than by a listener of their own, so the reading is the
+     * same whether somebody pressed the row in the menu, opened `#page=usage` in a new tab, or
+     * came back to it with the browser's own Back. `main.js` hands them over at bind time.
+     */
+    function enter() { load(null, false); }
 
-    function close() {
-        elements["usage-analytics"].hidden = true;
-        elements.app.hidden = false;
-        elements["usage-open"].setAttribute("aria-expanded", "false");
-        doc.body.style.overflow = "";
-        elements.brand.focus();
-    }
+    /** Nothing to put back: the page that follows draws itself. Kept as the seam a page has. */
+    function leave() { }
+
+    /* Escape stays here rather than moving in with the rest of it, because the question it has to
+       ask is about this page and not about pages: the detail dialog opens *over* Usage, and its
+       own Escape closes it. Leaving through this one as well would close two things for one press.
+       `navigate` is the page router; a harness that has none leaves the module inert rather than
+       reaching for a document it was never given. */
+    var navigate = environment.navigate || function () { };
 
     initializeControls();
-    elements["usage-open"].addEventListener("click", open);
-    elements["usage-close"].addEventListener("click", close);
     elements["usage-overview"].addEventListener("click", function () { selectView("overview"); });
     elements["usage-agent-work"].addEventListener("click", function () { selectView("agent_work"); });
     [elements["usage-overview"], elements["usage-agent-work"]].forEach(function (tab) {
@@ -722,7 +726,7 @@ export function bindUsagePortfolio(elements, environment) {
     });
     doc.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && !elements["usage-analytics"].hidden
-            && !elements["usage-detail"].open) close();
+            && !elements["usage-detail"].open) navigate("sessions");
     });
-    return { load: load, render: render, selectView: selectView };
+    return { load: load, render: render, selectView: selectView, enter: enter, leave: leave };
 }

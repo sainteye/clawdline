@@ -66,9 +66,13 @@ export function paintStatic() {
     // The send button's words and its hover text belong to `renderComposer`: both of them change
     // while a message is in flight, and one owner for a thing that moves.
 
-    // The wordmark, and the sheet behind it.
-    attr(els.brand, "aria-label", T.webSettings);
-    attr(els.brand, "title", T.webSettings);
+    // The pages, and the menu that names them. `Sessions` is the word the transcript's back
+    // button already uses for the same destination, so it is the same string.
+    text(els["nav-sessions"], T.webBack);
+    text(els["nav-settings"], T.webSettings);
+    // The wordmark itself is not painted here. It opens the menu now rather than the settings
+    // sheet, and `Menu` would be a new member on the `Copy` protocol whose Chinese half is not
+    // this change's to write — so it is in the markup, in English, and says so there.
     attr(els["settings-sheet"], "aria-label", T.webSettings);
     text(els["settings-title"], T.webSettings);
     text(els["settings-notify-title"], T.webSettingsNotify);

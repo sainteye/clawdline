@@ -2,6 +2,9 @@
 > `Resources/web/index.html` 在 commit `0199775` 時的內容（9889 行）。拆檔一旦開始，
 > 這裡的行號就會失效——它們的用途是把每一刀切在哪裡記錄下來，供拆檔期間對照與事後追溯，
 > 不是給讀者拿去對照當前的檔案。實際進度見 git log 裡 `split/` 開頭的分支。
+>
+> 拆完之後這個 app 多了「哪一頁」這件事——側邊欄、Usage 與 Settings 兩個頁面、`#page=` ——
+> 那部分是現況說明，寫在 [`web-pages.md`](web-pages.md)，要加新的一頁請讀那一份。
 
 # Resources/web/index.html 拆檔方案
 

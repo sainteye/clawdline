@@ -7,6 +7,7 @@ import { renderTranscript } from "../view/transcript.js";
 import { closeDetail, openSession, toBottom } from "../session/open.js";
 import { closeAgent, move, select } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
+import { Sidebar } from "./sidebar.js";
 import { Settings } from "./settings.js";
 import { Start } from "./start.js";
 import { Command } from "./command.js";
@@ -57,8 +58,9 @@ document.addEventListener("keydown", function (ev) {
         ev.preventDefault();
         if (!els.info.hidden) { Info.close(); return; }
         // Do not stack one sheet over another. The shortcut remains global while composing, but
-        // a visible settings, start or keyboard card owns the next key until it closes.
-        if (els.settings.hidden && els.start.hidden && els.keys.hidden) Info.open();
+        // an open menu, or a visible settings, start or keyboard card, owns the next key until
+        // it closes.
+        if (els.sidebar.hidden && els.settings.hidden && els.start.hidden && els.keys.hidden) Info.open();
         return;
     }
 
@@ -71,6 +73,10 @@ document.addEventListener("keydown", function (ev) {
         // Same rule as `Command.close`, one line up: refused rather than skipped while the POST
         // that makes the schedule is in flight — see `Schedule.close`.
         if (!els["schedule-form"].hidden) { Schedule.close(); return; }
+        // The menu is over whatever page you are on, so it goes before the page does: closing
+        // both for one press would take somebody off Settings when all they wanted was the
+        // drawer shut.
+        if (!els.sidebar.hidden) { Sidebar.close(); return; }
         if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
         if (document.activeElement === els.filter) {
@@ -88,8 +94,9 @@ document.addEventListener("keydown", function (ev) {
 
     if (typing(document.activeElement)) return;
     if (meta || ev.altKey) return;
-    // A sheet is over the page, so `j` is not "move down the list behind it".
-    if (!els.settings.hidden || !els.start.hidden || !els.command.hidden
+    // A sheet is over the page, so `j` is not "move down the list behind it", and the menu is one
+    // more thing that is over it.
+    if (!els.sidebar.hidden || !els.settings.hidden || !els.start.hidden || !els.command.hidden
         || !els["schedule-form"].hidden) return;
 
     switch (key) {

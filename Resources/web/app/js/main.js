@@ -12,6 +12,7 @@ import "./core/esc.js";
 import { applyStrings } from "./core/i18n.js";
 import { S } from "./core/state.js";
 import { els } from "./core/dom.js";
+import { Pages } from "./core/pages.js";
 import { Diagnostics } from "./core/layout-diagnostics.js";
 import { clockOf, tint } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
@@ -53,7 +54,8 @@ import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
 import { routeTo } from "./input/route.js";
-import "./input/settings.js";
+import { markSidebarPage } from "./input/sidebar.js";
+import { Settings } from "./input/settings.js";
 import "./input/start.js";
 import "./input/command.js";
 import "./input/schedule.js";
@@ -198,9 +200,11 @@ Diagnostics.bind({ state: S, elements: els });
 // makes the preload URL and the runtime request one identity, while these literal lookups keep the
 // DOM contract visible to the permanent repository guard.
 var byId = function (id) { return document.getElementById(id); };
-bindUsagePortfolio({
-    app: byId("app"), brand: byId("brand"), settings: byId("settings"),
-    "usage-open": byId("usage-open"), "usage-analytics": byId("usage-analytics"),
+// `usage-open` is not in this table any more. It is the drawer's Usage row now, and reaching the
+// page is the drawer's business; the portfolio module stopped having an opinion about how somebody
+// got to it. The id stays on that row — `usage.css` styles it and the Usage guard looks for it.
+var usage = bindUsagePortfolio({
+    "usage-analytics": byId("usage-analytics"),
     "usage-close": byId("usage-close"), "usage-overview": byId("usage-overview"),
     "usage-agent-work": byId("usage-agent-work"), "usage-controls": byId("usage-controls"),
     "usage-range": byId("usage-range"), "usage-from": byId("usage-from"),
@@ -233,7 +237,41 @@ bindUsagePortfolio({
     // `drawIcon` rather than a second copy. It arrives through this seam rather than an import
     // because `view/usage.js` deliberately imports nothing: `core/pixels.js` reaches `window` at
     // module scope, and the Usage module is exercised whole in Node by Tests/web-usage-analytics.mjs.
-    drawIcon: drawIcon, tint: tint
+    drawIcon: drawIcon, tint: tint,
+    // And the way out of the page, for the same reason: Escape over the Usage page means the
+    // sessions page, which is a fact about the shell rather than about the portfolio.
+    navigate: function (name) { Pages.go(name); }
+});
+
+/**
+ * The pages, in the order the menu names them, home first.
+ *
+ * This array is the whole registry: `core/pages.js` knows no page names of its own, so a page is
+ * added by putting a section in the document, a row in the drawer, and a line here. The Projects
+ * page belongs between `sessions` and `usage` — see `docs/web-pages.md`.
+ *
+ * `enter` is what a page does on arrival however the arrival happened — a row in the menu, a
+ * pasted `#page=…`, the browser's Back — and `focus` is where the keyboard lands once it has.
+ */
+Pages.bind({
+    document: document,
+    root: document.documentElement,
+    pages: [
+        { name: "sessions", element: byId("app") },
+        { name: "usage", element: byId("usage-analytics"), focus: "usage-close",
+          enter: function () { usage.enter(); }, leave: function () { usage.leave(); } },
+        { name: "settings", element: byId("settings"), focus: "settings-close",
+          enter: function () { Settings.enter(); } }
+    ],
+    onChange: markSidebarPage,
+    // Written with `replaceState` rather than by assigning to `location.hash`, because a page is
+    // where you are and not a step you took: a reload lands back on it, and the Back button still
+    // means the screen before this app rather than three menu presses ago. The fragment is
+    // deliberately the whole of it — arriving at a page is arriving away from `#session=…`.
+    writeHash: function (hash) {
+        try { history.replaceState(history.state, "", hash); }
+        catch (e) { location.hash = hash; }
+    }
 });
 
 // The controls module keeps its pure command selection importable without a browser. DOM and
