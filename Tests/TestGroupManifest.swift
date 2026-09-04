@@ -304,6 +304,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "session completion receipts are bound to the current process, not a reusable terminal",
     "a root session can report one delivered turn without becoming a child task",
     "only broker-verified target landing evidence can produce the double check",
+    "a landing node reads the receipt the root actually wrote, on the delivery beside it",
     "the in-flight list answers what a worktree hides",
     "a session can say what it is doing without stopping to write a report",
     "a sandboxed child's progress arrives as a file, the way its result does",

@@ -222,8 +222,10 @@ manifest_group_count=$(awk '
 # from the one it enforces cannot be read to find out what it wants.
 # 519 once task retention became a setting: two groups, one for the pure sweep and one for the
 # three settings reaching it.
-[ "$manifest_group_count" -eq 519 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 519"
+# 520 once a landing node could read the receipt the root wrote on the delivery beside it: one
+# group, which is the first time any test in this tree observes a landing node reaching `done`.
+[ "$manifest_group_count" -eq 520 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 520"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

@@ -288,10 +288,66 @@ extension Orchestrator {
         index[graphID]?[node.id]
     }
 
-    static func graphNodeOutcome(_ node: GraphNode, graphID: String,
+    /// Whether the work a landing node is responsible for is already recorded as landed.
+    ///
+    /// A landing node never has a task of its own. `AGENTS.md` gives landing to the root that
+    /// dispatched the graph, and a root does not dispatch itself, so the node this reads was
+    /// looking at an empty slot: 23 landing nodes across the graphs on this machine, none with a
+    /// task, every one of them `planned` or `blocked` forever — while 66 real landings sat
+    /// recorded, verified commit and all, on the delivery tasks beside them. The receipt was never
+    /// missing. It was being read in the one place a root never writes it.
+    ///
+    /// So it is read where the root does write it: on the byte-producing nodes this landing node
+    /// depends on, transitively, because the ordinary shape puts a review or a verification
+    /// between the two. The two producing kinds are not treated alike, and the difference is the
+    /// whole design decision here:
+    ///
+    /// - A `delivery` node must have a task and that task must carry a `landed` receipt. A graph
+    ///   that declared two implementations and ran one has not landed, and one of them did in the
+    ///   record this was measured against.
+    /// - A `correction` node counts only when it has one. Corrections are contingent by
+    ///   construction — a review demands them or it does not — so treating an undispatched
+    ///   correction as missing evidence would re-create exactly the bug above one node along, in
+    ///   every graph whose review found nothing.
+    ///
+    /// And at least one landed receipt is required, so a landing node that depends on nothing that
+    /// produces bytes stays honest rather than passing on an empty conjunction. Two such graphs
+    /// exist in the record.
+    ///
+    /// The producing task's own state is deliberately not consulted. What is being asserted is
+    /// that the bytes are on the target branch, and the thing that asserts it is the landing
+    /// receipt the root wrote after resolving the commit against the named local target — three of
+    /// the landed receipts here belong to tasks that timed out or failed after their work was
+    /// already integrated.
+    static func graphLandingEvidence(_ node: GraphNode, graph: PlanningGraph,
+                                     index: GraphTaskIndex) -> Bool {
+        let byID = Dictionary(graph.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in
+            first
+        })
+        var seen: Set<String> = []
+        var pending = node.dependsOn
+        var landed = 0
+        while let dependencyID = pending.popLast() {
+            guard seen.insert(dependencyID).inserted,
+                  let dependency = byID[dependencyID] else { continue }
+            pending.append(contentsOf: dependency.dependsOn)
+            guard dependency.kind == .delivery || dependency.kind == .correction else { continue }
+            guard let producer = graphNodeTask(dependency, graphID: graph.id, index: index) else {
+                if dependency.kind == .delivery { return false }
+                continue
+            }
+            guard producer.landing?.state == .landed else { return false }
+            landed += 1
+        }
+        return landed > 0
+    }
+
+    static func graphNodeOutcome(_ node: GraphNode, graph: PlanningGraph,
                                  index: GraphTaskIndex) -> String {
-        guard let task = graphNodeTask(node, graphID: graphID, index: index) else {
-            return "planned"
+        guard let task = graphNodeTask(node, graphID: graph.id, index: index) else {
+            guard node.kind == .landing,
+                  graphLandingEvidence(node, graph: graph, index: index) else { return "planned" }
+            return "done"
         }
         if !task.state.isTerminal { return "active" }
         guard task.state == .success else { return "failed" }
@@ -301,7 +357,12 @@ extension Orchestrator {
         case .verification:
             return task.verification?.last == .pass ? "done" : "failed"
         case .landing:
-            return task.landing?.state == .landed ? "done" : "awaiting_landing"
+            // A landing task of its own does not move where the receipt lives: `CHILD.md` still
+            // forbids a child from calling its own `/landing` route, so the root records the
+            // landing against the delivery either way.
+            if task.landing?.state == .landed { return "done" }
+            return graphLandingEvidence(node, graph: graph, index: index)
+                ? "done" : "awaiting_landing"
         default:
             return "done"
         }
@@ -349,7 +410,7 @@ extension Orchestrator {
         guard let current = graph.nodes.first(where: { $0.id == graph.currentNode }) else {
             return .refused(422, "bad_task", "graph.current_node does not exist.")
         }
-        let currentOutcome = graphNodeOutcome(current, graphID: graph.id, index: taskIndex)
+        let currentOutcome = graphNodeOutcome(current, graph: graph, index: taskIndex)
         if currentOutcome == "active" || currentOutcome == "awaiting_landing" {
             return .refused(status: 409, code: "graph_node_active",
                             message: "This graph node already has an active task or landing obligation.",
@@ -366,7 +427,7 @@ extension Orchestrator {
             guard let dependency = graph.nodes.first(where: { $0.id == dependencyID }) else {
                 continue // Parser already proves this cannot happen.
             }
-            let outcome = graphNodeOutcome(dependency, graphID: graph.id, index: taskIndex)
+            let outcome = graphNodeOutcome(dependency, graph: graph, index: taskIndex)
             guard outcome != "done" else { continue }
             if outcome == "failed" { failed = true }
             let state = outcome == "planned" ? "blocked" : outcome
@@ -399,12 +460,12 @@ extension Orchestrator {
                                     taskIndex: GraphTaskIndex) -> [String: Any] {
         var statuses: [String: String] = [:]
         for node in graph.nodes {
-            let outcome = graphNodeOutcome(node, graphID: graph.id, index: taskIndex)
+            let outcome = graphNodeOutcome(node, graph: graph, index: taskIndex)
             if outcome == "planned" {
                 let ready = node.dependsOn.allSatisfy { dependencyID in
                     guard let dependency = graph.nodes.first(where: { $0.id == dependencyID })
                     else { return false }
-                    return graphNodeOutcome(dependency, graphID: graph.id,
+                    return graphNodeOutcome(dependency, graph: graph,
                                             index: taskIndex) == "done"
                 }
                 statuses[node.id] = ready ? "ready" : "blocked"

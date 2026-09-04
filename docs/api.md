@@ -3247,7 +3247,20 @@ at read time from the newest task attempt for each node: `ready`, `blocked`, `ac
 `done` only with a valid three-axis `review.verdict == safe_to_land`; verification nodes additionally
 require `verification.last == pass`. A successful review or verification task without its
 kind-specific receipt is `failed` for dependency purposes; other node kinds use ordinary task
-`success`. While a graph remains in the bounded task registry, its definition is immutable per
+`success`.
+
+**A landing node is the one kind read from somebody else's task.** Landing belongs to the root that
+dispatched the graph, and a root does not dispatch a task to itself, so a landing node normally has
+no task of its own and its receipt is written against the delivery it landed. It reaches `done` when
+every `delivery` node it transitively depends on has a task carrying `landing.state == landed`, and
+`correction` nodes count the same way when they have a task — an undispatched correction is a repair
+no review demanded, not missing evidence. At least one such receipt is required, so a landing node
+that depends on nothing which produces bytes stays `blocked` rather than passing on an empty
+conjunction. The producing task's own outcome is not consulted: the receipt is the root's assertion
+that the commit is contained by the named local target, and work has been landed after the task that
+produced it timed out. A landing node that does carry a task of its own reads its own `landed`
+receipt first and falls back to the same derivation, so it is `awaiting_landing` only while neither
+exists. While a graph remains in the bounded task registry, its definition is immutable per
 graph id; after retention expires, reuse the old id only if the caller independently retained that
 definition. `current_node` and the projected task ids vary by task attempt.
 
