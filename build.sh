@@ -22,7 +22,24 @@ verify_swift_source_manifest production
 #
 # **Fail closed.** No lock means the compile does not run. There is no proceed-anyway, and
 # nothing here ever ends anybody else's process.
-CLAWDLINE_LEASE_DIR="${CLAWDLINE_LEASE_DIR:-/tmp/clawdline-suite.lock}"
+# **One lock, one set of knob names.** Both scripts write `<lock>/holder.txt` and both read each
+# other's, and until now each read its own spelling of the same dial: `CLAWDLINE_LEASE_DIR` here
+# against `CLAWDLINE_SUITE_LOCK_DIR` in `test.sh`, `CLAWDLINE_LEASE_DEADLINE_SECONDS` here against
+# `CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS` there. The defaults matched, so the ordinary path was
+# right and nothing said otherwise — but `heartbeat_deadline` is a *record* field that both writers
+# fill in and every reader prefers to its own, so somebody who tuned one spelling got two writers
+# putting different numbers in one field, and a reader that believed whichever wrote last.
+#
+# `CLAWDLINE_SUITE_LOCK_*` is the canonical family, because it is the one `test.sh` already carries
+# for the whole block. The `CLAWDLINE_LEASE_*` names keep working as aliases — somebody may have
+# them exported — and the canonical name wins when both are set. The *variables* below keep their
+# old names on purpose: they are what the body of this file and its harnesses read.
+CLAWDLINE_LEASE_DIR="${CLAWDLINE_SUITE_LOCK_DIR:-${CLAWDLINE_LEASE_DIR:-/tmp/clawdline-suite.lock}}"
+# `pgrep -x` matches the executable's own name, which is the physical backstop below. Measured in
+# `test.sh`'s own comment against a live compile: a running `swiftc` shows up as `swift-frontend`
+# under `pgrep -x`, and `pgrep -f` additionally counts anything that merely mentions the word.
+CLAWDLINE_LEASE_COMPILER_PATTERN="${CLAWDLINE_SUITE_LOCK_COMPILER_PATTERN:-${CLAWDLINE_LEASE_COMPILER_PATTERN:-swift-frontend}}"
+CLAWDLINE_LEASE_POLL_SECONDS="${CLAWDLINE_SUITE_LOCK_POLL_SECONDS:-${CLAWDLINE_LEASE_POLL_SECONDS:-5}}"
 CLAWDLINE_LEASE_ID=""
 CLAWDLINE_LEASE_MODE=""
 CLAWDLINE_LEASE_DONE=""
@@ -37,10 +54,11 @@ CLAWDLINE_SUITE_JOBS="${CLAWDLINE_SUITE_JOBS:-}"
 # Deciding it up here was how this line came to say "unset" for a ceiling the environment had set:
 # it took its answer from whichever branch of the acquire ran rather than from the ceiling itself.
 CLAWDLINE_SUITE_JOBS_SOURCE="not settled yet"
-CLAWDLINE_LEASE_WAIT_SECONDS="${CLAWDLINE_LEASE_WAIT_SECONDS:-1800}"
+CLAWDLINE_LEASE_WAIT_SECONDS="${CLAWDLINE_SUITE_LOCK_WAIT_SECONDS:-${CLAWDLINE_LEASE_WAIT_SECONDS:-1800}}"
 # The same number `test.sh` uses. A reader prefers the deadline the holder recorded to its own, so
-# a record that does not carry one leaves every reader guessing on this run's behalf.
-CLAWDLINE_LEASE_DEADLINE_SECONDS="${CLAWDLINE_LEASE_DEADLINE_SECONDS:-60}"
+# a record that does not carry one leaves every reader guessing on this run's behalf — and this is
+# the field the two spellings above were able to disagree in.
+CLAWDLINE_LEASE_DEADLINE_SECONDS="${CLAWDLINE_SUITE_LOCK_DEADLINE_SECONDS:-${CLAWDLINE_LEASE_DEADLINE_SECONDS:-60}}"
 
 clawdline_lease_field() {
   # The value of one `key=` line, or nothing — the same reader `test.sh` uses, because the record
@@ -48,6 +66,281 @@ clawdline_lease_field() {
   local key=$1 file=$2
   [ -f "$file" ] || return 0
   awk -v key="$key" 'index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }' "$file" 2>/dev/null
+}
+
+# --- Reading somebody else's hold, and handing it on -----------------------------------------
+#
+# **This half is `test.sh`'s, copied rather than reinvented**, because the two scripts take the
+# same directory and a second set of rules for when a lock may be handed on is a second answer to
+# the one question that matters here. What follows is `clawdline_suite_lock_probe_compilers`,
+# `…_pid_identity`, `…_pid_verdict`, `…_identity_verdict`, `…_admission`, `…_take_over` and their
+# two phrase helpers, with `clawdline_suite_lock_` renamed to `clawdline_lease_`. The rules do not
+# move: admission is fail-closed, `unknown` blocks, the physical backstop is never waived, and
+# nothing here ever signals a process it did not start.
+#
+# **Why it had to come across.** `test.sh` hands a dead holder's lock on after one renewal
+# deadline; this script had no takeover path at all and no backstop, so its only two outcomes were
+# `mkdir` succeeding and waiting out `CLAWDLINE_LEASE_WAIT_SECONDS` — 1800 seconds by default —
+# before refusing. A `./test.sh` killed with SIGKILL, or a Mac force-rebooted by Jetsam mid-suite,
+# leaves `/tmp/clawdline-suite.lock` behind; the next `./test.sh` reclaims it in 60 seconds and the
+# next `./build.sh` waited half an hour and then declined to build. "The machine crashed and needs
+# rebuilding" is the path `docs/machine-resource-scheduling.md` names as the one that has to work.
+clawdline_lease_compilers=""
+# What the last probe *answered*, kept apart from what it found: `found`, `clear` or `unreadable`.
+# An unreadable `pgrep` leaves the pid list empty exactly as a clear machine does, and reading the
+# emptiness as "clear" is the fail-open direction in the one axis the backstop rests on.
+clawdline_lease_compilers_verdict="unreadable"
+# `held` / `unknown` / `orphaned` / `stale`, and the sentence that says what was read. Globals
+# rather than printed values because `$(…)` runs a function in a subshell and throws the evidence
+# away, and a refusal that cannot name its evidence is a refusal nobody can act on.
+clawdline_lease_state=""
+clawdline_lease_evidence=""
+
+clawdline_lease_probe_compilers() {
+  # **A global count, on purpose, and it includes other people's compilers.** The question is "is
+  # anything on this machine burning", not "is my own work running".
+  #
+  # 0 = at least one compiler is running, 1 = none anywhere, 2 = the probe could not answer.
+  # `pgrep` exits 1 when nothing matched, so a `||` here would read "no compiler" as a failure and
+  # a failure as "no compiler"; the status is read explicitly and only an explicit 1 is ever
+  # allowed to mean the machine is clear.
+  local found="" probe_status=0
+  found=$(LC_ALL=C pgrep -x "$CLAWDLINE_LEASE_COMPILER_PATTERN" 2>/dev/null) || probe_status=$?
+  clawdline_lease_compilers=$(printf '%s' "$found" | tr '\n' ' ')
+  case "$probe_status" in
+    0) clawdline_lease_compilers_verdict="found"; return 0 ;;
+    1) clawdline_lease_compilers_verdict="clear"; return 1 ;;
+    *) clawdline_lease_compilers_verdict="unreadable"; return 2 ;;
+  esac
+}
+
+clawdline_lease_pid_identity() {
+  # A pid's start time, as one normalised line, used to tell a recorded holder from a later process
+  # that inherited its number. **Both sides of every comparison come out of this one function**,
+  # which is why `LC_ALL=C` is pinned here and not at the call sites: this Mac runs zh_TW.UTF-8,
+  # where the same instant renders with a different field count depending on the day of the month.
+  # Nothing counts fields; the whole line is normalised and compared as a string.
+  local pid=$1 line
+  case "$pid" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
+  line=$(LC_ALL=C ps -o lstart= -p "$pid" 2>/dev/null | awk 'NR == 1 { $1 = $1; print; exit }') || line=""
+  printf '%s' "${line:-unknown}"
+}
+
+clawdline_lease_pid_verdict() {
+  # `alive`, `gone` or `unknown` — and the third one is the point. A two-valued reader collapses
+  # "the tool did not answer" into "the process is gone", which is fail-open wherever the question
+  # is "may I act". So the probe carries its own control: `ps -p <pid> -p 1` asks about the process
+  # *and* about pid 1, which exists on every running macOS. If `1` comes back the tool answered and
+  # the absence of `<pid>` is a fact; if `1` does not, the reading is `unknown` and blocks.
+  local pid=$1 seen="" control=0 target=0 n
+  case "$pid" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
+  seen=$(ps -p "$pid" -p 1 -o pid= 2>/dev/null) || seen=""
+  for n in $seen; do
+    if [ "$n" = "1" ]; then control=1; fi
+    if [ "$n" = "$pid" ]; then target=1; fi
+  done
+  if [ "$control" = 0 ]; then printf 'unknown'; return 0; fi
+  if [ "$target" = 1 ]; then printf 'alive'; else printf 'gone'; fi
+}
+
+clawdline_lease_identity_verdict() {
+  # `same`, `different` or `unknown`. `clawdline_lease_pid_identity` returns the literal string
+  # `unknown` when it could not read, and `unknown` never equals a recorded start — so a caller
+  # comparing the two directly reads every failed read as "a different process now has that
+  # number". That is a reading, not a fact.
+  local pid=$1 recorded=$2 observed
+  observed=$(clawdline_lease_pid_identity "$pid")
+  case "$observed" in unknown) printf 'unknown'; return 0 ;; esac
+  case "$recorded" in "" | unknown) printf 'unknown'; return 0 ;; esac
+  if [ "$observed" = "$recorded" ]; then printf 'same'; else printf 'different'; fi
+}
+
+clawdline_lease_duration() {
+  local seconds=$1
+  case "$seconds" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
+  if [ "$seconds" -ge 60 ]; then printf '%ss (%sm)' "$seconds" "$(( seconds / 60 ))"; else printf '%ss' "$seconds"; fi
+}
+
+clawdline_lease_phase_since() {
+  local value
+  value=$(clawdline_lease_field phase_since "$1")
+  case "$value" in "" | *[!0-9]*) date +%s ;; *) printf '%s' "$value" ;; esac
+}
+
+clawdline_lease_last_compiling_phrase() {
+  local file=$1 now=$2 value
+  value=$(clawdline_lease_field last_compiling "$file")
+  case "$value" in
+    "" | never | *[!0-9]*) printf 'nothing has compiled under this lock yet' ;;
+    *) printf 'last compiling %s ago' "$(clawdline_lease_duration "$(( now - value ))")" ;;
+  esac
+}
+
+clawdline_lease_admission() {
+  # Reads somebody else's record and leaves `clawdline_lease_state` and `clawdline_lease_evidence`.
+  #
+  # **Liveness is proved by renewal, not by a pid existing**, and admission is fail-closed: the
+  # lock is handed on only when BOTH (A) the holder has stopped proving it is alive AND (B) no
+  # compiler exists anywhere on this machine. (B) alone would hand the lock over in the gaps
+  # between one run's compiles; (A) alone would hand it over while an orphaned compile is still
+  # spending the memory this lock rations. Missing, stale or ambiguous evidence reads `unknown`
+  # and blocks; it never reads "dead".
+  #
+  # `probe_status=0; … || probe_status=$?` rather than `…; probe_status=$?`: the second form takes
+  # the whole script down under `set -e` whenever this function is reached from a caller that is
+  # not itself inside a condition, and a probe that legitimately returns 1 is the ordinary case.
+  local dir=$1 file="$1/holder.txt" beat heartbeat deadline now age probe_status pid pid_started done_flag
+  # `heartbeat` in the record is the *path* of the beat file; the evidence is that file's mtime.
+  # The holder says where its heartbeat is, the filesystem says when it last happened.
+  beat=$(clawdline_lease_field heartbeat "$file")
+  heartbeat=""
+  if [ -n "$beat" ] && [ -f "$beat" ]; then
+    heartbeat=$(stat -f %m "$beat" 2>/dev/null) || heartbeat=""
+  fi
+  deadline=$(clawdline_lease_field heartbeat_deadline "$file")
+  pid=$(clawdline_lease_field pid "$file")
+  pid_started=$(clawdline_lease_field owner_started "$file")
+  done_flag=$(clawdline_lease_field done_flag "$file")
+  case "$deadline" in "" | *[!0-9]* | 0) deadline="$CLAWDLINE_LEASE_DEADLINE_SECONDS" ;; esac
+
+  # The done flag is a **positive** signal only. Present means the guarded work is over, so with
+  # the backstop still satisfied the lock may be handed on at once. Absent proves nothing — a run
+  # killed with SIGKILL never writes one — so absence falls through to renewal below.
+  if [ -n "$done_flag" ] && [ -f "$done_flag" ]; then
+    probe_status=0; clawdline_lease_probe_compilers || probe_status=$?
+    case "$probe_status" in
+      1) clawdline_lease_state="stale"
+         clawdline_lease_evidence="the holder marked its work finished at $done_flag and no $CLAWDLINE_LEASE_COMPILER_PATTERN is running anywhere" ;;
+      0) clawdline_lease_state="orphaned"
+         clawdline_lease_evidence="the holder marked its work finished, but $CLAWDLINE_LEASE_COMPILER_PATTERN is still running as pid(s) ${clawdline_lease_compilers}— the memory is still being spent, so nobody is admitted and nothing here will kill them" ;;
+      *) clawdline_lease_state="unknown"
+         clawdline_lease_evidence="the holder marked its work finished, but the $CLAWDLINE_LEASE_COMPILER_PATTERN probe could not answer — unknown blocks" ;;
+    esac
+    return 0
+  fi
+
+  case "$heartbeat" in
+    "" | *[!0-9]*)
+      # **The abandoned acquisition, and the one way out of `unknown`.** Acquiring is `mkdir`, then
+      # a few forks, then the first record. A run that dies in that window leaves a directory with
+      # no `holder.txt` and no `beat`, and only positive evidence of that distinct thing clears it:
+      # nothing has ever been written here, for longer than any acquisition could take, and the
+      # machine is clear. A directory that has a `beat` but no record had a record once and
+      # something removed it — a different, unexplained event — and stays `unknown`.
+      if [ ! -f "$dir/holder.txt" ] && [ ! -f "$dir/beat" ]; then
+        local born born_age
+        born=$(stat -f %m "$dir" 2>/dev/null) || born=""
+        case "$born" in
+          "" | *[!0-9]*) born_age=-1 ;;
+          *) born_age=$(( $(date +%s) - born )) ;;
+        esac
+        if [ "$born_age" -gt "$deadline" ]; then
+          probe_status=0; clawdline_lease_probe_compilers || probe_status=$?
+          case "$probe_status" in
+            1) clawdline_lease_state="stale"
+               clawdline_lease_evidence="it was created ${born_age}s ago and has never held a record or a heartbeat, which is what a run killed between mkdir and its first write leaves behind, and no $CLAWDLINE_LEASE_COMPILER_PATTERN is running anywhere"
+               return 0 ;;
+            0) clawdline_lease_state="orphaned"
+               clawdline_lease_evidence="it has never held a record, but $CLAWDLINE_LEASE_COMPILER_PATTERN is still running as pid(s) ${clawdline_lease_compilers}— nobody is admitted and nothing here will kill them"
+               return 0 ;;
+          esac
+        fi
+      fi
+      clawdline_lease_state="unknown"
+      clawdline_lease_evidence="its record names no heartbeat file, or the file it names is not there, so whether anyone is still there is unknown — and unknown blocks rather than reading as dead"
+      return 0 ;;
+  esac
+  now=$(date +%s)
+  age=$(( now - heartbeat ))
+  if [ "$age" -lt 0 ]; then
+    clawdline_lease_state="unknown"
+    clawdline_lease_evidence="its heartbeat is ${age#-}s in the future, so the two clocks disagree and the evidence is ambiguous — ambiguous blocks"
+    return 0
+  fi
+  if [ "$age" -le "$deadline" ]; then
+    clawdline_lease_state="held"
+    # Three answers, not two. A record carrying no `owner_started` is one a writer with no
+    # `ps -o lstart=` line to give wrote, and reporting that as "this pid no longer looks like the
+    # one that took the lock" is a sentence a person could act on and should not have.
+    case "$(clawdline_lease_identity_verdict "$(clawdline_lease_field owner_pid "$file")" "$pid_started")" in
+      same)
+        clawdline_lease_evidence="it renewed ${age}s ago against a ${deadline}s deadline; phase $(clawdline_lease_field phase "$file") for $(clawdline_lease_duration "$(( now - $(clawdline_lease_phase_since "$file") ))"), $(clawdline_lease_last_compiling_phrase "$file" "$now"); working: $(clawdline_lease_field work "$file"), compilers: $(clawdline_lease_field compilers "$file")" ;;
+      different)
+        clawdline_lease_evidence="it renewed ${age}s ago against a ${deadline}s deadline, so something is still proving it is there, though pid $pid no longer looks like the process that took the lock" ;;
+      *)
+        clawdline_lease_evidence="it renewed ${age}s ago against a ${deadline}s deadline; its record carries no readable start identity for pid $pid, so that axis says nothing either way" ;;
+    esac
+    return 0
+  fi
+  # The holder has stopped proving it is alive. That admits nobody on its own: the backstop is
+  # physical, and it is never waived.
+  probe_status=0; clawdline_lease_probe_compilers || probe_status=$?
+  case "$probe_status" in
+    1) clawdline_lease_state="stale"
+       clawdline_lease_evidence="its last renewal was ${age}s ago, past its own ${deadline}s deadline, and no $CLAWDLINE_LEASE_COMPILER_PATTERN is running anywhere on this machine" ;;
+    0) clawdline_lease_state="orphaned"
+       clawdline_lease_evidence="its last renewal was ${age}s ago, past its own ${deadline}s deadline, but $CLAWDLINE_LEASE_COMPILER_PATTERN is still running as pid(s) ${clawdline_lease_compilers}— an orphaned compile is still spending the memory this lock rations, so nobody is admitted and nothing here will kill them" ;;
+    *) clawdline_lease_state="unknown"
+       clawdline_lease_evidence="its last renewal was ${age}s ago, but the $CLAWDLINE_LEASE_COMPILER_PATTERN probe could not answer, so whether a compile is running is unknown — and unknown blocks" ;;
+  esac
+  return 0
+}
+
+clawdline_lease_release_gate() {
+  local gate=$1
+  if [ "$(clawdline_lease_field pid "$gate/holder.txt")" = "$$" ]; then
+    rm -rf "$gate"
+  fi
+}
+
+clawdline_lease_take_over() {
+  # The compare and the swap, and it is `test.sh`'s.
+  #
+  # `rename(2)` decides which of several waiters that judged the *same* lock stale gets to remove
+  # it: exactly one `mv` succeeds and the losers fail with ENOENT. That alone is not enough,
+  # because a waiter's judgement can be older than a whole takeover — B reads a stale record; A
+  # takes over, acquires and starts compiling; B then renames A's *fresh* lock away. So the
+  # judgement is made again here, under a gate directory only one waiter can hold, and the pair of
+  # lines the gate wraps is what actually closes it: the re-read, which a beating holder cannot
+  # satisfy, and the token compare, which requires it to still be the *same* record.
+  local lock=$1 judged_token=$2
+  local gate="$lock.takeover" gate_pid gate_verdict stale
+  if ! mkdir "$gate" 2>/dev/null; then
+    # Three answers here too. An *empty or non-numeric* `pid` is a different fact and keeps its own
+    # answer: the gate was created and its record never written, so there is nobody to ask about
+    # and nobody is holding it. Leaving that uncleared would be a deadlock.
+    gate_pid=$(clawdline_lease_field pid "$gate/holder.txt")
+    case "$gate_pid" in
+      "" | *[!0-9]*) gate_verdict="unowned" ;;
+      *) gate_verdict=$(clawdline_lease_pid_verdict "$gate_pid") ;;
+    esac
+    case "$gate_verdict" in
+      gone | unowned)
+        if mv "$gate" "$gate.abandoned.$$" 2>/dev/null; then rm -rf "$gate.abandoned.$$"; fi ;;
+    esac
+    return 1
+  fi
+  printf 'pid=%s\n' "$$" > "$gate/holder.txt"
+  # And confirm the gate is still this waiter's before acting on it: if another waiter cleared it
+  # as abandoned in the window just above, two could be holding it, and whichever no longer reads
+  # its own pid backs out rather than swapping.
+  gate_pid=$(clawdline_lease_field pid "$gate/holder.txt")
+  if [ "$gate_pid" != "$$" ]; then
+    return 1
+  fi
+  clawdline_lease_admission "$lock"
+  if [ "$clawdline_lease_state" = "stale" ] &&
+     [ "$(clawdline_lease_field token "$lock/holder.txt")" = "$judged_token" ]; then
+    stale="$lock.stale.$$"
+    if mv "$lock" "$stale" 2>/dev/null; then
+      rm -rf "$stale"
+      echo "→ took over $lock — $clawdline_lease_evidence"
+      clawdline_lease_release_gate "$gate"
+      return 0
+    fi
+  fi
+  clawdline_lease_release_gate "$gate"
+  return 1
 }
 
 # **The record. One format, two writers — see the contract above `clawdline_suite_lock_write_record`
@@ -203,11 +496,12 @@ clawdline_lease_acquire() {
   CLAWDLINE_LEASE_DONE="${TMPDIR:-/tmp}/clawdline-build-done-$$"
   rm -f "$CLAWDLINE_LEASE_DONE"
   local deadline=$(( $(date +%s) + CLAWDLINE_LEASE_WAIT_SECONDS ))
-  local announced=0
-  # **`mkdir` is the whole of the exclusion, and the wait is the whole of the queue.** There is no
-  # broker in front of this any more, so there is no position, no budget and no visibility beyond
-  # the record in the directory — and none of those three was what stopped two compiles colliding.
-  # What is here is what was used: take it or say who has it, and never proceed without it.
+  local announced=0 judged_token=""
+  # **`mkdir` is the whole of the exclusion, `rename` is the whole of the takeover, and the wait is
+  # the whole of the queue.** There is no broker in front of this any more, so there is no
+  # position, no budget and no visibility beyond the record in the directory — and none of those
+  # three was what stopped two compiles colliding. What is here is what was used: take it, or hand
+  # a dead holder's on under the two conditions below, or say who has it. Never proceed without it.
   while :; do
     if mkdir "$CLAWDLINE_LEASE_DIR" 2>/dev/null; then
       if ! clawdline_lease_first_record; then
@@ -216,17 +510,31 @@ clawdline_lease_acquire() {
       echo "→ heavy-compile lock taken ($CLAWDLINE_LEASE_ID)"
       return 0
     fi
+    # Somebody has it. Read what the record says before deciding anything, because the answer is
+    # what both the takeover and the sentence below are made of.
+    judged_token=$(clawdline_lease_field token "$CLAWDLINE_LEASE_DIR/holder.txt")
+    clawdline_lease_admission "$CLAWDLINE_LEASE_DIR"
+    if [ "$clawdline_lease_state" = "stale" ]; then
+      if clawdline_lease_take_over "$CLAWDLINE_LEASE_DIR" "$judged_token"; then
+        # The directory is gone; go round and take it with `mkdir` like anybody else. Losing that
+        # race to another waiter is fine — it means the slot is held by a run that is alive.
+        announced=0
+        continue
+      fi
+    fi
     if [ "$announced" = 0 ]; then
-      echo "→ waiting for $CLAWDLINE_LEASE_DIR, held by:"
+      echo "→ waiting for $CLAWDLINE_LEASE_DIR — $clawdline_lease_evidence"
+      echo "  held by:"
       sed 's/^/    /' "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null | head -4
       announced=1
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       echo "!! gave up waiting ${CLAWDLINE_LEASE_WAIT_SECONDS}s for the heavy-compile slot." >&2
+      echo "   $clawdline_lease_evidence" >&2
       echo "   Nothing was killed and nothing was compiled. Look at $CLAWDLINE_LEASE_DIR/holder.txt." >&2
       return 1
     fi
-    sleep 5
+    sleep "$CLAWDLINE_LEASE_POLL_SECONDS"
   done
 }
 
