@@ -1468,10 +1468,18 @@ enum ITerm {
     /// Bring iTerm2 forward without selecting anything in it.
     ///
     /// The half of ``reveal(_:activate:)`` that is left when there is no session id to point at,
-    /// which is the situation under `tmux -CC`: the tab is tmux's to choose and iTerm2 follows the
-    /// control-mode stream on its own, but nothing moves iTerm2's window in front of whatever
-    /// application is there. Called from ``Tmux/reveal(_:activate:)``, and only once tmux itself
-    /// has said that a control-mode client is attached to that pane's session.
+    /// which is the situation under `tmux -CC`. It used to be the whole of what a tmux reveal
+    /// could do, on the belief that iTerm2 follows tmux's window selection by itself. **It does
+    /// not** — measured on this Mac against tmux 3.6a: `select-window` moved tmux's active window
+    /// from 8 to 4 and iTerm2's current session id did not change, two minutes later or with
+    /// iTerm2 already frontmost. So on its own this lands the window in front of whichever tab was
+    /// last looked at, which is exactly the report that sent somebody looking:
+    /// *the window comes forward and stays on the wrong tab*.
+    ///
+    /// ``revealTmuxPane(_:activate:)`` is the step that was missing, and this is now what happens
+    /// when that step cannot find the mirroring row: a window in front of the wrong tab beats
+    /// nothing happening at all. Called from ``Tmux/reveal(_:activate:)``, and only once tmux
+    /// itself has said that a control-mode client is attached to that pane's session.
     @discardableResult
     static func activate() -> TerminalFailure? {
         let res = osa(["activate"])
@@ -1479,6 +1487,47 @@ enum ITerm {
             return terminalFailure(res, fallback: "iTerm2 would not come forward.")
         }
         return nil
+    }
+
+    /// Select the iTerm2 tab that is drawing one tmux pane under `tmux -CC`, and come forward.
+    ///
+    /// **The mapping this needs was believed not to exist, and it does.** A mirrored tmux window
+    /// arrives in ``listedRowTTYs()`` with no tty, and a tty is the only thing anything here has
+    /// ever matched a tmux pane against — so ``reveal(_:activate:)``, which wants a session id,
+    /// could not be reached from a pane id. iTerm2's `session` class carries no tmux *property*,
+    /// which is where the old reasoning stopped; the same scripting dictionary carries a
+    /// `variable` *command*, and `session.tmuxWindowPane` under it is the pane id with its `%`
+    /// stripped, beside `session.tmuxRole` of `client`. `iterm.js` does the matching and refuses
+    /// any row whose role is not `client`; see the block above `revealtmux` there for what was
+    /// measured, including the split-window experiment that proved the value is a pane and not,
+    /// as its name says, a window.
+    ///
+    /// **This does not decide whether iTerm2 may be touched at all.** It is called from
+    /// ``Tmux/activateITerm2(forPane:)`` behind the two gates that establish that the thing
+    /// speaking control mode really is iTerm2, and moving it in front of those would be the same
+    /// mistake as raising an application on the strength of the `control-mode` flag alone.
+    @discardableResult
+    static func revealTmuxPane(_ paneID: String, activate: Bool = true) -> TerminalFailure? {
+        guard let number = tmuxMirrorPaneNumber(paneID) else {
+            return TerminalFailure(kind: .io,
+                                   message: "\(paneID) is not a tmux pane id.")
+        }
+        let res = osa(["revealtmux", number, activate ? "1" : "0"])
+        guard res["ok"] as? Bool == true else {
+            return terminalFailure(res, fallback: "iTerm2 is drawing no tab for that tmux pane.")
+        }
+        return nil
+    }
+
+    /// `%65` as iTerm2 spells it, `65`, and nothing at all for anything that is not a pane id.
+    ///
+    /// The stripping is one line and the refusal is the point: `iterm.js` compares this against a
+    /// session variable with `!==`, so a `%` left on the front, a window id, or an empty string
+    /// would each match no row and be indistinguishable from *iTerm2 is not drawing this pane* —
+    /// the answer that makes the caller fall back to raising the application blind.
+    static func tmuxMirrorPaneNumber(_ paneID: String) -> String? {
+        guard Tmux.isPaneID(paneID) else { return nil }
+        return String(paneID.dropFirst())
     }
 
     /// The ptys iTerm2 says it is holding right now, or nothing when it would not say.

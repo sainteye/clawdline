@@ -1013,9 +1013,15 @@ enum Targets {
     /// tmux was always the second kind, because tmux is not an application and has no front to
     /// move to. It has one now, in one case: when tmux's own client list says a control-mode
     /// client is attached to that pane's session, the application on the other end of that stream
-    /// is iTerm2 and can be asked to come forward. So the flag is passed on rather than dropped —
-    /// otherwise the prompt bar walking its list would haul iTerm2 in front of the box being
-    /// typed into. See ``Tmux/reveal(_:activate:)``.
+    /// is iTerm2 and can be asked to come forward — and, since iTerm2 turns out to publish which
+    /// of its tabs is drawing which tmux pane, to come forward on the right tab. So the flag is
+    /// passed on rather than dropped — otherwise the prompt bar walking its list would haul
+    /// iTerm2 in front of the box being typed into. See ``Tmux/reveal(_:activate:)``.
+    ///
+    /// **`activate: false` under tmux still moves nothing on iTerm2's side**, which is not the
+    /// same courtesy the iTerm2 backend gives: there, the tab follows the prompt bar's list with
+    /// the keyboard left alone. Doing that here would put the whole four-round-trip identity
+    /// check on every arrow key, and it is a separate decision from the one this change made.
     @discardableResult
     static func reveal(_ session: TargetSession, activate: Bool = true) -> TerminalFailure? {
         switch session.backend {

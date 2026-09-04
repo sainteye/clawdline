@@ -371,6 +371,74 @@ group("revealing a tmux pane brings iTerm2 forward only when tmux says it drew i
     expect("the prompt bar walking its list hands on nothing at all", handedOn.count, 0)
 }
 
+group("a tmux -CC reveal names the tab, because iTerm2 does not follow tmux's selection") {
+    // **The measurement this group exists for cannot be made in here.** Whether iTerm2 moves its
+    // selected tab when tmux's active window changes is a fact about two running applications on
+    // somebody's desktop, and the answer — it does not, on tmux 3.6a, not after two minutes and
+    // not with iTerm2 already frontmost, while tmux did send `%session-window-changed` for every
+    // one of those calls — was taken by hand and written down in `docs/interface.md`. What can be
+    // proved here is everything that follows from it: the pane id arrives in the spelling
+    // `iterm.js` compares against, the tab is asked for before the application, and a tab that
+    // cannot be found still leaves somebody with their terminal in front of them.
+
+    // The conversion, which is one line of production code and three ways to be silently wrong.
+    // `iterm.js` compares with `!==` against a session variable, so every one of these mistakes
+    // arrives as *iTerm2 is drawing no tab for that pane* — indistinguishable from the true
+    // absence, and answered by raising the application blind, which is the old broken behaviour
+    // wearing the new code's clothes.
+    expect("a pane id is what iTerm2 spells without the marker", ITerm.tmuxMirrorPaneNumber("%65"),
+           "65")
+    expect("including the first pane a server ever made", ITerm.tmuxMirrorPaneNumber("%0"), "0")
+    expect("a window id is not a pane id, however alike the numbers look",
+           ITerm.tmuxMirrorPaneNumber("@65"), nil)
+    expect("a bare number is not one either", ITerm.tmuxMirrorPaneNumber("65"), nil)
+    expect("nor a marker with nothing after it", ITerm.tmuxMirrorPaneNumber("%"), nil)
+    expect("nor anything that is not all digits", ITerm.tmuxMirrorPaneNumber("%6a"), nil)
+    expect("and an empty id is refused rather than sent as an empty argument",
+           ITerm.tmuxMirrorPaneNumber(""), nil)
+
+    // **The order, and the fallback.** Selecting the tab already brings iTerm2 with it, so a
+    // second `activate` behind a successful select is an Apple Event spent on something done —
+    // and, more to the point, raising the application is what the tail used to do *instead* of
+    // selecting. If this ever goes back to calling both, or to calling only the second, the tab
+    // stops being named and the reveal lands wherever the person was last looking.
+    var revealed: [String] = []
+    var raised = 0
+    let landed = Tmux.bringITerm2ToPane("%65",
+                                        revealMirrorTab: { revealed.append($0); return nil },
+                                        bringForward: { raised += 1; return nil })
+    check("a pane whose tab was found is landed on", landed)
+    expect("the tab is asked for by pane id", revealed, ["%65"])
+    expect("and the application is not raised a second time behind it", raised, 0)
+
+    revealed.removeAll()
+    raised = 0
+    let fellBack = Tmux.bringITerm2ToPane(
+        "%65",
+        revealMirrorTab: {
+            revealed.append($0)
+            return TerminalFailure(kind: .io, message: "gone")
+        },
+        bringForward: { raised += 1; return nil })
+    check("a tab that cannot be found is not reported as landed on", !fellBack)
+    expect("it was still asked for first", revealed, ["%65"])
+    expect("and the window comes forward anyway rather than the press doing nothing", raised, 1)
+
+    // The same cross-language agreement the `ptyless` marker gets above, for the three strings
+    // this path is built on. Swift sends the command word; the two variable names and the role
+    // value live only in `iterm.js`, and renaming one there breaks the mapping *silently* —
+    // `revealtmux` would answer "no such tab" forever and every reveal would quietly fall back to
+    // raising the application, which is the bug this group is about, restored and invisible.
+    let script = (try? String(contentsOfFile: "Resources/iterm.js", encoding: .utf8)) ?? ""
+    check("iterm.js answers the command Swift sends",
+          script.contains("cmd === \"revealtmux\""),
+          "Resources/iterm.js read \(script.count) characters")
+    check("and matches on the variable that carries the tmux pane",
+          script.contains("session.tmuxWindowPane"))
+    check("and refuses any row iTerm2 does not call a mirrored tmux window",
+          script.contains("session.tmuxRole") && script.contains("!== \"client\""))
+}
+
 group("a tmux failure says whether there is no server, or only that nobody could ask") {
     // Every message here is tmux 3.6a's own, taken on this Mac on 2026-09-02 from three private
     // `-L` sockets — one whose server had been killed, one that had never existed, and one that

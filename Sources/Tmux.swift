@@ -266,9 +266,14 @@ enum Tmux {
     ///
     /// **This exists to be a second source, and the distinction it keeps is the point.** An
     /// iTerm2 row with an identity but no pty is either a tmux window iTerm2 is drawing, or an
-    /// anomaly nobody can explain — and the row itself cannot tell you which, because iTerm2's
-    /// scripting exposes no tmux property at all. Asking tmux is asking something that was not
-    /// involved in producing the first reading. `error` is kept separate from an empty list for
+    /// anomaly nobody can explain, and asking tmux is asking something that was not involved in
+    /// producing the first reading. It used to say here that the row *cannot* tell you which,
+    /// because iTerm2 exposes no tmux property — which is true of its properties and false of the
+    /// scripting dictionary as a whole: `session.tmuxRole` says `client` on a mirrored window
+    /// (see ``ITerm/revealTmuxPane(_:activate:)``). The attribution is left asking tmux anyway,
+    /// and now for the reason that was always the real one: a row that answers *I am a tmux
+    /// window* is the row's own account of itself, and a reading cannot be its own second source.
+    /// `error` is kept separate from an empty list for
     /// the same reason ``PaneObservation`` keeps it: *tmux says there is no control-mode client*
     /// and *tmux could not be asked* are two different answers, and only the first is evidence.
     struct ControlModeObservation {
@@ -370,9 +375,12 @@ enum Tmux {
     /// client is attached to one tmux *session*, and a pane belongs to one — so a pane in the
     /// session iTerm2 is drawing gets the application brought forward, and a pane in a session
     /// Ghostty or Terminal.app is attached to does not, even while an iTerm2 `-CC` client exists
-    /// somewhere else on the same server. Nothing here guesses at which iTerm2 *tab* holds the
-    /// pane: iTerm2's scripting dictionary carries no tmux property, so there is no supported
-    /// mapping and a name-matched one would be a fragile invention.
+    /// somewhere else on the same server.
+    ///
+    /// Nothing here guesses at which iTerm2 *tab* holds the pane, and nothing needs to: that is
+    /// ``ITerm/revealTmuxPane(_:activate:)``'s question and it is answered rather than guessed,
+    /// out of `session.tmuxWindowPane`. This one is only the permission — whether iTerm2 may be
+    /// touched at all — and it stays in front of the tab step for the same reason it was written.
     ///
     /// An unknown pane session is a no. Bringing the wrong application forward takes somebody's
     /// keyboard away from what they were typing into, which is the failure this whole app exists
@@ -771,12 +779,21 @@ enum Tmux {
     /// forward is up to whichever emulator is drawing it, and not something to chase.
     ///
     /// **There is one emulator where a piece of it can be chased, and only one.** Under
-    /// `tmux -CC` iTerm2 follows tmux's window selection — measured: asking iTerm2 for its
-    /// current session id before and after a `select-window` returned two different ids, matching
-    /// the two tmux windows. What it does not do is bring iTerm2's window forward when another
-    /// application is frontmost, so the last step is asked for at the application level. That is
-    /// as far as this goes on purpose: selecting the right *tab* would need a pane-to-session
-    /// mapping iTerm2 does not publish.
+    /// `tmux -CC` iTerm2 draws each tmux window as a tab of its own, and both halves of putting
+    /// somebody in front of one have to be asked for: the tab, and the application.
+    ///
+    /// **Neither of them follows from the `select-window` above, and one of them was believed
+    /// to.** This comment used to say iTerm2 follows tmux's window selection, measured from two
+    /// different session ids before and after. It does not: on this Mac, tmux 3.6a, eight
+    /// mirrored windows, `select-window` moved tmux's active window from 8 to 4 while iTerm2's
+    /// current session id stayed exactly where it was — still there two minutes later, and still
+    /// there when iTerm2 was brought frontmost *first* in case that was the condition. tmux is
+    /// not at fault and the command form is not either: a control-mode client attached to a
+    /// throwaway session did receive `%session-window-changed` for each of these calls. iTerm2
+    /// simply does not move its selected tab when it arrives.
+    ///
+    /// So the tail selects the tab as well, through ``ITerm/revealTmuxPane(_:activate:)``, and
+    /// falls back to raising the application when the mirroring row cannot be found.
     ///
     /// `activate: false` stops before that, the same as ``ITerm/reveal(_:activate:)``: the prompt
     /// bar walks its list with the terminal following underneath, and a terminal that jumped in
@@ -837,7 +854,37 @@ enum Tmux {
             paneSession: session,
             controlModeClients: ITerm.controlModeClientsDrawnByITerm2(clients, rowTTYs: ttys))
         else { return }
-        // An application that will not come forward is worth no failure of its own.
-        _ = ITerm.activate()
+        bringITerm2ToPane(paneID,
+                          revealMirrorTab: { ITerm.revealTmuxPane($0) },
+                          bringForward: { ITerm.activate() })
+    }
+
+    /// The last two steps of the tail, with both Apple Events passed in so the order between them
+    /// and the fallback between them can be proved without an iTerm2 to send them to.
+    ///
+    /// **Selecting the tab is not a nicer version of raising the application; it is the step that
+    /// was missing.** Raising alone leaves the window in front of whichever tab was last looked
+    /// at, which is what somebody reported: it came forward, on the wrong session. So the tab is
+    /// asked for first, and it already brings iTerm2 with it — a second `activate` after a
+    /// successful select would be one more Apple Event for something already done.
+    ///
+    /// The fallback is deliberately the old behaviour rather than nothing. Every reason the
+    /// mirroring row might be missing — a tab closed between the two readings, an iTerm2 that
+    /// would not answer, a tmux window this iTerm2 is not the one drawing — leaves a person who
+    /// pressed a button and wants their terminal, and a window in front of the wrong tab is
+    /// closer to that than a press that does nothing. Both gates have already passed by here, so
+    /// this is not deciding *whether* iTerm2 may be touched, only which of two ways to touch it.
+    ///
+    /// Returns whether the tab was selected, which is what a caller would have to know to say
+    /// anything truthful about where the person ended up.
+    @discardableResult
+    static func bringITerm2ToPane(_ paneID: String,
+                                  revealMirrorTab: (String) -> TerminalFailure?,
+                                  bringForward: () -> TerminalFailure?) -> Bool {
+        // An application that will not come forward is worth no failure of its own: this is a
+        // courtesy on a background queue, and its outcome is discarded either way.
+        if revealMirrorTab(paneID) == nil { return true }
+        _ = bringForward()
+        return false
     }
 }

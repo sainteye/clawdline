@@ -4,7 +4,8 @@
 // TTY on modern macOS (TIOCSTI is gone). iTerm2's `write text` is supported, stable, and
 // does not require bringing the window forward — which is the entire point of this tool.
 //
-// Usage: osascript -l JavaScript iterm.js <list|current|send|key|capture|tails|reveal|newtab|close> [args...]
+// Usage: osascript -l JavaScript iterm.js
+//          <list|current|send|key|capture|tails|reveal|revealtmux|activate|newtab|close> [args...]
 
 function run(argv) {
   const cmd = argv[0] || "list";
@@ -419,14 +420,76 @@ function run(argv) {
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
   }
 
+  // `revealtmux <pane> [activate]` — select the tab mirroring one tmux pane under `tmux -CC`.
+  //
+  // **`reveal` above cannot be used, because the caller has no session id to give it.** A tmux
+  // window drawn by iTerm2 comes back from `list` with an identity and no tty at all, and the tty
+  // is the only thing the Swift side could ever have matched a tmux pane against. So the argument
+  // here is tmux's own `#{pane_id}` with its `%` stripped, and the mapping is asked of iTerm2.
+  //
+  // **It is asked with `variable`, not with a property.** iTerm2's `session` class carries no tmux
+  // property — the old comment here was right about that and wrong about the conclusion, because
+  // the same scripting dictionary has a `variable` *command*, and the tmux facts live there.
+  // Measured on this Mac against iTerm2 and tmux 3.6a, over eight mirrored windows:
+  //
+  //     session.tmuxRole        "client" on a mirrored window, "gateway" on the row `tmux -CC`
+  //                             was typed into, and nothing at all on an ordinary session
+  //     session.tmuxWindowPane  the tmux pane id without its `%` — %65 comes back as "65"
+  //
+  // The name says window and the value is a pane, which on most Macs cannot be told apart: open
+  // one pane per window and tmux's two id counters advance in step, so `@65` and `%65` carry the
+  // same number. Splitting a window settled it — tmux window `@85` with panes `%85` and `%86`
+  // came
+  // back as *one* iTerm2 tab holding two sessions, reporting `85` and `86`.
+  //
+  // **The role is checked as well as the pane, and that is a lock rather than a nicety.** Swift
+  // has already established that the control-mode client on the other end is iTerm2 before this
+  // is called; this refuses a second time, so that a row which is not a mirrored tmux window
+  // cannot be selected however wrong the number is. Selecting the wrong tab takes somebody's
+  // keyboard away from what they were typing into just as surely as raising the wrong app does.
+  if (cmd === "revealtmux") {
+    const wantPane = String(argv[1] || "");
+    const activate = String(argv[2] === undefined ? "1" : argv[2]) === "1";
+    if (!/^[0-9]+$/.test(wantPane)) {
+      return JSON.stringify({ ok: false, error: "Not a tmux pane number: " + wantPane });
+    }
+    // One Apple event per session for the pane, and the role asked only of the row that matched.
+    // `variable` answers `null` rather than throwing on a session that has no tmux in it, so an
+    // ordinary tab costs one event and is over.
+    function variableOf(s, name) {
+      try {
+        const v = s.variable({ named: name });
+        return v === null || v === undefined ? "" : String(v);
+      } catch (e) { return ""; }
+    }
+    const hit = eachSession(function (s, wi, ti, win, tab) {
+      if (variableOf(s, "session.tmuxWindowPane") !== wantPane) return undefined;
+      if (variableOf(s, "session.tmuxRole") !== "client") return undefined;
+      try { win.select(); } catch (e) {}
+      try { tab.select(); } catch (e) {}
+      try { s.select(); } catch (e) {}
+      return { id: safe(function () { return s.id(); }, "").toUpperCase() };
+    });
+    if (!hit) {
+      return JSON.stringify({
+        ok: false,
+        error: "iTerm2 is drawing no tmux window for pane %" + wantPane
+      });
+    }
+    if (activate) {
+      try { it.activate(); } catch (e) {}
+    }
+    return JSON.stringify({ ok: true, id: hit.id });
+  }
+
   // `activate` — bring iTerm2 forward, without selecting anything inside it.
   //
-  // The half of `reveal` that has no session id to work from. Under `tmux -CC` the selection is
-  // tmux's to make: asking tmux for a window does move iTerm2's tab, because iTerm2 is following
-  // the control-mode stream — what it does not do is bring iTerm2's *window* forward when
-  // another application is in front. There is no supported way to name that tab from outside
-  // (iTerm2's scripting dictionary exposes no tmux property at all), so this asks for the only
-  // thing that can be asked for reliably: the application.
+  // The half of `reveal` that has no session id to work from, and — since `revealtmux` above —
+  // the fallback rather than the whole of what a `tmux -CC` reveal does: iTerm2 does *not* move
+  // its selected tab when tmux's active window changes, measured on this Mac twice, including
+  // with iTerm2 already frontmost, so bringing the application forward on its own lands on
+  // whatever tab was last looked at. This stays for the case where the mirroring row cannot be
+  // found: the window in front of the wrong tab is still better than nothing happening at all.
   if (cmd === "activate") {
     try { it.activate(); } catch (e) {
       return JSON.stringify({ ok: false, error: "Could not bring iTerm2 forward: " + e.message });

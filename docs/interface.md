@@ -85,13 +85,52 @@ out of the same `list-clients` reading:
   session are watching the same windows and are counted once. Pty-less rows beyond that ceiling
   are unexplained, and say so.
 
-One thing it deliberately does not do is claim to know *which* iTerm2 tab holds which tmux pane.
-iTerm2's scripting dictionary exposes no tmux property at all, so there is no supported mapping to
-check; the attribution is the coarse, true statement — tmux is drawing windows here — rather than
-a per-row guess made from tab names. The practical effect shows up when you jump to a pane:
-asking tmux for a window does move iTerm2's tab, because iTerm2 is following the control-mode
-stream, and Clawdline brings iTerm2 forward behind it when tmux's client list says that pane's
-session is the one being drawn. Which tab it lands on is tmux's decision, not a guess of ours.
+The attribution above still says only the coarse, true thing — tmux is drawing windows here —
+and not which row is which pane. It does not need to: for the one place that question matters,
+there is a real answer.
+
+### Jumping to a pane lands on its tab
+
+**This used to land on the wrong tab, and the reason is worth writing down because the wrong
+belief is an easy one to hold.** Under `tmux -CC` it looks as though iTerm2 must be following
+tmux: the tabs appear and disappear as tmux windows come and go, so surely selecting a tmux
+window selects the tab. It does not. Measured on this Mac against tmux 3.6a: `tmux select-window`
+moved tmux's active window from 8 to 4 and iTerm2's current session id did not change — not after
+two minutes, and not when iTerm2 was brought frontmost first in case that was the condition. tmux
+is not withholding anything either; a control-mode client attached to a throwaway session was
+sent `%session-window-changed` for exactly those calls. iTerm2 receives that notification and
+does not move its selection for it. So "the window comes forward and stays on the tab you were
+last looking at" was the whole of what a jump did.
+
+**The mapping to fix it does exist, one level below where it was looked for.** iTerm2's `session`
+class carries no tmux property — that part of the old note was right — but the same scripting
+dictionary carries a `variable` command, and the tmux facts live there:
+
+| variable | on a mirrored tmux window | on the gateway | on an ordinary session |
+| --- | --- | --- | --- |
+| `session.tmuxRole` | `client` | `gateway` | nothing |
+| `session.tmuxWindowPane` | the tmux pane id without its `%` | nothing | nothing |
+
+The name says window and the value is a pane. On most Macs those cannot be told apart — open one
+pane per window and tmux's two id counters advance in step, so `@65` and `%65` carry the same
+number — so it was settled by splitting one: tmux window `@85` holding panes `%85` and `%86` came
+back as a single iTerm2 tab with two sessions, reporting `85` and `86`.
+
+So a jump now selects the tab and brings iTerm2 forward with it, and falls back to bringing
+iTerm2 forward alone when the mirroring row cannot be found — a window in front of the wrong tab
+being closer to what somebody asked for than a press that does nothing.
+
+**Both locks stay in front of it.** The tab is only selected once tmux's client list has said a
+control-mode client is attached to that pane's session *and* that client's gateway pty is a row in
+iTerm2's own listing; and then `iterm.js` refuses a second time on any row whose `tmuxRole` is not
+`client`. Selecting the wrong tab takes somebody's keyboard away from what they were typing into
+just as surely as raising the wrong application does, so the step that was added is behind the
+guard rather than beside it.
+
+One thing this does not extend to: the prompt bar walking its list with `activate: false`. On the
+iTerm2 backend the tab underneath follows your selection while the keyboard stays in the box you
+are typing into; under tmux it still does not, because doing it would put the whole identity check
+on every arrow key.
 
 The tmux gateway — the session you typed `tmux -CC` into, usually named something like
 `Default (tmux)` — is an ordinary iTerm2 row with a real tty and behaves exactly as it always did.
