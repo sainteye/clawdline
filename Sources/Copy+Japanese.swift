@@ -889,6 +889,18 @@ struct Japanese: Copy {
     let menuQuit = "Clawdline を終了"
     let menuNoTarget = "（未検出）"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest) が出ています — こちらは \(installed) です"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed)。このビルドが確認したのは \(builtAgainst) です"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed)。このビルドが確認したのは \(builtAgainst) です — Clawdline \(release) が出ています"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "\(combo) を登録できませんでした" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """

@@ -9,6 +9,45 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: this app can tell you it has been left behind
+
+An installed copy had no way of finding out that a newer one exists. It arrives as a zip from a
+release page, it is not in a store, and cutting a release touches no machine that already has one —
+so whoever installed it stayed on that version until they happened to look. That failure is quiet
+in the worst way: what this reads is another program's screen, so an old build does not break
+loudly, it stops reading sessions correctly and says nothing, which looks exactly like the sessions
+being idle.
+
+The menu bar now carries one row when there is a newer release, naming it and the build in front of
+you, and opening the page it is about. Nothing is downloaded and nothing is replaced: what to do
+about a new version is a decision, and installing one closes and reopens the app you are using.
+No dependency was taken on for this — no Sparkle, no appcast, no package manager. It is `URLSession`
+and the same GitHub endpoint `install.sh` already reads.
+
+It asks once a day. Ten launches in an afternoon cost one request, and a failure is retried after
+an hour rather than at once, because an hour is GitHub's own window for an address that has used up
+its sixty unauthenticated requests.
+
+**A check that could not be made does not look like a check that found nothing.** Rate-limited,
+refused with a status, unreachable, answered with something it could not read, and unable to say
+which version it is are five different outcomes, none of which can be spelled "you are up to date".
+The menu stays quiet for all of them — a menu that reports its own failures grows a permanent row —
+and the reason is in `~/Library/Logs/Clawdline.log` and in
+`~/Library/Application Support/Clawdline/update-check.json`, in words.
+
+### Changed: a compatibility note about a newer assistant now has something to act on
+
+Clawdline said nothing when the Claude Code in front of it was *newer* than the one this build was
+checked against, and the reason was written down: that assistant updates itself, this does not, and
+a line nobody can act on becomes a line nobody reads. The first half of that has stopped being
+true.
+
+So the case splits. When this is already the newest Clawdline there is, it stays silent — now
+because there is provably nothing to be done rather than because there was nothing to say. When an
+assistant has moved past what this was checked against **and** a release is waiting, you get one
+line naming all three: what is installed, what this was built against, and the version that catches
+up with it. It needs both halves at once, so it cannot become a weekly notice.
+
 ### Changed: automatic names can use the assistant you choose
 
 The automatic-naming switch is now one three-way choice: off, Codex or Claude Code. Existing

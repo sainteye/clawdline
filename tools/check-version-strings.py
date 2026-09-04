@@ -87,8 +87,6 @@ ALLOWED = [
      "taken, and changing it would make them less true rather than more"),
     ("docs/remote.md", None,
      "the same, for the remote page's example reply"),
-    ("docs/backlog.yaml", None,
-     "prose about one row of the compatibility table"),
     ("Resources/web/app/js/net/mock.js", None,
      "a mock version deliberately unlike any real one, so a mock reading cannot be mistaken for a "
      "live one"),

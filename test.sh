@@ -211,14 +211,14 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # time, which is what says the total is the tree's and the two failures were the clock's. A count
 # from a red run is still the count when the run reached the end of its roster; what a red run
 # cannot give you is a green.
-expected_swift_receipt='8788 checks passed'
+expected_swift_receipt='8873 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=6948
+expected_swift_receipt_witness=7030
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -624,7 +624,7 @@ browser_contract_suites=(
   Tests/web-pages.mjs
   Tests/web-projects.mjs
 )
-if [ "${#browser_contract_suites[@]}" -ne 18 ]; then
+if [ "${#browser_contract_suites[@]}" -ne 19 ]; then
   echo "browser contract roster changed without updating its sealed count" >&2
   exit 1
 fi
@@ -671,6 +671,12 @@ node Tests/keychain-rebuild-focused.mjs
 # version in that payload was a typed string that went on naming an old release for two releases
 # after it, with nothing in this suite comparing it to anything.
 node Tests/codex-client-identity.mjs
+# Whether there is a newer Clawdline, on exactly the same terms and for a sharper reason: a check
+# that answers "nothing newer" when it was in fact rate-limited is a silence that reads as an
+# all-clear, and the person on the old build never finds out. The decision block is lifted out of
+# Sources/UpdateCheck.swift by its markers and compiled against the real Sources/Compat.swift, so
+# every way of failing is exercised without a single request leaving this Mac.
+node Tests/update-check.mjs
 # The install path the website and both READMEs recommend, which runs on a Mac this project has
 # never seen and had nothing exercising it: that the release reply is read without an interpreter
 # that is really an xcselect shim, that a reply this script cannot read says so instead of ending

@@ -65,6 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // — which it is until they do. See Sources/StateHook.swift.
         StateHook.observe()
         DeployWatch.observe()
+        // One request a day, and none at all until the stored reading is a day old — so ten
+        // launches in an afternoon still cost GitHub one. See UpdateCheck.swift for why the
+        // interval is a day and why a failure is retried after an hour rather than at once.
+        UpdateChecker.shared.start()
         NotificationCenter.default.addObserver(self, selector: #selector(configChanged),
                                                name: .clawdlineConfigChanged, object: nil)
 
@@ -326,13 +330,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if case .ready = status {} else { dictation.target = self }
         menu.addItem(dictation)
 
-        // Only when an assistant in front of us is older than the one this was built against.
-        // Newer is the normal state — they update themselves and this does not — and a line that
-        // is there every week is one nobody reads on the week it matters. Usually none of them,
-        // occasionally one, and both only on a machine that is behind twice. See Compat.swift.
-        for note in Compat.notes() {
-            let item = NSMenuItem(title: note, action: #selector(openCompatibility),
-                                  keyEquivalent: "")
+        // There is a newer Clawdline, and this row is the only way anybody finds out.
+        //
+        // Nothing else reaches an installed copy: it is a zip from a release page, it is not in a
+        // store, and `tools/release.sh` publishes without touching a single machine that already
+        // has one. The row is absent when there is nothing to move to and absent again when the
+        // check could not be made — the difference between those two is in the log and in
+        // `~/Library/Application Support/Clawdline/update-check.json`, not here, because a menu
+        // that reports its own failures is a menu with a permanent row in it. See UpdateCheck.swift.
+        let newerRelease = UpdateChecker.shared.newerRelease
+        if let latest = newerRelease {
+            let update = NSMenuItem(
+                title: L.t.updateAvailable(latest: latest,
+                                           installed: UpdateChecker.shared.installedVersion),
+                action: #selector(openReleases), keyEquivalent: "")
+            update.target = self
+            menu.addItem(update)
+        }
+
+        // An assistant older than the one this was built against, or newer than it *and* a
+        // Clawdline waiting that has caught up. Never merely newer: that is the ordinary state of
+        // the world, and a line that is there every week is one nobody reads on the week it
+        // matters. Usually none of them, occasionally one. See Compat.swift.
+        for standing in Compat.standings(newerRelease: newerRelease) {
+            let item = NSMenuItem(title: L.t.compatNote(standing),
+                                  action: #selector(openCompatibility), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }
@@ -517,6 +539,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openWhisperDocs() {
         NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline/blob/main/docs/whisper.md")!)
+    }
+
+    @objc private func openReleases() {
+        NSWorkspace.shared.open(URL(string: UpdateCheck.releasesPage)!)
     }
 
     @objc private func openCompatibility() {

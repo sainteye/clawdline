@@ -895,6 +895,18 @@ struct Hindi: Copy {
     let menuQuit = "Clawdline बंद करें"
     let menuNoTarget = "(अभी पता नहीं चला)"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest) आ गया — यह \(installed) है"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed); यह बिल्ड \(builtAgainst) के साथ जाँचा गया था"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed); यह बिल्ड \(builtAgainst) के साथ जाँचा गया था — Clawdline \(release) आ गया"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "\(combo) दर्ज नहीं हो सका" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """

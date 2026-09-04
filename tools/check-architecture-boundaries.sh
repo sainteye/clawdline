@@ -265,6 +265,17 @@ manifest_group_count=$(awk '
 # tab when tmux's active window changes, which is a fact about two running applications on
 # somebody's desktop. The group proves what follows from the answer (it does not), and the answer
 # itself is written down with its commands in `docs/interface.md`.
+# 528 with the update check's one: the checker holding a reading between launches, the file it
+# keeps it in, and a refusal reaching disk looking like a refusal rather than like an all-clear.
+# The decision that reading rests on is not in this number at all — it is compiled and run by
+# `Tests/update-check.mjs` out of a marker-bounded block, which takes a second instead of a module.
+#
+# **Both of the two entries above were written as 527, each correct about its own tree.** They were
+# cut in parallel, each from a manifest holding 526, and each counted rather than added — which is
+# the rule three paragraphs up and it did not save them, because the rule guards against adding to a
+# stale number and says nothing about two branches measuring the same fresh one. The merge is where
+# that shows, and only there: neither side is wrong, and the sum of two right answers is not one.
+# 528 was that merged tree counted with the awk above.
 # 530 once both arrived together: counted from the manifest, never one total plus another, which
 # is the mistake the paragraph above is about.
 # 524-in-isolation once a Project could be asked which of its worktrees finished a Feature: three groups — the
@@ -272,8 +283,12 @@ manifest_group_count=$(awk '
 # join itself, and the pair this read exists to keep apart, an empty list with rows behind it
 # against a Project nothing in range mentions. The third is the first test in this tree to assert
 # that an empty answer carries the receipt proving the query ran.
-[ "$manifest_group_count" -eq 530 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 530"
+# 531 is this merged tree counted with the awk above: main's update-check group and the three this
+# branch brought, met by a merge that touched neither manifest. Adding would have given 531 too,
+# and that is the point rather than a reprieve — the two numbers agreeing is not what makes either
+# right, and the paragraph above is about the day two branches agreed and were wrong together.
+[ "$manifest_group_count" -eq 531 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 531"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

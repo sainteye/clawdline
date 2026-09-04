@@ -891,6 +891,18 @@ struct Turkish: Copy {
     let menuQuit = "Clawdline'dan çık"
     let menuNoTarget = "(henüz bulunamadı)"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest) çıktı — buradaki \(installed)"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed); bu yapı \(builtAgainst) ile denendi"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed); bu yapı \(builtAgainst) ile denendi — Clawdline \(release) çıktı"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "\(combo) kaydedilemedi" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """
