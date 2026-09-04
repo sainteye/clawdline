@@ -60,20 +60,12 @@ group("documents leave one of two roots and a path chooses only inside one") {
     try! Data("# what the child found\n".utf8)
         .write(to: taskArtifacts.appendingPathComponent("report.md"))
 
-    // One spelling for a resolved path. `resolvingSymlinksInPath()` alone alternates the
-    // `/private` prefix on exactly the temporary directories this fixture lives in, and a
-    // containment test whose two sides normalise a different number of times disagrees with
-    // itself. This is the property the rest of the group rests on, so it is asserted first.
-    let once = ProjectDocuments.resolvedPath(published)
-    expect("resolving a path twice lands where resolving it once did",
-           ProjectDocuments.resolvedPath(URL(fileURLWithPath: once)), once)
-
     guard let root = ProjectDocuments.root(under: project.path) else {
         check("the project's document root resolves through its symlink", false)
         return
     }
-    expect("and the symlink's target is what becomes the root",
-           ProjectDocuments.resolvedPath(root), once)
+    expect("the symlink's target is what becomes the root",
+           ProjectDocuments.resolvedPath(root), ProjectDocuments.resolvedPath(published))
     check("a project with no artifacts directory has no root",
           ProjectDocuments.root(under: elsewhere.path) == nil)
 

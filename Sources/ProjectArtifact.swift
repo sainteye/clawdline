@@ -155,16 +155,19 @@ enum ProjectDocuments {
         }
     }
 
-    /// One spelling for a resolved path, because `resolvingSymlinksInPath()` does not have one.
+    /// One place a path is normalised, so both sides of a containment test are normalised the
+    /// same way.
     ///
-    /// It strips a leading `/private` only when the receiver already carries it, so applying it
-    /// to a temporary directory alternates: `/var/folders/x` resolves to `/private/var/folders/x`
-    /// and that resolves back to `/var/folders/x`. A containment test comparing a root normalised
-    /// once against a path normalised twice would then disagree with itself on exactly the
-    /// directories the tests use. Resolve once, then pin the prefix.
+    /// **It does not need a fixed point, and an earlier version carried a `/private` fix-up that
+    /// assumed it did.** Foundation documents `resolvingSymlinksInPath()` as stripping a leading
+    /// `/private` when the receiver already carries one, which would make it alternate on a
+    /// temporary directory; that reasoning was written into a comment, and then a run with the
+    /// fix-up removed passed all sixty checks, so this tree does not do it. What makes the
+    /// comparison safe is structural rather than a property of this call: a candidate is always
+    /// built by appending to the root, so whatever this does to the root it does to the
+    /// candidate too.
     static func resolvedPath(_ url: URL) -> String {
-        let path = url.resolvingSymlinksInPath().path
-        return path.hasPrefix("/private/") ? String(path.dropFirst("/private".count)) : path
+        url.resolvingSymlinksInPath().path
     }
 
     /// A root, with its one symlink followed and everything about it settled before a caller's
