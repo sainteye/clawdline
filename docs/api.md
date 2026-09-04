@@ -148,6 +148,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `GET` | `/v1/orchestrator/usage/analytics` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage/analytics.csv` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage/analytics.json` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/usage/project-worktrees` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/whoami` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
@@ -3840,6 +3841,118 @@ The Project/Feature recording contract and the append-only classifier boundary a
 [`docs/usage-attribution.md`](usage-attribution.md). What proposes a label today is a local
 deterministic classifier, source `heuristic`, and no model participates; only one unambiguous
 accepted head enters Feature totals, and no attribution event can rewrite tokens.
+
+### `GET /v1/orchestrator/usage/project-worktrees?project=<id|name|path>`
+
+**Which worktrees under one Project have finished a Feature, and which Features those were.**
+
+`git worktree list` answers a different question. This Mac carries 58 managed checkouts and most
+of them are finished task directories that produced nothing anybody kept; what a person asks in
+front of a Project is narrower, and this is that question: *which of these actually made
+something, and what was it, and did it reach the tree.*
+
+It is a read-time join over the store the analytics routes already read, and it needed no new
+column. `usage_intervals.working_dir` is the checkout a task ran in — for a Clawdline-managed
+worktree, the path ending in the task UUID that names it; `project_key` is the canonical
+repository; `usage_attribution_events` carries the accepted Feature head; `task_state` and
+`landing_state` say how each of those tasks ended. What made the worktree invisible until now is
+that resolving a row's Project *consumes* that identity and discards it — a managed worktree path
+resolves to no Project rather than to one of its own — so nothing in the store is filed under a
+worktree. The column it was read from is still there.
+
+| Query | Meaning |
+|---|---|
+| `project` | **required.** The Portfolio's opaque project id (`project-` and sixteen hex digits), the Project's final name, or its absolute canonical path. There is no machine-wide form: this read is about one Project |
+| `from`, `to` | inclusive local days, `YYYY-MM-DD`, interpreted in `timezone`. Omitted means every row the ledger holds |
+| `timezone` | IANA timezone identifier; the Mac's current timezone by default |
+
+Unknown keys and repeated keys are `400 bad_request`, for the same reason they are on the
+analytics query: a misspelled filter must not quietly widen an accounting read.
+
+```json
+{"projectWorktrees":{
+  "schemaVersion":1,"status":"available","policy":"one_unambiguous_accepted_head",
+  "outcomeRule":"landed_then_delivered_then_live_then_abandoned",
+  "generatedAt":"2026-09-04T11:40:00Z",
+  "range":{"from":null,"to":null,"timezone":"Asia/Taipei"},
+  "project":{"id":"project-9c1f2e7a4b0d8e35","label":"clawdline"},
+  "read":{"rows":726,"projectRows":237,"worktreeRows":240,"featureRows":190,
+          "truncated":false,"maxScannedRows":100000},
+  "worktrees":[
+    {"id":"b1103ab1-…","outcome":"delivered","runs":2,
+     "tasks":["b1103ab1-…","6f2c…"],"liveTasks":[],
+     "taskStates":["spawning","success"],"landingStates":[],
+     "firstSeenAt":"2026-09-03T09:08:09Z","lastSeenAt":"2026-09-03T09:13:12Z",
+     "features":[{"id":"feature-34ccefd0…","label":"Clawdfather: machine coordinator",
+                  "outcome":"delivered","runs":2,"tasks":["b1103ab1-…"],"liveTasks":[],
+                  "taskStates":["spawning","success"],"landingStates":[],
+                  "firstSeenAt":"…","lastSeenAt":"…"}]}],
+  "excluded":{"worktreesWithoutFeature":31,"reason":"no_unambiguous_accepted_head"},
+  "unattributed":{"worktrees":13,
+                  "reasons":{"legacy_managed_worktree_project_key":13}}}}
+```
+
+**`outcome` is the whole point, and every rung of it is a stored fact rather than an inference.**
+It is evaluated in this order, over all of a worktree's Feature-carrying rows — which is the same
+answer as the strongest of its Features':
+
+| value | what it rests on |
+|---|---|
+| `landed` | some row carries `landing_state = landed`: a root recorded that this delivery reached its target branch. It outranks the child's own word, including `failure` — two rows on this Mac say exactly that, and what is being asked about is the branch |
+| `delivered` | some row's task reached `success` and no landing says it landed. Done, not landed. An open landing obligation (`pending`) and one that was given up (`abandoned`) both live here, and both spellings travel in `landingStates` beside the word |
+| `active` | neither of the above, and one of these tasks is still live in the registry now |
+| `abandoned` | neither landed nor successful, and nothing left running: every task either ended without success, or stopped being observed and was never finalized. That second shape is what debris looks like in this store — a task sitting at `briefed` for 41 hours because the session died before anything wrote a terminal state |
+| `unknown` | no row carried any task state at all |
+
+Liveness is asked of the live registry rather than measured as an age. The half of that answer
+worth trusting is the absence: the registry holds every live task, so a task it does not hold is
+certainly not running. Its presence is bounded by task retention, which is the right direction
+here — the question is only ever asked about work no stored row has already called finished.
+
+**An empty list and a query that did not run are the same picture on a screen, so they are made
+different.** Every answer carries `read`, which is the receipt saying how much was actually
+scanned: total rows, this Project's rows, the ones that ran in a worktree, and the ones carrying a
+Feature. `status` is `available`, or `partial` when the scan hit `maxScannedRows` — it is never the
+word for an empty answer. The refusals are the other half of the same rule:
+
+| code | status | what it means |
+|---|---|---|
+| `bad_request` | 400 | unknown key, repeated key, missing `project`, malformed date, unknown timezone, `from` after `to` |
+| `project_not_found` | 404 | no row in this range resolves to a Project spelled that way. Not an empty 200, because the useful next move — widen the range, or check the name — is not available to a reader who was handed a blank list. The message says how many rows were read |
+| `ambiguous_project` | 409 | more than one Project in this range has that final name. The Portfolio puts the name on screen, so answering for whichever came first would file one repository's worktrees under another's; the message hands back both opaque ids |
+
+`worktrees` lists **only** the worktrees that carry an accepted Feature head — that is the
+selection the question asks for, and it is why this is not `git worktree list`. The rest are
+counted in `excluded.worktreesWithoutFeature` rather than listed. `unattributed` is separate and
+is not this Project's: rows recorded before canonical Project keys landed can carry a
+managed-worktree path as their own `project_key`, which belongs to no Project a surface may name
+and so can appear under none. Counting them here keeps that absence visible; the append-only
+migration that would give them a Project is specified in
+[`docs/usage-attribution.md`](usage-attribution.md).
+
+The payload names task ids, Feature labels and branchless worktree ids. It contains **no
+filesystem path** — a worktree is published as the task UUID that names its checkout, never as the
+directory — which is the same privacy contract the analytics projection carries. There is no
+`branch` field: the ledger stores none, and the registry that does is swept, so a field that
+existed only for recent tasks would be read as evidence of an old one's absence. By convention
+that branch is `clawdline/task/<worktree id>`, and
+[`GET /v1/orchestrator/inflight`](#get-v1orchestratorinflightprojectdir-get-v1orchestratortasksidinflight)
+answers with the real one while the task record survives.
+
+Authentication is identical to the analytics routes: an orchestrator token, or a paired device
+with `read`. Anonymous requests are `401`. It takes the analytics worker and the analytics
+admission budget, because it is the same bounded scan of the same store, and saturation is the
+same typed `429 usage_analytics_busy`.
+
+**It is deliberately absent on the Cloud path, and the reason is the transport's shape rather than
+a judgement about the data.** Every member of the closed read vocabulary a paired viewer may name
+— transcript, info, agent, shell, skills, git, image — carries a session, and that session is also
+the channel its answer is published on. This read has no session: its subject is a Project, and
+its answer is about work whose sessions are mostly over. Adding it would mean inventing an
+addressing scheme for the relay, which is a decision about the transport and not about this
+feature. So a page that offers it guards the call site with `typeof api.X === "function"` and does
+not draw the control over Cloud, exactly as the reads listed under
+[the Cloud read vocabulary](#the-reads-a-browser-on-the-cloud-path-may-ask-for) already do.
 
 ### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
 

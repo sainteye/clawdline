@@ -1850,6 +1850,32 @@ group("an empty worktree list says the query ran, and an unknown Project is refu
           UsageProjectWorktreeService.isProjectID(UsageQueryService.projectID("/private/acme/w"))
             && !UsageProjectWorktreeService.isProjectID("project-not-a-digest")
             && !UsageProjectWorktreeService.isProjectID("project-things"))
+
+    // The door, end to end: a refusal this service invents is only worth having if it is the
+    // one the route hands back.
+    let anonymous = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/usage/project-worktrees?project=widget"))
+    expect("an anonymous reader is refused before the scan", anonymous.status, 401)
+    check("and this read takes the analytics side door rather than the shared queue",
+          RemoteServer.isUsageAnalyticsReading("/v1/orchestrator/usage/project-worktrees"))
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    check("while the orchestrator token reaches the worker",
+          RemoteServer.shared.slowReadingRefusal(
+            remoteRequest("GET", "/v1/orchestrator/usage/project-worktrees?project=widget",
+                          headers: auth)) == nil)
+    let unknownProject = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/project-worktrees?project=no-such-project-anywhere",
+        headers: auth))
+    expect("a Project this Mac has never recorded is 404 on the route too",
+           unknownProject.status, 404)
+    expect("carrying the service's own code", remoteErrorCode(unknownProject),
+           "project_not_found")
+    let misspelled = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/usage/project-worktrees?project=widget&group=day",
+        headers: auth))
+    expect("and a misspelled filter is refused rather than quietly widening the query",
+           misspelled.status, 400)
+    expect("as a bad request", remoteErrorCode(misspelled), "bad_request")
 }
 
 }
