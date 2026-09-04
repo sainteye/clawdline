@@ -57,7 +57,11 @@ typed while a rebase is stopped on a conflict — so a stranger's half-finished 
 be yours to commit without a word.
 
 This check reads the filesystem and nothing else. It has no dependency to be down, so there is
-nothing to fail open for, and it refuses whether or not Clawdline is running. A conflict-free
+nothing to fail open for, and in the shared checkout it refuses whether or not Clawdline is
+running. **In a linked worktree it says so and allows**: the hazard is somebody else's
+hand-resolved conflicts, and a worktree made for one landing has one possible committer. The
+narrowing is `--git-dir` differing from `--git-common-dir`, and a question it cannot resolve
+leaves the refusal in place. A conflict-free
 `git merge` makes its commit without calling `pre-commit` at all (verified on git 2.38.1), so
 reaching this check means the conflicts were resolved by hand.
 
@@ -150,7 +154,11 @@ unchecked. So:
 All six are exercised by `Tests/git-hooks.mjs`; three of them used to be claims about untested
 code paths.
 
-**The sequencer check fails closed**, because it depends on nothing.
+**The sequencer check fails closed in the shared checkout**, because it depends on nothing. In a
+linked worktree it allows and prints why — and it prints, in the same breath, that the claims
+check below will not refuse anything there either: a claim names a task's `projectDir`, a linked
+worktree's toplevel is never that, so nothing is compared. Neither half of this guard protects a
+commit made in a worktree, and the message says so rather than implying otherwise.
 
 **Identity failure takes the claims check's direction, not the sequencer check's** — see *A session
 this guard cannot identify is warned, not refused* above. It is a broker-dependent answer: it rests

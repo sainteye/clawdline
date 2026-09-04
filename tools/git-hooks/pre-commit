@@ -119,7 +119,11 @@ if [ -n "$op" ] && [ -n "$linked_worktree" ]; then
     that $op can only be yours. Allowing the commit. In the shared checkout this is a refusal,
     because there the same marker may be another session's hand-resolved conflicts.
 
-    Your staged paths are still checked against other sessions' live claims below.
+    The claims check below will not refuse anything here either, and saying so is the point: a
+    claim names a task's projectDir, this checkout's toplevel is the worktree, and the two are
+    never equal — so in a linked worktree that check finds nothing to compare and passes. It is
+    the shared checkout it was built for. Nothing about this commit has been checked against
+    another session's claims.
 
 EOF
     op=""
