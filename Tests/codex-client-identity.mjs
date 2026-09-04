@@ -2,11 +2,12 @@
 
 // What Clawdline tells `codex app-server` it is, compiled and run rather than grepped.
 //
-// **What it is here for.** `Sources/CodexNaming.swift` sent `"version": "0.6.0"` in its
-// `initialize` for as long as 0.6.0 was current and then for the whole of 0.7.0, because the string
-// was typed rather than derived and nothing in the suite compared it with anything. A `grep -c`
-// over `Tests/` for that line answered zero on 2026-09-04, which is the whole story: the drift was
-// not hard to find, there was simply nobody to find it.
+// **What it is here for.** `Sources/CodexNaming.swift` sent a typed version string in its
+// `initialize`, and went on sending it for two releases after the one it named, because nothing in
+// the suite compared it with anything. A `grep -c` over `Tests/` for that line answered zero on
+// 2026-09-04, which is the whole story: the drift was not hard to find, there was simply nobody to
+// find it. The numbers are in that commit's message and not here, because a version typed into
+// this file is the same defect one file along — `tools/check-version-strings.py` refuses one.
 //
 // **Why it does not live in the Swift suite.** `Sources/CodexNaming.swift` names `Assistant`,
 // `TargetSession`, `SessionState`, `Config` and more, so compiling it means compiling the module,
@@ -164,9 +165,6 @@ let encoded = try! JSONSerialization.data(withJSONObject: ClawdlineClientIdentit
 let text = String(decoding: encoded, as: UTF8.self)
 check(text.contains("\"version\":\"" + stamped + "\""),
       "and serialised for the wire it carries " + stamped)
-check(!text.contains("0.6.0") || stamped == "0.6.0",
-      "the version that drifted for three releases is not in the payload unless it is current")
-
 print("\(checks) swift checks passed")
 `, "utf8");
 
@@ -188,7 +186,7 @@ print("\(checks) swift checks passed")
   check("the compiled identity block ran to the end", run.status === 0);
   // A count in the output is what tells "clean" from "never looked": a harness that exits 0 having
   // asserted nothing reads exactly like one that asserted everything.
-  check(`and asserted all 13 of its checks (saw ${swiftChecks})`, swiftChecks === 13);
+  check(`and asserted all 12 of its checks (saw ${swiftChecks})`, swiftChecks === 12);
 
   console.log(failures === 0
     ? `codex client identity: all ${checks} node checks passed, ${swiftChecks} swift checks passed`

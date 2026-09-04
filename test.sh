@@ -563,6 +563,13 @@ fi
 # — but only if something checks. A release added to Compat.swift and not regenerated here is a
 # page claiming support for a version that was never tried.
 tools/build-compatibility.py --check
+# The version this app calls itself. One line of Sources/CodexNaming.swift told `codex app-server` a
+# release the app had left behind two releases earlier, and nothing could see it, because a literal
+# that is never compared with anything cannot go stale loudly. This reads the app's own versions out
+# of build.sh and the release table and refuses a third state — neither derived nor allowed with a
+# written reason — anywhere in the tracked tree. It also holds the two sources against each other,
+# because the fallback every bundle-less process takes is the table's newest row.
+tools/check-version-strings.py
 tools/check-web-strings.py
 tools/check-web-ids.py
 verify_suite_roster
