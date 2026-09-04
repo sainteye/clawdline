@@ -43,6 +43,13 @@ group("documents leave one of two roots and a path chooses only inside one") {
     try! Data("not this one".utf8).write(to: outside)
     try! FileManager.default.createSymbolicLink(
         at: published.appendingPathComponent("escape.md"), withDestinationURL: outside)
+    // And a symlinked *directory*, which is the escape the file above does not actually test:
+    // Foundation reports a symlink as not-a-regular-file, so `escape.md` is refused by that
+    // clause whether or not anything checks containment. A path *through* a symlinked directory
+    // ends on an ordinary regular file, so only containment can refuse it.
+    try! FileManager.default.createSymbolicLink(
+        at: published.appendingPathComponent("outward", isDirectory: true),
+        withDestinationURL: elsewhere)
     // A task directory in the shape the broker writes: the secret and the briefing at the top,
     // the child's deliverables one level down.
     try! Data(#"{"task_secret":"\#(secret)"}"#.utf8)
@@ -100,6 +107,11 @@ group("documents leave one of two roots and a path chooses only inside one") {
     expect("an absolute path inside the root is refused as well",
            refused(published.appendingPathComponent("inventory.md").path).status, 404)
     expect("a symlink out of the root is refused", refused("escape.md").status, 404)
+    expect("and so is a path that leaves through a symlinked directory",
+           refused("outward/private.md").status, 404)
+    check("that one really does end on a readable file when nothing checks containment",
+          FileManager.default.contents(
+            atPath: published.appendingPathComponent("outward/private.md").path) != nil)
     expect("a file the allowlist does not name is refused", refused("page.html").status, 404)
     expect("a dotfile is refused", refused(".hidden.md").status, 404)
     expect("an empty segment is refused", refused("nested//design.md").status, 404)
@@ -123,7 +135,8 @@ group("documents leave one of two roots and a path chooses only inside one") {
           paths.contains("inventory.md") && paths.contains("nested/design.md")
             && paths.contains("notes.txt"))
     check("it never offers what the read would refuse",
-          paths.isDisjoint(with: ["page.html", ".hidden.md", "escape.md", "huge.md"]))
+          paths.isDisjoint(with: ["page.html", ".hidden.md", "escape.md", "huge.md",
+                                  "outward/private.md"]))
     check("every listed row can actually be read",
           listed.allSatisfy { RemoteServer.documentResponse(root: root, path: $0.path).status == 200 })
     check("a row says how big it is", listed.first { $0.path == "inventory.md" }
