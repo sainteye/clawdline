@@ -412,12 +412,15 @@ bash install.sh          # or: bash install.sh ~/Applications
 
 ```sh
 brew install --cask sainteye/tap/clawdline
-xattr -dr com.apple.quarantine /Applications/Clawdline.app
+xattr -dr com.apple.quarantine /Applications/Clawdline.app   # only while the check below says adhoc
 ```
+
+The cask is updated by hand and can trail [Releases](https://github.com/sainteye/clawdline/releases/latest)
+by a version or two; `brew info --cask sainteye/tap/clawdline` says which one it would give you.
 
 **By hand** — download the `.zip` from
 [Releases](https://github.com/sainteye/clawdline/releases/latest), unzip it into `/Applications`,
-then run the `xattr` line above.
+then run the `xattr` line above if the check below says you need it.
 
 **From source** — no package manager, no dependencies, a few seconds:
 
@@ -427,10 +430,25 @@ cd clawdline && ./build.sh
 open ~/Applications/Clawdline.app
 ```
 
-> **Why the `xattr` line?** Releases are ad-hoc signed but not notarized, because notarizing
-> requires a paid Apple Developer account. macOS refuses to open an unnotarized download until the
-> quarantine flag comes off. An app you compiled yourself was never downloaded, so building from
-> source skips this entirely.
+> **Do you need the `xattr` line?** Ask the build you downloaded rather than this page, because the
+> answer changes with the release and a page cannot:
+>
+> ```sh
+> codesign --display --verbose=2 /Applications/Clawdline.app 2>&1 | grep -E 'Authority|Signature'
+> ```
+>
+> `Authority=Developer ID Application: TsunamiWorks Co., Ltd.` means it is signed and notarized: it
+> opens like any other download and the `xattr` line does nothing for you. `Signature=adhoc` means
+> it is not, and macOS refuses it until the quarantine flag comes off.
+>
+> **Every release up to and including v0.6.0 is ad-hoc**, so today the line is needed. It is not a
+> missing Apple account — the certificate exists and `tools/release.sh` is built around it, with
+> `notarytool submit --wait`, a stapled ticket and `spctl --assess` all of which it refuses to
+> publish without. No release has been cut through that path yet, and the first one that is will
+> answer `Authority=` above. `install.sh` already makes this check for you and only strips
+> quarantine when the answer is `adhoc`.
+>
+> An app you compiled yourself was never downloaded, so building from source skips all of it.
 
 The first time you send something, macOS asks whether Clawdline may control iTerm2. Say yes — it
 cannot send anything without that. Menu bar ✳ → **Launch at login** makes it stick around.

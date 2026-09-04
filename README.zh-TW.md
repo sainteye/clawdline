@@ -345,11 +345,14 @@ bash install.sh          # 或 bash install.sh ~/Applications
 
 ```sh
 brew install --cask sainteye/tap/clawdline
-xattr -dr com.apple.quarantine /Applications/Clawdline.app
+xattr -dr com.apple.quarantine /Applications/Clawdline.app   # 只在下面那個判準說 adhoc 的時候
 ```
 
+cask 是手動更新的，可能落後 [Releases](https://github.com/sainteye/clawdline/releases/latest)
+一兩個版本；`brew info --cask sainteye/tap/clawdline` 會告訴你它現在會給你哪一版。
+
 **手動** —— 從 [Releases](https://github.com/sainteye/clawdline/releases/latest) 下載 `.zip`，
-解開丟進 `/Applications`，然後跑上面那行 `xattr`。
+解開丟進 `/Applications`，然後**如果下面那個判準說你需要**，才跑上面那行 `xattr`。
 
 **自己編** —— 沒有套件管理器、沒有相依套件，幾秒鐘：
 
@@ -359,9 +362,24 @@ cd clawdline && ./build.sh
 open ~/Applications/Clawdline.app
 ```
 
-> **那行 `xattr` 是幹嘛的？** release 的 build 有 ad-hoc 簽章但沒有公證，因為公證需要付費的
-> Apple Developer 帳號。macOS 會拒絕開啟沒公證的下載檔，直到隔離屬性被拿掉。自己編出來的 app
-> 從來沒被下載過，所以自己編就完全不會碰到這件事。
+> **你需不需要那行 `xattr`？** 問你下載到的那個 build，不要問這一頁——答案會隨版本改變，
+> 而一頁文件不會：
+>
+> ```sh
+> codesign --display --verbose=2 /Applications/Clawdline.app 2>&1 | grep -E 'Authority|Signature'
+> ```
+>
+> 出現 `Authority=Developer ID Application: TsunamiWorks Co., Ltd.` 代表它有簽章也公證過：
+> 開起來跟任何一個下載來的 app 一樣，那行 `xattr` 對你沒有作用。出現 `Signature=adhoc` 代表沒有，
+> macOS 會拒絕開它，直到隔離屬性被拿掉。
+>
+> **v0.6.0 以及更早的每一版都是 ad-hoc**，所以今天那行是需要的。原因不是缺一個 Apple 帳號——
+> 憑證是有的，`tools/release.sh` 整支就是繞著它寫的，`notarytool submit --wait`、stapled ticket、
+> `spctl --assess` 三關少一關它就拒絕發布。只是還沒有任何一版走過那條路，
+> 而第一個走過的版本會在上面回答 `Authority=`。`install.sh` 已經替你做這個判斷，
+> 只有在答案是 `adhoc` 時才會去拿掉隔離屬性。
+>
+> 自己編出來的 app 從來沒被下載過，所以自己編完全不會碰到這件事。
 
 第一次送出時，macOS 會問要不要讓 Clawdline 控制 iTerm2，按**好**——沒有這個權限它什麼都送不
 出去。選單列的 ✳ → **開機時啟動** 可以讓它常駐。
