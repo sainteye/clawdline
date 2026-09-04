@@ -151,6 +151,15 @@ group("documents leave one of two roots and a path chooses only inside one") {
     expect("a task listing holds only its deliverables", delivered.count, 1)
     expect("and names the one file that is there", delivered.first?.path, "report.md")
 
+    // The address a listing row hands to a page. An ordinary name has to survive it, or the
+    // link the page draws is uglier than the file it points at.
+    expect("an ordinary name keeps an ordinary address",
+           ProjectDocuments.escaped("nested/design.md"), "nested/design.md")
+    expect("a space is escaped and the separators are not",
+           ProjectDocuments.escaped("two words/a b.md"), "two%20words/a%20b.md")
+    expect("and a question mark cannot start a query string",
+           ProjectDocuments.escaped("what?.md"), "what%3F.md")
+
     // The route shape, matched whole rather than by suffix.
     check("the documents listing is the documents route",
           RemoteServer.isDocumentsReading("/v1/sessions/ABC/documents"))

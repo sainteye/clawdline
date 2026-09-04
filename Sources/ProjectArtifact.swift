@@ -142,7 +142,7 @@ enum ProjectDocuments {
         var modified: Double
     }
 
-    enum Refusal: String {
+    enum Refusal: String, Error {
         case notFound = "document_not_found"
         case tooLarge = "document_too_large"
 
@@ -210,6 +210,16 @@ enum ProjectDocuments {
         return .success(Located(
             url: url, path: relative, bytes: bytes,
             modified: values.contentModificationDate?.timeIntervalSince1970 ?? 0))
+    }
+
+    /// The path as it appears in a URL. `.urlPathAllowed` rather than `.alphanumerics`, so an
+    /// ordinary document keeps an ordinary address: a name is split on `/` before it gets here,
+    /// so no separator can survive the escaping, and `?` and `#` are not in that set.
+    static func escaped(_ path: String) -> String {
+        path.split(separator: "/").map {
+            String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+                ?? String($0)
+        }.joined(separator: "/")
     }
 
     /// What is in a root, newest first.
@@ -327,10 +337,7 @@ extension RemoteServer {
         func rows(_ documents: [ProjectDocuments.Document], under address: String,
                   source: String, task: [String: Any]?) {
             for document in documents {
-                let escaped = document.path.split(separator: "/").map {
-                    String($0).addingPercentEncoding(
-                        withAllowedCharacters: .alphanumerics) ?? String($0)
-                }.joined(separator: "/")
+                let escaped = ProjectDocuments.escaped(document.path)
                 var row: [String: Any] = [
                     "source": source,
                     "path": document.path,
