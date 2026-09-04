@@ -12,7 +12,9 @@ There is a place to *be* now. This page is how it works and what adding the next
 - [The drawer](#the-drawer)
 - [The address](#the-address)
 - [Adding a page](#adding-a-page)
+- [The Projects page](#the-projects-page)
 - [Three things a browser found and no suite did](#three-things-a-browser-found-and-no-suite-did)
+- [Two more, from the page that followed](#two-more-from-the-page-that-followed)
 - [What deliberately did not change](#what-deliberately-did-not-change)
 
 ## What a page is
@@ -123,8 +125,9 @@ transcript underneath a page that is still on screen.
 
 ## Adding a page
 
-Three things, and no new mechanism. The **Projects page** is the next one, and it belongs between
-`sessions` and `usage`: it is a way *into* the sessions rather than a reading about them.
+Three things, and no new mechanism. The **Projects page** was the first one added this way, and it
+cost exactly these three — it sits between `sessions` and `usage`, because it is a way *into* the
+sessions rather than a reading about them.
 
 1. **A section in `Resources/web/index.html`**, beside the others:
    `<section class="page" id="projects" data-page-view="projects" hidden>`. `.page` in
@@ -165,6 +168,75 @@ paints each of them, and `Tests/web-pages.mjs` holds every id in the drawer agai
 `webSessions` is a separate string from `webBack` on purpose. They are one word in English and two
 elsewhere: `webBack` is the chevron above a transcript — 「清單」in Chinese, with `webBackLabel`
 reading 「回到 session 清單」beside it — and a row in a navigation drawer is not that sentence.
+
+A page with a **fourth** thing — a key of its own, a shortcut, a second address — is the point at
+which to stop and read the note below on where Escape lives. It is the one thing about this
+mechanism that a suite driving a stand-in document will tell you is fine.
+
+## The Projects page
+
+`Resources/web/app/js/view/projects.js`, styled in `app/css/projects.css`, drawn from
+`Tests/web-projects.mjs`. It answers two questions and the second one is why it exists.
+
+The first is **where a session could be started** — `/v1/places`, directories an assistant has
+actually been run in and that are still on the disk. That is the list.
+
+The second is asked standing in front of one of them: **which of this Project's worktrees finished
+a Feature, and did that delivery reach the branch.**
+[`GET /v1/orchestrator/usage/project-worktrees`](api.md#get-v1orchestratorusageproject-worktreesprojectidnamepath)
+answers it, and it is deliberately not `git worktree list`: this Mac carries 58 managed checkouts
+and the ledger remembers 150, most of which produced nothing anybody kept. Only the ones carrying
+an accepted Feature head are listed; the rest are counted.
+
+**The screen has one subject and it is `delivered`.** Thirty-eight of this repository's
+seventy-nine Feature-carrying worktrees finished their work and have no landing record — the first
+number anybody has had for "it gets done and nobody merges it". So it is the open block at the
+top, with the branch each one is on. The payload carries no `branch` on purpose (the ledger stores
+none and the registry that does is swept), so what is drawn is the convention
+`clawdline/task/<worktree id>` under a label that says it is one. The other four rungs are closed
+`<details>` underneath, each with the stored fact it rests on rather than a description of itself.
+
+**An empty answer and an answer that never arrived are drawn differently**, which is the half of
+the route's work a page throws away most easily. Every answer carries a `read` receipt; it is on
+screen whenever the route answered and cleared whenever it did not — including the moment before a
+request goes out, so a refusal cannot be left wearing the last Project's numbers.
+`project_not_found` and `ambiguous_project` each get their own sentence, because the useful next
+move after them is different. `unattributed` is counted in a block that says it belongs to no
+Project rather than dropped.
+
+The Project detail is a **view inside the page** rather than an address of its own. `#page=` is the
+whole fragment — a page is not a session — so a second key here would be inventing an addressing
+scheme beside one that had just been agreed.
+
+Neither read exists on the Cloud path, so `main.js` asks
+`typeof api.places === "function" && typeof api.projectWorktrees === "function"` **when the page is
+used** rather than when it is bound: `net/api.js` holds a live binding the entry point fills in,
+and on the Cloud path it fills it in twice.
+
+## Two more, from the page that followed
+
+Same fifteen seconds of setup, same answer: both were green in Node at the moment they were broken.
+
+**The Project's identity read right-aligned.** `.projects-heading` pushes its two halves apart,
+which is what the list's count needs and the opposite of what an identity is — the mark and the
+name are one thing. A stand-in document has no layout, so nothing but looking could have caught it.
+
+**Escape closed the drawer and left the page under it, for one press.** The page answered Escape
+with a listener of its own and stood down while the drawer was open, which is the right rule and
+was never true: `input/keys.js` closes the drawer and *returns*, and **returning is only ever true
+of the listener doing it.** By the time a second listener on the same document ran, the drawer it
+was checking for was already shut. A harness with one listener has nothing to be second to.
+
+The fix was not a better guard. This page's Escape moved into `input/keys.js` — the one place where
+the order of Escape is decided — reached through an exported `Projects.escape` the way
+`Settings.close` already is, and placed after the drawer's turn and the shortcuts card's.
+`Tests/web-projects.mjs` now refuses a key listener in `view/projects.js` at all and pins that
+branch's position, because the mistake is invisible in a diff that touches one file.
+
+`view/usage.js` had the same defect in its own Escape listener. It was found twice
+independently — by the review of the slice that added the drawer, and again here — and was
+repaired there before this page landed, so the chain in `input/keys.js` is now the only place a
+page answers Escape.
 
 ## Three things a browser found and no suite did
 

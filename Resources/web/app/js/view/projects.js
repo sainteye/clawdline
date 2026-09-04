@@ -34,6 +34,23 @@ import { T, fill } from "../core/i18n.js";
    says so rather than drawing controls that cannot answer.
    ========================================================================== */
 
+/**
+ * What Escape means on this page, reachable from the one module that owns the Escape chain.
+ *
+ * **It is not a listener of this module's own, and that is the whole point.** The first version
+ * was one, standing down while the drawer was open — and in a browser it fired anyway and took
+ * the page with it, because `input/keys.js` closes the drawer and *returns*, and returning is
+ * only ever true of the listener doing it. By the time a second listener on the same document
+ * ran, the drawer it was checking for was already shut. No stand-in document catches that: a
+ * harness with one listener has nothing to be second to.
+ *
+ * So the ordering lives where the ordering is decided. `input/keys.js` calls this after the
+ * drawer and the shortcuts card have had their turn, exactly as it calls `Settings.close`.
+ * `bindProjectsPage` fills it in; before that it is a no-op, so importing this module still
+ * touches no document.
+ */
+export var Projects = { escape: function () { } };
+
 /** The outcomes this page draws below the fold, hardest evidence first. */
 var SECONDARY = ["landed", "active", "abandoned", "unknown"];
 
@@ -131,14 +148,21 @@ function worktreeItem(context, worktree) {
     return item;
 }
 
-/** The hero: what finished and never landed. */
-function renderDelivered(context, worktrees) {
+/**
+ * The hero: what finished and never landed.
+ *
+ * `total` is every worktree in the answer, and the all-clear sentence is drawn only when there is
+ * something for it to be an all-clear *about*. Read in a browser on a Project with nothing in it,
+ * "nothing is waiting" sat directly above "no worktree here has finished a Feature", which is two
+ * sentences agreeing that there is nothing and one of them implying somebody had checked.
+ */
+function renderDelivered(context, worktrees, total) {
     var doc = context.document, elements = context.elements;
     var list = elements["project-delivered-list"];
     clear(list);
     var any = worktrees.length > 0;
     elements["project-delivered"].hidden = !any;
-    elements["project-delivered-none"].hidden = any;
+    elements["project-delivered-none"].hidden = any || !total;
     elements["project-delivered-none"].textContent = T.webProjectDeliveredNone;
     if (!any) return;
     elements["project-delivered-count"].textContent = number(worktrees.length);
@@ -208,7 +232,7 @@ function renderAnswer(context, answer) {
         var outcome = worktree.outcome || "unknown";
         (byOutcome[outcome] || (byOutcome[outcome] = [])).push(worktree);
     });
-    renderDelivered(context, byOutcome.delivered || []);
+    renderDelivered(context, byOutcome.delivered || [], worktrees.length);
     renderGroups(context, byOutcome);
     /* The one sentence that says the query ran and found nothing. It is separate from the
        receipt beside it on purpose: the receipt is the evidence, this is the reading. */
@@ -382,9 +406,10 @@ export function bindProjectsPage(elements, environment) {
             renderAnswer(context, data && data.projectWorktrees);
         }).catch(function (error) {
             if (ticket !== state.loading) return;
-            // A refusal leaves the answer cleared, receipt included. That is the whole of the
-            // difference between "read 726 rows and found none" and "this was never answered".
-            clearAnswer(context);
+            // Nothing is taken off the screen here, because `clearAnswer` above already did it
+            // before the request went out — and that is the whole of the difference between
+            // "read 726 rows and found none" and "this was never answered". A second clear on
+            // this path would be a line no test could ever turn red.
             elements["project-status"].textContent = refusalText(error);
         });
     }
@@ -411,25 +436,17 @@ export function bindProjectsPage(elements, environment) {
 
     elements["projects-back"].addEventListener("click", backToList);
 
-    /* Escape stays here rather than moving in with the rest of the shortcuts, for the reason
-       Usage's does: the question it has to ask is about this page and not about pages. A Project
-       is open *inside* the Projects page, so the first press gives that back and only the second
-       leaves — anything else would close two things for one press. `navigate` is the page router;
-       a harness that has none leaves the module inert rather than reaching for a document it was
-       never given.
-       **And it stands down while the drawer is open.** `input/keys.js` closes the drawer on
-       Escape and returns, but "returns" is only true of that one listener: this is a second
-       listener on the same document, so without this line one press would close the menu *and*
-       leave the page under it. That is why the drawer's element is in this page's table at all. */
+    /* A Project is open *inside* this page, so the first Escape gives the Project back and only
+       the second leaves — anything else closes two things for one press. `navigate` is the page
+       router; a harness that has none leaves this inert rather than reaching for a document it
+       was never given. `input/keys.js` decides when this is called; see the note on `Projects`. */
     var navigate = environment.navigate || function () { };
-    doc.addEventListener("keydown", function (event) {
-        if (event.key !== "Escape" || elements.projects.hidden) return;
-        if (elements.sidebar && !elements.sidebar.hidden) return;
+    Projects.escape = function () {
         if (state.view === "detail") { backToList(); return; }
         navigate("sessions");
-    });
+    };
 
     showView("list");
     return { enter: enter, leave: leave, loadPlaces: loadPlaces, openProject: openProject,
-             state: state };
+             escape: Projects.escape, state: state };
 }

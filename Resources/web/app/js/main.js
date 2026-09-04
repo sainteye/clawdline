@@ -210,7 +210,7 @@ var byId = function (id) { return document.getElementById(id); };
    handed over as thunks and a `carries` question, all three asked when the page is used: `api` is
    a live binding the entry point fills in, and on the Cloud path it is filled in twice. */
 var projects = bindProjectsPage({
-    "projects": byId("projects"), "sidebar": byId("sidebar"),
+    "projects": byId("projects"),
     "projects-list-view": byId("projects-list-view"),
     "projects-detail-view": byId("projects-detail-view"),
     "projects-title": byId("projects-title"), "projects-count": byId("projects-count"),

@@ -78,7 +78,10 @@
     color: var(--ink);
 }
 .projects-back:hover { border-color: var(--accent-ed); background: var(--card-hi); }
-.project-identity { align-items: center; gap: 14px; }
+/* `.projects-heading` pushes its two halves apart, which is what the list's count needs and the
+   opposite of what an identity is: the mark and the name are one thing and belong together at the
+   left edge. Seen in a browser and nowhere else — a stand-in document has no layout to be wrong. */
+.project-identity { justify-content: flex-start; align-items: center; gap: 14px; }
 .project-mark { flex: none; width: 40px; height: 20px; image-rendering: pixelated; }
 .project-mark.none { background: var(--line); border-radius: 4px; }
 

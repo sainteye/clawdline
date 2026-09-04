@@ -9,6 +9,7 @@ import { closeDetail, openSession, toBottom } from "../session/open.js";
 import { closeAgent, move, select } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
 import { Sidebar } from "./sidebar.js";
+import { Projects } from "../view/projects.js";
 import { Settings } from "./settings.js";
 import { Start } from "./start.js";
 import { Command } from "./command.js";
@@ -79,6 +80,15 @@ document.addEventListener("keydown", function (ev) {
         // drawer shut.
         if (!els.sidebar.hidden) { Sidebar.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
+          /* The Projects page has a step inside it: the first press closes the Project, the
+             second leaves the page. It sits before the general branch rather than in a listener
+             of its own for the reason that branch gives — a second listener on the document
+             cannot see that this one has already answered the press — and it asks `Pages` rather
+             than `els.projects.hidden` because that is the addressing this chain established.
+             `Projects.escape` answers both steps itself and returns nothing, so the press is
+             spent here either way — testing its result would send the second step on to the
+             branch below, which is the two-things-for-one-press this order exists to prevent. */
+          if (Pages.current() === "projects") { Projects.escape(); return; }
         /* Leaving a page, once, for every page there is. This was `els.settings.hidden` and a
            `Settings.close()` that is itself one line — `Pages.goHome()` — while the Usage page
            answered Escape from a second `keydown` listener of its own inside `view/usage.js`.

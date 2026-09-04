@@ -3954,6 +3954,14 @@ feature. So a page that offers it guards the call site with `typeof api.X === "f
 not draw the control over Cloud, exactly as the reads listed under
 [the Cloud read vocabulary](#the-reads-a-browser-on-the-cloud-path-may-ask-for) already do.
 
+**The page that offers it is the Projects page** — `Resources/web/app/js/view/projects.js`, see
+[`docs/web-pages.md`](web-pages.md#the-projects-page). It asks that question when the page is used
+rather than when it is bound, because `net/api.js` holds a live binding the entry point fills in
+and the Cloud path fills it in twice; over that transport the page says the connection cannot read
+Projects instead of drawing a list it cannot fill. It draws the branch as
+`clawdline/task/<worktree id>` under a label saying the value is this document's convention rather
+than a field of the payload.
+
 ### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
 
 **Every line of work outstanding in a repository, including work a worktree hides.**
