@@ -2028,8 +2028,13 @@ try {
               open.out.includes(`expected_cloud_receipt='${receiptFor(moveOne(first.name, 1))}'`));
         check("and it goes on to compare the Swift seal instead of stopping at the Cloud one",
               /Swift test completion receipt mismatch/.test(open.out));
+        // On a log whose Swift total *does* match, so the 125 can only be the Cloud seal talking.
+        // Asserted on `open` it would have been satisfied by the Swift branch below it and would
+        // have stayed green with the Cloud verdict thrown away entirely.
+        const cloudOnly = verify(logFor({ pairs: moveOne(first.name, 1) }), { CLAWDLINE_RESEAL: "1" });
         check("and the run still ends 125, because the door decides what you are told and not whether the tree is sealed",
-              open.status === 125);
+              open.status === 125 && cloudOnly.status === 125
+                && !/Swift test completion receipt mismatch/.test(cloudOnly.out));
 
         const nothingToCopy = verify(logFor({ pairs: moveOne(first.name, 1), receipt: false }),
                                      { CLAWDLINE_RESEAL: "1" });
