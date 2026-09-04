@@ -1408,3 +1408,40 @@ items:
       trigger is that choice changing, and the first thing to run is the SSE experiment, because a
       no there changes the shape rather than the schedule.
     opened: 2026-09-04
+
+  - id: B-KEYCHAIN-ASKS-THREE-TIMES-AND-NOBODY-COUNTED
+    title: The Keychain asks for a password on restart, and no reading says whether it still does
+    problem: >-
+      The person running this Mac reports being asked for the login password three times after a
+      rebuild, and says pressing "Always Allow" did not stop it. Nothing in the app records how
+      many prompts a restart produced, so the question can only be answered by a human being in
+      front of the screen at the moment it happens — and the moment is exactly when they are
+      likely to be elsewhere, because a rebuild is something they asked for and walked away from.
+
+
+      That makes the two candidate causes indistinguishable in retrospect. If the prompts come
+      from Keychain items created before the signing certificate existed, they are a one-off that
+      a rebuild of those items ends. If they come from the signing identity changing on each
+      build, they recur for ever. **The same complaint is consistent with both**, and the evidence
+      that separates them expires the instant the dialog is dismissed.
+    evidence: >-
+      Three items exist; two were created 2026-08-31, before the local signing certificate at
+      2026-09-01 01:51, which is what the one-off reading rests on. `build.sh` prints its own
+      version of the claim — "After changing signing identity, first use may show up to three
+      Keychain prompts (machine credential and two Cloud keys)" — conditioned on the identity
+      *changing*, and the 2026-09-04 22:38 build reported "using stable local signing", so on that
+      reading it should not have prompted at all. Nobody was at the Mac for that build, so it
+      produced no reading either way. `Sources/CloudKeys.swift` records ten `Keychain identity
+      read timed out` entries on 09-01, four on 09-02 and four on 09-03, which is a separate
+      symptom on the same subject.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      The deciding observation is cheap and has to be taken live: at the next rebuild, count the
+      dialogs. Three means the identity is being replaced and the four candidate repairs have to
+      be costed; two means the pre-certificate items are the whole of it and rebuilding those two
+      ends it; none means it was already over. Say so before the build starts, because after it
+      the evidence is gone. A reading nobody was present for is not a null result, and this entry
+      exists so the next attempt is not made from memory.
+    opened: 2026-09-04
