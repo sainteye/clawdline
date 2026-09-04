@@ -1097,6 +1097,12 @@ group("the languages the interface speaks") {
         // German keeps the loanword here: this file's own menuHome reads
         // "Home / Einrichtungscenter", so "Clawdline Home" is its choice rather than a gap.
         "de:homeTitle",
+        // The drawer behind the wordmark. "Menu" is the word itself in French, Italian,
+        // Portuguese and Indonesian — Spanish, German and Turkish all accent or spell it
+        // differently and are not listed here — and French writes "Pages" and "Sessions" exactly
+        // as English does, which is also what this file's French `webBack` already says.
+        "fr:webMenu", "it:webMenu", "pt:webMenu", "id:webMenu",
+        "fr:webPages", "fr:webSessions",
     ]
     let en = English()
 
