@@ -1334,3 +1334,48 @@ items:
       compiles at once and the shared name buys nothing. Any conclusion of the form "the same
       binary N times" that did not check is the trigger.
     opened: 2026-09-04
+
+  - id: B-AN-APPEND-ONLY-FILE-COLLECTS-WHOEVER-IS-NEAREST
+    title: A file everyone appends to never conflicts, so it quietly carries other people's work
+    problem: >-
+      `docs/backlog.yaml` is written by appending an entry at the tail. Two sessions appending on
+      the same day touch different lines, so Git never conflicts and never warns. That is
+      comfortable and it is the trap: an entry left uncommitted in the shared tree sits there
+      until the next person runs `git add docs/backlog.yaml`, and then it lands inside their
+      commit, under their message, at their moment.
+
+
+      **Naming files explicitly does not stop it.** The shared-tree rule here is to stage by name
+      rather than with `git add -A`, and that rule is sound against staging a *different* file by
+      accident. It cannot see this, because the file named is the right file — what is wrong is
+      some of the lines inside it, and a filename does not address lines.
+
+
+      There is a second half, worse than the first: **afterwards the file cannot say who wrote
+      what.** Every entry looks the same, the commit that carried it names one author, and nothing
+      in the format records the difference between "I wrote this" and "this was in my working
+      tree".
+    evidence: >-
+      2026-09-03 16:16, `b283683c` added seven entries to this file. Two of them —
+      `B-FANOUT-GATE-GUARD-CANNOT-GO-RED` and `B-DELIVERY-PUSH-DIVERGES-FROM-ITS-SIBLINGS` — were
+      the notifications line's own findings, left uncommitted in the shared tree while that
+      session worked. They landed inside somebody else's commit.
+
+
+      The same day, the same file, the opposite direction and a near miss: a root about to commit
+      read `git diff --cached --stat`, saw four entries it had not written, and stopped. So the
+      trap caught work going both ways within hours, and only the direction that was noticed did
+      no harm. Which of the two happened in `b283683c` cannot now be recovered from the file: the
+      committing session's own notes say it *carried* those two deliberately, and the authoring
+      session's account is that they were swept — and the format keeps no evidence that separates
+      the readings.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      The check that would have caught it is one the file-naming rule does not imply: before
+      committing a shared append-only file, read `git diff --cached -- <file>` — the hunks, not
+      the stat — and confirm every added entry is one you wrote. The stat says how many lines; it
+      never says whose. Any commit to this file that adds entries its message does not account for
+      is the trigger.
+    opened: 2026-09-04
