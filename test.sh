@@ -368,6 +368,13 @@ node Tests/git-hooks.mjs
 # recompile of everything.
 node Tests/app-onboarding-focused.mjs
 node Tests/keychain-rebuild-focused.mjs
+# The install path the website and both READMEs recommend, which runs on a Mac this project has
+# never seen and had nothing exercising it: that the release reply is read without an interpreter
+# that is really an xcselect shim, that a reply this script cannot read says so instead of ending
+# the install in silence, and that the ad-hoc legacy branch verifies the bundle before it takes
+# macOS's last guard off it. Stand-ins on PATH for every command it reaches out with, and a
+# temporary DEST — nothing here downloads a release or touches an installed app.
+node Tests/install-focused.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
