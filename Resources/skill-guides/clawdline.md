@@ -178,9 +178,24 @@ only as an attached follow-up task**: a full task record with its own id, secret
 paired-device route, it makes no task record, and anything fed through it holds no claims, signals
 no completion, shows up in no `inflight` answer and is counted in no usage. So **without a follow-up
 task carrying `claims`, a standing session must not write to the shared tree at all** — which a
-review session satisfies by construction and an odd-jobs session does not. Until that mechanism has
-landed, the honest approximation is one ordinary task per emptied pool and one per review round; a
-tab you keep alive by typing into it is not a standing session, and do not call it one.
+review session satisfies by construction and an odd-jobs session does not.
+
+<!-- clawdline-attached-follow-up:v1 -->
+**That mechanism landed on 2026-08-28, so use it rather than approximating it.** `task.json` takes
+`attach_session`: the terminal-neutral id of a Session Clawdline opened for a task with launch-time
+access to the whole task root. The same complete task — fresh id and secret, its own task directory
+and `CHILD.md`, `claims`, `serialize`, `timeout_minutes`, usage, `result.json`, landing record and
+`inflight` visibility — is typed into that session instead of into a new tab, and the public record
+carries `attached: true`. It fails closed before a character is typed, and every refusal is typed:
+`attach_session_not_found` (404), `attach_unsupported` (a plain shell with no assistant),
+`attach_not_managed` (no task role, or a launch grant covering only its own task directory, so it
+cannot read the new follow-up's sibling `CHILD.md`), `attach_assistant_mismatch`,
+`attach_session_occupied` (one live task per attached session), `attach_session_busy` (a confirmed
+menu — nothing was typed, retry the same body) and `attach_delivery_failed` (registered, but the
+first line could not be typed). The full table is in `docs/api.md`. A tab you keep alive by typing
+into it is still not a standing session — Clawdline refuses it `attach_not_managed` — so do not
+call it one.
+<!-- /clawdline-attached-follow-up:v1 -->
 
 **A message is not an assignment.** When one live assistant needs to report status, a finding or a
 coordination note to another — with no new work or shared-tree ownership attached — use

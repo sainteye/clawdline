@@ -353,6 +353,11 @@ node Tests/web-cloud-pairing.mjs
 node Tests/web-cloud-onboarding.mjs
 node Tests/web-app-build.mjs
 node Tests/dispatch-role-contract.mjs
+# The three surfaces that tell a root how to reach a standing session, held against the closed set
+# of `attach_*` refusals scanned out of Sources/*.swift rather than against each other: they spent
+# seven days telling every root to approximate a mechanism that had already landed, and comparing
+# two copies of a wrong sentence produces agreement, not a red.
+node Tests/attached-follow-up-contract.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/remote-response-write-close.mjs
 node Tests/release-signing-contract.mjs
