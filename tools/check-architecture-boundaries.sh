@@ -252,8 +252,14 @@ manifest_group_count=$(awk '
 # number is the manifest counted, not 521 plus five: the delivery was cut when the manifest also
 # held 521, and adding its increment to a number that had reached the same value by a different
 # road is how two edits agree with each other and are wrong together.
-[ "$manifest_group_count" -eq 526 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 526"
+# 527 once a `tmux -CC` reveal had to name the tab: one group, and it is the first test in this
+# tree that stands on a measurement nothing in here can take — whether iTerm2 moves its selected
+# tab when tmux's active window changes, which is a fact about two running applications on
+# somebody's desktop. The group proves what follows from the answer (it does not), and the answer
+# itself is written down with its commands in `docs/interface.md`.
+# Counted from the manifest, not 526 plus one, for the reason the paragraph above gives.
+[ "$manifest_group_count" -eq 527 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 527"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
