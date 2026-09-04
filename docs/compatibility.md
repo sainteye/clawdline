@@ -16,7 +16,8 @@ being true.
 - The oldest that everything here works with is **2.1.224**. 4 rows below name a floor at all; the rest have none known.
 - Nothing refuses to run on an older one. What you lose is whichever of those rows names
   a floor you are under, and the second table below says which.
-- A **newer** Claude Code is the normal state of the world and is not warned about.
+- A **newer** Claude Code is the normal state of the world, and is only mentioned when a
+  newer Clawdline is out too — that is the one case where there is something to do about it.
 
 ## Tested against
 
@@ -35,9 +36,15 @@ release — not a supported range. A range nobody tried is how a compatibility t
 saying things that are not true. "Not applicable" is a release that predates this being
 able to see Codex at all, which is a different thing from nobody having written it down.
 
-**A newer Claude Code is the normal state of the world.** It updates itself and this does
-not, so nothing warns about it. Older than 2.1.260 does get a line in the menu bar, because
-then a missing feature really is missing rather than broken here.
+**Older than 2.1.260 gets a line in the menu bar**, because then a missing feature really is
+missing rather than broken here.
+
+**A newer Claude Code is the normal state of the world**, and for a long time nothing said
+anything about it: that assistant updates itself, this did not, and a line you cannot act on
+is a line you stop reading. Clawdline now checks once a day whether a release of its own is
+out, so that case has split in two. Ahead of what this was checked against with no newer
+Clawdline to move to is still silent. Ahead **and** a release waiting is one line naming all
+three versions, which needs both halves at once and so cannot become a weekly notice.
 
 ## What it depends on, and how you would know
 

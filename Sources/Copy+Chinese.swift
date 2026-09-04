@@ -862,6 +862,18 @@ struct TraditionalChinese: Copy {
     let menuQuit = "結束 Clawdline"
     let menuNoTarget = "（尚未偵測）"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest) 出了——你手上這個是 \(installed)"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed)；這個 build 是對 \(builtAgainst) 檢查的"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed)；這個 build 是對 \(builtAgainst) 檢查的——Clawdline \(release) 已經出了"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "\(combo) 註冊不起來" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """
@@ -1732,6 +1744,18 @@ struct SimplifiedChinese: Copy {
     let menuReload = "重新加载配置"
     let menuQuit = "退出 Clawdline"
     let menuNoTarget = "（尚未检测到）"
+
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest) 出了——你手上这个是 \(installed)"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed)；这个 build 是对 \(builtAgainst) 检查的"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed)；这个 build 是对 \(builtAgainst) 检查的——Clawdline \(release) 已经出了"
+        }
+    }
 
     func hotkeyFailedTitle(_ combo: String) -> String { "\(combo) 注册不上" }
     func hotkeyFailedBody(_ configPath: String) -> String {

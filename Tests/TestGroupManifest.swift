@@ -86,6 +86,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "knowing when somebody has finished, not just paused",
     "words that are not settled yet are not fully there",
     "which versions this was run against",
+    "a newer Clawdline is a fact this app can find out, or say it could not",
     "an image goes over as an image, not as a path",
     "remote images survive the terminal handoff",
     "giving the pasteboard back",
