@@ -204,14 +204,21 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # wrote down was that focused count added to the seal *its own* base carried, and that base is not
 # this one: `main` has moved to 8,549 since. The number below is what the merged tree's full run
 # reported, measured rather than computed. 8,549 + 34 = 8,583.
-expected_swift_receipt='8680 checks passed'
+# Folding the Feature table and naming each Feature's Project adds 17, in one group. 8,680 -> 8,697,
+# and the run that produced it was red: two checks in `OrchestratorLifecycleTests` failed on a
+# three-second `eventually` while the machine was busy, in a file this delivery does not touch. The
+# same compiled binary re-run five times reported `8697 checks passed` with zero failures every
+# time, which is what says the total is the tree's and the two failures were the clock's. A count
+# from a red run is still the count when the run reached the end of its roster; what a red run
+# cannot give you is a green.
+expected_swift_receipt='8697 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=6840
+expected_swift_receipt_witness=6857
 
 count_exact_receipt_lines() {
   local receipt=$1

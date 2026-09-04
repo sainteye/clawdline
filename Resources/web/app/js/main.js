@@ -13,7 +13,7 @@ import { applyStrings } from "./core/i18n.js";
 import { S } from "./core/state.js";
 import { els } from "./core/dom.js";
 import { Diagnostics } from "./core/layout-diagnostics.js";
-import { clockOf } from "./core/util.js";
+import { clockOf, tint } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
 import { api, useApi } from "./net/api.js";
 import "./net/build.js";
@@ -220,12 +220,19 @@ bindUsagePortfolio({
     "usage-insights": byId("usage-insights"), "usage-schedule-body": byId("usage-schedule-body"),
     "usage-unknown-schedule": byId("usage-unknown-schedule"), "usage-feature-body": byId("usage-feature-body"),
     "usage-feature-summary": byId("usage-feature-summary"),
+    "usage-feature-count": byId("usage-feature-count"), "usage-feature-fold": byId("usage-feature-fold"),
     "usage-unknown-feature": byId("usage-unknown-feature"),
     "usage-coverage-panel": byId("usage-coverage-panel"), "usage-coverage-list": byId("usage-coverage-list"),
     "usage-export-csv": byId("usage-export-csv"), "usage-export-json": byId("usage-export-json"),
     "usage-agent-list": byId("usage-agent-list"), "usage-more": byId("usage-more"),
     "usage-detail": byId("usage-detail"), "usage-detail-list": byId("usage-detail-list"),
     "usage-detail-close": byId("usage-detail-close")
+}, {
+    // The Feature table draws a Project's pixel mark, and it draws it with the page's one
+    // `drawIcon` rather than a second copy. It arrives through this seam rather than an import
+    // because `view/usage.js` deliberately imports nothing: `core/pixels.js` reaches `window` at
+    // module scope, and the Usage module is exercised whole in Node by Tests/web-usage-analytics.mjs.
+    drawIcon: drawIcon, tint: tint
 });
 
 // The controls module keeps its pure command selection importable without a browser. DOM and

@@ -464,6 +464,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "usage portfolio ranks canonical projects and keeps every unavailable dimension honest",
     "legacy managed-worktree Projects migrate through auditable append-only evidence",
     "usage portfolio accepts exactly one Feature head and leaves proposals or conflicts unknown",
+    "a Feature row names the Project its own row in the Projects table names",
     "a 60k-row SQLite-to-DTO usage query stays bounded and measured",
     "the SQLite analytics bound belongs to the complete matching query",
     "usage exports are spreadsheet-safe and JSON-lossless",

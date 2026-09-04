@@ -516,9 +516,10 @@ document.documentElement.className = "booting";
                     <p class="usage-unknown-note" id="usage-unknown-schedule"></p>
                 </section>
                 <section class="usage-panel" aria-labelledby="usage-feature-title">
-                    <div class="usage-section-head"><div><p class="usage-eyebrow">Accepted attribution only</p><h2 id="usage-feature-title">Features</h2></div></div>
+                    <div class="usage-section-head"><div><p class="usage-eyebrow">Accepted attribution only</p><h2 id="usage-feature-title">Features</h2></div><span class="usage-section-stat" id="usage-feature-count">—</span></div>
                     <p class="usage-summary" id="usage-feature-summary">A Feature appears only with one unambiguous accepted attribution head.</p>
-                    <div class="usage-table-wrap"><table aria-describedby="usage-feature-summary" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Feature</th><th scope="col" role="columnheader">Agent work</th><th scope="col" role="columnheader">Generated output</th><th scope="col" role="columnheader">Coverage</th></tr></thead><tbody id="usage-feature-body" role="rowgroup"></tbody></table></div>
+                    <div class="usage-table-wrap"><table aria-describedby="usage-feature-summary" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Project</th><th scope="col" role="columnheader">Feature</th><th scope="col" role="columnheader">Agent work</th><th scope="col" role="columnheader">Generated output</th><th scope="col" role="columnheader">Coverage</th></tr></thead><tbody id="usage-feature-body" role="rowgroup"></tbody></table></div>
+                    <button class="usage-fold" id="usage-feature-fold" type="button" aria-controls="usage-feature-body" aria-expanded="false" hidden></button>
                     <p class="usage-unknown-note" id="usage-unknown-feature"></p>
                 </section>
                 <section class="usage-panel" id="usage-coverage-panel" aria-labelledby="usage-coverage-title">

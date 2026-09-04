@@ -121,11 +121,50 @@ function classifiedFeatures() {
     },
     groups: [
       { id: "feature-4a2b", label: "Ledger repair", runs: 9, output: 41000,
+        project: { id: "project-1f3a", label: "clawdline",
+                   icon: { accent: "#2F6B5E", cells: [["#EEF6F4", null]] } },
         coverage: { status: "complete" } },
       { id: "feature-7c9d", label: "Schedule identity", runs: 4, output: 17500,
+        project: { id: null, label: "Unknown Project", reason: "mixed_project_scope" },
         coverage: { status: "partial", unknownOutputRuns: 3 } },
     ],
     unknown: { label: "Unknown Feature", runs: 13, output: 6200, unknownOutputRuns: 6,
+               reason: "no_unambiguous_accepted_head" },
+  };
+}
+
+// `count` Features, every field of every row different from every other: distinct labels, runs,
+// outputs, Project ids, Project names and accents. Two coincident values cannot tell two fields
+// apart, and this repository has shipped a green "every field survives" assertion that had
+// silently dropped three fields because two of them were equal.
+function foldableFeatures(count) {
+  const groups = [];
+  for (let index = 0; index < count; index += 1) {
+    const shade = (0x21 + index * 7).toString(16).padStart(2, "0");
+    groups.push({
+      id: `feature-${(index + 11).toString(16)}${index}`,
+      label: `Feature ${index + 1} of ${count}`,
+      runs: index + 3,
+      output: 90000 - index * 1234,
+      // The last row is the one with no mark: `drawIcon` refuses it and the cell must still
+      // carry that Project's name rather than an empty cell or a substitute mark.
+      project: index === count - 1
+        ? { id: null, label: "Unknown Project", reason: "mixed_project_scope" }
+        : { id: `project-${(index + 1) * 3}b`, label: `Project ${String.fromCharCode(65 + index)}`,
+            icon: { accent: `#${shade}5${index}9${index}c`.slice(0, 7),
+                    cells: [[`#a${shade}3f${index}1`.slice(0, 7), null]] } },
+      coverage: index % 2 === 0
+        ? { status: "complete" }
+        : { status: "partial", unknownOutputRuns: index + 1 },
+    });
+  }
+  return {
+    status: "available", automaticAttribution: true,
+    policy: "one_unambiguous_accepted_head",
+    classifier: { configured: true, id: "clawdline-local-feature-merger", version: "7",
+                  threshold: 0.75 },
+    groups,
+    unknown: { label: "Unknown Feature", runs: 37, output: 4100, unknownOutputRuns: 2,
                reason: "no_unambiguous_accepted_head" },
   };
 }
@@ -271,15 +310,16 @@ async function exerciseRealModule(usage, mainSource) {
   ]).map((item) => item.id), ["first", "late", "unknown"]);
 }
 
-function renderPortfolio(usage, mainSource, features) {
+function renderPortfolio(usage, mainSource, features, environment = {}) {
   const doc = new FakeDocument();
   const elements = fakeElements(doc, mainSource);
   const controller = usage.bindUsagePortfolio(elements, {
     document: doc,
     fetch: () => Promise.reject(new Error("unexpected request")),
+    ...environment,
   });
   controller.render(portfolioPayload(features), false);
-  return elements;
+  return { elements, controller };
 }
 
 function featureRows(elements) {
@@ -288,13 +328,21 @@ function featureRows(elements) {
   })));
 }
 
+// Which Feature rows a reader can actually see. Folding is not filtering: every row stays in the
+// DOM and every total still counts it, so what the fold changes is `hidden` and nothing else.
+function visibleFeatureLabels(elements) {
+  return elements["usage-feature-body"].children
+    .filter((row) => !row.hidden)
+    .map((row) => row.children[1] && row.children[1].textContent);
+}
+
 // Scenario: not configured keeps the honest sentence and never a table pretending
 function exerciseUnconfiguredFeatures(usage, mainSource) {
   const honest = "Automatic Feature attribution is not configured."
     + " Accepted manual or external assignments appear here.";
   for (const [name, features] of [["absent classifier object", undefined],
                                   ["classifier.configured false", unconfiguredFeatures()]]) {
-    const elements = renderPortfolio(usage, mainSource, features);
+    const { elements } = renderPortfolio(usage, mainSource, features);
     verify.equal(elements["usage-feature-summary"].textContent, honest,
                  `${name} must keep the unconfigured Feature sentence byte for byte`);
     const rows = featureRows(elements);
@@ -311,7 +359,7 @@ function exerciseUnconfiguredFeatures(usage, mainSource) {
 
 // Scenario: configured renders the real Feature table and keeps Unknown
 function exerciseConfiguredFeatures(usage, mainSource) {
-  const elements = renderPortfolio(usage, mainSource, classifiedFeatures());
+  const { elements } = renderPortfolio(usage, mainSource, classifiedFeatures());
   const summary = elements["usage-feature-summary"].textContent;
   verify.match(summary, /clawdline-local-feature-merger/,
                "a configured summary must name the classifier id");
@@ -323,15 +371,18 @@ function exerciseConfiguredFeatures(usage, mainSource) {
                + " Only one unambiguous accepted head enters a named total.",
                "a configured summary must not fall back to the unconfigured sentence");
   verify.deepEqual(featureRows(elements), [
-    [{ label: "Feature", text: "Ledger repair" },
+    [{ label: "Project", text: "clawdline" },
+     { label: "Feature", text: "Ledger repair" },
      { label: "Agent work", text: "9" },
      { label: "Generated output", text: "41,000" },
      { label: "Coverage", text: "Complete" }],
-    [{ label: "Feature", text: "Schedule identity" },
+    [{ label: "Project", text: "Unknown Project" },
+     { label: "Feature", text: "Schedule identity" },
      { label: "Agent work", text: "4" },
      { label: "Generated output", text: "17,500" },
      { label: "Coverage", text: "Partial · 3 unknown output" }],
-  ], "two accepted Features with different labels, runs and outputs must both render");
+  ], "two accepted Features with different labels, runs and outputs must both render, "
+     + "each naming the Project it belongs to");
   verify.equal(elements["usage-unknown-feature"].textContent,
                "13 runs remain Unknown Feature. Proposals, rejections,"
                + " and conflicting accepted heads never enter a named total.",
@@ -344,7 +395,7 @@ function exerciseConfiguredFeatures(usage, mainSource) {
   barren.groups = [];
   barren.unknown = { label: "Unknown Feature", runs: 21, output: 8300, unknownOutputRuns: 5,
                      reason: "no_unambiguous_accepted_head" };
-  const empty = renderPortfolio(usage, mainSource, barren);
+  const { elements: empty } = renderPortfolio(usage, mainSource, barren);
   verify.deepEqual(featureRows(empty),
                    [[{ label: "Features",
                        text: "No Feature reached the acceptance threshold in this range" }]],
@@ -353,6 +404,112 @@ function exerciseConfiguredFeatures(usage, mainSource) {
                "21 runs remain Unknown Feature. Proposals, rejections,"
                + " and conflicting accepted heads never enter a named total.",
                "an empty configured table must still report its Unknown Feature runs");
+  verify.equal(empty["usage-feature-count"].textContent, "0 Features",
+               "an empty table still says how many Features there are, which is none");
+  verify.equal(empty["usage-feature-fold"].hidden, true,
+               "there is nothing to fold when there are no Feature rows");
+}
+
+// Scenario: the table folds to ten rows, says how many it is hiding, and expands back
+function exerciseFeatureFold(usage, mainSource) {
+  const total = 12;
+  const { elements } = renderPortfolio(usage, mainSource, foldableFeatures(total));
+  const everyLabel = foldableFeatures(total).groups.map((group) => group.label);
+
+  verify.equal(featureRows(elements).length, total,
+               "folding is not filtering: every Feature row stays in the table");
+  verify.deepEqual(visibleFeatureLabels(elements), everyLabel.slice(0, 10),
+                   "a folded Feature table shows the first ten rows and no more");
+  verify.equal(elements["usage-feature-count"].textContent, "12 Features · 2 hidden",
+               "a reader must never have to expand the table to learn how many rows it has");
+  verify.equal(elements["usage-feature-fold"].hidden, false,
+               "twelve Features must offer a control that reaches the other two");
+  verify.equal(elements["usage-feature-fold"].textContent, "Show 2 more",
+               "the collapsed control names the number of rows it is hiding");
+  verify.equal(elements["usage-feature-fold"].getAttribute("aria-expanded"), "false");
+  verify.equal(elements["usage-feature-fold"].getAttribute("aria-controls"), null,
+               "aria-controls belongs to the markup, so nothing writes it at render time");
+  const unknownLine = "37 runs remain Unknown Feature. Proposals, rejections,"
+    + " and conflicting accepted heads never enter a named total.";
+  verify.equal(elements["usage-unknown-feature"].textContent, unknownLine,
+               "the Unknown Feature line is outside the fold and visible while folded");
+  verify.equal(elements["usage-unknown-feature"].hidden, false,
+               "the honest remainder is never one of the rows the fold puts away");
+
+  elements["usage-feature-fold"].click();
+  verify.deepEqual(visibleFeatureLabels(elements), everyLabel,
+                   "expanding the fold reveals every remaining Feature row");
+  verify.equal(elements["usage-feature-count"].textContent, "12 Features",
+               "an expanded table hides nothing, and says so by naming no hidden rows");
+  verify.equal(elements["usage-feature-fold"].textContent, "Show the first 10",
+               "the expanded control offers the way back");
+  verify.equal(elements["usage-feature-fold"].getAttribute("aria-expanded"), "true");
+  verify.equal(elements["usage-unknown-feature"].textContent, unknownLine,
+               "the Unknown Feature line is unchanged by expanding the fold");
+
+  elements["usage-feature-fold"].click();
+  verify.deepEqual(visibleFeatureLabels(elements), everyLabel.slice(0, 10),
+                   "the control collapses as well as expands");
+
+  const short = renderPortfolio(usage, mainSource, foldableFeatures(10)).elements;
+  verify.equal(short["usage-feature-count"].textContent, "10 Features",
+               "exactly ten Features hides nothing, so the count names no hidden rows");
+  verify.equal(short["usage-feature-fold"].hidden, true,
+               "a table that fits offers no fold control");
+  verify.equal(visibleFeatureLabels(short).length, 10);
+}
+
+// Scenario: the Project column draws the page's own pixel mark, and never a substitute
+function exerciseFeatureProjectMarks(usage, mainSource) {
+  const total = 12;
+  const drawn = [];
+  const tinted = [];
+  const { elements } = renderPortfolio(usage, mainSource, foldableFeatures(total), {
+    // `false` for the last row, which is the Project this payload has no mark for — exactly what
+    // the real `drawIcon` answers for an absent `cells`, and the branch that must reach the CSS
+    // placeholder rather than draw something else.
+    drawIcon: (canvas, icon, cellPx) => {
+      drawn.push({ tag: canvas.tagName, cellPx, accent: icon && icon.accent });
+      return !!(icon && icon.cells);
+    },
+    tint: (hex) => { tinted.push(hex); return `tinted(${hex})`; },
+  });
+
+  verify.equal(drawn.length, total, "every Feature row asks the page to draw its Project's mark");
+  verify.ok(drawn.every((call) => call.tag === "CANVAS"),
+            "the mark is drawn on a canvas, the one surface drawIcon knows how to write");
+  verify.ok(drawn.every((call) => call.cellPx === 3),
+            "every mark is drawn at one cell size, so the column does not stagger");
+  verify.equal(new Set(drawn.map((call) => call.accent)).size, total,
+               "each row was handed its own Project's icon, not a neighbour's");
+
+  const rows = elements["usage-feature-body"].children;
+  const first = rows[0].children[0].children[0];
+  verify.equal(first.children[0].className, "usage-feature-project-mark",
+               "a Project with a mark carries no placeholder class");
+  verify.equal(first.children[1].textContent, "Project A",
+               "the Project cell carries that Project's name beside its mark");
+  verify.equal(first.children[1].style.color, `tinted(${tinted[0]})`,
+               "a Project's name is tinted with that Project's own accent");
+  verify.equal(tinted[0], foldableFeatures(total).groups[0].project.icon.accent);
+
+  const last = rows[total - 1].children[0].children[0];
+  verify.equal(last.children[0].className, "usage-feature-project-mark none",
+               "a Project with no mark falls back to the CSS placeholder");
+  verify.equal(last.children[1].textContent, "Unknown Project",
+               "a Project with no mark still renders its name");
+  verify.equal(last.children[1].style.color, "",
+               "there is no accent to tint an unmarked Project's name with");
+  verify.equal(tinted.length, total - 1, "tint is asked only about Projects that have a mark");
+
+  // The page has exactly one implementation of both, and this module reaches them through the
+  // seam `main.js` fills in. A second drawing path is the thing this assertion exists to refuse.
+  verify.match(mainSource, /import \{[^}]*\bdrawIcon\b[^}]*\} from "\.\/core\/pixels\.js"/,
+               "main.js must draw Feature marks with the page's own drawIcon");
+  verify.match(mainSource, /import \{[^}]*\btint\b[^}]*\} from "\.\/core\/util\.js"/,
+               "main.js must tint Feature Projects with the page's own tint");
+  verify.match(mainSource, /bindUsagePortfolio\(\{[\s\S]*drawIcon: drawIcon, tint: tint/,
+               "main.js must hand both to bindUsagePortfolio");
 }
 
 function guard(tool, options = {}) {
@@ -390,9 +547,25 @@ async function main() {
   for (const id of ["usage-project-list", "usage-project-detail", "usage-project-trend",
                     "usage-project-mix", "usage-project-lineage", "usage-project-recent",
                     "usage-schedule-body", "usage-feature-body", "usage-unknown-feature",
+                    "usage-feature-count", "usage-feature-fold",
                     "usage-insights", "usage-agent-list", "usage-coverage-panel"]) {
     verify.match(page, new RegExp(`id="${id}"`), `Portfolio DOM must contain #${id}`);
   }
+  verify.match(page, /<th scope="col" role="columnheader">Project<\/th><th scope="col" role="columnheader">Feature<\/th>/,
+               "the Feature table names its Project column, first and before the Feature name");
+  verify.match(page, /id="usage-feature-fold"[^>]*aria-controls="usage-feature-body"/,
+               "the fold control must say in the markup which rows it folds");
+  verify.match(css, /\.usage-feature-project-mark\.none \{[^}]*background: #202028/,
+               "an unmarked Project falls back to the same placeholder the session list uses");
+  // The fold sets `hidden` on rows, and the card breakpoints give `tr` a `display` of their own.
+  // A class selector outranks the browser's `[hidden] { display: none }`, so without a rule of at
+  // least that specificity the fold hides nothing below 1280px — which no fake DOM can notice.
+  verify.match(css, /^\.usage-analytics tbody tr\[hidden\] \{ display: none; \}$/m,
+               "a folded row must be hidden at every width, over the card breakpoints' own display");
+  const foldRule = css.indexOf(".usage-analytics tbody tr[hidden]");
+  const firstCardDisplay = css.search(/^\s+\.usage-project-table tr,$/m);
+  verify.ok(foldRule >= 0 && firstCardDisplay >= 0,
+            "both halves of that specificity argument must still be in the sheet");
   verify.match(page, /role="table"[\s\S]*role="rowgroup"[\s\S]*role="columnheader"/,
                "card breakpoints must retain explicit table semantics");
   verify.match(css, /@media \(max-width: 1280px\)[\s\S]*\.usage-project-table td::before[\s\S]*color: var\(--dim\); font-size: 12px/,
@@ -445,6 +618,8 @@ async function main() {
   await exerciseRealModule(usage, mainSource);
   exerciseUnconfiguredFeatures(usage, mainSource);
   exerciseConfiguredFeatures(usage, mainSource);
+  exerciseFeatureFold(usage, mainSource);
+  exerciseFeatureProjectMarks(usage, mainSource);
 
   const stub = join(work, "usage-stub.mjs");
   writeFileSync(stub, `

@@ -176,6 +176,21 @@ enum ProjectIcon {
         return Int(h % 0x7fff_ffff)
     }
 
+    /// The mark as colours rather than as a picture: `{"accent": "#RRGGBB", "cells": [[…]]}`.
+    ///
+    /// One implementation, because two surfaces send it now. `RemoteServer.json(of:)` puts it on
+    /// a session, a stack row and a schedule; `UsageQueryService` puts it on a Feature row. Two
+    /// copies of the dictionary literal would be two shapes the moment either grew a field, and
+    /// the page has one `drawIcon` reading both.
+    static func gridJSON(_ grid: Grid) -> [String: Any] {
+        [
+            "accent": hex(grid.accent),
+            "cells": grid.cells.map { row in
+                row.map { $0.map { hex($0) as Any } ?? (NSNull() as Any) }
+            },
+        ]
+    }
+
     /// The other direction, for anything that has to hand a colour to something that is not
     /// AppKit — a browser, a JSON payload. Converted into sRGB first: a colour that came from a
     /// catalog or a display profile has components that mean nothing until they are in a space

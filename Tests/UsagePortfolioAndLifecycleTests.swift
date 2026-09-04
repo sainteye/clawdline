@@ -422,6 +422,157 @@ group("usage portfolio accepts exactly one Feature head and leaves proposals or 
                                                        dimension: .feature)?.valueID)
 }
 
+group("a Feature row names the Project its own row in the Projects table names") {
+    let at = ISO8601DateFormatter().date(from: "2026-08-22T09:00:00Z")!
+    // A home-directory path on purpose: the one thing this payload must never contain is the
+    // filesystem path, and a fixture under /private could not tell a leak from a coincidence.
+    let widget = "/Users/tester/code/widget"
+    let gadget = "/private/acme/gadget"
+    // Every field differs from every other, including the two icons: coincident values cannot
+    // tell two fields apart, and an assertion that reads the wrong one then passes.
+    let widgetCells: [[Any]] = [["#445566", NSNull()], [NSNull(), "#778899"]]
+    let gadgetCells: [[Any]] = [[NSNull(), "#DDEEFF"]]
+    let icons: [String: [String: Any]] = [
+        widget: ["accent": "#112233", "cells": widgetCells],
+        gadget: ["accent": "#AABBCC", "cells": gadgetCells],
+    ]
+
+    var widgetOne = analyticsRow("ledger-a", at: at, project: widget,
+                                 counts: .init(inputNew: 11, output: 310, cacheRead: 12,
+                                               cacheWrite: 13))
+    widgetOne.depth = Orchestrator.depthFloor
+    var widgetTwo = analyticsRow("ledger-b", at: at.addingTimeInterval(60), project: widget,
+                                 counts: .init(inputNew: 14, output: 290, cacheRead: 15,
+                                               cacheWrite: 16))
+    widgetTwo.depth = Orchestrator.depthFloor
+    var gadgetOne = analyticsRow("schedule-a", at: at.addingTimeInterval(120), project: gadget,
+                                 counts: .init(inputNew: 17, output: 180, cacheRead: 18,
+                                               cacheWrite: 19))
+    gadgetOne.depth = Orchestrator.depthFloor
+    var nameless = analyticsRow("nameless-a", at: at.addingTimeInterval(180), project: nil,
+                                counts: .init(inputNew: 20, output: 120, cacheRead: 21,
+                                              cacheWrite: 22))
+    nameless.depth = Orchestrator.depthFloor
+    // Two rows in two different Projects sharing one accepted Feature head. A Feature id is
+    // Project-scoped so this should not arise; the point is that when it does the answer is a
+    // refusal rather than whichever Project happened to be read first.
+    var mixedWidget = analyticsRow("mixed-a", at: at.addingTimeInterval(240), project: widget,
+                                   counts: .init(inputNew: 23, output: 70, cacheRead: 24,
+                                                 cacheWrite: 25))
+    mixedWidget.depth = Orchestrator.depthFloor
+    var mixedGadget = analyticsRow("mixed-b", at: at.addingTimeInterval(300), project: gadget,
+                                   counts: .init(inputNew: 26, output: 60, cacheRead: 27,
+                                                 cacheWrite: 28))
+    mixedGadget.depth = Orchestrator.depthFloor
+
+    let accepted: [String: UsageLedger.AcceptedAttribution] = [
+        "ledger-a": .init(id: "feature-ledger", label: "Ledger repair"),
+        "ledger-b": .init(id: "feature-ledger", label: "Ledger repair"),
+        "schedule-a": .init(id: "feature-schedule", label: "Schedule identity"),
+        "nameless-a": .init(id: "feature-nameless", label: "Nameless work"),
+        "mixed-a": .init(id: "feature-mixed", label: "Mixed scope"),
+        "mixed-b": .init(id: "feature-mixed", label: "Mixed scope"),
+    ]
+    let payload = UsageQueryService(
+        rows: { [widgetOne, widgetTwo, gadgetOne, nameless, mixedWidget, mixedGadget] },
+        acceptedFeatures: { accepted },
+        projectIcon: { icons[$0] }
+    ).query(.init(from: "2026-08-22", to: "2026-08-22", timezoneID: "UTC"),
+            now: at.addingTimeInterval(900)).payload
+    let portfolio = payload["portfolio"] as? [String: Any]
+    let features = portfolio?["features"] as? [String: Any]
+    let groups = features?["groups"] as? [[String: Any]] ?? []
+    let projects = portfolio?["projects"] as? [[String: Any]] ?? []
+    func project(of feature: String) -> [String: Any] {
+        (groups.first { $0["id"] as? String == feature })?["project"] as? [String: Any] ?? [:]
+    }
+    func projectRow(label: String) -> [String: Any]? {
+        projects.first { $0["label"] as? String == label }
+    }
+    /// A mark as one comparable string, so a wrong mark says which one it was rather than
+    /// "not equal". `·` is a transparent cell.
+    func markOf(_ project: [String: Any]) -> String {
+        guard let icon = project["icon"] as? [String: Any] else { return "no icon" }
+        let cells = (icon["cells"] as? [[Any]] ?? []).map { row in
+            row.map { $0 as? String ?? "·" }.joined(separator: ",")
+        }.joined(separator: "/")
+        return (icon["accent"] as? String ?? "no accent") + " " + cells
+    }
+
+    expect("every accepted Feature is present", groups.count, 4)
+    check("the complete Feature payload is JSON serializable",
+          JSONSerialization.isValidJSONObject(payload))
+
+    let ledgerProject = project(of: "feature-ledger")
+    expect("a Feature names its Project by that Project's final name",
+           ledgerProject["label"] as? String, "widget")
+    expect("the Feature's Project id is the same string the Projects table carries",
+           ledgerProject["id"] as? String, projectRow(label: "widget")?["id"] as? String)
+    check("that shared id is a real id and not two absent values agreeing",
+          (ledgerProject["id"] as? String)?.hasPrefix("project-") == true)
+    expect("the Project's mark crosses as colours, resolved from the canonical identity",
+           markOf(ledgerProject), "#112233 #445566,·/·,#778899")
+    check("a Feature group scoped to one Project never claims mixed scope",
+          ledgerProject["reason"] == nil)
+
+    let scheduleProject = project(of: "feature-schedule")
+    expect("a second Project's Feature gets that Project's name",
+           scheduleProject["label"] as? String, "gadget")
+    expect("and that Project's own mark, not its neighbour's",
+           markOf(scheduleProject), "#AABBCC ·,#DDEEFF")
+    check("two Projects do not share one id",
+          (ledgerProject["id"] as? String) != (scheduleProject["id"] as? String))
+
+    let namelessProject = project(of: "feature-nameless")
+    expect("a Feature with no canonical Project key is Unknown Project",
+           namelessProject["label"] as? String, "Unknown Project")
+    expect("and joins the Projects table's own Unknown row",
+           namelessProject["id"] as? String, projectRow(label: "Unknown Project")?["id"] as? String)
+    check("an unknown Project carries no icon key at all, rather than an empty one",
+          namelessProject["icon"] == nil && namelessProject.keys.contains("icon") == false)
+
+    let mixedProject = project(of: "feature-mixed")
+    check("rows that disagree about their Project produce a refusal, never a guess",
+          mixedProject["id"] is NSNull
+            && mixedProject["label"] as? String == "Unknown Project"
+            && mixedProject["reason"] as? String == "mixed_project_scope"
+            && mixedProject["icon"] == nil)
+
+    // Public analytics exposes the canonical Project's final name and never the filesystem path
+    // (docs/usage-attribution.md). The icon is derived from that path, which is exactly the seam
+    // where the path could start travelling with it, so the whole subtree is read rather than
+    // the two keys somebody remembered to check.
+    func everyString(in value: Any) -> [String] {
+        if let text = value as? String { return [text] }
+        if let dictionary = value as? [String: Any] {
+            return Array(dictionary.keys) + dictionary.values.flatMap(everyString(in:))
+        }
+        if let list = value as? [Any] { return list.flatMap(everyString(in:)) }
+        return []
+    }
+    let featureStrings = everyString(in: features ?? [:])
+    var leaked = features ?? [:]
+    leaked["identityForThisCheckOnly"] = ["evidence": [widget]]
+    check("this walk finds a path when one is there, so its silence is a fact",
+          everyString(in: leaked).contains(widget) && !featureStrings.contains(widget))
+    check("no value anywhere in the features payload is or contains a filesystem path",
+          featureStrings.allSatisfy {
+              !$0.contains("/Users/") && !$0.contains(widget) && !$0.contains(gadget)
+          },
+          "leaked: \(featureStrings.filter { $0.contains("/Users/") || $0.contains(gadget) })")
+
+    let unshaped = UsageQueryService(
+        rows: { [widgetOne] }, acceptedFeatures: { ["ledger-a": accepted["ledger-a"]!] }
+    ).query(.init(from: "2026-08-22", to: "2026-08-22", timezoneID: "UTC"),
+            now: at.addingTimeInterval(900)).payload
+    let unshapedProject = (((unshaped["portfolio"] as? [String: Any])?["features"]
+        as? [String: Any])?["groups"] as? [[String: Any]])?.first?["project"] as? [String: Any]
+    check("a Mac with no mark for a Project still names it, and simply sends no icon",
+          unshapedProject?["label"] as? String == "widget"
+            && unshapedProject?["icon"] == nil
+            && unshapedProject?["reason"] == nil)
+}
+
 group("a 60k-row SQLite-to-DTO usage query stays bounded and measured") {
     let store = freshUsageLedger()
     defer { forgetUsageLedger(store) }

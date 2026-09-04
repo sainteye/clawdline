@@ -146,6 +146,21 @@
 .usage-empty { border: 1px dashed var(--line); border-radius: 11px; padding: 14px; color: var(--faint); font-size: 12px; }
 
 .usage-secondary-grid { display: grid; grid-template-columns: 1.15fr 1.15fr .7fr; gap: 12px; align-items: start; margin-top: 12px; }
+
+/* A Feature's Project: the same pixel mark the session list draws, at the size a table row can
+   carry, and the same placeholder when there is no mark to draw. */
+.usage-feature-project { min-width: 0; display: inline-flex; align-items: center; gap: 6px; }
+.usage-feature-project-mark { flex: 0 0 auto; display: block; image-rendering: pixelated; opacity: .9; }
+.usage-feature-project-mark.none { width: 18px; height: 10px; border-radius: 2px; background: #202028; }
+.usage-feature-project-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: 12px; }
+.usage-fold { min-height: 34px; margin-top: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 0 11px; color: var(--accent); font-size: 12px; }
+.usage-fold:hover { border-color: var(--accent-ed); background: var(--accent-in); }
+/* A folded row is hidden at every width. The card breakpoints below give `tr` a `display` of
+   their own, and a class selector outranks the browser's own `[hidden] { display: none }` — so
+   without this the fold worked on a desk and did nothing at all on a phone, which is the width
+   the fold is most for. Kept here rather than repeated inside each media block: one rule cannot
+   be updated in three places and get it right in two. */
+.usage-analytics tbody tr[hidden] { display: none; }
 .usage-unknown-note { min-height: 18px; margin: 10px 0 0; border-left: 2px solid var(--warn); padding-left: 8px; color: var(--dim); font-size: 11px; }
 .usage-coverage-list { display: grid; gap: 8px; margin: 12px 0 16px; padding: 0; list-style: none; }
 .usage-coverage-list li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 7px; color: var(--dim); font-size: 11px; }

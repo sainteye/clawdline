@@ -309,6 +309,57 @@ function renderScheduledWork(context, scheduled) {
         : "Every scheduled run in this range has explicit schedule identity.";
 }
 
+/* How many Feature rows are shown before the fold. A client-side fold and deliberately not
+   server pagination: the whole group list is already in this payload, bounded by the same scan
+   ceiling as everything else on the page, so a cursor would buy one round trip and a second
+   source of truth for a list of a few dozen. Do not "fix" this into pagination. */
+var FEATURE_FOLD = 10;
+
+/* The Project a Feature belongs to: its pixel mark and its name, drawn with the page's one
+   `drawIcon` and tinted the way a session row's title is. `drawIcon` returns false when there is
+   no mark, which is the CSS placeholder path — nothing here draws a substitute for a mark that
+   does not exist. `project.id` is the same string that Project's row in the Projects table
+   carries, which is what lets a reader join the two tables; the label is the canonical Project's
+   final name, and there is deliberately no path anywhere in this payload to show. */
+function featureProjectCell(context, row, project) {
+    var doc = context.document;
+    var cell = doc.createElement("td");
+    cell.setAttribute("role", "cell");
+    cell.dataset.label = "Project";
+    var wrap = doc.createElement("span"), mark = doc.createElement("canvas");
+    wrap.className = "usage-feature-project";
+    mark.setAttribute("aria-hidden", "true");
+    mark.className = "usage-feature-project-mark"
+        + (context.drawIcon(mark, project.icon, 3) ? "" : " none");
+    wrap.appendChild(mark);
+    var name = appendText(doc, wrap, "span", project.label || "Unknown Project",
+                          "usage-feature-project-name");
+    name.style.color = project.icon ? context.tint(project.icon.accent) : "";
+    cell.appendChild(wrap);
+    row.appendChild(cell);
+    return cell;
+}
+
+/* Fold the rendered rows to the first `FEATURE_FOLD`, and say how many are hidden while they
+   are hidden. Folding is not filtering: every row stays in the DOM and every total on the page
+   still counts it, so the count beside the heading is the whole list in both states. */
+function applyFeatureFold(context, total) {
+    var elements = context.elements, expanded = context.state.featuresExpanded === true;
+    var rows = elements["usage-feature-body"].children;
+    var hidden = Math.max(0, total - FEATURE_FOLD);
+    var foldable = hidden > 0;
+    for (var i = 0; i < rows.length; i++) rows[i].hidden = foldable && !expanded && i >= FEATURE_FOLD;
+    elements["usage-feature-count"].textContent = formatUsageNumber(total)
+        + (total === 1 ? " Feature" : " Features")
+        + (foldable && !expanded ? " · " + formatUsageNumber(hidden) + " hidden" : "");
+    var control = elements["usage-feature-fold"];
+    control.hidden = !foldable;
+    control.setAttribute("aria-expanded", String(expanded));
+    control.textContent = expanded
+        ? "Show the first " + formatUsageNumber(FEATURE_FOLD)
+        : "Show " + formatUsageNumber(hidden) + " more";
+}
+
 function renderFeatures(context, features) {
     var doc = context.document, elements = context.elements, body = elements["usage-feature-body"];
     /* An absent classifier object is "not configured", never a throw and never a fuller table:
@@ -321,9 +372,11 @@ function renderFeatures(context, features) {
             + " proposes; the policy accepts at confidence ≥ " + classifier.threshold
             + ". Only one unambiguous accepted head enters a named total."
         : "Automatic Feature attribution is not configured. Accepted manual or external assignments appear here.";
-    (features.groups || []).forEach(function (item) {
+    var groups = features.groups || [];
+    groups.forEach(function (item) {
         var row = doc.createElement("tr");
         row.setAttribute("role", "row");
+        featureProjectCell(context, row, item.project || {});
         tableCell(doc, row, "Feature", item.label || item.id);
         tableCell(doc, row, "Agent work", formatUsageNumber(item.runs), "usage-value");
         tableCell(doc, row, "Generated output", formatUsageNumber(item.output), "usage-value usage-value-primary");
@@ -336,9 +389,12 @@ function renderFeatures(context, features) {
             : "No accepted Feature attribution in this range";
         var empty = doc.createElement("tr"), cell = tableCell(doc, empty, "Features", emptyText, "usage-empty");
         empty.setAttribute("role", "row");
-        cell.colSpan = 4;
+        cell.colSpan = 5;
         body.appendChild(empty);
     }
+    applyFeatureFold(context, groups.length);
+    /* The Unknown Feature line is the honest remainder and is never inside the fold: it is not
+       one of the ranked rows, it is what the ranked rows do not account for. */
     var unknown = features.unknown || {};
     elements["usage-unknown-feature"].textContent = formatUsageNumber(unknown.runs || 0)
         + " runs remain Unknown Feature. Proposals, rejections, and conflicting accepted heads never enter a named total.";
@@ -485,8 +541,16 @@ export function bindUsagePortfolio(elements, environment) {
     var doc = environment.document || document;
     var request = environment.fetch || fetch;
     var state = { data: null, rows: [], cursor: null, loading: false, pending: null,
-                  view: "overview", exporting: false, selectedProject: null };
-    var context = { document: doc, elements: elements, state: state };
+                  view: "overview", exporting: false, selectedProject: null,
+                  featuresExpanded: false };
+    /* This module imports nothing on purpose — it is exercised whole in Node — so the two things
+       it needs from the page's drawing helpers arrive here. `main.js` passes the real `drawIcon`
+       from `core/pixels.js` and the real `tint` from `core/util.js`; the fallbacks below are what
+       a test gets when it does not care about marks, and they draw nothing rather than draw a
+       second kind of mark. */
+    var context = { document: doc, elements: elements, state: state,
+                    drawIcon: environment.drawIcon || function () { return false; },
+                    tint: environment.tint || function () { return ""; } };
 
     function params(cursor) {
         var query = new URLSearchParams();
@@ -643,6 +707,13 @@ export function bindUsagePortfolio(elements, environment) {
     });
     elements["usage-more"].addEventListener("click", function () {
         if (state.cursor) load(state.cursor, true);
+    });
+    /* Expanding and collapsing the Feature table touches nothing but the rows already rendered:
+       no request, no re-render, and the count beside the heading stays the whole list. */
+    elements["usage-feature-fold"].addEventListener("click", function () {
+        state.featuresExpanded = !state.featuresExpanded;
+        applyFeatureFold(context, ((state.data && state.data.portfolio
+            && state.data.portfolio.features && state.data.portfolio.features.groups) || []).length);
     });
     elements["usage-export-csv"].addEventListener("click", function () { downloadExport("csv"); });
     elements["usage-export-json"].addEventListener("click", function () { downloadExport("json"); });

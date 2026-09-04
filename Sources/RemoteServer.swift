@@ -5016,14 +5016,9 @@ final class RemoteServer: @unchecked Sendable {
     /// A PNG would have been fewer bytes and a worse answer: the client draws these at whatever
     /// size it is drawing at, on a screen whose pixel ratio this end does not know, and a pixel
     /// mark that has been resampled is not a pixel mark any more.
-    private func json(of grid: ProjectIcon.Grid) -> [String: Any] {
-        [
-            "accent": ProjectIcon.hex(grid.accent),
-            "cells": grid.cells.map { row in
-                row.map { $0.map { ProjectIcon.hex($0) as Any } ?? (NSNull() as Any) }
-            },
-        ]
-    }
+    /// The shaping itself is `ProjectIcon.gridJSON`, because the usage payload sends the same
+    /// grid and two literals would be two shapes the first time either grew a field.
+    private func json(of grid: ProjectIcon.Grid) -> [String: Any] { ProjectIcon.gridJSON(grid) }
 
     /// One agent's conversation, plus the agent itself so the page has something to put in the
     /// header while it is reading it.

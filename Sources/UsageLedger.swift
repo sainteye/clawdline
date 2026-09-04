@@ -3133,12 +3133,22 @@ final class UsageQueryService {
     /// Whether a Feature producer is configured, injected the way `readScheduleLabels` is: a test
     /// says what the setting is without reaching for the person's own config file.
     private let readFeatureClassifier: () -> UsageLedger.FeatureClassifierState
+    /// A Project's pixel mark, keyed by the canonical identity `resolveProject` returned, and
+    /// injected for the same reason the two above are: a test must be able to give a Feature row
+    /// an icon without `~/.claude/project-icons.json` existing or saying anything in particular.
+    ///
+    /// **The identity goes in and only colours come out.** `docs/usage-attribution.md` says public
+    /// analytics exposes the canonical Project's final name and never the filesystem path, and
+    /// this seam is where that could quietly stop being true — so the path is the argument, never
+    /// part of the answer.
+    private let readProjectIcon: (String) -> [String: Any]?
     private let encodeJSON: ([String: Any]) -> Data?
 
     init() {
         readRows = { UsageLedger.shared.analyticsRead($0) }
         readScheduleLabels = { Orchestrator.usageScheduleLabels() }
         readFeatureClassifier = { UsageLedger.featureClassifierState() }
+        readProjectIcon = { ProjectIcon.grid(forCwd: $0).map(ProjectIcon.gridJSON) }
         encodeJSON = Self.jsonEncoderForTesting ?? {
             try? JSONSerialization.data(withJSONObject: $0,
                                         options: [.sortedKeys, .withoutEscapingSlashes])
@@ -3154,6 +3164,7 @@ final class UsageQueryService {
          featureClassifier: @escaping () -> UsageLedger.FeatureClassifierState = {
              .notConfigured
          },
+         projectIcon: @escaping (String) -> [String: Any]? = { _ in nil },
          jsonEncoder: @escaping ([String: Any]) -> Data? = {
              try? JSONSerialization.data(withJSONObject: $0,
                                          options: [.sortedKeys, .withoutEscapingSlashes])
@@ -3167,6 +3178,7 @@ final class UsageQueryService {
         }
         readScheduleLabels = scheduleLabels
         readFeatureClassifier = featureClassifier
+        readProjectIcon = projectIcon
         encodeJSON = jsonEncoder
     }
 
@@ -3360,6 +3372,7 @@ final class UsageQueryService {
             previousAcceptedProjects: previousAcceptedProjects, calendar: calendar,
             scheduleLabels: readScheduleLabels(),
             featureClassifier: readFeatureClassifier(),
+            projectIcon: readProjectIcon,
             query: query, priorRange: priorRange,
             comparisonTruncated: truncated || previousTruncated)
         if truncated {
@@ -3599,6 +3612,16 @@ final class UsageQueryService {
         return label.isEmpty ? "Unnamed Project" : label
     }
 
+    /// Which bucket of the Projects table a row falls in. A single implementation because the
+    /// Feature table now has to land in the same bucket as the Projects table for the same row —
+    /// the two are joined by the id below, and a second spelling of "unknown" would join nothing.
+    private static func projectGroupKey(
+        _ row: UsageLedger.Row,
+        acceptedProjects: [String: UsageLedger.AcceptedAttribution]
+    ) -> String {
+        projectIdentity(row, acceptedProjects: acceptedProjects).identity ?? "\u{0}unknown-project"
+    }
+
     private static func groupedProjects(
         _ rows: [UsageLedger.Row],
         acceptedProjects: [String: UsageLedger.AcceptedAttribution]
@@ -3609,7 +3632,7 @@ final class UsageQueryService {
         for row in rows {
             let accepted = acceptedProjects[row.intervalKey]
             let evidence = projectIdentity(row, acceptedProjects: acceptedProjects)
-            let key = evidence.identity ?? "\u{0}unknown-project"
+            let key = projectGroupKey(row, acceptedProjects: acceptedProjects)
             if groups[key] == nil { groups[key] = (evidence.identity, accepted?.label, [], []) }
             if let reason = evidence.reason { groups[key]?.reasons.insert(reason) }
             groups[key]?.rows.append(row)
@@ -3845,8 +3868,45 @@ final class UsageQueryService {
         ]
     }
 
+    /// One Project exactly as a Feature row may name it.
+    ///
+    /// Built from the Projects table's own grouping rather than re-derived, so `id` is the same
+    /// string that Project's row in `projects[]` carries and a reader can join the two tables.
+    /// The identity itself is not a field here: only the id, the final name, and colours.
+    private struct FeatureProjectScope {
+        var id: String
+        var label: String
+        var icon: [String: Any]?
+    }
+
+    /// Which Project a Feature belongs to, or the honest refusal.
+    ///
+    /// A Feature id is computed inside a Project scope, so every row in one group should resolve
+    /// to the same Project — but *should* is not a thing to render. When the rows disagree the
+    /// answer is `mixed_project_scope` and no id at all: a Feature attributed to the wrong
+    /// Project is worse than a Feature attributed to none.
+    private static func featureProject(
+        _ rows: [UsageLedger.Row],
+        acceptedProjects: [String: UsageLedger.AcceptedAttribution],
+        scopes: [String: FeatureProjectScope]
+    ) -> [String: Any] {
+        let keys = Set(rows.map { projectGroupKey($0, acceptedProjects: acceptedProjects) })
+        // The lookup cannot independently fail: `scopes` was built from these same rows by this
+        // same key, so disagreement is the only way past this guard.
+        guard keys.count == 1, let key = keys.first, let scope = scopes[key] else {
+            return ["id": NSNull(), "label": "Unknown Project", "reason": "mixed_project_scope"]
+        }
+        var payload: [String: Any] = ["id": scope.id, "label": scope.label]
+        // Absent rather than null: a Project with no mark and a Project whose mark failed to
+        // read are the same thing to draw, and `drawIcon` already falls back to the placeholder.
+        if let icon = scope.icon { payload["icon"] = icon }
+        return payload
+    }
+
     private static func featureWork(_ rows: [UsageLedger.Row],
                                     accepted: [String: UsageLedger.AcceptedAttribution],
+                                    acceptedProjects: [String: UsageLedger.AcceptedAttribution],
+                                    projectScopes: [String: FeatureProjectScope],
                                     classifier: UsageLedger.FeatureClassifierState)
         -> [String: Any] {
         var groups: [String: (label: String, rows: [UsageLedger.Row])] = [:]
@@ -3862,6 +3922,8 @@ final class UsageQueryService {
         let payload = groups.map { id, value -> [String: Any] in
             let totals = summary(value.rows)
             return ["id": id, "label": value.label,
+                    "project": featureProject(value.rows, acceptedProjects: acceptedProjects,
+                                              scopes: projectScopes),
                     "runs": Set(value.rows.map(runID)).count,
                     "output": output(totals) as Any? ?? NSNull(),
                     "unknownOutputRuns": unknownOutputRuns(value.rows),
@@ -3965,6 +4027,7 @@ final class UsageQueryService {
                                   previousAcceptedProjects: [String: UsageLedger.AcceptedAttribution],
                                   calendar: Calendar, scheduleLabels: [String: String],
                                   featureClassifier: UsageLedger.FeatureClassifierState,
+                                  projectIcon: (String) -> [String: Any]?,
                                   query: Query, priorRange: PreviousRange?,
                                   comparisonTruncated: Bool) -> [String: Any] {
         let currentGroups = groupedProjects(rows, acceptedProjects: acceptedProjects)
@@ -3987,6 +4050,14 @@ final class UsageQueryService {
             ranked["rank"] = index + 1
             return ranked
         }
+        // The Feature table's Project column, taken from the Projects grouping above rather than
+        // resolved a second time. The mark is read here, from the canonical identity, so nothing
+        // downstream of this line has a path to leak.
+        let featureProjectScopes = currentGroups.mapValues { value in
+            FeatureProjectScope(id: projectID(value.identity),
+                                label: projectLabel(value.identity, acceptedLabel: value.label),
+                                icon: value.identity.flatMap(projectIcon))
+        }
         var comparison = outputComparison(current: rows, previous: previousRows,
                                           unavailableReason: comparisonReason)
         comparison["currentRange"] = ["from": query.from as Any? ?? NSNull(),
@@ -4003,6 +4074,8 @@ final class UsageQueryService {
             "scheduledWork": scheduledWork(rows, calendar: calendar,
                                            labels: scheduleLabels),
             "features": featureWork(rows, accepted: acceptedFeatures,
+                                    acceptedProjects: acceptedProjects,
+                                    projectScopes: featureProjectScopes,
                                     classifier: featureClassifier),
             "insights": portfolioInsights(projects: projects, rows: rows,
                                            previousRows: previousRows),

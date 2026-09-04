@@ -234,8 +234,11 @@ manifest_group_count=$(awk '
 # three settings reaching it.
 # 520 once a landing node could read the receipt the root wrote on the delivery beside it: one
 # group, which is the first time any test in this tree observes a landing node reaching `done`.
-[ "$manifest_group_count" -eq 520 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 520"
+# 521 once a Feature row could name its Project: one group, and it is the first test in this tree
+# to assert that two of the Portfolio's tables carry the *same* id for the same Project rather
+# than each carrying one of its own.
+[ "$manifest_group_count" -eq 521 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 521"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
