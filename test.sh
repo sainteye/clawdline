@@ -228,6 +228,20 @@ count_exact_receipt_lines() {
 # takes the ones after it, so the count is a coverage number as well as a result.
 # Reports only. The exit code belongs to whatever called this — a check should not alter the
 # conclusion of the thing it reports on.
+
+# The one reader of this run's per-suite counts. `Tests/CloudTestRunner.swift` prints
+# `  ✓ <suite> (<n> checks)` from a single site, so there is one format to read, and it is read
+# in one place here for the reason the seal has one home: two copies of a pattern drift apart, and
+# this one's failure direction is silence — a pattern that has stopped matching is indistinguishable
+# from a run in which nothing moved, unless somebody counts what it found. Callers do.
+#
+# `|| true` is not decoration. `grep` exits 1 on no match and this script runs under
+# `set -o pipefail`, so an empty scan inside `x=$(...)` would abort the whole script — at the exact
+# moment the reporting below is the only thing left that could say anything useful.
+cloud_suite_counts() {
+  grep -aoE '^  . [A-Za-z]+ \([0-9]+ checks\)' "$1" | awk '{ print $2 ":" substr($3, 2) }' || true
+}
+
 report_receipt_direction() {
   local log=$1 sealed attempted ran suite missing=""
   sealed=${expected_swift_receipt%% *}
@@ -240,7 +254,7 @@ report_receipt_direction() {
   case "$attempted" in "" | *[!0-9]*) return 0 ;; esac
   if [ "$attempted" -lt "$sealed" ]; then
     echo "The total came out short: $attempted ran, this tree's seal is $sealed, so $((sealed - attempted)) never ran." >&2
-    ran=$(grep -aoE '^  . [A-Za-z]+ \([0-9]+ checks\)' "$log" | awk '{ print $2 }')
+    ran=$(cloud_suite_counts "$log" | awk -F: '{ print $1 }')
     for suite in $(printf '%s' "${expected_cloud_receipt#*suites=}" | tr ',' ' '); do
       printf '%s\n' "$ran" | grep -qx "${suite%%:*}" || missing="$missing ${suite%%:*}"
     done
@@ -254,9 +268,161 @@ report_receipt_direction() {
 }
 # <<< clawdline receipt direction <<<
 
+# >>> clawdline cloud receipt fields >>>
+# `expected_cloud_receipt` pins twelve numbers inside one exact string and `count_exact_receipt_lines`
+# compares the string, so all twelve produce the same sentence when they move: *appeared 0 times*.
+# On 2026-09-03 that sentence stood in front of `main` for four hours. The field that had moved was
+# `CloudTransport` — sealed 67 against a tree reporting 68, from two commits that added a `require`
+# and one that removed one, none of which touched this file — and the red landed on whoever tried to
+# land next rather than on whoever caused it. This says which field moved, and by how much.
+#
+# **Both sides are read; neither is computed.** The sealed pairs come out of the seal itself and this
+# run's pairs come off the `  ✓ <suite> (<n> checks)` lines through `cloud_suite_counts`, the reader
+# `report_receipt_direction` already uses. Nothing here proposes a value for the seal: a seal is
+# transcribed from a run, and the run's own line is what `report_cloud_receipt_reseal_line` hands
+# back. A per-field delta is printed because it says how far the two are apart; it is not an answer,
+# and adding it to the seal is exactly the arithmetic this repository keeps refusing.
+
+# The completion receipt lines this run actually printed, found by the keyword the seal itself opens
+# with rather than by a second copy of that keyword written here. Exact prefix, no regex: the line
+# carries no metacharacters and this way no locale can change what a `.` means.
+cloud_receipt_lines() {
+  local token=${expected_cloud_receipt%% *}
+  [ -n "$token" ] || return 0
+  awk -v token="$token " 'substr($0, 1, length(token)) == token' "$1"
+}
+
+report_cloud_receipt_fields() {
+  # Reports only, like report_receipt_direction above it: an awk that cannot run must not turn a
+  # 125 into its own exit code, or the conclusion would belong to the thing describing it.
+  local log=$1 sealed_pairs sealed_count actual_line
+  sealed_pairs=${expected_cloud_receipt#*suites=}
+  # A seal carrying no `suites=` list cannot be compared field by field. Say that, rather than
+  # diffing nothing and printing a comparison that read as clean.
+  if [ "$sealed_pairs" = "$expected_cloud_receipt" ]; then
+    echo "The seal in test.sh carries no \`suites=\` list, so this run could not be compared against it field by field." >&2
+    return 0
+  fi
+  sealed_count=${expected_cloud_receipt#*suite_count=}
+  sealed_count=${sealed_count%% *}
+  case "$sealed_count" in "" | *[!0-9]*) sealed_count="" ;; esac
+  actual_line=$(cloud_receipt_lines "$log" | awk 'NR == 1')
+  cloud_suite_counts "$log" | awk \
+    -v sealed="$sealed_pairs" -v sealed_count="$sealed_count" -v logpath="$log" \
+    -v sealed_line="$expected_cloud_receipt" -v actual_line="$actual_line" '
+    function suites(k) { return k == 1 ? "One suite" : k " suites" }
+    BEGIN {
+      n = split(sealed, entries, ",")
+      for (i = 1; i <= n; i++) {
+        split(entries[i], kv, ":")
+        order[i] = kv[1]
+        seal[kv[1]] = kv[2]
+        if (length(kv[1]) > width) width = length(kv[1])
+      }
+    }
+    /:/ {
+      split($0, kv, ":")
+      if (!(kv[1] in ran)) ran_order[++ran_n] = kv[1]
+      ran[kv[1]] = kv[2]
+      if (length(kv[1]) > width) width = length(kv[1])
+    }
+    END {
+      # A scan that found nothing is a third answer and has to look like one. A pattern that has
+      # stopped matching — the line renamed, or a locale in which the `.` in it is one byte and the
+      # tick is three — would otherwise print a clean comparison of no data at all, which is the
+      # shape of failure this whole block exists to remove.
+      if (ran_n == 0) {
+        # `logpath`, not `log`: awk has a natural-logarithm builtin of that name, and a variable
+        # called `log` printed `-inf` here instead of the path — a message about not being able to
+        # read something, unable to say what it could not read.
+        printf "This run printed no `  \342\234\223 <suite> (<n> checks)` lines at all, so its per-suite counts could not be read out of %s.\n", logpath
+        print "That is not the same as nothing having moved: the twelve fields were never compared, and this is that third answer rather than a clean one."
+        exit 0
+      }
+      for (i = 1; i <= n; i++) {
+        name = order[i]
+        if (!(name in ran)) { silent_names[++silent] = name; continue }
+        if (ran[name] + 0 != seal[name] + 0) moved_names[++moved] = name; else matched++
+      }
+      for (i = 1; i <= ran_n; i++) if (!(ran_order[i] in seal)) extra_names[++extra] = ran_order[i]
+
+      if (moved > 0) {
+        printf "Cloud receipt does not match the seal. %s moved:\n", suites(moved)
+        for (i = 1; i <= moved; i++) {
+          name = moved_names[i]
+          printf "  %-*s sealed %s, this run reported %s (%+d)\n",
+                 width, name, seal[name], ran[name], ran[name] - seal[name]
+        }
+      } else if (silent + extra > 0) {
+        print "Cloud receipt does not match the seal. No suite it names reported a different count, but the roster did not hold:"
+      } else {
+        print "Cloud receipt does not match the seal, and every suite it names reported exactly the count it names."
+        print "So what differs is the rest of the line. The seal, and the line this run printed:"
+        printf "  sealed:   %s\n", sealed_line
+        printed = (actual_line == "") ? "(this run printed no completion receipt line at all)" : actual_line
+        printf "  this run: %s\n", printed
+      }
+      if (silent > 0) {
+        printf "%s the seal names never reported at all:\n", suites(silent)
+        for (i = 1; i <= silent; i++) {
+          name = silent_names[i]
+          printf "  %-*s sealed %s, and this run printed no line for it\n", width, name, seal[name]
+        }
+      }
+      if (extra > 0) {
+        printf "%s reported that the seal does not name:\n", suites(extra)
+        for (i = 1; i <= extra; i++) {
+          name = extra_names[i]
+          printf "  %-*s this run reported %s\n", width, name, ran[name]
+        }
+      }
+      if (sealed_count != "" && sealed_count + 0 != ran_n) {
+        # A roster that grew says plainly that suite_count moves. A roster that came up short does
+        # not: a suite removed from the registry and a suite that never got to report are the same
+        # eleven lines from here, and naming one of them would be a cause this cannot establish.
+        tail = (extra > 0) ? ", so suite_count moves with them." \
+               : ". Which of those two the seal should carry is not something this can tell: a suite removed from the registry and a suite that never reported look the same from here."
+        printf "The seal names suite_count=%s and this run reported %d Cloud suites%s\n",
+               sealed_count, ran_n, tail
+      }
+      if (moved + silent + extra > 0 && matched > 0) {
+        printf "The other %d %s the seal names reported exactly the count it names.\n",
+               matched, (matched == 1 ? "suite" : "suites")
+      }
+    }
+  ' >&2 || true
+  return 0
+}
+
+# The door, in the shape its Swift sibling in tools/check-architecture-boundaries.sh already has:
+# the person who has to re-seal is otherwise stopped by the very check they are trying to move, and
+# the only thing that knows the new value is a run. This one does not relax the verdict — the run
+# still ends non-zero, because the tree really is unsealed until the line below is pasted in — it
+# decides whether the run hands back the string to paste or leaves it to be dug out of a log.
+report_cloud_receipt_reseal_line() {
+  local log=$1 token lines count
+  token=${expected_cloud_receipt%% *}
+  lines=$(cloud_receipt_lines "$log")
+  count=$(printf '%s\n' "$lines" | awk 'NF { c++ } END { print c + 0 }')
+  if [ "$count" -eq 0 ]; then
+    echo "CLAWDLINE_RESEAL=1 — this run printed no $token line, so there is nothing to re-seal from: the Cloud harness did not reach the end of its own roster." >&2
+    echo "That is a defect in the run, not a stale seal. A seal is transcribed from a run that produced one, and this run produced none." >&2
+    return 0
+  fi
+  if [ "$count" -ne 1 ]; then
+    echo "CLAWDLINE_RESEAL=1 — this run printed $count $token lines, so no single one of them is the line to copy:" >&2
+    printf '%s\n' "$lines" | sed 's/^/  /' >&2
+    return 0
+  fi
+  echo "CLAWDLINE_RESEAL=1 — this is the line this run printed. Replace the seal in test.sh with it, whole:" >&2
+  echo "expected_cloud_receipt='$lines'" >&2
+  echo "The run still ends 125. The door decides whether you are told what to paste, not whether the tree is sealed." >&2
+}
+# <<< clawdline cloud receipt fields <<<
+
 verify_test_completion_receipts() {
   local log=$1
-  local cloud_receipt_count swift_receipt_count reported_swift_receipts
+  local cloud_receipt_count swift_receipt_count reported_swift_receipts cloud_receipt_stale=0
   cloud_receipt_count=$(count_exact_receipt_lines "$expected_cloud_receipt" "$log")
   if [ "$cloud_receipt_count" -ne 1 ]; then
     echo "Cloud test completion receipt appeared $cloud_receipt_count times, expected exactly once — full output kept at $log" >&2
@@ -264,16 +430,31 @@ verify_test_completion_receipts() {
     # has to be reported on this path too or `--verify-completion-receipts` stays silent about the
     # one case it is most often pointed at: a log from a run that stopped early.
     report_receipt_direction "$log"
-    return 125
+    report_cloud_receipt_fields "$log"
+    # Without the door, nothing below this line runs: a stale Cloud field hides the Swift seal
+    # entirely, which is what left 2026-09-03 comparing one of the two records it has. With it, both
+    # are compared and both are reported from the one run that could measure either.
+    if [ "${CLAWDLINE_RESEAL:-}" != "1" ]; then
+      echo "Set expected_cloud_receipt from a run, never from arithmetic. CLAWDLINE_RESEAL=1 makes this run print the line to paste, and compares the Swift seal as well instead of stopping here." >&2
+      return 125
+    fi
+    cloud_receipt_stale=1
+    report_cloud_receipt_reseal_line "$log"
   fi
 
   swift_receipt_count=$(count_exact_receipt_lines "$expected_swift_receipt" "$log")
   if [ "$swift_receipt_count" -ne 1 ]; then
     reported_swift_receipts=$(awk '/^[0-9]+ checks passed$/ { values = values (values ? ", " : "") $0 } END { print values ? values : "none" }' "$log")
     echo "Swift test completion receipt mismatch: expected exactly one '$expected_swift_receipt'; found $swift_receipt_count exact and reported $reported_swift_receipts — full output kept at $log" >&2
-    report_receipt_direction "$log"
+    # Once, not twice. Without the door only one of these two branches is ever reached, so this is
+    # the door's own arithmetic: it lets both run, and the direction is a property of the run rather
+    # than of the branch that noticed.
+    [ "$cloud_receipt_stale" -eq 1 ] || report_receipt_direction "$log"
     return 125
   fi
+  # A run under the door that got this far still failed the Cloud comparison. The door bought the
+  # rest of the reporting, not a pass.
+  [ "$cloud_receipt_stale" -eq 0 ] || return 125
 }
 
 # >>> clawdline suite roster >>>

@@ -1854,6 +1854,198 @@ try {
     rmSync(work, { recursive: true, force: true });
 }
 
+// The twelve fields inside the Cloud seal, and the door that lets somebody move one. The block
+// above drives the *reporter* by lifting one function out of `test.sh`; this one runs the whole of
+// `test.sh` through its own `--verify-completion-receipts` mode, because what is checked here is a
+// decision — which branch returns, and with what — and a decision cannot be lifted out of the
+// script that makes it. That mode compiles nothing and runs no suite; it reads a log.
+//
+// **What it is guarding.** `expected_cloud_receipt` pins twelve counts inside one exact string that
+// `count_exact_receipt_lines` compares whole, so all twelve produce one sentence when they move:
+// *the receipt appeared 0 times*. On 2026-09-03 `8399aee7` added two `require` calls to
+// `Tests/CloudTransportTests.swift` and `b66d5d27` removed one, neither touched `test.sh`, and
+// `main` said that sentence for four hours without ever naming CloudTransport. Every check below is
+// that sentence being replaced by a name and two numbers — and by a line somebody can paste.
+{
+    const work = mkdtempSync(join(tmpdir(), "cloud-receipt-fields-"));
+    try {
+        const copy = join(work, "test.sh");
+        copyFileSync(new URL("../test.sh", import.meta.url), copy);
+
+        const cloudSeal = /^expected_cloud_receipt='(.*)'$/m.exec(script);
+        const swiftSeal = /^expected_swift_receipt='(.*)'$/m.exec(script);
+        if (!cloudSeal || !swiftSeal) {
+            stop("test.sh no longer carries both receipt seals under the names this file reads; if they were renamed, update this file rather than deleting the checks");
+        }
+        const sealedPairs = cloudSeal[1].replace(/^.*suites=/, "").split(",").map((entry) => {
+            const [name, count] = entry.split(":");
+            return { name, count: Number(count) };
+        });
+
+        // The fixture's spelling is lifted from `Tests/CloudTestRunner.swift` rather than typed
+        // here, for the reason the block above gives: a check anchored on a spelling it does not
+        // share with the producer goes on passing while the producer moves, and this one's failure
+        // direction is silence. It also settles a question worth writing down — the twelve pairs
+        // come off **one** print site, so there is one format and not twelve.
+        const runner = readFileSync(new URL("../Tests/CloudTestRunner.swift", import.meta.url), "utf8");
+        const suitePrints = [...runner.matchAll(/print\("([^"]*\\\(suite\.name\)[^"]*checks\)[^"]*)"\)/g)]
+            .map((m) => m[1]);
+        if (suitePrints.length !== 1) {
+            stop(`the Cloud runner has ${suitePrints.length} sites printing a per-suite line, not the one this file reads them with`);
+        }
+        const suiteLine = ({ name, count }) => suitePrints[0]
+            .replace("\\(suite.name)", name).replace("\\(suiteChecks)", String(count));
+        // Same for the receipt itself: its prefix is a constant in the runner, and the seal in
+        // `test.sh` is a transcription of a line that constant opened. Building the fixture from
+        // the seal and checking it reproduces the seal exactly is what keeps this a fixture of the
+        // real line rather than a hand-made lookalike.
+        const receiptPrefix = cloudSeal[1].split(" suite_count=")[0];
+        const receiptFor = (pairs) => `${receiptPrefix} suite_count=${pairs.length} suites=`
+            + pairs.map((p) => `${p.name}:${p.count}`).join(",");
+        if (receiptFor(sealedPairs) !== cloudSeal[1]) {
+            stop("the receipt this file builds is not the seal test.sh carries, so every log below would be a lookalike rather than a fixture");
+        }
+        if (!runner.includes(`"${receiptPrefix} `)) {
+            stop(`the Cloud runner does not open its receipt with ${receiptPrefix}, so the seal and the producer have parted company`);
+        }
+
+        let logs = 0;
+        const logFor = ({ pairs = sealedPairs, total = swiftSeal[1], receipt = true, line = null }) => {
+            const path = join(work, `suite-${++logs}.log`);
+            const body = [...pairs.map(suiteLine), "", total];
+            if (receipt) body.push(line ?? receiptFor(pairs));
+            writeFileSync(path, `${body.join("\n")}\n`);
+            return path;
+        };
+        // **The operator's own `CLAWDLINE_RESEAL` must not reach the script this block drives.**
+        // Half of what is asserted here is the door being *shut*, so a re-sealing operator running
+        // the suite would watch these fail on their own environment rather than on the tree — the
+        // same trap the governance block below documents, in the second guard to have a door.
+        const sealedEnv = () => {
+            const e = { ...process.env };
+            delete e.CLAWDLINE_RESEAL;
+            return e;
+        };
+        const verify = (logPath, env = {}, scriptPath = copy) => {
+            const r = spawnSync("/bin/bash", [scriptPath, "--verify-completion-receipts", logPath],
+                                { encoding: "utf8", env: { ...sealedEnv(), ...env } });
+            return { status: r.status, out: `${r.stdout}${r.stderr}` };
+        };
+
+        const untouched = verify(logFor({}));
+        if (untouched.status !== 0) {
+            stop(`a log built from test.sh's own seals is not accepted by test.sh, so nothing below can mean anything: ${untouched.out.slice(0, 400)}`);
+        }
+
+        const moveOne = (name, by) => sealedPairs.map((p) => p.name === name ? { ...p, count: p.count + by } : p);
+        const first = sealedPairs[2], second = sealedPairs[3], last = sealedPairs[sealedPairs.length - 1];
+        const row = (name, sealed, reported, delta) =>
+            new RegExp(`\\n  ${name}\\s+sealed ${sealed}, this run reported ${reported} \\(${delta}\\)`);
+
+        // The decisive one, and 2026-09-03 reproduced: one `require` added to one Cloud suite.
+        const one = verify(logFor({ pairs: moveOne(first.name, 1) }));
+        check("the field that moved is named, with what the seal says, what this run reported and the distance between them",
+              one.status === 125 && row(first.name, first.count, first.count + 1, "\\+1").test(one.out));
+        check("and the eleven that did not move are not named, so the one that did is the message",
+              sealedPairs.filter((p) => p.name !== first.name).every((p) => !one.out.includes(p.name)));
+
+        const two = verify(logFor({
+            pairs: moveOne(first.name, 1).map((p) => p.name === second.name ? { ...p, count: p.count - 7 } : p),
+        }));
+        check("two fields that moved are both named, each in its own direction",
+              row(first.name, first.count, first.count + 1, "\\+1").test(two.out)
+                && row(second.name, second.count, second.count - 7, "-7").test(two.out));
+        check("and how many did not move is a number it read rather than one it asserts",
+              new RegExp(`The other ${sealedPairs.length - 2} suites`).test(two.out));
+
+        // A suite that never reported is the other shape, and it already had a path. That path is
+        // `report_receipt_direction`, reached when the total came out short, and it must still be
+        // the one that runs — the fields below add to it rather than replace it.
+        const shortTotal = `1 of ${Number(swiftSeal[1].split(" ")[0]) - 679} checks failed:`;
+        const silent = verify(logFor({
+            pairs: sealedPairs.filter((p) => p.name !== last.name), receipt: false, total: shortTotal,
+        }));
+        check("a suite that never reported still walks the path it already had",
+              new RegExp(`never reported:[^\\n]*${last.name}`).test(silent.out));
+        check("and the fields report it as one that printed no line, not as a count that moved",
+              new RegExp(`\\n  ${last.name}\\s+sealed ${last.count}, and this run printed no line for it`).test(silent.out)
+                && !row(last.name, last.count, "\\d+", "[-+]\\d+").test(silent.out));
+        check("and a roster that came up short does not claim suite_count should follow it",
+              new RegExp(`suite_count=${sealedPairs.length} and this run reported ${sealedPairs.length - 1} Cloud suites`).test(silent.out)
+                && !/suite_count moves with them/.test(silent.out));
+
+        // The other direction: a thirteenth Cloud suite. The runner refuses to print a receipt at
+        // all when its roster is not the twelve it expects, so the fixture carries none — which is
+        // why the fields have to be read off the per-suite lines and not out of the receipt.
+        const grown = [...sealedPairs, { name: "CloudDrafts", count: 9 }];
+        const extra = verify(logFor({ pairs: grown, receipt: false, total: `1 of ${swiftSeal[1].split(" ")[0]} checks failed:` }));
+        check("a suite the seal does not name is named, with suite_count said to move with it",
+              new RegExp(`\\n  CloudDrafts\\s+this run reported 9`).test(extra.out)
+                && new RegExp(`suite_count=${sealedPairs.length} and this run reported ${grown.length} Cloud suites, so suite_count moves with them`).test(extra.out));
+
+        const relabelled = verify(logFor({ line: cloudSeal[1].replace("v=1", "v=2") }));
+        check("twelve fields that all agree point at the line itself and print both of them, rather than at a suite",
+              /every suite it names reported exactly the count it names/.test(relabelled.out)
+                && relabelled.out.includes(`sealed:   ${cloudSeal[1]}`)
+                && relabelled.out.includes(`this run: ${cloudSeal[1].replace("v=1", "v=2")}`));
+
+        // **Zero scan.** A pattern that has stopped matching finds twelve suites that did not move,
+        // which is the exact shape of the silence this whole block exists to remove. So it is
+        // blinded on purpose and the answer has to be the third one: *not compared*.
+        const PATTERN = "[A-Za-z]+ \\([0-9]+ checks\\)";
+        const source = readFileSync(copy, "utf8");
+        const occurrences = source.split(PATTERN).length - 1;
+        check("the pattern that reads this run's per-suite counts has exactly one copy in test.sh",
+              occurrences === 1);
+        if (occurrences === 0) {
+            stop("test.sh no longer contains the pattern this file blinds, so the zero-scan checks below would prove nothing");
+        }
+        const blind = join(work, "blind.sh");
+        writeFileSync(blind, source.split(PATTERN).join("zzzzzzzz"));
+        const blindLog = logFor({ pairs: moveOne(first.name, 1) });
+        const blinded = verify(blindLog, {}, blind);
+        check("a scan that matches nothing says the counts could not be read, and names the log it could not read them out of",
+              blinded.status === 125 && /per-suite counts could not be read out of/.test(blinded.out)
+                && blinded.out.includes(blindLog));
+        check("and it does not report a clean comparison of no data",
+              !/suites? moved/.test(blinded.out) && !/reported exactly the count it names/.test(blinded.out)
+                && /never compared/.test(blinded.out));
+
+        // The door. Everything above ran without it, which is half of what "unchanged" means; the
+        // rest is that the run still stops at the Cloud seal without it, and still ends 125 with it.
+        const bothWrong = logFor({
+            pairs: moveOne(first.name, 1), total: `${Number(swiftSeal[1].split(" ")[0]) + 4} checks passed`,
+        });
+        const shut = verify(bothWrong);
+        check("without the door the run returns at the Cloud seal, exactly as before: no Swift comparison and nothing to paste",
+              shut.status === 125 && !/Swift test completion receipt mismatch/.test(shut.out)
+                && !/expected_cloud_receipt='/.test(shut.out));
+        check("and the door is the value 1, not the variable being set to something",
+              JSON.stringify(verify(bothWrong, { CLAWDLINE_RESEAL: "yes" })) === JSON.stringify(shut));
+
+        const open = verify(bothWrong, { CLAWDLINE_RESEAL: "1" });
+        check("the door hands back the line this run printed, already inside the assignment it belongs in",
+              open.out.includes(`expected_cloud_receipt='${receiptFor(moveOne(first.name, 1))}'`));
+        check("and it goes on to compare the Swift seal instead of stopping at the Cloud one",
+              /Swift test completion receipt mismatch/.test(open.out));
+        // On a log whose Swift total *does* match, so the 125 can only be the Cloud seal talking.
+        // Asserted on `open` it would have been satisfied by the Swift branch below it and would
+        // have stayed green with the Cloud verdict thrown away entirely.
+        const cloudOnly = verify(logFor({ pairs: moveOne(first.name, 1) }), { CLAWDLINE_RESEAL: "1" });
+        check("and the run still ends 125, because the door decides what you are told and not whether the tree is sealed",
+              open.status === 125 && cloudOnly.status === 125
+                && !/Swift test completion receipt mismatch/.test(cloudOnly.out));
+
+        const nothingToCopy = verify(logFor({ pairs: moveOne(first.name, 1), receipt: false }),
+                                     { CLAWDLINE_RESEAL: "1" });
+        check("and with no receipt line at all it says there is nothing to re-seal from rather than offering one",
+              nothingToCopy.status === 125 && /nothing to re-seal from/.test(nothingToCopy.out)
+                && !/expected_cloud_receipt='/.test(nothingToCopy.out));
+    } finally {
+        rmSync(work, { recursive: true, force: true });
+    }
+}
+
 // The governance table and the seal it renders, driven the same way: the real
 // `tools/check-architecture-boundaries.sh` is run against a scratch copy of this tree, and the
 // mutations are applied to the copy. It lives beside the receipt checks above because it is the
