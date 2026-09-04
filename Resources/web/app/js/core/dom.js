@@ -13,13 +13,8 @@ export var els = {};
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
  "image-lightbox", "image-lightbox-title", "image-lightbox-image", "image-lightbox-close",
  "status-line", "status-line-open", "status-line-files", "status-line-deploy", "status-line-limits", "keys", "toast", "brand", "brand-mark",
-<<<<<<< HEAD
   "sidebar", "nav-sessions", "usage-open", "nav-projects", "nav-settings",
-  "projects-title", "projects-lede", "projects-back",
-=======
- "sidebar", "nav-sessions", "nav-projects", "nav-settings",
- "projects", "projects-title", "projects-lede", "projects-back",
->>>>>>> d2ff43ad (Put this page's Escape where the order of Escape is decided)
+  "projects", "projects-title", "projects-lede", "projects-back",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
  "settings-close", "settings-order", "settings-order-title", "settings-order-say",
