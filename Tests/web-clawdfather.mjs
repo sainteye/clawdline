@@ -1022,6 +1022,27 @@ if (process.env.CLAWDLINE_CLAWDFATHER_SHEET_BEHAVIOR === "1") {
     assert.equal(row.hidden, false);
     assert.ok(!line.textContent.includes(T.webCoordCmdReconnect),
         "an online Clawdfather is told nothing about reconnecting");
+    Start.close();
+
+    // The boundary the first arm draws, from its other side. A transport that *has* this read and
+    // cannot answer it is not a transport that lacks it: the first is a failure and is said out
+    // loud, the second is an absence and is silent. Widening the hidden case to swallow a failed
+    // read is the one regression that turns this delivery back into the bug it fixes, and it left
+    // the whole file green — `webCoordReadFailed` appeared in no test in this repository until
+    // this arm, so the sentence a reader would actually see was pinned by nothing.
+    useApi({
+        places: places, startPlace: noop,
+        coordinatorBearings: function () { return Promise.reject(new Error("relay is down")); }
+    });
+    Start.open();
+    await settle();
+    assert.equal(row.hidden, false,
+        "a read this transport carries and could not complete still draws the row");
+    assert.ok(line.textContent.includes(T.webCoordReadFailed),
+        "and says the read failed, which is true here and was the false sentence before. Got: "
+        + line.textContent);
+    assert.ok(!line.textContent.includes(T.webCoordCmdReconnect),
+        "without advising a reconnect it has no evidence is needed");
 
     console.log("web clawdfather creation sheet behavior passed");
     process.exit(0);
