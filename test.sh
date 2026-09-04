@@ -642,6 +642,13 @@ node Tests/dispatch-role-contract.mjs
 node Tests/attached-follow-up-contract.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/remote-response-write-close.mjs
+# `GET /sw.js`, which was the one of RemotePage's five entry points with no route test — the gap
+# `B-SERVICE-WORKER-HAS-NO-ROUTE-TEST` names. The script is a response body inside a Swift raw
+# string, so this lifts it out and runs it in a node:vm with stand-in worker globals rather than
+# grepping it: install, activate, fetch, push and notificationclick are each driven. What it is
+# guarding is the only lever that reaches a browser already holding a stale copy of the page, and
+# every step of that lever is one line.
+node Tests/web-service-worker.mjs
 node Tests/release-signing-contract.mjs
 # The shared-tree commit guard: that `tools/git-hooks/pre-commit` refuses a commit carrying a path
 # another session is working on, that it lets everything else through, and that it fails open and
