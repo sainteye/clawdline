@@ -2296,6 +2296,21 @@ final class RemoteServer: @unchecked Sendable {
             }
             return .json(["usage": result.payload])
 
+        // Which worktrees under one Project finished a Feature. A read of the same store as the
+        // three above, and deliberately not a `group=` mode of them: it answers about a subject
+        // the ledger files nothing under, and its refusals are its own.
+        case ("GET", "/v1/orchestrator/usage/project-worktrees"):
+            let parsed = UsageProjectWorktreeService.parse(
+                request.query, repeatedKeys: request.repeatedQueryKeys)
+            guard let query = parsed.query else {
+                return .error(400, "bad_request", parsed.error ?? "Invalid project query.")
+            }
+            switch UsageProjectWorktreeService().read(query) {
+            case .reading(let payload): return .json(["projectWorktrees": payload])
+            case .refused(let refusal):
+                return .error(refusal.status, refusal.code, refusal.message)
+            }
+
         case ("GET", "/v1/orchestrator/root-assignments"):
             guard orchestratorAuthed else {
                 return .error(403, "forbidden",
@@ -4042,6 +4057,9 @@ final class RemoteServer: @unchecked Sendable {
         path == "/v1/orchestrator/usage/analytics"
             || path == "/v1/orchestrator/usage/analytics.csv"
             || path == "/v1/orchestrator/usage/analytics.json"
+            // The project-worktrees read is the same bounded scan of the same store, so it takes
+            // the same worker and the same admission budget rather than a lane of its own.
+            || path == "/v1/orchestrator/usage/project-worktrees"
     }
 
     /// The slow optional reads that may be refused before they enter their worker queue.

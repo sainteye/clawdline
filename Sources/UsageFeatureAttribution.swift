@@ -357,4 +357,23 @@ extension Orchestrator {
         }
         return facts
     }
+
+    /// **The tasks this Mac still has running**, so a worktree that is being worked in right now
+    /// is not reported as debris.
+    ///
+    /// The absence of an id here is the half of this answer that is safe to trust: the registry
+    /// holds every live task, so a task it does not hold is certainly not running. Its presence
+    /// is bounded by retention — a task old enough to have been swept is gone from here whatever
+    /// happened to it — and that is the right direction for this reader, which asks the question
+    /// only about work no stored row has already called finished.
+    ///
+    /// Same shape and same locking discipline as ``Orchestrator/usageFeatureTaskFacts()`` above,
+    /// and it lives beside it for the same reason that one is not in `Sources/Orchestrator.swift`.
+    static func usageLiveTaskIDs() -> Set<String> {
+        load()
+        lock.lock()
+        let snapshots = Array(tasks.values)
+        lock.unlock()
+        return Set(snapshots.filter { !$0.state.isTerminal }.map(\.id))
+    }
 }

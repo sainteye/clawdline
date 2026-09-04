@@ -3247,7 +3247,7 @@ final class UsageQueryService {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "en_US_POSIX")
         calendar.timeZone = timezone
-        let bounds = dateBounds(from: query.from, to: query.to, calendar: calendar)
+        let bounds = Self.dateBounds(from: query.from, to: query.to, calendar: calendar)
 
         let filter = UsageLedger.AnalyticsFilter(
             start: bounds.start, end: bounds.end, assistant: query.assistant, model: query.model,
@@ -3436,7 +3436,9 @@ final class UsageQueryService {
         return data
     }
 
-    private func dateBounds(from: String?, to: String?, calendar: Calendar)
+    /// Not private, because `UsageProjectWorktreeService` bounds its own read by the same
+    /// requested days in the same zone. Two copies of this would be two ranges wearing one name.
+    static func dateBounds(from: String?, to: String?, calendar: Calendar)
         -> (start: Date?, end: Date?) {
         let formatter = DateFormatter()
         formatter.calendar = calendar
@@ -3598,14 +3600,17 @@ final class UsageQueryService {
                                        reason: resolution.refusal?.rawValue)
     }
 
-    private static func projectID(_ identity: String?) -> String {
+    /// **The Project id every surface joins on.** Not private for the reason the rule it hashes
+    /// is not: a second surface computing this digest itself would produce ids that look like
+    /// these and join nothing.
+    static func projectID(_ identity: String?) -> String {
         guard let identity else { return "unknown-project" }
         let digest = SHA256.hash(data: Data(identity.utf8)).prefix(8)
             .map { String(format: "%02x", $0) }.joined()
         return "project-" + digest
     }
 
-    private static func projectLabel(_ identity: String?, acceptedLabel: String? = nil) -> String {
+    static func projectLabel(_ identity: String?, acceptedLabel: String? = nil) -> String {
         guard let identity else { return "Unknown Project" }
         if let acceptedLabel, !acceptedLabel.isEmpty { return acceptedLabel }
         let label = URL(fileURLWithPath: identity).lastPathComponent
@@ -4216,6 +4221,380 @@ final class UsageQueryService {
             return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
         return value
+    }
+}
+
+/// **Which worktrees under one Project have finished a Feature, and which Features those were.**
+///
+/// `git worktree list` answers a different question. This Mac carries 58 managed checkouts, most
+/// of them finished task directories that produced nothing anybody kept; what a person asks in
+/// front of a Project is narrower — *which of these actually made something, and what was it*.
+///
+/// **This is a read-time join and not a new column**, because the material is already stored:
+///
+/// * `usage_intervals.working_dir` is the checkout a task ran in, and for a Clawdline-managed
+///   worktree that path ends in the task UUID which names it;
+/// * `usage_intervals.project_key` is the canonical repository the task belonged to, which is
+///   what ``UsageFeatureClassifier/resolveProject(projectKey:acceptedProjectIdentity:)`` turns
+///   into the Project every other surface names;
+/// * `usage_attribution_events` carries the accepted Feature head for that interval;
+/// * `task_state` and `landing_state` say how each of those tasks ended.
+///
+/// The worktree's identity is consumed and discarded when a row's Project is resolved — a managed
+/// worktree path resolves to *no* Project rather than to one of its own — so nothing is filed
+/// under a worktree anywhere in the store. The column it was read from is still there, which is
+/// the whole reason this needs no migration: the join reads `working_dir` for the identity that
+/// resolution threw away, and reads the Project by the one shared rule so that a row lands in the
+/// same Project the Portfolio put it in.
+///
+/// **A row whose Project cannot be named is not silently dropped.** Some rows recorded before
+/// canonical Project keys landed carry a managed-worktree path as their own `project_key`; those
+/// belong to no Project a surface may name, so they can appear under no Project here either. They
+/// are counted and named in `unattributed` instead, with the refusal that produced them — the
+/// migration that would give them a Project is specified in `docs/usage-attribution.md`.
+final class UsageProjectWorktreeService {
+
+    /// **How the work in one worktree ended.** The three states the person asked to be able to
+    /// tell apart are `landed`, `delivered` and `abandoned`; `active` exists because folding
+    /// work that is running right now into "abandoned" would be a lie, and `unknown` exists
+    /// because a verdict with no evidence behind it must not wear one of the other four's names.
+    ///
+    /// The ladder is evaluated in this order, and each rung is a stored fact rather than an
+    /// inference:
+    ///
+    /// 1. `landed` — some row carries `landing_state = landed`: a root recorded that this
+    ///    delivery reached its target branch. It outranks everything, including a task that
+    ///    reported failure, because the branch is in the tree whatever the child said.
+    /// 2. `delivered` — some row's task reached `success`, and no landing says it landed. This is
+    ///    "done, not landed", which includes an open landing obligation (`pending`) and one that
+    ///    was given up (`abandoned`); both spellings travel in `landingStates` beside the word.
+    /// 3. `active` — neither of the above, and one of these tasks is still live in the registry
+    ///    now. Liveness is asked of the registry rather than measured as an age: a task the
+    ///    registry does not hold is certainly not running, which is the direction that is safe to
+    ///    conclude from an absence.
+    /// 4. `abandoned` — neither landed nor successful, and nothing left running: every task
+    ///    either ended without success, or stopped being observed and was never finalized. That
+    ///    second shape is what debris looks like in this store — `b57fc96f` sat at `briefed` for
+    ///    41 hours because the session died before anything wrote a terminal state.
+    /// 5. `unknown` — no row carried any task state at all.
+    enum Outcome: String, CaseIterable {
+        case landed, delivered, active, abandoned, unknown
+
+        /// Strongest first. A worktree's own outcome is this ladder applied to every row of every
+        /// Feature it carries, which is the same answer as the strongest of its Features'.
+        var rank: Int { Outcome.allCases.firstIndex(of: self) ?? Outcome.allCases.count }
+    }
+
+    struct Query: Equatable {
+        /// The Portfolio's opaque Project id, or the Project's final name, or its absolute
+        /// canonical path. Required: this read is about one Project and has no machine-wide form.
+        var project: String
+        var from: String?
+        var to: String?
+        var timezoneID: String
+
+        init(project: String, from: String? = nil, to: String? = nil,
+             timezoneID: String = TimeZone.autoupdatingCurrent.identifier) {
+            self.project = project
+            self.from = from
+            self.to = to
+            self.timezoneID = timezoneID
+        }
+    }
+
+    struct ParseResult {
+        var query: Query?
+        var error: String?
+    }
+
+    struct Refusal: Equatable {
+        var status: Int
+        var code: String
+        var message: String
+    }
+
+    /// One or the other, never both and never neither: an empty list is an answer this type is
+    /// allowed to give, and it must not be reachable by accident from a read that did not happen.
+    enum Answer {
+        case reading([String: Any])
+        case refused(Refusal)
+
+        var payload: [String: Any]? {
+            if case .reading(let payload) = self { return payload }
+            return nil
+        }
+
+        var refusal: Refusal? {
+            if case .refused(let refusal) = self { return refusal }
+            return nil
+        }
+    }
+
+    static let schemaVersion = 1
+
+    private let readRows: (UsageLedger.AnalyticsFilter) -> UsageLedger.AnalyticsRead
+    /// The ids of tasks this Mac still has running. Injected the way `UsageQueryService` injects
+    /// its schedule labels: a test says which tasks are live without a registry existing.
+    private let readLiveTaskIDs: () -> Set<String>
+
+    init() {
+        readRows = { UsageLedger.shared.analyticsRead($0) }
+        readLiveTaskIDs = { Orchestrator.usageLiveTaskIDs() }
+    }
+
+    /// Test seam. Production never enters here: the bounded predicate lives in
+    /// `UsageLedger.analyticsRead`, and this initializer's rows arrive already in memory.
+    init(rows: @escaping () -> [UsageLedger.Row],
+         acceptedFeatures: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
+         acceptedProjects: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
+         liveTaskIDs: @escaping () -> Set<String> = { [] }) {
+        readRows = { _ in
+            let rows = rows()
+            return UsageLedger.AnalyticsRead(
+                rows: rows, corrections: 0,
+                latestLedgerObservation: rows.map(\.updatedAt).max(),
+                acceptedFeatures: acceptedFeatures(), acceptedProjects: acceptedProjects())
+        }
+        readLiveTaskIDs = liveTaskIDs
+    }
+
+    /// A closed query, refused on an unknown or repeated key for the same reason the analytics
+    /// query is: a misspelled filter must not quietly widen an accounting read.
+    static func parse(_ values: [String: String], repeatedKeys: Set<String>) -> ParseResult {
+        let allowed: Set<String> = ["project", "from", "to", "timezone"]
+        let unknown = Set(values.keys).subtracting(allowed)
+        guard unknown.isEmpty else {
+            return ParseResult(error: "Unknown project-worktrees query field: "
+                                 + unknown.sorted().joined(separator: ", ") + ".")
+        }
+        guard repeatedKeys.isEmpty else {
+            return ParseResult(error: "Project-worktrees query fields may appear only once.")
+        }
+        let project = values["project"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !project.isEmpty else {
+            return ParseResult(error: "project is required: the Portfolio's project id, the "
+                                 + "Project's final name, or its absolute canonical path.")
+        }
+        let timezoneID = values["timezone"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? TimeZone.autoupdatingCurrent.identifier
+        guard TimeZone(identifier: timezoneID) != nil else {
+            return ParseResult(error: "timezone must be an IANA timezone identifier.")
+        }
+        let from = values["from"].flatMap { $0.isEmpty ? nil : $0 }
+        let to = values["to"].flatMap { $0.isEmpty ? nil : $0 }
+        guard [from, to].allSatisfy({ $0 == nil || UsageLedger.isLocalDay($0!) }) else {
+            return ParseResult(error: "from and to are local dates, YYYY-MM-DD.")
+        }
+        guard from == nil || to == nil || from! <= to! else {
+            return ParseResult(error: "from must not be after to.")
+        }
+        return ParseResult(query: Query(project: project, from: from, to: to,
+                                        timezoneID: timezoneID))
+    }
+
+    /// The Portfolio's opaque Project id: `project-` and exactly sixteen lowercase hex digits.
+    /// Matched by shape rather than by prefix so that a Project whose directory really is called
+    /// `project-something` is still reachable by its name.
+    static func isProjectID(_ value: String) -> Bool {
+        guard value.hasPrefix("project-") else { return false }
+        let digest = value.dropFirst("project-".count)
+        return digest.count == 16 && digest.allSatisfy { $0.isNumber || ("a"..."f").contains($0) }
+    }
+
+    func read(_ query: Query, now: Date = Date()) -> Answer {
+        let timezone = TimeZone(identifier: query.timezoneID) ?? TimeZone(secondsFromGMT: 0)!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.timeZone = timezone
+        let bounds = UsageQueryService.dateBounds(from: query.from, to: query.to,
+                                                  calendar: calendar)
+        let reading = readRows(UsageLedger.AnalyticsFilter(
+            start: bounds.start, end: bounds.end,
+            limit: UsageQueryService.maxScannedRows + 1))
+        // Production has already applied these bounds in SQLite; reapplying them keeps the
+        // injectable seam above honest without changing the bounded production cost.
+        let inRange = reading.rows.filter { row in
+            if let start = bounds.start, row.startedAt < start { return false }
+            if let end = bounds.end, row.startedAt >= end { return false }
+            return true
+        }
+        let truncated = inRange.count > UsageQueryService.maxScannedRows
+        let rows = Array(inRange.prefix(UsageQueryService.maxScannedRows))
+
+        // One pass by the Portfolio's own rule, so a row lands in the Project the Projects table
+        // put it in. A second copy of that rule split three work lines into six Features once.
+        var groups: [String: (label: String, rows: [UsageLedger.Row])] = [:]
+        var unattributed: [String: Set<String>] = [:]
+        for row in rows {
+            let accepted = reading.acceptedProjects[row.intervalKey]
+            let resolution = UsageFeatureClassifier.resolveProject(
+                projectKey: row.projectKey, acceptedProjectIdentity: accepted?.id)
+            guard let identity = resolution.identity else {
+                guard let directory = row.workingDir,
+                      let worktree = UsageLedger.legacyManagedWorktreeTaskID(directory)
+                else { continue }
+                unattributed[resolution.refusal?.rawValue ?? "project_unresolved",
+                             default: []].insert(worktree)
+                continue
+            }
+            let label = UsageQueryService.projectLabel(identity, acceptedLabel: accepted?.label)
+            if groups[identity] == nil { groups[identity] = (label, []) }
+            groups[identity]?.rows.append(row)
+        }
+
+        let wanted = query.project.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wantedPath = URL(fileURLWithPath: wanted).standardizedFileURL.path
+        let candidates = groups.filter { identity, group in
+            if Self.isProjectID(wanted) { return UsageQueryService.projectID(identity) == wanted }
+            return group.label == wanted || (wanted.hasPrefix("/") && identity == wantedPath)
+        }
+        // **Two Projects may share a final name**, and a name is what the Portfolio puts on
+        // screen. Answering for whichever the dictionary happened to hand over first would file
+        // one repository's worktrees under another's, so the ambiguity is refused with both ids
+        // in the message — the caller has an unambiguous handle and is told to use it.
+        guard candidates.count <= 1 else {
+            return .refused(Refusal(
+                status: 409, code: "ambiguous_project",
+                message: "\(candidates.count) Projects in this range are named \(wanted). Ask by "
+                    + "id: " + candidates.keys.map { UsageQueryService.projectID($0) }.sorted()
+                        .joined(separator: ", ") + "."))
+        }
+        guard let matched = candidates.first else {
+            // **A Project nothing in this window mentions is a refusal, not an empty list.** The
+            // two are the same picture on a screen and completely different facts, and this is
+            // the one of them a reader can act on: narrow the question or widen the range.
+            return .refused(Refusal(
+                status: 404, code: "project_not_found",
+                message: "No usage row in this range resolves to a Project named "
+                    + "\(wanted). \(rows.count) row(s) were read."))
+        }
+
+        var worktrees: [String: [UsageLedger.Row]] = [:]
+        var worktreeRows = 0
+        var featureRows = 0
+        for row in matched.value.rows {
+            guard let directory = row.workingDir,
+                  let id = UsageLedger.legacyManagedWorktreeTaskID(directory) else { continue }
+            worktreeRows += 1
+            if reading.acceptedFeatures[row.intervalKey] != nil { featureRows += 1 }
+            worktrees[id, default: []].append(row)
+        }
+
+        let live = readLiveTaskIDs()
+        var payloads: [[String: Any]] = []
+        var withoutFeature = 0
+        for (id, rows) in worktrees {
+            let features = Self.features(rows, accepted: reading.acceptedFeatures, live: live)
+            guard !features.isEmpty else {
+                // The 58-checkout answer the person did not ask for. Counted, never listed.
+                withoutFeature += 1
+                continue
+            }
+            let carried = rows.filter { reading.acceptedFeatures[$0.intervalKey] != nil }
+            payloads.append(Self.worktree(id: id, rows: carried, features: features, live: live))
+        }
+        payloads.sort {
+            let left = $0["lastSeenAt"] as? String ?? "", right = $1["lastSeenAt"] as? String ?? ""
+            if left != right { return left > right }
+            return ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "")
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        var range: [String: Any] = ["timezone": query.timezoneID]
+        range["from"] = query.from as Any? ?? NSNull()
+        range["to"] = query.to as Any? ?? NSNull()
+        return .reading([
+            "schemaVersion": Self.schemaVersion,
+            // `partial` says the scan hit its cap, which is the one way this list can be short
+            // without the store being short. It is never the word for an empty answer.
+            "status": truncated ? "partial" : "available",
+            "policy": "one_unambiguous_accepted_head",
+            "outcomeRule": "landed_then_delivered_then_live_then_abandoned",
+            "generatedAt": formatter.string(from: now),
+            "range": range,
+            "project": ["id": UsageQueryService.projectID(matched.key),
+                        "label": matched.value.label],
+            // **The receipt that says this query ran.** An empty `worktrees` with rows behind it
+            // is an answer; the same list with nothing behind it is a read that did not happen,
+            // and only these counts can tell a reader which one they are looking at.
+            "read": ["rows": rows.count, "projectRows": matched.value.rows.count,
+                     "worktreeRows": worktreeRows, "featureRows": featureRows,
+                     "truncated": truncated,
+                     "maxScannedRows": UsageQueryService.maxScannedRows],
+            "worktrees": payloads,
+            "excluded": ["worktreesWithoutFeature": withoutFeature,
+                         "reason": "no_unambiguous_accepted_head"],
+            "unattributed": ["worktrees": unattributed.values.reduce(into: Set<String>()) {
+                                 $0.formUnion($1)
+                             }.count,
+                             "reasons": unattributed.mapValues(\.count)],
+        ])
+    }
+
+    /// The Features one worktree carries, each with the outcome of its own rows.
+    private static func features(_ rows: [UsageLedger.Row],
+                                 accepted: [String: UsageLedger.AcceptedAttribution],
+                                 live: Set<String>) -> [[String: Any]] {
+        var grouped: [String: (label: String, rows: [UsageLedger.Row])] = [:]
+        for row in rows {
+            guard let head = accepted[row.intervalKey] else { continue }
+            if grouped[head.id] == nil { grouped[head.id] = (head.label, []) }
+            grouped[head.id]?.rows.append(row)
+        }
+        return grouped.map { id, group in
+            var payload = summary(group.rows, live: live)
+            payload["id"] = id
+            payload["label"] = group.label
+            return payload
+        }.sorted {
+            let left = $0["lastSeenAt"] as? String ?? "", right = $1["lastSeenAt"] as? String ?? ""
+            if left != right { return left > right }
+            return ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "")
+        }
+    }
+
+    private static func worktree(id: String, rows: [UsageLedger.Row],
+                                 features: [[String: Any]], live: Set<String>) -> [String: Any] {
+        var payload = summary(rows, live: live)
+        payload["id"] = id
+        payload["features"] = features
+        return payload
+    }
+
+    /// The shape both a worktree and one of its Features report: the verdict, the stored words it
+    /// was read from, and the tasks and instants behind it.
+    private static func summary(_ rows: [UsageLedger.Row], live: Set<String>) -> [String: Any] {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let tasks = Set(rows.compactMap { $0.taskID?.nonEmpty }).sorted()
+        let landingStates = Set(rows.compactMap { $0.landingState?.nonEmpty }).sorted()
+        let taskStates = Set(rows.compactMap { $0.taskState?.nonEmpty }).sorted()
+        return [
+            "outcome": outcome(rows, live: live).rawValue,
+            "runs": tasks.isEmpty ? rows.count : tasks.count,
+            "tasks": tasks,
+            "liveTasks": tasks.filter(live.contains),
+            "taskStates": taskStates,
+            "landingStates": landingStates,
+            "firstSeenAt": rows.map(\.startedAt).min().map(formatter.string(from:))
+                as Any? ?? NSNull(),
+            "lastSeenAt": rows.map(\.startedAt).max().map(formatter.string(from:))
+                as Any? ?? NSNull(),
+        ]
+    }
+
+    /// The ladder in ``Outcome``, and the only place it is written down.
+    static func outcome(_ rows: [UsageLedger.Row], live: Set<String>) -> Outcome {
+        if rows.contains(where: { $0.landingState == Orchestrator.LandingState.landed.rawValue }) {
+            return .landed
+        }
+        if rows.contains(where: { $0.taskState == Orchestrator.State.success.rawValue }) {
+            return .delivered
+        }
+        if rows.contains(where: { $0.taskID.map(live.contains) == true }) { return .active }
+        if rows.contains(where: { $0.taskState?.nonEmpty != nil }) { return .abandoned }
+        return .unknown
     }
 }
 

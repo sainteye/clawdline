@@ -190,7 +190,15 @@ fi
 #                                          The mechanism itself is not here — it is
 #                                          `Sources/LiveScreen.swift`, a new file, because this one
 #                                          is a router and a FIFO lifecycle is not routing.)
-remote_server_ceiling=5652
+#   5,670  the project-worktrees read arrived   (+13, counted per hunk: +10 for the route case —
+#                                          the parse, the 400 on a bad query, and the two arms of
+#                                          the service's closed answer — and +3 naming that path
+#                                          in `isUsageAnalyticsReading`, with the comment saying
+#                                          why it takes the analytics worker rather than a lane of
+#                                          its own: it is the same bounded scan of the same store.
+#                                          The projection, its ladder and its refusals are all in
+#                                          `UsageLedger.swift`; what landed here is the door.)
+remote_server_ceiling=5670
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -260,6 +268,14 @@ manifest_group_count=$(awk '
 # Counted from the manifest, not 526 plus one, for the reason the paragraph above gives.
 [ "$manifest_group_count" -eq 527 ] \
   || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 527"
+# 524 once a Project could be asked which of its worktrees finished a Feature: three groups — the
+# outcome ladder that tells a landed delivery from one nobody landed from debris, the read-time
+# join itself, and the pair this read exists to keep apart, an empty list with rows behind it
+# against a Project nothing in range mentions. The third is the first test in this tree to assert
+# that an empty answer carries the receipt proving the query ran.
+[ "$manifest_group_count" -eq 524 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 524"
+remote_server_ceiling=5670
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
