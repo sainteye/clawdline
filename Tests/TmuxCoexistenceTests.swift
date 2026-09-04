@@ -433,10 +433,14 @@ group("a tmux -CC reveal names the tab, because iTerm2 does not follow tmux's se
     check("iterm.js answers the command Swift sends",
           script.contains("cmd === \"revealtmux\""),
           "Resources/iterm.js read \(script.count) characters")
+    // **Both of these are matched inside the call and not as a bare word**, because the block of
+    // prose above `revealtmux` names all three strings too — a first cut of this check passed
+    // happily while the code below it asked for `session.tmuxPaneNumber`, which is the rename it
+    // was written to catch. A guard that cannot go red for the thing it guards is worse than none.
     check("and matches on the variable that carries the tmux pane",
-          script.contains("session.tmuxWindowPane"))
+          script.contains("variableOf(s, \"session.tmuxWindowPane\")"))
     check("and refuses any row iTerm2 does not call a mirrored tmux window",
-          script.contains("session.tmuxRole") && script.contains("!== \"client\""))
+          script.contains("variableOf(s, \"session.tmuxRole\") !== \"client\""))
 }
 
 group("a tmux failure says whether there is no server, or only that nobody could ask") {

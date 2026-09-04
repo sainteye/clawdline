@@ -504,6 +504,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a tmux control-mode client is what makes a pty-less iTerm2 row explicable",
     "an iTerm2 row with no pty is attributed rather than dropped",
     "revealing a tmux pane brings iTerm2 forward only when tmux says it drew it",
+    "a tmux -CC reveal names the tab, because iTerm2 does not follow tmux's selection",
     "a tmux failure says whether there is no server, or only that nobody could ask",
     "one tmux subprocess answers for every pane in a reading",
     "Clawdline starts a tmux server rather than telling a phone to go and run one",
