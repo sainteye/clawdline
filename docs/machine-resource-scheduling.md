@@ -480,6 +480,14 @@ check still fails on a wrong seal with the door open, so landing is not weakened
 ./test.sh` reaches the guard through the ordinary child process, which is the path people will use
 rather than the direct invocation the first proofs used.
 
+**A second door since 2026-09-04, and it is the same shape.** `expected_cloud_receipt` pins twelve
+suite counts inside one exact string, so any one of them moving produced one sentence — *the receipt
+appeared 0 times* — which never named a suite. It now names the field that moved, both numbers and
+the distance between them, and under `CLAWDLINE_RESEAL=1` it prints the whole line to paste and goes
+on to compare the Swift seal rather than stopping there. **The exit code is unchanged at 125 either
+way.** Both doors change what a person is told and neither changes whether a tree may land, which is
+the property that makes them safe to open at all.
+
 **Since measured, and the claim was wrong.** Somebody ran the whole loop on both trees and counted:
 two suite runs before, two suite runs after, two hand-edited numbers each time. **The door saves no
 run.** What it changes is step one: adding an assertion and running the guard used to exit 0 —

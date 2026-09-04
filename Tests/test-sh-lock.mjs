@@ -1958,6 +1958,19 @@ try {
         check("and how many did not move is a number it read rather than one it asserts",
               new RegExp(`The other ${sealedPairs.length - 2} suites`).test(two.out));
 
+        // The scan reads lines that begin with a tick, and `.` matched one *character*: one byte
+        // under `LC_ALL=C`, where the tick is three. Measured against `/usr/bin/grep`, which is what
+        // runs here — C found nothing, both UTF-8 locales found the line. It failed safe rather than
+        // lying, because the third answer above exists, but "could not be read" is not the answer a
+        // person needs when one field moved and the log says which one.
+        const cLocale = verify(logFor({ pairs: moveOne(first.name, 1) }),
+                               { LC_ALL: "C", LANG: "C", LC_CTYPE: "C" });
+        check("the moved field is named in the C locale too, not only where a tick is one character",
+              cLocale.status === 125
+                && row(first.name, first.count, first.count + 1, "\\+1").test(cLocale.out));
+        check("and it does not fall back to the answer that says the counts could not be read",
+              !cLocale.out.includes("could not be read out of"));
+
         // A suite that never reported is the other shape, and it already had a path. That path is
         // `report_receipt_direction`, reached when the total came out short, and it must still be
         // the one that runs — the fields below add to it rather than replace it.

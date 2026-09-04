@@ -239,7 +239,13 @@ count_exact_receipt_lines() {
 # `set -o pipefail`, so an empty scan inside `x=$(...)` would abort the whole script — at the exact
 # moment the reporting below is the only thing left that could say anything useful.
 cloud_suite_counts() {
-  grep -aoE '^  . [A-Za-z]+ \([0-9]+ checks\)' "$1" | awk '{ print $2 ":" substr($3, 2) }' || true
+  # `.` was one character here, which is one *byte* under `LC_ALL=C` while the tick is three, so
+  # this read nothing at all in that locale — and the caller then reported all twelve suites as
+  # never having reported, a false positive that reads exactly like a run that stopped early.
+  # Measured against `/usr/bin/grep`, which is what runs here: C found nothing, both UTF-8 locales
+  # found the line. `[^[:space:]]+` is the same shape without asking what a character is.
+  grep -aoE '^  [^[:space:]]+ [A-Za-z]+ \([0-9]+ checks\)' "$1" \
+    | awk '{ print $2 ":" substr($3, 2) }' || true
 }
 
 report_receipt_direction() {
