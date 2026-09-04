@@ -854,6 +854,18 @@ struct Russian: Copy {
     let menuQuit = "Выйти из Clawdline"
     let menuNoTarget = "(пока не найдено)"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Вышла Clawdline \(latest) — здесь \(installed)"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed); эта сборка проверялась с \(builtAgainst)"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed); эта сборка проверялась с \(builtAgainst) — вышла Clawdline \(release)"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "Не удалось зарегистрировать \(combo)" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """

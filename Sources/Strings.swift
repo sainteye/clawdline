@@ -1378,6 +1378,22 @@ protocol Copy {
     var menuQuit: String { get }
     var menuNoTarget: String { get }
 
+    /// The one row that says a newer Clawdline exists.
+    ///
+    /// **It has to name both numbers.** "An update is available" is a sentence somebody has to
+    /// take on trust; "0.8.0 is out — this is 0.7.0" is one they can check against the release
+    /// page they are about to open, and it is the difference between a notice and a nag. The row
+    /// is only ever there when there is something to move to, so it is not a status line: it is a
+    /// thing to click.
+    func updateAvailable(latest: String, installed: String) -> String
+    /// One assistant in front of us, worded from ``Compat/Standing``.
+    ///
+    /// Two arms, and they ask for two different things. `behind` explains why a feature is
+    /// missing — nothing to do about it but know. `ahead` is the rare one, and it is the only
+    /// line in this app that names three versions at once: it is only ever shown when all three
+    /// are true and there is a release to move to, so every word of it has to earn its place.
+    func compatNote(_ standing: Compat.Standing) -> String
+
     // Regular application shell and purpose-driven Setup Center.
     var menuApplication: String { get }
     var menuWindow: String { get }

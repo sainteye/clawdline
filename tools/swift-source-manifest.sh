@@ -107,6 +107,7 @@ clawdline_production_sources=(
   Sources/Transcript.swift
   Sources/TranscriptReadCoordinator.swift
   Sources/TranscriptRevisionWatch.swift
+  Sources/UpdateCheck.swift
   Sources/UsageFeatureAttribution.swift
   Sources/UsageFeatureClassifier.swift
   Sources/UsageLedger.swift

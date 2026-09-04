@@ -852,6 +852,18 @@ struct Korean: Copy {
     let menuQuit = "Clawdline 종료"
     let menuNoTarget = "(아직 찾지 못함)"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest)이(가) 나왔습니다 — 이건 \(installed)입니다"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed). 이 빌드가 확인한 버전은 \(builtAgainst)입니다"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed). 이 빌드가 확인한 버전은 \(builtAgainst)입니다 — Clawdline \(release)이(가) 나왔습니다"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "\(combo)를 등록하지 못했습니다" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """

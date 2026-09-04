@@ -854,6 +854,18 @@ struct Indonesian: Copy {
     let menuQuit = "Keluar dari Clawdline"
     let menuNoTarget = "(belum terdeteksi)"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest) sudah rilis — ini \(installed)"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed); build ini diperiksa terhadap \(builtAgainst)"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed); build ini diperiksa terhadap \(builtAgainst) — Clawdline \(release) sudah rilis"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "Tidak bisa mendaftarkan \(combo)" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """

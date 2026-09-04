@@ -432,12 +432,6 @@ enum Compat {
         return .orderedSame
     }
 
-    /// What to say about the version in front of us, if anything.
-    ///
-    /// Only when it is **older** than the one this was built against. A newer Claude Code is the
-    /// normal state of the world — it updates itself, this does not — and a warning that fires
-    /// every week is one nobody reads by the time it matters. Older is the case worth naming,
-    /// because then a missing feature really is a missing feature rather than a bug here.
     /// The newest release that names a version anybody actually checked.
     static var builtAgainst: String {
         releases.first { $0.claudeCode.first?.isNumber == true }?.claudeCode ?? ""
@@ -449,26 +443,80 @@ enum Compat {
         releases.first { $0.codex.first?.isNumber == true }?.codex ?? ""
     }
 
-    static func note(installed: String?, builtAgainst: String = Compat.builtAgainst) -> String? {
-        note(program: Assistant.claude.label, installed: installed, builtAgainst: builtAgainst)
+    // MARK: - What is worth saying about it
+
+    /// One program in front of us, and why it is worth a line. The rule, not the words — the
+    /// words are ``Copy/compatNote(_:)``, in fourteen languages.
+    enum Standing: Equatable {
+        /// Older than what this was built against, so the feature you are missing really is
+        /// missing rather than broken here.
+        case behind(program: String, installed: String, builtAgainst: String)
+        /// Newer than what this was built against, **and** there is a Clawdline that has caught
+        /// up. Both halves, or nothing: see ``standing(program:installed:builtAgainst:newerRelease:)``.
+        case ahead(program: String, installed: String, builtAgainst: String, release: String)
     }
 
-    /// One line about one program, or nothing.
-    static func note(program: String, installed: String?, builtAgainst: String) -> String? {
+    /// What to say about the version in front of us, if anything.
+    ///
+    /// **Behind gets a line, and always did.** Under the floor a feature is absent rather than
+    /// wrong, and saying which is the whole job of the table above.
+    ///
+    /// **Ahead was silent, and the reason it was silent has expired.** It read: *a newer Claude
+    /// Code is the normal state of the world — it updates itself, this does not — and a warning
+    /// that fires every week is one nobody reads by the time it matters.* Every clause of that
+    /// was true and the conclusion followed from the last one: there was nothing to say. Being
+    /// ahead is not a fault of the person's, they cannot fix it, and a line they cannot act on
+    /// arriving every week is a line they stop seeing — by the week it means something.
+    ///
+    /// **What changed is the "this does not".** ``UpdateCheck`` asks GitHub, once a day, whether
+    /// there is a Clawdline that has caught up. So the ahead case now splits in two, and only one
+    /// half is the old one:
+    ///
+    /// - Ahead, and this is the newest Clawdline there is. Still silent, and now for a better
+    ///   reason than "there is nothing to be done": there is *provably* nothing to be done. The
+    ///   drift is real, and the fix does not exist yet.
+    /// - Ahead, **and a newer Clawdline is out.** That is the sentence this file could never say
+    ///   before: *your Claude Code is 2.1.280, this was built against 2.1.260, and 0.8.0 is out.*
+    ///   Three facts, one action, and the third is what turns the first two from trivia into a
+    ///   reason to click something.
+    ///
+    /// **And it stays rare, which was the real objection.** It needs both halves at once — an
+    /// assistant that has moved past the floor *and* a release waiting — so it cannot become the
+    /// weekly notice the old comment was written against. A machine that updates Clawdline the
+    /// day it is told will see this at most once per Clawdline release, and never twice for the
+    /// same one. That is the difference between this and option C, "say it whenever the assistant
+    /// is ahead", which would fire on the ordinary state of the world and go unread exactly as
+    /// predicted.
+    ///
+    /// `newerRelease` being `nil` covers three different situations and deliberately treats them
+    /// alike: nobody has checked yet, the check failed, and there is nothing newer. Only the last
+    /// of those means "no release is waiting" — but the other two do not mean one *is*, and this
+    /// line must not be conjured out of not knowing. What tells those three apart is
+    /// ``UpdateCheck/Outcome``, which is where that distinction belongs.
+    static func standing(program: String, installed: String?, builtAgainst: String,
+                         newerRelease: String? = nil) -> Standing? {
         guard let installed, !builtAgainst.isEmpty else { return nil }
-        guard compare(installed, builtAgainst) == .orderedAscending else { return nil }
-        return "\(program) \(installed); this was built against \(builtAgainst)"
+        switch compare(installed, builtAgainst) {
+        case .orderedAscending:
+            return .behind(program: program, installed: installed, builtAgainst: builtAgainst)
+        case .orderedDescending:
+            guard let newerRelease, !newerRelease.isEmpty else { return nil }
+            return .ahead(program: program, installed: installed, builtAgainst: builtAgainst,
+                          release: newerRelease)
+        case .orderedSame:
+            return nil
+        }
     }
 
     /// Every version in front of us worth saying something about.
     ///
-    /// Both assistants, asked the same way and warned about on the same rule — older than what
-    /// this was built against, and silence otherwise. Usually empty, which is the point: a line
-    /// that is there every week is one nobody reads on the week it matters.
-    static func notes() -> [String] {
-        [note(program: Assistant.claude.label, installed: installedClaudeVersion(),
-              builtAgainst: builtAgainst),
-         note(program: Assistant.codex.label, installed: installedCodexVersion(),
-              builtAgainst: builtAgainstCodex)].compactMap { $0 }
+    /// Both assistants, asked the same way and judged on the same rule. Usually empty, which is
+    /// still the point: a line that is there every week is one nobody reads on the week it
+    /// matters.
+    static func standings(newerRelease: String? = nil) -> [Standing] {
+        [standing(program: Assistant.claude.label, installed: installedClaudeVersion(),
+                  builtAgainst: builtAgainst, newerRelease: newerRelease),
+         standing(program: Assistant.codex.label, installed: installedCodexVersion(),
+                  builtAgainst: builtAgainstCodex, newerRelease: newerRelease)].compactMap { $0 }
     }
 }

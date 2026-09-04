@@ -854,6 +854,18 @@ struct French: Copy {
     let menuQuit = "Quitter Clawdline"
     let menuNoTarget = "(pas encore détecté)"
 
+    func updateAvailable(latest: String, installed: String) -> String {
+        "Clawdline \(latest) est sorti — ici c’est \(installed)"
+    }
+    func compatNote(_ standing: Compat.Standing) -> String {
+        switch standing {
+        case .behind(let program, let installed, let builtAgainst):
+            return "\(program) \(installed) ; cette version a été vérifiée avec \(builtAgainst)"
+        case .ahead(let program, let installed, let builtAgainst, let release):
+            return "\(program) \(installed) ; cette version a été vérifiée avec \(builtAgainst) — Clawdline \(release) est sorti"
+        }
+    }
+
     func hotkeyFailedTitle(_ combo: String) -> String { "Impossible d'enregistrer \(combo)" }
     func hotkeyFailedBody(_ configPath: String) -> String {
         """
