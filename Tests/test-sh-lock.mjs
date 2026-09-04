@@ -1496,9 +1496,22 @@ try {
         'sed "s/^token=.*/token=somebody-elses-token/" "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt" > "$LOCK_SCRATCH/r23.txt"',
         'mv "$LOCK_SCRATCH/r23.txt" "$CLAWDLINE_SUITE_LOCK_DIR/holder.txt"',
         'sleep 2.2',
-        '[ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ] && echo "note=written" || echo "note=missing"',
+        // **Three answers, not two, and the file's absence is not one of them on its own.**
+        // This read the note's existence once, after the confirmation, and called it `read` when
+        // the file was gone — which is the same answer a note that was *never written* produces.
+        // A renewer that stopped writing the note would have left this check green while the
+        // check above it went red, and a check that can pass for the wrong reason looks exactly
+        // like one that passed. So `before` is recorded and the pair is what is reported.
+        'if [ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ]; then before=written; else before=missing; fi',
+        'echo "note=$before"',
         'st=0; clawdline_confirm_suite_lock || st=$?; echo "confirm=$st"',
-        '[ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ] && echo "note_after=kept" || echo "note_after=read"',
+        'if [ -f "$CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE" ]; then after=kept; else after=gone; fi',
+        'case "$before/$after" in',
+        '  written/gone) echo "note_after=consumed" ;;',
+        '  written/kept) echo "note_after=kept" ;;',
+        '  missing/gone) echo "note_after=never_written" ;;',
+        '  *) echo "note_after=appeared" ;;',
+        'esac',
         'rm -rf "$CLAWDLINE_SUITE_LOCK_DIR"',
     ].join("\n"));
     const r23b = run(note23);
@@ -1507,8 +1520,11 @@ try {
     check("the confirmation repeats it to the run and refuses the second expensive thing",
           /confirm=75/.test(r23b.all)
             && /renewal loop stopped during the guarded section — .*changed hands/.test(r23b.all));
-    check("and the note is consumed, so a later run cannot inherit somebody else's stop reason",
-          /note_after=read/.test(r23b.all));
+    // The verdict is in the line so the reading is visible in a green run too: `consumed` and
+    // `never_written` are different sentences on the screen, where the old `read` was one.
+    const noteVerdict = /note_after=(\S+)/.exec(r23b.all)?.[1] ?? "nothing reported";
+    check(`and the note is consumed, so a later run cannot inherit somebody else's stop reason (read: ${noteVerdict})`,
+          noteVerdict === "consumed");
     check("the note lives outside the lock, which is the directory two of the stop reasons are about",
           /CLAWDLINE_SUITE_LOCK_RENEWAL_NOTE:-\$\{TMPDIR:-\/tmp\}\//.test(block));
 
