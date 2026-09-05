@@ -1,5 +1,6 @@
 #!/bin/bash
 # guard: tools/check-version-strings.py
+# prevents: the app's own version typed into a third place that nothing derives and nothing keeps in step, so it goes stale with no one able to see it
 # defect: the app's own version typed into a document nothing keeps in step
 # expect: nothing keeps in step
 #

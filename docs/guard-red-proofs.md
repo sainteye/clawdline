@@ -15,6 +15,39 @@ Neither is a knowledge gap and neither is carelessness. There was nothing on the
 `Tests/guard-red-proofs/` that puts one defect in front of it and requires it to say so, and the
 same script refuses a guard that no proof names.
 
+## The mutation has to be the failure the guard exists for
+
+This is the rule the first pass was missing, and `Tests/changelog-facts.mjs` is why it is here.
+
+That guard takes every HTTP route named in the CHANGELOG's `## Unreleased` block and asserts the
+server still answers it. Its own header says so. It has a red proof in the easy sense: invent
+`/v1/nothing-answers-this` and it exits 1 and names it.
+
+Measured here on 2026-09-05, in a disposable copy of this tree:
+
+| what was changed | what the guard said |
+|---|---|
+| `GET /v1/nothing-answers-this` added to Unreleased | **red** — "answers no such path" |
+| `GET /v1/orchestrator/tasks/:id/nothing-answers-this` added to Unreleased | green |
+| `/v1/orchestrator/tasks` renamed to `/v1/GONE/tasks` in `RemoteServer.swift` | green |
+
+A route counts as answered if **any** run of its literal segments longer than three characters
+appears anywhere in the source, so `/v1/orchestrator` answers for everything beneath it. Every
+route anybody actually adds lives under a namespace that already exists — so the guard is blind to
+its whole subject, and green for the one mutation a proof-writer reaches for first.
+
+Deleting an entire route is not a thing that happens. Naming one that was never wired up is. So a
+proof declares what the guard is **for**, and its broken arm has to be an instance of that:
+
+```sh
+# prevents: the CHANGELOG's Unreleased block promising an HTTP route the shipped server does not
+#           answer — the failure tools/release.sh opens with, where the README described a product
+#           the only downloadable build did not contain
+```
+
+A guard that cannot say what it prevents is a finding in itself, and the runner refuses a proof
+whose `# prevents:` is too short to be a failure mode.
+
 ## What a proof is
 
 Two arms over one defect. The runner requires:
@@ -41,12 +74,13 @@ differ only by the mutation.
 
 ## Writing one
 
-A proof is a shell script in `Tests/guard-red-proofs/`. Three headers, which the runner reads:
+A proof is a shell script in `Tests/guard-red-proofs/`. Four headers, which the runner reads:
 
 ```sh
 #!/bin/bash
 # guard: tools/check-something.py
-# defect: what the broken arm puts in front of it, in a few words
+# prevents: the failure this guard exists to stop, in its own terms — a sentence, not a word
+# defect: what the broken arm puts in front of it, and it has to be an instance of `prevents:`
 # expect: a fragment of the sentence the guard should print about it
 ```
 
@@ -60,11 +94,37 @@ the environment:
 
 Guards that take a root from the environment (`CLAWDLINE_WEB_ROOT`, `CLAWDLINE_VERSION_SCAN_ROOT`,
 `CLAWDLINE_CURL_SCAN_ROOT`, `CLAWDLINE_GUARD_ROOT`) need much less than a whole tree; look at the
-five existing proofs before copying one.
+six existing proofs before copying one.
 
 **Do not pin a literal the tree also owns.** `Tests/guard-red-proofs/version-strings.sh` reads the
 app's version out of the fixture's `build.sh` rather than typing it, because typing it would be a
 third place this repository's version is written down — caught by the very guard it is proving.
+
+## When the guard is blind: three arms, and a marker that expires
+
+A proof that does not hold is **two** findings, and they must not be confused: either the guard is
+blind to its own subject, or the proof script never applied its mutation. So a proof that expects
+not to hold declares `# known-blind: <what was measured>` and owes a third arm — `easy`, the crude
+mutation that even a weak guard catches. The runner then requires:
+
+- the **easy** arm goes red for this defect — which is what makes the next line a statement about
+  the guard rather than about the fixture;
+- the **broken** arm does not.
+
+It reports the guard as `BLIND`, prints the finding, and exits 0. The run stays green because the
+finding is about a guard the change was told not to repair — and it cannot rot into folklore,
+because **the day somebody fixes the guard the marker is what fails**: an expectation of failure
+that quietly starts succeeding is refused, with "take the marker out".
+
+There is one today, `Tests/changelog-facts.mjs`, for the reason in the table above.
+
+## Suites are guards too
+
+`Tests/*.mjs` are guards in every sense that matters, and there are fifty of them. Requiring a proof
+for each is a programme rather than a change, so what the runner holds is only that the count never
+falls: `MJS_PROOF_FLOOR` in `tools/check-guards-go-red.sh`, the same shape as this repository's
+file-size ceilings, raised by whoever adds the next proof. A count that can only go up is the
+difference between "we will get to it" and "we got to one and then stopped".
 
 ## The meta check, and its own proof
 
@@ -94,6 +154,11 @@ Not a list of exempt names kept in the runner. A list somewhere else goes stale 
 puts the reason where the next reader is not looking. A marker with nothing behind it is a
 silencer, so the runner requires at least sixteen characters of reason and reports a marker that
 has none.
+
+**Rename, do not delete.** The two web proofs each rename a name on one side of a contract — an
+element id in `index.html` that the registry still looks up, a key in `i18n.js` that the modules
+and `/v1/strings` still spell the old way. That is how those actually break. Adding a lookup for an
+element nobody ever wrote is not.
 
 ## What is not covered
 

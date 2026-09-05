@@ -1,5 +1,6 @@
 #!/bin/bash
 # guard: tools/check-architecture-boundaries.sh
+# prevents: a file growing past the ceiling somebody set for it without anybody raising that ceiling in a diff — the guard's promise is that every growth is stated on purpose
 # defect: Tests/main.swift grown past the ceiling it is held to
 # expect: maximum is 500
 #

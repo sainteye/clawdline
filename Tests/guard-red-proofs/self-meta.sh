@@ -1,5 +1,6 @@
 #!/bin/bash
 # guard: tools/check-guards-go-red.sh
+# prevents: a guard added to tools/ with nothing beside it that has ever seen it fail — the family this whole mechanism is for, arriving one file at a time
 # defect: a guard added to tools/ with no red proof beside it
 # expect: has no red proof
 #
@@ -25,6 +26,7 @@ if [ "$ARM" = clean ]; then
     printf '#!/bin/bash\n'
     printf '# %s: tools/check-nothing-at-all.sh\n' guard
     printf '# %s: nothing at all, which is what this fixture is\n' defect
+    printf '# %s: nothing; this fixture exists so the clean arm has a registered guard\n' prevents
     printf '# %s: a sentence no run of this proof ever prints\n' expect
     printf 'exit 1\n'
   } > "$DIR/Tests/guard-red-proofs/nothing-at-all.sh"

@@ -1,5 +1,6 @@
 #!/bin/bash
 # guard: tools/check-curl-status.py
+# prevents: a request whose HTTP status is never looked at, so a 401 or a 409 comes back through curl's exit code as the answer the caller was hoping for
 # defect: a shell script that reads only curl's exit status
 # expect: reads curl's exit status
 #
