@@ -121,7 +121,15 @@ main_lines=$(line_count Tests/main.swift)
 # than a mechanism). Nine landings sat invisible to every ledger reader on 2026-09-05 until a
 # rebuild happened to run the backfill, because finalize — the only other writer — always runs
 # before anybody can land the work. A feature, so it raises rather than being absorbed.
-orchestrator_ceiling=10606
+#
+# 10,618 is the other half of that landing reaching the ledger (+12: two four-line write-backs in
+# `updateLanding`, one on the idempotent `landed -> landed` re-send and one on the race that finds
+# it landed after the verification subprocesses, plus their four lines of comment). The raise above
+# wired the paths that *change* a landing, and a re-send changes nothing by definition — so a
+# landing recorded before that wiring existed had no door at all and waited for the next launch,
+# which is the wait the feature was built to remove. Its review found it; the ceiling is what makes
+# the fix visible rather than absorbed.
+orchestrator_ceiling=10618
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -273,8 +281,12 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # rule gets its own runner too. **Both branches wrote 33 and neither was wrong on its own tree**,
 # which is precisely why this number is counted on the merged one rather than carried over from
 # whichever side merged second.
-[ "$runner_count" -eq 34 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 34"
+# 35 once the Projects page's read got a suite of its own — the same wall as the two above and the
+# same answer. `Tests/UsageLedgerTests.swift` stood at 1,998 lines against the 2,000-line limit
+# below, so the three groups that answer for one route moved out whole, in the position they
+# already ran in, rather than being trimmed to fit under it.
+[ "$runner_count" -eq 35 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 35"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -450,8 +462,12 @@ done
 # 46 with Tests/ProjectRunTests.swift; see the runner-count note above for why it is its own file.
 # 47 with Tests/SnippetStoreTests.swift, which arrived on another branch with the store it proves.
 # Two branches, one number each, both 46: counted here on the tree that holds both files.
-[ "$suite_count" -eq 47 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 47"
+# 48 with Tests/UsageProjectWorktreeTests.swift, which is not a new area: it is the three Projects
+# groups moved out of Tests/UsageLedgerTests.swift when that file hit the 2,000-line stop-growth
+# limit above. The move keeps the executed group order — the new runner is called between the two
+# it was cut from — so `expectedOrderedTestGroupTitles` is untouched by it.
+[ "$suite_count" -eq 48 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 48"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
