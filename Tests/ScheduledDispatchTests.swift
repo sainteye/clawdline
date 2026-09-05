@@ -134,9 +134,8 @@ group("schedule files are strict and carry an ordinary task template") {
     }
     var spent = single
     spent["fired_at"] = 1_788_600_000
-    // The two arms differ in one key and are asserted together on purpose: "it has not run" alone
-    // passes for a parser that never reads `fired_at` at all, which is how it was first written.
-    // The pair goes red for that parser, for one that invents a stamp, and for one off by a day.
+    // Asserted together on purpose: "it has not run" alone passes for a parser that never reads
+    // `fired_at`, which is how it was first written. The pair goes red for that parser too.
     if case .ok(let parsed) = Orchestrator.schedule(from: spent, filename: "\(id).json",
                                                     isDirectory: { $0 == "/tmp" }) {
         check("the ran-at is read off the file rather than assumed either way",
@@ -845,8 +844,8 @@ group("bad schedule files are isolated and the routes use orchestrator envelopes
     check("a save may still move a one-shot that has not run", retimed == (200, "ok"),
           String(describing: retimed))
     waitingWork.forEach { $0() }
-    // The daily schedule beside it is the control: same queue, same pass, so a green here
-    // cannot be a harness that ran nothing.
+    // The daily schedule beside it is the control: same queue, same pass, so a green here cannot
+    // be a harness that ran nothing.
     check("the work that was waiting drops the occurrence it lost, and only that one",
           laterRuns.contains(id) && !laterRuns.contains(laterID), String(describing: laterRuns))
     check("and nothing stamped the old day onto the retimed file",
@@ -1587,9 +1586,15 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
            source(onceID)["fired_at"] as? Int, 1_788_600_000)
     var movedDay = onceBody
     movedDay["on"] = "2026-09-13"
-    _ = update(onceID, movedDay)
-    check("and a save that moves it takes the stamp off",
-          source(onceID)["fired_at"] == nil, String(describing: source(onceID)["fired_at"]))
+    // This used to take the stamp off, on the reading that `fired_at` named one occurrence rather
+    // than the schedule — which made the route a re-arm primitive. The cycle is in the beat group.
+    let moved = refusal(update(onceID, movedDay))
+    check("and a save that moves it is refused with the run route's own code",
+          moved?.status == 409 && moved?.code == "schedule_spent", String(describing: moved))
+    check("and the stamp and the day are exactly where they were",
+          source(onceID)["fired_at"] as? Int == 1_788_600_000
+            && (source(onceID)["when"] as? [String: Any])?["on"] as? String == "2026-09-06",
+          String(describing: source(onceID)["when"]))
     // Taken away again: the checks further down this group are about which files a removal leaves
     // behind, and a schedule this block made would be one of them.
     try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(onceID).json"))
