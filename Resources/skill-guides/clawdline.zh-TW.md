@@ -60,14 +60,24 @@ description: |
 PORT=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
 TOKEN=$(cat ~/.config/clawdline/orchestrator-token 2>/dev/null)
 [ -n "$TOKEN" ] || echo "NO TOKEN"
-curl -s "http://127.0.0.1:$PORT/v1/health"
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/health"
 ```
 
 - `NO TOKEN`／檔案不存在 → **停下來**，告訴使用者：Clawdline 沒開，或版本太舊沒有 orchestrator。
   請他開 Clawdline、到「Clawdline 設定 → 遠端」打開
   **讓瀏覽器或你的手機看得到你的 session**，token 會在 server 起來時自己生出來。
 - `curl` 連不上 → 同上，server 沒在跑。
+- 印出 `curl: (22) The requested URL returned error: …` → 那個 port 上有東西在回應，而它拒絕了
+  這個請求；下面印出來的 body 帶著 typed 的 `code`，讀它。
 - health 回得出來但 token 檔沒有 → 這台的 Clawdline 還沒有這個功能，請使用者更新。
+
+**這份指南裡每一條指令都帶 `--fail-with-body`，而它是承重的。** `curl` 對 `401` 的結束碼跟對 `200`
+一樣是 0，所以少了這個 flag，被拒絕的請求跟被接受的請求長得一模一樣。這不是假設：2026-09-05 有一個
+session 的兩則訊息因為 id 過期被拒，它那端只看到 `ok:null`；而某支送信腳本整晚印著 `sent`，因為結束碼
+是 0 的 `curl` 會讓 `&& echo sent` 對 `404` 一樣成立。加上它，server 的 typed error body 照樣印出來
+——下面每一句「看 `code` 分支」講的就是它——而指令會以非 0 結束。**非 0 就是沒發生：要說出這件事，
+不要說你本來想做什麼。** 用 pipeline 把輸出接進 `jq` 時，shell 回報的是 jq 的狀態，那裡該讀的是
+stderr 上那行 `curl: (22) …`。
 
 **這個 token 是「我是本機、以你的身分在跑的程式」的證明。** 不要寫進任何檔案、不要交給 child、
 不要放進 `/tmp`、不要貼進回覆裡。
@@ -341,7 +351,7 @@ reviewer 不是第五個工人，是一個讀者：只讀別人的產出、只�
 **codex 的 sandbox 預設禁外連**——要上網的任務不要給它，會卡在核准或直接失敗。
 （生圖不受這條影響，見 §2.5。）
 
-**挑之前先查額度。** `curl -s http://127.0.0.1:7717/v1/orchestrator/assistants`
+**挑之前先查額度。** `curl --fail-with-body -sS http://127.0.0.1:7717/v1/orchestrator/assistants`
 （帶 `X-Clawdline-Orchestrator`）會回兩邊各自的 `availability`——`ok`、`low`、`exhausted`，
 或近期沒人查過的 `unknown`。派給已經 `exhausted` 的那個會被 `409 assistant_exhausted` 擋下，
 它的 `alternatives` 陣列會列出該改派誰。
@@ -681,7 +691,7 @@ active physical id 或 durable Coordinator 的 physical binding，會回
 ## 5. Dispatch
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
@@ -722,7 +732,7 @@ automation。它不是 Child 派工、Root Assignment、Major Feature launch，�
 復原手段。task 寫成 `root.session_id:null` 與 `root.poll_only:true`，再把同一個 closed body 送到：
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
@@ -752,7 +762,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
    TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
    TASK_ID='<task-id from the completion line>'
    NOTICE_ID='<notice-id from the completion line>'
-   curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/completion/ack" \
+   curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/completion/ack" \
      -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
      -d "{\"notice_id\":\"$NOTICE_ID\"}"
    ```
@@ -762,7 +772,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
 2. **自己 poll**——`root.session_id` 沒查到、或使用者現在就要知道：
 
 ```bash
-curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id" \
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id" \
   -H "X-Clawdline-Orchestrator: $TOKEN" | jq '.task | {state, summary, artifacts, usage}'
 ```
 
@@ -783,7 +793,7 @@ result-verified、transport-delivered、observed 與 acknowledged 是分開的�
 要提早收掉：
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
 ```
 
@@ -794,7 +804,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
 關**之前**，先看這一關會帶走誰：
 
 ```bash
-curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   | jq --arg s "$ROOT_SESSION" '[.tasks[]
       | select(.root.sessionId == $s and (.state | IN("queued","spawning","briefed")))
@@ -869,7 +879,7 @@ ROOT_TERMINAL=$(curl -fsSG "http://127.0.0.1:$PORT/v1/orchestrator/whoami" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   --data-urlencode "conversation_id=$ROOT_CONVERSATION" | jq -er .terminal_id)
 jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
-  | curl -sS -X POST \
+  | curl --fail-with-body -sS -X POST \
       "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
       -H "X-Clawdline-Orchestrator: $TOKEN" \
       -H 'Content-Type: application/json' --data-binary @-
@@ -1133,7 +1143,7 @@ echo "$hid"
 **4. 開 session。**
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
   -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"handoff_id\":\"$hid\",\"project_dir\":\"$PWD\",\"title\":\"Cloud 規劃線\",\"from_session\":\"$ROOT_SESSION\"}"
 ```
@@ -1194,9 +1204,9 @@ handoff 路由）。寄件者契約另外有九個：
 `error`。只有格式有效才手動跑一次：
 
 ```bash
-curl -s "http://127.0.0.1:$PORT/v1/orchestrator/schedules" \
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/orchestrator/schedules" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
-curl -s -X POST \
+curl --fail-with-body -sS -X POST \
   "http://127.0.0.1:$PORT/v1/orchestrator/schedules/<schedule-id>/run" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
 ```
@@ -1264,7 +1274,7 @@ jq -n --arg id "$task_id" --arg dir "$PWD" --arg created "$(date -u +%Y-%m-%dT%H
           project_dir:$dir, label:"clawdline 主控"}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
 ```

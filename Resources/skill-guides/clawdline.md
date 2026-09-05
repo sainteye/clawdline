@@ -63,7 +63,7 @@ older build left behind is deleted rather than left to be followed.
 PORT=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
 TOKEN=$(cat ~/.config/clawdline/orchestrator-token 2>/dev/null)
 [ -n "$TOKEN" ] || echo "NO TOKEN"
-curl -s "http://127.0.0.1:$PORT/v1/health"
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/health"
 ```
 
 - `NO TOKEN` / no such file → **stop** and tell the user: Clawdline is not running, or it is too
@@ -71,8 +71,20 @@ curl -s "http://127.0.0.1:$PORT/v1/health"
   **Let a browser or your phone see your sessions** in Settings → Remote; the token writes itself
   when the server comes up.
 - `curl` cannot connect → same thing, the server is not running.
+- it prints `curl: (22) The requested URL returned error: …` → something is answering on that
+  port and it refused this request. The body printed underneath carries the typed `code`.
 - health answers but there is no token file → this copy of Clawdline does not have the feature.
   Ask them to update.
+
+**Every call in this guide carries `--fail-with-body`, and it is load-bearing.** `curl` exits 0
+for a `401` exactly as it does for a `200`, so without the flag a request the server refused
+looks identical to one it accepted. That is not hypothetical: on 2026-09-05 one session's two
+messages were rejected for a stale id and its end saw only `ok:null`, while a send script printed
+`sent` all evening because a `curl` that exits 0 makes `&& echo sent` true for a `404` as well.
+With the flag the server's typed error body still prints — it is what every "branch on `code`"
+below is about — and the command exits non-zero. **A non-zero exit means it did not happen: say
+that, instead of what you meant to do.** In a pipeline, where the output goes into `jq`, the
+shell reports jq's status, so the line to read there is the `curl: (22) …` one on stderr.
 
 **That token is the proof that you are a local process running as them.** Do not write it to a
 file, do not hand it to a child, do not put it anywhere under `/tmp`, and do not paste it into a
@@ -394,7 +406,7 @@ If the user named one, use it. Otherwise:
 open web; it will stall on an approval or simply fail. (Image generation is not affected; see
 §2.5.)
 
-**Check quota before picking one.** `curl -s http://127.0.0.1:7717/v1/orchestrator/assistants`
+**Check quota before picking one.** `curl --fail-with-body -sS http://127.0.0.1:7717/v1/orchestrator/assistants`
 (with `X-Clawdline-Orchestrator`) answers `availability` for both — `ok`, `low`, `exhausted`, or
 `unknown` when nobody has looked recently. Dispatching to an `exhausted` one is refused with `409
 assistant_exhausted`; its `alternatives` array names who to send instead.
@@ -777,7 +789,7 @@ as `root_unresolved`; multiple same-assistant process owners are refused as
 ## 5. Dispatch
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
@@ -819,7 +831,7 @@ Root Assignment, Major Feature launch, or recovery from a failed identity lookup
 with `root.session_id:null` and `root.poll_only:true`, then send the same closed body to:
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
@@ -850,7 +862,7 @@ Completion arrives one of two ways, and you do not have to choose:
    TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
    TASK_ID='<task-id from the completion line>'
    NOTICE_ID='<notice-id from the completion line>'
-   curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/completion/ack" \
+   curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/completion/ack" \
      -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
      -d "{\"notice_id\":\"$NOTICE_ID\"}"
    ```
@@ -861,7 +873,7 @@ Completion arrives one of two ways, and you do not have to choose:
 2. **You poll** — when `root.session_id` came back empty, or the user wants to know now:
 
 ```bash
-curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id" \
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id" \
   -H "X-Clawdline-Orchestrator: $TOKEN" | jq '.task | {state, summary, artifacts, usage}'
 ```
 
@@ -885,7 +897,7 @@ way to use this.
 To end one early:
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
 ```
 
@@ -896,7 +908,7 @@ deepest first. That is documented as a mechanism; here it is an obligation with 
 *Before* you close, look at what the close takes with it:
 
 ```bash
-curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   | jq --arg s "$ROOT_SESSION" '[.tasks[]
       | select(.root.sessionId == $s and (.state | IN("queued","spawning","briefed")))
@@ -981,7 +993,7 @@ ROOT_TERMINAL=$(curl -fsSG "http://127.0.0.1:$PORT/v1/orchestrator/whoami" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   --data-urlencode "conversation_id=$ROOT_CONVERSATION" | jq -er .terminal_id)
 jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
-  | curl -sS -X POST \
+  | curl --fail-with-body -sS -X POST \
       "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
       -H "X-Clawdline-Orchestrator: $TOKEN" \
       -H 'Content-Type: application/json' --data-binary @-
@@ -1292,7 +1304,7 @@ no credential in a handoff.
 **4. Open the session.**
 
 ```bash
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
   -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"handoff_id\":\"$hid\",\"project_dir\":\"$PWD\",\"title\":\"Cloud planning line\",\"from_session\":\"$ROOT_SESSION\"}"
 ```
@@ -1357,9 +1369,9 @@ After writing the file, validate it through the read route: find its `id`, or st
 row whose `state` is `invalid` and read its `error`. Then manually run a valid schedule once:
 
 ```bash
-curl -s "http://127.0.0.1:$PORT/v1/orchestrator/schedules" \
+curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/orchestrator/schedules" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
-curl -s -X POST \
+curl --fail-with-body -sS -X POST \
   "http://127.0.0.1:$PORT/v1/orchestrator/schedules/<schedule-id>/run" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
 ```
@@ -1433,7 +1445,7 @@ jq -n --arg id "$task_id" --arg dir "$PWD" --arg created "$(date -u +%Y-%m-%dT%H
           project_dir:$dir, label:"clawdline root"}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 
-curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
 ```
