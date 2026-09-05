@@ -1838,10 +1838,17 @@ var SNIPPET_BASE = [
 /// hands over rows the server would have dropped teaches the page a habit the server will break.
 Mock.snippets = function (id) {
     var where = snippetScopeKey(Mock._sessionCwd(id));
+    // `snippetRows()` and not `SNIPPET_BASE`: the writing half further down keeps what the sheet
+    // made in a second table, and a read that could not see it would make every write look lost.
     var list = params.get("snippets") === "empty" ? [] :
-        SNIPPET_BASE.filter(function (row) {
+        snippetRows().filter(function (row) {
             return row.scope === "global" || row.project === where;
-        }).slice().sort(function (a, b) { return a.position - b.position; });
+        }).slice().sort(function (a, b) {
+            // Project rows first, then global, each in the order the person put them in — the
+            // two-key sort `Snippets.records(for:)` does with two filtered arrays.
+            var group = (a.scope === "project" ? 0 : 1) - (b.scope === "project" ? 0 : 1);
+            return group || a.position - b.position;
+        });
     return new Promise(function (done) {
         setTimeout(function () {
             done({ project: { key: where, label: where.split("/").pop() }, snippets: list });
@@ -1849,6 +1856,196 @@ Mock.snippets = function (id) {
     });
 };
 
+/* The writing half, which is what makes the editor visible without a Mac.
+   ---------------------------------------------------------------------------
+   These four hold their rows in `SNIPPET_MADE`, which `Mock.snippets` above reads alongside the
+   fixture, so a snippet made in the sheet is a snippet the next read finds — the same reason the
+   schedule fixtures push into the table their list route reads.
+
+   The store's refusals are modelled where the sheet has a branch for them, and nowhere else: an
+   empty title or body, and the exact-key rule that makes a `project` beside `scope: "global"` a
+   `snippet_scope_mismatch`. That second one is not decoration. It is the shape a body built by
+   copying a row and overwriting two fields takes, and a fixture that quietly accepted it would
+   teach this page a habit `Sources/Snippets.swift` breaks on the first real Mac.
+
+   `?snippets=readonly` takes the four away and leaves `snippets()`, which is the Cloud path: the
+   list reads out of the published snapshot and there is no envelope class for a write. That is
+   the arrangement `snippetActions` exists for, and it is one URL away rather than one Mac away.
+   -------------------------------------------------------------------------- */
+var SNIPPET_MADE = [];
+
+function snippetRefusal(status, code, message) {
+    return Object.assign(new Error(message), { code: code, status: status });
+}
+
+/// Every row this fixture has, the base three plus anything the sheet made, minus anything it
+/// deleted — `Mock.snippets` filters and orders this, exactly as the Mac's route does.
+function snippetRows() {
+    return SNIPPET_BASE.concat(SNIPPET_MADE).filter(function (row) { return !row.deleted; });
+}
+
+function snippetPosition(scope, project) {
+    return snippetRows().filter(function (row) {
+        return row.scope === scope && (row.project || null) === (project || null);
+    }).reduce(function (top, row) { return Math.max(top, row.position || 0); }, 0) + 100;
+}
+
+/// The store's key rule, which is the one a browser is most likely to break: `project` is
+/// present if and only if the scope is `project`, and a `project: null` counts as present.
+function snippetScopeOK(body) {
+    var hasProject = Object.prototype.hasOwnProperty.call(body, "project");
+    if (body.scope === "project") return hasProject && !!body.project;
+    if (body.scope === "global") return !hasProject;
+    return false;
+}
+
+Mock.createSnippet = function (snippet) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            var body = snippet || {};
+            var keys = Object.keys(body);
+            var known = keys.every(function (key) {
+                return ["title", "body", "scope", "project"].indexOf(key) >= 0;
+            });
+            if (!known || !body.title || !body.body) {
+                fail(snippetRefusal(400, "malformed_snippet",
+                    "A snippet contains missing or unknown fields."));
+                return;
+            }
+            if (!snippetScopeOK(body)) {
+                fail(snippetRefusal(400, "snippet_scope_mismatch",
+                    "Project snippets need one project path; global snippets cannot carry one."));
+                return;
+            }
+            var now = Math.floor(Date.now() / 1000);
+            var row = { id: uuid(), title: body.title, body: body.body, scope: body.scope,
+                        position: snippetPosition(body.scope, body.project),
+                        created_at: now, updated_at: now };
+            if (body.scope === "project") row.project = body.project;
+            SNIPPET_MADE.push(row);
+            done(row);
+        }, 220);
+    });
+};
+
+Mock.updateSnippet = function (id, snippet) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            var body = snippet || {};
+            var row = null;
+            snippetRows().forEach(function (candidate) {
+                if (candidate.id === id) row = candidate;
+            });
+            if (!row) {
+                fail(snippetRefusal(404, "snippet_not_found",
+                    "No snippet named that exists on this Mac."));
+                return;
+            }
+            if (!Object.keys(body).length) {
+                fail(snippetRefusal(400, "malformed_snippet",
+                    "A snippet change contains no fields or an unknown field."));
+                return;
+            }
+            var scope = body.scope || row.scope;
+            var project = Object.prototype.hasOwnProperty.call(body, "project")
+                ? body.project : (body.scope ? null : row.project);
+            var proposed = { scope: scope };
+            if (project) proposed.project = project;
+            if (!snippetScopeOK(proposed)) {
+                fail(snippetRefusal(400, "snippet_scope_mismatch",
+                    "Project snippets need one project path; global snippets cannot carry one."));
+                return;
+            }
+            // A row that came out of `SNIPPET_BASE` is edited through a copy in `SNIPPET_MADE`,
+            // so reloading the page brings the fixture back exactly as it was written.
+            var kept = SNIPPET_MADE.indexOf(row) >= 0 ? row : null;
+            if (!kept) {
+                kept = { id: row.id, title: row.title, body: row.body, scope: row.scope,
+                         project: row.project, position: row.position,
+                         created_at: row.created_at, updated_at: row.updated_at };
+                SNIPPET_MADE.push(kept);
+                row.deleted = true;
+            }
+            if (body.title != null) kept.title = body.title;
+            if (body.body != null) kept.body = body.body;
+            if (body.scope) {
+                var moved = kept.scope !== scope || (kept.project || null) !== (project || null);
+                kept.scope = scope;
+                if (scope === "project") kept.project = project;
+                else delete kept.project;
+                if (moved) kept.position = snippetPosition(scope, project);
+            }
+            kept.updated_at = Math.floor(Date.now() / 1000);
+            done(kept);
+        }, 220);
+    });
+};
+
+Mock.deleteSnippet = function (id) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            var found = false;
+            snippetRows().forEach(function (row) {
+                if (row.id !== id) return;
+                found = true;
+                row.deleted = true;
+                if (SNIPPET_MADE.indexOf(row) < 0) SNIPPET_MADE.push(row);
+            });
+            if (!found) {
+                fail(snippetRefusal(404, "snippet_not_found",
+                    "No snippet named that exists on this Mac."));
+                return;
+            }
+            done({ ok: true });
+        }, 200);
+    });
+};
+
+/// The full order of one scope, under the promise the real route makes: it may reorder the
+/// members of that scope and may never add or remove one. The refusal for an order that is not
+/// exactly that set is modelled, because it is the one a sheet reordering the wrong group hits.
+Mock.orderSnippets = function (scope, project, order) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            var mine = snippetRows().filter(function (row) {
+                return row.scope === scope && (row.project || null) === (project || null);
+            });
+            var ids = mine.map(function (row) { return row.id; }).sort();
+            var asked = (order || []).slice().sort();
+            if (ids.length !== asked.length ||
+                ids.some(function (id, at) { return id !== asked[at]; })) {
+                fail(snippetRefusal(400, "snippet_scope_mismatch",
+                    "That order must contain every snippet in this scope, and no others."));
+                return;
+            }
+            order.forEach(function (id, at) {
+                mine.forEach(function (row) {
+                    if (row.id !== id) return;
+                    var moved = SNIPPET_MADE.indexOf(row) >= 0 ? row : null;
+                    if (!moved) {
+                        moved = { id: row.id, title: row.title, body: row.body, scope: row.scope,
+                                  project: row.project, created_at: row.created_at,
+                                  updated_at: row.updated_at, position: row.position };
+                        SNIPPET_MADE.push(moved);
+                        row.deleted = true;
+                    }
+                    moved.position = (at + 1) * 100;
+                    moved.updated_at = Math.floor(Date.now() / 1000);
+                });
+            });
+            done({ ok: true });
+        }, 200);
+    });
+};
+
 // The Mac too old to have the route at all. `input/snippets.js` asks `typeof api.snippets` and
 // leaves its `⋯` row undrawn, which is the same guard `/v1/places` and `/v1/push/key` are behind.
 if (params.get("snippets") === "off") delete Mock.snippets;
+// The Cloud path: the list arrives with the published snapshot and no write can be sent at all.
+// `snippetActions` is what turns that into a sheet with no `＋` and no row menu.
+if (params.get("snippets") === "readonly") {
+    delete Mock.createSnippet;
+    delete Mock.updateSnippet;
+    delete Mock.deleteSnippet;
+    delete Mock.orderSnippets;
+}

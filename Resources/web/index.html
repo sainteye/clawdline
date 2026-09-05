@@ -318,16 +318,23 @@ document.documentElement.className = "booting";
     <section class="pane pane-detail" id="pane-detail">
         <div class="detail-head" id="detail-head">
             <button class="back" id="back" aria-label="Back to the session list">‹ Sessions</button>
-            <!-- The whole identity block leads to this Session's information. One real button
-                 around the mark, title and path makes the generous phone target match what the
-                 reader sees, while the separate overflow button remains the actions entrance. -->
-            <button class="detail-session" id="detail-info" type="button"
-                    aria-haspopup="dialog">
+            <!-- The identity block is two buttons that read as one. The mark is the shortcut to
+                 this project's snippets — it already means *this project* and it is the easiest
+                 thing on the header to hit with a thumb — and the name and the path lead to this
+                 session's information, which is what a reader points at when they mean "tell me
+                 about this". Neither press has to reveal what it meant; `detail.css` keeps the
+                 two halves at the spacing they had when they were one button, and gives the
+                 mark its own 44px target. -->
+            <button class="detail-mark-go" id="detail-snippets" type="button"
+                    aria-haspopup="menu">
                 <span class="detail-identity">
                     <span class="clawdfather-crown" id="detail-clawdfather-crown"
                           role="img" aria-label="Clawdfather" hidden></span>
                     <canvas id="detail-mark" width="0" height="0"></canvas>
                 </span>
+            </button>
+            <button class="detail-session" id="detail-info" type="button"
+                    aria-haspopup="dialog">
                 <span class="who detail-who">
                     <span class="name" id="detail-name">No session open</span>
                     <span class="sub" id="detail-sub"></span>

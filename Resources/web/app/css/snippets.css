@@ -13,9 +13,37 @@
     flex-direction: column;
 }
 .snippets-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
     padding: 16px 20px 14px;
     border-bottom: 1px solid var(--line);
 }
+.snippets-heading { flex: 1 1 auto; min-width: 0; }
+/* The way in to the editor, and the only writing control that is not inside the list. It is
+   drawn only when this transport has `createSnippet` and this device may write; the rest of
+   them live in `snippetsListHTML`, which answers the same question about the same routes. */
+.snippets-new {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    /* The thumb rule the header's mark follows too: the glyph is small, the target is not. */
+    min-width: 44px;
+    min-height: 44px;
+    margin: -10px -8px -10px 0;
+    border-radius: 9px;
+    color: var(--dim);
+    font-size: 19px;
+    line-height: 1;
+}
+.snippets-new:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.snippets-new:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+/* A rule that sets `display` outranks the `hidden` attribute — the grid above would keep an
+   empty 44px box in the head of every sheet a relay reader opens. */
+.snippets-new[hidden] { display: none; }
 .snippets-sheet h2 {
     margin: 0;
     font-size: 14px;
@@ -60,10 +88,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+/* A row and, when this transport can write, its own `⋯` beside it. One grid line rather than
+   the `⋯` floating over the row: the text is what gets shorter when the menu button appears,
+   and a title that ran under it would be a title nobody could read on the narrowest phone. */
+.snippet-line {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+}
+.snippet-line + .snippet-line { margin-top: 2px; }
 .snippet-row {
     display: block;
     width: 100%;
     min-width: 0;
+    flex: 1 1 auto;
     text-align: left;
     padding: 10px 12px;
     border: 1px solid transparent;
@@ -74,6 +112,77 @@
     cursor: pointer;
 }
 .snippet-row + .snippet-row { margin-top: 2px; }
+.snippet-more {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    min-width: 44px;
+    border-radius: 10px;
+    background: none;
+    color: var(--faint);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+.snippet-more:hover { background: var(--card-hi); color: var(--ink); }
+.snippet-more:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+.snippet-line.open .snippet-more { color: var(--accent); }
+/* The row's menu, drawn inside the list under the row it belongs to rather than floating over
+   it. A menu positioned against a row inside a scroller has to be moved every time the scroller
+   moves; one that is part of the list moves because the list moved. */
+.snippet-menu {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 8px 12px;
+}
+.snippet-act {
+    padding: 8px 11px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--dim);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+}
+.snippet-act:hover { background: var(--card-hi); color: var(--ink); }
+.snippet-act:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+.snippet-act.danger { border-color: #57362e; color: #e09985; }
+.snippet-act.danger:hover { background: #2f2322; color: #f0b6a2; }
+/* The empty state's two starters. They are rows in everything but name — the same two lines in
+   the same two colours — because pressing one is how the first snippet on this Mac gets made,
+   and it should look like the thing it is about to become. */
+.snippet-starters {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 0 8px;
+}
+.snippet-starter {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+}
+.snippet-starter:hover { background: var(--card-hi); }
+.snippet-starter:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
 .snippet-row:hover { background: var(--card-hi); }
 .snippet-row:focus-visible {
     outline: 2px solid var(--accent);
@@ -129,7 +238,52 @@
     padding: 8px 14px;
     text-align: center;
 }
+/* What a refused write said, in the words the Mac used — `snippet_limit_reached` says how many
+   there are, and no string of ours knows that. Above the buttons and inside the sheet, not in a
+   toast that has gone by the time somebody looks up from a lock screen. */
+.snippets-sheet > .said {
+    margin: 0;
+    padding: 10px 20px 0;
+    color: var(--accent);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+.snippets-sheet > .said:empty { display: none; }
+
+/* The editor
+   ---------------------------------------------------------------------------
+   The `#schedule-form` furniture, which is this page's form: uppercase field labels, the
+   recessed text fields, a chip row for the one choice it offers, and Delete pushed to the far
+   side of Cancel and Save by `.danger` in `sheets.css`. */
+.snippet-editor-sheet {
+    width: min(520px, 100%);
+    max-height: calc(var(--vvh, 100dvh) - 48px);
+    overflow-y: auto;
+}
+.snippet-editor-sheet .block { display: block; margin-bottom: 13px; }
+.snippet-editor-sheet .field-label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+.snippet-editor-sheet .find { margin-bottom: 0; }
+.snippet-editor-sheet textarea {
+    min-height: 118px;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.55;
+    /* A snippet is literal text, and a body typed on a phone is usually several lines of it. */
+    white-space: pre-wrap;
+}
+/* Offered only while there is nothing to overwrite, so it sits under the field it would fill. */
+.snippet-from-last { margin-top: 8px; padding: 7px 12px; font-size: 12.5px; }
 
 @media (max-width: 899px) {
     .snippet-list { padding: 4px 18px 12px; }
+    .snippet-menu { margin-left: 8px; }
 }

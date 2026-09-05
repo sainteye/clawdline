@@ -25,6 +25,44 @@
 }
 .detail-head .detail-session:hover:not(:disabled) { background: var(--card); }
 .detail-head .detail-session:disabled { opacity: 0.45; cursor: default; }
+
+/* The mark, which is now the snippets shortcut.
+   ---------------------------------------------------------------------------
+   **The mark is about 35×20 and a thumb is not.** Seven cells at 5px is a picture, not a
+   target, so the button carries its own padding out to 44×44 and takes every pixel of it back
+   with a matching negative margin — the trick `.detail-session` beside it already uses. The
+   margin box therefore stays exactly the size of the mark, the header does not grow, and the
+   name still sits the same 10px away from the mark it sat at when the two were one button.
+
+   `min-width`/`min-height` rather than only padding, because the padding is measured from a
+   canvas whose size is not ours to promise: `drawIcon` sets it from the icon's own cells. A
+   mark two cells narrower must not shrink the target below the floor.
+
+   The floor is also why `[data-mark="none"]` exists. `drawIcon` collapses the canvas to 0×0
+   for a session with no icon, and the header — unlike the list, which has `.row .mark.none` —
+   had no placeholder for that. `view/project-mark.js` now draws one instead of leaving a hole,
+   so this rule is the second line and not the first: it catches the moment before the first
+   render, and any session whose project path is empty. */
+.detail-head .detail-mark-go {
+    display: grid; place-items: center;
+    flex: 0 0 auto;
+    min-width: 44px; min-height: 44px;
+    padding: 12px 5px; margin: -12px -5px;
+    border-radius: 7px;
+}
+/* **A rule that sets `display` outranks the `hidden` attribute** — the same trap the header
+   itself fell into, noted further down. `renderDetailHead` hides this button when no session is
+   open, and without this line the grid above would keep an empty 44px box on screen. */
+.detail-head .detail-mark-go[hidden] { display: none; }
+.detail-head .detail-mark-go:hover:not(:disabled) { background: var(--card); }
+.detail-head .detail-mark-go:disabled { opacity: 0.45; cursor: default; }
+/* A Mac too old for the snippets routes: the mark is inert, and it is also perfectly present.
+   Fading it there would be the header claiming the project's own mark was unavailable. */
+.detail-head .detail-mark-go[data-plain="on"]:disabled { opacity: 1; }
+.detail-head .detail-mark-go[data-mark="none"] .detail-identity::after {
+    content: ""; display: block;
+    width: 16px; height: 12px; border-radius: 2px; background: #202028;
+}
 .detail-head .detail-identity { position: relative; flex: 0 0 auto; }
 .detail-head .detail-actions { position: relative; flex: 0 0 auto; }
 .detail-head .detail-identity > .clawdfather-crown {

@@ -63,14 +63,43 @@ export var T = {
     webSessionGit: "Git changes",
     // Snippets: the `⋯` row, the two scope headings the sheet groups under, and the two things
     // it says when there is no list to show. The sheet is reached from the overflow menu and
-    // (once the header split lands) from the project mark, which is the first thing a reader who
-    // does not read English will press — so these come from the string table like every other
-    // row in that menu, rather than from a copy table of the view's own.
+    // from the project mark in the header, which is the first thing a reader who does not read
+    // English will press — so these come from the string table like every other row in that
+    // menu, rather than from a copy table of the view's own.
     webSnippets: "Snippets",
     webSnippetsThisProject: "This project",
     webSnippetsEveryProject: "Every project",
+    // Two empty states, because there are two different facts to say. A device that cannot write
+    // is told where snippets come from; a device that can is shown the door and two starters.
     webSnippetsEmpty: "No snippets yet. Add one on the Mac and it appears here.",
+    webSnippetsEmptyNew: "No snippets yet. Write one, or start from one of these.",
     webSnippetsReadOnly: "This device may read but not write — a snippet cannot be put in the box.",
+    // The editor. Every one of these is behind `snippetControls`: a transport that cannot write
+    // never draws the control that would say them, so a reader on the relay sees none of it.
+    webSnippetNew: "New snippet",
+    webSnippetEditing: "Edit snippet",
+    webSnippetMore: "Snippet actions",
+    webSnippetEdit: "Edit",
+    webSnippetDelete: "Delete",
+    webSnippetDeleteAsk: "Press again to delete",
+    webSnippetUp: "Move up",
+    webSnippetDown: "Move down",
+    webSnippetToGlobal: "Move to every project",
+    webSnippetToProject: "Only this project",
+    webSnippetTitleLabel: "Title",
+    webSnippetBodyLabel: "Text",
+    webSnippetScopeLabel: "Where",
+    webSnippetSave: "Save",
+    // Prefill from the newest thing this person sent in this session — the sentence they are
+    // about to save is usually one they have just finished typing once.
+    webSnippetFromLast: "From my last message",
+    webSnippetNeedsText: "A snippet needs a title and some text.",
+    // The two the design was written from, offered on the empty list as one press each. The
+    // English here is the fallback; the fourteen copy files carry what a reader actually sees.
+    webSnippetStarterCommitTitle: "Commit, push, deploy",
+    webSnippetStarterCommitBody: "Commit each file by name — never git add -A — then push and deploy.",
+    webSnippetStarterReportTitle: "Say what you did",
+    webSnippetStarterReportBody: "Say what you just did, what is still undone, and what you are doing next.",
     webScreenTitle: "Screen",
     webScreenLive: "live",
     webScreenOnDemand: "on demand",

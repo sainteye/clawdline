@@ -7,6 +7,8 @@ import { els } from "../core/dom.js";
 import { ASK_MARK, clockOf, shortPath, tint } from "../core/util.js";
 import { assistantLogo, assistantName, drawIcon, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
 import { byId, taskOfChild, taskWord } from "./derive.js";
+import { markForSession, projectLabel } from "./project-mark.js";
+import { snippetControls } from "./snippets-data.js";
 import { closingID } from "./list.js";
 import { copyCodeBlock, inlineMd, richText } from "./markdown.js";
 import { Optimistic, Waits, listUnknown, txSkeleton } from "./waits.js";
@@ -46,7 +48,10 @@ export function renderDetailHead() {
     // header is the third thing that used to announce an absence and then fill in a name.
     els["detail-name"].textContent = s ? (s.label || s.tty || s.id)
         : (listUnknown() ? "" : T.webNoSessionOpen);
-    els["detail-name"].style.color = s && s.icon ? tint(s.icon.accent) : "";
+    // The mark's own colour, whether the registry drew that mark or this page did. Two sessions
+    // in two unregistered projects are still two projects, and the title says so.
+    var mark = markForSession(s);
+    els["detail-name"].style.color = mark ? tint(mark.accent) : "";
     els["detail-clawdfather-crown"].hidden = !coordinatorForSession(s);
     var sub = [];
     if (s) {
@@ -72,7 +77,13 @@ export function renderDetailHead() {
         }
     }
     els["detail-sub"].textContent = sub.join("  ·  ");
-    drawIcon(els["detail-mark"], s && s.icon, 5);
+    // `drawIcon` answers false when it had nothing to draw and left the canvas at 0×0. That is
+    // the case `detail.css` keeps a box for: the mark is a button now, and a button with no box
+    // is a shortcut nobody can press. `markForSession` makes it rare rather than impossible —
+    // a session with no `cwd` at all, and the moment before the first render, still land here.
+    var drew = drawIcon(els["detail-mark"], mark, 5);
+    els["detail-snippets"].dataset.mark = drew ? (mark.generated ? "generated" : "registry")
+        : "none";
     // **Hidden unless this page is being read on the Mac itself.**
     //
     // The button brings a session's terminal to the front over there. Pressed from a phone it
@@ -94,6 +105,32 @@ export function renderDetailHead() {
     els["detail-info"].disabled = !s || ending;
     els["detail-info"].title = T.webSessionInfo;
     els["detail-info"].setAttribute("aria-label", T.webSessionInfo);
+    // The other half of that block: the mark opens this project's snippets. It says what it does
+    // first and which project second, because a label that is only a project name does not tell
+    // a reader who cannot see the sheet what pressing it will do. Reading needs no write switch
+    // — the sheet shows its rows to a device that may only read, and says why it cannot insert.
+    //
+    // **On a transport with no snippets route the mark stops being a control and goes back to
+    // being a picture.** Hiding it would take this project's identity off the header of an older
+    // Mac, and dimming it would say the mark itself was unavailable; neither is true. So it is
+    // `disabled` — inert, and announced as inert — labelled with the project alone, and
+    // `data-plain` tells `detail.css` not to fade a mark that is perfectly present. The same
+    // `snippetControls` the sheet asks, so the header and the `⋯` row cannot disagree.
+    var canSnippet = snippetControls(api).read;
+    var snippetsFor = s ? projectLabel(s.cwd) : "";
+    var snippetsSays = !canSnippet ? snippetsFor
+        : (snippetsFor ? T.webSnippets + " · " + snippetsFor : T.webSnippets);
+    // No session is not a project with no mark: it is no project. The button goes away entirely
+    // rather than leaving an empty box beside "No session open", which is what the header did
+    // when the mark was a canvas inside the other button.
+    els["detail-snippets"].hidden = !s;
+    els["detail-snippets"].disabled = !s || ending || !canSnippet;
+    els["detail-snippets"].dataset.plain = canSnippet ? "off" : "on";
+    els["detail-snippets"].title = snippetsSays;
+    if (snippetsSays) els["detail-snippets"].setAttribute("aria-label", snippetsSays);
+    else els["detail-snippets"].removeAttribute("aria-label");
+    if (canSnippet) els["detail-snippets"].setAttribute("aria-haspopup", "menu");
+    else els["detail-snippets"].removeAttribute("aria-haspopup");
     els["detail-actions-trigger"].disabled = !s || ending;
     els["detail-actions-trigger"].title = T.webSessionActions;
     els["detail-actions-trigger"].setAttribute("aria-label", T.webSessionActions);
