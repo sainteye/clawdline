@@ -38,7 +38,7 @@ group("schedule files are strict and carry an ordinary task template") {
         expect("the default close policy is on-success", schedule.closeTab, .onSuccess)
         expect("the default catch-up window is six hours", schedule.catchUpHours, 6)
         expect("the default failure notification is on", schedule.notifyOnFailure, true)
-        expect("weekday names become Calendar weekday numbers", schedule.weekdays, Set([2, 4, 6]))
+        expect("weekday names become Calendar weekday numbers", schedule.when, .weekly([2, 4, 6]))
         // Every schedule file written before this field existed, and every one somebody typed in
         // an editor, is this case. It has to keep meaning "as far back as anyone knows".
         check("a file that never said when it was made parses and says so",
@@ -124,13 +124,13 @@ group("schedule fire arithmetic crosses midnight and filters days") {
     let formatter = ISO8601DateFormatter()
     func date(_ value: String) -> Date { formatter.date(from: value)! }
     let daily = Orchestrator.Schedule(id: "a", title: "a", hour: 23, minute: 45,
-        weekdays: nil, taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+        when: .daily, taskTemplate: [:], enabled: true, closeTab: .onSuccess,
         catchUpHours: 6, notifyOnFailure: true, createdAt: nil, whenChangedAt: nil)
     expect("after midnight sees yesterday's fire",
            Orchestrator.latestFire(of: daily, at: date("2026-08-26T00:15:00Z"), calendar: calendar),
            date("2026-08-25T23:45:00Z"))
     let monday = Orchestrator.Schedule(id: "b", title: "b", hour: 9, minute: 0,
-        weekdays: Set([2]), taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+        when: .weekly([2]), taskTemplate: [:], enabled: true, closeTab: .onSuccess,
         catchUpHours: 6, notifyOnFailure: true, createdAt: nil, whenChangedAt: nil)
     expect("Tuesday looks back to the selected Monday",
            Orchestrator.latestFire(of: monday, at: date("2026-08-25T10:00:00Z"), calendar: calendar),
@@ -224,7 +224,7 @@ group("no occurrence from before a schedule was made is an occurrence it missed"
     let formatter = ISO8601DateFormatter()
     func date(_ value: String) -> Date { formatter.date(from: value)! }
     func nine(madeAt: Date?, changedAt: Date? = nil) -> Orchestrator.Schedule {
-        Orchestrator.Schedule(id: "c", title: "c", hour: 9, minute: 0, weekdays: nil,
+        Orchestrator.Schedule(id: "c", title: "c", hour: 9, minute: 0, when: .daily,
                               taskTemplate: [:], enabled: true, closeTab: .onSuccess,
                               catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt,
                               whenChangedAt: changedAt)
@@ -295,7 +295,7 @@ group("an edit does not fire the occurrence it has just invented") {
     let madeAt = date("2026-08-25T08:00:00Z")
     let ranYesterday = date("2026-08-25T21:00:00Z")
     func schedule(hour: Int, changedAt: Date?) -> Orchestrator.Schedule {
-        Orchestrator.Schedule(id: "d", title: "d", hour: hour, minute: 0, weekdays: nil,
+        Orchestrator.Schedule(id: "d", title: "d", hour: hour, minute: 0, when: .daily,
                               taskTemplate: [:], enabled: true, closeTab: .onSuccess,
                               catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt,
                               whenChangedAt: changedAt)
@@ -330,7 +330,7 @@ group("an edit does not fire the occurrence it has just invented") {
     let savedAt = date("2026-08-26T14:00:00Z")
     let beat = savedAt.addingTimeInterval(60)
     expect("a schedule created at 14:00 was already safe, and still is",
-           beatWould(Orchestrator.Schedule(id: "e", title: "e", hour: 9, minute: 0, weekdays: nil,
+           beatWould(Orchestrator.Schedule(id: "e", title: "e", hour: 9, minute: 0, when: .daily,
                                            taskTemplate: [:], enabled: true, closeTab: .onSuccess,
                                            catchUpHours: 6, notifyOnFailure: true,
                                            createdAt: savedAt, whenChangedAt: nil),
@@ -695,7 +695,8 @@ group("a schedule made over HTTP is one the parser above would have accepted") {
     expect("the file is named after the id it generated", files(), ["\(madeID).json"])
     let loaded = Orchestrator.schedules()
     expect("and it is loaded back off disk by the ordinary inventory", loaded.count, 1)
-    expect("with the weekdays it was asked for", loaded.first?.weekdays, Set([2, 4]))
+    expect("with the weekdays it was asked for", loaded.first?.when,
+           Orchestrator.ScheduleWhen.weekly([2, 4]))
     expect("the hour survived the round trip", loaded.first?.hour, 9)
     expect("and the minute", loaded.first?.minute, 30)
     expect("the place id became the project directory, and never came from the request",
@@ -812,7 +813,7 @@ group("a schedule made over HTTP is one the parser above would have accepted") {
     expect("both schedules are on disk", both.count, 2)
     let second = both.first { $0.id != madeID }
     check("daily is a schedule with no weekday filter",
-          second != nil && second?.weekdays == nil)
+          second != nil && second?.when == .daily)
     expect("the close policy came through", second?.closeTab, .always)
     expect("the catch-up window came through", second?.catchUpHours, 12)
     expect("the failure notification came through", second?.notifyOnFailure, false)
@@ -1254,7 +1255,7 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     check("the rewritten file is one the ordinary inventory reads back", reloaded != nil)
     expect("the new hour is on disk", reloaded?.hour, 7)
     expect("and the new minute", reloaded?.minute, 5)
-    check("daily replaced the two weekdays", reloaded?.weekdays == nil)
+    check("daily replaced the two weekdays", reloaded?.when == .daily)
     expect("the new place became the project directory, and never came from the request",
            reloaded?.taskTemplate["project_dir"] as? String, "/usr")
     expect("and the close policy came through", reloaded?.closeTab, .always)

@@ -1671,8 +1671,12 @@ struct ScheduleFormState: Equatable {
     /// `HH:MM` in local time, produced by the picker rather than typed — see ``time(from:calendar:)``.
     var at = ScheduleFormState.timeDefault
     var daily = true
-    /// Only read when ``daily`` is false. Codes from ``dayCodes``.
+    /// Only read when ``daily`` is false and ``onDay`` is nil. Codes from ``dayCodes``.
     var weekdays: Set<String> = []
+    /// `YYYY-MM-DD` for a schedule that runs once, nil for a recurring one. Carried across a save
+    /// and never shown, for the reason ``model`` is: there is no control for it here, and a save
+    /// that dropped it would be this form changing something it did not put on screen.
+    var onDay: String?
     /// A `place_id` from ``StartPoints/places()``, never a path. See ``placeChoices(_:including:)``.
     var placeID = ""
     var assistant = ""
@@ -1700,8 +1704,19 @@ struct ScheduleFormState: Equatable {
         let task = schedule.taskTemplate
         title = schedule.title
         at = String(format: "%02d:%02d", schedule.hour, schedule.minute)
-        daily = schedule.weekdays == nil
-        weekdays = Set((schedule.weekdays ?? []).compactMap(Self.code(forWeekday:)))
+        switch schedule.when {
+        case .daily: daily = true
+        case .weekly(let numbers):
+            daily = false
+            weekdays = Set(numbers.compactMap(Self.code(forWeekday:)))
+        case .once(let day):
+            // This form has no date control, and a save that dropped the date would convert
+            // somebody's single run into a daily one — an edit changing a field it never showed.
+            // So the date is carried instead, the day chips draw as none-of-them, and the days
+            // row is inert here; see ``toggle(day:)``.
+            daily = false
+            onDay = day.text
+        }
         // The file has a path and the form has an id, the same way round as the page's own
         // `placeIdForPath`. Nothing is guessed when it is not on the list: `placeChoices` is what
         // makes sure it is.
@@ -1722,7 +1737,6 @@ struct ScheduleFormState: Equatable {
         var out: [String: Any] = [
             "title": title,
             "at": at,
-            "days": daily ? "daily" : Self.dayCodes.filter { weekdays.contains($0) },
             "place_id": placeID,
             "assistant": assistant,
             "instructions": instructions,
@@ -1732,6 +1746,11 @@ struct ScheduleFormState: Equatable {
             "notify_on_failure": notifyOnFailure,
             "timeout_minutes": timeoutMinutes,
         ]
+        // How often, and exactly one of the two spellings: `on` is a schedule that runs once and
+        // `days` one that repeats, and a body carrying both is refused by the parser rather than
+        // having one of them chosen for it.
+        if let onDay { out["on"] = onDay }
+        else { out["days"] = daily ? "daily" : Self.dayCodes.filter { weekdays.contains($0) } }
         // Empty means "whatever that assistant runs by default", and the allowlist would take
         // `"model": ""` happily — leaving a field in the file whoever opens it later has to read
         // and dismiss. See the same rule in `Orchestrator.scheduleObject(from:)`.
@@ -1744,6 +1763,10 @@ struct ScheduleFormState: Equatable {
     /// rather than adding to it, because a chip meaning "every day" stops meaning that the moment
     /// one day is chosen instead.
     mutating func toggle(day code: String) {
+        // A schedule that runs once has no weekday pattern to toggle, and this form cannot offer
+        // the conversion either way round: `PATCH` refuses a save that changes whether a schedule
+        // repeats, precisely because neither form shows the date it would be replacing.
+        guard onDay == nil else { return }
         guard !daily else {
             daily = false
             weekdays = [code]
