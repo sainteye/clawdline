@@ -670,7 +670,7 @@ struct Hindi: Copy {
     let webSnippetSave = "सहेजें"
     let webSnippetFromLast = "अपने पिछले संदेश से"
     let webSnippetNeedsText = "वाक्य में शीर्षक और कुछ टेक्स्ट होना चाहिए।"
-    let webSnippetStarterCommitTitle = "commit, push, deploy"
+    let webSnippetStarterCommitTitle = "Commit, push, deploy"
     let webSnippetStarterCommitBody = "हर फ़ाइल का नाम लेकर commit करो — git add -A कभी नहीं — फिर push और deploy।"
     let webSnippetStarterReportTitle = "बताओ क्या किया"
     let webSnippetStarterReportBody = "बताओ अभी क्या किया, क्या बाकी है, और आगे क्या करने वाले हो।"

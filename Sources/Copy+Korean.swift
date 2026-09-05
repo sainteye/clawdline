@@ -664,7 +664,7 @@ struct Korean: Copy {
     let webSnippetSave = "저장"
     let webSnippetFromLast = "방금 보낸 메시지로 만들기"
     let webSnippetNeedsText = "문구에는 제목과 내용이 있어야 합니다."
-    let webSnippetStarterCommitTitle = "commit, push, deploy"
+    let webSnippetStarterCommitTitle = "Commit, push, deploy"
     let webSnippetStarterCommitBody = "파일을 하나씩 이름을 지정해서 commit하고 — git add -A 는 쓰지 말고 — push, deploy까지 해줘."
     let webSnippetStarterReportTitle = "진행 상황 알려줘"
     let webSnippetStarterReportBody = "방금 뭘 했고, 아직 안 한 게 뭐고, 다음에 뭘 할 건지 알려줘."

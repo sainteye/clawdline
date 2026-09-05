@@ -1219,6 +1219,17 @@ group("the languages the interface speaks") {
         // as English does, which is also what this file's French `webBack` already says.
         "fr:webMenu", "it:webMenu", "pt:webMenu", "id:webMenu",
         "fr:webPages", "fr:webSessions",
+        // The snippets sheet. `Text` is the German word for the editor's second field, and the
+        // starter snippet's title is three commands rather than three verbs: a French reader who
+        // saw *Valider, pousser, déployer* would be looking at the names of nothing they can run,
+        // which is the opposite of what a snippet is for. Chinese and Japanese are not on this
+        // list — they punctuate the same three words with their own comma.
+        "de:webSnippetBodyLabel",
+        "fr:webSnippetStarterCommitTitle", "de:webSnippetStarterCommitTitle",
+        "es:webSnippetStarterCommitTitle", "pt:webSnippetStarterCommitTitle",
+        "it:webSnippetStarterCommitTitle", "ru:webSnippetStarterCommitTitle",
+        "id:webSnippetStarterCommitTitle", "tr:webSnippetStarterCommitTitle",
+        "ko:webSnippetStarterCommitTitle", "hi:webSnippetStarterCommitTitle",
     ]
     let en = English()
 
