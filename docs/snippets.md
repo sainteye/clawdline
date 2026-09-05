@@ -1,9 +1,15 @@
 # Snippets
 
-**This page is a design. None of it is built yet.** It is written as a spec so the sessions that
-implement it read one description rather than five, and so the decisions already taken are not
-retaken. Every "does", "answers" and "rides" below is what the feature *will* do; nothing here can
-be verified against a running app today.
+**This shipped.** It was written as a design first — one description for the sessions that built
+it, so the decisions already taken were not retaken — and it is kept as one, because the reasons
+are the part worth having written down and a reader who has only the code re-derives them wrong.
+Every "does", "answers" and "rides" below is now something you can check against a running app.
+
+**Where this page and the code disagree, the code is right**, and the five places they did are
+marked ⚠ in the text below rather than quietly corrected: a design that is silently edited to
+match what was built stops being evidence of anything. The wire is
+[`api.md`](api.md#the-snippets-a-session-can-press), which was written from
+[`Snippets.swift`](../Sources/Snippets.swift) and the route cases rather than from here.
 
 - [What a snippet is](#what-a-snippet-is)
 - [Where you press one](#where-you-press-one)
@@ -129,7 +135,7 @@ here blocks it; see the last section.
 
 ```json
 {
-  "id": "3F2A…",
+  "id": "3f2a91c4-7e0b-4d68-8b41-6d0a2c9e5f31",
   "title": "Commit, push, deploy",
   "body": "commit（逐檔指名，不要 git add -A）、push、deploy。",
   "scope": "project",
@@ -141,7 +147,9 @@ here blocks it; see the last section.
 ```
 
 - `title` 1–60 characters; `body` 1–4000; `scope` exactly `"global"` or `"project"`; `project`
-  present if and only if `scope` is `"project"`.
+  present if and only if `scope` is `"project"`. ⚠ The `id` above read `3F2A…`; every id this
+  store writes or accepts is a **lowercased** UUID, and one sent in any other case is canonicalised
+  before it addresses anything.
 - **The key set is exact.** An unknown key is `400 malformed_snippet` rather than a field quietly
   dropped, the way every other written object in this API behaves.
 - At most **100** snippets on a Mac and **50** in one scope; over that is `409 snippet_limit_reached`
@@ -149,7 +157,13 @@ here blocks it; see the last section.
 - Typed refusals, each with a code of its own so a sheet can say which it hit:
   `malformed_snippet`, `snippet_not_found`, `snippet_too_long`, `snippet_limit_reached`,
   `snippet_scope_mismatch` (a `project` scope with no path, or a path with `scope: "global"`).
-- Writes are atomic — write to a temporary file, `replaceItemAt`. Deletes resolve `<id>.json` and
+  ⚠ Three more came with the writing: `rate_limited` for the brake, and `write_failed` and
+  `delete_failed` for a disk that would not take it — listed in
+  [`api.md`](api.md#the-snippets-a-session-can-press) with what each one means.
+- Writes are atomic — write to a temporary file, `replaceItemAt` — **and read back off disk
+  through the same check that reads the list before the request is answered**, so a file this app
+  cannot itself parse never survives the request that made it: a create removes it, an edit puts
+  the previous bytes back. Deletes resolve `<id>.json` and
   nothing else, which is the whole of the path handling, exactly as
   [`docs/schedules.md`](schedules.md) does it. A file whose name is not a UUID has no id and is
   skipped rather than repaired.
@@ -172,7 +186,14 @@ session: both change what is on this Mac, and a device that may only read must n
 rewrite the owner's snippets. A brake of ten writes in ten minutes, copied from
 `POST /v1/orchestrator/schedules`, keeps a looping client off the disk.
 
-`docs/api.md` gains one section for the set, placed beside the schedules routes.
+[`docs/api.md`](api.md#the-snippets-a-session-can-press) carries one section for the set, beside
+the schedules routes.
+
+⚠ **Two things this section got wrong.** These are paired-device routes and are *not* under
+`/v1/orchestrator/`, so unlike the schedules reads the orchestrator token opens none of them — it
+is never read here. And the brake is one bucket for all four writes rather than a copy of the
+schedules one: ten writes in ten minutes across create, edit, delete and reorder together, `DELETE`
+included, where `DELETE /v1/orchestrator/schedules/:id` is deliberately not braked at all.
 
 ## The list rides the snapshot
 
@@ -203,7 +224,7 @@ Two things follow, and the second is the reason to do it this way:
 | `index.html` | the mark comes out of `#detail-info` into `#detail-snippets`. |
 | `app/css/detail.css` | the two buttons read as one block; the new button gets its 44px box and its no-mark placeholder. |
 | `app/js/view/transcript.js` | `renderDetailHead` sets `disabled`, `title` and `aria-label` on the new button the way it does for the two it already owns. |
-| `app/js/net/client.js` | `snippets()`, `createSnippet()`, `updateSnippet()`, `deleteSnippet()`, `orderSnippets()`. **Not** added to `ClawdlineClient.methods`, which is the contract every transport must satisfy. |
+| `app/js/net/live.js` | `snippets()`, `createSnippet()`, `updateSnippet()`, `deleteSnippet()`, `orderSnippets()`, on `LocalClient`. **Not** added to `ClawdlineClient.methods` in `net/client.js`, which is the contract every transport must satisfy. ⚠ This row said `net/client.js`; that file is the contract, and the direct transport is `net/live.js`. |
 | `app/js/net/cloud-client.js` | `snippets()` only, from the published rows. |
 | `app/js/net/mock.js` | a fixture: a couple of global snippets and one project-scoped, so `?mock=1` exercises the sheet, the grouping and the empty state without a Mac. |
 
@@ -225,14 +246,24 @@ A read-only device shows the sheet and its rows, with the insert disabled and th
 
 ## Words
 
-About twelve strings: the menu row, the sheet title, the two scope headings, 新增 / 編輯 / 刪除 /
-上移 / 下移, the empty state, the limit message, the read-only reason.
+⚠ **Twenty-six, not the twelve this said.** The menu row, the sheet title, the two scope headings,
+two empty states, the read-only reason, the editor's three field labels and its two headings, the
+row menu's six actions, Save, the delete confirmation, 用上一則訊息新增, the "needs a title and some
+text" refusal — and the two starters, which are four strings on their own because each has a title
+and a body. The twelve was an estimate made before the editor and the empty state existed.
 
-They belong in `Sources/Strings.swift` and its fourteen `Copy+*.swift` files, with the English baked
-into `core/i18n.js` as the fallback — the house rule, and the `⋯` menu is a shipped surface where
-every other row already comes from there. `input/user-messages.js` carries its own two-language copy
-table instead; that was the right call for a sheet reached from one place, and it is the wrong one
-here, because the shortcut on the header is the first thing a non-English reader will press.
+They are in `Sources/Strings.swift` and the fourteen `Copy` structs across thirteen `Copy+*.swift`
+files — Chinese carries Traditional and Simplified in one file — with the English baked into
+`core/i18n.js` as the fallback, and `RemotePage.swift` answering all twenty-six on `/v1/strings`.
+That is the house rule, and the `⋯` menu is a shipped surface where every other row already comes
+from there. `input/user-messages.js` carries its own two-language copy table instead; that was the
+right call for a sheet reached from one place, and it is the wrong one here, because the shortcut on
+the header is the first thing a non-English reader will press.
+
+**The two starters are the one place a literal translation is the wrong answer.** Every other string
+is the interface talking; those two are text a person sends to an assistant, so each language says
+what somebody there would actually type. `Strings.swift` carries that instruction beside the
+declarations so the next translator reads it before writing over them.
 
 ## Tests
 
@@ -248,8 +279,8 @@ One file each. `./test.sh` compiles every source file together with the tests in
 invocation with no cache between runs, so a second Swift test file is a real cost and this feature
 does not need one.
 
-`docs/interface.md` gains a paragraph under the session header; `README.md` and `README.zh-TW.md`
-gain the same feature line in both; `CHANGELOG.md` gains the entry.
+[`docs/interface.md`](interface.md#the-mark-in-a-sessions-header) carries the paragraph on what the
+mark opens; both READMEs carry the same feature line; `CHANGELOG.md` carries the entry.
 
 ## Not in v1, and what each would cost
 
@@ -278,15 +309,15 @@ Two of these were **declined outright on 2026-09-05**, not merely postponed, and
 
 ## Build order
 
-Six pieces, each verifiable on its own, in this order:
+Six pieces, each verifiable on its own, in this order — all six landed:
 
 1. **Store and routes**, Swift only, no UI — provable with `curl` and the new test file.
 2. **The snapshot field and the transports**, including the mock fixture.
 3. **The sheet and the `⋯` row** — inserting works end to end; the editor is not there yet.
 4. **The mark as a shortcut** — the header split, the tap target, the no-mark box.
 5. **The editor** — create, edit, delete, reorder, the empty-state starters, `用上一則訊息新增`.
-6. **The words and the pages** — the fourteen copy files, `docs/api.md`, `docs/interface.md`, both
+6. **The words and the pages** — the fourteen languages, `docs/api.md`, `docs/interface.md`, both
    READMEs, `CHANGELOG.md`.
 
-Steps 3 and 4 are the ones a person can judge by looking, and step 4 is the one that touches a
-header that already works — it should land after the sheet has been used, not before.
+Steps 3 and 4 are the ones a person can judge by looking, and step 4 is the one that touched a
+header that already worked — it landed after the sheet had been used, not before.
