@@ -429,7 +429,10 @@ export function snippetsListHTML(model, options) {
             "</h3>");
         rows.forEach(function (row, at) {
             var summary = snippetSummary(row.body);
-            var open = index === openMenu;
+            // A row cannot be "the one with its menu open" on a transport that draws no menus.
+            // Left as a bare index comparison, a relay reader's list still carried the open
+            // class — a state about a control that is not there.
+            var open = may.menu && index === openMenu;
             out.push('<div class="snippet-line' + (open ? " open" : "") + '">');
             out.push('<button class="snippet-row" type="button" data-snippet="' + index + '"' +
                 (opts.readOnly ? " disabled" : "") + ">");

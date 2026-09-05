@@ -20,8 +20,12 @@ assert.equal(typeof globalThis.document, "undefined",
 assert.equal(typeof globalThis.window, "undefined", "and without a window");
 
 const data = await import("../Resources/web/app/js/view/snippets-data.js");
-const { snippetControls, snippetGroups, snippetOrder, snippetSummary, snippetTitle,
+const { snippetActions, snippetControls, snippetCreateBody, snippetDraft, snippetDraftFromText,
+    snippetDraftProblem, snippetGroups, snippetOrder, snippetOrderBody, snippetPatchBody,
+    snippetReorder, snippetScopeSwap, snippetStarters, snippetSummary, snippetTitle,
     snippetsListHTML } = data;
+const { generatedMark, markForSession, projectLabel } =
+    await import("../Resources/web/app/js/view/project-mark.js");
 const { appendGap, appendedText } = await import("../Resources/web/app/js/core/compose-text.js");
 const { T } = await import("../Resources/web/app/js/core/i18n.js");
 
@@ -37,12 +41,26 @@ const cloudSource = await readFile(
     new URL("../Resources/web/app/js/net/cloud-client.js", import.meta.url), "utf8");
 const styles = await readFile(
     new URL("../Resources/web/app/css/snippets.css", import.meta.url), "utf8");
+const headSource = await readFile(
+    new URL("../Resources/web/app/js/view/transcript.js", import.meta.url), "utf8");
+const headStyles = await readFile(
+    new URL("../Resources/web/app/css/detail.css", import.meta.url), "utf8");
+const indexSource = await readFile(
+    new URL("../Resources/web/index.html", import.meta.url), "utf8");
+const mockSource = await readFile(
+    new URL("../Resources/web/app/js/net/mock.js", import.meta.url), "utf8");
 
 /* ---- the words -----------------------------------------------------------
    The `⋯` menu is a shipped surface and every other row in it comes from the string table, so
    these five are read from `T` rather than written into the view. */
 for (const key of ["webSnippets", "webSnippetsThisProject", "webSnippetsEveryProject",
-    "webSnippetsEmpty", "webSnippetsReadOnly"]) {
+    "webSnippetsEmpty", "webSnippetsEmptyNew", "webSnippetsReadOnly",
+    "webSnippetNew", "webSnippetEditing", "webSnippetMore", "webSnippetEdit", "webSnippetDelete",
+    "webSnippetDeleteAsk", "webSnippetUp", "webSnippetDown", "webSnippetToGlobal",
+    "webSnippetToProject", "webSnippetTitleLabel", "webSnippetBodyLabel", "webSnippetScopeLabel",
+    "webSnippetSave", "webSnippetFromLast", "webSnippetNeedsText",
+    "webSnippetStarterCommitTitle", "webSnippetStarterCommitBody",
+    "webSnippetStarterReportTitle", "webSnippetStarterReportBody"]) {
     assert.equal(typeof T[key], "string", key + " has an English fallback in core/i18n.js");
     assert.ok(T[key].length > 0, key + " is not the empty string");
 }
@@ -241,26 +259,36 @@ assert.ok(drawn.includes(">clawdline</span>"), "the heading names the project it
 assert.equal((drawn.match(/class="snippet-row"/g) || []).length, 3, "one button per snippet");
 assert.deepEqual(drawn.match(/data-snippet="\d+"/g), ['data-snippet="0"', 'data-snippet="1"',
     'data-snippet="2"'], "the press index is the position in snippetOrder()");
-assert.ok(!drawn.includes("disabled"), "a device that may write draws no disabled row");
+assert.ok(!/data-snippet="\d+" disabled/.test(drawn),
+    "a device that may write draws no disabled row");
+assert.equal((drawn.match(/data-snippet-more="\d+"/g) || []).length, 3,
+    "and every row on a transport that can write carries its own menu button");
 
-// No control this wave has nothing to open — on either transport. The editor's `＋` and the
-// row's own `⋯` arrive with the editor, behind snippetControls; a menu drawn before the thing
-// it opens is the dead button the guard exists to prevent.
+// **The guard, which is the whole reason this feature has two halves.** The relay reads the
+// list out of the published snapshot and has no envelope class for a write, so it draws the
+// same rows and not one control that would fail when pressed. Absent, not disabled: a dead
+// button is worse than no button, and `assert.equal` on the two strings is what stops a later
+// hand from "just disabling" one of them.
 const onRelayHTML = snippetsListHTML(grouped, { controls: snippetControls(relay) });
-assert.equal(onRelayHTML, drawn,
-    "the list a relay reader sees is the list a direct reader sees, because neither carries a "
-    + "writing control yet");
-for (const html of [drawn, onRelayHTML]) {
-    for (const marker of ["data-snippet-edit", "data-snippet-delete", "snippet-new",
-        "snippet-more"]) {
-        assert.ok(!html.includes(marker), "no writing control is drawn: " + marker);
-    }
+assert.equal(onRelayHTML.replace(/<button class="snippet-more"[^]*?<\/button>/g, ""),
+    onRelayHTML, "a relay reader is drawn no row menu at all");
+for (const marker of ["data-snippet-edit", "data-snippet-delete", "data-snippet-scope",
+    "data-snippet-up", "data-snippet-down", "data-snippet-more", "snippet-menu"]) {
+    assert.ok(!onRelayHTML.includes(marker),
+        "no writing control reaches a transport that cannot write: " + marker);
 }
+assert.equal(onRelayHTML,
+    snippetsListHTML(grouped, { controls: snippetControls(relay), menuFor: 1 }),
+    "and asking for a menu on a relay row changes nothing, because there is no menu to open");
 
 const readOnly = snippetsListHTML(grouped, { controls: snippetControls(direct), readOnly: true });
 assert.equal((readOnly.match(/class="snippet-row" type="button" data-snippet="\d+" disabled/g)
     || []).length, 3, "a device that may read but not write sees every row, and cannot press one");
 assert.ok(readOnly.includes(T.webSnippetsReadOnly), "with the reason on screen");
+for (const marker of ["data-snippet-edit", "data-snippet-delete", "data-snippet-more"]) {
+    assert.ok(!readOnly.includes(marker),
+        "and S.write === false draws no writing control either: " + marker);
+}
 
 assert.equal(snippetsListHTML(grouped, { loading: true }), "",
     "before the answer arrives the list is empty rather than claiming there are none");
@@ -302,5 +330,358 @@ assert.match(styles, /\.snippet-row-line\s*\{[^}]*text-overflow:\s*ellipsis;/s,
     "a long first line is clipped rather than laying out the sheet");
 assert.match(styles, /\.snippet-row\[disabled\]/,
     "the read-only row has a look of its own");
+
+
+/* ==========================================================================
+   The editor
+   ========================================================================== */
+
+/* ---- which controls exist, and where they stop existing ------------------- */
+
+assert.deepEqual(snippetActions(snippetControls(direct), false),
+    { create: true, update: true, remove: true, order: true, menu: true },
+    "a device that may write, on a transport that has the routes, gets all of it");
+assert.deepEqual(snippetActions(snippetControls(relay), false),
+    { create: false, update: false, remove: false, order: false, menu: false },
+    "the relay reads and cannot write, so it gets none of it");
+assert.deepEqual(snippetActions(snippetControls(direct), true),
+    { create: false, update: false, remove: false, order: false, menu: false },
+    "and a read-only device gets none of it either, on the same transport that has every route");
+assert.equal(snippetActions({ update: true }, false).menu, true,
+    "the row menu exists when any one of its items would");
+assert.equal(snippetActions({ create: true }, false).menu, false,
+    "and not when its only route is the one that makes a new snippet — an empty menu is a "
+    + "button that opens nothing");
+assert.deepEqual(snippetActions(null, false),
+    { create: false, update: false, remove: false, order: false, menu: false },
+    "no transport is no control");
+
+/* ---- what the editor starts with ----------------------------------------- */
+
+const blank = snippetDraft(null, {});
+assert.equal(blank.scope, "global",
+    "a new snippet defaults to every project — that is the common case and it was the ask");
+assert.deepEqual([blank.id, blank.title, blank.body, blank.project], ["", "", "", ""]);
+
+const editingProject = snippetDraft(
+    { id: "p-only", title: "Focused", body: "run them", scope: "project", project }, {});
+assert.deepEqual(editingProject,
+    { id: "p-only", title: "Focused", body: "run them", scope: "project", project: project },
+    "a row being changed keeps everything it had, scope included");
+assert.equal(snippetDraft({ id: "x", body: "b", scope: "nonsense" }, {}).scope, "global",
+    "a scope nobody recognises is not carried into the editor");
+
+/* ---- what it refuses to save --------------------------------------------- */
+
+assert.equal(snippetDraftProblem({ title: "t", body: "b", scope: "global" }), "");
+assert.equal(snippetDraftProblem({ title: "  ", body: "b", scope: "global" }), "empty",
+    "a title of spaces is not a title");
+assert.equal(snippetDraftProblem({ title: "t", body: "\n \n", scope: "global" }), "empty",
+    "and a body of blank lines is not a body");
+assert.equal(snippetDraftProblem({ title: "x".repeat(61), body: "b", scope: "global" }), "long",
+    "sixty characters is the store's limit, counted here so the Mac never has to refuse it");
+assert.equal(snippetDraftProblem({ title: "x".repeat(60), body: "b", scope: "global" }), "",
+    "and exactly sixty is inside it");
+assert.equal(snippetDraftProblem({ title: "t", body: "b".repeat(4001), scope: "global" }), "long");
+assert.equal(snippetDraftProblem({ title: "t", body: "b", scope: "project", project: "" }),
+    "scope", "a project scope with no project is the store's snippet_scope_mismatch");
+assert.equal(snippetDraftProblem(null), "empty", "and nothing at all is not saveable either");
+
+/* ---- the bodies, whose key sets are exact --------------------------------- */
+
+assert.deepEqual(snippetCreateBody({ title: " Deploy ", body: " commit, push ", scope: "global" }),
+    { title: "Deploy", body: "commit, push", scope: "global" },
+    "a global snippet carries no project key at all — not even a null one, which the store "
+    + "counts as present and refuses");
+assert.ok(!Object.prototype.hasOwnProperty.call(
+    snippetCreateBody({ title: "t", body: "b", scope: "global" }), "project"),
+    "said again as a key check, because `project: null` is the mistake this prevents");
+assert.deepEqual(snippetCreateBody({ title: "t", body: "b", scope: "project", project }),
+    { title: "t", body: "b", scope: "project", project: project },
+    "and a project snippet carries exactly one");
+assert.equal(snippetCreateBody({ title: "", body: "b", scope: "global" }), null,
+    "a draft that is not ready cannot be sent by accident");
+
+const stored = { id: "g-late", title: "Deploy", body: "commit, push, deploy", scope: "global",
+    position: 300 };
+assert.deepEqual(snippetPatchBody(snippetDraft(stored, {}), stored), {},
+    "changing nothing is a sheet to close, not a patch to send — the store refuses an empty one");
+assert.deepEqual(
+    snippetPatchBody({ title: "Ship it", body: stored.body, scope: "global" }, stored),
+    { title: "Ship it" }, "one field changed is one field sent");
+assert.deepEqual(
+    snippetPatchBody({ title: stored.title, body: "just push", scope: "global" }, stored),
+    { body: "just push" });
+assert.deepEqual(
+    snippetPatchBody({ title: stored.title, body: stored.body, scope: "project", project },
+        stored),
+    { scope: "project", project: project },
+    "scope and project move together or the store refuses the pair");
+const storedLocal = { id: "p", title: "Focused", body: "run them", scope: "project", project };
+assert.deepEqual(
+    snippetPatchBody({ title: "Focused", body: "run them", scope: "global" }, storedLocal),
+    { scope: "global" },
+    "and going the other way sends no project at all, which is how the store clears it");
+assert.equal(snippetPatchBody({ title: "", body: "b", scope: "global" }, stored), null);
+
+/* ---- the row menu's scope item ------------------------------------------- */
+
+assert.deepEqual(snippetScopeSwap(storedLocal, project), { scope: "global" },
+    "a project row moves to every project");
+assert.deepEqual(snippetScopeSwap(stored, project), { scope: "project", project: project },
+    "and a global row moves into the project the Mac resolved");
+assert.equal(snippetScopeSwap(stored, ""), null,
+    "a session whose project the Mac did not resolve has nowhere to move it, so the item is "
+    + "not offered");
+assert.equal(snippetScopeSwap(null, project), null);
+assert.equal(snippetScopeSwap({ scope: "elsewhere" }, project), null);
+
+/* ---- reorder arithmetic --------------------------------------------------- */
+
+const ordered = [{ id: "a" }, { id: "b" }, { id: "c" }];
+assert.deepEqual(snippetReorder(ordered, "b", -1).map((row) => row.id), ["b", "a", "c"],
+    "up swaps a row with the one above it");
+assert.deepEqual(snippetReorder(ordered, "b", 1).map((row) => row.id), ["a", "c", "b"],
+    "and down with the one below");
+assert.deepEqual(ordered.map((row) => row.id), ["a", "b", "c"],
+    "without moving the array it was given — the drawn list is not the request");
+assert.equal(snippetReorder(ordered, "a", -1), null, "the first row cannot go up");
+assert.equal(snippetReorder(ordered, "c", 1), null, "and the last cannot go down");
+assert.equal(snippetReorder(ordered, "nobody", -1), null);
+assert.equal(snippetReorder([], "a", 1), null);
+assert.deepEqual(snippetReorder(ordered, "c", -1).map((row) => row.id), ["a", "c", "b"],
+    "moving c up and moving b down are the same swap, said twice");
+
+assert.deepEqual(snippetOrderBody("global", "", ordered),
+    { scope: "global", order: ["a", "b", "c"] },
+    "the global order carries no project key — the store compares the key set exactly");
+assert.deepEqual(snippetOrderBody("project", project, ordered),
+    { scope: "project", project: project, order: ["a", "b", "c"] });
+assert.equal(snippetOrderBody("project", "", ordered), null,
+    "and a project order with no project is refused here rather than by the Mac");
+assert.equal(snippetOrderBody("global", "", []), null, "an empty scope has no order to send");
+assert.equal(snippetOrderBody("global", "", [{ id: "a" }, {}]), null,
+    "a row with no id makes the whole order null rather than one the store refuses halfway");
+assert.equal(snippetOrderBody("elsewhere", "", ordered), null);
+
+/* ---- the starters, and my last message ------------------------------------ */
+
+const starters = snippetStarters();
+assert.equal(starters.length, 2, "the two this design was written from");
+assert.deepEqual(starters.map((one) => one.scope), ["global", "global"],
+    "both global: a starter that belonged to one project would teach the wrong thing about "
+    + "the feature on its first use");
+assert.equal(starters[0].title, T.webSnippetStarterCommitTitle);
+assert.equal(starters[0].body, T.webSnippetStarterCommitBody);
+assert.equal(starters[1].title, T.webSnippetStarterReportTitle);
+assert.equal(starters[1].body, T.webSnippetStarterReportBody);
+for (const one of starters) {
+    assert.equal(snippetDraftProblem(snippetDraft(null, one)), "",
+        one.key + " is savable exactly as it arrives — a starter that needed editing first "
+        + "would not be a starter");
+}
+
+const fromMessage = snippetDraftFromText(
+    "  跑一次 focused groups\n先看到紅的再看到綠的。  ");
+assert.equal(fromMessage.body, "跑一次 focused groups\n先看到紅的再看到綠的。",
+    "the whole message is the body, with only the whitespace at its ends taken off");
+assert.equal(fromMessage.title, "跑一次 focused groups", "and its first line is the title");
+assert.equal(fromMessage.scope, "global");
+const longMessage = snippetDraftFromText("x".repeat(200));
+assert.equal(longMessage.title.length, 60,
+    "a title made from a long first line is cut to the store's sixty");
+assert.ok(longMessage.title.endsWith("…"), "and says that it was cut");
+assert.equal(snippetDraftProblem(longMessage), "",
+    "which means the draft it produces is one the store will take");
+assert.equal(snippetDraftFromText("").title, "");
+assert.equal(snippetDraftFromText(null).body, "");
+
+/* ---- what the empty state offers ------------------------------------------ */
+
+const emptyModel = snippetGroups({ project: { key: project, label: "clawdline" }, snippets: [] },
+    {});
+const emptyWritable = snippetsListHTML(emptyModel, { controls: snippetControls(direct) });
+assert.ok(emptyWritable.includes(T.webSnippetsEmptyNew),
+    "a device that can write is shown the door rather than told to go to the Mac");
+assert.equal((emptyWritable.match(/data-snippet-starter="\d+"/g) || []).length, 2,
+    "and the two starters, one press each");
+assert.ok(emptyWritable.includes(T.webSnippetStarterCommitTitle));
+assert.ok(emptyWritable.includes(T.webSnippetStarterReportTitle));
+
+const emptyRelay = snippetsListHTML(emptyModel, { controls: snippetControls(relay) });
+assert.ok(emptyRelay.includes(T.webSnippetsEmpty),
+    "a relay reader is told where snippets come from, which is the only useful thing to say "
+    + "to somebody who cannot make one here");
+assert.ok(!emptyRelay.includes("data-snippet-starter"),
+    "and offered no starter, because pressing one would open an editor that cannot save");
+assert.ok(!snippetsListHTML(emptyModel,
+    { controls: snippetControls(direct), readOnly: true }).includes("data-snippet-starter"),
+    "nor is a read-only device");
+
+/* ---- the row menu --------------------------------------------------------- */
+
+const withMenu = snippetsListHTML(grouped, { controls: snippetControls(direct), menuFor: 1 });
+assert.equal((withMenu.match(/class="snippet-menu"/g) || []).length, 1,
+    "one menu is open at a time, under the row it belongs to");
+assert.ok(withMenu.includes('data-snippet-edit="1"'), "it edits that row");
+assert.ok(withMenu.includes('data-snippet-delete="1"'));
+assert.ok(withMenu.includes('data-snippet-scope="1"'));
+assert.ok(withMenu.includes(T.webSnippetToProject),
+    "a global row's scope item offers the project, in the project's own words");
+assert.ok(!withMenu.includes('data-snippet-up="1"'),
+    "the first row of the global group cannot go up — the item is absent, not disabled");
+assert.ok(withMenu.includes('data-snippet-down="1"'), "and it can go down");
+assert.ok(withMenu.includes('aria-expanded="true"'), "the row's own button says it is open");
+
+const lastMenu = snippetsListHTML(grouped, { controls: snippetControls(direct), menuFor: 2 });
+assert.ok(lastMenu.includes('data-snippet-up="2"'));
+assert.ok(!lastMenu.includes('data-snippet-down="2"'), "and the last row cannot go down");
+
+const oneRowMenu = snippetsListHTML(grouped, { controls: snippetControls(direct), menuFor: 0 });
+assert.ok(!oneRowMenu.includes("data-snippet-up") && !oneRowMenu.includes("data-snippet-down"),
+    "a group of one has nowhere to move, so neither arrow is drawn — the ordering is per "
+    + "scope, and a row's neighbours are the rows in its own group");
+assert.ok(oneRowMenu.includes(T.webSnippetToGlobal),
+    "and the project row's scope item offers every project");
+
+const orderOnly = snippetsListHTML(grouped,
+    { controls: { read: true, order: true }, menuFor: 1 });
+assert.ok(!orderOnly.includes("data-snippet-edit") && !orderOnly.includes("data-snippet-delete"),
+    "a transport with only the ordering route draws only the arrows");
+assert.ok(orderOnly.includes("data-snippet-down"));
+
+/* ---- a project with no mark of its own ------------------------------------ */
+
+const madeUp = generatedMark("/Users/x/tmp/notes");
+assert.equal(madeUp.cells.length, 4, "four rows, the same shape every mark in this app has");
+assert.equal(madeUp.cells[0].length, 7, "and seven cells across");
+assert.match(madeUp.accent, /^#[0-9a-f]{6}$/, "with a colour `tint()` can read");
+assert.equal(madeUp.generated, true, "and it says it was made up rather than registered");
+for (const row of madeUp.cells) {
+    for (let x = 0; x < 3; x++) {
+        assert.equal(row[x], row[6 - x],
+            "mirrored about the middle column: sixteen coin flips read as noise, and a "
+            + "mirrored sixteen reads as an emblem");
+    }
+}
+assert.deepEqual(generatedMark("/Users/x/tmp/notes"), madeUp,
+    "the same path is the same mark, on every machine and every reload");
+assert.notDeepEqual(generatedMark("/Users/x/tmp/other"), madeUp,
+    "and two projects are two marks — a placeholder repeated everywhere says 'no icon', "
+    + "which is not what a project mark is for");
+assert.deepEqual(generatedMark("/Users/x/code/p/"), generatedMark("/Users/x/code/p"),
+    "a trailing slash is the same project");
+assert.equal(generatedMark(""), null,
+    "no project is not a project with no mark: there is nothing to stand in for");
+assert.equal(generatedMark(null), null);
+
+// Density, which is the whole reason this is generated rather than random: a mark with nothing
+// lit is an invisible button, and a mark with everything lit is a rectangle. Both identify
+// nothing, which is the failure a drawn placeholder would also have had. The band below was
+// measured over these five thousand, not guessed: 6 to 23 of 28.
+let thinnest = 99, thickest = 0;
+for (let i = 0; i < 5000; i++) {
+    const mark = generatedMark("/Users/x/code/project-" + i);
+    let lit = 0;
+    for (const row of mark.cells) for (const cell of row) if (cell === mark.accent) lit += 1;
+    thinnest = Math.min(thinnest, lit);
+    thickest = Math.max(thickest, lit);
+}
+assert.ok(thinnest >= 6, "every generated mark has something on it: thinnest was " + thinnest);
+assert.ok(thickest <= 24, "and none of them is a solid block: thickest was " + thickest);
+
+assert.equal(markForSession({ cwd: "/Users/x/tmp/notes", icon: null }).generated, true,
+    "a session whose project was never registered gets one made up");
+const registered = { accent: "#d97757", cells: [["#d97757"]] };
+assert.equal(markForSession({ cwd: "/Users/x/code/clawdline", icon: registered }), registered,
+    "and a registered icon always wins — this is what a project has until somebody draws it one");
+assert.equal(markForSession({ cwd: "/Users/x", icon: { cells: [] } }).generated, true,
+    "an icon record with no cells in it is no icon");
+assert.equal(markForSession(null), null);
+
+assert.equal(projectLabel("/Users/x/code/clawdline"), "clawdline");
+assert.equal(projectLabel("/Users/x/code/clawdline/"), "clawdline");
+assert.equal(projectLabel(""), "", "and an unknown project is named nothing, not 'undefined'");
+
+/* ---- the header: pressing the mark is not pressing Session info ----------- */
+
+assert.match(indexSource, /<button class="detail-mark-go" id="detail-snippets" type="button"/,
+    "the mark is a button of its own");
+assert.match(indexSource,
+    /id="detail-snippets"[^]*?<canvas id="detail-mark"[^]*?<\/button>\s*<button class="detail-session" id="detail-info"/,
+    "the canvas is inside it, and #detail-info begins after it closes");
+const infoButton = /<button class="detail-session" id="detail-info"[^]*?<\/button>/.exec(
+    indexSource)[0];
+assert.ok(!infoButton.includes("detail-mark"),
+    "so pressing the mark is not pressing Session info — the whole point of the split");
+assert.ok(infoButton.includes('id="detail-name"') && infoButton.includes('id="detail-sub"'),
+    "and Session info keeps the name and the path, which is what a reader points at when they "
+    + "mean 'tell me about this session'");
+const markButton = /<button class="detail-mark-go"[^]*?<\/button>/.exec(indexSource)[0];
+assert.ok(!/<button/.test(markButton.slice(7)),
+    "no button is nested inside another one, which no browser would let a person press");
+
+assert.match(headSource, /els\["detail-snippets"\]\.disabled = /,
+    "renderDetailHead owns the new button's disabled state, beside the two it already sets");
+assert.match(headSource, /els\["detail-snippets"\]\.setAttribute\("aria-label", snippetsSays\)/,
+    "and its label");
+assert.match(headSource, /var canSnippet = snippetControls\(api\)\.read;/,
+    "asked of the same guard the sheet asks, so the header and the ⋯ row cannot disagree");
+assert.match(headSource, /els\["detail-snippets"\]\.hidden = !s;/,
+    "no session open is no project: the button goes away rather than leaving an empty box");
+assert.match(headSource, /drawIcon\(els\["detail-mark"\], mark, 5\)/,
+    "and the mark it draws is markForSession's, so an unregistered project is not a hole");
+
+assert.match(headStyles, /\.detail-mark-go\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s,
+    "the 44px target is a floor and not only padding: drawIcon sizes that canvas from the "
+    + "icon's own cells, and a narrower mark must not shrink the target");
+assert.match(headStyles, /\.detail-mark-go\s*\{[^}]*margin:\s*-12px -5px;/s,
+    "with a negative margin that takes the space back, the way .detail-session already does");
+assert.match(headStyles, /\.detail-mark-go\[data-mark="none"\]/,
+    "and a box for the session that still has nothing to draw");
+assert.match(headStyles, /\.detail-mark-go\[hidden\]\s*\{\s*display:\s*none;/,
+    "a rule that sets display outranks the hidden attribute — the grid above would keep an "
+    + "empty box on screen otherwise");
+
+/* ---- the sheet's own new wiring ------------------------------------------- */
+
+assert.match(sheetSource, /getElementById\("detail-snippets"\)/,
+    "the header's button opens this sheet");
+assert.equal((sheetSource.match(/openSnippets\(\);/g) || []).length, 2,
+    "from the same function the ⋯ row calls — one function, two entrances, not two code paths");
+assert.match(sheetSource,
+    /function may\(\) \{\n    return snippetActions\(snippetControls\(api\), S\.write !== true\);/,
+    "and every control this sheet draws asks one question about the transport and the switch");
+assert.match(sheetSource, /newButton\.hidden = !can\.create/,
+    "the ＋ is the one writing control outside the list, so it is hidden by hand");
+assert.match(sheetSource, /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order\)/,
+    "reordering sends the full order of one scope");
+assert.match(sheetSource, /userMessageEntries\(/,
+    "'from my last message' asks the sheet next door rather than walking the transcript again");
+assert.ok(!/S\.tx\.entries\.filter/.test(sheetSource),
+    "which is a call, not a second copy of that rule");
+
+for (const forbidden of [/createSnippet\s*=/, /uuid\(/]) {
+    assert.ok(!forbidden.test(sheetSource),
+        "the sheet calls the transport rather than building its own request: " + forbidden);
+}
+
+assert.match(styles, /\.snippet-more\s*\{[^}]*min-width:\s*44px;/s,
+    "a row's own menu button is a thumb target too");
+assert.match(styles, /\.snippets-new\[hidden\]\s*\{\s*display:\s*none;/,
+    "and the ＋ really disappears, rather than being a grid rule that outranks its attribute");
+
+/* ---- the fixture writes, so the editor can be seen without a Mac ---------- */
+
+for (const name of ["createSnippet", "updateSnippet", "deleteSnippet", "orderSnippets"]) {
+    assert.ok(mockSource.includes("Mock." + name + " = function"),
+        "the mock carries " + name + "(), or the editor cannot be looked at with ?mock=1");
+}
+assert.match(mockSource, /snippets"\) === "readonly"/,
+    "and one URL takes the writing half away, which is the Cloud path's shape");
+assert.match(mockSource, /snippet_scope_mismatch/,
+    "the fixture refuses a project beside a global scope the way the store does — that is the "
+    + "shape a body built by copying a row takes, and a fixture that accepted it would teach "
+    + "this page a habit Sources/Snippets.swift breaks on the first real Mac");
 
 console.log("web snippet tests passed");
