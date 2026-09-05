@@ -376,4 +376,31 @@ extension Orchestrator {
         lock.unlock()
         return Set(snapshots.filter { !$0.state.isTerminal }.map(\.id))
     }
+
+    /// **What each delivery branch was cut from**, keyed by the branch name git knows it under,
+    /// so a reader of `for-each-ref` can tell a branch that received commits from one that never
+    /// did. It is the immutable receipt `spawn` resolved and wrote down, and it is the one fact
+    /// about a delivery branch that the repository itself cannot answer for.
+    ///
+    /// Same shape and same locking discipline as ``usageLiveTaskIDs()`` above, and bounded the
+    /// same way: task retention sweeps the record, and a branch this cannot speak for is refused
+    /// the upgrade rather than granted it — see
+    /// ``UsageProjectWorktreeService/branchEvidence(worktree:branches:bases:)``.
+    ///
+    /// Keyed by branch rather than by task id because the caller holds branch names: the branch a
+    /// task delivers on is built in exactly one place, `OrchestratorDraft.worktreeBranch(for:)`,
+    /// and carries the task's own UUID, so one name belongs to one task in any repository.
+    static func usageWorktreeBases() -> [String: String] {
+        load()
+        lock.lock()
+        let snapshots = Array(tasks.values)
+        lock.unlock()
+        var bases: [String: String] = [:]
+        for task in snapshots {
+            guard let worktree = task.worktree, !worktree.branch.isEmpty,
+                  !worktree.base.isEmpty else { continue }
+            bases[worktree.branch] = worktree.base
+        }
+        return bases
+    }
 }

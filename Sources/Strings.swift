@@ -1497,12 +1497,38 @@ protocol Copy {
     var webProjectActiveSay: String { get }
     var webProjectAbandoned: String { get }
     var webProjectAbandonedSay: String { get }
+    /// **The delivery branch is not in the repository any more.** It was `landed` for one day,
+    /// on the belief that this app deletes a delivery branch only when it is empty — true of the
+    /// app, and the app is not the only thing that deletes branches: eight it kept for their
+    /// commits, three of them carrying 1, 63 and 122, are gone with no removal recorded. Work
+    /// that vanished must not vanish from the screen too.
+    var webProjectBranchGone: String { get }
+    var webProjectBranchGoneSay: String { get }
     var webProjectUnknownOutcome: String { get }
     var webProjectUnknownSay: String { get }
     /// The payload carries no branch: the ledger stores none and the registry that does is
     /// swept, so a field present only for recent tasks would read as an old one's absence.
     /// `clawdline/task/<worktree id>` is the convention, and this label says so.
     var webProjectBranch: String { get }
+    /// **Which of two different things says this delivery reached the tree.** A verified record
+    /// a root wrote and a branch this side found merged are both good answers and are not the
+    /// same answer, and until 2026-09-05 this page could give neither: it asked whether anybody
+    /// had filled a column in, and called 53 worktrees unlanded while git said 26 of them were.
+    var webProjectEvidence: String { get }
+    var webProjectEvidenceRecord: String { get }
+    var webProjectEvidenceBranchMerged: String { get }
+    /// The branch is in HEAD and still points at the commit it was cut from, so containment says
+    /// nothing about a delivery: `git worktree add -b` makes every branch an ancestor of HEAD on
+    /// the day it is created. Twelve of this Mac's seventy-five contained delivery branches.
+    var webProjectEvidenceBranchEmpty: String { get }
+    /// The branch is in HEAD and nothing records what it was cut from, so the line above cannot
+    /// be told from a real merge. git answered; the missing half is the registry's.
+    var webProjectEvidenceBranchBaseUnknown: String { get }
+    var webProjectEvidenceBranchAbsent: String { get }
+    var webProjectEvidenceBranchUnmerged: String { get }
+    /// git was not asked or could not answer. Everything on this screen then keeps the verdict it
+    /// had before git was a source, and this word is what says so rather than a silent blank.
+    var webProjectEvidenceUnknown: String { get }
     var webProjectRuns: String { get }
     var webProjectSeen: String { get }
     /// The query ran and matched nothing, which is not the same as a query that never

@@ -2424,6 +2424,13 @@ be what Clawdline sees rather than only what it started.
 - **`SessionWatch`** checkpoints every assistant session in the reading it already takes — the
   transcripts are on disk, so it costs no extra terminal round trip — at most once every five
   minutes per session, and seals a session's row when its process disappears.
+- **A landing** re-files its task the moment the record is written — `pending`, `landed` and
+  `abandoned` alike. Finalize always runs *before* anybody can land the work, so without this a
+  landing recorded at 23:11 reached no ledger reader until the next launch: on 2026-09-05 nine of
+  them appeared together at 23:29 because the app had just been rebuilt, and until that moment the
+  Projects page called work with a verified landing receipt "delivered, not landed". This is
+  wiring rather than a mechanism — `landing_state` is written as `COALESCE(?, landing_state)`
+  precisely so a landing may arrive after the immutable usage is sealed.
 - **Startup** imports whatever the registry still holds, up to its 200 rows. Running it again is
   free, so it runs on every launch rather than once and picks up whatever finished while the app
   was not running.

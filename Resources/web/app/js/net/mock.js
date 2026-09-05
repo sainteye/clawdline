@@ -481,50 +481,67 @@ export var Mock = (function () {
        this was written on — delivered is the largest group, and it is the whole reason the page
        has a shape. Ids are the task UUIDs that name the checkouts; there is no path in this
        payload and no branch either, by design. */
-    function feature(id, label, outcome, runs, first, last) {
-        return { id: id, label: label, outcome: outcome, runs: runs, tasks: [], liveTasks: [],
-                 taskStates: [], landingStates: [], firstSeenAt: first, lastSeenAt: last };
+    function feature(id, label, outcome, runs, first, last, evidence) {
+        return { id: id, label: label, outcome: outcome, landingEvidence: evidence, runs: runs,
+                 tasks: [], liveTasks: [], taskStates: [], landingStates: [],
+                 firstSeenAt: first, lastSeenAt: last };
     }
-    function worktree(id, outcome, runs, label, first, last, states, landings) {
-        return { id: id, outcome: outcome, runs: runs, tasks: [id], liveTasks: [],
+    /* `evidence` is what the verdict beside it rests on, and every one of the five values it can
+       take appears somewhere below — including `unknown`, which is git not answering and is the
+       one a page must not draw as if it were a verdict. */
+    function worktree(id, outcome, runs, label, first, last, states, landings, evidence) {
+        return { id: id, outcome: outcome, landingEvidence: evidence || "unknown", runs: runs,
+                 tasks: [id], liveTasks: [],
                  taskStates: states, landingStates: landings || [],
                  firstSeenAt: first, lastSeenAt: last,
-                 features: [feature("feature-" + id.slice(0, 8), label, outcome, runs, first, last)] };
+                 features: [feature("feature-" + id.slice(0, 8), label, outcome, runs, first, last,
+                                    evidence || "unknown")] };
     }
     var worktreesByPath = {
         "/Users/you/code/clawdline": [
             worktree("b1103ab1-6f2c-41d8-9a70-3e5c17d0ba49", "delivered", 2,
                      "Clawdfather: machine coordinator", "2026-09-01T09:08:09Z", "2026-09-01T09:13:12Z",
-                     ["spawning", "success"]),
+                     ["spawning", "success"], [], "branch_unmerged"),
             worktree("4d92c7e0-1b53-4a86-b2f1-7c08e5d41a63", "delivered", 5,
                      "The schedules page", "2026-08-28T02:41:00Z", "2026-08-29T18:02:44Z",
-                     ["success"]),
+                     ["success"], [], "branch_unmerged"),
             worktree("7a15fe38-90c4-4d21-8e07-2b6491cf0d55", "delivered", 3,
                      "Push, and the one lever that reaches a stale page", "2026-08-24T11:20:05Z",
-                     "2026-08-24T15:44:19Z", ["success"], ["pending"]),
+                     "2026-08-24T15:44:19Z", ["success"], ["pending"], "branch_unmerged"),
             worktree("2ef96bc1-13ac-41c9-9cdb-b709b3b56d09", "delivered", 1,
                      "Review the close confirmation", "2026-08-19T07:02:31Z", "2026-08-19T07:58:00Z",
-                     ["failure"], ["abandoned"]),
+                     ["failure"], ["abandoned"], "unknown"),
             worktree("9c077b24-67a1-4a93-ac34-40fee4c97851", "landed", 4,
                      "The sidebar, and which page", "2026-09-04T03:10:00Z", "2026-09-04T11:35:00Z",
-                     ["success"], ["landed"]),
+                     ["success"], ["landed"], "record"),
             worktree("f0eedc18-2a77-4b90-8c31-5d0ae6b2f947", "landed", 6,
                      "Usage Portfolio", "2026-08-11T05:00:00Z", "2026-08-13T21:30:00Z",
-                     ["success"], ["landed"]),
+                     ["success"], [], "branch_merged"),
             worktree("3f9a21bc-88d0-4e57-9b12-6ca4de70f381", "active", 1,
                      "The Projects page", "2026-09-04T11:50:54Z", "2026-09-04T12:04:00Z",
-                     ["briefed"]),
+                     ["briefed"], [], "branch_unmerged"),
             worktree("b57fc96f-4e10-42a3-95d8-0c1b7e6a2f84", "abandoned", 1,
                      "Read the delivery logs", "2026-07-30T22:14:00Z", "2026-07-30T22:41:00Z",
-                     ["briefed"]),
+                     ["briefed"], [], "branch_absent"),
             worktree("e4402d71-5c88-4b06-a3e9-71fd0b62c95a", "unknown", 1,
                      "Rewrite the README around what it is for", "2026-07-02T13:00:00Z",
-                     "2026-07-02T13:26:00Z", [])
+                     "2026-07-02T13:26:00Z", []),
+            // The two the 2026-09-06 correction gave words to. A finished delivery whose branch
+            // git can no longer find is its own rung rather than a landing; a branch HEAD
+            // contains because it never received a commit is delivered, not merged — the shape
+            // every Codex worktree child leaves behind, dirty and uncommitted, until a root
+            // records the landing.
+            worktree("5b1c8ad4-3e77-42fa-9d10-8ac6e5721b30", "branch_gone", 2,
+                     "The landing queue's focused runner", "2026-08-21T04:12:00Z",
+                     "2026-08-21T20:03:00Z", ["success"], [], "branch_absent"),
+            worktree("8d3e64f1-90b2-4c55-a7e6-1fd042c7b3a9", "delivered", 1,
+                     "Chat loading latency", "2026-09-05T22:41:00Z", "2026-09-05T23:58:00Z",
+                     ["success"], [], "branch_empty")
         ],
         "/Users/you/code/atrium": [
             worktree("c0aa5f92-7b31-4d68-8e02-45cb1d907e36", "landed", 2,
                      "The greenhouse view", "2026-08-02T08:00:00Z", "2026-08-02T19:12:00Z",
-                     ["success"], ["landed"])
+                     ["success"], ["landed"], "record")
         ]
     };
 
@@ -1331,7 +1348,8 @@ export var Mock = (function () {
                             schemaVersion: 1,
                             status: mode === "partial" ? "partial" : "available",
                             policy: "one_unambiguous_accepted_head",
-                            outcomeRule: "landed_then_delivered_then_live_then_abandoned",
+                            outcomeRule: "landed_by_record_or_nonempty_merged_branch_then_"
+                                + "branch_gone_then_delivered_then_live_then_abandoned",
                             generatedAt: new Date().toISOString(),
                             range: { from: null, to: null, timezone: "Asia/Taipei" },
                             project: { id: "project-9c1f2e7a4b0d8e35", label: project },

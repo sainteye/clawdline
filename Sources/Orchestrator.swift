@@ -2917,6 +2917,25 @@ enum Orchestrator {
         return out
     }
 
+    /// **A landing reaches the ledger when it is written, not when the app is next launched.**
+    ///
+    /// The ledger had two writers: ``finalize(_:as:summary:)``, which runs when a task ends and
+    /// therefore always *before* anybody could have landed it, and the backfill in ``start()``.
+    /// So a landing recorded at 23:11 was invisible to every surface reading the ledger until the
+    /// next restart — measured on 2026-09-05, nine of them appeared together at 23:29 because the
+    /// app had just been rebuilt, and until then the Projects page called that work "delivered,
+    /// not landed" with the receipt already sitting in the registry.
+    ///
+    /// This is wiring rather than a mechanism: `updateLineage` writes
+    /// `landing_state = COALESCE(?, landing_state)` precisely so a landing may arrive after the
+    /// immutable usage is sealed, and the interval key is deterministic, so re-importing a record
+    /// the store already has changes nothing. All three landing states go over — `pending` and
+    /// `abandoned` are as much a fact about the delivery as `landed` is, and a surface that saw
+    /// only the last of the three would show an obligation that had been given up as an open one.
+    private static func recordLandingInLedger(_ task: Task) {
+        UsageLedger.shared.collect(taskRecord: ledgerRecord(of: task))
+    }
+
     /// Under the lock.
     private static func reindex() {
         OrchestratorRegistry.withTransactionOnHeldLock { registry in
@@ -5291,7 +5310,14 @@ enum Orchestrator {
         }
         let existing = current.landing
         if existing?.state == .landed, requestedState == .landed {
+            let settled = current
             lock.unlock()
+            // **The idempotent re-send is the only door left for a landing recorded before this
+            // wiring existed.** Such a record is in the registry and not on its ledger row, and
+            // the write-back below runs on the paths that *change* the landing — which this one,
+            // by definition, does not. Without this line the row waits for the next launch's
+            // backfill, which is exactly the wait this feature was built to remove.
+            recordLandingInLedger(settled)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
         if let existing, (existing.state == .landed || existing.state == .abandoned),
@@ -5339,6 +5365,7 @@ enum Orchestrator {
                 "task": taskID, "ok": "1", "state": requestedState.rawValue,
                 "target": current.landing?.target ?? "",
             ])
+            recordLandingInLedger(current)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
 
@@ -5373,7 +5400,12 @@ enum Orchestrator {
             return .refused(404, "not_found", "No task named that")
         }
         if verifiedCurrent.landing?.state == .landed {
+            let settled = verifiedCurrent
             lock.unlock()
+            // The same door, reached by the race rather than by a re-send: another caller landed
+            // it while these subprocesses ran. Its write-back is that caller's, and a second one
+            // of the same record changes nothing — `collect(taskRecord:)` is keyed by interval.
+            recordLandingInLedger(settled)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
         guard verifiedCurrent.state == expectedState,
@@ -5407,6 +5439,7 @@ enum Orchestrator {
             "verified_commit": verification.commit,
             "verified_target_commit": verification.targetCommit,
         ])
+        recordLandingInLedger(verifiedCurrent)
         return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
     }
 
