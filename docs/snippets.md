@@ -253,10 +253,12 @@ gain the same feature line in both; `CHANGELOG.md` gains the entry.
 
 ## Not in v1, and what each would cost
 
+Two of these were **declined outright on 2026-09-05**, not merely postponed, and are marked as such below. They stay on this list because a later reader will propose them again, and the answer is on the record rather than in a chat.
+
 - **`send_on_tap`.** A per-snippet flag that sends instead of inserting. It is one boolean in the
   record and one branch in the row handler — but it puts a control on the header that runs code on
-  the Mac in one tap, from a phone, in whichever session happens to be open. Worth doing only after
-  the two-tap version has been lived with, and worth marking clearly in the row when it is on.
+  the Mac in one tap, from a phone, in whichever session happens to be open. **Declined
+  2026-09-05.** Every snippet inserts; the send button stays the only thing that sends.
 - **Snippets committed in the repository** (`.clawdline/snippets.json`, read-only, merged under a
   third heading). This is the team-sharing answer and the reason the record carries a `scope` rather
   than just a path: adding a source later changes no stored file. Cost is roughly half the v1 work
@@ -264,7 +266,8 @@ gain the same feature line in both; `CHANGELOG.md` gains the entry.
   cannot be edited here.
 - **Placeholders** (`{{branch}}`, `{{project}}`, the current task's title). Needs an expander on the
   Mac, a preview in the editor so nobody presses a snippet whose text they cannot predict, and a
-  decision about what an unresolved placeholder does. Real value, entirely separable.
+  decision about what an unresolved placeholder does. **Declined 2026-09-05.** A snippet is
+  literal text; what you saved is what goes in the box.
 - **Per-assistant snippets.** Claude Code and Codex take different slash commands; a snippet naming
   `/recap` is wrong in half the sessions. A `assistant` field, hidden by default.
 - **Use counts and most-recently-used ordering.** The press never reaches the Mac — the whole design
