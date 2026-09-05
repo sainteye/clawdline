@@ -1125,6 +1125,45 @@ group("finalize files a task in the ledger without being told anybody heard abou
           "\(String(describing: UsageLedger.shared.rows(taskID: landedID).first?.landingState))")
     expect("without a second row being invented for the same task",
            UsageLedger.shared.rows(taskID: landedID).count, 1)
+
+    // **The re-send is the only door for a landing recorded before this wiring existed**, and it
+    // was the one path that did not write back: `landed -> landed` returns at the top of
+    // `updateLanding` as idempotent, above every write-back below it. A root re-declaring a
+    // landing it already declared then changed nothing, and the row waited for the next launch —
+    // which is the wait this whole feature removes.
+    let priorID = "7778a1c3-3333-4444-8555-666666666666"
+    var prior = Orchestrator.Task(id: priorID, state: .briefed, kind: "custom",
+                                  title: "landed before the ledger heard about it",
+                                  assistant: .claude, projectDir: repository.url.path,
+                                  timeoutMinutes: 30, created: Date(),
+                                  secretHash: String(repeating: "0", count: 64))
+    prior.childSessionId = "sess-prior-landing"
+    prior.usage = usage
+    Orchestrator.holdScheduleTaskForTesting(prior)
+    Orchestrator.finalize(priorID, as: .success, summary: "delivered")
+    check("the older delivery is on its ledger row",
+          eventually { UsageLedger.shared.rows(taskID: priorID).count == 1 })
+    // The landing goes straight into the registry, which is the state a landing recorded before
+    // the write-back existed is in: settled there, absent here.
+    Orchestrator.mutateTaskForTesting(priorID) { task in
+        task.landing = Orchestrator.Landing(
+            state: .landed, target: "main", delivery: nil, ownerRootKey: "root-key",
+            since: Date(), commit: repository.commit, note: nil, landedAt: Date(),
+            verificationOrigin: "local_target_branch", verifiedCommit: repository.commit,
+            verifiedTargetCommit: repository.commit)
+    }
+    check("and the row still carries no landing state, which is the control",
+          UsageLedger.shared.rows(taskID: priorID).first?.landingState == nil,
+          "\(String(describing: UsageLedger.shared.rows(taskID: priorID).first?.landingState))")
+    expect("re-declaring the same landing is still idempotent",
+           landingState(Orchestrator.updateLanding(
+             taskID: priorID, secret: "", orchestratorToken: token,
+             raw: ["state": "landed", "target": "main", "commit": repository.commit])), "landed")
+    check("and it files the landing the registry was already holding",
+          eventually { UsageLedger.shared.rows(taskID: priorID).first?.landingState == "landed" },
+          "\(String(describing: UsageLedger.shared.rows(taskID: priorID).first?.landingState))")
+    expect("on the one row that task has",
+           UsageLedger.shared.rows(taskID: priorID).count, 1)
 }
 
 group("a row with one part unknown keeps its unknown through every reader") {

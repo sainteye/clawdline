@@ -173,6 +173,7 @@ clawdline_test_sources=(
   Tests/TranscriptTests.swift
   Tests/UsageLedgerTests.swift
   Tests/UsagePortfolioAndLifecycleTests.swift
+  Tests/UsageProjectWorktreeTests.swift
   Tests/main.swift
 )
 
