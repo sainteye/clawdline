@@ -147,15 +147,64 @@ enum Tmux {
     /// So the rule is stated once, in one place, and an unrecognised message falls to
     /// ``ServerAnswer/reached`` — tmux answering about the command rather than about the server —
     /// which is the reading that lets no caller claim anything it has not been told.
+    /// Which of the three sentences carried *there is no server here* — because they are three
+    /// different worlds, and only one value used to come out the other side.
+    ///
+    /// **What one flattened value cost.** On the evening of 2026-09-05 twenty-three iTerm2 rows
+    /// were reported unexplained against a tmux server that had been up since 09-03, and the
+    /// whole of what that evening's log held about tmux was nothing: the three sentences became
+    /// one `noServer`, `noServer` became an empty list, and the empty list carried no receipt.
+    /// The five `error connecting to … (No such file or directory)` lines from 09-03 are in the
+    /// log only because that spelling then took the ``ServerAnswer/unreachable`` branch, which
+    /// keeps tmux's words. So the sentence a reading is entitled to quote afterwards is decided
+    /// here, and it is decided by keeping the distinction rather than by logging harder.
+    ///
+    /// A caller that only wants the conclusion asks ``ServerAnswer/isNoServer``; nothing about
+    /// *whether* there is a server changed when the cause was added underneath it.
+    enum NoServerCause: Equatable {
+        /// `no server running on <path>` — tmux reached the socket path, found nothing on it and
+        /// resolved the question itself. The socket file is usually still on disk: a server ran
+        /// here and was killed.
+        case declaredGone
+        /// `failed to connect to server` — kept as its own world and, on the tmux this Mac has,
+        /// one that cannot happen. Measured 2026-09-05 against `/opt/homebrew/bin/tmux` 3.6a:
+        /// `no server running on %s` and `error connecting to %s (%s)` are both in the binary and
+        /// this sentence is not, the nearest strings being `connect failed: %s` and
+        /// `failed to send command`. So it is an older tmux's spelling, another build's, or
+        /// nothing's — and a value of its own is precisely how anyone would ever find out, which
+        /// a third `case noServer` could never have said.
+        case connectFailed
+        /// `error connecting to <path> (No such file or directory)` — `ENOENT` straight out of
+        /// tmux's own `connect(2)`. **This process cannot see that socket path at all**, which is
+        /// the strongest proof of absence there is and, read the other way, exactly the shape a
+        /// process holding the wrong `TMPDIR` makes. The distinction that earns it a case is not
+        /// about tmux: the other two are answers about a server, and this one is a fact about the
+        /// environment the app is running in.
+        case socketPathAbsent
+    }
+
     enum ServerAnswer: Equatable {
         /// tmux got as far as the socket path and there is no server on it. A complete empty
-        /// inventory: nothing to list, and nothing a second attempt would find.
-        case noServer
+        /// inventory: nothing to list, and nothing a second attempt would find. The cause says
+        /// which of tmux's three sentences said so, and no caller has to read it.
+        case noServer(NoServerCause)
         /// tmux could not get to a server at all, and cannot say whether one is there. Not
         /// evidence, and never a reason to go and do the same work again a slower way.
         case unreachable
         /// tmux was reached. Whatever went wrong is about the command that was sent.
         case reached
+
+        /// The conclusion by itself, for the readers that act on *whether* there is a server.
+        /// Every one of them spelled this `== .noServer` before there was a cause to carry, and
+        /// keeping the reading one expression long is what let the cause go in underneath them
+        /// without any of them changing what they decide.
+        var isNoServer: Bool { noServerCause != nil }
+
+        /// Which sentence said it, or `nil` when tmux did not say there was no server.
+        var noServerCause: NoServerCause? {
+            guard case .noServer(let cause) = self else { return nil }
+            return cause
+        }
     }
 
     static func serverAnswer(_ failure: TerminalFailure?) -> ServerAnswer {
@@ -165,13 +214,31 @@ enum Tmux {
         if failure.kind == .timeout { return .unreachable }
         let message = failure.message.lowercased()
         // tmux resolved the question itself and is reporting the conclusion.
-        if message.contains("no server running") { return .noServer }
-        if message.contains("failed to connect to server") { return .noServer }
+        if message.contains("no server running") { return .noServer(.declaredGone) }
+        if message.contains("failed to connect to server") { return .noServer(.connectFailed) }
         // `error connecting to <path> (<strerror>)` — only the errno decides.
         if message.contains("error connecting to") {
-            return message.contains("(no such file or directory)") ? .noServer : .unreachable
+            return message.contains("(no such file or directory)")
+                ? .noServer(.socketPathAbsent)
+                : .unreachable
         }
         return .reached
+    }
+
+    /// Why an answer from this file is empty, when it is empty because something refused to
+    /// answer rather than because there was nothing to say. Carried **beside** the error rather
+    /// than inside it, and the reason is in ``PaneObservation/emptiness``.
+    ///
+    /// `nil` is the fourth kind and the ordinary one: a reading that happened and found nothing.
+    enum Emptiness: Equatable {
+        /// There was no tmux for this app to ask, so nothing was asked and nothing answered.
+        /// ``binary`` is `Config`'s `tmuxPath` plus four fixed install paths, so this says *this
+        /// app could not find a tmux* and never *this Mac has no tmux*.
+        case noTmuxToAsk
+        /// tmux answered, and the answer was that there is no server. It carries both which of
+        /// the three sentences said so and the sentence itself, so whoever reads this can quote
+        /// tmux instead of paraphrasing it — which is the half the 09-05 evening did not have.
+        case noServer(NoServerCause, said: TerminalFailure)
     }
 
     /// Every pane in every session, whether or not a client is attached.
@@ -179,11 +246,33 @@ enum Tmux {
     struct PaneObservation {
         let sessions: [TargetSession]
         let error: TerminalFailure?
+        /// Which kind of empty this is, when the list is empty because something refused rather
+        /// than because there were no panes.
+        ///
+        /// **Beside `error`, and deliberately not inside it.** `error` is not a diagnostic
+        /// channel on this type, it is an authority flag: `Targets.snapshot(processScan:)` turns
+        /// any non-nil value into `isComplete = false`, `Targets.stableTerminal(_:in:…)` then
+        /// refuses to close anything against an incomplete inventory, and `StartPoints`'s
+        /// `tmuxReach()` reads incomplete as *a server is running* and declines to start one. So
+        /// spelling "there is no server" as an error would stop every Mac with tmux installed
+        /// and no server on it from either closing a session or starting one — the close-refusing
+        /// defect the empty-and-complete convention exists to remove. The evidence goes in a
+        /// field of its own, where adding it cannot change what anybody already decides: both
+        /// callers were read before this was chosen, and neither of them mentions this field.
+        let emptiness: Emptiness?
         var isComplete: Bool { error == nil }
+
+        init(sessions: [TargetSession], error: TerminalFailure?, emptiness: Emptiness? = nil) {
+            self.sessions = sessions
+            self.error = error
+            self.emptiness = emptiness
+        }
     }
 
     static func paneObservation() -> PaneObservation {
-        guard binary != nil else { return PaneObservation(sessions: [], error: nil) }
+        guard binary != nil else {
+            return PaneObservation(sessions: [], error: nil, emptiness: .noTmuxToAsk)
+        }
         let fmt = "#{pane_id}\u{1}#{pane_tty}\u{1}#{pane_current_command}\u{1}"
             + "#{session_name}\u{1}#{window_index}\u{1}#{pane_index}\u{1}#{pane_title}"
             + "\u{1}#{pane_current_path}"
@@ -191,8 +280,16 @@ enum Tmux {
         if !receipt.ok {
             // No server is a complete empty inventory, not a failed one. Other failures — and
             // especially a timeout — have no authority to prove a pane absent.
-            if serverAnswer(receipt.failure) == .noServer {
-                return PaneObservation(sessions: [], error: nil)
+            //
+            // **Complete and unexplained are not the same thing.** The inventory this returns is
+            // exactly the one it always returned; what it no longer does is throw away the
+            // receipt on the way out. *No panes* and *no panes, because tmux said this sentence*
+            // are the same list and two different amounts of evidence, and the second is the one
+            // an incident gets diagnosed from a day later.
+            if let failure = receipt.failure,
+               let cause = serverAnswer(failure).noServerCause {
+                return PaneObservation(sessions: [], error: nil,
+                                       emptiness: .noServer(cause, said: failure))
             }
             return PaneObservation(sessions: [], error: receipt.failure)
         }
@@ -317,7 +414,7 @@ enum Tmux {
         if !receipt.ok {
             // Same rule as `paneObservation`: no server is a complete empty answer, and anything
             // else — a timeout above all — has no authority to prove a client absent.
-            if serverAnswer(receipt.failure) == .noServer {
+            if serverAnswer(receipt.failure).isNoServer {
                 return ControlModeObservation(clients: [], error: nil)
             }
             return ControlModeObservation(clients: [], error: receipt.failure)
