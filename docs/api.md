@@ -4022,9 +4022,12 @@ each of those tasks ended, and the **live task registry** says what became of it
 state — and a landing closes *after* the work ends, so the field is almost always absent when the
 sample is written. Nothing filled it in afterwards except the backfill import that runs on launch,
 which made an app restart the only route by which a closed landing reached this read. Measured
-over one Mac's own store on 2026-09-05: of the tasks whose landing closed before the last launch,
-79 of 79 carried the copy; of those closed after it, 0 of 6 did, and two of them were sitting in
-this page's "done, never landed" block while the broker held a verified `landed` for each. The
+over one Mac's own store at 11:06 on 2026-09-05, against an app up since the previous evening: of
+the tasks whose landing had closed before that launch, 79 of 79 carried the copy; of the 6 closed
+after it, 0 did, and two of those were sitting in this page's "done, never landed" block while the
+broker held a verified `landed` for each. That Mac then restarted at 11:16 with no landing record
+changing, and the same two rows read `landed` — the count fell 42 to 40 because the app had been
+started, which is the defect from the other side. The
 store stays append-only — a sealed row is history and is never edited to make a read current — so
 the join is where the currency comes from, and the payload says which of the two each verdict
 rests on:

@@ -6,10 +6,11 @@ import Foundation
 // The defect these two groups were written for is one defect. `usage_intervals.landing_state` is
 // a point-in-time copy taken when a task reaches a terminal state, and a landing closes *after*
 // the work ends — so the field is almost always absent at sampling time, and the only thing that
-// ever filled it in was the backfill import on launch. Measured over this Mac's own store on
-// 2026-09-05: of the tasks whose landing closed before the last launch, 79 of 79 carried the
-// copy; of those closed after it, 0 of 6 did. Two of the second group were sitting in the
-// Projects page's 「做完了，沒有落地」 block while the broker held a verified `landed` for each.
+// ever filled it in was the backfill import on launch. Measured over this Mac's own store at
+// 11:06 on 2026-09-05: of the tasks whose landing had closed before that launch, 79 of 79 carried
+// the copy; of the 6 closed after it, 0 did. Two of those were sitting in the Projects page's
+// 「做完了，沒有落地」 block while the broker held a verified `landed` for each — and when the app
+// restarted at 11:16 with no landing record changing, both read `landed` and the count fell by two.
 //
 // They live in a file of their own because `Tests/UsageLedgerTests.swift` and
 // `Tests/OrchestratorLandingTests.swift` are both within a hundred lines of the 2,000-line

@@ -18,9 +18,10 @@ absent when the sample was written. The only thing that ever filled it in afterw
 backfill import that runs on launch, which made restarting the app the one route by which a closed
 landing reached the count.
 
-Measured over this Mac's own store: of the tasks whose landing closed before the last launch, 79 of
-79 carried the copy; of those closed after it, 0 of 6 did. Two of them were sitting in the block
-while the broker held a `landed` record verified against `refs/heads/main`. The number was not
+Measured over one Mac's own store: of the tasks whose landing had closed before its last launch, 79
+of 79 carried the copy; of the 6 closed after it, 0 did. Two of those were sitting in the block
+while the broker held a `landed` record verified against `refs/heads/main` — and when that Mac was
+restarted with no landing record changing, both moved and the count fell by two. The number was not
 merely high, it was wrong in one direction, and it looked exactly like a real backlog — which is
 how it survived.
 

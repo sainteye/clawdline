@@ -36,10 +36,11 @@ extension UsageLedger {
     /// The ledger's `landing_state` is a point-in-time sample taken at `collect(taskRecord:)`,
     /// which runs when a task reaches a terminal state — and a landing is closed *after* the work
     /// ends, so the field is almost always absent at sampling time. The only thing that ever
-    /// filled it in was the backfill import on launch. Measured on 2026-09-05 over this Mac's own
-    /// store: of the tasks whose landing closed before the last launch, 79 of 79 carried the
-    /// copy; of those closed after it, 0 of 6 did, and two of them were sitting in the Projects
-    /// page's "done, never landed" block while the broker held a verified `landed` for each.
+    /// filled it in was the backfill import on launch. Measured at 11:06 on 2026-09-05 over this
+    /// Mac's own store: of the tasks whose landing had closed before that launch, 79 of 79 carried
+    /// the copy; of the 6 closed after it, 0 did, and two of those were sitting in the Projects
+    /// page's "done, never landed" block while the broker held a verified `landed` for each. The
+    /// app restarted at 11:16 with no landing record changing, and those two then read `landed`.
     ///
     /// So this is the live half of a read-time join, and the stored copy stays what it always
     /// was: history. Same shape and same locking discipline as ``UsageLedger/TaskFacts``.
