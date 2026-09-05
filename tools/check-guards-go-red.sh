@@ -209,6 +209,13 @@ for proof in ${proofs[@]+"${proofs[@]}"}; do
     # So a known-blind proof owes a third arm: `easy`, the crude mutation that even a weak guard
     # catches. The easy arm going red for this defect is what makes "the broken arm did not" a
     # statement about the guard rather than about the fixture.
+    # The clean arm first, and with its own sentence. A proof whose clean arm already says the
+    # thing separates nothing at all, and blaming the easy arm for that sends the next reader to
+    # the wrong file — which is how a diagnosis becomes the defect it was describing.
+    if printf '%s\n' "$clean_out" | grep -qF -- "$expect"; then
+      fail "$named says \"$expect\" on the clean arm of $base too, so this proof separates nothing"
+      continue
+    fi
     easy_out=$(run_arm "$proof" easy "$WORK/${base%.sh}-easy") && easy_status=0 || easy_status=$?
     if ! held "$named" "$easy_status" "$easy_out"; then
       fail "$named: the easy arm of $base did not go red either, so this proof cannot tell a blind guard from a fixture that never applied. First line: $(printf '%s\n' "$easy_out" | head -1)"
