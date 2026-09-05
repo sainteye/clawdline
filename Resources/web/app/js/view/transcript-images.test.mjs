@@ -99,12 +99,22 @@ close(onScreen(anchored.state(), held.x, held.y).x, 350, "the point under the fi
 close(onScreen(anchored.state(), held.x, held.y).y, 210, "the point under the finger stays under it (y)");
 
 const stepped = fittedZoom();
-const cornerHeld = underPointer(stepped.state(), 40, 30);
-stepped.scaleBy(1.5, 40, 30);
-stepped.scaleBy(1.5, 40, 30);
+const edgeHeld = underPointer(stepped.state(), 40, 150);
+stepped.scaleBy(1.5, 40, 150);
+stepped.scaleBy(1.5, 40, 150);
 close(stepped.state().scale, 2.25, "two relative steps compose into one absolute scale");
-close(onScreen(stepped.state(), cornerHeld.x, cornerHeld.y).x, 40, "and the anchor survives both (x)");
-close(onScreen(stepped.state(), cornerHeld.x, cornerHeld.y).y, 30, "and the anchor survives both (y)");
+close(onScreen(stepped.state(), edgeHeld.x, edgeHeld.y).x, 40, "and the anchor survives both (x)");
+close(onScreen(stepped.state(), edgeHeld.x, edgeHeld.y).y, 150, "and the anchor survives both (y)");
+
+// Where the two rules meet, and which one gives way. This picture is 16:9 in a 4:3 frame, so at
+// 1.5x there are 100px of horizontal travel and 18.75 vertical — anchoring on a point 120px above
+// the middle would need 60. The bound wins, and it has to: an anchor honoured exactly there is a
+// picture with a band of backdrop along its top edge that no drag can close.
+const cornered = fittedZoom();
+cornered.scaleBy(1.5, 40, 30);
+close(cornered.state().x, 80, "the anchor is honoured on the axis that has the room for it");
+close(cornered.state().y, (1.5 * CONTENT.height - FRAME.height) / 2,
+    "and gives way to the edge on the axis that does not");
 
 // Panning. At scale 2 the picture is 800x450 inside a 400x300 frame, so there are exactly 200
 // pixels of slack each way horizontally and 75 vertically: enough that an edge never comes inside
@@ -120,7 +130,7 @@ panned.panBy(-10000, -10000);
 assert.deepEqual({ x: panned.state().x, y: panned.state().y }, { x: -200, y: -75 },
     "the far corner is the mirror of the near one");
 checks += 1;
-equal(panned.panBy(-10, 0), true, "a drag that has room still reports that it moved something");
+equal(panned.panBy(10, 0), true, "a drag away from an edge reports that it moved something");
 equal(panned.panBy(-10000, 0), true, "a drag that runs out of room part-way still moved");
 equal(panned.panBy(-10000, 0), false,
     "and one against a bound it is already on moved nothing, which is how a drag is told from a tap");

@@ -923,6 +923,11 @@ node Tests/install-focused.mjs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
 node Resources/web/app/js/net/client.test.mjs
+# The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
+# what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05
+# and none of them could be enlarged — `index.html` turns the browser's pinch off page-wide — so
+# the anchor maths, the two bounds and the recentre are the lightbox's own and are checked here.
+node Resources/web/app/js/view/transcript-images.test.mjs
 # Two more of exactly the same, found the same way and registered on 2026-09-04. Neither had run
 # once since the day it was committed — `Tests/web-usage-analytics.mjs` at f0eedc18 and
 # `Tests/web-close-confirm-explanation.mjs` at 58386b07 — because nothing compares this hand-written

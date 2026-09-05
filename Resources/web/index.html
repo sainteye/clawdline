@@ -1180,7 +1180,10 @@ document.documentElement.className = "booting";
     <div class="image-lightbox-frame">
         <span id="image-lightbox-title" class="sr-only">Image preview</span>
         <button id="image-lightbox-close" class="image-lightbox-close" type="button">Close preview</button>
-        <img id="image-lightbox-image" alt="">
+        <!-- `draggable="false"`: a mouse press on a picture otherwise starts the
+             browser's own image drag, and the drag that pans an enlarged one begins
+             exactly the same way. The zoom itself is `transcript-images.js`. -->
+        <img id="image-lightbox-image" alt="" draggable="false">
     </div>
 </div>
 
