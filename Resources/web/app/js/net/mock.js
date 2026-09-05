@@ -755,6 +755,16 @@ export var Mock = (function () {
     }
 
     return {
+        /// Not a route and deliberately named so it cannot be mistaken for one: where a fixture
+        /// session sits, for the fixture blocks appended after this closure. `Mock.snippets`
+        /// needs it because the real `GET /v1/snippets?session=…` answers a project the Mac
+        /// resolved from that session's `cwd`, and a fixture that answered one fixed project
+        /// would show the same list in every session and prove nothing about the grouping.
+        _sessionCwd: function (id) {
+            var session = find(id);
+            return session && session.cwd ? session.cwd : null;
+        },
+
         start: function () {
             handlers.conn("connecting");
             if (!admitted) {
@@ -1768,3 +1778,77 @@ Mock.deleteSchedule = function (id) {
         }, 420);
     });
 };
+
+/* ---- snippets fixture -----------------------------------------------------
+   Its own block beside the schedule fixtures above, for the same reason they are one: this file
+   is an editing surface and a feature's rows should be findable in one place.
+
+   Three rows, which is the smallest number that exercises the sheet: two that belong to every
+   project and one that belongs to `/Users/x/code/clawdline`, the `cwd` most of the sessions at
+   the top of this file sit in. So `?mock=1` shows both headings with the project group first,
+   and opening a session in another directory shows the global group alone — the grouping and
+   the filtering, both visible without a Mac.
+
+   The `position` values are deliberately not in source order: the reading half is supposed to
+   sort by the order the person put them in, and a fixture already in that order cannot tell
+   anybody whether it does.
+
+   The two global rows are the exact sentences this feature was designed from — see
+   `docs/snippets.md`. They are Chinese in an English fixture on purpose: a snippet is literal
+   text somebody typed, this page is used in Chinese, and a row of ASCII would not have shown
+   that the title and its first line wrap the way real ones do.
+
+   `?snippets=empty` is the empty state, and `?snippets=off` takes the read route away entirely —
+   the shape of a Mac too old to have it — so that the `⋯` row's `typeof api.snippets` guard can
+   be seen doing its job rather than only asserted about.
+   -------------------------------------------------------------------------- */
+var SNIPPET_PROJECT = "/Users/x/code/clawdline";
+
+/// The Mac's scope resolution, as far as a fixture can honestly go: the session sitting in
+/// `…/clawdline/docs` belongs to `…/clawdline`, which is the prefix half of the icon's own rule.
+/// The registry lookup and the worktree fold are not modelled — there is no registry and no git
+/// directory here — and the browser never does any of this: it reads the `project` this answers.
+function snippetScopeKey(cwd) {
+    var where = cwd || SNIPPET_PROJECT;
+    return where === SNIPPET_PROJECT || where.indexOf(SNIPPET_PROJECT + "/") === 0
+        ? SNIPPET_PROJECT : where;
+}
+
+var SNIPPET_BASE = [
+    { id: "b1f8c2d0-5e47-4a9b-9d31-0c6a7e2f4813",
+      title: "Commit, push, deploy",
+      body: "commit（逐檔指名，不要 git add -A）、push、deploy。",
+      scope: "global", position: 300,
+      created_at: 1789700000, updated_at: 1789700000 },
+    { id: "7c04ae91-2b6d-43f8-8a15-ef90d3c5b672",
+      title: "Say what you did",
+      body: "回報你剛剛做了什麼、什麼還沒做、接下來要做什麼。",
+      scope: "global", position: 100,
+      created_at: 1789700100, updated_at: 1789700100 },
+    { id: "3a5d61fe-9c82-4f07-b4ee-18d7920ac3f5",
+      title: "Run the focused suite",
+      body: "跑一次這個 feature 的 focused groups，先看到紅的再看到綠的。\n不要跑 ./build.sh。",
+      scope: "project", project: SNIPPET_PROJECT, position: 200,
+      created_at: 1789700200, updated_at: 1789700200 }
+];
+
+/// The reading half, in the shape `GET /v1/snippets?session=<id>` answers: the resolved project
+/// beside the list, already filtered to it and already ordered. The filtering is the Mac's job
+/// on the real route, so it is done here too rather than left to the sheet — a fixture that
+/// hands over rows the server would have dropped teaches the page a habit the server will break.
+Mock.snippets = function (id) {
+    var where = snippetScopeKey(Mock._sessionCwd(id));
+    var list = params.get("snippets") === "empty" ? [] :
+        SNIPPET_BASE.filter(function (row) {
+            return row.scope === "global" || row.project === where;
+        }).slice().sort(function (a, b) { return a.position - b.position; });
+    return new Promise(function (done) {
+        setTimeout(function () {
+            done({ project: { key: where, label: where.split("/").pop() }, snippets: list });
+        }, 160);
+    });
+};
+
+// The Mac too old to have the route at all. `input/snippets.js` asks `typeof api.snippets` and
+// leaves its `⋯` row undrawn, which is the same guard `/v1/places` and `/v1/push/key` are behind.
+if (params.get("snippets") === "off") delete Mock.snippets;
