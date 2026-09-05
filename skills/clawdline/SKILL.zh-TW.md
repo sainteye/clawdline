@@ -3,8 +3,9 @@ name: clawdline
 description: |
   使用 Clawdline 派 bounded child（目前 Root 保留綜合、整合與 landing）、把既有工作線完整 handoff
   給下一個 session，或傳送 message、report、status、finding、coordination note
-  給另一個 live session。觸發語句包括「派任務」「開 child」「叫 Codex review」「使用 Clawdline Handoff」
-  「交接給下一個 session」及等義英文。
+  給另一個 live session，或把這個 session 自己做完的一輪登記成 milestone——**任何一個** Clawdline
+  看得到的 repository 都適用，不限於它自己那個。觸發語句包括「派任務」「開 child」「叫 Codex review」
+  「使用 Clawdline Handoff」「交接給下一個 session」「回報這一輪做完了」「更新 milestone」及等義英文。
   Handoff 會移轉 sender 的 REFERENCES、VERIFICATION、OPEN THREADS。poll-only detached task 只供
   無人值守 automation，絕不是 Root 或 Major Feature owner。Root Assignment / Feature Launch 會
   啟動獨立 ordinary Root；不得用 child、detached automation 或假 handoff 冒充。這條對話能直接做、provider-native
@@ -16,6 +17,20 @@ description: |
 
 **這個檔案是 discovery stub，不是使用指南。** 完整、與版本吻合的參考文件隨 Clawdline app bundle
 一起出貨；刻意不寫在這裡，這樣它就不可能跟真正替你派工的那個 build 對不上。
+
+## 回報這個 session 自己做完的一輪
+
+**Clawdline 看的是這台 Mac 上的每一個終端，不是只有在它自己 repository 裡工作的 session。**
+所以一個真的把自己這一輪做完的 root——不管它坐在哪個專案裡——在給出最後答覆之前，用最後一個
+工具動作送出一筆 session-scoped 的交付收據。那就是 milestone：它畫出一個 check，
+*delivered; awaiting approval*，而且永遠不宣稱獨立複審或 broker 驗證過的 landing。
+
+路由、它吃哪一種 id、以及它的 typed refusal，都在 guide 的 **"Report the root's completed turn"**
+一節。照下一節的方式載入 guide 去那裡讀；指令刻意不在這裡重複，因為抄一份會對不上真正要記下
+這筆收據的那個 build。
+
+它只給真的做完的一輪。做到一半、只做了診斷、被擋住、或是回頭問使用者，**都不是** milestone；
+而 Clawdline 的 **child** 是用自己的 `result.json` 回報，不走這條。
 
 ## 做任何事之前，先載入指南
 

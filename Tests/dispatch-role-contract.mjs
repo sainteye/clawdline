@@ -77,6 +77,27 @@ for (const [file, destination] of skillTriggers) {
     }
 }
 
+// A session working in another repository has no `AGENTS.md` of this project's, so the only thing
+// that can tell it the completed-turn receipt exists is this stub's own trigger list — and until
+// 2026-09-05 that list was entirely about handing work *out*. A root elsewhere on this Mac finished
+// its turn and had nothing to make it look. So the trigger is held here, in both spellings, and the
+// stub is held to pointing at the guide's section rather than copying its commands, which is the
+// failure mode the 140-line ceiling in `Tests/web-clawdfather.mjs` guards from the other side.
+for (const [file] of skillTriggers) {
+    const text = fs.readFileSync(path.join(root, file), "utf8");
+    const frontmatter = text.split("---")[1]?.toLowerCase() ?? "";
+    assert.ok(frontmatter.includes("milestone"),
+        `${file}: nothing in the trigger list would make a session in another repository look up `
+        + `the completed-turn receipt`);
+    // Whitespace-normalised on purpose: the subject is whether the stub names that section, not
+    // whether a re-wrap happened to leave it on one line. Asked with a bare `includes` this went
+    // red the first time it ran, on a line break rather than on a missing pointer.
+    assert.ok(text.replace(/\s+/g, " ").includes("Report the root's completed turn"),
+        `${file}: the body no longer names the guide section that carries the receipt`);
+    assert.ok(!text.includes("/complete"),
+        `${file}: the stub has copied the receipt route instead of pointing at the guide`);
+}
+
 for (const file of ["skills/clawdline/SKILL.md", "skills/clawdline/SKILL.zh-TW.md"]) {
     const text = fs.readFileSync(path.join(root, file), "utf8");
     assert.ok(text.includes("POST /v1/orchestrator/detached-tasks"),

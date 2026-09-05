@@ -3,10 +3,13 @@ name: clawdline
 description: |
   Use Clawdline to dispatch a bounded child task when the current Root keeps synthesis,
   integration, and landing; to hand off an existing work line for full continuation; or to send a
-  message, report, status, finding, or coordination note to another live session. Triggers include
+  message, report, status, finding, or coordination note to another live session; or to record this
+  session's own finished turn as a milestone, which applies in **any** repository Clawdline is
+  watching, not only its own. Triggers include
   "dispatch a task", "open a child session", "get Codex to review this", "use Clawdline Handoff",
-  and the equivalent Chinese
-  requests 「派任務」「開 child」「使用 Clawdline Handoff」「交接給下一個 session」. A handoff transfers
+  "report my milestone", "record this turn as delivered", and the equivalent Chinese
+  requests 「派任務」「開 child」「使用 Clawdline Handoff」「交接給下一個 session」「回報這一輪做完了」
+  「更新 milestone」. A handoff transfers
   the sender's REFERENCES, VERIFICATION, and OPEN THREADS. Detached poll-only tasks are unattended
   automation, never Root or Major Feature owners. Root Assignment / Feature Launch opens an
   independent ordinary Root and must not be faked with a child, detached automation, or handoff. Do not use for
@@ -19,6 +22,23 @@ description: |
 **This file is a discovery stub, not the usage guide.** The complete, version-matched reference
 ships inside the Clawdline app bundle, kept out of this file on purpose so it can never drift from
 the build that will actually broker your dispatch.
+
+## Reporting this session's own finished turn
+
+**Clawdline watches every terminal on this Mac, not only sessions working in its own repository.**
+So a root whose turn is genuinely complete — in whatever project it is sitting in — reports one
+session-scoped delivery receipt as its last tool action before the final answer. That is the
+milestone: it draws one check, *delivered; awaiting approval*, and never claims independent review
+or a broker-verified landing.
+
+The route, the id it takes, and its typed refusals are in the guide's **"Report the root's
+completed turn"** section. Load the guide the way the next section says and read it there; the
+commands are deliberately not repeated here, because a copy of them goes stale against the build
+that will actually record the receipt.
+
+It is only for a turn that is actually finished. Partial work, a diagnosis-only answer, a blocked
+task, and a question back to the user are none of them a milestone — and a Clawdline **child**
+reports through its own `result.json` instead.
 
 ## Load the guide before you do anything else
 
