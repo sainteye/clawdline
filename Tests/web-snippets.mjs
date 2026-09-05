@@ -23,7 +23,7 @@ const data = await import("../Resources/web/app/js/view/snippets-data.js");
 const { byteLength, rememberSnippetProject, snippetActions, snippetControls, snippetCreateBody,
     snippetDraft, snippetDraftFromText, snippetDraftProblem, snippetGroups, snippetOrder,
     snippetOrderBody, snippetPatchBody, snippetProjectFor, snippetReorder, snippetScopeSwap,
-    snippetStarters, snippetSummary, snippetTitle, snippetsListHTML } = data;
+    snippetStarters, snippetSummary, snippetTitle, snippetsListHTML, starterPress } = data;
 const { generatedMark, markForSession, projectLabel } =
     await import("../Resources/web/app/js/view/project-mark.js");
 const { appendGap, appendedText } = await import("../Resources/web/app/js/core/compose-text.js");
@@ -31,6 +31,8 @@ const { T } = await import("../Resources/web/app/js/core/i18n.js");
 
 const sheetSource = await readFile(
     new URL("../Resources/web/app/js/input/snippets.js", import.meta.url), "utf8");
+const openSource = await readFile(
+    new URL("../Resources/web/app/js/session/open.js", import.meta.url), "utf8");
 const composerSource = await readFile(
     new URL("../Resources/web/app/js/input/composer.js", import.meta.url), "utf8");
 const liveSource = await readFile(
@@ -819,5 +821,50 @@ for (const route of ["createSnippet", "updateSnippet"]) {
     assert.ok(/snippetScopeOK\(/.test(source) && /snippet_scope_mismatch/.test(source),
         route + "() asks it, and refuses with the store's own code when the answer is no");
 }
+
+/* ---- a starter is a row, so it does what a row does ----------------------
+   It opened the editor prefilled, and the first person to press the one saying 回報進度 expected
+   those words in the composer and got a form. The control shows its text and is drawn with the
+   row's own classes; a press on it has one visible promise and this is it. */
+
+const starter = snippetStarters()[0];
+assert.equal(starterPress(starter, { mayCreate: true }).body, starter.body.trim(),
+    "pressing a starter yields its text, which is what the person pressed");
+assert.deepEqual(starterPress(starter, { mayCreate: true }).create,
+    { title: starter.title.trim(), body: starter.body.trim(), scope: "global" },
+    "and the body of the create that keeps it, so the second press is an ordinary row");
+assert.equal(starterPress(starter, {}).create, null,
+    "a transport that cannot write still gives the text: the words are the promise, keeping is not");
+assert.equal(starterPress(starter, { mayCreate: false }).body, starter.body.trim(),
+    "and it is the same text either way");
+assert.equal(starterPress(null, { mayCreate: true }), null);
+assert.equal(starterPress({ title: "t", body: "   " }, { mayCreate: true }), null,
+    "a starter with nothing to insert is not a press");
+
+assert.match(sheetSource,
+    /hasAttribute\("data-snippet-starter"\)\) \{\n        useStarter\(/,
+    "the sheet's starter branch hands the press to useStarter and stops");
+assert.ok(!/data-snippet-starter[^]{0,240}openEditor/.test(sheetSource),
+    "and no path from a starter press reaches the editor");
+assert.match(sheetSource, /function useStarter[^]*?appendMsg\(press\.body\);/,
+    "the words go in the box");
+assert.match(sheetSource, /function useStarter[^]*?appendMsg\(press\.body\);\n    if \(press\.create\)/,
+    "and keeping it happens behind that, not in front of it");
+
+/* ---- the sheet opens with what it already knows ---------------------------
+   The list is a fetch on the direct path, so every open showed a loading line and then filled —
+   for a control whose whole promise is that pressing it is faster than typing. */
+
+assert.match(sheetSource, /var known = answered\[sessionID\];\n    if \(known\) drawAnswer\(known\); else draw\(null, \{ loading: true \}\);/,
+    "an open paints the last answer for this session before it reads again");
+assert.match(sheetSource, /answered\[sessionID\] = answer;/,
+    "and every read leaves one behind for the next open");
+assert.match(sheetSource, /export var Snippets = \{\n    follow: function \(\) \{/,
+    "the panel follows the open session the way every other panel does");
+assert.match(openSource, /Snippets\.follow\(\);/,
+    "and session/open.js calls it, so the first open of a session has usually been warmed");
+assert.equal((openSource.match(/Snippets\.follow\(\);/g) || []).length,
+    (openSource.match(/GitPanel\.follow\(\);/g) || []).length,
+    "at every place the other panels are told, and not at one of them");
 
 console.log("web snippet tests passed");

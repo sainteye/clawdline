@@ -7,7 +7,8 @@ import { userMessageEntries } from "../view/user-messages-data.js";
 import {
     rememberSnippetProject, snippetActions, snippetControls, snippetCreateBody, snippetDraft,
     snippetDraftFromText, snippetDraftProblem, snippetGroups, snippetOrder, snippetOrderBody,
-    snippetPatchBody, snippetReorder, snippetScopeSwap, snippetStarters, snippetsListHTML
+    snippetPatchBody, snippetReorder, snippetScopeSwap, snippetStarters, snippetsListHTML,
+    starterPress
 } from "../view/snippets-data.js";
 import { renderDetailHead } from "../view/transcript.js";
 import { appendMsg } from "./composer.js";
@@ -303,12 +304,60 @@ export function openSnippets() {
     menuFor = -1;
     say("");
     syncCopy();
-    draw(null, { loading: true });
+    // **Paint what was last answered for this session, and read again behind it.** A shortcut
+    // that spins is not a shortcut, and this one spun on every open: the list is a fetch on the
+    // direct path, so the sheet showed a loading line and then filled — for a control whose whole
+    // promise is "press this and the words are in the box". The answer is remembered per session
+    // and refreshed after the paint, so the only open that waits is one this session has never
+    // opened, and `Snippets.follow` has usually made that one wait in the background instead.
+    var known = answered[sessionID];
+    if (known) drawAnswer(known); else draw(null, { loading: true });
     overlay.hidden = false;
     SessionActions.close();
     closeButton.focus({ preventScroll: true });
-    refresh();
+    refresh({ keepScroll: !!known });
 }
+
+/** The last answer for each session, so an open has something to draw. Not storage: a reload
+ *  asks again, and a session that has never been opened has no entry. */
+var answered = {};
+var warming = {};
+
+/** Turn one answer into rows on screen. The paint half of `refresh`, called on its own when the
+ *  sheet opens with an answer already in hand. */
+function drawAnswer(answer, options) {
+    // Only the read's own `project` reaches the header: on the relay there is no such field, and
+    // remembering the sheet's own fallback would put the session's raw `cwd` back on the header
+    // by a longer route.
+    var session = byId(sessionID);
+    rememberSnippetProject(sessionID, answer && answer.project);
+    renderDetailHead();
+    draw(snippetGroups(answer, {
+        machine: session ? session.machine : null,
+        project: session ? session.cwd : null
+    }), options);
+}
+
+/**
+ * The open session changed: shut a sheet that belongs to the session it was opened from, and read
+ * the new one's list before anybody asks for it.
+ *
+ * `session/open.js` calls this beside `Info.follow`, `GitPanel.follow` and the rest, which is
+ * where every other panel learns the same thing. The read is one small request against a route
+ * whose whole inventory already rides the snapshot every few seconds, and it buys the thing the
+ * feature is for: the mark opens a list rather than a wait.
+ */
+export var Snippets = {
+    follow: function () {
+        closeSnippets();
+        var id = S.openId;
+        if (!id || !readable() || answered[id] || warming[id]) return;
+        warming[id] = true;
+        api.snippets(id).then(function (answer) {
+            answered[id] = answer;
+        }).catch(function () {}).then(function () { warming[id] = false; });
+    }
+};
 
 /** Read the list again and repaint. Every write ends here rather than editing the drawn rows in
  *  place: `position` is the Mac's to assign — a create lands at the end of its scope, a scope
@@ -318,21 +367,12 @@ function refresh(options) {
     if (!sessionID) return Promise.resolve();
     var opts = options && typeof options === "object" ? options : {};
     var ticket = ++reading;
-    var session = byId(sessionID);
     return api.snippets(sessionID).then(function (answer) {
         // Two presses, or a session switched while the first read was out: only the newest one
         // may paint, the same ticket rule the transcript reads under.
         if (ticket !== reading || overlay.hidden) return;
-        // The header names this project and hashes its mark, and until this line it derived both
-        // from the session's raw `cwd` — which is not the key this sheet groups under. Only the
-        // read's own `project` is kept: on the relay there is none, and the header then says
-        // nothing about a project rather than saying the wrong one.
-        rememberSnippetProject(sessionID, answer && answer.project);
-        renderDetailHead();
-        draw(snippetGroups(answer, {
-            machine: session ? session.machine : null,
-            project: session ? session.cwd : null
-        }), { keepScroll: opts.keepScroll });
+        answered[sessionID] = answer;
+        drawAnswer(answer, { keepScroll: opts.keepScroll });
     }).catch(function (error) {
         if (ticket !== reading || overlay.hidden) return;
         // The transport's own sentence, unedited — `cloud_snippets_unpublished` says a Mac is
@@ -359,6 +399,25 @@ function insert(row) {
     if (!row || S.write !== true) return;
     closeSnippets();
     appendMsg(row.body);
+}
+
+/**
+ * A starter is pressed the way a row is pressed, because it is drawn as one.
+ *
+ * It used to open the editor prefilled, and the first person to use this sheet pressed the one
+ * saying *回報進度* expecting those words in the composer and got a form instead. The words are
+ * the visible promise of a press on something that shows its words; keeping the snippet is the
+ * useful side effect, and it belongs behind the press rather than in front of it. A save that
+ * fails costs nothing the person can see — the text is already in their box, the list is still
+ * empty, and the starter is still on offer next time.
+ */
+function useStarter(starter) {
+    if (S.write !== true) return;
+    var press = starterPress(starter, { mayCreate: snippetControls(api).create });
+    if (!press) return;
+    closeSnippets();
+    appendMsg(press.body);
+    if (press.create) api.createSnippet(press.create).catch(function () {});
 }
 
 /* ---- writing ------------------------------------------------------------- */
@@ -561,8 +620,7 @@ list.addEventListener("click", function (event) {
     if (!target || !list.contains(target)) return;
 
     if (target.hasAttribute("data-snippet-starter")) {
-        var starter = snippetStarters()[Number(target.getAttribute("data-snippet-starter"))];
-        if (starter) openEditor(null, starter);
+        useStarter(snippetStarters()[Number(target.getAttribute("data-snippet-starter"))]);
         return;
     }
     if (target.hasAttribute("data-snippet-more")) {

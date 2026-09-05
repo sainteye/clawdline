@@ -16,6 +16,7 @@ import { ShellPanel } from "../input/shell-panel.js";
 import { Terminal } from "../view/terminal.js";
 import { ActionConfirm } from "../input/action-confirm.js";
 import { Info } from "../input/info.js";
+import { Snippets } from "../input/snippets.js";
 import { StatusLine } from "../input/status-line.js";
 import { Shots } from "../input/shots.js";
 import { SkillPicker } from "../input/composer.js";
@@ -230,6 +231,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         observeTranscriptRevision(id, revisionOf(s), false);
         // These surfaces may draw immediately, so they follow the synchronous transcript issue.
         Info.follow();
+        Snippets.follow();
         GitPanel.follow();
         ShellPanel.follow();
         Terminal.follow();
@@ -279,6 +281,7 @@ export function closeDetail(silent) {
     S.expanded = {};
     Shots.clear();
     Info.follow();
+    Snippets.follow();
     GitPanel.follow();
     ShellPanel.follow();
     Terminal.follow();

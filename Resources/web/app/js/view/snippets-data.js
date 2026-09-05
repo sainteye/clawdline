@@ -330,6 +330,25 @@ export function snippetCreateBody(draft) {
 }
 
 /**
+ * What pressing a starter means.
+ *
+ * A starter is drawn as a row — same title, same first line, same shape under the same thumb —
+ * and it opened the editor instead. The first person to use this sheet pressed the one that said
+ * *回報進度* expecting those words in the box and got a form to fill in; **a control that looks
+ * like a row must do what a row does.** So a press inserts, and keeping it is the part that
+ * happens behind the press rather than in front of it.
+ *
+ * `create` is null when the transport cannot write, and `body` is never null: the text is the
+ * visible promise of the press, and it is kept even when the saving half is not available.
+ */
+export function starterPress(starter, options) {
+    var opts = options && typeof options === "object" ? options : {};
+    if (!starter || !trimmed(starter.body)) return null;
+    return { body: trimmed(starter.body),
+             create: opts.mayCreate ? snippetCreateBody(starter) : null };
+}
+
+/**
  * `PATCH /v1/snippets/:id`: the fields that actually changed, and nothing else.
  *
  * Scope and project move together or not at all — sending `scope` without its `project`, or a
