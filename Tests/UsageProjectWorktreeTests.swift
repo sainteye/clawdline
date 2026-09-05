@@ -498,24 +498,30 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
     let solo = "77777777-2222-4333-8444-555555555555"
     let soloBranch = "clawdline/task/" + solo
     let soloRows = [worktreeRow("solo", at: at, worktree: solo, task: solo)]
+    // `null` and `missing` are told apart on purpose: an advice this read declines to give is a
+    // published `null`, and a key that never reached the payload is a different failure.
     func soloNeeds(_ branches: Orchestrator.RepositoryBranches,
-                   bases: [String: String] = [:]) -> Any? {
+                   bases: [String: String] = [:]) -> String {
         let payload = UsageProjectWorktreeService(
             rows: { soloRows },
             acceptedFeatures: { ["solo": acceptedFeature("feature-d", "The focused runner")] },
             branches: { _ in branches }, worktreeBases: { bases })
             .read(.init(project: "widget", timezoneID: "UTC"), now: at).payload ?? [:]
-        return ((payload["worktrees"] as? [[String: Any]]) ?? [])
-            .first { $0["id"] as? String == solo }?["needs"]
+        let row = ((payload["worktrees"] as? [[String: Any]]) ?? [])
+            .first { $0["id"] as? String == solo } ?? [:]
+        guard let value = row["needs"] else { return "missing" }
+        if let word = value as? String { return word }
+        return value is NSNull ? "null" : "other"
     }
     expect("a delivered worktree is advised through the payload and not only through the ladder",
            soloNeeds(Orchestrator.RepositoryBranches(heads: [soloBranch: "cafed00d"],
-                                                     merged: [], known: true)) as? String,
+                                                     merged: [], known: true)),
            "no_record")
-    check("while the same rows on a branch git says is merged are advised nothing at all",
-          soloNeeds(Orchestrator.RepositoryBranches(heads: [soloBranch: "cafed00d"],
-                                                    merged: [soloBranch], known: true),
-                    bases: [soloBranch: "0ddba5e"]) is NSNull)
+    expect("while the same rows on a branch git says is merged are advised nothing at all",
+           soloNeeds(Orchestrator.RepositoryBranches(heads: [soloBranch: "cafed00d"],
+                                                     merged: [soloBranch], known: true),
+                     bases: [soloBranch: "0ddba5e"]),
+           "null")
 
     // **An accepted Project identity is whatever a person accepted, and this read hands that key
     // to a subprocess.** `repositoryBranches(in:)` makes it the git process's working directory,
