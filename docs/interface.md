@@ -350,8 +350,10 @@ its path. **The mark is a button of its own now, and it opens that project's sni
 pieces of text you wrote once and press instead of typing again. It used to be a picture inside
 the identity block, so pressing anywhere on that block opened Session info; the block is two
 buttons now, the mark and everything beside it, and neither press has to guess which of the two
-you meant. `⋯` → **Snippets** opens the same sheet, which is the entrance that still works when a
-project was never given a mark.
+you meant. `⋯` → **Snippets** opens the same sheet, and it is the discoverable entrance rather than
+the fallback one: **a project the icon registry has never seen gets a mark of its own anyway**,
+drawn from the project's path, so two unregistered projects look like two projects instead of like
+two blanks. A registered icon always wins over it.
 
 Pressing a row **puts its text in the composer and closes the sheet. It does not send.** Sending is
 the second press, on the button that already sends — so a mis-tap on a phone in a pocket cannot

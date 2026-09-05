@@ -230,7 +230,18 @@ fi
 #                                          new file, because a router is not a place to keep a
 #                                          store. What landed here is six doors and the envelope
 #                                          they answer through.)
-remote_server_ceiling=5726
+#   5,759  the snippet corrections           (+33, measured: seven lines went out with the second
+#                                          percent-decode on `?session=` and its now-wrong local,
+#                                          and forty came in — the comment saying why that value
+#                                          is used exactly as the parser handed it over, the
+#                                          `republishing` envelope and its counter that put a
+#                                          snippet write back on the snapshot the Cloud path
+#                                          reads, and the four call sites that now go through it.
+#                                          The store's own corrections — bytes rather than
+#                                          grapheme clusters, a bound on `project` and on
+#                                          `position`, symlinks resolved — are all in
+#                                          `Sources/Snippets.swift`.)
+remote_server_ceiling=5759
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"

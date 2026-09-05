@@ -16,9 +16,11 @@ add -A）、push、deploy。* and *回報你剛剛做了什麼、什麼還沒做
 once and press it.
 
 The project mark on a session's header — the pixel icon that already means *this project* — is a
-button of its own and opens that project's snippets. `⋯` → **Snippets** opens the same sheet, which
-is the entrance that still works in a project nobody ever gave a mark. Pressing a row puts its text
-in the composer and closes the sheet. **It does not send.** Sending is the second press, on the
+button of its own and opens that project's snippets, and `⋯` → **Snippets** opens the same sheet.
+**A project nobody ever drew an icon for now has a mark anyway**: one generated from its own path,
+four rows of seven cells in a colour of its own, so two projects the registry has never seen look
+like two projects rather than like two empty boxes. A registered icon still wins. Pressing a row
+puts its text in the composer and closes the sheet. **It does not send.** Sending is the second press, on the
 button that already says so — a mis-tap on a phone in a pocket cannot run `commit, push, deploy` in
 the wrong session, and the ordinary case of *snippet plus one more sentence*, "…, 但先跑測試",
 needs no separate feature.
@@ -27,7 +29,7 @@ A snippet belongs to one project or to every project, and the Mac decides which 
 is in by the mark's own rule — so a session running in an isolated worktree sees the snippets of
 the checkout it was cut from rather than an empty list of its own. They live beside your schedules,
 one file each in `~/.config/clawdline/snippets/`, and the list rides the snapshot the page already
-receives: the sheet opens with nothing to wait for, and a phone on the relay can press one too.
+receives — which is what lets a phone on the relay press one too, with nothing to wait for.
 Making and changing them stays on the direct path, and a device that may only read still sees the
 list and is told why it cannot insert.
 

@@ -7,7 +7,7 @@ import { els } from "../core/dom.js";
 import { ASK_MARK, clockOf, shortPath, tint } from "../core/util.js";
 import { assistantLogo, assistantName, drawIcon, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
 import { byId, taskOfChild, taskWord } from "./derive.js";
-import { markForSession } from "./project-mark.js";
+import { markForSession, projectLabel } from "./project-mark.js";
 import { snippetControls, snippetProjectFor } from "./snippets-data.js";
 import { closingID } from "./list.js";
 import { copyCodeBlock, inlineMd, richText } from "./markdown.js";
@@ -126,8 +126,13 @@ export function renderDetailHead() {
     // `data-plain` tells `detail.css` not to fade a mark that is perfectly present. The same
     // `snippetControls` the sheet asks, so the header and the `⋯` row cannot disagree.
     var canSnippet = snippetControls(api).read;
+    // The name the button claims, and it claims one only where a press would open the sheet that
+    // has to agree with it. An inert mark is a picture of the project this session sits in and
+    // opens nothing, so it keeps the label it has always had — the tail of the session's own
+    // path — because leaving it nameless would be a button a screen reader can only call
+    // "button", and there is no sheet for it to disagree with.
     var snippetsFor = resolved ? resolved.label : "";
-    var snippetsSays = !canSnippet ? snippetsFor
+    var snippetsSays = !canSnippet ? (s ? projectLabel(s.cwd) : "")
         : (snippetsFor ? T.webSnippets + " · " + snippetsFor : T.webSnippets);
     // No session is not a project with no mark: it is no project. The button goes away entirely
     // rather than leaving an empty box beside "No session open", which is what the header did

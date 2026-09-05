@@ -3284,10 +3284,17 @@ session. Both change what is on this Mac, and a device that may only read must n
 rewrite the owner's snippets.
 
 The whole list also rides `orchestratorSnapshot` as `snippets`, beside `schedules`, which is what
-lets the sheet open with no request of its own and lets a browser on the Cloud path — which
-speaks no HTTP to this Mac and may ask for only
-[seven reads](#the-reads-a-browser-on-the-cloud-path-may-ask-for) — still show the list. Editing
-is direct-path only: the four writes below have no Cloud equivalent at all.
+lets a browser on the Cloud path — which speaks no HTTP to this Mac and may ask for only
+[seven reads](#the-reads-a-browser-on-the-cloud-path-may-ask-for) — show the list at all, and
+show it with no request of its own. **A browser on the direct path does make one**: it reads
+`GET /v1/snippets?session=<id>` below, because that is the answer carrying the resolved project
+and the per-session filtering the snapshot's whole unsorted inventory does not. Editing is
+direct-path only: the four writes below have no Cloud equivalent at all.
+
+Each of those four republishes the snapshot when it succeeds, so a phone on the relay sees a
+snippet made at the desk without waiting for an unrelated orchestrator event to repaint it. A
+refusal republishes nothing, and neither does an answer replayed out of the ten-minute
+idempotency table: nothing changed either time.
 
 **The replies in this section are composed, and the rest of this page's are pasted.** The build
 running on the Mac these six were written against answers `404 not_found` for `/v1/snippets` —
@@ -3366,6 +3373,25 @@ off disk's own format, so `id`, `position` and both timestamps are the Mac's ans
 anything the client sent; none of those four may be written by a client, and sending one is an
 unknown field.
 
+**The three lengths are bytes, not characters**, and the same numbers now mean something the
+store can be held to: `title.utf8.count <= 60`, `body.utf8.count <= 4000`,
+`project.utf8.count <= 1024`, the way `label` on a root assignment is already
+`utf8.count <= 200`. Swift's `String.count` counts grapheme clusters, so four thousand ZWJ emoji
+were four thousand of them and about a hundred kilobytes on disk, in an append-only audit file
+and on every snapshot broadcast — none of which pays in characters — and `project`, the one
+field of the four that reaches `remote-audit.jsonl`, had no bound at all. What it costs is worth
+knowing before you write a client: sixty bytes is sixty Latin letters and twenty Han characters.
+
+`project` is measured **as you sent it**, before the path is standardised. Standardising truncates
+at `PATH_MAX` without saying so — measured on macOS, a 2,005-byte path comes back as exactly 1,024
+bytes — so a bound taken afterwards could never fire, and the snippet would be filed under a path
+that is not the one you sent.
+
+The read side counts the same way. A stored file whose title or body exceeds its bound in bytes,
+or whose `project` exceeds 1024, is isolated by the record check like any other malformed one —
+and so is a `position` outside `0…1_000_000_000`, which is the one field that used to be
+accepted unbounded and then have 100 added to it by the next create in that scope.
+
 `position` is a hundred past the highest in that same scope and project, so a new snippet lands at
 the end of its own group. `scope` is exactly `"global"` or `"project"`, and `project` is present
 if and only if the scope is `"project"` — a `project` path beside `"global"`, or `"project"` with
@@ -3375,7 +3401,7 @@ no path, is `snippet_scope_mismatch` rather than a field quietly dropped.
 |---|---|
 | `400 bad_request` | no `Idempotency-Key` |
 | `400 malformed_snippet` | an unknown field, a missing `title`, `body` or `scope`, a `scope` that is neither word, or a title or body that is empty |
-| `400 snippet_too_long` | a title over 60 characters or a body over 4000. `title_count` and `body_count` sit beside the code with the lengths actually counted |
+| `400 snippet_too_long` | a title over 60 **bytes of UTF-8**, a body over 4000, or a `project` path over 1024. `title_count`, `body_count` and `project_count` sit beside the code with the lengths actually counted |
 | `400 snippet_scope_mismatch` | `"project"` with no `project`, or a `project` beside `"global"` |
 | `401 unauthorized` | no token, or one this Mac does not know |
 | `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
@@ -3383,9 +3409,20 @@ no path, is `snippet_scope_mismatch` rather than a field quietly dropped.
 | `429 rate_limited` | ten snippet writes in the last ten minutes |
 | `500 write_failed` | the file could not be written, or could not be read back through the record check afterwards — in which case it has been removed |
 
-Every one of those refusals is audited as `snippet.created` with `ok=0` and `why=<code>`, and a
-success as `snippet.created` with the id; the audit line is written whichever way it goes. **A
-refusal never spends the brake**: validation and both limits are decided before the window is
+**The refusals the store makes are audited; the ones the gates make are not.** A success is
+`snippet.created` with the id, and `malformed_snippet`, `snippet_too_long`,
+`snippet_scope_mismatch`, `snippet_limit_reached`, `rate_limited` and `write_failed` are each
+`snippet.created` with `ok=0` and `why=<code>` — those are the answers this store decides.
+`400 bad_request`, `401 unauthorized`, `403 write_disabled` and `403 forbidden` are decided by
+[the three write gates](#writing-three-gates-in-this-order) before the store is reached, and
+`writing()` returns them without a line in `remote-audit.jsonl` or in the log. That is this whole
+API's existing behaviour rather than anything about snippets — every gated route on this page
+answers the same four the same silent way — and it means a revoked or read-only device hammering
+the four write routes leaves no record at all. It is written down as a gap in
+[`docs/backlog.yaml`](backlog.yaml) rather than fixed here, because changing it changes every
+write route on this Mac at once.
+
+**A refusal never spends the brake**: validation and both limits are decided before the window is
 touched, so a client that sends the same malformed body ten times has used none of its ten writes.
 
 **The brake is one bucket for all four writes**, not one per route: ten writes in ten minutes

@@ -24,7 +24,7 @@ const { byteLength, rememberSnippetProject, snippetActions, snippetControls, sni
     snippetDraft, snippetDraftFromText, snippetDraftProblem, snippetGroups, snippetOrder,
     snippetOrderBody, snippetPatchBody, snippetProjectFor, snippetReorder, snippetScopeSwap,
     snippetStarters, snippetSummary, snippetTitle, snippetsListHTML } = data;
-const { generatedMark, markForSession } =
+const { generatedMark, markForSession, projectLabel } =
     await import("../Resources/web/app/js/view/project-mark.js");
 const { appendGap, appendedText } = await import("../Resources/web/app/js/core/compose-text.js");
 const { T } = await import("../Resources/web/app/js/core/i18n.js");
@@ -704,8 +704,16 @@ assert.match(headSource, /markForSession\(s, resolved \? resolved\.key : ""\)/,
 assert.match(headSource, /var snippetsFor = resolved \? resolved\.label : "";/,
     "and names the project only once something has answered — a session in the home directory "
     + "used to announce the account name as a project");
-assert.ok(!/projectLabel\(/.test(headSource),
-    "rather than deriving a second name from the raw cwd, which is what disagreed with the sheet");
+assert.match(headSource,
+    /var snippetsSays = !canSnippet \? \(s \? projectLabel\(s\.cwd\) : ""\)/,
+    "the one place a name is still derived from the raw cwd is the mark that opens nothing: it "
+    + "has no sheet to disagree with, and a nameless button is what a screen reader can only "
+    + "call 'button'");
+assert.equal((headSource.match(/projectLabel\(/g) || []).length, 1,
+    "and nowhere else: one call, on the branch that draws no control");
+assert.equal(projectLabel("/Users/x/code/clawdline"), "clawdline");
+assert.equal(projectLabel("/Users/x/code/clawdline/"), "clawdline");
+assert.equal(projectLabel(""), "", "and an unknown project is named nothing, not 'undefined'");
 assert.match(headSource, /setAttribute\("aria-haspopup", "dialog"\)/,
     "the mark announces the dialog it actually opens; the sheet is role=dialog aria-modal=true");
 // The mutation that stayed green: `renderDetailHead` stops toggling the attribute and an inert
