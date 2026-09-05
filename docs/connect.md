@@ -74,14 +74,23 @@ the local run goes the other way.
 
 ## The shortcut: is claude-bestiary installed?
 
-Three of the seven below — the health check (2), the deploy (3) and the mark (7) — are small files
-that have to be *kept current*, and keeping them current is most of the work.
+Four of the seven below — the health check (2), the deploy (3), the backlog (5) and the mark (7) —
+are small files that have to be *kept current*, and keeping them current is most of the work.
 [claude-bestiary](https://github.com/sainteye/claude-bestiary) already does it. It writes these
 files for its own terminal status line, and Clawdline reads the same ones, so installing it
-connects three of the seven with nothing left for you to maintain.
+connects four of the seven with nothing left for you to maintain.
 
-**The other four are yours either way.** `.devstack.json` (1) states this project's own
-commands; the backlog (5) and the milestone (6) count this project's own work; and the local run
+**The backlog is the one that surprises people**, because the count looks like something only this
+project could know — and bestiary does not know it either. When the file goes stale it shells out to
+a counter **inside your repository** and writes down whatever that prints, so what it is offering is
+the scheduling, not the counting. The paths it probes for are the convention worth adopting:
+`tools/backlog.py --json`, or `backend/scripts/build_backlog_artifact.py`. Put this project's
+counter at one of those and the backlog re-counts itself whenever its source file changes, with no
+cron entry, no hook, and one writer for the JSON rather than two. Put it anywhere else and the
+backlog is yours to keep current, which is section 5.
+
+**The other three are yours either way.** `.devstack.json` (1) states this project's own
+commands; the milestone (6) counts work only this project can define; and the local run
 (4) is written by the script that is running, because nothing polls for a test that started
 thirty seconds ago in the next tab. Check what is actually in the cache directory before you decide
 who owns a file; a second writer for one file is a race whose loser is whichever ran first.
@@ -190,8 +199,10 @@ Whether the thing this project deploys is answering, as a dot with a label.
 { "state": "ok", "label": "example.com" }
 ```
 
-`state` is `ok` or anything else, and anything else is red. `label` is what to show — usually the
-domain.
+`ok` is the green dot, and a recognised state that is not `ok` is red —
+[project-status.md](project-status.md) has the vocabulary. A value **no reader recognises** draws
+nothing rather than a red dot, which is the rule every file on this page follows: a project whose
+check has never run is not a project that is down. `label` is what to show — usually the domain.
 
 **Do not build a cron entry for this before checking whether one is needed.**
 [claude-bestiary](https://github.com/sainteye/claude-bestiary) polls and writes this file for you:
@@ -236,12 +247,12 @@ while they work in another. It is the file to write for a project whose tests ta
 
 ```jsonc
 {
-  "state": "running",       // running | ok | fail | none
+  "state": "running",       // required — running | ok | fail | none
   "label": "test",          // free text, drawn exactly as written, never translated
   "phase": "compiling",     // optional, drawn where a percentage would be
   "started_at": 1757040000, // unix seconds
   "typical_seconds": 288,   // how long this usually takes — time one honest run and use that
-  "updated_at": 1757040100  // unix seconds; keep it moving while the run is alive
+  "updated_at": 1757040100  // required while running; a `running` row without it is drawn by nobody
 }
 ```
 
@@ -264,6 +275,7 @@ suite should go red because a status file could not be written.
 ```bash
 run=~/.claude/statusline-cache/run-$(pwd | tr / -).json
 started=$(date +%s)
+finished=0
 mkdir -p "$(dirname "$run")" 2>/dev/null || :   # absent on a machine with nothing else writing there
 
 say() {   # say <state> [phase]
@@ -272,23 +284,53 @@ say() {   # say <state> [phase]
   return 0   # a status file must never be able to fail the run it is reporting on
 }
 
-trap 'say fail interrupted; exit 130' INT TERM
+finish() {   # finish <exit status> — the last write, and only ever one of them
+  [ "$finished" = 0 ] || return 0
+  finished=1
+  case "${1:-1}" in 0) say ok ;; *) say fail ;; esac
+  return 0
+}
+
+trap 'finish "$?"' EXIT           # every way out, a deliberate `exit 1` included
+trap 'finish 130; exit 130' INT   # the `exit` is the point of these two: a handler
+trap 'finish 143; exit 143' TERM  # that returns carries on and then declares success
+
+status=0
 say running compiling
-# … compile …
-say running "running tests"
-# … run …
-say ok
+make build || status=$?                    # … or whatever this project compiles with
+
+if [ "$status" -eq 0 ]; then
+  say running "running tests"
+  make test || status=$?                   # … or whatever it tests with
+fi
+
+exit "$status"    # no `say ok` anywhere: the EXIT trap decides which of the two it was
 ```
 
-Four things in that sketch are the whole point of it:
+Five things in that sketch are the whole point of it:
 
-- **The `trap`.** A run interrupted with `Ctrl-C` must write `fail` and leave, or it leaves
-  `running` in the bar behind it. `INT` and `TERM` are the two that matter; `KILL` cannot be
-  trapped, which is what the next bullet is for.
+- **Nothing writes `ok` by hand.** The tick is a *consequence* of the run's exit status, never a
+  line the control flow reaches on its way past. A sketch ending in `say ok` reports a red suite as
+  a tick on every machine whose script does not set `-e`, and freezes at `running` until the
+  staleness ceiling clears it on every machine whose script does — and the first is the worse of the
+  two, because it is the one that looks like it is working. The `|| status=$?` is what survives both
+  settings: a command on the left of `||` does not trip `set -e`, and its status is still there to
+  be read.
+- **The traps, and `EXIT` as the one carrying most of it.** `INT` and `TERM` cover `Ctrl-C` and a
+  `kill`; `KILL` cannot be trapped, which is what the `updated_at` bullet is for. `ERR` alone is not
+  enough, and that was measured on this Mac on 2026-09-05: under `set -e` a command failing *inside
+  a function* ends the script without firing `ERR` at all unless `set -E` is on too, and every
+  deliberate `exit 1` misses `ERR` by construction. `EXIT` sees all of them. **Look for an existing
+  `EXIT` trap before you add one** — a shell keeps exactly one, a second `trap … EXIT` silently
+  replaces the first, and the cleanup it was doing goes with it. If the script already has one, call
+  `finish` from inside that handler instead of installing your own.
 - **`updated_at` on every write.** A reader ignores a `running` row whose `updated_at` is older
   than `stale_after` — 900 seconds when that field is absent — because a run killed with `kill -9`
   writes nothing on the way out and nothing else ever retracts it. That ceiling is the only thing
-  standing between the user and a progress bar that runs forever. If a phase of this project's
+  standing between the user and a progress bar that runs forever, which is why the field is
+  **required while the row says `running`**: a `running` row without a usable number there is
+  malformed, and is drawn by nobody rather than being drawn from `started_at` instead. A finished
+  `ok` or `fail` does not decay and does not need it. If a phase of this project's
   build takes longer than fifteen minutes, either write from inside it or set `stale_after` to
   something that fits, but do not leave the row unable to say it is still alive.
 - **`.tmp` then `mv`.** As with every file on this page.
@@ -331,7 +373,10 @@ whole rather than drawn as zero. The other lane names are free.
 **Do not hand-write the counts.** A backlog file typed once is a number that was true on the
 afternoon somebody wired this up, and it will still be on the screen next spring. If this project
 keeps its backlog in a file — a YAML list, a `TODO.md`, GitHub issues — write the few lines that
-count it and say in your report what runs them. If it does not keep one anywhere, this is a kind
+count it and say in your report what runs them. **Put those few lines at `tools/backlog.py` and give
+them a `--json` flag**: that is the path claude-bestiary probes for, so the answer to "what runs
+them" becomes "whatever is already installed, whenever the source file changes", and nothing has to
+be scheduled. Anywhere else works too and is then yours to keep current. If it does not keep one anywhere, this is a kind
 this project has nothing to say through: skip it and say so.
 
 `artifact` is optional and is what the chip opens. It must be a regular `.html` file **inside the
@@ -442,9 +487,18 @@ Do not report success without evidence. For each file you created:
 
    Read it twice, a few seconds apart, and show that `updated_at` **moved**. A `running` row whose
    age is already past its ceiling is a row every reader ignores, and one that never moves is what
-   a dead producer leaves behind. Then let the run finish and show the state landing on `ok`, and
-   interrupt one with `Ctrl-C` and show it landing on `fail` rather than staying `running` — the
-   `trap` is the half of this wiring that only shows up on the bad day.
+   a dead producer leaves behind. Then show all three endings, because they are three different
+   paths through the wiring and a good day only exercises one of them:
+
+   - let a run finish and show the state landing on `ok`;
+   - **make one run fail on purpose** — break an assertion, or put `exit 1` where the tests are —
+     and show the file landing on `fail`. This is the check that catches the mistake everybody
+     makes: a producer that writes the tick unconditionally is green on a good day, green on a bad
+     day, and wrong only when it matters;
+   - interrupt one with `Ctrl-C` and show it landing on `fail` rather than staying `running`.
+
+   The last two are the half of this wiring that only shows up on the bad day, which is the half
+   nobody checks unless a list tells them to.
 8. **Say which of the seven you did not write, and which of those were nothing to say rather than
    nothing done.** A project with no deployed service has no health check, and that is a complete
    answer; a project whose backlog you could not find a source for is an open item. They read

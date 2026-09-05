@@ -98,10 +98,14 @@ uses it to decide whether *your* local deploy or *its* GitHub poller owns the fi
 producer that omits it gets quietly overwritten a few seconds later. If you are writing a deploy
 script, read the other page before you write this file.
 
-`run-<path>.json` is the exception to the whole of this section: both programs read it the same
-way, out of the same fields, and both apply the same staleness ceiling — because that ceiling is a
-reader's job rather than a producer's, and a rule that only one reader honours is a rule the other
-reader's users do not have. One file, one set of rules, wherever it is being drawn.
+`run-<path>.json` is the exception to the whole of this section, and the exception is a claim about
+readers rather than a report on them. **Any reader that adopts this format is expected to read it
+out of these fields and to apply the staleness ceiling below**, because that ceiling is a reader's
+job rather than a producer's: a producer killed with `kill -9` cannot retract its own row, so a
+reader that skips the ceiling shows a run that finished an hour ago and no producer can tell it
+otherwise. A rule only one reader honours is a rule the other reader's users do not have. One file,
+one set of rules, wherever it is being drawn — which is a contract this page is asking for, not a
+description of how many programs have implemented it today.
 
 ---
 
@@ -109,8 +113,21 @@ reader's users do not have. One file, one set of rules, wherever it is being dra
 
 `~/.claude/statusline-cache/`, and five of the seven live here: a deploy, a local run, a backlog, a
 milestone, a health check. Each file is optional; absent means the bar has one less thing to show.
-Every field is optional on the way in too, so a format that grows a key does not break a reader
-that has not heard of it.
+
+**Two rules hold across every file on this page**, and the sections below rely on them rather than
+restating them:
+
+- **A malformed value is an absent one.** Each format names the few fields it cannot do without —
+  `state` and `updated_at` for a `running` local run, `total` for a backlog, `total` and `complete`
+  for a milestone — and everything else is optional, so a format that grows a key does not break a
+  reader that has not heard of it. A field carrying the wrong type is treated exactly as if it were
+  not written: it falls back to that field's documented default where the format has one, and where
+  it has none, the row is malformed and is not drawn. There is no per-field exception to that, and
+  a reader that invents one is the reason two readers disagree about the same file.
+- **A value nobody recognises means "say nothing".** Not a cross, not a red dot, not an error the
+  user gets told about — a row that silently is not there. A state you have not heard of is not a
+  failure, and the mark drawn for one is always wrong: this is why `ghrun-` has a `none` at all, and
+  it is the rule for every file here rather than a quirk of the file it was first written for.
 
 ### A deploy in flight — `ghrun-<owner>-<repo>.json`
 
@@ -137,9 +154,10 @@ file rather than for the bar:
 { "state": "none", "why": "no-runs", "updated_at": 1787056878 }
 ```
 
-**A consumer that has not heard of `none` will draw a cross for a project that simply has no CI**,
-which is a red mark that is always wrong. Treat any state you do not recognise as "say nothing"
-rather than as failure.
+**A reader that has not heard of `none` draws a cross for a project that simply has no CI**, which
+is a red mark that is always wrong. That is where the second shared rule above came from, and it is
+why it is written as a rule for all of these files rather than as an allowance this one file makes:
+any state a reader does not recognise means "say nothing".
 
 `<owner>-<repo>` comes from the repository's `origin` remote — **of the repository you want to
 see it in**, which is not always the one that deployed.
@@ -158,13 +176,13 @@ in another.
 
 ```jsonc
 {
-  "state": "running",                        // running | ok | fail | none
+  "state": "running",                        // required — running | ok | fail | none
   "label": "test",                           // free text, drawn exactly as written
   "phase": "compiling",                      // optional free text, drawn in place of the percentage
   "started_at": 1757040000,                  // unix seconds
   "typical_seconds": 288,                    // how long this usually takes
-  "updated_at": 1757040100,                  // unix seconds — the producer must keep this moving
-  "stale_after": 900,                        // optional seconds; 900 when the field is absent
+  "updated_at": 1757040100,                  // required while running — keep it moving
+  "stale_after": 900,                        // optional seconds; 900 when absent, 0 means "expire now"
   "log": "/tmp/clawdline-tests-8d.log",      // optional, a path for a person to open
   "holder": "clawdline-8d",                  // optional, which session started it
   "tree": "/Users/you/code/atrium"           // optional, which checkout it is running in
@@ -175,12 +193,24 @@ in another.
 shows how far through it is, this one shows `phase` verbatim when the producer sets one. `ok` and
 `fail` draw a tick or a cross.
 
-`none` — **and every state a reader does not recognise** — draws nothing at all. That is the same
-rule `ghrun-` has and it is here for the same reason: a state you have not heard of is not a
-failure, and a cross drawn for one is a red mark that is always wrong.
+`none`, and every state a reader does not recognise, draws nothing at all — the second shared rule
+above, and this file is not an exception to it.
 
-Every field is optional on the way in except `state`, so a format that grows a key does not break a
-reader that has not heard of it, and no reader throws the whole row away because one key moved.
+**`state` and `updated_at` are the two fields this format cannot do without; every other one is
+optional.** `updated_at` is what the ceiling below is measured against, so a `running` row that does
+not carry a usable number there is malformed rather than merely thin, and **is not drawn at all** —
+there is nothing to hold it to a liveness ceiling with, and the ceiling is the whole reason this
+format exists rather than reusing `ghrun-`. Falling back to `started_at` looks kinder and is not: it
+makes "required" mean nothing, and it draws a run whose producer died before it ever said it was
+alive.
+
+**A finished verdict is the exception, in the other direction.** `ok` and `fail` are not alive and
+do not decay, so they are drawn however old they are and whether or not `updated_at` is there. "The
+last run of this tree failed" stays true until the next run overwrites the file — and every run
+rewrites it, so a verdict only survives while there has been nothing newer to say. The deploy chip
+beside it already behaves this way, and two neighbouring chips with two expiry rules is a thing no
+reader will ever get right.
+
 Write to a temporary name and rename it into place, as with every other file on this page.
 
 `label` and `phase` are the producer's own words and are drawn **verbatim, in every language** —
@@ -207,14 +237,16 @@ each is the kind of decision the next reader assumes was an accident and then "f
   out, and there is no poller to tidy up after it, so a `running` row would otherwise spin in the
   bar forever — which is exactly what claude-bestiary's own `docs/producers.md` says about
   `ghrun-`. So **a reader ignores a `running` row whose `updated_at` is older than `stale_after`**,
-  900 seconds when that field is absent. Putting the ceiling in the reader rather than asking every
-  producer to clean up after itself means every reader gets it, including the ones nobody has
-  written yet.
+  900 seconds when that field is absent or carries something that is not a number. The instant equal
+  to the ceiling is still fresh and one second past it is not; `0` is a value rather than a missing
+  field, so a producer that writes `0` gets a row that expires the moment it is written, and a
+  negative one the same. Putting the ceiling in the reader rather than asking every producer to
+  clean up after itself means every reader gets it, including the ones nobody has written yet.
 
 That last rule is what makes `updated_at` the one field beyond `state` a producer must not leave
 out: it is what staleness is measured against, and a `running` row that never says when it was last
-touched cannot be told from one whose process died an hour ago. Write it at every phase boundary,
-and more often than `stale_after` for any phase that runs longer than that.
+touched cannot be told from one whose process died an hour ago — so it is not drawn. Write it at
+every phase boundary, and more often than `stale_after` for any phase that runs longer than that.
 
 ### A backlog — `backlog-<path>.json`
 
@@ -301,8 +333,9 @@ did not hold.
 | `unknown` | not checked yet |
 
 `sick` and `offline` draw alike and mean opposite things: one is a thing to go and fix, the other
-is a thing to ignore until the café's wifi comes back. Anything unrecognised should draw nothing
-rather than a red dot.
+is a thing to ignore until the café's wifi comes back. Anything outside this vocabulary draws
+nothing rather than a red dot — the second shared rule above, which this file follows for the same
+reason `ghrun-` does: a project whose check has never run is not a project that is down.
 
 `<path>` — in this file name and in `run-`, `backlog-` and `milestone-` — is the project's
 directory with `/` turned into `-`, the same shape Claude Code uses for its own project folders:
