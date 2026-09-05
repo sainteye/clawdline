@@ -693,6 +693,11 @@ node Tests/install-focused.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
+# The sheet next door: what a snippet press does — insert through the composer's own `appendMsg`,
+# never send — the grouping the Mac resolved, and the guard that leaves a control undrawn on a
+# transport whose route is missing. Registered here rather than in `browser_contract_suites` above
+# so the sealed count of that roster stays the landing root's to move.
+node Tests/web-snippets.mjs
 node Resources/web/app/js/net/client.test.mjs
 # Two more of exactly the same, found the same way and registered on 2026-09-04. Neither had run
 # once since the day it was committed — `Tests/web-usage-analytics.mjs` at f0eedc18 and

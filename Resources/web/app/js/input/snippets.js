@@ -90,11 +90,27 @@ new MutationObserver(syncCopy).observe(document.documentElement, {
 });
 syncCopy();
 
-/** The row in the `⋯` menu, present only when this transport can read the list. */
+/**
+ * The row in the `⋯` menu, present only when this transport can read the list.
+ *
+ * `disabled` as well as `hidden`, because `SessionActions.items()` collects
+ * `button:not(:disabled)` for the keyboard: a row that is only hidden is still a stop on the way
+ * down the menu with the arrow keys, which is a shortcut to a sheet nobody can see.
+ *
+ * **Asked when the menu opens, not once at the end of a render.** The transport is chosen after
+ * these modules evaluate, and `renderTranscript` returns early — emitting no `clawdline:rendered`
+ * — for a session whose transcript could not be read. A row that decided its own existence on
+ * that event stayed hidden for exactly those sessions, which is how this was found.
+ */
 function syncRow() {
-    button.hidden = !readable();
+    var ok = readable();
+    button.hidden = !ok;
+    button.disabled = !ok;
 }
 syncRow();
+// Registered after `input/detail-actions.js` has bound its own handler to the same button, so
+// the menu is already open by the time this runs — the same tick, so nothing is painted between.
+document.getElementById("detail-actions-trigger").addEventListener("click", syncRow);
 
 function draw(model, options) {
     shown = snippetOrder(model);

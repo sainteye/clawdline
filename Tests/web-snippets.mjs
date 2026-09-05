@@ -81,8 +81,15 @@ assert.equal(snippetControls({ snippets: "yes" }).read, false,
 // `/v1/push/key` already use, and it is asked in the sheet rather than assumed.
 assert.match(sheetSource, /snippetControls\(api\)/,
     "the sheet asks the live transport what it can do");
-assert.match(sheetSource, /button\.hidden = !readable\(\)/,
-    "and leaves its own menu row undrawn when the transport cannot even read the list");
+assert.match(sheetSource, /var ok = readable\(\);\n    button\.hidden = !ok;\n    button\.disabled = !ok;/,
+    "and leaves its own menu row undrawn when the transport cannot even read the list — "
+    + "disabled as well as hidden, because SessionActions.items() collects "
+    + "button:not(:disabled) for the arrow keys");
+assert.match(sheetSource,
+    /getElementById\("detail-actions-trigger"\)\.addEventListener\("click", syncRow\)/,
+    "and asks again every time the menu opens: the transport is chosen after these modules "
+    + "evaluate, and renderTranscript emits no clawdline:rendered for a transcript it could "
+    + "not read");
 
 // The frozen contract stays five methods short of this feature: the relay satisfies it and has
 // none of the writing half, so adding any of them would make a transport that works illegal.
