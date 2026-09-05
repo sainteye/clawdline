@@ -190,6 +190,39 @@ enum RemotePage {
             "webCodeCopyFailed": t.webCodeCopyFailed,
         ])
 
+        // The snippets sheet, reached from the `⋯` menu and from the project mark beside it.
+        // Everything from `webSnippetNew` down is only ever drawn where the transport can
+        // write, and is sent anyway: the payload is what this browser may need, and which
+        // controls it draws is decided in the page from `snippetControls`.
+        add([
+            "webSnippets": t.webSnippets,
+            "webSnippetsThisProject": t.webSnippetsThisProject,
+            "webSnippetsEveryProject": t.webSnippetsEveryProject,
+            "webSnippetsEmpty": t.webSnippetsEmpty,
+            "webSnippetsEmptyNew": t.webSnippetsEmptyNew,
+            "webSnippetsReadOnly": t.webSnippetsReadOnly,
+            "webSnippetNew": t.webSnippetNew,
+            "webSnippetEditing": t.webSnippetEditing,
+            "webSnippetMore": t.webSnippetMore,
+            "webSnippetEdit": t.webSnippetEdit,
+            "webSnippetDelete": t.webSnippetDelete,
+            "webSnippetDeleteAsk": t.webSnippetDeleteAsk,
+            "webSnippetUp": t.webSnippetUp,
+            "webSnippetDown": t.webSnippetDown,
+            "webSnippetToGlobal": t.webSnippetToGlobal,
+            "webSnippetToProject": t.webSnippetToProject,
+            "webSnippetTitleLabel": t.webSnippetTitleLabel,
+            "webSnippetBodyLabel": t.webSnippetBodyLabel,
+            "webSnippetScopeLabel": t.webSnippetScopeLabel,
+            "webSnippetSave": t.webSnippetSave,
+            "webSnippetFromLast": t.webSnippetFromLast,
+            "webSnippetNeedsText": t.webSnippetNeedsText,
+            "webSnippetStarterCommitTitle": t.webSnippetStarterCommitTitle,
+            "webSnippetStarterCommitBody": t.webSnippetStarterCommitBody,
+            "webSnippetStarterReportTitle": t.webSnippetStarterReportTitle,
+            "webSnippetStarterReportBody": t.webSnippetStarterReportBody,
+        ])
+
         // The composer, and what it refuses.
         add([
             "webSend": t.webSend,
