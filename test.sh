@@ -642,6 +642,21 @@ tools/build-compatibility.py --check
 tools/check-version-strings.py
 tools/check-web-strings.py
 tools/check-web-ids.py
+# `curl` exits 0 for `409`, `401` and `503` alike, which is how a refused restart came to be
+# announced as an accepted one and a five-second client timeout came to be written down as the
+# server refusing. Every `curl` this repository runs now either asks curl to fail on an HTTP error
+# or takes the code out and compares it. The self-test runs first because it is the scanner's own
+# control: twenty-nine shapes, calls and mentions, and a scan that has stopped telling them apart
+# would otherwise pass the tree in silence. docs/curl-status.md has the rule.
+tools/check-curl-status.py --self-test
+tools/check-curl-status.py
+# And every guard above has to have been seen to fail. Two checks that could not go red arrived on
+# 2026-09-05 — a claims comparison that is identically true inside a linked worktree, and a
+# `stale > worst` that was an identity — and both were green the way a working guard is green. This
+# puts one defect in front of each `tools/check-*` and requires it to say so, and refuses a guard
+# that no proof names. It matches `tools/check-*` itself, so it is on its own list.
+# docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s.
+bash tools/check-guards-go-red.sh
 verify_suite_roster
 # (c) in `docs/suite-runtime.md`: 129 s of the 288, before the compile the machine lock exists for
 # has even started. Two of these suites are 119 s of it.

@@ -6,6 +6,10 @@
 # looked fine at a glance and both times it was caught by cropping the footer and looking. So:
 # this crops the parts that carry identity out of every asset and stacks them into one sheet.
 #
+# red-proof-exempt: it has no verdict to prove. This one builds a contact sheet for a person
+# to look at; every exit it has is about ffmpeg or a missing file, so a proof that it goes
+# red would only be a proof that ffmpeg can be hidden from it. See docs/guard-red-proofs.md.
+#
 # **It cannot pass or fail on its own — you have to look at the sheet.** What it is looking for
 # is a real repository name where "my-project" should be, and any conversation that is not the
 # made-up one in docs/assets/demo-transcript.jsonl.

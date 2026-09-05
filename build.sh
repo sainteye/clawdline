@@ -1033,10 +1033,26 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1; then
   PORT=$(/usr/bin/python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717)
   TOKEN_FILE="$HOME/.config/clawdline/orchestrator-token"
   if [ -r "$TOKEN_FILE" ]; then
-    if ! TASK_SNAPSHOT=$(curl -s --max-time 2 \
-        "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
-        -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null); then
-      TASK_SNAPSHOT=
+    # **A refused read and an empty list are the same silence, and they must not be.** `curl -s`
+    # exits 0 for a `401`, and a `401` body is not JSON, so the parse below finds no tasks and
+    # this block concludes that nothing is mid-spawn — from a request the server never answered.
+    # The token file exists on every machine that has ever paired; it going stale is exactly how
+    # this arrives. Take the code, and when it is not a snapshot say so: the build carries on
+    # either way, because this is a courtesy, but the courtesy has to know it did not happen.
+    TASK_SNAPSHOT=
+    TASK_SNAPSHOT_BODY=$(mktemp -t clawdline-tasks 2>/dev/null) || TASK_SNAPSHOT_BODY=
+    if [ -n "$TASK_SNAPSHOT_BODY" ]; then
+      TASK_SNAPSHOT_CURL=0
+      TASK_SNAPSHOT_STATUS=$(curl -s --max-time 2 -o "$TASK_SNAPSHOT_BODY" -w '%{http_code}' \
+          "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+          -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null) || TASK_SNAPSHOT_CURL=$?
+      if [ "$TASK_SNAPSHOT_CURL" = 0 ] && [ "${TASK_SNAPSHOT_STATUS:-}" = 200 ]; then
+        TASK_SNAPSHOT=$(cat "$TASK_SNAPSHOT_BODY")
+      else
+        echo "→ could not read the task list before restarting (HTTP ${TASK_SNAPSHOT_STATUS:-000}, curl exit $TASK_SNAPSHOT_CURL)"
+        echo "  a task that is mid-spawn right now will not be waited for"
+      fi
+      rm -f "$TASK_SNAPSHOT_BODY"
     fi
     MIDFLIGHT=$(printf '%s' "$TASK_SNAPSHOT" | /usr/bin/python3 -c 'import json,sys
 try: t = json.load(sys.stdin).get("tasks", [])
@@ -1062,16 +1078,33 @@ for x in t:
       # agent, and it will not stop to read a line it did not ask for.
       echo "→ a dispatched task is mid-spawn; waiting for it to be briefed (up to 90s)"
       echo "$MIDFLIGHT"
+      # **A poll that stopped being answered must not read as a poll that came back clear.** This
+      # loop used to pipe `curl -s` straight into the parser: a `401` or a `503` is a body that is
+      # not JSON, the parser printed nothing, and that empty string is the same empty string that
+      # means "nothing is queued or spawning any more". A refused read announced `clear —
+      # carrying on` and the restart went ahead over the top of the task it was waiting for.
+      POLL_BODY=$(mktemp -t clawdline-tasks-poll 2>/dev/null) || POLL_BODY=
+      STILL=x
       for _ in $(seq 1 90); do
         sleep 1
-        STILL=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
-            -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null \
-          | /usr/bin/python3 -c 'import json,sys
-try: t = json.load(sys.stdin).get("tasks", [])
+        [ -n "$POLL_BODY" ] || break
+        POLL_CURL=0
+        POLL_STATUS=$(curl -s --max-time 2 -o "$POLL_BODY" -w '%{http_code}' \
+            "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+            -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null) || POLL_CURL=$?
+        if [ "$POLL_CURL" != 0 ] || [ "${POLL_STATUS:-}" != 200 ]; then
+          echo "   the task list stopped answering (HTTP ${POLL_STATUS:-000}, curl exit $POLL_CURL);"
+          echo "   restarting without knowing whether it is still mid-spawn"
+          STILL=
+          break
+        fi
+        STILL=$(/usr/bin/python3 -c 'import json,sys
+try: t = json.load(open(sys.argv[1])).get("tasks", [])
 except Exception: raise SystemExit
-print("".join("x" for x in t if x.get("state") in ("queued", "spawning")))' 2>/dev/null)
+print("".join("x" for x in t if x.get("state") in ("queued", "spawning")))' "$POLL_BODY" 2>/dev/null)
         [ -z "$STILL" ] && { echo "   clear — carrying on"; break; }
       done
+      [ -n "$POLL_BODY" ] && rm -f "$POLL_BODY"
       # Ninety seconds is the whole of the patience. Past that the task is not mid-spawn any
       # more, it is stuck, and holding a build hostage to it helps nobody.
       [ -n "$STILL" ] && echo "   still spawning after 90s; restarting anyway"
@@ -1303,8 +1336,11 @@ maintenance_abort() {
 # Which app process is answering right now. A receipt's `requested_instance_id` is only meaningful
 # against this.
 maintenance_running_instance() {
+  # `-f`, so that a refusal comes back as no instance rather than as a body. An error page parsed
+  # for an `instance` field yields "" either way today; the difference is that a `503` can no
+  # longer become an instance id if that page ever grows one.
   local body=""
-  body=$(curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" --max-time 10 \
+  body=$(curl -fsS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" --max-time 10 \
     "http://127.0.0.1:$PORT/v1/health" 2>/dev/null) || return 0
   printf '%s' "$body" | /usr/bin/python3 -c 'import json,sys
 try:
@@ -1638,18 +1674,41 @@ if [ "$WAS_RUNNING" = "1" ]; then
       # a bound on the wait, not on the attempts.
       RECONCILE_DEADLINE=$(( $(date +%s) + MAINTENANCE_RECONCILE_SECONDS ))
       RECONCILED=0
+      # **Nothing may be concluded from silence here.** This loop used to read the body and only
+      # the body, with `|| true` under it: a `401` from a token that went stale over the restart
+      # and a replacement that has not finished reconciling produce the same empty `phase`, so the
+      # whole window could be spent on a question that was being refused — and the sentence at the
+      # end of it blamed the replacement. The same mistake as reading a client timeout as a
+      # refusal, once more: there, no answer was read as "no"; here, no answer was read as "not
+      # yet". Keep the code alongside the phase, and let the report say which of the two it was.
+      RECONCILE_ANSWERED=0
+      RECONCILE_LAST_STATUS=
+      RECONCILE_LAST_CURL=0
       while :; do
-        RESTART_REPLY=$(curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" --max-time 5 \
+        RECONCILE_LAST_CURL=0
+        RECONCILE_LAST_STATUS=$(curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" \
+          --max-time 5 -o "$MAINTENANCE_REPLY" -w '%{http_code}' \
           "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
-          -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" || true)
-        PHASE=$(printf '%s' "$RESTART_REPLY" | /usr/bin/python3 -c 'import json,sys
-try: print(json.load(sys.stdin).get("restart",{}).get("phase",""))
-except Exception: pass')
+          -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null) || RECONCILE_LAST_CURL=$?
+        PHASE=
+        if [ "$RECONCILE_LAST_CURL" = 0 ] && [ "${RECONCILE_LAST_STATUS:-}" = 200 ]; then
+          RECONCILE_ANSWERED=1
+          PHASE=$(maintenance_field "$MAINTENANCE_REPLY" phase)
+        fi
         if [ "$PHASE" = complete ]; then RECONCILED=1; break; fi
         [ "$(date +%s)" -ge "$RECONCILE_DEADLINE" ] && break
         sleep 1
       done
       if [ "$RECONCILED" != 1 ]; then
+        # Which of the two failures this was. `RECONCILE_ANSWERED` is 1 only if some read in the
+        # loop came back `200`, so "it never answered" is a fact about the whole window and not
+        # about its last second.
+        if [ "$RECONCILE_ANSWERED" = 1 ]; then
+          RECONCILE_WHY="it answered but never reported phase=complete"
+        else
+          RECONCILE_WHY="no read of its restart state was answered (last HTTP ${RECONCILE_LAST_STATUS:-000}, curl exit $RECONCILE_LAST_CURL) — this is not the replacement saying it is not ready"
+        fi
+        echo "   $RECONCILE_WHY"
         # Same rule as the drain timeout above: the abort is allowed to fail, the sentence is not
         # allowed to be wrong about it.
         if maintenance_abort "$MAINTENANCE_REQUEST_ID" 5; then
