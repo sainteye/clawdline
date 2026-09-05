@@ -376,7 +376,27 @@ enum Tmux {
     struct ControlModeObservation {
         let clients: [ControlModeClient]
         let error: TerminalFailure?
+        /// The same field ``PaneObservation/emptiness`` carries, for the same reason and with one
+        /// difference worth saying out loud: here ``Emptiness/noTmuxToAsk`` arrives *with* an
+        /// error, because this type's convention is the opposite one — a tmux nobody could find
+        /// has not agreed that there is no control-mode client. So the two fields answer two
+        /// questions rather than one. `error` says whether this reading may be believed;
+        /// `emptiness` says why it is empty. They are independent, and this is the type that
+        /// proves it by holding both at once.
+        ///
+        /// **This is the path the 2026-09-05 sentence came out of.** `ITerm.ptylessSecondSource`
+        /// reads `isComplete`, and a `noServer` answer here is complete, so twenty-three rows
+        /// were told "tmux reports no control-mode client that would explain it" on the strength
+        /// of a `list-clients` that had failed and said which of three ways.
+        let emptiness: Emptiness?
         var isComplete: Bool { error == nil }
+
+        init(clients: [ControlModeClient], error: TerminalFailure?,
+             emptiness: Emptiness? = nil) {
+            self.clients = clients
+            self.error = error
+            self.emptiness = emptiness
+        }
     }
 
     /// What ``controlModeObservation()`` answers when there is no tmux binary to ask.
@@ -399,7 +419,8 @@ enum Tmux {
             clients: [],
             error: TerminalFailure(
                 kind: .io,
-                message: "no tmux found at Config's tmuxPath or the usual install paths"))
+                message: "no tmux found at Config's tmuxPath or the usual install paths"),
+            emptiness: .noTmuxToAsk)
     }
 
     static func controlModeObservation() -> ControlModeObservation {
@@ -413,9 +434,14 @@ enum Tmux {
         let receipt = run(["list-clients", "-F", fmt], timeout: subprocessTimeoutForTesting ?? 5)
         if !receipt.ok {
             // Same rule as `paneObservation`: no server is a complete empty answer, and anything
-            // else — a timeout above all — has no authority to prove a client absent.
-            if serverAnswer(receipt.failure).isNoServer {
-                return ControlModeObservation(clients: [], error: nil)
+            // else — a timeout above all — has no authority to prove a client absent. And the
+            // same receipt on the way out, for the sharper reason: the sentence a person is shown
+            // about pty-less rows is decided by this call, so a `list-clients` that failed must
+            // not leave through here having said nothing at all.
+            if let failure = receipt.failure,
+               let cause = serverAnswer(failure).noServerCause {
+                return ControlModeObservation(clients: [], error: nil,
+                                              emptiness: .noServer(cause, said: failure))
             }
             return ControlModeObservation(clients: [], error: receipt.failure)
         }

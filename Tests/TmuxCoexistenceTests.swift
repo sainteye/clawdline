@@ -565,6 +565,26 @@ group("a tmux failure says whether there is no server, or only that nobody could
               let observed = Tmux.paneObservation()
               return observed.isComplete && observed.sessions.isEmpty && observed.error == nil
           })
+    // **The sibling reading, which is the one the incident came out of.** `list-clients` is what
+    // `ITerm.ptylessSecondSource` consults before the panel says "tmux reports no control-mode
+    // client that would explain it", and it dropped the same receipt in the same way. It is
+    // checked here rather than in a group of its own because it is the same fact.
+    let ccFake = makeFakeTmux(refusing: neverUsed)
+    Tmux.binaryForTesting = ccFake.binary
+    let ccObserved = Tmux.controlModeObservation()
+    ccFake.cleanup()
+    let ccWant: Tmux.Emptiness? = .noServer(.socketPathAbsent, said: io(neverUsed))
+    expect("the empty control-mode answer says which empty it is too",
+           ccObserved.emptiness, ccWant)
+    check("while still being the complete answer that lets a pty-less row stay unexplained",
+          ccObserved.isComplete && ccObserved.clients.isEmpty)
+    // The one place the two fields disagree on purpose, which is what makes them two fields:
+    // a tmux this app could not find is *not* a complete control-mode answer, and it is still
+    // empty for the same nameable reason.
+    let unaskable = Tmux.controlModeObservationWithoutBinary()
+    check("an unaskable tmux names its emptiness and refuses to be believed at once",
+          unaskable.emptiness == .noTmuxToAsk && !unaskable.isComplete)
+
     // The fourth kind of empty has no fixture here on purpose. `Tmux.binary` falls back to four
     // fixed install paths, so a suite running on a Mac that has tmux cannot reach the
     // no-binary branch by clearing `binaryForTesting` — it would reach the real server on this
