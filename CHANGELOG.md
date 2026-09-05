@@ -9,6 +9,26 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: an answer sent from a phone stopped landing when the question carried a preview
+
+Tapping an option on a phone sends that row's digit into the picker, and Claude Code's
+`AskUserQuestion` takes a digit two different ways. A plain row reads it as the answer and puts the
+next question up. A row drawn beside a `preview` panel reads it as a move: the highlight walks over
+and stays there, under a hint that says `Enter to select`. One call draws both shapes, so a single
+set of questions can hold one of each.
+
+Clawdline sends the Return that commits an answer only when it can see the picker did *not* move on
+by itself — and it read "this question is one of a set" as proof that it had. On a preview question
+that is exactly backwards: the highlight had moved, nothing had been committed, and the one thing
+withheld was the Return the picker was waiting for. The phone reported the answer as sent, honestly,
+because the keystroke had been delivered; the Mac then sat on the same three options for six minutes
+with both questions still unanswered. Measured 2026-09-05 against Claude Code v2.1.261.
+
+What decides it now is the picker's own tab bar, which moves for exactly one of the two: a digit
+that answered ticks its question off, and a digit that only moved a highlight leaves every box as it
+was. A question whose box ticked is still left alone, which is what stops a stray Return from
+answering a question nobody has read.
+
 ### Added: this app can tell you it has been left behind
 
 An installed copy had no way of finding out that a newer one exists. It arrives as a zip from a
