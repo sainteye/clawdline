@@ -468,7 +468,9 @@ enum Targets {
     }
 
     /// **Why a moved-on picker must not be confirmed.** `AskUserQuestion` can ask a set at once,
-    /// and a digit both answers the current question and puts the next one up. A confirming Return
+    /// and at a row drawn without a preview a digit both answers the current question and puts
+    /// the next one up — which is half of the shape, the other half being in
+    /// ``confirmation(want:asked:now:)``. A confirming Return
     /// then lands on a question nobody has read, and lands on its *default* row — which for row 1
     /// is exactly the row `menu.selected == want` was checking for, so the guard that was supposed
     /// to make this safe agreed with it.
@@ -479,13 +481,29 @@ enum Targets {
     /// the highlight did not match, so no Return was sent and the picker looked like it worked.
     static func confirmation(want: Int, asked: SessionState.Menu?,
                              now: SessionState.Menu) -> Confirmation {
-        // **A set of questions never needs confirming at all.** Its digit both answers and moves
-        // on, so there is nothing left on this screen to commit — and unlike the comparison
-        // below, this holds even when the reading taken before the keystroke failed and there is
-        // no earlier question to compare against. The two are ordered this way deliberately: a
-        // missing `asked` must not be the thing that lets a Return through.
-        if !now.steps.isEmpty { return .movedOn }
-        if let asked, now.question != asked.question { return .movedOn }
+        // **Nothing to compare against.** A lone question confirms the way it always did. A set
+        // is refused on its own evidence: the reading taken before the keystroke can fail, and a
+        // missing `asked` must not be the thing that lets a Return through onto a question
+        // nobody has read.
+        guard let asked else {
+            return now.steps.isEmpty ? (now.selected == want ? .send : .notYet) : .movedOn
+        }
+        // **"One of a set" was read as "the digit already answered", and that is not a fact
+        // about the set.** It is a fact about the question: at an ordinary row a digit answers
+        // and puts the next question up, and at a row carrying a `preview` it moves the
+        // highlight and stops there, under a hint that says `Enter to select`. One
+        // `AskUserQuestion` call draws both shapes, so no reading of the tab bar can be true of
+        // both — and withholding the Return from the question still waiting for it is how an
+        // answer sent from a phone arrived nowhere. Measured 2026-09-05 against Claude Code
+        // v2.1.261, after a picker sat unanswered for six minutes with its receipt already
+        // delivered.
+        //
+        // **The bar is the evidence, because it moves for exactly one of the two.** A digit that
+        // answered ticks its question off; a digit that only moved a highlight leaves every box
+        // as it was. Compared whole rather than counted, so anything the set does — a tick, a
+        // question arriving, the review taking its place — reads as having moved on.
+        if now.steps.map(\.answered) != asked.steps.map(\.answered) { return .movedOn }
+        if now.question != asked.question { return .movedOn }
         return now.selected == want ? .send : .notYet
     }
 

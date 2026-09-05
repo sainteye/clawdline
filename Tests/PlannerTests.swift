@@ -1230,6 +1230,34 @@ group("a picker's tab bar says which of its questions are answered") {
     expect("a picker that is one of a set is never confirmed, even with no earlier reading",
            Targets.confirmation(want: 1, asked: nil, now: withBar), .movedOn)
 
+    // **The other half of that shape, and it points the opposite way.** A digit does not always
+    // answer. Measured 2026-09-05 against Claude Code v2.1.261: an option carrying a `preview`
+    // puts the picker in a two-pane layout whose own hint reads
+    // `Enter to select · ↑/↓ to navigate`, and there a digit **moves the highlight and stops**.
+    // The same call's other question, drawn without a preview, answered on the digit and moved
+    // on — one `AskUserQuestion` set, two behaviours, told apart by nothing the assistant says.
+    //
+    // So "this is one of a set" cannot stand in for "the digit already answered": on the preview
+    // question that reading withholds the Return the picker is still waiting for, and the answer
+    // never lands at all. Found from a phone, which is the only place it can be found — the tap
+    // reported itself sent and the Mac's screen sat on the same three options for six minutes.
+    // The bar is what actually tells the two apart, because a digit that answered ticks its
+    // question off, and a digit that only moved a highlight leaves every box as it was.
+    var previewAsked = asked
+    previewAsked.steps = [.init(label: "名稱格式", answered: false),
+                          .init(label: "IV1 10 堂", answered: false)]
+    var previewNow = previewAsked
+    previewNow.selected = 2
+    expect("a set whose digit only moved the highlight is confirmed",
+           Targets.confirmation(want: 2, asked: previewAsked, now: previewNow), .send)
+    expect("and one whose highlight has not arrived yet is looked at again",
+           Targets.confirmation(want: 3, asked: previewAsked, now: previewNow), .notYet)
+    var previewMovedOn = previewNow
+    previewMovedOn.steps = [.init(label: "名稱格式", answered: true),
+                            .init(label: "IV1 10 堂", answered: false)]
+    expect("a set whose bar ticked a question off is not confirmed",
+           Targets.confirmation(want: 1, asked: previewAsked, now: previewMovedOn), .movedOn)
+
     // Answering one question of several changes the bar and nothing else on screen. Without the
     // steps in the revision, a client that trusts it never learns the answer landed.
     var answered = menu!
