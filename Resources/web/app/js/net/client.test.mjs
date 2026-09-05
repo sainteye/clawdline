@@ -1134,5 +1134,44 @@ await answerPicture(pacedCloud, pacedSocket, pngAnswer("11111111-2222-4333-8444-
 assert.equal((await Promise.all(paced)).length, 3, "and every picture is delivered in the end");
 pacedCloud.stop();
 
+// ── 一個放著不動就會過期的畫面，以及它唯一的檢查點 ──────────────────────────
+// 手機把背景分頁的連線暫停，回來時不補送錯過的東西；而一個「答完就不再變」的 session
+// 之後也沒有新的 frame 可送。所以頁面必須自己問一次「我畫的還是真的嗎」。
+// 2026-09-05 從手機回報：Mac 判 idle、log 全程沒有 picker，手機仍畫著等你回答的卡片。
+assert.equal(typeof LocalClient.revalidate, "function",
+    "the local client can be asked whether what the page shows is still true");
+{
+    const beforeRevalidate = requests.length;
+    LocalClient.lastSessionsAt = 0;
+    globalThis.fetch = function (path) {
+        requests.push({ path: path });
+        return Promise.resolve(jsonResponse({
+            sessions: [{ id: "REVALIDATED", state: "idle", menu: null }],
+            at: 4242,
+            scan: { generation: 4242, complete: true, emptyAuthoritative: false,
+                completed: { sequence: 4242, complete: true } }
+        }));
+    };
+    // A fresh evidence clock: the assertions above this point have already walked it forward,
+    // and what is under test here is the revalidation, not the ordering guard it goes through.
+    LocalClient.sessionGeneration = null;
+    LocalClient.sessionEvidenceAt = 0;
+    LocalClient.completedScanSequence = null;
+    LocalClient.sessionProbe = null;
+    const seen = [];
+    const previousSessionsHandler = handlers.sessions;
+    handlers.sessions = function (list) { seen.push(list); return true; };
+    await LocalClient.revalidate("test");
+    handlers.sessions = previousSessionsHandler;
+    assert.ok(requests.slice(beforeRevalidate).some(function (r) { return r.path === "/v1/sessions"; }),
+        "revalidating actually asks for the list rather than trusting the feed");
+    assert.equal(seen.length, 1,
+        "and the answer is applied, so a stale card is replaced rather than merely refetched");
+    assert.equal(seen[0][0].state, "idle",
+        "the applied answer is the fresh one, which is the whole point of asking");
+    assert.ok(LocalClient.lastSessionsAt > 0,
+        "an accepted reading is timestamped, so a quiet feed can be told from a dead one");
+}
+
 console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam, cloud reads, transcript images");
 process.exit(0);

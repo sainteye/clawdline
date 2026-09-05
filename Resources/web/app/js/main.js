@@ -381,7 +381,28 @@ function boot(data) {
     api.start();
     Schedules.start();
     Push.start();
+    watchForStaleness();
     Diagnostics.ready();
+}
+
+/**
+ * Coming back to a page that was put away, and asking whether it is still telling the truth.
+ *
+ * **A background tab's connection is suspended, not closed**, so the page returns holding
+ * whatever it was holding — and a session whose state finished moving while the page was asleep
+ * has no further frame to send. The transport is fine, the stream is open, and the screen is
+ * wrong. `visibilitychange` is the one moment the page knows it may have missed something, and
+ * `revalidate` is the transport's answer to "is this still true"; a transport without one keeps
+ * whatever it has, which is what every transport did before this existed.
+ *
+ * Bound here rather than inside a transport because it is a fact about the *page* — being put
+ * away and brought back — and both transports want the same thing done about it.
+ */
+function watchForStaleness() {
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden) return;
+        if (api && typeof api.revalidate === "function") api.revalidate("visible");
+    });
 }
 
 if (window.__strings) {

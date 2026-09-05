@@ -5,6 +5,7 @@ import { adoptToken, jsonFetch, post } from "./fetch.js";
 import { Door } from "../door/door.js";
 import { T } from "../core/i18n.js";
 import { LOCAL_MACHINE, sessionIdentity } from "./client.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 
 var eventSubscribers = new Set();
 
@@ -17,6 +18,10 @@ export var LocalClient = {
     countdown: null,
     sessionProbe: null,
     sessionRevision: 0,
+    /// When the last accepted session reading arrived. **The only thing on this page that can
+    /// tell a feed with nothing to say from a feed that has stopped saying it** — the two look
+    /// identical, and one of them is a page showing something that stopped being true.
+    lastSessionsAt: 0,
     sessionGeneration: null,
     sessionEvidenceAt: 0,
     completedScanSequence: null,
@@ -92,6 +97,37 @@ export var LocalClient = {
             self.emit({ type: "orchestrator", data: d, machine: LOCAL_MACHINE });
         }).catch(function () { });
         if (!this.es) this.connect();
+    },
+
+    /**
+     * Ask for the session list again, because nothing here can tell a quiet feed from a dead one.
+     *
+     * **This is not a retry.** A retry is for a transport that failed and said so; this is for
+     * one that did not. A phone suspends the connections of a page it puts in the background,
+     * and what comes back does not replay what it missed — so a session that finished answering
+     * its question while the page was away sends no further frame, because its state has already
+     * stopped moving. The page then goes on drawing the last thing it was told, and the card that
+     * says *this session is waiting for you* is the worst possible sentence to be stale.
+     *
+     * Measured 2026-09-05, reported from a phone: the Mac had read the session as `idle` for
+     * minutes — the log shows no picker on screen the whole time — while the phone still drew the
+     * waiting card, folded, over the composer. Nothing was broken and nothing said so.
+     *
+     * So the page checks whether what it is showing is still true, at the one moment it has
+     * evidence that it might not be. The answer goes through ``receiveSessions``, which already
+     * refuses anything older than what it has, so a revalidation can only ever move forward.
+     */
+    revalidate: function (reason) {
+        var self = this;
+        Diagnostics.note("sessions.revalidate", {
+            reason: reason || "unknown",
+            // Milliseconds since the last reading this page actually accepted. `-1` is "none yet",
+            // which is a different thing from "a long time ago" and is not worth collapsing.
+            ageMs: this.lastSessionsAt ? Date.now() - this.lastSessionsAt : -1
+        });
+        return jsonFetch("/v1/sessions").then(function (d) {
+            return self.receiveSessions(d);
+        }).catch(function () { return false; });
     },
 
     /** Stand down: the door is up, and a stream we are not allowed to open is just noise. */
@@ -207,6 +243,7 @@ export var LocalClient = {
             this.observeSessionRefreshEvidence(completedSequence, completed.complete);
         }
         if (handlers.sessions(data.sessions, data.at, scan) !== false) {
+            this.lastSessionsAt = Date.now();
             this.sessionRevision += 1;
             this.sessionProbe = null;
             this.emit({ type: "sessions", data: data, machine: LOCAL_MACHINE });
