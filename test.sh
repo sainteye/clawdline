@@ -237,32 +237,33 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # here too, on this tree, on the snippets branch before the merge, and on `9e42f5b3` with none of
 # it: two sessions reached that conclusion separately, each by building a control tree.
 #
-# **9,342 was read out of a red run, and there is no line in that run to copy.** The receipt the
-# check below looks for is printed only when nothing failed, so while those two detached-door
-# checks stay red nobody can re-seal in the ordinary way: the run reports `2 of 9342 checks
-# failed` and no `9342 checks passed` anywhere. The total in that sentence is still this tree's
-# own measurement — 2026-09-06, `CLAWDLINE_RESEAL=1`, the roster reached its end — and the
-# witness below came from the same run, so the pair is not arithmetic. What it is not is a green
-# receipt, and the receipt check will keep returning 125 until the detached door is fixed. That
-# is the honest state of this line rather than a reason to leave it saying 9,303, which was
-# measured on a tree 39 checks smaller and hid the growth behind the same red.
+# **9,473 is the first seal in this repository read out of a green run.** Every total before it
+# was taken from a run that had failures in it: the receipt line the check below looks for is
+# printed only when nothing failed, so while the two detached-door checks stayed red there was no
+# `N checks passed` anywhere to copy, and the seal had to be set from the failing run's own count
+# with the reason written down. Those two are fixed — the fixture named `"assistant": "codex"` and
+# reached the real dispatch path, which reads this Mac's live quota, so an account at `7d 100%`
+# answered `409 assistant_exhausted` before a starter was ever called. 2026-09-06,
+# `CLAWDLINE_RESEAL=1`, tree `954ec556`, nothing unstaged before or after: 0 failures and
+# `9473 checks passed` printed for real. The witness below came from the same tree, so the pair is
+# a measurement rather than arithmetic.
 #
-# **Three other checks were red on this tree once and are not red here**, which is why the
-# number above is 9,342 and not a smaller total taken from that run: the 60k-row usage-query
-# fixture opens a second SQLite connection through `usageStoreExec` with no `busy_timeout`,
-# against a `UsageLedger.shared` connection that has one, so which side gets the write lock is
-# a race. Three runs of the same tree: 2 red, then 5 red with `sqlite: database is locked` in
-# the log and the fixture's INSERT never happening (`seconds=0.011` against the usual ~3.9),
-# then 2 red again. The total is unaffected — those checks ran either way — and the fixture's
-# missing pragma is written down in `docs/mac-app-shell.md` rather than fixed here.
-expected_swift_receipt='9342 checks passed'
+# **The SQLite flakiness that made three checks come and go is understood now, and the earlier
+# note here named the wrong side of it.** It blamed the connection holding the write lock. The
+# answer is in the side that loses: the fixture's SQL opens with `BEGIN IMMEDIATE`, and with no
+# busy handler that returns `SQLITE_BUSY` immediately, so `sqlite3_exec` stops on the first
+# statement and the INSERT never runs — which is what `seconds=0.011` against the usual ~3.9 was
+# saying. Reproduced four ways on a scratch WAL database. The repair is
+# `sqlite3_busy_timeout(db, 5000)` on that fixture's connection, and the useful part is that it
+# does not require knowing who held the lock.
+expected_swift_receipt='9473 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7473
+expected_swift_receipt_witness=7564
 
 count_exact_receipt_lines() {
   local receipt=$1
