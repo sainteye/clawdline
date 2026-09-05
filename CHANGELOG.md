@@ -87,6 +87,46 @@ that answered ticks its question off, and a digit that only moved a highlight le
 was. A question whose box ticked is still left alone, which is what stops a stray Return from
 answering a question nobody has read.
 
+### Fixed: "done, never landed" was counting a snapshot rather than the world
+
+The Projects page's top block — the one number anybody has for *it gets done and nobody merges
+it* — was reading a copy. The usage ledger samples a task's landing state when the task reaches a
+terminal state, and a landing is closed **after** the work ends, so the field was almost always
+absent when the sample was written. The only thing that ever filled it in afterwards was the
+backfill import that runs on launch, which made restarting the app the one route by which a closed
+landing reached the count.
+
+Measured over one Mac's own store: of the tasks whose landing had closed before its last launch, 79
+of 79 carried the copy; of the 6 closed after it, 0 did. Two of those were sitting in the block
+while the broker held a `landed` record verified against `refs/heads/main` — and when that Mac was
+restarted with no landing record changing, both moved and the count fell by two. The number was not
+merely high, it was wrong in one direction, and it looked exactly like a real backlog — which is
+how it survived.
+
+`GET /v1/orchestrator/usage/project-worktrees` now joins against the live task registry and leaves
+the stored copy as history: `landingStates` is what is true now, `storedLandingStates` is what the
+row recorded, and `landingBasis` says which of the two each verdict rests on. The ledger stays
+append-only; nothing is edited to make a read current.
+
+### Added: a card says what the work was, and a row says how to clear it
+
+Every card on that page was titled with the Feature's label, which is the work line a classifier
+grouped by — nine of them at once read `Clawdfather — handoff 18bde7c3`. The heading is now the
+task's own title, with the label kept beside it under a word that says which of the two it is.
+
+Each row in the block also says which of the two things it needs before it can leave: a person's
+landing decision, or a close as the new `nothing_to_land`. Nothing closes anything on its own.
+
+### Added: a read-only delivery has a state of its own
+
+`POST /v1/orchestrator/tasks/:id/landing` accepts `nothing_to_land`, for a task that audited
+something and wrote to no repository. `landed` wants a target and a commit such a task does not
+have, and `abandoned` says the work was given up — a false sentence about an audit that was read
+and acted on — so five deliveries on one Mac had no honest terminal state and sat in the block for
+ever. It is as final as the other two, takes no target and no commit, accepts only the machine
+credential, and is refused for any task this Mac has evidence wrote: a declared claim, commits on
+its branch, a dirty checkout, or counts it never took.
+
 ### Added: this app can tell you it has been left behind
 
 An installed copy had no way of finding out that a newer one exists. It arrives as a zip from a
