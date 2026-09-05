@@ -47,6 +47,24 @@ CLAWDLINE_RUN_STARTED=$(date +%s)
 # 900 is what a reader with no field to read uses anyway; it is written out because a file that says
 # what it means costs twelve bytes and saves the next reader a trip to the documentation.
 CLAWDLINE_RUN_STALE_AFTER="${CLAWDLINE_RUN_STALE_AFTER:-900}"
+# **Validated for the same reason `typical_seconds` is**: this value is interpolated into the file
+# with `%s`, so anything that is not a JSON number makes the whole row unparseable — and a row that
+# does not parse is drawn as nothing at all, which looks exactly like no run. The contract's rule
+# for the reader is that a malformed value is an absent one, and an absent `stale_after` has a
+# documented default; the producer follows the same rule rather than a second one.
+#
+# The sign is split off so one pattern can judge the digits. What JSON accepts is `-5`, `0` and
+# `900`; what it refuses — and a person would not think twice about — is `+5`, `007` and `5.5`.
+# **`0` is kept, and that is a decision rather than an oversight**: a producer that writes `0` means
+# *expire immediately*, and treating it as missing would be the falsy-therefore-default accident
+# this format has already ruled out once. A negative is a number too, and the reader has a
+# documented answer for it, so it travels rather than being replaced.
+clawdline_run_stale_digits="${CLAWDLINE_RUN_STALE_AFTER#-}"
+case "$clawdline_run_stale_digits" in
+  0) ;;
+  "" | *[!0-9]* | 0*) CLAWDLINE_RUN_STALE_AFTER=900 ;;
+esac
+unset clawdline_run_stale_digits
 # **How long this usually takes — measured, and here is where it was measured.** 288 s is one green
 # `./test.sh` on 2026-09-03, receipt `8353 checks passed`, in a detached worktree pinned at
 # `d97d0afb`; a second run in the shared tree two changes older read 289.55 s with the same four
@@ -178,6 +196,17 @@ trap 'clawdline_run_file_signal "$?"' ERR
 trap 'clawdline_run_file_signal 130' INT
 trap 'clawdline_run_file_signal 143' TERM
 # <<< clawdline run file <<<
+
+# The run file's own way out, from here rather than from the EXIT handler installed further down.
+# **A window before the first EXIT trap is a window in which an `exit` is caught by nothing.** No
+# ERR trap ever sees a deliberate `exit`, and both scripts have guards above their real handler
+# that end that way — so a run that stopped there left a `running` row behind for the reader's
+# staleness ceiling to retire fifteen minutes later, which reads as a run still going.
+#
+# Every EXIT trap installed below **replaces** this one rather than joining it: bash keeps exactly
+# one, so each of them composes `clawdline_run_file_exit` and is a superset of this line.
+# `Tests/run-file-producer.mjs` holds all of them to that, in both scripts.
+trap 'clawdline_run_file_exit "$?"' EXIT
 
 clawdline_run_file_phase preparing
 
@@ -797,7 +826,24 @@ else
   keychain_status_command=(xcrun swift tools/keychain-status.swift)
 fi
 signing_probe_out=$(mktemp "${TMPDIR:-/tmp}/clawdline-signing-probe.XXXXXX")
-trap 'rm -f "$signing_probe_out" "$signing_probe_out.timed-out"' EXIT
+clawdline_signing_probe_exit() {
+  # The probe's own cleanup **and** the run file's way out, in one handler, because bash keeps
+  # exactly one EXIT trap and this one replaces the trap installed with the run-file block above.
+  # Four of the deliberate `exit 1`s in the selection below — a locked Keychain, two identities,
+  # no identity at all — are the most common way a build stops, and an `exit` reaches no ERR trap;
+  # this used to be the one window the run file was knowingly left open in, and the cost of that
+  # was a `running` row nobody would retire for fifteen minutes. The temporary file goes first: it
+  # is this handler's own business, and the run file never fails the run it reports on.
+  local status=${1:-0}
+  rm -f "$signing_probe_out" "$signing_probe_out.timed-out"
+  # `declare -F`, because this handler is inside the region between the
+  # `# BEGIN keychain-rebuild-focused: signing identity selection` markers, and that region is
+  # lifted out and run by `Tests/keychain-rebuild-focused.mjs` in a shell where the run-file block
+  # does not exist. A bare call there would print `command not found` from inside an EXIT trap.
+  # Same guard and same reason as the one call inside test.sh's suite-lock block.
+  if declare -F clawdline_run_file_exit >/dev/null 2>&1; then clawdline_run_file_exit "$status" || true; fi
+}
+trap 'clawdline_signing_probe_exit "$?"' EXIT
 if [ "${CLAWDLINE_SIGN_IDENTITY+x}" = x ]; then
   # An explicit value keeps its historical meaning, including an empty value becoming ad-hoc.
   SIGN_IDENTITY="${CLAWDLINE_SIGN_IDENTITY:--}"
@@ -866,7 +912,10 @@ fi
 # The probe's own trap is replaced by cleanup_build further down, so retire it here rather than
 # leaving the file behind for whoever empties TMPDIR next.
 rm -f "$signing_probe_out" "$signing_probe_out.timed-out"
-trap - EXIT
+# **Back to the run file's own handler, not to no handler at all.** A bare `trap - EXIT` here left
+# everything between this line and `cleanup_build` — the staging directory, the backup, the lease —
+# with no EXIT trap of any kind, which is the same window this block closed at the top of the file.
+trap 'clawdline_run_file_exit "$?"' EXIT
 
 mkdir -p "$APP_PARENT"
 # Build beside the installed app, on the same filesystem. The final rename is then quick and

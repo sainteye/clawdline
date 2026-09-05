@@ -166,16 +166,58 @@ check("and the compiling phase sits with the lock phase of the same name, above 
       /\nclawdline_run_file_phase compiling\nclawdline_suite_lock_phase compiling\nswiftc/.test(script));
 check("build.sh moves the phase at its own boundaries",
       buildPhases.join(",") === "preparing,checking signing,compiling,packaging,signing,installing");
-// build.sh installs three EXIT traps in sequence. The one that matters is `cleanup_build`, which
-// covers the compile, the signing and the install; the signing probe's own trap is **deliberately
-// left alone**, because it is inside a region `Tests/keychain-rebuild-focused.mjs` lifts and runs.
-// The cost of that is written down rather than hidden: a build that stops inside the signing
-// selection leaves a `running` row for the reader's staleness rule to retire, which is the case
-// that rule exists for.
+// build.sh installs four EXIT traps in sequence, and `cleanup_build` — which covers the compile,
+// the signing and the install — is the last of them.
 check("build.sh composes the run file's exit into the EXIT handler that covers the build",
       /cleanup_build\(\) \{\n[\s\S]{0,400}?clawdline_run_file_exit "\$clawdline_build_status"/.test(buildScript));
-check("and leaves the signing probe's own trap exactly as it was, because that one is lifted",
-      /trap 'rm -f "\$signing_probe_out" "\$signing_probe_out\.timed-out"' EXIT/.test(buildScript));
+// The signing probe's trap used to be `trap 'rm -f …' EXIT` and was **knowingly** left that way,
+// because it sits inside a region `Tests/keychain-rebuild-focused.mjs` lifts and runs in a shell
+// where these functions do not exist. The cost was written down rather than hidden — and it was
+// the largest of the three windows: four of the deliberate `exit 1`s in this file are in the
+// selection below it, so the ordinary way a build stops was the one way it did not report. It is
+// composed now, through the same `declare -F` guard test.sh's lock block uses, which costs the
+// lifted region nothing.
+// Read the handler's whole body rather than a window of N characters after its name: a comment
+// grown by one paragraph would otherwise take this red for a reason that is not a defect.
+const probeBody = /clawdline_signing_probe_exit\(\) \{([\s\S]*?)\n\}/.exec(buildScript);
+check("and the signing probe's trap removes its own file and then reports the run",
+      probeBody !== null
+        && /rm -f "\$signing_probe_out" "\$signing_probe_out\.timed-out"/.test(probeBody[1])
+        && /if declare -F clawdline_run_file_exit >\/dev\/null 2>&1; then clawdline_run_file_exit "\$status" \|\| true; fi/.test(probeBody[1])
+        && /^trap 'clawdline_signing_probe_exit "\$\?"' EXIT$/m.test(buildScript));
+
+// ---------------------------------------------------------------------------------------------
+// **The window before the first EXIT trap.** No ERR trap ever sees a deliberate `exit`, so until
+// an EXIT handler is armed an `exit` in either script is caught by nothing at all and the row it
+// leaves behind says `running`. test.sh had two such guards above its lock — the trailing-comma
+// scan and the browser-contract roster — and build.sh had everything above `cleanup_build`.
+//
+// What is asked is not a count. Bash keeps exactly one EXIT trap, so what has to hold is that
+// every replacement is a widening: each `trap … EXIT` in either script writes the run file, and
+// the first of them is armed in the line immediately below the block's closing marker.
+const exitTrapsOf = (text) => text.split("\n")
+    .filter((l) => /^\s*trap\s+[^-]/.test(l) && /\bEXIT\b/.test(l) && !/^\s*#/.test(l));
+const handlerReports = (text, line) => {
+    if (/clawdline_run_file_exit/.test(line)) return true;
+    // A trap that names a function is only as good as that function's body, so read the body.
+    const named = /trap\s+'?([A-Za-z_][A-Za-z0-9_]*)/.exec(line);
+    if (!named) return false;
+    const body = new RegExp(`${named[1]}\\(\\) \\{([\\s\\S]*?)\\n\\}`).exec(text);
+    return body !== null && /clawdline_run_file_exit/.test(body[1]);
+};
+for (const [name, text] of [["test.sh", script], ["build.sh", buildScript]]) {
+    const traps = exitTrapsOf(text);
+    check(`every one of ${name}'s ${traps.length} EXIT traps writes the run file, directly or through its handler`,
+          traps.length >= 2 && traps.every((l) => handlerReports(text, l)));
+    // Read off the text after the marker rather than by line number, which goes stale.
+    const after = text.slice(text.indexOf(CLOSE) + CLOSE.length);
+    check(`and ${name} arms the first of them before anything that could exit`,
+          /^\s*(#[^\n]*\n)*trap 'clawdline_run_file_exit "\$\?"' EXIT$/m.test(after.split("\nclawdline_run_file_phase")[0]));
+    // A `trap - EXIT` in column one puts the script back to having no handler at all, which is the
+    // same window again. build.sh had one, between the signing probe and `cleanup_build`.
+    check(`and nothing in ${name} takes the EXIT trap off again at the top level`,
+          !/^trap - EXIT$/m.test(text));
+}
 
 // **A call inside a region another suite lifts out is a call that suite cannot make.** Three parts
 // of `build.sh` are cut out between `# BEGIN keychain-rebuild-focused: …` markers and run by
@@ -188,8 +230,13 @@ const liftedRegions = [...buildScript.matchAll(/^# BEGIN keychain-rebuild-focuse
     const to = buildScript.indexOf(`# END keychain-rebuild-focused: ${m[1]}`);
     return { label: m[1], text: to > from ? buildScript.slice(from, to) : "" };
 });
-const trespassing = liftedRegions.filter((r) => /clawdline_run_file_/.test(r.text)).map((r) => r.label);
-check(`none of the ${liftedRegions.length} regions build.sh hands to Tests/keychain-rebuild-focused.mjs calls these functions`,
+// One region does call one of them — the signing probe's EXIT handler, which is the only way to
+// close the window that region contains — and it does it behind `declare -F`, so the lifted shell
+// takes the branch that does nothing. Every *other* mention is trespass.
+const guarded = 'if declare -F clawdline_run_file_exit >/dev/null 2>&1; then clawdline_run_file_exit "$status" || true; fi';
+const trespassing = liftedRegions.filter((r) => r.text.split("\n")
+    .some((l) => /clawdline_run_file_/.test(l) && !/^\s*#/.test(l) && l.trim() !== guarded)).map((r) => r.label);
+check(`none of the ${liftedRegions.length} regions build.sh hands to Tests/keychain-rebuild-focused.mjs calls these functions unguarded`,
       liftedRegions.length >= 3 && liftedRegions.every((r) => r.text !== "") && trespassing.length === 0);
 // The one place a call *is* inside a lifted region is the suite lock's cleanup in `test.sh`, and it
 // is guarded, because `Tests/test-sh-lock.mjs` runs that block on its own.
@@ -404,6 +451,38 @@ try {
               row !== null && row.state === "fail" && r.code === 125);
     }
 
+    // 5b. **The window before the first EXIT trap**, driven rather than read off the text. The
+    //     harnesses above install the composed cleanup immediately after the block and so could
+    //     never see it; the two scripts install theirs 1,000 and 700 lines further down, and a
+    //     guard that exits in between reached no trap of any kind. The trap line is lifted from
+    //     test.sh, never retyped.
+    {
+        const early = /^trap 'clawdline_run_file_exit "\$\?"' EXIT$/m.exec(script);
+        check("test.sh arms an EXIT trap of its own directly below the block", early !== null);
+        const window = (name, trapLine) => {
+            const dir = join(scratch, name);
+            mkdirSync(dir, { recursive: true });
+            const path = join(dir, "test.sh");
+            writeFileSync(path, ["#!/bin/bash", "set -euo pipefail", block, trapLine,
+                                 "clawdline_run_file_phase guards",
+                                 '# The shape of both guards above test.sh\'s lock: say what is wrong, exit on a number.',
+                                 'echo "trailing comma before ) — Swift 6.1 syntax" >&2',
+                                 "exit 1", ""].join("\n"));
+            chmodSync(path, 0o755);
+            return { dir, path, file: join(cache, keyFor(dir)) };
+        };
+        const closed = window("early-exit-trap", early ? early[0] : "");
+        const r = run(closed);
+        check("a guard that exits above the composed handler still leaves state fail",
+              r.code === 1 && (rowOf(closed.file) || {}).state === "fail");
+        // The control, and it is the measurement the line exists because of: the same guard with no
+        // EXIT trap armed yet leaves the row saying `running`, for a run that has already stopped.
+        const open = window("early-exit-trap-missing", "");
+        run(open);
+        check("control: with no EXIT trap armed yet, the same exit leaves a row that says running",
+              (rowOf(open.file) || {}).state === "running");
+    }
+
     // 6. The clear, which is the other half of what the block owes: a row from a run that no longer
     //    exists can be taken away without editing the file by hand.
     {
@@ -448,6 +527,43 @@ try {
         const row = rowOf(h.file);
         check("a tree path with a quote and a backslash in it still produces a file that parses",
               row !== null && row.unparseable === undefined && row.tree === h.dir);
+    }
+
+    // 9. `stale_after` comes out of the environment and goes straight into the file with `%s`, so
+    //    what a person types there decides whether the row parses at all. A row that does not parse
+    //    is drawn as nothing, which looks exactly like no run — the failure that looks like no
+    //    failure. The rule is the reader's own: a malformed value is an absent one, and an absent
+    //    `stale_after` has a documented default.
+    {
+        const ceiling = (name, value) => {
+            const h = harness(`stale-${name}`, "test.sh", "clawdline_run_file_phase guards\n");
+            run(h, { CLAWDLINE_RUN_STALE_AFTER: value });
+            return rowOf(h.file) || {};
+        };
+        check("a stale_after that is not a number falls back to the documented default",
+              ceiling("words", "abc").stale_after === 900);
+        check("and so does one JSON would refuse even though a person would read it as a number",
+              ceiling("leading-zero", "007").stale_after === 900
+                && ceiling("fraction", "5.5").stale_after === 900
+                && ceiling("plus", "+5").stale_after === 900
+                && ceiling("spaced", " 5").stale_after === 900);
+        // `0` is a value, not a missing field. A producer that writes it means *expire
+        // immediately*, and "falsy therefore default" is a language accident rather than a
+        // decision — which is what the contract settled after two implementations disagreed.
+        check("zero is kept, because a producer that writes it meant it",
+              ceiling("zero", "0").stale_after === 0);
+        check("and a negative one travels, because the reader has an answer for it",
+              ceiling("negative", "-5").stale_after === -5);
+        // The control. Without the validation the same value reaches `printf '%s'` and the row
+        // stops being JSON at all — every field in it lost, not just this one.
+        const mutant = block.replace(/\ncase "\$clawdline_run_stale_digits" in\n[\s\S]*?\nesac\n/, "\n");
+        check("control: the validation can be taken out of the block",
+              mutant !== block && !/clawdline_run_stale_digits" in/.test(mutant));
+        const h = harness("stale-unvalidated", "test.sh", "clawdline_run_file_phase guards\n", mutant);
+        run(h, { CLAWDLINE_RUN_STALE_AFTER: "abc" });
+        const row = rowOf(h.file) || {};
+        check("control: and without it the whole row stops parsing, not merely that one field",
+              row.unparseable !== undefined);
     }
 
     // ---------------------------------------------------------------------------------------------

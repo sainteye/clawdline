@@ -583,6 +583,24 @@ CLAWDLINE_RUN_STARTED=$(date +%s)
 # 900 is what a reader with no field to read uses anyway; it is written out because a file that says
 # what it means costs twelve bytes and saves the next reader a trip to the documentation.
 CLAWDLINE_RUN_STALE_AFTER="${CLAWDLINE_RUN_STALE_AFTER:-900}"
+# **Validated for the same reason `typical_seconds` is**: this value is interpolated into the file
+# with `%s`, so anything that is not a JSON number makes the whole row unparseable — and a row that
+# does not parse is drawn as nothing at all, which looks exactly like no run. The contract's rule
+# for the reader is that a malformed value is an absent one, and an absent `stale_after` has a
+# documented default; the producer follows the same rule rather than a second one.
+#
+# The sign is split off so one pattern can judge the digits. What JSON accepts is `-5`, `0` and
+# `900`; what it refuses — and a person would not think twice about — is `+5`, `007` and `5.5`.
+# **`0` is kept, and that is a decision rather than an oversight**: a producer that writes `0` means
+# *expire immediately*, and treating it as missing would be the falsy-therefore-default accident
+# this format has already ruled out once. A negative is a number too, and the reader has a
+# documented answer for it, so it travels rather than being replaced.
+clawdline_run_stale_digits="${CLAWDLINE_RUN_STALE_AFTER#-}"
+case "$clawdline_run_stale_digits" in
+  0) ;;
+  "" | *[!0-9]* | 0*) CLAWDLINE_RUN_STALE_AFTER=900 ;;
+esac
+unset clawdline_run_stale_digits
 # **How long this usually takes — measured, and here is where it was measured.** 288 s is one green
 # `./test.sh` on 2026-09-03, receipt `8353 checks passed`, in a detached worktree pinned at
 # `d97d0afb`; a second run in the shared tree two changes older read 289.55 s with the same four
@@ -714,6 +732,17 @@ trap 'clawdline_run_file_signal "$?"' ERR
 trap 'clawdline_run_file_signal 130' INT
 trap 'clawdline_run_file_signal 143' TERM
 # <<< clawdline run file <<<
+
+# The run file's own way out, from here rather than from the EXIT handler installed further down.
+# **A window before the first EXIT trap is a window in which an `exit` is caught by nothing.** No
+# ERR trap ever sees a deliberate `exit`, and both scripts have guards above their real handler
+# that end that way — so a run that stopped there left a `running` row behind for the reader's
+# staleness ceiling to retire fifteen minutes later, which reads as a run still going.
+#
+# Every EXIT trap installed below **replaces** this one rather than joining it: bash keeps exactly
+# one, so each of them composes `clawdline_run_file_exit` and is a superset of this line.
+# `Tests/run-file-producer.mjs` holds all of them to that, in both scripts.
+trap 'clawdline_run_file_exit "$?"' EXIT
 
 # (d) in `docs/suite-runtime.md`: the manifest, the architecture guard, the trailing-comma scan, the
 # three Python guards and the protocol vectors. Three seconds of the 288, and the phase exists so
