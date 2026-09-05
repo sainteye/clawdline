@@ -1146,31 +1146,70 @@ MAINTENANCE_READ_FLOOR=10
 # count of attempts. 180 attempts of `--max-time 5` with a second of sleep between them is 1080 s,
 # not 180, and the number below is quoted in the derivation that guards the gate.
 MAINTENANCE_RECONCILE_SECONDS="${CLAWDLINE_MAINTENANCE_RECONCILE_SECONDS:-180}"
-# **The longest one build can hold a window, derived rather than asserted.** The comment here used
-# to claim "under 500 s" against a poll loop that handed every read a fresh full budget; the real
-# figure was about 790 s. Worse, nothing connected the claim to the gate below, so raising
+# **The longest one build can hold a window, added up along each path it can take.** The comment
+# here used to claim "under 500 s" against a poll loop that handed every read a fresh full budget;
+# the real figure was about 790 s. Worse, nothing connected the claim to the gate below, so raising
 # `CLAWDLINE_MAINTENANCE_BUDGET` on its own was enough to guarantee that a live window would look
 # abandoned to the next build — which then aborts it on age alone, without ever asking about a pid.
+#
+# That was replaced by one formula, and the formula was wrong in the other direction. It charged a
+# second admission budget to every path, when only the drain timeout spends one; and it left out
+# the abort `cleanup_build` takes on the way out, which is 30 seconds this script really spends
+# with the window still open. The two mistakes cancelled at the default knobs and came apart as
+# soon as the budget was lowered: at `CLAWDLINE_MAINTENANCE_BUDGET=10` the gate below stood at
+# 236 s while a build could still be inside its own window at 251 s.
+#
+# **And nothing said so, because the check compared the gate against the figure the gate was
+# derived from.** `MAINTENANCE_STALE_SECONDS` defaults to `worst + budget`, so `stale > worst` is
+# an identity for any positive budget — a comparison that cannot come out false, which on screen is
+# indistinguishable from one that came out true. So the two paths are summed separately below, and
+# the check is asked about `MAINTENANCE_WORST_REAL`, which no default is derived from.
+#
+# The two aborts that were missing, named once so both sums can spend them:
+MAINTENANCE_CLEANUP_ABORT_SECONDS=30
+MAINTENANCE_RECONCILE_ABORT_SECONDS=5
 # Every term is a timeout this script really spends, counted from the POST that creates the intent,
-# because that is when the age this gate reads starts:
-#   budget x 2      the POST and the `ready` poll that share its deadline, then the abort that ends
-#                   the window, which spends the same budget
+# because that is when the age this gate reads starts.
+#
+# The drain timeout:
+#   budget          the POST and the `ready` poll, which share one deadline
 #   read floor      the one read that may still be running when that deadline passes
+#   budget          the abort that ends the window, which spends the same budget
+#   cleanup abort   and the exit handler's, because this path leaves through it
+MAINTENANCE_WORST_DRAIN=$(( MAINTENANCE_BUDGET + MAINTENANCE_READ_FLOOR + MAINTENANCE_BUDGET \
+  + MAINTENANCE_CLEANUP_ABORT_SECONDS ))
+# The reconciliation timeout:
+#   budget + floor  the same admission wait, this time answered
 #   6 + 5           waiting for the old process to go, and for the replacement to answer
 #   reconcile + 5   the reconciliation wait, and the read that may start just before its deadline
-MAINTENANCE_WORST_WINDOW=$(( MAINTENANCE_BUDGET * 2 + MAINTENANCE_READ_FLOOR + 6 + 5 + MAINTENANCE_RECONCILE_SECONDS + 5 ))
+#   5 + cleanup     that path's own short abort, then the exit handler's again
+MAINTENANCE_WORST_RECONCILE=$(( MAINTENANCE_BUDGET + MAINTENANCE_READ_FLOOR + 6 + 5 \
+  + MAINTENANCE_RECONCILE_SECONDS + 5 + MAINTENANCE_RECONCILE_ABORT_SECONDS \
+  + MAINTENANCE_CLEANUP_ABORT_SECONDS ))
+if [ "$MAINTENANCE_WORST_RECONCILE" -gt "$MAINTENANCE_WORST_DRAIN" ]; then
+  MAINTENANCE_WORST_REAL=$MAINTENANCE_WORST_RECONCILE
+else
+  MAINTENANCE_WORST_REAL=$MAINTENANCE_WORST_DRAIN
+fi
+MAINTENANCE_WORST_WINDOW=$MAINTENANCE_WORST_REAL
 # How old an unclaimed intent has to be before this script will clear it: the worst window above
 # plus one more admission budget of margin, so the gate moves when either knob moves instead of
 # being a constant that happens to be larger today. It is only ever consulted for an intent whose
 # writer this machine has no live process for.
 MAINTENANCE_STALE_SECONDS="${CLAWDLINE_MAINTENANCE_STALE_SECONDS:-$(( MAINTENANCE_WORST_WINDOW + MAINTENANCE_BUDGET ))}"
-if [ "$MAINTENANCE_STALE_SECONDS" -le "$MAINTENANCE_WORST_WINDOW" ]; then
+if [ "$MAINTENANCE_STALE_SECONDS" -le "$MAINTENANCE_WORST_REAL" ]; then
   # An override can still put the two knobs the wrong way round, and what that buys is the
   # dangerous direction: a window a build could legitimately still be inside, judged abandoned by
   # the next one. Say it here, where both numbers are in hand, rather than leaving it to be read
   # off an aborted window later.
-  echo "!! CLAWDLINE_MAINTENANCE_STALE_SECONDS=$MAINTENANCE_STALE_SECONDS is not longer than the ${MAINTENANCE_WORST_WINDOW}s this build can hold a maintenance window"
-  echo "   a live window can be judged abandoned on age alone; raise it above ${MAINTENANCE_WORST_WINDOW}s or lower CLAWDLINE_MAINTENANCE_BUDGET"
+  #
+  # **The subject is `MAINTENANCE_WORST_REAL`, not `MAINTENANCE_WORST_WINDOW`.** They hold the same
+  # number today and they are not the same claim: one is what the timeouts add up to, the other is
+  # what this block publishes and derives the gate from. Comparing the gate against the second is
+  # the identity described above; against the first, a derivation that understates a path is
+  # something this line can still object to.
+  echo "!! CLAWDLINE_MAINTENANCE_STALE_SECONDS=$MAINTENANCE_STALE_SECONDS is not longer than the ${MAINTENANCE_WORST_REAL}s this build can hold a maintenance window"
+  echo "   a live window can be judged abandoned on age alone; raise it above ${MAINTENANCE_WORST_REAL}s or lower CLAWDLINE_MAINTENANCE_BUDGET"
 fi
 # Beside the token this block already reads, because it has to outlive the run that wrote it: the
 # whole point is that the *next* process can recognise this one's leftover. `$STAGE_ROOT` cannot
