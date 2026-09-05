@@ -1448,7 +1448,15 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
     # negative, so there is no window under this id and the exit handler must not knock for one —
     # a `DELETE` from here could only come back as a second refusal, and be reported as a window
     # this build might still be holding.
-    MAINTENANCE_POSTED=
+    #
+    # **Except that `000` is not an answer.** It is what curl writes when there was no HTTP
+    # response at all, and reading it as a status is how the whole of 2026-09-05 happened. Nothing
+    # reaches this branch with `000` while the split above is intact — which is exactly why the
+    # condition has to say so rather than rely on it.
+    case "$MAINTENANCE_STATUS" in
+      "" | 000) : ;;
+      *) MAINTENANCE_POSTED= ;;
+    esac
     echo "!! restart maintenance was refused by the app (HTTP $MAINTENANCE_STATUS)"
     echo "   request_id: $MAINTENANCE_REQUEST_ID"
     maintenance_error "$MAINTENANCE_REPLY" | sed 's/^/   /'

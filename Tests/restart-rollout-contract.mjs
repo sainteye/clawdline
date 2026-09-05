@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
@@ -182,6 +182,27 @@ assert.equal(script.split('\n').filter((l) => l === MAINT_OPEN).length, 1,
 const maintenanceBlock = script.slice(script.indexOf(MAINT_OPEN),
   script.indexOf(MAINT_CLOSE) + MAINT_CLOSE.length);
 
+// **The block is half of it; the other half runs on the way out.** Everything below used to drive
+// the block alone, so `cleanup_build`'s maintenance clause — the thing that decides whether a
+// build ends a window it may be holding — was never executed by this suite at all. The only check
+// that ever touched it was `explicitAbort`, which asks whether the characters `-X DELETE` appear
+// somewhere in the file; that is the kind of evidence this whole half exists because of. The
+// clause is lifted by its own markers and installed as a real EXIT trap in every scenario, so the
+// exits below are the exits the script takes.
+/** A mutation that no longer matches anything is a control that silently passes: it runs the
+ *  unmutated script and agrees with it. Every mutation below goes through here. */
+function mutate(text, from, to) {
+  assert.ok(text.includes(from), `this mutation no longer matches build.sh, so it proves nothing: ${from}`);
+  return text.replace(from, to);
+}
+
+const CLEANUP_OPEN = '# >>> clawdline maintenance cleanup >>>';
+const CLEANUP_CLOSE = '# <<< clawdline maintenance cleanup <<<';
+assert.equal(script.split('\n').filter((l) => l.trim() === CLEANUP_OPEN).length, 1,
+  'build.sh must carry exactly one maintenance-cleanup opening marker');
+const cleanupClause = script.slice(script.indexOf(CLEANUP_OPEN),
+  script.indexOf(CLEANUP_CLOSE) + CLEANUP_CLOSE.length);
+
 // **The number, and where it came from.** `--max-time 5` on the POST plus a 120-attempt poll was
 // 125 seconds of client patience against a drain measured at 146 — so the old script could not
 // have waited that drain out even if the POST had answered instantly. A budget is only defensible
@@ -295,6 +316,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         request_id = self.read_body().get("request_id")
         note({"method": "DELETE", "path": self.path, "request_id": request_id})
+        if cfg.get("delete") == "refuse":
+            # A server that answers, and what it answers is no. curl exits 0 for this.
+            return self.reply(409, {"error": {"code": "restart_in_progress",
+                                              "message": "A different restart maintenance intent is active."}})
         with lock:
             current = state["intent"]
             if current is None:
@@ -340,7 +365,13 @@ function readLog(path) {
  * `HOME` is redirected as well as `CLAWDLINE_MAINTENANCE_STATE_FILE`, so a mistake in one of them
  * cannot reach the state file of the person running the suite; `PORT` is the stub's, never 7717.
  */
-function driveBlock({ config, block = maintenanceBlock, remembered, env = {} }) {
+/** The suite's own environment must not decide what these scenarios measure: a person with
+ *  `CLAWDLINE_MAINTENANCE_STALE_SECONDS` exported would silently move the gate scenario 4 is
+ *  about. Only what a scenario asks for is passed in. */
+const cleanEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('CLAWDLINE_MAINTENANCE_')));
+
+function driveBlock({ config, block = maintenanceBlock, cleanup = cleanupClause, remembered, env = {} }) {
   const room = mkdtempSync(join(tmpdir(), 'clawdline-maintenance-'));
   const stubPath = join(room, 'stub.py');
   const configPath = join(room, 'config.json');
@@ -376,13 +407,19 @@ function driveBlock({ config, block = maintenanceBlock, remembered, env = {} }) 
       `PORT=${port}`,
       `TOKEN_FILE=${JSON.stringify(tokenPath)}`,
       `STAGE_ROOT=${JSON.stringify(stage)}`,
+      // Installed before the block runs, exactly as `cleanup_build` is installed some four hundred
+      // lines above the block in `build.sh`, so every `exit 1` below leaves through it.
+      'clawdline_maintenance_cleanup() {',
+      cleanup,
+      '}',
+      'trap clawdline_maintenance_cleanup EXIT',
       block,
       'echo "BLOCK_END active=${MAINTENANCE_ACTIVE} id=${MAINTENANCE_REQUEST_ID}"',
     ].join('\n');
     const run = spawnSync('/bin/bash', ['-c', harness], {
       encoding: 'utf8',
       env: {
-        ...process.env,
+        ...cleanEnv,
         HOME: room,
         CLAWDLINE_MAINTENANCE_STATE_FILE: statePath,
         CLAWDLINE_MAINTENANCE_CONNECT_SECONDS: '2',
@@ -415,6 +452,16 @@ assert.match(unobserved.run.stdout, /BLOCK_END active=1 id=[0-9a-f-]{36}$/m,
 const postedId = unobserved.requests.find((r) => r.method === 'POST').request_id;
 assert.match(unobserved.run.stdout, new RegExp(`request_id: ${postedId}`),
   'the id of an unobserved request must be printed, or nothing can end it by hand');
+// And the exit handler ran, which is the half this file could not see before: the window this run
+// opened is ended, the note that recorded it is gone — by id, because it is still this run's — and
+// nothing is left beside it, because the note is written by rename rather than by truncation.
+assert.deepEqual(unobserved.requests.filter((r) => r.method === 'DELETE').map((r) => r.request_id),
+  [postedId], 'the exit handler must end the window this run opened, and exactly that one');
+assert.equal(existsSync(unobserved.statePath), false,
+  'and must forget the note, which still records this run');
+assert.deepEqual(
+  readdirSync(unobserved.room).filter((name) => name.startsWith('last-build-maintenance')), [],
+  'and must leave no half-written note beside it');
 
 // Control: take the new branch out and the run reproduces 2026-09-05 exactly — "refused",
 // HTTP 000, exit 1, with the window it just opened left standing.
@@ -427,8 +474,13 @@ assert.notEqual(conflated.run.status, 0,
   'without the split, an unobserved answer must end the build — or this scenario proves nothing');
 assert.match(conflated.run.stdout, /refused by the app \(HTTP 000\)/,
   `the control must fail the way it failed that night: ${conflated.run.stdout}`);
-assert.ok(!conflated.requests.some((r) => r.method === 'DELETE'),
-  'and must leave the intent standing, which is what blocked every later build');
+// The intent is no longer left standing, and that is the handler's doing rather than the block's:
+// the request left this process, so the id is ended on the way out whatever the block believed
+// about it. What the control still reproduces is the misreport — an unobserved answer called a
+// refusal, and the build dead — which is the sentence that was read that night.
+assert.deepEqual(conflated.requests.filter((r) => r.method === 'DELETE').map((r) => r.request_id),
+  [conflated.requests.find((r) => r.method === 'POST').request_id],
+  'the only DELETE may be the handler ending the id this run posted, never another');
 
 // --- 2. This machine's own abandoned intent is reclaimed. --------------------------------------
 const abandonedId = '11111111-1111-4111-8111-111111111111';
@@ -447,12 +499,12 @@ assert.equal(reclaimed.run.status, 0,
   `an intent this machine wrote, whose writer is gone, must not block the build: ${reclaimed.run.stdout}${reclaimed.run.stderr}`);
 assert.match(reclaimed.run.stdout, /reclaiming it: this machine wrote it/,
   'and the reason it was reclaimed must be said out loud');
-assert.deepEqual(
-  reclaimed.requests.filter((r) => r.method === 'DELETE').map((r) => r.request_id),
-  [abandonedId],
-  'exactly the abandoned id is ended, and nothing else');
 assert.equal(reclaimed.requests.filter((r) => r.method === 'POST').length, 1,
   'and a fresh window is then opened');
+assert.deepEqual(
+  reclaimed.requests.filter((r) => r.method === 'DELETE').map((r) => r.request_id),
+  [abandonedId, reclaimed.requests.find((r) => r.method === 'POST').request_id],
+  'exactly the abandoned id is ended, then the window this run opened, and nothing else');
 
 // Control: no preflight, which is what the script did before — straight into `409` and out.
 const unreclaimed = driveBlock({
@@ -477,19 +529,47 @@ assert.match(unreclaimed.run.stdout, /restart_in_progress/,
 // live process behind it, and nothing here may abort that — not the intent, not by age, not at all.
 const liveId = '22222222-2222-4222-8222-222222222222';
 const holder = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
-let live;
-try {
-  live = driveBlock({
-    config: {
-      intent: {
-        request_id: liveId, phase: 'draining', requested_instance_id: 'stub-instance',
-        requested_at: Math.floor(Date.now() / 1000) - 5, outstanding: 1,
-        channels: { '%92': 1 }, admission_closed: true,
-      },
+const liveScenario = () => ({
+  config: {
+    intent: {
+      request_id: liveId, phase: 'draining', requested_instance_id: 'stub-instance',
+      requested_at: Math.floor(Date.now() / 1000) - 5, outstanding: 1,
+      channels: { '%92': 1 }, admission_closed: true,
     },
-    remembered: { request_id: liveId, pid: String(holder.pid) },
-    // Even told that everything is stale, a live writer must still be untouchable.
-    env: { CLAWDLINE_MAINTENANCE_STALE_SECONDS: '0' },
+  },
+  remembered: { request_id: liveId, pid: String(holder.pid) },
+  // Even told that everything is stale, a live writer must still be untouchable.
+  env: { CLAWDLINE_MAINTENANCE_STALE_SECONDS: '0' },
+});
+let live;
+let liveWithIdAlone;
+let liveWithIdAndBlindRm;
+let liveWithAllThreeGone;
+try {
+  live = driveBlock(liveScenario());
+  // The control, and the reason this scenario now drives the exit handler. Take one condition out
+  // of the handler — leave it firing on holding an id, which is what it did before — and this same
+  // clean refusal sends a `DELETE` for an id the server has never seen, reads the `409` as an
+  // ending, and deletes the note the live build depends on. That is not a hypothetical: it is the
+  // run recorded in the review's `cleanup-build-proof.txt`, reproduced here so it stays fixed.
+  liveWithIdAlone = driveBlock({
+    ...liveScenario(),
+    cleanup: mutate(cleanupClause, '[ -n "${MAINTENANCE_POSTED:-}" ] && ', ''),
+  });
+  liveWithIdAndBlindRm = driveBlock({
+    ...liveScenario(),
+    cleanup: mutate(mutate(cleanupClause, '[ -n "${MAINTENANCE_POSTED:-}" ] && ', ''),
+      'maintenance_forget "$MAINTENANCE_REQUEST_ID"',
+      'rm -f "${MAINTENANCE_STATE_FILE:-}" 2>/dev/null || true'),
+  });
+  liveWithAllThreeGone = driveBlock({
+    ...liveScenario(),
+    block: mutate(maintenanceBlock,
+      '  [ "$abort_curl" = 0 ] || return 1\n  case "${MAINTENANCE_ABORT_STATUS:-}" in\n    2??) return 0 ;;\n  esac\n  return 1\n',
+      '  return 0\n'),
+    cleanup: mutate(mutate(cleanupClause, '[ -n "${MAINTENANCE_POSTED:-}" ] && ', ''),
+      'maintenance_forget "$MAINTENANCE_REQUEST_ID"',
+      'rm -f "${MAINTENANCE_STATE_FILE:-}" 2>/dev/null || true'),
   });
 } finally {
   holder.kill('SIGKILL');
@@ -499,6 +579,25 @@ assert.match(live.run.stdout, new RegExp(`another \\./build\\.sh \\(pid ${holder
   `and must name who is holding it: ${live.run.stdout}`);
 assert.ok(!live.requests.some((r) => r.method === 'DELETE' || r.method === 'POST'),
   'and must send neither a DELETE nor a POST — the window is not this build\'s to touch');
+// "Nothing has been changed" has to be true of the whole run, exit handler included.
+assert.equal(readFileSync(live.statePath, 'utf8'), `request_id=${liveId}\npid=${holder.pid}\n`,
+  'and must leave the other build\'s note exactly as it found it');
+
+assert.notEqual(liveWithIdAlone.run.status, 0, 'the control must still refuse the build');
+assert.match(liveWithIdAlone.run.stdout, /Nothing has been changed/,
+  'and must still print that nothing was changed, which is the half that was true');
+assert.ok(liveWithIdAlone.requests.some((r) => r.method === 'DELETE' && r.request_id !== liveId
+    && /^[0-9a-f-]{36}$/.test(r.request_id || '')),
+  'while knocking with a fresh id the server has never seen — or this is not driving the handler');
+// Three separate things had to be wrong at once for that knock to reach the other build's note,
+// which is why one control is not enough: each of the three stops it on its own.
+assert.equal(readFileSync(liveWithIdAlone.statePath, 'utf8'), `request_id=${liveId}\npid=${holder.pid}\n`,
+  'and the note survives it, because a note is now forgotten by id rather than by position');
+assert.equal(readFileSync(liveWithIdAndBlindRm.statePath, 'utf8'), `request_id=${liveId}\npid=${holder.pid}\n`,
+  'it survives an unconditional rm too, because the 409 is no longer read as an ending');
+assert.equal(existsSync(liveWithAllThreeGone.statePath), false,
+  'and with all three gone the note is deleted — which is the run in the review\'s proof file,'
+  + ' reproduced here so that fixing it stays fixed');
 
 // --- 4. An unclaimed intent is refused while it is young, and reclaimed only once it is old. ----
 const orphanId = '33333333-3333-4333-8333-333333333333';
@@ -525,7 +624,8 @@ const old = driveBlock({
 assert.equal(old.run.status, 0,
   `past the staleness gate the same intent must be reclaimed: ${old.run.stdout}${old.run.stderr}`);
 assert.deepEqual(old.requests.filter((r) => r.method === 'DELETE').map((r) => r.request_id),
-  [orphanId], 'and it is the standing id that is ended');
+  [orphanId, old.requests.find((r) => r.method === 'POST').request_id],
+  'and it is the standing id that is ended, then this run\'s own on the way out');
 
 // --- 5. A server that answers "no" is still reported as a refusal. -----------------------------
 const refused = driveBlock({ config: { post: 'refuse' } });
