@@ -211,14 +211,23 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # time, which is what says the total is the tree's and the two failures were the clock's. A count
 # from a red run is still the count when the run reached the end of its roster; what a red run
 # cannot give you is a green.
-expected_swift_receipt='9069 checks passed'
+# Snippets adds 82: the store's strictness and UUID-only addressing, the scope rule that follows
+# the mark and then the git common directory, the routes sharing the write gate with their typed
+# refusals, the snapshot a session read is already filtered from, and the byte bounds the review
+# round added to all of them. The run that produced this number was red on two checks in
+# `owned child dispatch and detached automation use different doors`, and neither is this tree's:
+# that fixture names `assistant: "codex"`, this Mac's codex quota is exhausted until 2026-09-06,
+# and the same two are red on the base commit `9e42f5b3` with none of this code in it — measured,
+# not assumed. As the paragraph above says, a red run still gives the count when it reached the end
+# of its roster; what it cannot give is a green.
+expected_swift_receipt='9151 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7212
+expected_swift_receipt_witness=7285
 
 count_exact_receipt_lines() {
   local receipt=$1
