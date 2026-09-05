@@ -243,8 +243,12 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # file came out at 2,005 lines against the 2,000-line stop-growth limit below — which is the
 # limit doing exactly what it is for, so the group moved into its own file rather than being
 # trimmed to fit under a wall it would have left the next person standing at.
-[ "$runner_count" -eq 32 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 32"
+# 33 once the landing-currency slice needed a file. `Tests/UsageLedgerTests.swift` (1,883) and
+# `Tests/OrchestratorLandingTests.swift` (1,937) are both within a hundred lines of the 2,000-line
+# stop-growth limit below, and its two groups belong beside each other rather than split across
+# two files with no room in either.
+[ "$runner_count" -eq 33 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 33"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -325,8 +329,11 @@ manifest_group_count=$(awk '
 # two named artifact slots before it could not be asked for a path at all.
 # 532 is this merged tree counted with the awk above: 531 was counted on the tree the Projects
 # page landed on, and the documents group is the one this branch brought.
-[ "$manifest_group_count" -eq 532 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 532"
+# 534 with the landing-currency file's two: the state a read-only delivery settles with, and the
+# read that joins against the live registry instead of the copy a row froze. Counted with the awk
+# above on this tree rather than added to the number.
+[ "$manifest_group_count" -eq 534 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 534"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -400,8 +407,8 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 45 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 45"
+[ "$suite_count" -eq 46 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 46"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
