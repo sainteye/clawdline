@@ -292,6 +292,9 @@ if want web || want web-wide; then
   WEBSERVE=$!
   trap 'kill $WEBSERVE 2>/dev/null; restore' EXIT
   # Poll rather than sleep: the port is open when it is open.
+  # curl-status-exempt: what this waits for is a listener, and any HTTP answer is one — a 404
+  # from a page that is not there yet still means the server came up. The next line is what
+  # reads the page properly; a status check here would only make the wait wrong.
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     curl -s -o /dev/null -m 1 "http://127.0.0.1:$WEB_PORT/" && break
     sleep 0.3
@@ -347,7 +350,10 @@ run_if tabs        webstrip tabs "file://$PWD/tools/tabs/index.html" tabs 760 12
 # app's `/v1/` on one origin, which is the only arrangement a browser will subscribe under.
 if want web-push; then
   PORT=$(python3 -c "import json,io,os;print(json.load(io.open(os.path.expanduser('~/.config/clawdline/config.json'))).get('remote_port',7717))")
-  if ! curl -s -m 3 "http://127.0.0.1:$PORT/v1/health" >/dev/null; then
+  # `-f`, because the sentence below is a diagnosis. Without it a `503` from an app that is up
+  # and refusing reads as health, the shoot goes on, and what fails is the screenshot twenty
+  # seconds later with nothing pointing back here.
+  if ! curl -fs -m 3 "http://127.0.0.1:$PORT/v1/health" >/dev/null; then
     echo "!! the app is not answering on 127.0.0.1:$PORT — Settings → Remote → Let a browser or your phone see your sessions"
     exit 1
   fi
