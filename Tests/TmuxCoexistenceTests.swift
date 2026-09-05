@@ -583,7 +583,7 @@ group("a tmux failure says whether there is no server, or only that nobody could
     // empty for the same nameable reason.
     let unaskable = Tmux.controlModeObservationWithoutBinary()
     check("an unaskable tmux names its emptiness and refuses to be believed at once",
-          unaskable.emptiness == .noTmuxToAsk && !unaskable.isComplete)
+          unaskable.emptiness == Tmux.Emptiness.noTmuxToAsk && !unaskable.isComplete)
 
     // The fourth kind of empty has no fixture here on purpose. `Tmux.binary` falls back to four
     // fixed install paths, so a suite running on a Mac that has tmux cannot reach the
