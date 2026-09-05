@@ -662,6 +662,18 @@ loopback path is an execution-environment limitation; a permitted health request
 connect is a Clawdline service failure. Never substitute a provider-native child session merely
 because the first sandboxed request could not reach localhost.
 
+### Name a session to a person, address it by id
+
+`%88` is what `to_session` takes and what every route matches on exactly; it is also unreadable to
+the person reading your report, who cannot tell which of their tabs it is — and it does not last,
+because a terminal id is reissued whenever the app restarts while the label outlives it. The wire
+format already pairs them: a `<clawdline-message>` envelope carries `source.label` beside
+`source.id`, and every row from `GET /v1/orchestrator/sessions` carries `label`, `cwd` and
+`assistant`. Prose is the only place the name is dropped. So the first time a session appears in
+something a person reads, write **its label, then its id and project** — 「MongoDB 現代化與平台收尾」
+(`%88`, `~/code/foodblogs`) — and the short form after that. Nothing about machine addressing
+changes: no route has ever matched a title, and none should start.
+
 ### Repeated communication stalls require a capacity and protocol audit
 
 When request latency, a loading state, a pending message, a dropped event, or a terminal-automation

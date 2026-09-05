@@ -186,6 +186,14 @@ Markdown，並把來源畫成獨立的 `Clawdline ↔` 卡片。不能拿它來 
 回覆。任何 typed refusal 都要如實呈現；不得退回 `/v1/sessions/:id/send` 或手寫 sender prefix。
 closed body 與 wire 格式見 `docs/messages.md`。
 
+**還有，對「人」講到另一個 session 時，要給名字，不只是給位址。** `%88`、`A0939BAC-…` 是路由吃的
+東西，對讀你報告的人是不可讀的：他分不出你指的是他哪一個分頁，而且到明天你自己也分不出來——
+terminal id 每次 app 重啟就重發，label 活得比它久。線上的協定本來就做對了：每一個
+`<clawdline-message>` 信封都把 `source.label` 跟 `source.id` 放在一起，`GET /v1/orchestrator/sessions`
+的每一列也都帶著 `label`、`cwd`、`assistant`。只有散文會把名字丟掉。所以在訊息或報告裡第一次提到
+它時寫**「MongoDB 現代化與平台收尾」（`%88`，~/code/foodblogs）**，之後再用簡稱。機器定址不變——
+`to_session` 還是只吃精確的 id，沒有任何路由會用標題去比對。
+
 **生成的點陣圖要當本機圖片送，不要塞進文字。** ImageGen 或其他本機工具產生
 PNG／JPEG／WebP／GIF／TIFF 後，若要讓另一個 live session 看見，請用上面同一組來源／目標 id、
 token 與 idempotency key 呼叫 `POST /v1/orchestrator/messages`，並帶

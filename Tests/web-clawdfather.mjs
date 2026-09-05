@@ -500,6 +500,27 @@ for (const guide of ["../Resources/skill-guides/clawdline.md",
         + `is the half a receiver cannot look up`);
 }
 
+// A session named to a person by its id alone is unreadable — the person cannot tell which of
+// their own tabs it is — and the id does not even survive the next app restart, while the label
+// does. The wire format already pairs them (`source.label` beside `source.id`); prose was the only
+// place the name was dropped, and it was dropped through a whole conversation before anybody said
+// so. Held on every surface that tells an assistant how to talk about another session.
+// Each surface is asked in its own words. Written once as a shared `/restart/i` this block was
+// green on the Chinese guide with that guide's rule deleted, because the English word appears
+// elsewhere in a long file — a check passing for a reason unrelated to its subject, which is the
+// defect this whole delivery was about.
+for (const [surface, expiry] of [
+    ["../Resources/skill-guides/clawdline.md", /reissued whenever the app restarts/],
+    ["../Resources/skill-guides/clawdline.zh-TW.md", /每次 app 重啟就重發/],
+    ["../AGENTS.md", /reissued whenever the app restarts/],
+]) {
+    const text = await readFile(new URL(surface, import.meta.url), "utf8");
+    assert.match(text, /source\.label/,
+        `${surface} no longer says the wire already pairs the label with the id`);
+    assert.match(text, expiry,
+        `${surface} no longer says why the id is the half that expires`);
+}
+
 // And the install step for the one carrier this project does not ship: a global CLAUDE.md is the
 // user's file, so if the documentation stops telling them it exists, the only people who get it
 // are the ones who already knew.

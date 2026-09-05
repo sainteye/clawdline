@@ -211,6 +211,16 @@ require an explicit reply when the outcome depends on receipt. Surface any typed
 fall back to `/v1/sessions/:id/send` or a hand-written prefix. The closed body and wire format are
 in `docs/messages.md`.
 
+**And when you name another session to a *person*, give it its name, not only its address.**
+`%88` and `A0939BAC-…` are what the routes take, and they are unreadable to the person reading your
+report: they cannot tell which of their tabs you mean, and by tomorrow neither can you — a terminal
+id is reissued whenever the app restarts, while the label survives it. The wire already does this
+right: every `<clawdline-message>` envelope carries `source.label` beside `source.id`, and every
+row from `GET /v1/orchestrator/sessions` carries `label`, `cwd` and `assistant`. Prose is the only
+place the name gets dropped. So write **「MongoDB 現代化與平台收尾」(`%88`, ~/code/foodblogs)** the
+first time it appears in a message or a report, and the short form after that. Machine addressing is
+unchanged — `to_session` still takes the exact id and no route ever matches on a title.
+
 **Send a generated raster as a local image, not as prose.** When ImageGen or another local tool
 has produced a PNG/JPEG/WebP/GIF/TIFF that another live session should see, call
 `POST /v1/orchestrator/messages` with `images:[{"path":"/absolute/local/path.png"}]` and the

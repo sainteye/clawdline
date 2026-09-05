@@ -106,7 +106,15 @@ main_lines=$(line_count Tests/main.swift)
 # that receipt is created. Of the 51 lines, 12 are the sender, 9 the pure wording beside
 # `batchMessage`, 4 the test seam and its reset, and the rest are the doc comments that say why
 # `smart_notifications` means something narrower on this path than on any other.
-orchestrator_ceiling=10628
+#
+# 10,585 is the sender contract's relocation, taken rather than left as headroom. `844a4e08` moved
+# `HandoffDraft`, `handoffDraft` and the sender verdict out into
+# `Sources/OrchestratorHandoffSender.swift` and did not lower this number with them, so the file
+# sat 43 lines under a ceiling that says two lines above it that it has none on purpose. The guard
+# stayed green because the slack check below only refuses a gap over 200 — which is the shape this
+# comment block keeps warning about, found by the reviewer of that very delivery and not by
+# anything here. A relocation lowers the ceiling; only a feature raises it.
+orchestrator_ceiling=10585
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
