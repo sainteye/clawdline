@@ -190,19 +190,28 @@ extension Orchestrator {
               before completion or for 60 seconds afterwards:
 
               ```bash
-              curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/notify \\
+              curl --fail-with-body -sS -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/notify \\
                 -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
                 -H 'Content-Type: application/json' \\
                 -d '{"title":"<at most 80 characters>","body":"<at most 500 characters>"}'
               ```
+
+              **`--fail-with-body` is not decoration, and it is on every command in this
+              briefing.** Plain `curl` exits 0 whatever the server says: a `401` from a stale
+              secret and a `200` are the same exit status, so a request that was refused reads
+              exactly like one that arrived. With the flag the server's typed error still
+              prints and the command exits non-zero — measured on this Mac, a wrong task secret
+              answers `403 forbidden` and exits 22. **Look at that status before you say you
+              sent something.**
 
               The value of push is rarity. Routine results belong in `result.json`; notify only
               when the user is waiting for the answer, including a scheduled task such as
               today's weather whose useful output is the notification itself. Empty title/body
               values are refused. Each task may send at most 5 notifications, and this Mac
               accepts at most 30 per hour. The user may turn agent notifications off. A `409
-              agent_notify_disabled` response is not your fault: leave the content in
-              `result.json`, report failure honestly, and do not retry.
+              agent_notify_disabled` response is not your fault, and neither is any other
+              refusal here: leave the content in `result.json`, report failure honestly, and do
+              not retry.
               """
         let progressChannel = sandboxed
             ? """
@@ -219,15 +228,21 @@ extension Orchestrator {
               """
             : """
               ```bash
-              curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\
+              curl --fail-with-body -sS -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\
                 -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
                 -H 'Content-Type: application/json' \\
                 -d '{"note":"<one sentence, at most \(progressLimit) characters>"}'
               ```
 
-              If that `curl` cannot connect — some sandboxes have no loopback — do not keep
-              retrying it: write \(dir)/progress.json with your file-writing tool instead,
-              replacing the whole file each time,
+              **A non-zero exit means the note was not recorded.** `--fail-with-body` prints
+              what the server said and then fails; without it a `401` or a `404` exits 0 and
+              you carry on believing the note is on somebody's screen. A refusal here is
+              usually the secret: it is the TASK_SECRET from your first message and nothing
+              else.
+
+              If that `curl` cannot connect — some sandboxes have no loopback — or it keeps
+              being refused, do not keep retrying it: write \(dir)/progress.json with your
+              file-writing tool instead, replacing the whole file each time,
 
               \(progressFile)
 
@@ -256,7 +271,7 @@ extension Orchestrator {
               This is:
 
               ```bash
-              curl -s http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/inflight \\
+              curl --fail-with-body -sS http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/inflight \\
                 -H "X-Clawdline-Task-Secret: <TASK_SECRET>"
               ```
 
@@ -265,6 +280,13 @@ extension Orchestrator {
               where its code actually lives. Read it before you build something you think
               nobody has built. If a row looks like your job, say so in your result rather
               than doing it twice.
+
+              **If this one fails you have no answer, which is not the same as an empty
+              board.** Without the flag a refusal prints nothing and exits 0, and nothing on
+              the screen is exactly what "no other work" looks like. So on a non-zero exit —
+              and on an empty list, which is only what the broker knows about this repository
+              at this moment — say in your result what you checked and what it told you,
+              rather than reporting the ground as clear.
               """
         let announceSection = sandboxed
             ? """
@@ -273,10 +295,11 @@ extension Orchestrator {
               """
             : """
               Optionally, if outbound network is permitted in your sandbox, you may ALSO announce it:
-              `curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/complete \\
+              `curl --fail-with-body -sS -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/complete \\
                  -H "X-Clawdline-Task-Secret: <TASK_SECRET>" -H 'Content-Type: application/json' \\
                  -d '{"status":"success","summary":"..."}'`
-              This is never required; the file alone is enough.
+              This is never required; the file alone is enough — so when this call fails, the
+              work is already reported and there is nothing to repair.
               """
         let reviewReporting = typedReviewReporting(for: task)
         return """
