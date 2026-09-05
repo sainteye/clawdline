@@ -97,6 +97,7 @@ clawdline_production_sources=(
   Sources/Settings.swift
   Sources/Shells.swift
   Sources/SmartNotification.swift
+  Sources/Snippets.swift
   Sources/StackLog.swift
   Sources/StartPoints.swift
   Sources/StateHook.swift
@@ -162,6 +163,7 @@ clawdline_test_sources=(
   Tests/SessionLaunchTests.swift
   Tests/SessionRegistryTests.swift
   Tests/SessionWatchTests.swift
+  Tests/SnippetStoreTests.swift
   Tests/TestGroupManifest.swift
   Tests/TestHarness.swift
   Tests/TestIsolation.swift
