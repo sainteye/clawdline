@@ -166,6 +166,268 @@ assistant has moved past what this was checked against **and** a release is wait
 line naming all three: what is installed, what this was built against, and the version that catches
 up with it. It needs both halves at once, so it cannot become a weekly notice.
 
+### Fixed: a notification could be tapped and leave you exactly where you were
+
+Tapping a push is supposed to open the session it is about. The address it carries is
+`/#session=<id>`, and the id went into it as-is. The sessions this app watches under tmux are
+panes, so the id is `%141` — and the page at the other end reads that fragment with
+`decodeURIComponent`, which does not object: `%14` is a complete escape, so what it went looking
+for was the control character U+0014 followed by a `1`. No session has ever had that id. The
+lookup found nothing, the first full list quietly let go of the request, and the tap landed on the
+session list with nothing on screen to say why.
+
+**It only ever happened on a phone.** iTerm2's ids are `w0t0p0:<UUID>` with no per-cent in them, so
+every fixture here passed and every tap on a desk worked; a push naming a tmux pane was the one
+case, and a push is what a phone gets.
+
+The address is now written in one place, with the unreserved characters of RFC 3986 rather than the
+fragment set — which allows `&`, `=` and `#`, the three characters that would cut the fragment in
+half. Notifications already sitting on a phone still work: reading one back tries the raw text as a
+second candidate, but **only where the decoded form is impossible**, which is what a control
+character is. A link written since the fix decodes to a real id, and there the raw text names a
+*different* real session — `%2` is spelled `%252` now, and on a Mac that has reached pane `%252`
+the old reading would silently open a stranger. The narrow thing not rescued is an old link naming
+`%20`–`%39`, which decodes to something printable: that stays where this was yesterday, "does not
+route", never "routes somewhere else".
+
+### Added: a picture on a phone that can be looked at closely
+
+An image in a transcript opened to fit the screen and that was the end of it. On a phone that is
+often not enough to read one — a screenshot of a diff, a chart, a stack trace someone pasted — and
+the honest workaround was to go and find the Mac.
+
+Four ways in, all of them the ones a hand already tries: two fingers, one finger twice, one finger
+dragged, and a wheel. A trackpad pinch arrives as a wheel event with `ctrlKey` set and is read at
+its own rate. The frame takes `touch-action: none`, without which Safari claims the two-finger
+gesture before the first move arrives. The page-wide `user-scalable=no` is untouched and the suite
+asserts it stays that way — this is the picture's own zoom, deliberately, not the browser's.
+
+**A press that moved the picture no longer closes the preview.** Dragging on the backdrop's padding
+is delivered as a click on the dialog, which is exactly what the close handler was testing for. The
+first fix asked whether the picture had moved and was wrong in a way only a real browser shows: a
+16:9 picture a little over the fit in a 4:3 frame has no vertical travel at all, so a drag straight
+up moved nothing, and the release on the padding arrived as an ordinary press. What is asked now
+is travel rather than effect, from the moment a press begins rather than the moment a drag does,
+with a tap's own slop — so a sweep across a picture that is not zoomed still is not a press on
+what is behind it, and a hand that is not perfectly still still closes the preview.
+
+### Added: anything on this Mac slow enough to wonder about can draw its own bar
+
+Something started in one tab was invisible from every other one. A test run, a build, an import, a
+long encode — the only report was scrolling past in a terminal nobody was looking at, and the
+question left over was the one nobody could answer: *how much longer?*
+
+There is a seventh project status file for it, `run-<key>.json` beside the six this app already
+reads. Whatever is taking the time writes it, and the bar draws it: a label, a phase, and a bar
+from elapsed time against typical time, with a tick or a cross at the end. `./test.sh` and
+`./build.sh` write it at every phase boundary they already had, so a suite run is a bar on the Mac
+footer and a chip on the page while it happens. A local run takes the chip ahead of a deploy that
+is also running, because it is the thing holding up the person at this keyboard.
+
+Two deliberate differences from the deploy file it is shaped after. **It is keyed by working
+directory rather than by git remote**, so two worktrees of one repository do not overwrite each
+other's progress, which is the ordinary case here. And **a `running` row goes quiet on its own**
+after `stale_after` — nothing polls these files, so without a ceiling a run somebody `kill -9`'d
+spins in the bar for good. The ceiling lives in the reader rather than in the producer, so every
+reader inherits it, including the ones nobody has written yet.
+
+**The format stays open — anything may write this file — and there is now a helper, so that nothing
+else has to get the hard half right.** The JSON is the easy half; the shell around it fails in the
+direction that looks like success, and two agents each holding the whole written contract got it
+wrong on the first attempt on this Mac's `bash 3.2.57`. Measured, one script each: an `EXIT` trap
+on its own runs with `$?` of `0` for a script that was killed, so the last thing it writes is `ok`;
+`set -e` without `set -E` skips `ERR` entirely for a failure inside a function; and a signal
+handler that returns lets the script carry on to its own `exit 0`. `clawdline-progress` is those
+traps written once and shipped inside the app bundle. The wrapper form is the whole of what
+somebody who just wants a bar has to know — `clawdline-progress run --label lint --typical 120 --
+./scripts/lint.sh` — because the command it wraps is not edited and knows nothing about any of
+this, and the state the row ends on is that command's own exit status rather than a line somebody
+remembered to write. Sourcing the helper instead gives a script `progress_start` and
+`progress_phase`, for phases it already knows the names of. Neither form invents a typical time it
+was not given — `./build.sh` writes none, because nobody has ever measured a build.
+
+### Fixed: a project with no CI wore a red cross
+
+`{"state":"none"}` means *there is nothing to say*: no workflow, no run on this branch yet, `gh`
+not installed. The rule that an unrecognised state must draw nothing has been written down for a
+long time, precisely so that a reader which has not heard of `none` does not draw a cross for a
+project that simply has no CI — a red mark that is always wrong. The run file honoured it. The
+deploy and health readers did not. Counted on this Mac on 2026-09-05: fifteen deploy status files,
+**twelve of them exactly `{"state":"none"}`**, each drawing a red ✗ in the footer at that moment.
+
+Both readers have an allow-list now, so a state nobody recognises parses to nothing rather than to
+a row that will be drawn wrongly. Finding it turned up the mirror image underneath: two different
+tools write health files here and one of them says `online` where the page documents `ok`, so the
+footer had been drawing a red dot for a site that was answering perfectly well. Both surfaces read
+one answer now instead of two.
+
+### Fixed: bringing a session's tab to the front raised whichever tab you last looked at
+
+Under `tmux -CC`, asking for a session — from the phone, from the bar, from a notification — moved
+tmux's own selection and brought iTerm2 forward, and iTerm2 arrived on whatever it had been showing
+before. So the thing you asked for was behind the thing you were already looking at, and it was
+worse than doing nothing, because the window came forward and looked like an answer.
+
+Two beliefs held that shape in place and both were measured false against tmux 3.6a on this Mac:
+that iTerm2 follows tmux's window selection (it does not — tmux's active window moved and iTerm2's
+did not, and tmux really did send the notification), and that iTerm2 publishes no mapping from a
+tmux pane to one of its tabs (its scripting dictionary carries a per-session variable naming the
+pane). So the tab is now selected outright, and when the row cannot be found the application alone
+is raised — a window in front of the wrong tab, rather than a press that does nothing.
+
+Selecting the wrong tab takes somebody's keyboard away just as surely as raising the wrong
+application does, so it is refused twice before it happens: tmux's own client list has to say a
+control-mode client is attached to that pane's session and that client's terminal is one of
+iTerm2's, and iTerm2 has to agree that the row it is about to select is a tmux mirror rather than
+an ordinary tab.
+
+### Added: a page for the work that got finished and never merged
+
+The web interface was one page with things laid over it — Usage hid the app from inside its own
+module, Settings was a sheet behind the wordmark — so nothing decided which screen you were on and
+nothing could be linked to. The wordmark now opens a drawer that names the screens, `#page=usage`
+in a fresh tab arrives on Usage, and a new page costs a row in that drawer instead of its own way
+of appearing and its own way of putting the page back.
+
+**The first screen added that way has one subject, and it is work that was delivered and never
+landed.** `git worktree list` has fifty-eight answers on this Mac and almost none of them are the
+one anybody wants; the question in front of a project is narrower — which of these checkouts
+actually finished something, and did it reach the branch. Of this repository's seventy-nine
+worktrees carrying an accepted piece of work, **thirty-eight finished and have no landing record at
+all**. That is the first number anybody has had for *it gets done and nobody merges it*, so it is
+the open block at the top with the branch each one is on, and the other outcomes are folded
+underneath it.
+
+Every rung is a stored fact rather than a guess: landed, delivered, still active, or abandoned,
+each resting on a row that says so, with liveness asked of the registry rather than inferred from
+an age — a task the registry does not hold is certainly not running, and that is the direction an
+absence can be trusted in. **An empty answer and an answer that never arrived are drawn
+differently**, which is the half of this most pages throw away: every reply carries the count of
+rows behind it and that is on screen whenever the read succeeded, a project this Mac has no record
+of is a `404` rather than an empty list, two projects sharing a final name are a `409` rather than
+whichever the dictionary handed over first, and checkouts that resolve to no project are counted in
+a block that says so instead of being dropped.
+
+`GET /v1/orchestrator/usage/project-worktrees` is the read, and it publishes no branch on purpose —
+the ledger stores none, and a field present only for recent tasks would be read as evidence about
+an old one. Thirty-one new strings, in all fourteen languages. Not on the phone relay: every read a
+paired viewer may ask for names a session, and that session is also the channel the answer comes
+back on; this one's subject is a project and its answer is about sessions that are mostly over.
+
+### Added: the documents this Mac writes, over HTTP
+
+Three long documents were produced here in one day and none of them could be opened from anywhere
+but the Mac: working notes under a project's own `artifacts/`, and the deliverables every
+dispatched task writes. The route that served project files could not reach any of them and was
+never going to — it took a slot rather than a path, and there was no string a caller could send
+that named a third file.
+
+That is exactly what made it safe, so the replacement draws a boundary instead of widening a slot.
+`GET /v1/sessions/:id/documents` lists what is there and gives each one an address underneath it.
+Two roots, both computed by the server, and a caller's string may only choose *inside* one: the
+project's own `artifacts` — with that one symlink followed, because somebody put it there to say
+where their documents are kept — and a task's `artifacts`, whose symlinks are not followed, because
+the child writing there is the party the boundary bounds. A task's `task.json` and `result.json`
+sit one level above its root and are therefore outside it, not filtered out of it.
+
+A hostile path gets nowhere. Absolute paths, empty segments and any segment starting with `.` are
+refused before the filesystem is touched; decoding happens after the split and the joined path is
+re-split and re-checked, so `..%2F..` dies by the same clause that refuses `../..`. What survives
+must resolve under the root, be a regular file, carry one of `md`, `markdown` or `txt`, and be at
+most 2 MiB. The listing is built by the same resolver the read uses, so it cannot offer a row the
+read then refuses.
+
+**This is a route and not yet a screen.** There is no document view on the page and no row in the
+links sheet: a control the client cannot draw an answer for is a promise rather than a feature.
+What exists today is something you can call with your token.
+
+### Fixed: a conversation opened with a pasted image was called `Image #1`
+
+Claude Code writes a conversation's name itself, from the material it has, and never revises it. A
+conversation that began with nothing but a pasted screenshot gave it nothing to name from, so it
+wrote `Image #1` — and this app showed that faithfully, because it had no way to notice the name
+said nothing.
+
+It notices now, and falls back to naming the conversation itself. **The judgement is made about the
+input, never about the title**: looking for the word *image* in a name would take a real
+conversation about images off somebody's screen, so the question asked is the one Claude Code was
+answering — did the material it had describe the work? Measured across every transcript on this Mac
+— 2,152 with an opening message, 697 of them titled — all five whose opening was empty once
+attachment markers came off got a placeholder name, and not one titled conversation with actual
+prose in its opening did.
+
+**And the sheet you pick a conversation back up from stopped disagreeing with the list about what
+it is called.** That sheet read the transcript's own two names and nothing this app knew, so a
+conversation you had renamed here was one thing in the session list and another in the resume
+sheet, at the same moment, on the same screen. It reads the same ladder as everywhere else now, as
+far as a finished conversation can answer it.
+
+### Changed: a handoff has to say who sent it
+
+Handing a line of work to another session took an optional, free-form field for the sender, which
+meant it could not say who sent it. On 2026-09-04 this machine's coordinator sent one naming
+nobody: the succession sequence was skipped entirely, and a person had to close the sending tab by
+hand before the receiving session could take over.
+
+`POST /v1/orchestrator/handoffs` now requires that field and resolves it to exactly one live
+session, with nine named refusals in place of one shared error — so a handoff that cannot be
+attributed says which of the nine things went wrong instead of a blank *bad request*. A sender that
+is the current coordinator is refused outright and told what to do instead, carrying the fields the
+succession request itself takes; one flag waives that single refusal and nothing else.
+
+**Being told "offline" is not proof that a process is gone**, and reading it as proof replayed the
+incident this was written to prevent: a status of offline means only that this reading matched no
+row on every field, and one of those fields is missing for a perfectly live session whose
+transcript could not be located that round. So a coordinator that was alive — same terminal, same
+pid — read as offline and its plain handoff was accepted. What is required now is positive absence.
+A row still holding the bound terminal means the machine has something there it could not match,
+which is *unknown*, not permission.
+
+The other way in was a truthy back door: JSON `1` and JSON `true` arrive as the same kind of
+object, so a client serialising booleans as `0` and `1` could waive that refusal by accident while
+three separate surfaces promised it needed exactly `true`. It is asked as a type now, the way this
+tree already separates the two elsewhere.
+
+### Added: a session in any repository can report that its turn is delivered
+
+Marking a finished turn as delivered — the check on the session's card that means *done, awaiting
+approval* — has been a route for a long time, and the guide has carried it in full for just as
+long. **What was missing was a reason to go and look.** A session working in a different project
+finished, was told to make its work show up here, and probed four addresses that do not exist, read
+another session's briefing, and concluded that publishing was something only a dispatched child
+could do. Wrong, and supported by every piece of evidence it could reach.
+
+It had seen the skill and decided it was not for it, which was fair: every clause of that
+description was about handing work *out* — dispatch, handoff, message — and a session that had just
+*finished* something matched none of them. So the shipped skill files now trigger on having finished as
+well as on handing work out, including the phrasing that does not require knowing the feature exists
+first (*show this session as finished in Clawdline*), and they say plainly that this applies in any
+repository Clawdline watches rather than only in its own.
+
+**The noun was the direct cause of the worst of it.** This project already labels a project's
+status artifact `milestone`, and repositories keep `*_MILESTONES.md` files. Told its milestone had
+not been updated, that session edited the markdown document and reported it done — twice. Every
+piece of copy now says *delivery receipt* and keeps the old word only as something to search for.
+
+And the instruction goes where a receiver actually reads rather than only where a sender does: into
+the handoff document itself, which is the one thing a session picking up work in somebody else's
+project is guaranteed to read, alongside the naming step that was already written there for the
+same reason. For a session that is neither dispatched nor picking up a handoff, both READMEs now
+point at the optional global instruction file, with the text to paste.
+
+### Changed: Homebrew is no longer one of the documented ways to install this
+
+The cask was the only thing that could have told somebody a newer Clawdline had shipped, and that
+was the whole of its case. The app checks for itself now, so what the cask is left with — a clean
+uninstall, and being the idiom of the terminal — is convenience rather than capability. Against
+that, it is updated by hand, the release script has no `brew` in it, and **it had been serving
+0.5.0 for seventeen days and 882 commits** while the README listed it as an equal path. Its own
+notes still told people to strip quarantine from a build that is notarized and does not need it.
+
+Nothing is withdrawn: the tap still exists and still serves what it has to anybody who already
+tapped it, and the uninstall instructions stay for exactly those people. What changed is that the
+README no longer sends somebody new down a path that was two and a half weeks behind.
+
 ### Changed: automatic names can use the assistant you choose
 
 The automatic-naming switch is now one three-way choice: off, Codex or Claude Code. Existing
@@ -1039,6 +1301,16 @@ the rendered frame byte-identical.
 - **The release script deleted the build before checking it** — it removed the worktree and then
   looked for the app inside it, so the check meant to catch an empty build was the thing
   guaranteeing one. The build lands beside the worktree now.
+- **One build that timed out could wedge every build after it.** `build.sh` asks the running app to
+  pause while it is replaced, and it waited five seconds for the answer. A drain that took 146
+  seconds therefore printed `refused` and stopped — while the pause it had just registered went on
+  and closed the door behind it. Nothing was left that could reopen it: the id needed to cancel was
+  generated inside the script, never printed, and its only copy was in a directory the script
+  deletes on the way out. Every later build was refused, and it took a hand-written request to
+  recover. The wait is now one budget shared by the request and the polling that follows it, the id
+  is printed and written down before the request goes out, the script ends a pause whenever it
+  holds one rather than only when it saw a reply, and **"no answer" and "refused" are two
+  different sentences** — a client that heard nothing is not a server that said no.
 - **The "this page is older" notice can be dismissed.** It was correct and unclearable, and
   reloading to silence a banner is what somebody halfway through a sentence is trying not to do.
 - The sleepy-tuna mascot pack failed its own validator.
