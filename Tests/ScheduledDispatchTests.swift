@@ -239,6 +239,17 @@ group("schedule fire arithmetic crosses midnight and filters days") {
         expect("and the row draws the day the file wrote",
                Orchestrator.scheduleWhenObject(parsed.when, hour: 9, minute: 0)["days"] as? [String],
                [code])
+        // The negative control, because a check that cannot fail is worse than no check: an
+        // off-by-one table would move every name along by a day, and this is that mistake made on
+        // purpose beside the real answer. Without it the loop above would stay green with the
+        // formatter, the parser and the arithmetic all agreeing on the wrong day.
+        let shifted = Orchestrator.Schedule(id: "shifted", title: "shifted", hour: 9, minute: 0,
+            when: .weekly([(index + 1) % 7 + 1]), taskTemplate: [:], enabled: true,
+            closeTab: .onSuccess, catchUpHours: 6, notifyOnFailure: true, createdAt: nil,
+            whenChangedAt: nil)
+        check("and the day next to it is not the day \(code) means",
+              Orchestrator.nextFire(of: shifted, after: wednesday, calendar: calendar)
+                  .map { english.string(from: $0).lowercased() } != code)
     }
 
     // A schedule that runs once has exactly one occurrence, and both halves of the arithmetic say
