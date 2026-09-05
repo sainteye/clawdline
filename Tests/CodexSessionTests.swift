@@ -668,6 +668,18 @@ group("an unnamed Claude conversation gets a durable model fallback") {
     check("and the two unnumbered ones Claude Code writes",
           ConversationTitle.isWeak(title: "Images", opening: "[Image] [Images]"))
 
+    // The two halves the predicate is built out of, on their own. The marker shape is what keeps
+    // the rule off ordinary prose: something in brackets with no `#N` is something somebody wrote.
+    expect("markers and nothing else leave nothing",
+           ConversationTitle.withoutAttachmentPlaceholders("[Image #1] [Image #2]"), "")
+    expect("a marker in front of a question leaves the question",
+           ConversationTitle.withoutAttachmentPlaceholders("[Image #1] 這個問題應該要怎麼解決？"),
+           "這個問題應該要怎麼解決？")
+    expect("and a bracketed word nobody numbered is prose",
+           ConversationTitle.withoutAttachmentPlaceholders("[TODO] 修正"), "[TODO] 修正")
+    expect("comparison folds width, case, spacing and punctuation together",
+           ConversationTitle.comparable("Ｓｈｉｐ Ｔｏｄａｙ。"), "shiptoday")
+
     // The seven pairs measured across 697 titled transcripts on this Mac, where the title does
     // not describe the opening so much as hand it back.
     let restatements = [("Ok", "reply with exactly: ok"),
