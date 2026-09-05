@@ -106,9 +106,13 @@ check("nothing in the helper writes a `producer` field", !/"producer"/.test(help
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "clawdline-progress-")));
 const cache = join(scratch, "statusline-cache");
 const realCache = join(homedir(), ".claude", "statusline-cache");
-const realCacheBefore = existsSync(realCache)
-    ? readdirSync(realCache).filter((n) => n.startsWith("run-")).sort().join("\n")
-    : "(no directory)";
+// The containment assertion at the end names **this suite's own keys**, not the directory's
+// contents. Diffing the whole listing before and after looks stricter and is in fact unusable
+// here: `~/.claude/statusline-cache` is machine-wide, several sessions run `./test.sh` on this Mac
+// at once, and each of those legitimately writes its own `run-` file mid-flight. Measured on
+// 2026-09-05 — this check went red while another session was in its node-suite phase, and nothing
+// this file did had touched the real directory. A check that goes red for somebody else's correct
+// behaviour teaches people to ignore it, which is worse than not having it.
 
 const keyFor = (dir) => `run-${dir.replace(/\//g, "-")}.json`;
 const rowOf = (path) => {
@@ -641,12 +645,16 @@ try {
               (rowOf(w.file) || {}).unparseable !== undefined);
     }
 
-    // And the containment this file promised at the top: the real cache directory was not touched.
-    const realCacheAfter = existsSync(realCache)
-        ? readdirSync(realCache).filter((n) => n.startsWith("run-")).sort().join("\n")
-        : "(no directory)";
-    check("no run file was written into the real ~/.claude/statusline-cache",
-          realCacheAfter === realCacheBefore);
+    // And the containment this file promised at the top: nothing this suite ran wrote its file
+    // anywhere but the scratch cache. Every working directory here lives under `scratch`, so every
+    // key this suite could produce begins with that path — a stray is a name, not a count.
+    const scratchKeys = `run-${scratch.replace(/\//g, "-")}`;
+    const strays = existsSync(realCache)
+        ? readdirSync(realCache).filter((n) => n.startsWith(scratchKeys))
+        : [];
+    check("no run file from this suite was written into the real ~/.claude/statusline-cache"
+          + (strays.length ? ` — found ${strays.join(", ")}` : ""),
+          strays.length === 0);
 } finally {
     rmSync(scratch, { recursive: true, force: true });
 }
