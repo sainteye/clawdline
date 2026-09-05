@@ -293,15 +293,30 @@ person in front of it, and it is a sequence:
    otherwise.
 7. **Keep `CURRENT STATE` true.** The document is now this session's, and a handoff that stops being
    updated is a handoff that can only be made once.
+8. **When the turn is genuinely finished, send the delivery receipt.** It is the same kind of
+   session-scoped call as step 2 and the only difference is when: step 2 names the session before
+   the work, this one records that the work is done, and Clawdline draws one check meaning
+   *delivered; awaiting approval*. The route and its refusals are in the skill guide's
+   `Report the root's completed turn` section — load the guide rather than typing a route from
+   memory. Not for partial work, a diagnosis, a blocker, or a question back to the person; a
+   Clawdline **child** reports through `result.json` instead.
 
-**Step 2 has to be written into `handoff.md`, and that is not a formality.** A receiver is reached
+**Steps 2 and 8 have to be written into `handoff.md`, and that is not a formality.** A receiver is reached
 by exactly one sentence — [the line](#the-line) the app types — and that sentence names
 `handoff.md` and nothing else. It does not name this page, and the receiving session is usually in
 somebody else's project, where neither this file nor the skill exists. So an instruction that lives
 only in [the skill](#the-skill) is an instruction the sender reads and the receiver never sees: the
-skill is the *sending* recipe. The sender therefore writes the naming step into the document, as a
-line under `OBJECTIVE` — the one heading whose job already includes what the receiver's first hour
-looks like — and that is what makes it arrive.
+skill is the *sending* recipe. The sender therefore writes both steps into the document, as lines
+under `OBJECTIVE` — the one heading whose job already includes what the receiver's first hour
+looks like — and that is what makes them arrive.
+
+**Step 8 was missing until 2026-09-05 and the argument above is exactly why.** A receiver in
+another project made the step 2 call on arrival, because this document told it to, and then
+finished its turn reporting nothing, because nothing told it to — and asked afterwards, it said it
+had looked: it probed for a publishing route, found none, and concluded a root simply had no way to
+say it was done. Two session-scoped calls, one written down and one not, and the receiver did
+exactly the one it was given. That is not a reader who skipped an instruction; it is an instruction
+that was never sent.
 
 A receiving session that also intends to hand on later should keep the document under
 `OPEN THREADS` discipline as it works, rather than reconstructing it at the end from a context that

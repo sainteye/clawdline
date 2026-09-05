@@ -1445,3 +1445,37 @@ items:
       the evidence is gone. A reading nobody was present for is not a null result, and this entry
       exists so the next attempt is not made from memory.
     opened: 2026-09-04
+
+  - id: B-MILESTONE-NAMES-TWO-THINGS
+    title: Clawdline calls two unrelated things "milestone", and one of them collides with a filename half the repositories already have
+    problem: >-
+      `POST /v1/orchestrator/sessions/:id/complete` produces `milestone_complete` — the check that
+      says a session's turn is delivered. `Sources/ProjectStatus.swift:53` labels a project's
+      status artifact `milestone` — a page of planned work. The two have nothing to do with each
+      other, and the app is where both names come from, so this is an ambiguity the product
+      creates rather than one a reader brings.
+
+
+      The second name has a further problem the first does not: **it is also a filename**.
+      Repositories keep `*_MILESTONES.md`, so "update the milestone" has a third reading that is
+      neither of the above and looks, from inside such a project, like the obvious one.
+    evidence: >-
+      Asked on 2026-09-05 why it had not reported its finished turn, the session in
+      `~/code/foodblogs` answered that the word itself was the direct cause: told "the milestone
+      document is not updated", it edited `docs/ops/MONGODB_MODERNIZATION_MILESTONES.md` — which
+      exists, alongside `INFRASTRUCTURE_MODERNIZATION_MILESTONES.md` — and reported it done with a
+      timestamp. It got the instruction twice and took the same wrong reading both times. It also
+      pointed at the app's own links payload, `{"kind":"artifact","label":"milestone",
+      "status":"1/8"}`, and said that even a session that knows the receipt exists could still be
+      sent to that artifact by the same sentence. Root confirmed the label is the app's:
+      `Sources/ProjectStatus.swift:53` and `Sources/RemoteServer.swift:1087`.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      Renaming a shipped label is the user's call, not a repair to make quietly, which is why this
+      is an entry rather than a commit. The cheap half is already done: every piece of copy this
+      project controls now says "delivery receipt" / 「交付回報」 and keeps "milestone" only as a
+      searchable alias. The trigger is anybody reading "update the milestone" and reaching for a
+      file — if that happens again after the copy change, the label is the thing left to move.
+    opened: 2026-09-05
