@@ -771,7 +771,10 @@ for (const press of [/wantFocus\("data-snippet-more", shown\[at\]\)/,
     assert.match(sheetSource, press,
         "every press that redraws says where the keyboard should land: " + press);
 }
-assert.match(sheetSource, /document\.addEventListener\("keydown", function \(event\) \{\n    if \(event\.key !== "Escape"\)[^]*?\}, true\);/,
+// Indentation is deliberately not part of this pattern: the whole island moved inside `install`
+// on 2026-09-05 and a column-pinned match would have gone red for a change that moved no
+// behaviour at all. What it pins is the listener, the key, and the capture flag.
+assert.match(sheetSource, /document\.addEventListener\("keydown", function \(event\) \{\s*\n\s*if \(event\.key !== "Escape"\)[^]*?\}, true\);/,
     "and Escape is answered on the document in the capture phase, so it works wherever the "
     + "focus is and gets there before keys.js closes the session behind the sheet");
 assert.ok(!/overlay\.addEventListener\("keydown"/.test(sheetSource),
@@ -841,8 +844,9 @@ assert.equal(starterPress(null, { mayCreate: true }), null);
 assert.equal(starterPress({ title: "t", body: "   " }, { mayCreate: true }), null,
     "a starter with nothing to insert is not a press");
 
+// Same reason as the Escape pattern below: the branch is what matters, not the column it sits in.
 assert.match(sheetSource,
-    /hasAttribute\("data-snippet-starter"\)\) \{\n        useStarter\(/,
+    /hasAttribute\("data-snippet-starter"\)\) \{\s*\n\s*useStarter\(/,
     "the sheet's starter branch hands the press to useStarter and stops");
 assert.ok(!/data-snippet-starter[^]{0,240}openEditor/.test(sheetSource),
     "and no path from a starter press reaches the editor");
@@ -866,5 +870,32 @@ assert.match(openSource, /Snippets\.follow\(\);/,
 assert.equal((openSource.match(/Snippets\.follow\(\);/g) || []).length,
     (openSource.match(/GitPanel\.follow\(\);/g) || []).length,
     "at every place the other panels are told, and not at one of them");
+
+/* ---- importing this module may not touch the document ---------------------
+   The rule the five panels `session/open.js` already imports all keep, and the one this file
+   broke the day it joined them: it built its island — a stylesheet link on `document.head`, a row
+   in the `⋯` menu, two overlays on `document.body` — while the module was being evaluated.
+   `Tests/web-clawdfather.mjs` imports the start sheet through a fixture whose document has a
+   `body` and no `head`, so the import threw, and because the web phase of `./test.sh` runs before
+   the Swift phase, nobody on `main` could reach the Swift suite at all.
+
+   A rule with no mechanism decays, so this is the mechanism. It reads the source rather than the
+   behaviour on purpose: reproducing that fixture here would be a second copy of it, and what went
+   wrong is a *shape* — a statement at column zero that reaches the document. */
+
+const topLevel = sheetSource.split("\n").filter((line) =>
+    /^(document|[A-Za-z_$][\w$]*)\.(addEventListener|appendChild|insertBefore|append|prepend|replaceChildren)\(/.test(line)
+        || /^var [A-Za-z_$][\w$]*\s*=\s*document\./.test(line)
+        || /^new MutationObserver/.test(line));
+assert.deepEqual(topLevel, [],
+    "no statement at the top level of input/snippets.js touches the document: it is built in "
+    + "install(), which every entrance calls and which answers false where there is nothing to "
+    + "build in");
+assert.match(sheetSource, /function install\(\) \{[^]*?if \(typeof document === "undefined" \|\| !document\.head/,
+    "and install() says so itself rather than throwing");
+assert.match(sheetSource, /export function openSnippets\(\) \{\n    if \(!install\(\)\)/,
+    "opening the sheet installs first");
+assert.match(sheetSource, /follow: function \(\) \{\n        if \(!install\(\)\)/,
+    "and so does following the open session, which is the entrance session/open.js uses");
 
 console.log("web snippet tests passed");
