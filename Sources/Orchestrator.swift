@@ -559,31 +559,24 @@ enum Orchestrator {
         // what the two fields claim. `created_at` would be a guess about a past this app was not
         // there for; this is a fact it is watching happen.
         //
-        // **And a save may change when a schedule runs, not whether it repeats.** Neither form
-        // that reaches this route has a control for a one-shot's date, so a save from either
-        // would send `days` and convert one silently, having never shown the field it replaced —
-        // the shape the carried task fields already exist to refuse, one level up. Removing it
-        // and making a new one is the honest way to say this is different work.
-        guard made.when.runsOnce == existing.when.runsOnce else {
-            return .refused(400, "bad_request", existing.when.onDay.map {
-                "This schedule runs once, on \($0.text). A save may change when it runs, not "
-                    + "whether it repeats: send when.on, or remove it and make a new one."
-            } ?? "This schedule repeats. A save may change when it runs, not whether it repeats: "
-                + "send when.days, or remove it and make a new one.")
+        // The two things a save may not do to `when` — change whether the schedule repeats, and
+        // move a one-shot that has already run — are refused in `Schedules.swift`, beside the
+        // grammar they are about, and that is where both arguments are written down.
+        let movesWhen = made.hour != existing.hour || made.minute != existing.minute
+            || made.when != existing.when
+        if let refusal = scheduleWhenSaveRefusal(existing: existing, made: made,
+                                                 movesWhen: movesWhen) {
+            return refusal
         }
-        if made.hour == existing.hour, made.minute == existing.minute,
-           made.when == existing.when {
+        if movesWhen {
+            obj["when_changed_at"] = Int(now.timeIntervalSince1970)
+        } else {
             if let unchanged = existing.whenChangedAt {
                 obj["when_changed_at"] = Int(unchanged.timeIntervalSince1970)
             }
-            // Carried for the same reason and under the same condition: `fired_at` names *this*
-            // occurrence, so a save that leaves the occurrence alone leaves the schedule spent,
-            // and one that moves it is asking for a run that has not happened yet.
             if let fired = existing.firedAt {
                 obj["fired_at"] = Int(fired.timeIntervalSince1970)
             }
-        } else {
-            obj["when_changed_at"] = Int(now.timeIntervalSince1970)
         }
         // The same brake as a create, and for the same reason: what it bounds is a client
         // retrying in a loop with a fresh key each time, and a loop of saves writes a file per
@@ -893,10 +886,11 @@ enum Orchestrator {
             if let next = nextFire(of: schedule, after: now) {
                 out["next_fire"] = Int(next.timeIntervalSince1970)
             }
-            // A row that has spent itself says so, rather than falling quiet. Turning a schedule
-            // off by hand was the only way to retire one before `when.on` existed, and a paused
-            // row and a finished row were the same row — `enabled: false`, no explanation, and
-            // nothing to say which of the two somebody was looking at.
+            // A row that has spent itself says so **in this payload**: `once`, `fired_at`, and
+            // no `next_fire`. Neither screen reads those two keys yet, so on both of them a spent
+            // one-shot is still an enabled row with nothing scheduled — which is what a paused row
+            // and a never-run one look like too. `docs/schedules.md` says so rather than implying
+            // the screens changed with the API.
             if schedule.when.runsOnce { out["once"] = true }
             if let fired = schedule.firedAt { out["fired_at"] = Int(fired.timeIntervalSince1970) }
             if let last = snapshots.filter({ $0.scheduleID == schedule.id })
@@ -1077,12 +1071,17 @@ enum Orchestrator {
         // a route somebody presses when they want work to stop, and a session opening out of a
         // schedule that was removed a second earlier would be the one way pressing it is not
         // enough. Asked outside the lock: the inventory takes it for itself.
-        guard scheduleNamed(schedule.id) != nil else {
+        //
+        // **Existence was not enough**, and `scheduleFireIsStale` says why: a save landing in the
+        // wait can move this occurrence off the file, and dispatching it then runs a time nobody
+        // is scheduled for and stamps the old day onto the new one.
+        guard let fresh = scheduleNamed(schedule.id), !scheduleFireIsStale(fresh, fire: fire) else {
             lock.lock()
             pendingScheduleFires.removeValue(forKey: schedule.id)
             lock.unlock()
             RemoteAuth.audit("orchestrator.schedule.skipped",
-                             ["schedule": schedule.id, "why": "removed"])
+                             ["schedule": schedule.id,
+                              "why": scheduleNamed(schedule.id) == nil ? "removed" : "retimed"])
             return
         }
         lock.lock()
@@ -1113,7 +1112,7 @@ enum Orchestrator {
         // Only a session that really opened spends a one-shot. A dispatch this Mac refused
         // consumes the occurrence in memory exactly as it does for a recurring schedule and
         // leaves no stamp, because `fired_at` is this app's statement that the work ran.
-        if case .ok = reply, schedule.when.runsOnce {
+        if case .ok = reply, fresh.when.runsOnce {
             markScheduleFired(id: schedule.id, at: fire)
         }
         guard case .refused(_, let code, let message, _) = reply else { return }

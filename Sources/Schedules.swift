@@ -306,23 +306,38 @@ extension Orchestrator {
     /// process running as this user can read, which is what makes it a proof of being local, and
     /// the argument written beside those routes is that a phone cannot hold one — an argument for
     /// why the device gate exists, not for refusing a credential that is strictly more local than
-    /// the one it admits. The argument that does bear weight is the one about *what a schedule
-    /// is*: unattended execution that repeats, arranged once and running afterwards with nobody
-    /// watching. An assistant session can read this token off the disk it runs on, and a session
-    /// that can mint a repeating schedule can arrange to be woken every night forever.
+    /// the one it admits. A schedule that runs **once** is one dispatch at a named time; the same
+    /// credential already opens a session immediately with `POST /v1/orchestrator/tasks`, and
+    /// already runs any schedule on the spot with `POST /v1/orchestrator/schedules/:id/run`.
+    /// Refusing it the ability to say *at half past one* — while allowing *now* — protects
+    /// nothing. So the token creates, changes and removes a one-shot, and a repeating schedule
+    /// stays a person's to arrange.
     ///
-    /// That reason reaches exactly as far as the repetition. A schedule that runs **once** is one
-    /// dispatch at a named time; the same credential already opens a session immediately with
-    /// `POST /v1/orchestrator/tasks`, and already runs any schedule on the spot with
-    /// `POST /v1/orchestrator/schedules/:id/run`. Refusing it the ability to say *at half past
-    /// one* — while allowing *now* — protects nothing, and what it actually produced is on the
-    /// record: the session that hit this refusal wrote the JSON file by hand instead, at mode
-    /// 0644, with no `created_at`, unvalidated, unread-back and unaudited. The route it was
-    /// refused does all five of those things.
+    /// **What this refusal does not buy, said here because the first version of this comment said
+    /// the opposite.** It was justified as protecting against recurrence — an assistant session
+    /// can read this token off the disk it runs on, so a session able to mint a repeating schedule
+    /// could arrange to be woken every night forever. That sentence is true and it is not what
+    /// this gate stops, twice over. Nothing bounds how many one-shots exist and every fired
+    /// session holds the same token, so the run of one-shot *n* posts one-shot *n + 1* and the
+    /// ten-writes-in-ten-minutes brake is irrelevant at one write a day. And the refusal did not
+    /// bound it before this door existed either: the session that hit it wrote the schedule file
+    /// by hand instead, at mode 0644, and a hand-written file may carry `when.days`. **The gate
+    /// only ever decided which artifact the capability produced.**
     ///
-    /// So the token creates, changes and removes a one-shot, and a repeating schedule stays a
-    /// person's to arrange — with the refusal now saying so, and saying where the supported path
-    /// is. A caller who is told, rather than one who infers.
+    /// What it does buy is two things, and they are the reason it stays:
+    ///
+    /// - **A person's recurring rows are not an agent's to edit or delete.** `PATCH` and `DELETE`
+    ///   read the kind of the file being changed, so the nightly schedule somebody arranged in
+    ///   Settings cannot be retimed, disabled or removed out from under them by a session.
+    /// - **An agent's deferred work is validated, stamped, read back and audited** rather than
+    ///   hand-written: `created_at` written by the Mac and refused as a request field, the whole
+    ///   body through the real parser, the file re-read off disk through that same parser before
+    ///   the caller is told it worked, `orchestrator.schedule.created` / `.updated` / `.deleted`
+    ///   in the audit log, and `0600` instead of the `0644` a hand-written file lands with.
+    ///
+    /// ``scheduleWhenSaveRefusal(existing:made:movesWhen:)`` closes the one way this door was worse than
+    /// the text editor it replaced: a spent one-shot that the session it opened could retime back
+    /// into a run, and again the night after.
     static func machineScheduleRefusal(method: String, id: String?,
                                        body: [String: Any]) -> Reply? {
         let runsOnce: Bool
@@ -349,5 +364,62 @@ extension Orchestrator {
                         + "\(scheduleDirectory.path)/<schedule-id>.json. "
                         + "GET /v1/orchestrator/schedules/:id reads back what you wrote, through "
                         + "the same parser this route would have used.")
+    }
+
+    /// The two things a save may not do to `when`, and the sentence for each.
+    ///
+    /// **A save may change when a schedule runs, not whether it repeats.** Neither form that
+    /// reaches the save route has a control for a one-shot's date, so a save from either would
+    /// send `days` and convert one silently, having never shown the field it replaced — the shape
+    /// the carried task-template fields already exist to refuse, one level up. Removing it and
+    /// making a new one is the honest way to say this is different work.
+    ///
+    /// **A one-shot has one occurrence in its whole life, and `fired_at` is the record that it is
+    /// spent.** The first version of the save carried the stamp across only when `when` was
+    /// unchanged and wrote none at all otherwise, on the reading that the stamp names *that*
+    /// occurrence rather than the schedule. Read that way the machine door is a re-arm primitive:
+    /// create a one-shot for tomorrow, let it fire, have the session it opened `PATCH` it to the
+    /// day after, and repeat — a durable, unattended, restart-surviving nightly wake-up that both
+    /// screens draw as one run on a date that keeps moving.
+    ///
+    /// So a save may still rename a spent schedule or change what its session is told to do; it
+    /// may not put the run back. `POST /v1/orchestrator/schedules/:id/run` already answers exactly
+    /// this with exactly this code, and for the same reason: running once is the whole of what the
+    /// schedule promised. Making a new one is the honest way to ask for another run, and it leaves
+    /// one row per run instead of one row that has quietly run fourteen times.
+    ///
+    /// This is not the machine door's rule. A person retiming a spent one-shot by hand in Settings
+    /// would be asking for the same second run, and the file is still theirs to edit directly.
+    static func scheduleWhenSaveRefusal(existing: Schedule, made: Schedule,
+                                        movesWhen: Bool) -> Reply? {
+        guard made.when.runsOnce == existing.when.runsOnce else {
+            return .refused(400, "bad_request", existing.when.onDay.map {
+                "This schedule runs once, on \($0.text). A save may change when it runs, not "
+                    + "whether it repeats: send when.on, or remove it and make a new one."
+            } ?? "This schedule repeats. A save may change when it runs, not whether it repeats: "
+                + "send when.days, or remove it and make a new one.")
+        }
+        guard let fired = existing.firedAt, movesWhen else { return nil }
+        return .refused(409, "schedule_spent",
+                        "This schedule was made to run once and already ran at "
+                        + "\(Int(fired.timeIntervalSince1970)). A save may still change its title "
+                        + "or what its session is told to do; moving when it runs would be asking "
+                        + "a schedule that has run for a second run. Make a new one.")
+    }
+
+    /// Whether an occurrence the minute timer decided on is still the file's to run, asked again
+    /// at the moment the work reaches the terminal queue.
+    ///
+    /// The two gates in ``scheduleAction(now:fire:catchUpHours:lastRunCreated:lastRunTerminal:createdAt:whenChangedAt:firedAt:)``
+    /// that read the file rather than the clock are the two that can move while the work waits,
+    /// and it does wait: the timer decides, the terminal channel takes the work when it is free,
+    /// and a save can land in between. A one-shot due at 09:00 and retimed to tomorrow at 21:00
+    /// while its work sits in that queue would otherwise dispatch the nine o'clock it is no longer
+    /// scheduled for, and stamp `fired_at = 09:00 today` onto the retimed file — spending
+    /// tomorrow's run before it happens, and leaving a row saying it ran at a time it was not due.
+    static func scheduleFireIsStale(_ schedule: Schedule, fire: Date) -> Bool {
+        if schedule.firedAt != nil { return true }
+        if let changed = schedule.whenChangedAt, fire < changed { return true }
+        return false
     }
 }
