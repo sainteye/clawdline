@@ -51,7 +51,19 @@ const routes = new Set();
 for (const m of unreleased.matchAll(/`(?:(GET|POST|PATCH|DELETE|PUT) )?(\/v1\/[A-Za-z0-9/:._-]+)`/g)) {
   routes.add(m[2].replace(/\/$/, ""));
 }
-check(routes.size > 0, "the Unreleased block names at least one route (the pattern still matches)");
+// A zero here has two causes that look identical: nothing new names a route, or the pattern
+// stopped matching. Requiring Unreleased to be non-empty confuses them and forbids a legitimate
+// state — the minutes after a release, when the block has just been rolled into a version and
+// nothing has landed since. That is why 0.7.0 was cut without rolling at all, leaving two releases
+// stacked in one block. The control is the released sections below: frozen prose that does name
+// routes, so a pattern that finds none *there* is a pattern that broke.
+const releasedBelow = end < 0 ? "" : rest.slice(end);
+const controlRoutes = new Set();
+for (const m of releasedBelow.matchAll(/`(?:(GET|POST|PATCH|DELETE|PUT) )?(\/v1\/[A-Za-z0-9\/:._-]+)`/g)) {
+  controlRoutes.add(m[2]);
+}
+check(controlRoutes.size > 0,
+      "control: the route pattern still matches, measured on the released sections below");
 
 const server = read("Sources/RemoteServer.swift");
 

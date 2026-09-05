@@ -9,6 +9,8 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+## 0.8.0 — 2026-09-06
+
 ### Added: the sentence you type several times a day, one press away
 
 Two of them get typed into a phone all day, one thumb at a time: *commit（逐檔指名，不要 git
@@ -387,6 +389,8 @@ notes still told people to strip quarantine from a build that is notarized and d
 Nothing is withdrawn: the tap still exists and still serves what it has to anybody who already
 tapped it, and the uninstall instructions stay for exactly those people. What changed is that the
 README no longer sends somebody new down a path that was two and a half weeks behind.
+
+## 0.7.0 — 2026-09-04
 
 ### Changed: automatic names can use the assistant you choose
 

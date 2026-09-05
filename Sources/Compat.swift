@@ -308,6 +308,16 @@ enum Compat {
 
     /// Newest first.
     static let releases: [Release] = [
+        Release(clawdline: "0.8.0", claudeCode: "2.1.261", codex: "0.153.2",
+                notes: "Telling three tmux failures apart, which makes tmux's own "
+                     + "sentences load-bearing: `no server running`, `failed to connect "
+                     + "to server`, and the `error connecting to <path>` that carries an "
+                     + "errno are three typed answers now rather than one empty pane "
+                     + "list, so a rewording upstream turns a named cause back into an "
+                     + "unexplained absence. And a dispatch refuses on the quota it "
+                     + "reads out of each assistant's own local files: if either changes "
+                     + "where or how it records a usage window, this Mac stops being "
+                     + "able to say that a tab is opening to die."),
         Release(clawdline: "0.7.0", claudeCode: "2.1.260", codex: "0.151.0",
                 notes: "Picking a recorded conversation back up, which depends on `claude "
                      + "--resume` taking a session id and on the names Claude Code writes for "
