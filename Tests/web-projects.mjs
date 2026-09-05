@@ -129,12 +129,16 @@ const PLACES = {
 
 /* One worktree per rung, so no assertion below can pass by reading a neighbour: every count,
    every label and every date differs from every other one in this payload. */
-function worktree(id, outcome, runs, label) {
-    return {
+function worktree(id, outcome, runs, label, evidence) {
+    const row = {
         id, outcome, runs, tasks: [id], liveTasks: [], taskStates: [], landingStates: [],
         firstSeenAt: "2026-09-01T09:08:09Z", lastSeenAt: "2026-09-02T09:13:12Z",
         features: [{ id: `feature-${id.slice(0, 8)}`, label, outcome, runs }],
     };
+    // Left off entirely when the caller says nothing, because an older app is one of the two ways
+    // this field arrives missing and the page has to draw that as itself rather than as a blank.
+    if (evidence) row.landingEvidence = evidence;
+    return row;
 }
 
 function answer(overrides) {
@@ -143,16 +147,20 @@ function answer(overrides) {
             schemaVersion: 1,
             status: "available",
             policy: "one_unambiguous_accepted_head",
-            outcomeRule: "landed_then_delivered_then_live_then_abandoned",
+            outcomeRule: "landed_by_record_or_branch_then_delivered_then_live_then_abandoned",
             project: { id: "project-9c1f2e7a4b0d8e35", label: "clawdline" },
             read: { rows: 726, projectRows: 237, worktreeRows: 240, featureRows: 190,
                     truncated: false, maxScannedRows: 100000 },
             worktrees: [
-                worktree("b1103ab1-6f2c-41d8-9a70-3e5c17d0ba49", "delivered", 2, "Clawdfather"),
+                worktree("b1103ab1-6f2c-41d8-9a70-3e5c17d0ba49", "delivered", 2, "Clawdfather",
+                         "branch_unmerged"),
                 worktree("4d92c7e0-1b53-4a86-b2f1-7c08e5d41a63", "delivered", 5, "Schedules page"),
-                worktree("9c077b24-67a1-4a93-ac34-40fee4c97851", "landed", 4, "Sidebar and pages"),
-                worktree("3f9a21bc-88d0-4e57-9b12-6ca4de70f381", "active", 1, "Projects page"),
-                worktree("b57fc96f-4e10-42a3-95d8-0c1b7e6a2f84", "abandoned", 3, "Delivery logs"),
+                worktree("9c077b24-67a1-4a93-ac34-40fee4c97851", "landed", 4, "Sidebar and pages",
+                         "record"),
+                worktree("3f9a21bc-88d0-4e57-9b12-6ca4de70f381", "active", 1, "Projects page",
+                         "branch_unmerged"),
+                worktree("b57fc96f-4e10-42a3-95d8-0c1b7e6a2f84", "abandoned", 3, "Delivery logs",
+                         "branch_absent"),
                 worktree("e4402d71-5c88-4b06-a3e9-71fd0b62c95a", "unknown", 7, "README"),
             ],
             excluded: { worktreesWithoutFeature: 31, reason: "no_unambiguous_accepted_head" },
@@ -316,6 +324,27 @@ const ok = {
     match(first.textContent, new RegExp(T.webProjectBranch),
           "under a label saying that branch is a convention and not a stored field");
 
+    // **The screen has to say which of two different things believes this landed.** The rung this
+    // page is built around used to mean "nobody filled a column in", and on 2026-09-05 that read
+    // 53 of this repository's worktrees as unlanded while git said 26 of them were in the tree.
+    match(first.textContent, new RegExp(T.webProjectEvidence),
+          "and what the verdict beside it rests on");
+    match(first.textContent, new RegExp(T.webProjectEvidenceBranchUnmerged),
+          "which for a delivered worktree is git saying the branch is still sitting there");
+    // Read through a default rather than off the node: a mutation that deletes this row has to
+    // report six failures, not abort the file and take the rest of the suite with it.
+    const evidenceOf = (row) =>
+        (row.querySelectorAll(".project-fact-evidence")[0] || { dataset: {} }).dataset.evidence;
+    equal(evidenceOf(first), "branch_unmerged",
+          "carried on the row as the wire's own word, for anything reading the DOM");
+    const second = elements["project-delivered-list"].children[1];
+    match(second.textContent, new RegExp(T.webProjectEvidenceUnknown),
+          "a payload with no evidence field at all — an older app — says so rather than blanking");
+    equal(evidenceOf(second), "unknown",
+          "and unknown is a value here, never an absent attribute");
+    check(!new RegExp(T.webProjectEvidenceBranchUnmerged).test(second.textContent),
+          "an unknown is never drawn as one of the four answers this page can actually give");
+
     // The delivered worktrees are the block above; drawing them again below would double every
     // count on the page.
     const groups = elements["project-groups"].children;
@@ -332,6 +361,11 @@ const ok = {
           "the summary is the rung's name and how many are on it");
     match(groups[0].children[1].textContent, new RegExp(T.webProjectLandedSay),
           "and the stored fact that rung rests on, rather than a description of itself");
+    match(groups[0].children[2].textContent, new RegExp(T.webProjectEvidenceRecord),
+          "a landed worktree says a root's verified record put it there");
+    match(groups[2].children[2].textContent, new RegExp(T.webProjectEvidenceBranchAbsent),
+          "and a worktree whose branch git says is gone says that, still on the abandoned rung: a "
+          + "branch is deleted when it never carried a commit, which settles nothing on its own");
 
     match(elements["project-read"].textContent, /726/, "the receipt says how much was read");
     match(elements["project-read"].textContent, /237/, "how much of it was this Project's");
@@ -623,7 +657,9 @@ const readsInStatic = new Set([...staticSource.matchAll(/\bT\.(webProject[A-Za-z
     .map((m) => m[1]));
 check(readsHere.size >= 25, `view/projects.js draws its words from T: ${readsHere.size} of them`);
 const declared = Object.keys(T).filter((key) => key.startsWith("webProject"));
-equal(declared.length, 31, "this slice added thirty-one strings to the fallback table");
+equal(declared.length, 37,
+      "this slice added thirty-seven strings to the fallback table — thirty-one, and the six that "
+      + "name where a landing verdict came from");
 for (const key of declared) {
     check(readsHere.has(key) || readsInStatic.has(key),
           `T.${key} is read by the page it was added for — a string nothing draws is a string nobody translated for a reason`);

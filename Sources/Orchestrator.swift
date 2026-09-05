@@ -2917,6 +2917,25 @@ enum Orchestrator {
         return out
     }
 
+    /// **A landing reaches the ledger when it is written, not when the app is next launched.**
+    ///
+    /// The ledger had two writers: ``finalize(_:as:summary:)``, which runs when a task ends and
+    /// therefore always *before* anybody could have landed it, and the backfill in ``start()``.
+    /// So a landing recorded at 23:11 was invisible to every surface reading the ledger until the
+    /// next restart — measured on 2026-09-05, nine of them appeared together at 23:29 because the
+    /// app had just been rebuilt, and until then the Projects page called that work "delivered,
+    /// not landed" with the receipt already sitting in the registry.
+    ///
+    /// This is wiring rather than a mechanism: `updateLineage` writes
+    /// `landing_state = COALESCE(?, landing_state)` precisely so a landing may arrive after the
+    /// immutable usage is sealed, and the interval key is deterministic, so re-importing a record
+    /// the store already has changes nothing. All three landing states go over — `pending` and
+    /// `abandoned` are as much a fact about the delivery as `landed` is, and a surface that saw
+    /// only the last of the three would show an obligation that had been given up as an open one.
+    private static func recordLandingInLedger(_ task: Task) {
+        UsageLedger.shared.collect(taskRecord: ledgerRecord(of: task))
+    }
+
     /// Under the lock.
     private static func reindex() {
         OrchestratorRegistry.withTransactionOnHeldLock { registry in
@@ -5339,6 +5358,7 @@ enum Orchestrator {
                 "task": taskID, "ok": "1", "state": requestedState.rawValue,
                 "target": current.landing?.target ?? "",
             ])
+            recordLandingInLedger(current)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
 
@@ -5407,6 +5427,7 @@ enum Orchestrator {
             "verified_commit": verification.commit,
             "verified_target_commit": verification.targetCommit,
         ])
+        recordLandingInLedger(verifiedCurrent)
         return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
     }
 

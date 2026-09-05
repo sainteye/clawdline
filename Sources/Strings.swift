@@ -1503,6 +1503,18 @@ protocol Copy {
     /// swept, so a field present only for recent tasks would read as an old one's absence.
     /// `clawdline/task/<worktree id>` is the convention, and this label says so.
     var webProjectBranch: String { get }
+    /// **Which of two different things says this delivery reached the tree.** A verified record
+    /// a root wrote and a branch this side found merged are both good answers and are not the
+    /// same answer, and until 2026-09-05 this page could give neither: it asked whether anybody
+    /// had filled a column in, and called 53 worktrees unlanded while git said 26 of them were.
+    var webProjectEvidence: String { get }
+    var webProjectEvidenceRecord: String { get }
+    var webProjectEvidenceBranchMerged: String { get }
+    var webProjectEvidenceBranchAbsent: String { get }
+    var webProjectEvidenceBranchUnmerged: String { get }
+    /// git was not asked or could not answer. Everything on this screen then keeps the verdict it
+    /// had before git was a source, and this word is what says so rather than a silent blank.
+    var webProjectEvidenceUnknown: String { get }
     var webProjectRuns: String { get }
     var webProjectSeen: String { get }
     /// The query ran and matched nothing, which is not the same as a query that never

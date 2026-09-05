@@ -12,14 +12,26 @@ import { T, fill } from "../core/i18n.js";
    `git worktree list` is that this Mac carries 58 managed checkouts and the
    ledger remembers 150, most of which produced nothing anybody kept.
 
-   **The screen has one subject and it is `delivered`.** Thirty-eight of this
-   repository's seventy-nine Feature-carrying worktrees finished their work and
-   have no landing record — measured on 2026-09-04 over a copy of the
-   production ledger, and the first number anybody has had for "it gets done and
-   nobody merges it". So that outcome is not one of five equal rows in a
-   table: it is the block at the top, open, with its worktrees listed and the
-   branch each one is on. The other four rungs are `<details>` underneath,
-   closed, because they are the answer to "and the rest?".
+   **The screen has one subject and it is `delivered`.** Sixteen of this
+   repository's hundred and eighteen Feature-carrying worktrees finished their
+   work and are still sitting on a branch git says nothing has merged —
+   measured on 2026-09-05, against the production ledger and the repository
+   together. So that outcome is not one of five equal rows in a table: it is
+   the block at the top, open, with its worktrees listed and the branch each
+   one is on. The other four rungs are `<details>` underneath, closed, because
+   they are the answer to "and the rest?".
+
+   **That number replaced a much bigger one, and the difference is the point.**
+   The same payload read the old way said fifty-three, because the rung asked
+   whether anybody had filled `landing_state` in rather than whether the work
+   was in the tree: of those fifty-three, twenty-four were on branches already
+   contained by the checkout's HEAD and thirteen were on branches that no
+   longer exist. So a worktree now carries `landingEvidence` beside its
+   outcome and this page draws it — a verified record a root wrote and a
+   branch this side merely found merged are both good answers to "did it
+   land", and they are not the same answer. `git could not be asked` is a
+   third answer and is drawn as itself, because a screen that cannot ask
+   looks exactly like the screen this change was made to stop.
 
    **An empty answer and an answer that never arrived are drawn differently.**
    The route already refuses rather than returning a blank 200 — `404
@@ -114,6 +126,27 @@ function branchOf(worktree) {
     return "clawdline/task/" + worktree.id;
 }
 
+/**
+ * What the outcome beside it rests on, in words rather than in the wire's spelling.
+ *
+ * **The two that mean "landed" are deliberately not one word.** `record` is a root's landing
+ * receipt, written by the broker only after it verified with a machine credential that the commit
+ * is contained by the named target branch; `branch_merged` is this Mac reading `for-each-ref
+ * --merged HEAD` and recognising a landing nobody wrote down. A reader deciding whether to go and
+ * merge something needs to know which of the two they are looking at.
+ *
+ * An unrecognised value falls through to `unknown` rather than being printed raw: a payload from
+ * a newer app must not put a wire token on screen as if it were a sentence.
+ */
+function evidenceText(worktree) {
+    var evidence = worktree.landingEvidence;
+    if (evidence === "record") return T.webProjectEvidenceRecord;
+    if (evidence === "branch_merged") return T.webProjectEvidenceBranchMerged;
+    if (evidence === "branch_absent") return T.webProjectEvidenceBranchAbsent;
+    if (evidence === "branch_unmerged") return T.webProjectEvidenceBranchUnmerged;
+    return T.webProjectEvidenceUnknown;
+}
+
 /** Every Feature this worktree finished, as one line. Ids are the fallback for a missing label. */
 function featureText(worktree) {
     var features = worktree.features || [];
@@ -143,6 +176,9 @@ function worktreeItem(context, worktree) {
     var facts = doc.createElement("div");
     facts.className = "project-facts";
     fact(doc, facts, T.webProjectBranch, branchOf(worktree), "project-fact-branch");
+    var evidence = fact(doc, facts, T.webProjectEvidence, evidenceText(worktree),
+                        "project-fact-evidence");
+    evidence.dataset.evidence = worktree.landingEvidence || "unknown";
     fact(doc, facts, T.webProjectRuns, number(worktree.runs));
     fact(doc, facts, T.webProjectSeen, seenText(worktree));
     item.appendChild(facts);

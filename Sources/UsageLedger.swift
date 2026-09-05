@@ -4240,6 +4240,13 @@ final class UsageQueryService {
 /// * `usage_attribution_events` carries the accepted Feature head for that interval;
 /// * `task_state` and `landing_state` say how each of those tasks ended.
 ///
+/// **The last of those is not the only source, because it is not the only fact.** `landing_state`
+/// says whether anybody recorded a landing; git says whether the delivery is in the tree, and the
+/// two disagreed about 26 of one repository's 53 "delivered" worktrees on 2026-09-05. So this
+/// read also asks the repository what it knows about its own `clawdline/task/…` branches, through
+/// the same two `for-each-ref` calls the in-flight list uses, and says in ``LandingEvidence``
+/// which of the two each verdict came from.
+///
 /// The worktree's identity is consumed and discarded when a row's Project is resolved — a managed
 /// worktree path resolves to *no* Project rather than to one of its own — so nothing is filed
 /// under a worktree anywhere in the store. The column it was read from is still there, which is
@@ -4259,30 +4266,74 @@ final class UsageProjectWorktreeService {
     /// work that is running right now into "abandoned" would be a lie, and `unknown` exists
     /// because a verdict with no evidence behind it must not wear one of the other four's names.
     ///
-    /// The ladder is evaluated in this order, and each rung is a stored fact rather than an
-    /// inference:
+    /// The ladder is evaluated in this order, and each rung is a stored fact or a git fact rather
+    /// than an inference:
     ///
     /// 1. `landed` — some row carries `landing_state = landed`: a root recorded that this
     ///    delivery reached its target branch. It outranks everything, including a task that
     ///    reported failure, because the branch is in the tree whatever the child said.
-    /// 2. `delivered` — some row's task reached `success`, and no landing says it landed. This is
-    ///    "done, not landed", which includes an open landing obligation (`pending`) and one that
-    ///    was given up (`abandoned`); both spellings travel in `landingStates` beside the word.
-    /// 3. `active` — neither of the above, and one of these tasks is still live in the registry
+    /// 2. `landed` — git says the delivery branch is already contained by the repository's HEAD.
+    ///    The same reasoning as the rung above, one step weaker in provenance and no weaker in
+    ///    fact: the commits are in the tree whether or not anybody wrote it down.
+    /// 3. `delivered` — some row's task reached `success`, nothing above said it landed, and the
+    ///    branch is still there unmerged (or git could not be asked). This is "done, not landed",
+    ///    which includes an open landing obligation (`pending`) and one that was given up
+    ///    (`abandoned`); both spellings travel in `landingStates` beside the word. A branch git
+    ///    says is *gone* settles here instead — a delivery leaves the list when its branch is
+    ///    merged or deleted, which is what ``Orchestrator/workVisibility(state:landing:isolated:branchExists:branchMerged:)``
+    ///    has always done for the in-flight list.
+    /// 4. `active` — neither of the above, and one of these tasks is still live in the registry
     ///    now. Liveness is asked of the registry rather than measured as an age: a task the
     ///    registry does not hold is certainly not running, which is the direction that is safe to
     ///    conclude from an absence.
-    /// 4. `abandoned` — neither landed nor successful, and nothing left running: every task
+    /// 5. `abandoned` — neither landed nor successful, and nothing left running: every task
     ///    either ended without success, or stopped being observed and was never finalized. That
     ///    second shape is what debris looks like in this store — `b57fc96f` sat at `briefed` for
     ///    41 hours because the session died before anything wrote a terminal state.
-    /// 5. `unknown` — no row carried any task state at all.
+    /// 6. `unknown` — no row carried any task state at all.
+    ///
+    /// **A branch that is gone only settles work that succeeded**, which is why rung 3 owns that
+    /// case rather than the top of the ladder. `OrchestratorDraft.disposeWorktree` deletes a
+    /// delivery branch exactly when it has no commits on it, so absence is evidence of *nothing
+    /// outstanding* and never of *something landed*: on a task that failed it means the checkout
+    /// was thrown away empty, and that worktree stays `abandoned`.
     enum Outcome: String, CaseIterable {
         case landed, delivered, active, abandoned, unknown
 
         /// Strongest first. A worktree's own outcome is this ladder applied to every row of every
         /// Feature it carries, which is the same answer as the strongest of its Features'.
         var rank: Int { Outcome.allCases.firstIndex(of: self) ?? Outcome.allCases.count }
+    }
+
+    /// **Where the belief that this delivery reached the tree comes from**, published beside the
+    /// verdict so that a reader can tell a receipt from a resemblance.
+    ///
+    /// Measured on 2026-09-05, this route called 53 of one repository's worktrees "delivered, not
+    /// landed" while git said 24 of their branches were already ancestors of the checkout's HEAD
+    /// and 13 no longer existed. The ladder had asked whether anybody had filled a column in,
+    /// which is a question about the registry rather than about the tree — and the same night the
+    /// landing queue, which does ask git, said 17. Three screens, three answers.
+    ///
+    /// `record` and `branch_merged` are not the same claim and are deliberately not spelled the
+    /// same way. A record was written by the broker only after it verified with a machine
+    /// credential that the commit resolves in the task's repository and is contained by the named
+    /// target branch; `branch_merged` is this side reading `for-each-ref --merged HEAD` and
+    /// recognising the shape of a landing nobody recorded.
+    enum LandingEvidence: String {
+        /// A root recorded a verified landing: `landing_state = landed`.
+        case record
+        /// git says the delivery branch is contained by the repository's current HEAD.
+        case branchMerged = "branch_merged"
+        /// git answered and the branch is not in the repository at all.
+        case branchAbsent = "branch_absent"
+        /// git answered, the branch is there, and HEAD does not contain it. **This is the one
+        /// `delivered` with a fact behind it**, and the reason it is not spelled `unknown`.
+        case branchUnmerged = "branch_unmerged"
+        /// **Nobody could say.** git was not asked, could not answer, or the worktree id is not
+        /// one a branch name can be built from. Everything else on this screen keeps the answer
+        /// it had before git existed as a source, because the costs are not symmetric: showing a
+        /// merged delivery costs a glance and hiding an unmerged one costs somebody a day.
+        case unknown
     }
 
     struct Query: Equatable {
@@ -4336,18 +4387,34 @@ final class UsageProjectWorktreeService {
     /// The ids of tasks this Mac still has running. Injected the way `UsageQueryService` injects
     /// its schedule labels: a test says which tasks are live without a registry existing.
     private let readLiveTaskIDs: () -> Set<String>
+    /// What git says about this repository's delivery branches. Injected the same way liveness
+    /// is, and for the same reason: a test says what the branches are without a repository
+    /// existing.
+    ///
+    /// It is ``Orchestrator/repositoryBranches(in:)`` in production — **two** `for-each-ref`
+    /// calls for the whole repository rather than one subprocess per worktree, which is what
+    /// makes asking git affordable on a read that already joins a hundred thousand rows.
+    private let readBranches: (String) -> Orchestrator.RepositoryBranches
 
     init() {
         readRows = { UsageLedger.shared.analyticsRead($0) }
         readLiveTaskIDs = { Orchestrator.usageLiveTaskIDs() }
+        readBranches = { Orchestrator.repositoryBranches(in: $0) }
     }
 
     /// Test seam. Production never enters here: the bounded predicate lives in
     /// `UsageLedger.analyticsRead`, and this initializer's rows arrive already in memory.
+    ///
+    /// `branches` defaults to a repository git never answered for, which is exactly the state
+    /// this service was in before it asked: every verdict below then comes out of the stored
+    /// columns alone, so a test that says nothing about branches is asserting the old ladder.
     init(rows: @escaping () -> [UsageLedger.Row],
          acceptedFeatures: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          acceptedProjects: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
-         liveTaskIDs: @escaping () -> Set<String> = { [] }) {
+         liveTaskIDs: @escaping () -> Set<String> = { [] },
+         branches: @escaping (String) -> Orchestrator.RepositoryBranches
+             = { _ in Orchestrator.RepositoryBranches() }) {
+        readBranches = branches
         readRows = { _ in
             let rows = rows()
             return UsageLedger.AnalyticsRead(
@@ -4481,17 +4548,26 @@ final class UsageProjectWorktreeService {
         }
 
         let live = readLiveTaskIDs()
+        // Asked once for the whole repository, and only when there is something to ask about: two
+        // `for-each-ref` calls answer for every worktree below, and a Project whose work never
+        // left the shared checkout costs no subprocess at all. `matched.key` is the canonical
+        // repository path the Portfolio resolved, which is the directory these branches live in.
+        let branches = worktrees.isEmpty
+            ? Orchestrator.RepositoryBranches() : readBranches(matched.key)
         var payloads: [[String: Any]] = []
         var withoutFeature = 0
         for (id, rows) in worktrees {
-            let features = Self.features(rows, accepted: reading.acceptedFeatures, live: live)
+            let branch = Self.branchEvidence(worktree: id, branches: branches)
+            let features = Self.features(rows, accepted: reading.acceptedFeatures, live: live,
+                                         branch: branch)
             guard !features.isEmpty else {
                 // The 58-checkout answer the person did not ask for. Counted, never listed.
                 withoutFeature += 1
                 continue
             }
             let carried = rows.filter { reading.acceptedFeatures[$0.intervalKey] != nil }
-            payloads.append(Self.worktree(id: id, rows: carried, features: features, live: live))
+            payloads.append(Self.worktree(id: id, rows: carried, features: features, live: live,
+                                          branch: branch))
         }
         payloads.sort {
             let left = $0["lastSeenAt"] as? String ?? "", right = $1["lastSeenAt"] as? String ?? ""
@@ -4510,7 +4586,7 @@ final class UsageProjectWorktreeService {
             // without the store being short. It is never the word for an empty answer.
             "status": truncated ? "partial" : "available",
             "policy": "one_unambiguous_accepted_head",
-            "outcomeRule": "landed_then_delivered_then_live_then_abandoned",
+            "outcomeRule": "landed_by_record_or_branch_then_delivered_then_live_then_abandoned",
             "generatedAt": formatter.string(from: now),
             "range": range,
             "project": ["id": UsageQueryService.projectID(matched.key),
@@ -4533,9 +4609,14 @@ final class UsageProjectWorktreeService {
     }
 
     /// The Features one worktree carries, each with the outcome of its own rows.
+    ///
+    /// The branch fact is the worktree's, and every Feature inside it was delivered on that one
+    /// branch — so it is handed down rather than looked up again. A Feature's own rows may still
+    /// carry a landing record of their own, which is stronger and is read per Feature.
     private static func features(_ rows: [UsageLedger.Row],
                                  accepted: [String: UsageLedger.AcceptedAttribution],
-                                 live: Set<String>) -> [[String: Any]] {
+                                 live: Set<String>,
+                                 branch: LandingEvidence) -> [[String: Any]] {
         var grouped: [String: (label: String, rows: [UsageLedger.Row])] = [:]
         for row in rows {
             guard let head = accepted[row.intervalKey] else { continue }
@@ -4543,7 +4624,7 @@ final class UsageProjectWorktreeService {
             grouped[head.id]?.rows.append(row)
         }
         return grouped.map { id, group in
-            var payload = summary(group.rows, live: live)
+            var payload = summary(group.rows, live: live, branch: branch)
             payload["id"] = id
             payload["label"] = group.label
             return payload
@@ -4555,23 +4636,26 @@ final class UsageProjectWorktreeService {
     }
 
     private static func worktree(id: String, rows: [UsageLedger.Row],
-                                 features: [[String: Any]], live: Set<String>) -> [String: Any] {
-        var payload = summary(rows, live: live)
+                                 features: [[String: Any]], live: Set<String>,
+                                 branch: LandingEvidence) -> [String: Any] {
+        var payload = summary(rows, live: live, branch: branch)
         payload["id"] = id
         payload["features"] = features
         return payload
     }
 
-    /// The shape both a worktree and one of its Features report: the verdict, the stored words it
-    /// was read from, and the tasks and instants behind it.
-    private static func summary(_ rows: [UsageLedger.Row], live: Set<String>) -> [String: Any] {
+    /// The shape both a worktree and one of its Features report: the verdict, what that verdict
+    /// rests on, the stored words it was read from, and the tasks and instants behind it.
+    private static func summary(_ rows: [UsageLedger.Row], live: Set<String>,
+                                branch: LandingEvidence) -> [String: Any] {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         let tasks = Set(rows.compactMap { $0.taskID?.nonEmpty }).sorted()
         let landingStates = Set(rows.compactMap { $0.landingState?.nonEmpty }).sorted()
         let taskStates = Set(rows.compactMap { $0.taskState?.nonEmpty }).sorted()
         return [
-            "outcome": outcome(rows, live: live).rawValue,
+            "outcome": outcome(rows, live: live, branch: branch).rawValue,
+            "landingEvidence": evidence(rows, branch: branch).rawValue,
             "runs": tasks.isEmpty ? rows.count : tasks.count,
             "tasks": tasks,
             "liveTasks": tasks.filter(live.contains),
@@ -4585,16 +4669,57 @@ final class UsageProjectWorktreeService {
     }
 
     /// The ladder in ``Outcome``, and the only place it is written down.
-    static func outcome(_ rows: [UsageLedger.Row], live: Set<String>) -> Outcome {
+    ///
+    /// `branch` defaults to ``LandingEvidence/unknown``, which is not a convenience: it is the
+    /// answer this function gave before it had a second source, so every caller that cannot say
+    /// what git thinks gets exactly the old ladder rather than a guess in either direction.
+    static func outcome(_ rows: [UsageLedger.Row], live: Set<String>,
+                        branch: LandingEvidence = .unknown) -> Outcome {
         if rows.contains(where: { $0.landingState == Orchestrator.LandingState.landed.rawValue }) {
             return .landed
         }
+        if branch == .branchMerged { return .landed }
         if rows.contains(where: { $0.taskState == Orchestrator.State.success.rawValue }) {
-            return .delivered
+            // A delivery whose branch git says is gone has nothing outstanding on it. On work
+            // that did *not* succeed this rung is never reached, because a disposed empty
+            // checkout is debris and not a landing.
+            return branch == .branchAbsent ? .landed : .delivered
         }
         if rows.contains(where: { $0.taskID.map(live.contains) == true }) { return .active }
         if rows.contains(where: { $0.taskState?.nonEmpty != nil }) { return .abandoned }
         return .unknown
+    }
+
+    /// What the verdict above rests on, for these rows and this branch fact. A stored record is
+    /// the stronger of the two and is read per row set, so a Feature carrying its own landing
+    /// says `record` even inside a worktree whose branch nobody merged.
+    static func evidence(_ rows: [UsageLedger.Row], branch: LandingEvidence) -> LandingEvidence {
+        rows.contains { $0.landingState == Orchestrator.LandingState.landed.rawValue }
+            ? .record : branch
+    }
+
+    /// The branch fact for one worktree, out of the two `for-each-ref` readings taken for the
+    /// whole repository.
+    ///
+    /// **The branch name is a convention and is spelled in exactly one place**, which is the
+    /// place the worktree was created from: `OrchestratorDraft.worktreeBranch(for:)`. A worktree
+    /// id that is not a task id builds no branch name and is therefore `unknown` rather than
+    /// `branch_absent` — the difference between *git has no such branch* and *this side never
+    /// asked about one*.
+    ///
+    /// **Two things this cannot see, deliberately.** `--merged HEAD` is ancestry, so a delivery
+    /// that was squashed or cherry-picked into the target still reads as unmerged; running
+    /// `git cherry` per branch would be one subprocess per worktree on a read that already costs
+    /// two. And that `HEAD` is the main checkout's current HEAD, which is not literally `main` —
+    /// on a repository parked on another branch, "merged" means "contained by whatever is checked
+    /// out there".
+    static func branchEvidence(worktree id: String,
+                               branches: Orchestrator.RepositoryBranches) -> LandingEvidence {
+        guard branches.known, let branch = OrchestratorDraft.worktreeBranch(for: id) else {
+            return .unknown
+        }
+        if branches.merged.contains(branch) { return .branchMerged }
+        return branches.heads[branch] == nil ? .branchAbsent : .branchUnmerged
     }
 }
 

@@ -4288,19 +4288,20 @@ analytics query: a misspelled filter must not quietly widen an accounting read.
 ```json
 {"projectWorktrees":{
   "schemaVersion":1,"status":"available","policy":"one_unambiguous_accepted_head",
-  "outcomeRule":"landed_then_delivered_then_live_then_abandoned",
+  "outcomeRule":"landed_by_record_or_branch_then_delivered_then_live_then_abandoned",
   "generatedAt":"2026-09-04T11:40:00Z",
   "range":{"from":null,"to":null,"timezone":"Asia/Taipei"},
   "project":{"id":"project-9c1f2e7a4b0d8e35","label":"clawdline"},
   "read":{"rows":726,"projectRows":237,"worktreeRows":240,"featureRows":190,
           "truncated":false,"maxScannedRows":100000},
   "worktrees":[
-    {"id":"b1103ab1-…","outcome":"delivered","runs":2,
+    {"id":"b1103ab1-…","outcome":"delivered","landingEvidence":"branch_unmerged","runs":2,
      "tasks":["b1103ab1-…","6f2c…"],"liveTasks":[],
      "taskStates":["spawning","success"],"landingStates":[],
      "firstSeenAt":"2026-09-03T09:08:09Z","lastSeenAt":"2026-09-03T09:13:12Z",
      "features":[{"id":"feature-34ccefd0…","label":"Clawdfather: machine coordinator",
-                  "outcome":"delivered","runs":2,"tasks":["b1103ab1-…"],"liveTasks":[],
+                  "outcome":"delivered","landingEvidence":"branch_unmerged","runs":2,
+                  "tasks":["b1103ab1-…"],"liveTasks":[],
                   "taskStates":["spawning","success"],"landingStates":[],
                   "firstSeenAt":"…","lastSeenAt":"…"}]}],
   "excluded":{"worktreesWithoutFeature":31,"reason":"no_unambiguous_accepted_head"},
@@ -4308,17 +4309,50 @@ analytics query: a misspelled filter must not quietly widen an accounting read.
                   "reasons":{"legacy_managed_worktree_project_key":13}}}}
 ```
 
-**`outcome` is the whole point, and every rung of it is a stored fact rather than an inference.**
-It is evaluated in this order, over all of a worktree's Feature-carrying rows — which is the same
-answer as the strongest of its Features':
+**`outcome` is the whole point, and every rung of it is a stored fact or a git fact rather than an
+inference.** It is evaluated in this order, over all of a worktree's Feature-carrying rows — which
+is the same answer as the strongest of its Features':
 
 | value | what it rests on |
 |---|---|
 | `landed` | some row carries `landing_state = landed`: a root recorded that this delivery reached its target branch. It outranks the child's own word, including `failure` — two rows on this Mac say exactly that, and what is being asked about is the branch |
-| `delivered` | some row's task reached `success` and no landing says it landed. Done, not landed. An open landing obligation (`pending`) and one that was given up (`abandoned`) both live here, and both spellings travel in `landingStates` beside the word |
+| `landed` | or git says the delivery branch is already contained by the repository's HEAD. The same reasoning one step weaker in provenance and no weaker in fact: the commits are in the tree whether or not anybody wrote it down |
+| `delivered` | some row's task reached `success`, nothing above landed it, and the branch is still there unmerged — or git could not be asked. Done, not landed. An open landing obligation (`pending`) and one that was given up (`abandoned`) both live here, and both spellings travel in `landingStates` beside the word. A branch git says is *gone* settles as `landed` instead, because a delivery leaves the outstanding list when its branch is merged **or deleted** — the same rule [`GET /v1/orchestrator/inflight`](#get-v1orchestratorinflightprojectdir-get-v1orchestratortasksidinflight) has always used |
 | `active` | neither of the above, and one of these tasks is still live in the registry now |
 | `abandoned` | neither landed nor successful, and nothing left running: every task either ended without success, or stopped being observed and was never finalized. That second shape is what debris looks like in this store — a task sitting at `briefed` for 41 hours because the session died before anything wrote a terminal state |
 | `unknown` | no row carried any task state at all |
+
+**A branch that is gone only settles work that succeeded**, which is why it lives on the
+`delivered` rung and not at the top of the ladder. A worktree's branch is deleted exactly when it
+carries no commits, so absence is evidence of *nothing outstanding* and never of *something
+landed*: on a task that failed it means the checkout was thrown away empty, and that worktree stays
+`abandoned`.
+
+**`landingEvidence` says which of those sources answered**, per worktree and per Feature, because
+"a root verified and recorded it" and "this side found the branch merged" are both good answers to
+*did it land* and are not the same answer:
+
+| value | what it means |
+|---|---|
+| `record` | a root's landing record. The broker writes one only after verifying with a machine credential that the commit resolves in the task's repository and is contained by the named target branch |
+| `branch_merged` | `git for-each-ref --merged HEAD` contains `clawdline/task/<worktree id>` |
+| `branch_absent` | git answered and that branch is not in the repository |
+| `branch_unmerged` | git answered, the branch is there, and HEAD does not contain it. **This is the one `delivered` with a fact behind it** |
+| `unknown` | git was not asked or could not answer. Every verdict then falls back to the stored columns alone, which is the answer this route gave before it asked git at all — the costs are not symmetric, and showing a merged delivery costs a glance while hiding an unmerged one costs somebody a day |
+
+**Two things the branch half deliberately cannot see.** `--merged` is ancestry, so a delivery that
+was squashed or cherry-picked into the target still reads as `branch_unmerged`; catching those
+would cost one `git cherry` subprocess per worktree on a read that today costs two `for-each-ref`
+calls for the whole repository. And that `HEAD` is the main checkout's current HEAD rather than
+literally `main`, so on a repository parked on another branch "merged" means "contained by whatever
+is checked out there".
+
+**Why this is not the older, cheaper question.** Until 2026-09-05 the rung asked only whether
+anybody had filled `landing_state` in. On this Mac that read 53 of one repository's 118
+Feature-carrying worktrees as *delivered, not landed*, while git said 24 of those branches were
+already ancestors of HEAD and 13 no longer existed — and the landing queue, which does ask git,
+said 17 unmerged the same night. Three surfaces, three answers, one of them about the registry
+rather than about the tree.
 
 Liveness is asked of the live registry rather than measured as an age. The half of that answer
 worth trusting is the absence: the registry holds every live task, so a task it does not hold is
@@ -4351,7 +4385,8 @@ filesystem path** — a worktree is published as the task UUID that names its ch
 directory — which is the same privacy contract the analytics projection carries. There is no
 `branch` field: the ledger stores none, and the registry that does is swept, so a field that
 existed only for recent tasks would be read as evidence of an old one's absence. By convention
-that branch is `clawdline/task/<worktree id>`, and
+that branch is `clawdline/task/<worktree id>` — which is the name `landingEvidence` above asks git
+about, spelled in one place for both — and
 [`GET /v1/orchestrator/inflight`](#get-v1orchestratorinflightprojectdir-get-v1orchestratortasksidinflight)
 answers with the real one while the task record survives.
 
