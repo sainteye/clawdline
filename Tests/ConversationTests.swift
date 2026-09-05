@@ -410,6 +410,33 @@ group("the first turn is found however far in it sits") {
     expect("and a conversation nobody has answered yet has none",
            Transcript.firstAssistantMessage(in: #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#),
            nil)
+
+    // The readers above stop where the answer is. That is a cost rather than a result, so it is
+    // invisible to every check beside it — both a walking and a splitting implementation return
+    // the same text — and the only thing that can tell them apart is how much had to be decoded
+    // to get there. Hence `examined`, and hence a check that asserts on it: `split` on a
+    // two-megabyte head materialises every line to read what lives on the first two, which
+    // measured 24.54 ms against 0.17 ms on this Mac's largest transcript.
+    let opening = #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"開場"}]}}"#
+    let filler = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"..."}]}}"#
+    let head = ([opening] + Array(repeating: filler, count: 4000)).joined(separator: "\n")
+    let walked = Transcript.firstEntryText(in: Data(head.utf8)) { entries in
+        entries.first(where: { $0.kind == .user }).map(\.text)
+    }
+    expect("the opening answers from the first line", walked.text, "開場")
+    // The bound is the first line's own length, not a fraction of the buffer: a fraction would
+    // still pass against an implementation that decoded four thousand lines and one that decoded
+    // ten, and it is exactly those two that have to be told apart.
+    expect("and nothing past it was decoded to find it",
+           walked.examined == opening.utf8.count, true)
+    expect("the buffer it did not read is very much larger",
+           head.utf8.count > opening.utf8.count * 100, true)
+    // A question with no answer in the head has to reach the end, or "stopped early" would be
+    // indistinguishable from "gave up early" — the failure this check exists to keep out.
+    let missing = Transcript.firstEntryText(in: Data(head.utf8)) { _ in nil }
+    expect("a question nothing answers still examines the whole head",
+           missing.examined == head.utf8.count, true)
+    expect("and answers nothing", missing.text, nil)
     let onDisk = root.appendingPathComponent("answered.jsonl")
     try? answered.write(to: onDisk, atomically: true, encoding: .utf8)
     expect("the bounded file reader agrees with the parser above",
