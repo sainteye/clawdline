@@ -50,88 +50,36 @@ import { SessionActions } from "./detail-actions.js";
    which is the same sentence as: nothing in this file sends.
    ========================================================================== */
 
-var style = document.createElement("link");
-style.rel = "stylesheet";
-style.href = new URL("../../css/snippets.css", import.meta.url).href;
-document.head.appendChild(style);
-
-var menu = document.getElementById("session-actions-main");
-var before = document.getElementById("session-git-more");
-var button = document.createElement("button");
-button.id = "session-snippets";
-button.type = "button";
-button.setAttribute("role", "menuitem");
-menu.insertBefore(button, before);
-
-var overlay = document.createElement("div");
-overlay.className = "overlay";
-overlay.id = "snippets";
-overlay.hidden = true;
-overlay.innerHTML =
-    '<div class="sheet snippets-sheet" id="snippets-sheet" role="dialog" aria-modal="true" ' +
-    'aria-labelledby="snippets-title">' +
-    '<div class="snippets-head">' +
-    '<div class="snippets-heading"><h2 id="snippets-title"></h2>' +
-    '<span class="snippets-where" id="snippets-where"></span></div>' +
-    '<button class="snippets-new" id="snippets-new" type="button" hidden>＋</button>' +
-    "</div>" +
-    '<div class="snippet-list" id="snippet-list"></div>' +
-    '<p class="said" id="snippets-said" role="status" aria-live="polite"></p>' +
-    '<div class="buttons"><button class="chip" id="snippets-close" type="button"></button></div>' +
-    "</div>";
-document.body.appendChild(overlay);
-
-/* The editor, its own overlay over the list's. Same furniture as `#schedule-form`: labelled
-   blocks, a chip row for the one choice it offers, what just happened said where it happened,
-   and Delete pushed to the far side of Cancel and Save. */
-var editorOverlay = document.createElement("div");
-editorOverlay.className = "overlay";
-editorOverlay.id = "snippet-editor";
-editorOverlay.hidden = true;
-editorOverlay.innerHTML =
-    '<div class="sheet snippet-editor-sheet" id="snippet-editor-sheet" role="dialog" ' +
-    'aria-modal="true" aria-labelledby="snippet-editor-title">' +
-    '<h2 id="snippet-editor-title"></h2>' +
-    '<div class="block"><span class="field-label" id="snippet-title-label"></span>' +
-    '<input class="find" id="snippet-title" type="text" maxlength="200" autocomplete="off" ' +
-    'autocapitalize="sentences" spellcheck="false" data-1p-ignore data-lpignore="true" ' +
-    "data-bwignore></div>" +
-    '<div class="block"><span class="field-label" id="snippet-body-label"></span>' +
-    '<textarea class="find" id="snippet-body" rows="6" maxlength="4000" spellcheck="false" ' +
-    "data-1p-ignore data-lpignore=\"true\" data-bwignore></textarea>" +
-    '<button class="chip snippet-from-last" id="snippet-from-last" type="button" hidden>' +
-    "</button></div>" +
-    '<div class="block"><span class="field-label" id="snippet-scope-label"></span>' +
-    '<div class="row" id="snippet-scope"></div></div>' +
-    '<p class="said" id="snippet-said" role="status" aria-live="polite"></p>' +
-    '<div class="buttons">' +
-    '<button class="chip danger" id="snippet-editor-delete" type="button" hidden></button>' +
-    '<button class="chip" id="snippet-editor-cancel" type="button"></button>' +
-    '<button class="chip confirm-go" id="snippet-editor-save" type="button"></button>' +
-    "</div></div>";
-document.body.appendChild(editorOverlay);
-
-var sheet = document.getElementById("snippets-sheet");
-var title = document.getElementById("snippets-title");
-var where = document.getElementById("snippets-where");
-var list = document.getElementById("snippet-list");
-var newButton = document.getElementById("snippets-new");
-var said = document.getElementById("snippets-said");
-var closeButton = document.getElementById("snippets-close");
-
-var editorSheet = document.getElementById("snippet-editor-sheet");
-var editorTitle = document.getElementById("snippet-editor-title");
-var titleLabel = document.getElementById("snippet-title-label");
-var titleField = document.getElementById("snippet-title");
-var bodyLabel = document.getElementById("snippet-body-label");
-var bodyField = document.getElementById("snippet-body");
-var fromLast = document.getElementById("snippet-from-last");
-var scopeLabel = document.getElementById("snippet-scope-label");
-var scopeRow = document.getElementById("snippet-scope");
-var editorSaid = document.getElementById("snippet-said");
-var editorDelete = document.getElementById("snippet-editor-delete");
-var editorCancel = document.getElementById("snippet-editor-cancel");
-var editorSave = document.getElementById("snippet-editor-save");
+/* The island's own elements. Declared here and built in `install`, because a module
+   `session/open.js` imports may not touch the document while it is being evaluated —
+   see the note on `install` below. */
+var style;
+var menu;
+var before;
+var button;
+var overlay;
+var editorOverlay;
+var sheet;
+var title;
+var where;
+var list;
+var newButton;
+var said;
+var closeButton;
+var editorSheet;
+var editorTitle;
+var titleLabel;
+var titleField;
+var bodyLabel;
+var bodyField;
+var fromLast;
+var scopeLabel;
+var scopeRow;
+var editorSaid;
+var editorDelete;
+var editorCancel;
+var editorSave;
+var installed = false;
 
 var sessionID = null;
 var shown = [];
@@ -179,11 +127,6 @@ function syncCopy() {
 // The language arrives after the modules evaluate, exactly as it does for the sheet next door:
 // watching the document's language keeps the menu row from showing the English fallback on a
 // page that is about to be Chinese.
-new MutationObserver(syncCopy).observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["lang"]
-});
-syncCopy();
 
 /**
  * The row in the `⋯` menu, present only when this transport can read the list.
@@ -202,10 +145,6 @@ function syncRow() {
     button.hidden = !ok;
     button.disabled = !ok;
 }
-syncRow();
-// Registered after `input/detail-actions.js` has bound its own handler to the same button, so
-// the menu is already open by the time this runs — the same tick, so nothing is painted between.
-document.getElementById("detail-actions-trigger").addEventListener("click", syncRow);
 
 function projectKey() {
     return model && model.project ? model.project.key : "";
@@ -299,6 +238,7 @@ function say(message) {
  * fills is one.
  */
 export function openSnippets() {
+    if (!install()) return;
     if (!S.openId || !readable()) return;
     sessionID = S.openId;
     menuFor = -1;
@@ -349,6 +289,7 @@ function drawAnswer(answer, options) {
  */
 export var Snippets = {
     follow: function () {
+        if (!install()) return;
         closeSnippets();
         var id = S.openId;
         if (!id || !readable() || answered[id] || warming[id]) return;
@@ -615,125 +556,245 @@ function rowAt(target, attribute) {
     return shown[at];
 }
 
-list.addEventListener("click", function (event) {
-    var target = event.target.closest ? event.target.closest("button") : null;
-    if (!target || !list.contains(target)) return;
-
-    if (target.hasAttribute("data-snippet-starter")) {
-        useStarter(snippetStarters()[Number(target.getAttribute("data-snippet-starter"))]);
-        return;
-    }
-    if (target.hasAttribute("data-snippet-more")) {
-        var at = Number(target.getAttribute("data-snippet-more"));
-        menuFor = menuFor === at ? -1 : at;
-        wantFocus("data-snippet-more", shown[at]);
-        draw(model, { keepScroll: true });
-        return;
-    }
-    if (target.hasAttribute("data-snippet-edit")) {
-        openEditor(rowAt(target, "data-snippet-edit"));
-        return;
-    }
-    if (target.hasAttribute("data-snippet-delete")) {
-        if (!armDelete(target)) return;
-        remove(rowAt(target, "data-snippet-delete"));
-        return;
-    }
-    if (target.hasAttribute("data-snippet-scope")) {
-        swapScope(rowAt(target, "data-snippet-scope"));
-        return;
-    }
-    if (target.hasAttribute("data-snippet-up")) {
-        move(rowAt(target, "data-snippet-up"), -1);
-        return;
-    }
-    if (target.hasAttribute("data-snippet-down")) {
-        move(rowAt(target, "data-snippet-down"), 1);
-        return;
-    }
-    if (target.classList.contains("snippet-row")) insert(rowAt(target, "data-snippet"));
-});
-
-newButton.addEventListener("click", function () { openEditor(null, { scope: "global" }); });
-
-fromLast.addEventListener("click", function () {
-    var text = lastSaid();
-    if (!text) return;
-    var seeded = snippetDraftFromText(text);
-    draft.title = seeded.title;
-    draft.body = seeded.body;
-    drawEditor();
-});
-
-editorSave.addEventListener("click", save);
-editorCancel.addEventListener("click", closeEditor);
-editorDelete.addEventListener("click", function () {
-    if (!editing) return;
-    if (!armDelete(editorDelete)) return;
-    remove(editing);
-});
-// Typing is the answer to "are you sure": an armed Delete goes back to being a Delete.
-bodyField.addEventListener("input", function () { disarmDelete(editorDelete); });
-titleField.addEventListener("input", function () { disarmDelete(editorDelete); });
-
-button.addEventListener("click", function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-    openSnippets();
-});
-
-/* The second entrance, and the reason `openSnippets` takes no arguments: the project mark in
-   the session header. `view/transcript.js:renderDetailHead` owns whether that button is enabled,
-   what it is called and whether it claims to open a menu at all — this only says what it does.
-   Bound here rather than there because this module is what knows the sheet exists. */
-var headerMark = document.getElementById("detail-snippets");
-headerMark.addEventListener("click", function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-    openSnippets();
-});
-
-overlay.addEventListener("click", closeSnippets);
-sheet.addEventListener("click", function (event) { event.stopPropagation(); });
-closeButton.addEventListener("click", closeSnippets);
-
-editorOverlay.addEventListener("click", closeEditor);
-editorSheet.addEventListener("click", function (event) { event.stopPropagation(); });
 
 /**
- * Escape, from anywhere.
+ * Build this view's DOM island, once, and only where there is a document to build it in.
  *
- * These two handlers were on the overlays, which only works while the focus is inside one — and
- * a redraw used to put it on `<body>`, where the press fell through to `input/keys.js` and
- * closed the session behind the sheet instead. Focus is restored now, but a sheet whose way out
- * depends on where the keyboard happens to be is a sheet with a way out that can be lost again.
+ * **This used to happen while the module was being evaluated, and that broke the suite the
+ * moment `session/open.js` imported this file.** `Tests/web-clawdfather.mjs` imports the
+ * start sheet through a fixture whose document has a `body` and no `head`, so
+ * `document.head.appendChild` threw during the import and the whole web phase of
+ * `./test.sh` — which runs before the Swift phase — stopped there for everybody. The five
+ * panels `open.js` already imported are all safe to import without a document; this one
+ * was not, and it joined their company without meeting their condition.
  *
- * Capture, ahead of `keys.js`'s own bubble-phase document listener, which has no case for these
- * two overlays: the same answer `input/schedule.js` and `input/action-confirm.js` already give
- * for their nested overlays, copied rather than invented. The editor is over the list, so it
- * takes the press first — closing both for one press is the thing that order exists to prevent.
+ * `core/pages.js` states the rule this now follows: touch no document until asked, and be
+ * a no-op rather than a throw when the asking comes too early. Every entrance calls this
+ * first and does nothing when it answers false.
  */
-document.addEventListener("keydown", function (event) {
-    if (event.key !== "Escape") return;
-    if (!editorOverlay.hidden) {
+function install() {
+    if (installed) return true;
+    if (typeof document === "undefined" || !document.head || !document.body) return false;
+    if (!document.getElementById("session-actions-main")) return false;
+    style = document.createElement("link");
+    style.rel = "stylesheet";
+    style.href = new URL("../../css/snippets.css", import.meta.url).href;
+    document.head.appendChild(style);
+
+    menu = document.getElementById("session-actions-main");
+    before = document.getElementById("session-git-more");
+    button = document.createElement("button");
+    button.id = "session-snippets";
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    menu.insertBefore(button, before);
+
+    overlay = document.createElement("div");
+    overlay.className = "overlay";
+    overlay.id = "snippets";
+    overlay.hidden = true;
+    overlay.innerHTML =
+        '<div class="sheet snippets-sheet" id="snippets-sheet" role="dialog" aria-modal="true" ' +
+        'aria-labelledby="snippets-title">' +
+        '<div class="snippets-head">' +
+        '<div class="snippets-heading"><h2 id="snippets-title"></h2>' +
+        '<span class="snippets-where" id="snippets-where"></span></div>' +
+        '<button class="snippets-new" id="snippets-new" type="button" hidden>＋</button>' +
+        "</div>" +
+        '<div class="snippet-list" id="snippet-list"></div>' +
+        '<p class="said" id="snippets-said" role="status" aria-live="polite"></p>' +
+        '<div class="buttons"><button class="chip" id="snippets-close" type="button"></button></div>' +
+        "</div>";
+    document.body.appendChild(overlay);
+
+    /* The editor, its own overlay over the list's. Same furniture as `#schedule-form`: labelled
+       blocks, a chip row for the one choice it offers, what just happened said where it happened,
+       and Delete pushed to the far side of Cancel and Save. */
+    editorOverlay = document.createElement("div");
+    editorOverlay.className = "overlay";
+    editorOverlay.id = "snippet-editor";
+    editorOverlay.hidden = true;
+    editorOverlay.innerHTML =
+        '<div class="sheet snippet-editor-sheet" id="snippet-editor-sheet" role="dialog" ' +
+        'aria-modal="true" aria-labelledby="snippet-editor-title">' +
+        '<h2 id="snippet-editor-title"></h2>' +
+        '<div class="block"><span class="field-label" id="snippet-title-label"></span>' +
+        '<input class="find" id="snippet-title" type="text" maxlength="200" autocomplete="off" ' +
+        'autocapitalize="sentences" spellcheck="false" data-1p-ignore data-lpignore="true" ' +
+        "data-bwignore></div>" +
+        '<div class="block"><span class="field-label" id="snippet-body-label"></span>' +
+        '<textarea class="find" id="snippet-body" rows="6" maxlength="4000" spellcheck="false" ' +
+        "data-1p-ignore data-lpignore=\"true\" data-bwignore></textarea>" +
+        '<button class="chip snippet-from-last" id="snippet-from-last" type="button" hidden>' +
+        "</button></div>" +
+        '<div class="block"><span class="field-label" id="snippet-scope-label"></span>' +
+        '<div class="row" id="snippet-scope"></div></div>' +
+        '<p class="said" id="snippet-said" role="status" aria-live="polite"></p>' +
+        '<div class="buttons">' +
+        '<button class="chip danger" id="snippet-editor-delete" type="button" hidden></button>' +
+        '<button class="chip" id="snippet-editor-cancel" type="button"></button>' +
+        '<button class="chip confirm-go" id="snippet-editor-save" type="button"></button>' +
+        "</div></div>";
+    document.body.appendChild(editorOverlay);
+
+    sheet = document.getElementById("snippets-sheet");
+    title = document.getElementById("snippets-title");
+    where = document.getElementById("snippets-where");
+    list = document.getElementById("snippet-list");
+    newButton = document.getElementById("snippets-new");
+    said = document.getElementById("snippets-said");
+    closeButton = document.getElementById("snippets-close");
+
+    editorSheet = document.getElementById("snippet-editor-sheet");
+    editorTitle = document.getElementById("snippet-editor-title");
+    titleLabel = document.getElementById("snippet-title-label");
+    titleField = document.getElementById("snippet-title");
+    bodyLabel = document.getElementById("snippet-body-label");
+    bodyField = document.getElementById("snippet-body");
+    fromLast = document.getElementById("snippet-from-last");
+    scopeLabel = document.getElementById("snippet-scope-label");
+    scopeRow = document.getElementById("snippet-scope");
+    editorSaid = document.getElementById("snippet-said");
+    editorDelete = document.getElementById("snippet-editor-delete");
+    editorCancel = document.getElementById("snippet-editor-cancel");
+    editorSave = document.getElementById("snippet-editor-save");
+
+    new MutationObserver(syncCopy).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["lang"]
+    });
+    syncCopy();
+
+    syncRow();
+    // Registered after `input/detail-actions.js` has bound its own handler to the same button, so
+    // the menu is already open by the time this runs — the same tick, so nothing is painted between.
+    document.getElementById("detail-actions-trigger").addEventListener("click", syncRow);
+
+    list.addEventListener("click", function (event) {
+        var target = event.target.closest ? event.target.closest("button") : null;
+        if (!target || !list.contains(target)) return;
+
+        if (target.hasAttribute("data-snippet-starter")) {
+            useStarter(snippetStarters()[Number(target.getAttribute("data-snippet-starter"))]);
+            return;
+        }
+        if (target.hasAttribute("data-snippet-more")) {
+            var at = Number(target.getAttribute("data-snippet-more"));
+            menuFor = menuFor === at ? -1 : at;
+            wantFocus("data-snippet-more", shown[at]);
+            draw(model, { keepScroll: true });
+            return;
+        }
+        if (target.hasAttribute("data-snippet-edit")) {
+            openEditor(rowAt(target, "data-snippet-edit"));
+            return;
+        }
+        if (target.hasAttribute("data-snippet-delete")) {
+            if (!armDelete(target)) return;
+            remove(rowAt(target, "data-snippet-delete"));
+            return;
+        }
+        if (target.hasAttribute("data-snippet-scope")) {
+            swapScope(rowAt(target, "data-snippet-scope"));
+            return;
+        }
+        if (target.hasAttribute("data-snippet-up")) {
+            move(rowAt(target, "data-snippet-up"), -1);
+            return;
+        }
+        if (target.hasAttribute("data-snippet-down")) {
+            move(rowAt(target, "data-snippet-down"), 1);
+            return;
+        }
+        if (target.classList.contains("snippet-row")) insert(rowAt(target, "data-snippet"));
+    });
+
+    newButton.addEventListener("click", function () { openEditor(null, { scope: "global" }); });
+
+    fromLast.addEventListener("click", function () {
+        var text = lastSaid();
+        if (!text) return;
+        var seeded = snippetDraftFromText(text);
+        draft.title = seeded.title;
+        draft.body = seeded.body;
+        drawEditor();
+    });
+
+    editorSave.addEventListener("click", save);
+    editorCancel.addEventListener("click", closeEditor);
+    editorDelete.addEventListener("click", function () {
+        if (!editing) return;
+        if (!armDelete(editorDelete)) return;
+        remove(editing);
+    });
+    // Typing is the answer to "are you sure": an armed Delete goes back to being a Delete.
+    bodyField.addEventListener("input", function () { disarmDelete(editorDelete); });
+    titleField.addEventListener("input", function () { disarmDelete(editorDelete); });
+
+    button.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
-        closeEditor();
-        return;
-    }
-    if (overlay.hidden) return;
-    event.preventDefault();
-    event.stopPropagation();
-    closeSnippets();
-}, true);
+        openSnippets();
+    });
 
-// `renderTranscript` fires this after the strings have landed and after every transcript
-// refresh. It is what keeps the menu row's word right, keeps the row itself in step with a
-// transport that was chosen after these modules evaluated, and closes a sheet whose session went
-// away underneath it.
-document.addEventListener("clawdline:rendered", function () {
-    syncCopy();
-    syncRow();
-    if (overlay.hidden) return;
-    if (!S.openId || S.openId !== sessionID) closeSnippets();
-});
+    /* The second entrance, and the reason `openSnippets` takes no arguments: the project mark in
+       the session header. `view/transcript.js:renderDetailHead` owns whether that button is enabled,
+       what it is called and whether it claims to open a menu at all — this only says what it does.
+       Bound here rather than there because this module is what knows the sheet exists. */
+    var headerMark = document.getElementById("detail-snippets");
+    headerMark.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openSnippets();
+    });
+
+    overlay.addEventListener("click", closeSnippets);
+    sheet.addEventListener("click", function (event) { event.stopPropagation(); });
+    closeButton.addEventListener("click", closeSnippets);
+
+    editorOverlay.addEventListener("click", closeEditor);
+    editorSheet.addEventListener("click", function (event) { event.stopPropagation(); });
+
+    /**
+     * Escape, from anywhere.
+     *
+     * These two handlers were on the overlays, which only works while the focus is inside one — and
+     * a redraw used to put it on `<body>`, where the press fell through to `input/keys.js` and
+     * closed the session behind the sheet instead. Focus is restored now, but a sheet whose way out
+     * depends on where the keyboard happens to be is a sheet with a way out that can be lost again.
+     *
+     * Capture, ahead of `keys.js`'s own bubble-phase document listener, which has no case for these
+     * two overlays: the same answer `input/schedule.js` and `input/action-confirm.js` already give
+     * for their nested overlays, copied rather than invented. The editor is over the list, so it
+     * takes the press first — closing both for one press is the thing that order exists to prevent.
+     */
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") return;
+        if (!editorOverlay.hidden) {
+            event.preventDefault();
+            event.stopPropagation();
+            closeEditor();
+            return;
+        }
+        if (overlay.hidden) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeSnippets();
+    }, true);
+
+    // `renderTranscript` fires this after the strings have landed and after every transcript
+    // refresh. It is what keeps the menu row's word right, keeps the row itself in step with a
+    // transport that was chosen after these modules evaluated, and closes a sheet whose session went
+    // away underneath it.
+    document.addEventListener("clawdline:rendered", function () {
+        syncCopy();
+        syncRow();
+        if (overlay.hidden) return;
+        if (!S.openId || S.openId !== sessionID) closeSnippets();
+    });
+
+    installed = true;
+    return true;
+}
+
+install();
