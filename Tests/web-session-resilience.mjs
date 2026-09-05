@@ -192,6 +192,12 @@ function testElement(tag = "div") {
         hidden: false, disabled: false, value: "", textContent: "", className: "",
         scrollHeight: 0, scrollTop: 0, clientHeight: 0, parentNode: null,
         appendChild: function (child) { child.parentNode = proxy; children.push(child); return child; },
+        insertBefore: function (child, before) {
+            const at = before ? children.indexOf(before) : -1;
+            child.parentNode = proxy;
+            if (at >= 0) children.splice(at, 0, child); else children.push(child);
+            return child;
+        },
         removeChild: function (child) {
             const at = children.indexOf(child); if (at >= 0) children.splice(at, 1);
             child.parentNode = null; return child;
@@ -274,6 +280,10 @@ if (process.env.CLAWDLINE_START_SHEET_BEHAVIOR === "1") {
     document.querySelectorAll = function () { return []; };
     document.createElement = function (tag) { return testElement(tag); };
     document.body = root;
+    // `Resources/web/app/js/input/snippets.js` appends its own stylesheet at import time
+    // and puts its button in a named place, so a stub with a `body` and no `head` throws
+    // before any assertion in this file runs.
+    document.head = testElement("head");
     globalThis.MutationObserver = class { observe() { } disconnect() { } };
     globalThis.ResizeObserver = MutationObserver;
     globalThis.IntersectionObserver = MutationObserver;

@@ -502,6 +502,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a reading with live sessions in it reaches the ledger, both ways",
     "a manual session refresh has coherent evidence and bounded backpressure",
     "what a terminal's spend is filed under, and what the backfill hands over",
+    "an incomplete inventory publishes nothing it can see, and its probe sits behind ps",
     "a warm reading is answered without asking the Mac again",
     "a stale reading goes out first and the refresh happens behind it",
     "a refused refresh ages the reading it could not replace",

@@ -921,6 +921,13 @@ if (process.env.CLAWDLINE_CLAWDFATHER_SHEET_BEHAVIOR === "1") {
             appendChild: function (child) {
                 child.parentNode = proxy; children.push(child); return child;
             },
+            // The same module puts its button in a named place rather than at the end.
+            insertBefore: function (child, before) {
+                const at = before ? children.indexOf(before) : -1;
+                child.parentNode = proxy;
+                if (at >= 0) children.splice(at, 0, child); else children.push(child);
+                return child;
+            },
             removeChild: function (child) {
                 const at = children.indexOf(child);
                 if (at >= 0) children.splice(at, 1);
@@ -1004,6 +1011,12 @@ if (process.env.CLAWDLINE_CLAWDFATHER_SHEET_BEHAVIOR === "1") {
     document.querySelectorAll = function () { return []; };
     document.createElement = function (tag) { return testElement(tag); };
     document.body = root;
+    // A module that ships its own stylesheet appends the `<link>` at import time, so a
+    // fixture with a `body` and no `head` throws before any assertion in this file runs.
+    // `Resources/web/app/js/input/snippets.js` is the one that does; on `f95b5cdb` it made
+    // every group here unreachable rather than red, and `./test.sh` stops on this suite
+    // before the Swift half is ever compiled.
+    document.head = testElement("head");
     globalThis.MutationObserver = class { observe() { } disconnect() { } };
     globalThis.ResizeObserver = MutationObserver;
     globalThis.IntersectionObserver = MutationObserver;
