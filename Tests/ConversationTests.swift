@@ -216,7 +216,7 @@ group("what has already been said in a place") {
         #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"\#(text)"}]}}"#
     }
     func aiTitle(_ text: String) -> String { #"{"type":"ai-title","aiTitle":"\#(text)"}"# }
-    func renamed(_ text: String) -> String { #"{"customTitle":"\#(text)"}"# }
+    func renamedTo(_ text: String) -> String { #"{"customTitle":"\#(text)"}"# }
     func writeLadder(_ id: String, _ lines: [String], at seconds: TimeInterval) {
         let url = ladder.appendingPathComponent("\(id).jsonl")
         try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
@@ -226,14 +226,14 @@ group("what has already been said in a place") {
 
     writeLadder(named, [said("找一下這個 crash"), aiTitle("Crash triage")], at: 7000)
     writeLadder(bothNames, [said("先看 log"), aiTitle("Log reading"),
-                            renamed("在終端機 /rename 的名字")], at: 6000)
+                            renamedTo("在終端機 /rename 的名字")], at: 6000)
     writeLadder(itsOwn, [said("lightbox 在 Safari 18 播不動，幫我找原因"),
                          aiTitle("Lightbox 影片相容性")], at: 5000)
     writeLadder(weakWithFallback, [screenshot, aiTitle("Image review")], at: 4000)
     writeLadder(weakAlone, [screenshot, aiTitle("Images")], at: 3000)
     writeLadder(unnamed, [said("完全沒有標題的一段對話")], at: 2000)
     writeLadder(superseded, [said("先照舊"), aiTitle("Held still"),
-                             renamed("後來在終端機改的名字")], at: 1000)
+                             renamedTo("後來在終端機改的名字")], at: 1000)
 
     // A private config directory, so these are this suite's stored names and never the person's.
     let names = ladder.appendingPathComponent("config", isDirectory: true)
