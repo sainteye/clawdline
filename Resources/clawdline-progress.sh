@@ -212,56 +212,85 @@ clawdline_run_file_beat_loop() {
     #     would have to fail together — a reused pid *and* a `ps` that never answers again — for
     #     the beat to outlive its run.
     #
-    # The third way it stops is the file: a row that is finished, cleared, or another run's is a row
-    # with nothing to keep alive, and `clawdline_run_file_beat_refresh` says so by returning 1.
-    local run_pid=$1 run_started=$2 interval=$3 started_now
+    # **Only the run's death stops it**, and that is deliberate. A row that is finished, cleared or
+    # another run's is a row with nothing to keep alive, so the beat writes nothing that tick and
+    # naps again rather than exiting: a beat that ended on its own would leave the run holding a pid
+    # that the machine is free to hand to somebody else, and the stop below would then be a `kill`
+    # aimed at a stranger. Its lifetime is the run's; only its writes are conditional.
+    #
+    # **The nap is a background child waited for by a builtin, and that is what makes the stop both
+    # immediate and safe.** bash defers a trapped signal until the running *foreground* command
+    # finishes, but `wait` returns the moment one arrives — documented, and the difference between
+    # the two halves of the promise this loop makes: a TERM during the nap stops it at once, and a
+    # TERM during a write lets the write finish first, so no beat is ever cut in half and no
+    # orphaned `mv` lands after the run has written its last row.
+    local run_pid=$1 run_started=$2 interval=$3 started_now nap=""
+    trap 'kill "$nap" 2>/dev/null; exit 0' TERM
     while :; do
-        sleep "$interval"
+        sleep "$interval" &
+        nap=$!
+        wait "$nap" 2>/dev/null
         kill -0 "$run_pid" 2>/dev/null || return 0
         if [ -n "$run_started" ]; then
             started_now=$(LC_ALL=C ps -o lstart= -p "$run_pid" 2>/dev/null) || started_now=""
             [ -z "$started_now" ] || [ "$started_now" = "$run_started" ] || return 0
         fi
-        clawdline_run_file_beat_refresh || return 0
+        clawdline_run_file_beat_refresh || true
     done
 }
 
 clawdline_run_file_beat_start() {
     # One beat per run, started only by a write that has just left a `running` row behind, so its
     # first act can never be to refresh a row that is not there yet.
+    #
+    # **And it is started at arm's length, so that it is nobody's child.** A background job belongs
+    # to the shell that forked it, and in the sourced form that shell is somebody else's script: a
+    # bare `wait` — the ordinary way a script waits for its own jobs — would wait for the heartbeat
+    # too, and hang there until the run it is part of had ended. Measured on 2026-09-05: with the
+    # beat as a child, `wait` in a sourced script never returns. So it is backgrounded inside a
+    # subshell that exits immediately, which reparents it and leaves it out of the caller's job
+    # table, out of `wait`, `jobs` and `kill %1`. It stays in the run's process group, so a signal
+    # sent to the group still reaches it.
+    #
+    # **The traps go first, inside.** This file's EXIT handler writes the run's last row, and a beat
+    # that inherited it would report the whole run finished the moment it stopped beating. Errexit
+    # goes with them: every probe in the loop is allowed to answer `no`. And all three streams are
+    # redirected, because a job holds whatever it inherited — `./test.sh | tee` would otherwise wait
+    # for the beat before it saw the end of the run.
     [ -n "${CLAWDLINE_RUN_BEAT_SECONDS:-}" ] || return 0
     [ -z "${CLAWDLINE_RUN_BEAT_PID:-}" ] || return 0
-    (
-        # **The traps first.** This file's EXIT handler writes the run's last row, and a beat that
-        # inherited it would report the whole run finished the moment it stopped beating. An
-        # asynchronous subshell resets traps by itself on this Mac's bash 3.2.57 — measured on
-        # 2026-09-05 — and `test.sh`'s renewer clears them anyway; a line that costs nothing is
-        # cheaper than a reader having to know which of those two facts is load-bearing.
+    CLAWDLINE_RUN_BEAT_PID=$(
         trap - EXIT ERR INT TERM
-        # Errexit off: every probe in the loop below is allowed to answer `no`.
         set +e
         clawdline_run_file_beat_loop "$CLAWDLINE_RUN_PID" "$CLAWDLINE_RUN_PID_STARTED" \
-                                     "$CLAWDLINE_RUN_BEAT_SECONDS"
-    ) >/dev/null 2>&1 </dev/null &
-    # **Detached from the run's own three streams**, because a background job holds whatever it
-    # inherited: `./test.sh | tee` would otherwise wait for the beat before it saw the end of the run.
-    CLAWDLINE_RUN_BEAT_PID=$!
+                                     "$CLAWDLINE_RUN_BEAT_SECONDS" >/dev/null 2>&1 </dev/null &
+        echo $!
+    ) || CLAWDLINE_RUN_BEAT_PID=""
     return 0
 }
 
 clawdline_run_file_beat_stop() {
-    # **The `wait` is the point of this function, not the tidying.** The run and its beat both write
-    # this file, and the one order that must never happen is a beat landing after the finish: a run
-    # that ended half an hour ago, left in the bar saying `running` until the ceiling retires it.
-    # `kill` does not give that ordering — the beat may be between its `printf` and its `mv` — and
-    # `wait` does: when it returns the beat is gone and cannot write again. This is why **every**
-    # write stops the beat first and not only the last one, and it is what makes "a beat never moves
-    # the phase" a fact about the code rather than a race that is usually won.
-    local pid=${CLAWDLINE_RUN_BEAT_PID:-}
+    # **Seeing it gone is the point of this function, not the killing.** The run and its beat both
+    # write this file, and the one order that must never happen is a beat landing after the finish:
+    # a run that ended half an hour ago, left in the bar saying `running` until the ceiling retires
+    # it. Signalling alone does not give that ordering, because the beat may be between its `printf`
+    # and its `mv`; the loop's TERM handler and this poll together do, since a beat that is in a
+    # write finishes it before it stops. When this returns the beat is gone and cannot write again,
+    # which is why **every** write stops it first and not only the last one — and it is what makes
+    # "a beat never moves the phase" a fact about the code rather than a race that is usually won.
+    #
+    # `kill -0` rather than `wait`, because the beat is deliberately not this shell's child; an
+    # orphan is reaped as soon as it exits, so there is no zombie to mistake for a live beat. The
+    # ceiling of two seconds is a ceiling on a wait that in practice ends on its first turn.
+    local pid=${CLAWDLINE_RUN_BEAT_PID:-} turns=0
     [ -n "$pid" ] || return 0
     CLAWDLINE_RUN_BEAT_PID=""
     kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+    while [ "$turns" -lt 100 ]; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.02
+        turns=$(( turns + 1 ))
+    done
     # A beat killed between its write and its rename leaves the temporary file behind; it is named
     # for this run, so this run can take it away.
     rm -f "${CLAWDLINE_RUN_FILE:-}.$$.beat.tmp" 2>/dev/null || true

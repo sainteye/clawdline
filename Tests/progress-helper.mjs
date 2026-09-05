@@ -632,6 +632,26 @@ try {
                 && later.state === "ok" && later.updated_at === finished.updated_at);
     }
     {
+        // **The beat belongs to nobody, and a script that waits for its own jobs is how you find
+        // out.** `foo & bar & wait` is the ordinary way a shell script waits for the work it
+        // started; a heartbeat left in that shell's job table is waited for too, and the script
+        // stops there until the run it is part of has ended. Measured on 2026-09-05 while this was
+        // being built: with the beat as a child of the sourcing shell, this script never returned.
+        const w = workdir("beat-not-a-job");
+        const script = sourced(w, [
+            "progress_start --label waiter --stale-after 3",
+            "( sleep 0.5 ) &",
+            "wait",
+            'echo "wait returned"',
+        ].join("\n"));
+        const r = spawnSync("/bin/bash", [script], {
+            encoding: "utf8", cwd: w.dir, timeout: 8000,
+            env: { ...process.env, CLAWDLINE_STATUS_DIR: cache },
+        });
+        check("a sourced script's own bare `wait` returns: the beat is not one of its jobs",
+              r.status === 0 && r.signal === null && (r.stdout ?? "").includes("wait returned"));
+    }
+    {
         // **A beat is a liveness claim, not a progress claim.** `phase` is drawn in place of the
         // percentage, so a beat that wrote the row from its own memory would take the phase off
         // the bar every time it fired.
@@ -655,8 +675,11 @@ try {
         // so the beat is left an orphan and has to notice by itself — which is the whole of what
         // "the beat dies with the run" has to mean.
         const w = workdir("beat-killed-9");
+        // The killed command is a short one **because only the run's shell is killed here**: its
+        // child carries on holding the driver's stdout, and the driver is not read to the end until
+        // it lets go. Four seconds is long enough to be killed two and a half seconds in.
         const out = driveAndKill(w, ["/bin/bash", helperPath, "run", "--label", "encode",
-                                     "--stale-after", "3", "--", slowCommand(w.dir)],
+                                     "--stale-after", "3", "--", slowCommand(w.dir, 4)],
                                  "KILL", "pid", "2.5");
         spawnSync("/bin/sleep", ["2"]);
         const orphaned = rowOf(w.file);
