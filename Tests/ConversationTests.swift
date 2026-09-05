@@ -274,6 +274,30 @@ group("the first turn is found however far in it sits") {
            StartPoints.front(inRecord: ["type": "file-history-snapshot",
                                         "message": ["role": "user", "content": "hello"]])?.opening,
            nil)
+
+    // And the answer to that turn, which is what names a conversation whose opening request was
+    // one pasted screenshot and no words. Same row parser as the user side, so the same things
+    // are excluded — and tool calls are not the assistant talking.
+    let answered = [
+        #"{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"x"}},{"type":"text","text":"[Image #1]"}]}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"我看到了：素材缺一條"}]}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"再來查判準"}]}}"#,
+    ].joined(separator: "\n")
+    expect("a turn that opens by running a command is stepped over until it says something",
+           Transcript.firstAssistantMessage(in: answered), "我看到了：素材缺一條")
+    expect("the user side of the same transcript is unchanged",
+           Transcript.firstUserMessage(in: answered), "[Image #1]")
+    expect("a sidechain is not this conversation's answer",
+           Transcript.firstAssistantMessage(in: #"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"an agent"}]}}"#),
+           nil)
+    expect("and a conversation nobody has answered yet has none",
+           Transcript.firstAssistantMessage(in: #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#),
+           nil)
+    let onDisk = root.appendingPathComponent("answered.jsonl")
+    try? answered.write(to: onDisk, atomically: true, encoding: .utf8)
+    expect("the bounded file reader agrees with the parser above",
+           Transcript.firstAssistantMessage(of: onDisk), "我看到了：素材缺一條")
 }
 
 group("a rename is found wherever it was made") {

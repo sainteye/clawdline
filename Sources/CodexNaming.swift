@@ -186,6 +186,39 @@ final class CodexNaming {
         return true
     }
 
+    /// Whether Claude Code's own name for a conversation ends the fallback namer's interest in
+    /// it. **A non-empty title used to be the whole of this question**, and that is what made
+    /// `Image #1` permanent: the namer marked the conversation finished the instant it saw any
+    /// title, so the one thing that could still describe it never ran. A title that does not
+    /// describe the work finishes nothing. See ``ConversationTitle``.
+    ///
+    /// Both places in ``considerClaude(_:state:)`` that ask it — before the model turn and again
+    /// after, in case Claude wrote one while that turn was running — ask it here, so the two
+    /// cannot drift into different answers to one question.
+    static func nativeTitleIsFinal(_ title: String?, weak: Bool) -> Bool {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return false }
+        return !weak
+    }
+
+    /// What a weak-titled conversation is named from.
+    ///
+    /// ``generateTitle(request:target:codexExecutable:codexServer:)`` takes an arbitrary string,
+    /// and for these conversations the opening user message is by definition not one worth
+    /// having: `[Image #1]` is the whole of what Claude Code had, and `Image #1` is what it made
+    /// of it. The conversation's first answer is the material that is actually about the work —
+    /// for `a6d1ed3f` it opens 「我看到了：這是「真人接手後講出來的那一句⋯」, which is a title.
+    ///
+    /// Both halves are optional and both are kept when present. The opening is not dropped even
+    /// when it is only a marker: *an image was the subject* is a true thing to say about the
+    /// session, and a conversation Claude has not answered yet has nothing else.
+    static func namingMaterial(opening: String?, reply: String?) -> String? {
+        let parts = [opening, reply]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
     private func considerClaude(_ target: TargetSession, state: SessionState) {
         guard let record = Transcript.record(of: target), record.assistant == .claude,
               let sessionID = Transcript.sessionID(in: record.url, assistant: .claude),
@@ -195,9 +228,17 @@ final class CodexNaming {
         let key = identityKey(.claude, sessionID)
 
         // Claude's own title is authoritative and already reaches the display through
-        // `SessionNaming`. Mark this conversation finished without putting a second title under it.
-        if let title = Transcript.title(ofTranscript: record.url),
-           !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // `SessionNaming` — *when it describes the work*. It is written once, from whatever the
+        // first user message held, and never revised, so a turn that opened with a pasted image
+        // and no words is called `Image #1` for the rest of its life. Finishing on any non-empty
+        // title is what made that permanent: it is the fallback namer below, and nothing else,
+        // that can still describe such a conversation. So finish on a title that says something,
+        // and fall through on one that does not.
+        let native = Transcript.title(ofTranscript: record.url)
+        let weak = Transcript.titleIsWeak(
+            ofTranscript: record.url, title: native,
+            customTitle: Transcript.customTitle(ofTranscript: record.url))
+        if Self.nativeTitleIsFinal(native, weak: weak) {
             markFinished(key)
             return
         }
@@ -207,7 +248,13 @@ final class CodexNaming {
             return
         }
 
-        let request = Transcript.firstUserMessage(of: record.url)
+        let opening = Transcript.firstUserMessage(of: record.url)
+        // A weak title is exactly the case where the opening request is not naming material —
+        // that is what made it weak — so the conversation's first answer goes in beside it.
+        let request = weak
+            ? Self.namingMaterial(opening: opening,
+                                  reply: Transcript.firstAssistantMessage(of: record.url))
+            : opening
         guard Self.shouldGenerateClaudeTitle(systemTitle: nil, request: request, state: state),
               let request else { return }
         guard reserve(key) else { return }
@@ -219,9 +266,13 @@ final class CodexNaming {
         else { return }
 
         // Claude may have written `aiTitle` while the model turn was running. Its own answer wins,
-        // and the paid fallback is discarded rather than flashed briefly underneath it.
-        if let native = Transcript.title(ofTranscript: record.url),
-           !native.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // and the paid fallback is discarded rather than flashed briefly underneath it — unless
+        // what arrived is another weak one, in which case discarding this would put `Image #1`
+        // back on the row and nothing would ever replace it.
+        let arrived = Transcript.title(ofTranscript: record.url)
+        if Self.nativeTitleIsFinal(arrived, weak: Transcript.titleIsWeak(
+               ofTranscript: record.url, title: arrived,
+               customTitle: Transcript.customTitle(ofTranscript: record.url))) {
             done = true
             return
         }

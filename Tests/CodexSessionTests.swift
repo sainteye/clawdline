@@ -644,6 +644,171 @@ group("an unnamed Claude conversation gets a durable model fallback") {
                handle: "yoga-astro-44", coordinate: target.coordinate),
            "Claude 系統名稱")
     CodexNaming.shared.forget(target: target)
+
+    // The other half of the same feature, found on 2026-09-05: a conversation can carry a title
+    // Claude Code wrote and still be unnamed in every sense that matters. `Image #1` is what it
+    // makes of a first turn that was one pasted screenshot and no words, it never revises a title
+    // it has written, and Clawdline finished on any non-empty one — so the fallback namer, the
+    // only thing left that could describe such a session, never ran for it.
+    //
+    // **Every check below judges the input, never the wording of the title.** A rule that looked
+    // for the word *image* in a title would take `Lightbox 影片相容性` off somebody's screen,
+    // which is why the negative controls are the point of the exercise rather than a courtesy.
+    check("a first turn that is nothing but an attachment leaves the title with no source",
+          ConversationTitle.isWeak(title: "Image #1", opening: "[Image #1]"))
+    check("two of them, likewise",
+          ConversationTitle.isWeak(title: "Images", opening: "[Image #1] [Image #2]"))
+    check("and an opening that was read and held nothing",
+          ConversationTitle.isWeak(title: "Image review", opening: ""))
+    // The marker is recognised by its shape, so one this build has never seen still comes off.
+    check("a pasted-text marker is an attachment too",
+          ConversationTitle.isWeak(title: "Pasted text", opening: "[Pasted text #2]"))
+    check("as is a numbered marker nobody here has heard of",
+          ConversationTitle.isWeak(title: "Waveform", opening: "[Waveform capture #7]"))
+    check("and the two unnumbered ones Claude Code writes",
+          ConversationTitle.isWeak(title: "Images", opening: "[Image] [Images]"))
+
+    // The seven pairs measured across 697 titled transcripts on this Mac, where the title does
+    // not describe the opening so much as hand it back.
+    let restatements = [("Ok", "reply with exactly: ok"),
+                        ("準備好開始接下來的工作", "準備好開始接下來的工作。"),
+                        ("sleep 300", "請執行 sleep 300 這個指令"),
+                        ("找出原因和修正", "請去找出原因和修正"),
+                        ("Ship today", "執行 Ship today"),
+                        ("Ship Today", "請執行 Ship Today。")]
+    for (title, opening) in restatements {
+        check("`\(title)` only restates `\(opening)`",
+              ConversationTitle.isWeak(title: title, opening: opening))
+    }
+
+    // 40 is the middle of a plateau — 30 and 45 select the same seven transcripts — so what is
+    // pinned here is the constant itself, from both sides of it.
+    expect("the restatement window is the measured one", ConversationTitle.restatementLimit, 40)
+    let atTheLimit = "x" + String(repeating: "y", count: 39)
+    expect("the fixture really is the limit exactly", atTheLimit.count, 40)
+    check("prose at the limit can still be a restatement",
+          ConversationTitle.isWeak(title: "x", opening: atTheLimit))
+    check("one character more of it cannot", !ConversationTitle.isWeak(title: "x",
+                                                                      opening: atTheLimit + "y"))
+
+    // The negative controls. Each is a real title from this Mac's own transcripts.
+    check("a title that adds what the request did not stands",
+          !ConversationTitle.isWeak(title: "封鎖 IP 位址 1.34.58.99",
+                                    opening: "請封鎖此 ip 1.34.58.99"))
+    check("so does one that answers in another language",
+          !ConversationTitle.isWeak(title: "workspace status check",
+                                    opening: "現在這整個修正是不是停住了？"))
+    check("a placeholder beside real prose is not an empty opening",
+          !ConversationTitle.isWeak(title: "如何解決此問題",
+                                    opening: "[Image #1] 這個問題應該要怎麼解決？"))
+    check("a title about pictures is judged by its input like every other",
+          !ConversationTitle.isWeak(title: "Lightbox 影片相容性",
+                                    opening: "[Image #1] lightbox 在 Safari 18 播不動，附上 console"))
+    check("and a long request is not a restatement whatever the title says",
+          !ConversationTitle.isWeak(
+              title: "評估焦點頁面改版與指數K線整合",
+              opening: "請幫我評估焦點頁面改版，還要把指數 K 線整合進來，順便看一下效能"))
+    let spelledOut = "請執行 sleep 300 這個指令，然後把輸出貼回來，我要確認 timeout 是不是真的有作用"
+    check("the same title against a request that says more is not weak",
+          !ConversationTitle.isWeak(title: "sleep 300", opening: spelledOut))
+
+    // A name somebody typed is not a description Claude Code failed to write.
+    check("a person's `/rename` is never weak, however short",
+          !ConversationTitle.isWeak(title: "Ok", customTitle: "Ok",
+                                    opening: "reply with exactly: ok"))
+    check("nor is a person's short name over an empty opening",
+          !ConversationTitle.isWeak(title: "嗯", customTitle: "嗯", opening: "[Image #1]"))
+
+    // **A missing opening is not an empty one.** `nil` is a lookup that answered nothing and is
+    // no evidence about the title; `""` is a turn that was read and held nothing.
+    check("no opening at all is not evidence that a title is weak",
+          !ConversationTitle.isWeak(title: "Image #1", opening: nil))
+    check("and no title is not a weak title",
+          !ConversationTitle.isWeak(title: nil, opening: ""))
+    check("a blank one is not a title either",
+          !ConversationTitle.isWeak(title: "   ", opening: ""))
+
+    // What the namer does with the verdict. A non-empty title used to be the whole question.
+    check("a title that describes the work finishes the fallback namer",
+          CodexNaming.nativeTitleIsFinal("Lightbox 影片相容性", weak: false))
+    check("one that describes nothing finishes nothing",
+          !CodexNaming.nativeTitleIsFinal("Image #1", weak: true))
+    check("and a conversation with no title was never finished here anyway",
+          !CodexNaming.nativeTitleIsFinal(nil, weak: false))
+    check("a blank title is the same absence",
+          !CodexNaming.nativeTitleIsFinal("  \n ", weak: false))
+
+    // What it is named from instead. The opening is by definition not enough — that is what made
+    // the title weak — so the conversation's first answer goes in beside it.
+    expect("the opening and the first answer are both handed to the namer",
+           CodexNaming.namingMaterial(opening: "[Image #1]",
+                                      reply: "我看到了：這是素材缺一條的證據"),
+           "[Image #1]\n\n我看到了：這是素材缺一條的證據")
+    expect("an unanswered conversation still says an image was the subject",
+           CodexNaming.namingMaterial(opening: "[Image #1]", reply: nil), "[Image #1]")
+    expect("and an answer with nothing in front of it is material on its own",
+           CodexNaming.namingMaterial(opening: nil, reply: "先去查素材與判準"),
+           "先去查素材與判準")
+    expect("two blanks are not material", CodexNaming.namingMaterial(opening: "  ", reply: " \n "),
+           nil)
+
+    // The same verdict off a real file, which is where the two halves — the title from the tail,
+    // the opening from the head — are actually read.
+    let weakRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-weak-title-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: weakRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: weakRoot) }
+    func write(_ name: String, _ lines: [String]) -> URL {
+        let url = weakRoot.appendingPathComponent(name)
+        try! Data(lines.joined(separator: "\n").utf8).write(to: url)
+        return url
+    }
+    func weak(_ url: URL) -> Bool {
+        Transcript.titleIsWeak(ofTranscript: url, title: Transcript.title(ofTranscript: url),
+                               customTitle: Transcript.customTitle(ofTranscript: url))
+    }
+    let pastedImage = #"{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"x"}},{"type":"text","text":"[Image #1]"}]}}"#
+    let answered = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"我看到了：這是素材缺一條的證據。先去查素材與判準。"}]}}"#
+    let shot = write("shot.jsonl", [pastedImage, answered,
+                                    #"{"type":"ai-title","aiTitle":"Image #1"}"#])
+    expect("the transcript really does carry the title Claude Code wrote",
+           Transcript.title(ofTranscript: shot), "Image #1")
+    expect("and an opening that is a marker and nothing else",
+           Transcript.firstUserMessage(of: shot), "[Image #1]")
+    check("so the file reader reaches the same verdict as the predicate", weak(shot))
+    expect("and the first answer is there to name it from",
+           Transcript.firstAssistantMessage(of: shot),
+           "我看到了：這是素材缺一條的證據。先去查素材與判準。")
+
+    let described = write("described.jsonl", [
+        #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"lightbox 在 Safari 18 播不動，幫我找原因"}]}}"#,
+        #"{"type":"ai-title","aiTitle":"Lightbox 影片相容性"}"#])
+    check("a conversation that opened with words keeps its own title", !weak(described))
+
+    let renamed = write("renamed.jsonl", [pastedImage,
+                                          #"{"type":"ai-title","aiTitle":"Image #1"}"#,
+                                          #"{"customTitle":"截圖裡的排版問題"}"#])
+    expect("a `/rename` is what the transcript's title reads as",
+           Transcript.title(ofTranscript: renamed), "截圖裡的排版問題")
+    check("and a name a person typed is never weak, whatever it sits on top of", !weak(renamed))
+
+    // The answer is cached against the title rather than the file's signature, because a growing
+    // transcript changes signature on every append and cannot change either half of this. So the
+    // cache has to give way to a title that really did move.
+    // The `customTitle` road is deliberately not the one taken here: it answers before the cache
+    // is consulted, so it would prove nothing about the key. The `aiTitle` moves instead, over an
+    // opening held still — one short enough that the verdict is the title's to change.
+    let sameOpening = #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"請去找出原因和修正"}]}}"#
+    let moved = weakRoot.appendingPathComponent("moved.jsonl")
+    try! Data([sameOpening, #"{"type":"ai-title","aiTitle":"找出原因和修正"}"#]
+                .joined(separator: "\n").utf8).write(to: moved)
+    check("the first look says weak, because that title only hands the request back", weak(moved))
+    try! Data([sameOpening, answered,
+               #"{"type":"ai-title","aiTitle":"Cloudflare 憑證輪替失敗"}"#]
+                .joined(separator: "\n").utf8).write(to: moved)
+    expect("the transcript now calls itself something else",
+           Transcript.title(ofTranscript: moved), "Cloudflare 憑證輪替失敗")
+    check("and a title that moved is judged again rather than remembered", !weak(moved))
 }
 
 group("a Codex npm shim starts with Finder's cold PATH") {
@@ -797,6 +962,49 @@ group("a person-named session title outranks every automatic label") {
     store.setSessionTitle("   \n  ", sessionID: nil, terminalID: "terminal-clearing")
     expect("clearing a person's title restores the automatic label",
            labelForStoredTitle(), "automatic handoff")
+
+    // Rung 3 stepping aside. `Image #1` is a real `aiTitle` Claude Code wrote, it outranks the
+    // fallback rung underneath it, and it is never revised — so without this a correctly
+    // generated fallback would be produced and never seen.
+    expect("a title that describes nothing yields to the fallback underneath it",
+           TargetSession.displayedConversationTitle("Image #1", isWeak: true,
+                                                    fallback: "截圖裡的排版問題"),
+           nil)
+    expect("a title that describes the work does not",
+           TargetSession.displayedConversationTitle("Lightbox 影片相容性", isWeak: false,
+                                                    fallback: "截圖裡的排版問題"),
+           "Lightbox 影片相容性")
+    // **Only when there is something underneath.** Rung 5 reads `clawdline-9d` and rung 6 reads
+    // `⌘2-3`; neither says what the session is, and `Image #1` at least says an image was.
+    expect("with no fallback to step aside for, a weak title still stands",
+           TargetSession.displayedConversationTitle("Image #1", isWeak: true, fallback: nil),
+           "Image #1")
+    expect("and a fallback that answered with blanks did not answer",
+           TargetSession.displayedConversationTitle("Image #1", isWeak: true, fallback: " \n "),
+           "Image #1")
+
+    func rowFor(conversationTitle: String?, weak: Bool, fallback: String?) -> String {
+        TargetSession.preferredDisplayLabel(
+            manualTitle: nil, orchestratorTitle: nil,
+            conversationTitle: TargetSession.displayedConversationTitle(
+                conversationTitle, isWeak: weak, fallback: fallback),
+            threadName: fallback, handle: "clawdline-9d", coordinate: "⌘2-3")
+    }
+    expect("so the row reads the generated name rather than Claude Code's placeholder",
+           rowFor(conversationTitle: "Image #1", weak: true, fallback: "截圖裡的排版問題"),
+           "截圖裡的排版問題")
+    expect("and never degrades to a handle when nothing was generated",
+           rowFor(conversationTitle: "Image #1", weak: true, fallback: nil), "Image #1")
+    expect("a title that says something is untouched",
+           rowFor(conversationTitle: "Lightbox 影片相容性", weak: false, fallback: "截圖裡的排版問題"),
+           "Lightbox 影片相容性")
+    expect("and a person's own title outranks the whole question",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: "My release room", orchestratorTitle: nil,
+               conversationTitle: TargetSession.displayedConversationTitle(
+                   "Image #1", isWeak: true, fallback: "截圖裡的排版問題"),
+               threadName: "截圖裡的排版問題", handle: "clawdline-9d", coordinate: "⌘2-3"),
+           "My release room")
 }
 
 group("a session's name never comes from its terminal's tab title") {

@@ -81,13 +81,34 @@ struct TargetSession: Equatable, Identifiable {
     /// The impure naming lookup used only while SessionWatch's background worker is assembling
     /// the next publication. Consumers use ``displayLabel`` and therefore cannot repeat it.
     var observedDisplayLabel: String {
-        Self.preferredDisplayLabel(
+        let threadName = CodexNaming.shared.title(for: self)
+        return Self.preferredDisplayLabel(
             manualTitle: Config.shared.sessionTitle(for: self),
             orchestratorTitle: Orchestrator.title(forTerminal: id),
-            conversationTitle: SessionNaming.title(of: self),
-            threadName: CodexNaming.shared.title(for: self),
+            conversationTitle: Self.displayedConversationTitle(
+                SessionNaming.title(of: self), isWeak: SessionNaming.titleIsWeak(of: self),
+                fallback: threadName),
+            threadName: threadName,
             handle: SessionNaming.handle(of: self),
             coordinate: coordinate)
+    }
+
+    /// Rung 3 stepping aside, decided here rather than inside ``preferredDisplayLabel`` so that
+    /// function stays a pure ordering of the arguments it is handed.
+    ///
+    /// A `conversationTitle` Claude Code wrote from material that did not describe the work —
+    /// `Image #1` — still outranks the fallback rung underneath it, and since Claude Code never
+    /// revises a title it has written, that would keep a correctly generated fallback off the
+    /// screen forever. See ``ConversationTitle``.
+    ///
+    /// **Only when there is something underneath.** With no fallback yet generated, the weak
+    /// title is the best thing anybody has: rung 5 reads `clawdline-9d` and rung 6 reads `⌘2-3`,
+    /// and neither of those says what the session is. `Image #1` at least says an image was.
+    static func displayedConversationTitle(_ conversationTitle: String?, isWeak: Bool,
+                                           fallback: String?) -> String? {
+        guard isWeak else { return conversationTitle }
+        let fallback = fallback?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return fallback.isEmpty ? conversationTitle : nil
     }
 
     /// The order, and why each rung is above the next. **No parameter here carries a terminal
@@ -105,7 +126,9 @@ struct TargetSession: Equatable, Identifiable {
     ///    `~/.claude/projects/`. This is the rung that was missing. Measured against the one tab
     ///    still showing a name on 2026-08-28: the screen read `Clawdfather 新增介面` and so did
     ///    the transcript's `aiTitle`, while the same session's registry `name` read
-    ///    `clawdline-97`. The transcript is where the descriptive name lives.
+    ///    `clawdline-97`. The transcript is where the descriptive name lives. A title Claude Code
+    ///    wrote from material that described nothing does not reach this parameter at all: see
+    ///    ``displayedConversationTitle(_:isWeak:fallback:)``, which is where that is decided.
     /// 4. `threadName` — Codex's persisted thread metadata; the model fallback Clawdline keeps
     ///    for a Claude conversation whose first turn ended without an `aiTitle`; or the bounded,
     ///    display-only title carried across a resume until process-bound identity confirms it.
@@ -192,6 +215,10 @@ enum SessionNaming {
         /// Not a description of anything; kept because it is durable, per-conversation, and
         /// better than a coordinate for telling two rows apart.
         let handle: String?
+        /// Whether that title is one ``ConversationTitle/isWeak(title:customTitle:opening:)``
+        /// calls weak. It travels with the title because it is a fact about the same look: the
+        /// opening it was judged against was read from the same transcript at the same moment.
+        var titleIsWeak = false
         static let none = Name(title: nil, handle: nil)
         var isEmpty: Bool { title == nil && handle == nil }
     }
@@ -251,6 +278,7 @@ enum SessionNaming {
 
     static func title(of target: TargetSession) -> String? { name(of: target).title }
     static func handle(of target: TargetSession) -> String? { name(of: target).handle }
+    static func titleIsWeak(of target: TargetSession) -> Bool { name(of: target).titleIsWeak }
 
     /// The three files a look reads, each behind a closure so that ``look(at:startedAt:sources:)``
     /// can be exercised without a live terminal, somebody's real `~/.claude`, or a clock.
@@ -321,7 +349,11 @@ enum SessionNaming {
                                           sessionID: sessionID) else {
             return Name(title: nil, handle: handle)
         }
-        return Name(title: Transcript.title(ofTranscript: url), handle: handle)
+        let title = Transcript.title(ofTranscript: url)
+        return Name(title: title, handle: handle,
+                    titleIsWeak: Transcript.titleIsWeak(
+                        ofTranscript: url, title: title,
+                        customTitle: Transcript.customTitle(ofTranscript: url)))
     }
 
     /// What survives a look, field by field.
@@ -336,8 +368,12 @@ enum SessionNaming {
     static func reconcile(remembered previous: Remembered?, found: Name,
                           startedAt: Date?, now: Date) -> Remembered? {
         let carried = continues(previous, startedAt: startedAt) ? previous?.name : nil
+        // The weakness verdict is a fact about a title rather than a third field that fails on
+        // its own, so it is carried by whichever look supplied the title above it.
         let merged = Name(title: found.title ?? carried?.title,
-                          handle: found.handle ?? carried?.handle)
+                          handle: found.handle ?? carried?.handle,
+                          titleIsWeak: found.title != nil
+                              ? found.titleIsWeak : (carried?.titleIsWeak ?? false))
         guard !merged.isEmpty else { return nil }
         // The last start time known for this tab, so a look that could not measure one still
         // leaves a baseline for the look after it to be compared against.

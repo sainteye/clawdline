@@ -295,6 +295,32 @@ enum Transcript {
         return nil
     }
 
+    /// The first thing the assistant said back, for the conversations whose opening request is
+    /// not naming material — the ones ``ConversationTitle/isWeak(title:customTitle:opening:)``
+    /// calls weak, where the person pasted a screenshot and typed nothing.
+    ///
+    /// Same bound and the same row parser as ``firstUserMessage(of:bytes:)`` beside it, and for
+    /// the same reasons: a title is about how the conversation began, and ``entries(inRow:)`` is
+    /// the boundary that already keeps reminders, peer deliveries and Clawdline notices out of
+    /// what somebody actually said. Tool calls and their results are not the assistant talking,
+    /// so a turn that opens by running a command is stepped over until it says something.
+    static func firstAssistantMessage(of url: URL, bytes: Int = 2_000_000) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: bytes), !data.isEmpty else { return nil }
+        return firstAssistantMessage(in: String(decoding: data, as: UTF8.self))
+    }
+
+    static func firstAssistantMessage(in jsonl: String) -> String? {
+        for line in jsonl.split(separator: "\n") {
+            if let entry = entries(inRow: line).first(where: { $0.kind == .assistant }),
+               !entry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return entry.text
+            }
+        }
+        return nil
+    }
+
     /// One file changed by a tool. Codex carries the exact patch and Claude's `Write` carries
     /// the complete new file; keeping either structured here lets each surface decide how much
     /// to unfold without turning code into Markdown or asking Git what the file looks like later.
@@ -496,6 +522,38 @@ enum Transcript {
         titleLock.lock()
         defer { titleLock.unlock() }
         return customTitleCache[url.path]?.title
+    }
+
+    /// Whether this transcript's own title is one ``ConversationTitle`` calls weak, with the
+    /// head of the file read once rather than once per look.
+    ///
+    /// **Keyed on the title, not on the file's signature.** Every other cache here is
+    /// signature-keyed because the answer moves when the file grows; this one does not. Claude
+    /// Code writes `aiTitle` once and repeats the same value for the rest of the conversation,
+    /// and the opening user message is the one record that cannot change. So the answer moves
+    /// only when the title does — a `/rename` arriving, or a different conversation reusing the
+    /// path — and a signature key would re-read two megabytes off a busy transcript on every
+    /// reading to reach the same verdict as last time.
+    private static var weakTitleCache: [String: (title: String, weak: Bool)] = [:]
+
+    static func titleIsWeak(ofTranscript url: URL, title: String?, customTitle: String?,
+                            bytes: Int = 2_000_000) -> Bool {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return false }
+        // Asked before the cache is consulted: a name a person typed is never weak, and it costs
+        // nothing to say so without a file read or a cache entry standing behind it.
+        if let customTitle = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !customTitle.isEmpty { return false }
+        titleLock.lock()
+        let remembered = weakTitleCache[url.path]
+        titleLock.unlock()
+        if let remembered, remembered.title == title { return remembered.weak }
+        let weak = ConversationTitle.isWeak(title: title, customTitle: nil,
+                                            opening: firstUserMessage(of: url, bytes: bytes))
+        titleLock.lock()
+        weakTitleCache[url.path] = (title, weak)
+        titleLock.unlock()
+        return weak
     }
 
     /// Where a session's transcript is right now, and what `/rename` it last recorded — resolved
@@ -1644,4 +1702,86 @@ extension Transcript {
             ruleColor: .tertiaryLabelColor))
     }
 
+}
+
+/// Whether a Claude Code conversation's own title describes the work it is doing.
+///
+/// Claude Code writes `aiTitle` once, from whatever the first user message held, and never
+/// revises it — so a turn that opened with nothing but a pasted image is called `Image #1` for
+/// the rest of its life. That is not a Clawdline naming failure and the display ladder is right
+/// to show it; what is missing is anything that notices the name says nothing.
+///
+/// **The input is judged, never the wording of the title.** A rule that looked for the word
+/// *image* in a title would take `Lightbox 影片相容性` off somebody's screen. The question here is
+/// the one Claude Code was answering: *did the material it had describe the work?* Measured over
+/// every transcript on one Mac (2,152 with a first user message, 697 of them titled): all five
+/// whose opening was empty once attachment placeholders came off got a placeholder title —
+/// `Images`, `Image review`, `Image #1` — and no titled transcript with a prose-bearing opening
+/// had one. Seven more merely restate a short opening, and that set is identical at a threshold
+/// of 30 and of 45, so the second clause saturates rather than creeping.
+enum ConversationTitle {
+    /// How much prose may remain and still be *restated* rather than described. 40 because 30
+    /// and 45 select exactly the same seven transcripts out of the 697 measured; the number is
+    /// the middle of a plateau, not a tuned edge.
+    static let restatementLimit = 40
+
+    /// A title is weak when the material Claude Code had at naming time did not describe the
+    /// work: the opening said nothing once its attachments came off, or it said so little that
+    /// the title could only hand it back.
+    ///
+    /// `customTitle` is the name a person typed with `/rename`. It is never weak, whatever it
+    /// says and however short it is — it is not a description Claude Code failed to write, it is
+    /// somebody's choice, and second-guessing it is not this function's business.
+    ///
+    /// **A missing opening is not an empty one.** `nil` means no user turn could be read, which
+    /// is a lookup that answered nothing; `""` means one was read and it held nothing. The first
+    /// is not evidence about the title and returns `false`, the second is clause (a).
+    static func isWeak(title: String?, customTitle: String? = nil, opening: String?) -> Bool {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return false }
+        if let customTitle = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !customTitle.isEmpty { return false }
+        guard let opening else { return false }
+        let prose = withoutAttachmentPlaceholders(opening)
+        // (a) nothing but attachments.
+        if prose.isEmpty { return true }
+        // (b) so little prose that the title can only restate it.
+        guard prose.count <= restatementLimit else { return false }
+        let named = comparable(title)
+        let said = comparable(prose)
+        guard !named.isEmpty, !said.isEmpty else { return false }
+        return named.contains(said) || said.contains(named)
+    }
+
+    /// What is left of an opening message once Claude Code's attachment markers come off.
+    ///
+    /// The numbered shape — `[Image #1]`, `[Pasted text #2]`, and whatever is added next — is
+    /// recognised by that shape rather than by a list of nouns, so a marker this build has never
+    /// seen still comes off. Requiring the `#N` is what keeps the rule off ordinary prose: a
+    /// bracketed word on its own is something somebody wrote. The two unnumbered markers Claude
+    /// Code does write are named explicitly for that reason.
+    static func withoutAttachmentPlaceholders(_ opening: String) -> String {
+        let numbered = #"\[[A-Za-z][A-Za-z0-9]*(?:[ \t]+[A-Za-z0-9]+)*[ \t]*#[ \t]*[0-9]+\]"#
+        let unnumbered = #"\[(?:Images?|Screenshots?|Attachments?|Pasted (?:text|content))\]"#
+        guard let markers = try? NSRegularExpression(pattern: numbered + "|" + unnumbered,
+                                                     options: [.caseInsensitive]) else {
+            return opening.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let stripped = markers.stringByReplacingMatches(
+            in: opening, range: NSRange(opening.startIndex..<opening.endIndex, in: opening),
+            withTemplate: "")
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Both strings reduced to the part a restatement and its source have in common: NFKC, so
+    /// `Ｓｈｉｐ` and `Ship` are one word; lower-cased, so `Ship Today` restates `Ship today`;
+    /// and with whitespace and punctuation gone, so `準備好開始接下來的工作。` restates itself
+    /// without its full stop.
+    static func comparable(_ raw: String) -> String {
+        let folded = raw.precomposedStringWithCompatibilityMapping.lowercased()
+        return String(String.UnicodeScalarView(folded.unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0)
+                && !CharacterSet.punctuationCharacters.contains($0)
+        }))
+    }
 }
