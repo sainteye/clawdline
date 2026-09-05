@@ -1122,6 +1122,12 @@ MAINTENANCE_POSTED=
 # The HTTP code the last abort came back with, so the message that reports a failed abort can say
 # what the server actually said rather than "it did not work".
 MAINTENANCE_ABORT_STATUS=
+# The note this run's own note displaced, held in memory so it can be put back on the paths where
+# the server answers that this run holds no window at all. There is one note for the whole machine
+# and it is written before the POST leaves, so the write lands on runs that turn out to have
+# changed nothing; `maintenance_restore` is what makes that true of the note as well. Empty means
+# there was nothing there to displace.
+MAINTENANCE_DISPLACED=
 # 300 s: the measured 146-second drain doubled, with margin. It is the whole of the client's
 # patience for admission — the POST and the `ready` poll spend it between them rather than each
 # having its own — and it is deliberately larger than any drain seen so far rather than tuned to
@@ -1281,6 +1287,14 @@ except Exception:
 maintenance_remember() {
   local dir tmp
   dir=$(dirname "$MAINTENANCE_STATE_FILE")
+  # **Keep what is about to be displaced.** This write happens before the POST is answered, which
+  # is deliberate, and it therefore also happens on every run the server then refuses. Read the
+  # standing note first so `maintenance_restore` can put it back; the round trip is exact because
+  # both ends of it are this same two-line format.
+  MAINTENANCE_DISPLACED=
+  if [ -r "$MAINTENANCE_STATE_FILE" ]; then
+    MAINTENANCE_DISPLACED=$(cat "$MAINTENANCE_STATE_FILE" 2>/dev/null || true)
+  fi
   if ! mkdir -p "$dir" 2>/dev/null; then
     echo "!! could not create $dir; if this build is killed, $1 is the only handle on its window" >&2
     return 1
@@ -1296,6 +1310,45 @@ maintenance_remember() {
   rm -f "$tmp" 2>/dev/null || true
   echo "!! could not write $MAINTENANCE_STATE_FILE; if this build is killed, $1 is the only handle on its window" >&2
   return 1
+}
+
+# **Put back what this run displaced, once the server has said this run holds nothing.** The mirror
+# of `maintenance_forget`, and it asks the same question first: is the standing note still this
+# run's? A build refused with `409 restart_in_progress` or `503 restart_store_failed` has changed
+# nothing on the server — it never held a window — and until this existed it still overwrote a live
+# build's note on the way past. That is not a lost file: the note is the only machine-readable
+# evidence that a window has an owner, and what replaced it (an id the server is not holding, a pid
+# that dies a second later) is worse than an absence, because it sends the next run down the age
+# branch, the one that never asks about a pid.
+#
+# One machine-wide note is what makes this necessary at all: a file per request id would leave
+# nobody to displace. That is a design change and it is not this one; this closes the path where
+# the loss is caused by a build that did nothing.
+maintenance_restore() {
+  local tmp
+  [ -n "${MAINTENANCE_STATE_FILE:-}" ] || return 0
+  # Somebody may have written since. Then it is not this run's note to put anything back over.
+  [ "$(maintenance_remembered request_id)" = "$1" ] || return 0
+  if [ -z "$MAINTENANCE_DISPLACED" ]; then
+    # Nothing was displaced, so the truthful state is no note rather than this run's: the id it
+    # names is one the server has just said it is not holding.
+    maintenance_forget "$1"
+    return 0
+  fi
+  tmp=$(mktemp "$MAINTENANCE_STATE_FILE.XXXXXX" 2>/dev/null) || {
+    echo "!! could not put back the note this build displaced at $MAINTENANCE_STATE_FILE" >&2
+    return 0
+  }
+  if printf '%s\n' "$MAINTENANCE_DISPLACED" >"$tmp" 2>/dev/null \
+      && mv "$tmp" "$MAINTENANCE_STATE_FILE" 2>/dev/null; then
+    MAINTENANCE_DISPLACED=
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+  # The build is failing anyway; what this line adds is that the next run's recovery evidence went
+  # with it, and whose it was.
+  echo "!! could not put back the note this build displaced at $MAINTENANCE_STATE_FILE" >&2
+  return 0
 }
 
 # **Forget by id, or not at all.** There is one note for the whole machine, and three places used
@@ -1442,7 +1495,7 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
   fi
   if [ "$MAINTENANCE_STATUS" = 404 ]; then
     echo "→ installed runtime has no restart-maintenance route; using one-time bootstrap preflight"
-    maintenance_forget "$MAINTENANCE_REQUEST_ID"
+    maintenance_restore "$MAINTENANCE_REQUEST_ID"
     MAINTENANCE_REQUEST_ID=
     MAINTENANCE_POSTED=
   elif [ "$MAINTENANCE_STATUS" != 200 ]; then
@@ -1455,9 +1508,13 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
     # response at all, and reading it as a status is how the whole of 2026-09-05 happened. Nothing
     # reaches this branch with `000` while the split above is intact — which is exactly why the
     # condition has to say so rather than rely on it.
+    #
+    # **And the note goes back with it.** Observed and negative means this run never held a window,
+    # so the note it wrote on the way in is both worthless and in somebody else's place.
     case "$MAINTENANCE_STATUS" in
       "" | 000) : ;;
-      *) MAINTENANCE_POSTED= ;;
+      *) MAINTENANCE_POSTED=
+         maintenance_restore "$MAINTENANCE_REQUEST_ID" ;;
     esac
     echo "!! restart maintenance was refused by the app (HTTP $MAINTENANCE_STATUS)"
     echo "   request_id: $MAINTENANCE_REQUEST_ID"
