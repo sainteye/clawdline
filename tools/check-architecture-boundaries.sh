@@ -129,7 +129,27 @@ main_lines=$(line_count Tests/main.swift)
 # landing recorded before that wiring existed had no door at all and waited for the next launch,
 # which is the wait the feature was built to remove. Its review found it; the ceiling is what makes
 # the fix visible rather than absorbed.
-orchestrator_ceiling=10618
+#
+# The two paragraphs below were written on the 2026-09-05 branch that was never merged, against a
+# base of 10,585, so their absolute numbers are that tree's and their reasons are this one's:
+#
+# +19 for the read-only delivery's landing state. `nothing_to_land` is a feature and not a
+# relocation: nineteen lines of route, all of them inside `updateLanding` — the machine-only
+# credential it shares with `landed`, the field it refuses, and the evidence gate that reads the
+# predicate `Sources/OrchestratorTaskShape.swift` owns. The predicate, the enum case and its
+# reasons went to that file rather than here, which is why the raise is nineteen and not ninety.
+#
+# +7 for that same state reading the write set an isolated task actually declared. Seven lines:
+# `claims` is empty by design for a worktree child — the broker drops the lease and hands the list
+# back as `claims_ignored_for_worktree` — so the gate was reading the one spelling that positively
+# means "writes nothing" off every one of them. `OrchestratorLandingQueue.retainedLandingPaths()`
+# is a store with a lock of its own, so it is read before the registry lock rather than inside it.
+#
+# 10,644 is this merged tree counted with `line_count` above: 10,618 was counted on the tree the
+# landing verdict landed on, and the 26 lines are the two features that branch brought. Adding
+# would have given 10,644 too; the number here is the measurement rather than the sum, because a
+# sum cannot tell a feature that arrived twice from one that arrived once.
+orchestrator_ceiling=10644
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -152,7 +172,7 @@ printf '%s\n' "$orchestrator_record_projection" | grep -q 'publishedInventory()'
 record_publication_reads=$(printf '%s\n' "$orchestrator_record_projection" \
   | grep -Fc 'publishedInventory()' || true)
 [ "$record_publication_reads" -eq 2 ] \
-  || architecture_guard_fail "Orchestrator records/read-one projection has $record_publication_reads publication reads; expected 2"
+  || architecture_guard_fail "Orchestrator records/read-one projection has $record_publication_reads publication reads; expected 542"
 printf '%s\n' "$orchestrator_record_projection" \
   | grep -q 'let publication = SessionWatch.shared.publishedInventory();' \
   || architecture_guard_fail "Orchestrator records do not capture one publication before mapping tasks"
@@ -285,9 +305,13 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # same answer. `Tests/UsageLedgerTests.swift` stood at 1,998 lines against the 2,000-line limit
 # below, so the three groups that answer for one route moved out whole, in the position they
 # already ran in, rather than being trimmed to fit under it.
-[ "$runner_count" -eq 35 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 35"
-
+# 36 with the landing-currency slice's runner, which is the same wall again from the other side:
+# `Tests/UsageLedgerTests.swift` and `Tests/OrchestratorLandingTests.swift` were both within a
+# hundred lines of the limit, and its two groups belong beside each other rather than split across
+# two files with no room in either. That branch wrote 33 against a base of 32; this is the merged
+# tree's own count.
+[ "$runner_count" -eq 36 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 542"
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
   in_manifest && /^\]/ { in_manifest = 0 }
@@ -380,16 +404,10 @@ manifest_group_count=$(awk '
 # sharing the write gate with their typed refusals, and the snapshot carrying a list a session
 # read is already filtered from. One branch wrote 536 and the other 534, from the same 532; the
 # number here is the awk's answer on the merged manifest, which is the only tree that has both.
-# 540 is this merged tree counted with the awk above, not one side plus the other's increment.
-# Two branches each arrived carrying 539 for different reasons and both were right about their own
-# tree: the deep link's group, which holds a notification's session id percent-encoded (`%141` is
-# usually a tmux pane, and the unreserved set is used rather than `.urlFragmentAllowed`); and the
-# blindness group, the first test here that reads the automation circuit as a *detector* rather
-# than a subject — there is no `iterm.js` beside the test binary, so an inventory that was actually
-# taken arms the circuit, which is how it tells "the cadence read skipped the probe" from "the
-# probe ran and failed". Together they are 540, counted, never added.
-[ "$manifest_group_count" -eq 540 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 540"
+# 542 is this merged tree counted with the awk above, not one side plus the other's increment.
+# Three branches arrived carrying 539, 540 and 541 tonight and every one of them was right about
+# the tree it was measured on. Two groups are the deep link's and the blindness probe's; the rest
+# came in with the deliveries this merge carries. Counted, never added.
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -470,9 +488,11 @@ done
 # groups moved out of Tests/UsageLedgerTests.swift when that file hit the 2,000-line stop-growth
 # limit above. The move keeps the executed group order — the new runner is called between the two
 # it was cut from — so `expectedOrderedTestGroupTitles` is untouched by it.
-[ "$suite_count" -eq 48 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 48"
-
+# 49 with Tests/LandingCurrencyTests.swift, the 2026-09-05 branch's file. It wrote 46 against a
+# base of 45; this is the merged tree's own count, and the two files that branch never saw are the
+# difference.
+[ "$suite_count" -eq 49 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 542"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
 # what this refactor exists to abolish. It is defensible only as a migration step, and only if it

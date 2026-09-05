@@ -481,36 +481,61 @@ export var Mock = (function () {
        this was written on — delivered is the largest group, and it is the whole reason the page
        has a shape. Ids are the task UUIDs that name the checkouts; there is no path in this
        payload and no branch either, by design. */
-    function feature(id, label, outcome, runs, first, last, evidence) {
-        return { id: id, label: label, outcome: outcome, landingEvidence: evidence, runs: runs,
+    function feature(id, label, outcome, runs, first, last, evidence, work) {
+        return { id: id, label: label, outcome: outcome,
+                 landingEvidence: evidence || "unknown", runs: runs,
                  tasks: [], liveTasks: [], taskStates: [], landingStates: [],
+                 storedLandingStates: [], landingBasis: "live", work: work || null,
                  firstSeenAt: first, lastSeenAt: last };
     }
-    /* `evidence` is what the verdict beside it rests on, and every one of the five values it can
-       take appears somewhere below — including `unknown`, which is git not answering and is the
-       one a page must not draw as if it were a verdict. */
-    function worktree(id, outcome, runs, label, first, last, states, landings, evidence) {
+    /* `evidence` is what the verdict beside it rests on, and every one of the values it can take
+       appears somewhere below — including `unknown`, which is git not answering and is the one a
+       page must not draw as if it were a verdict. `label` is the work line a Feature was grouped
+       by and `work` is what the task itself said it was doing: on the machine this fixture was
+       written from, nine cards read `Clawdfather — handoff 18bde7c3` and none of them said what
+       the work was. `needs` is the row's own next step while it sits in the delivered block.
+
+       The two are answers to different questions and both are drawn, which is the whole reason
+       this fixture carries them side by side: `landingBasis` says whether the words came from the
+       registry or from the row's frozen copy, and `landingEvidence` says whether a landing was
+       recorded or read off a branch. */
+    function worktree(id, outcome, runs, label, first, last, states, landings, evidence, work,
+                      needs) {
         return { id: id, outcome: outcome, landingEvidence: evidence || "unknown", runs: runs,
                  tasks: [id], liveTasks: [],
                  taskStates: states, landingStates: landings || [],
+                 storedLandingStates: [], landingBasis: "live",
+                 work: work || null, needs: needs || null,
                  firstSeenAt: first, lastSeenAt: last,
                  features: [feature("feature-" + id.slice(0, 8), label, outcome, runs, first, last,
-                                    evidence || "unknown")] };
+                                    evidence || "unknown", work)] };
     }
     var worktreesByPath = {
         "/Users/you/code/clawdline": [
             worktree("b1103ab1-6f2c-41d8-9a70-3e5c17d0ba49", "delivered", 2,
                      "Clawdfather: machine coordinator", "2026-09-01T09:08:09Z", "2026-09-01T09:13:12Z",
-                     ["spawning", "success"], [], "branch_unmerged"),
+                     ["spawning", "success"], [], "branch_unmerged",
+                     "The succession a dead coordinator leaves behind", "land_or_abandon"),
             worktree("4d92c7e0-1b53-4a86-b2f1-7c08e5d41a63", "delivered", 5,
                      "The schedules page", "2026-08-28T02:41:00Z", "2026-08-29T18:02:44Z",
-                     ["success"], [], "branch_unmerged"),
+                     ["success"], [], "branch_unmerged", null, "no_record"),
             worktree("7a15fe38-90c4-4d21-8e07-2b6491cf0d55", "delivered", 3,
                      "Push, and the one lever that reaches a stale page", "2026-08-24T11:20:05Z",
-                     "2026-08-24T15:44:19Z", ["success"], ["pending"], "branch_unmerged"),
+                     "2026-08-24T15:44:19Z", ["success"], ["pending"], "branch_unmerged",
+                     "One notification a stale page cannot swallow", "land_or_abandon"),
             worktree("2ef96bc1-13ac-41c9-9cdb-b709b3b56d09", "delivered", 1,
                      "Review the close confirmation", "2026-08-19T07:02:31Z", "2026-08-19T07:58:00Z",
-                     ["failure"], ["abandoned"], "unknown"),
+                     ["failure"], ["abandoned"], "unknown",
+                     "Why the confirmation says what it says", "land_or_abandon"),
+            // A read-only delivery that was settled: it wrote to no repository, so its branch
+            // never received a commit and the strongest thing git can say about it is
+            // `branch_empty`. The settled rung is read above the two git rungs, which is why
+            // this row is `nothing_to_land` and not `delivered` — and why the evidence beside
+            // it is allowed to disagree without changing the verdict.
+            worktree("5a3b90ff-2c41-4d7e-8b06-19ae5c7d3f22", "nothing_to_land", 2,
+                     "Clawdfather: machine coordinator", "2026-08-31T04:20:00Z",
+                     "2026-08-31T09:05:00Z", ["success"], ["nothing_to_land"], "branch_empty",
+                     "Independent review of the handoff sender contract"),
             worktree("9c077b24-67a1-4a93-ac34-40fee4c97851", "landed", 4,
                      "The sidebar, and which page", "2026-09-04T03:10:00Z", "2026-09-04T11:35:00Z",
                      ["success"], ["landed"], "record"),
@@ -1348,8 +1373,9 @@ export var Mock = (function () {
                             schemaVersion: 1,
                             status: mode === "partial" ? "partial" : "available",
                             policy: "one_unambiguous_accepted_head",
-                            outcomeRule: "landed_by_record_or_nonempty_merged_branch_then_"
-                                + "branch_gone_then_delivered_then_live_then_abandoned",
+                            outcomeRule: "landed_by_record_then_settled_then_landed_by_nonempty_"
+                                + "merged_branch_then_branch_gone_then_delivered_then_live_then_"
+                                + "abandoned",
                             generatedAt: new Date().toISOString(),
                             range: { from: null, to: null, timezone: "Asia/Taipei" },
                             project: { id: "project-9c1f2e7a4b0d8e35", label: project },

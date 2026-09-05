@@ -128,13 +128,20 @@ const PLACES = {
 };
 
 /* One worktree per rung, so no assertion below can pass by reading a neighbour: every count,
-   every label and every date differs from every other one in this payload. */
-function worktree(id, outcome, runs, label, evidence) {
-    const row = {
+   every label and every date differs from every other one in this payload.
+
+   `work` and `needs` are the two fields the "done, never landed" block was missing: what the task
+   was actually doing, and which of the two things this row needs before it can leave the block.
+   `label` stays the work line the classifier grouped by, which is what every card used to be
+   titled with. `evidence` is the other axis entirely — what the verdict rests on — and is
+   positional rather than part of `extra` so that leaving it out still means *absent field*. */
+function worktree(id, outcome, runs, label, evidence, extra) {
+    const row = Object.assign({
         id, outcome, runs, tasks: [id], liveTasks: [], taskStates: [], landingStates: [],
+        storedLandingStates: [], landingBasis: "live", work: null, needs: null,
         firstSeenAt: "2026-09-01T09:08:09Z", lastSeenAt: "2026-09-02T09:13:12Z",
-        features: [{ id: `feature-${id.slice(0, 8)}`, label, outcome, runs }],
-    };
+        features: [{ id: `feature-${id.slice(0, 8)}`, label, outcome, runs, work: null }],
+    }, extra || {});
     // Left off entirely when the caller says nothing, because an older app is one of the two ways
     // this field arrives missing and the page has to draw that as itself rather than as a blank.
     if (evidence) row.landingEvidence = evidence;
@@ -147,17 +154,23 @@ function answer(overrides) {
             schemaVersion: 1,
             status: "available",
             policy: "one_unambiguous_accepted_head",
-            outcomeRule: "landed_by_record_or_nonempty_merged_branch_then_branch_gone_then_"
-                + "delivered_then_live_then_abandoned",
+            outcomeRule: "landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_"
+                + "then_branch_gone_then_delivered_then_live_then_abandoned",
             project: { id: "project-9c1f2e7a4b0d8e35", label: "clawdline" },
             read: { rows: 726, projectRows: 237, worktreeRows: 240, featureRows: 190,
                     truncated: false, maxScannedRows: 100000 },
             worktrees: [
                 worktree("b1103ab1-6f2c-41d8-9a70-3e5c17d0ba49", "delivered", 2, "Clawdfather",
-                         "branch_unmerged"),
-                worktree("4d92c7e0-1b53-4a86-b2f1-7c08e5d41a63", "delivered", 5, "Schedules page"),
+                         "branch_unmerged",
+                         { work: "The landing queue's second correction",
+                           needs: "land_or_abandon" }),
+                worktree("4d92c7e0-1b53-4a86-b2f1-7c08e5d41a63", "delivered", 5, "Schedules page",
+                         null, { needs: "no_record" }),
                 worktree("9c077b24-67a1-4a93-ac34-40fee4c97851", "landed", 4, "Sidebar and pages",
                          "record"),
+                worktree("5a3b90ff-2c41-4d7e-8b06-19ae5c7d3f22", "nothing_to_land", 6,
+                         "Clawdfather", "branch_empty",
+                         { work: "Independent review of the sender contract" }),
                 worktree("3f9a21bc-88d0-4e57-9b12-6ca4de70f381", "active", 1, "Projects page",
                          "branch_unmerged"),
                 worktree("b57fc96f-4e10-42a3-95d8-0c1b7e6a2f84", "abandoned", 3, "Delivery logs",
@@ -325,6 +338,15 @@ const ok = {
 
     const first = elements["project-delivered-list"].children[0];
     equal(first.dataset.outcome, "delivered", "each row says which rung it is on");
+    // 「光看標題真的看不出來分別」: nine cards on the real Mac read `Clawdfather — handoff
+    // 18bde7c3`, which is the work line and not an answer to "what is this".
+    equal(first.querySelectorAll(".project-worktree-features")[0].textContent,
+          "The landing queue's second correction",
+          "the heading is what the task was doing, taken from its own stored title");
+    const workLine = first.querySelectorAll(".project-fact-line")[0];
+    match(workLine.textContent, new RegExp(T.webProjectWorkLine),
+          "and the root's label keeps its place under a word saying which of the two it is");
+    match(workLine.textContent, /Clawdfather/, "carrying that label");
     match(first.textContent, /Clawdfather/, "and names the Feature it finished");
     match(first.textContent, /b1103ab1/, "and the worktree, short enough to read");
     match(first.textContent, /clawdline\/task\/b1103ab1-6f2c-41d8-9a70-3e5c17d0ba49/,
@@ -345,6 +367,11 @@ const ok = {
         (row.querySelectorAll(".project-fact-evidence")[0] || { dataset: {} }).dataset.evidence;
     equal(evidenceOf(first), "branch_unmerged",
           "carried on the row as the wire's own word, for anything reading the DOM");
+    // The block exists to be emptied, so every row in it says which of the two it needs. Nothing
+    // here closes anything: a landing record is durable and terminal.
+    match(first.querySelectorAll(".project-fact-needs")[0].textContent,
+          new RegExp(T.webProjectNeedsLanding),
+          "a row that wrote something needs a person to land it or write it off");
     const second = elements["project-delivered-list"].children[1];
     match(second.textContent, new RegExp(T.webProjectEvidenceUnknown),
           "a payload with no evidence field at all — an older app — says so rather than blanking");
@@ -352,13 +379,36 @@ const ok = {
           "and unknown is a value here, never an absent attribute");
     check(!new RegExp(T.webProjectEvidenceBranchUnmerged).test(second.textContent),
           "an unknown is never drawn as one of the four answers this page can actually give");
+    match(second.querySelectorAll(".project-fact-needs")[0].textContent,
+          new RegExp(T.webProjectNeedsNoRecord),
+          "and one whose task the registry has swept says there is nothing left to close");
+    equal(second.querySelectorAll(".project-worktree-features")[0].textContent, "Schedules page",
+          "a row with no stored title keeps the label as its heading rather than going blank");
+    equal(second.querySelectorAll(".project-fact-line").length, 0,
+          "and does not print that same label twice under a word saying it is something else");
+
+    const settled = elements["project-groups"].children[1];
+    equal(settled.dataset.outcome, "nothing_to_land",
+          "the read-only deliveries have a rung of their own, beside landed rather than above it");
+    equal(settled.children[0].textContent, T.webProjectNothingToLand + "1",
+          "with the rung's name and how many are on it");
+    match(settled.children[1].textContent, new RegExp(T.webProjectNothingToLandSay),
+          "and the stored fact it rests on: a root recorded that nothing was written");
+    equal(settled.querySelectorAll(".project-fact-needs").length, 0,
+          "a settled row needs nothing, and says so by not answering");
+    // **The two axes, on one row.** `nothing_to_land` is a settlement somebody recorded; the
+    // branch under it never received a commit, so git can only say `branch_empty`. The settled
+    // rung is read above the git rungs, so the verdict is the settlement and the evidence beside
+    // it is allowed to say something else.
+    match(settled.children[2].textContent, new RegExp(T.webProjectEvidenceBranchEmpty),
+          "a settled verdict keeps git's own word beside it rather than overwriting it");
 
     // The delivered worktrees are the block above; drawing them again below would double every
     // count on the page.
     const groups = elements["project-groups"].children;
-    equal(groups.length, 5, "the other five rungs are the five sections underneath");
+    equal(groups.length, 6, "the other six rungs are the six sections underneath");
     equal(groups.map((group) => group.dataset.outcome).join(","),
-          "landed,branch_gone,active,abandoned,unknown",
+          "landed,nothing_to_land,branch_gone,active,abandoned,unknown",
           "in the order the ladder is evaluated, hardest evidence first");
     for (const group of groups) {
         equal(group.tagName, "DETAILS",
@@ -372,7 +422,7 @@ const ok = {
           "and the stored fact that rung rests on, rather than a description of itself");
     match(groups[0].children[2].textContent, new RegExp(T.webProjectEvidenceRecord),
           "a landed worktree says a root's verified record put it there");
-    match(groups[3].children[2].textContent, new RegExp(T.webProjectEvidenceBranchAbsent),
+    match(groups[4].children[2].textContent, new RegExp(T.webProjectEvidenceBranchAbsent),
           "and a worktree whose branch git says is gone, with nothing that ever succeeded in it, "
           + "stays debris on the abandoned rung");
 
@@ -381,15 +431,15 @@ const ok = {
     // carries no commits — true of the app, and the app is not the only thing that deletes
     // branches. Eight it kept *because* they carried commits, three of them holding 1, 63 and
     // 122, are gone from that repository with no removal recorded anywhere.
-    equal(groups[1].children[0].textContent, T.webProjectBranchGone + "1",
+    equal(groups[2].children[0].textContent, T.webProjectBranchGone + "1",
           "the rung for a delivery whose branch nobody can find is drawn under its own name");
-    match(groups[1].children[1].textContent, new RegExp(T.webProjectBranchGoneSay),
+    match(groups[2].children[1].textContent, new RegExp(T.webProjectBranchGoneSay),
           "saying what it rests on rather than borrowing the landed rung's sentence");
-    match(groups[1].children[2].textContent, new RegExp(T.webProjectEvidenceBranchAbsent),
+    match(groups[2].children[2].textContent, new RegExp(T.webProjectEvidenceBranchAbsent),
           "with the branch fact that put it there");
-    match(groups[1].children[2].textContent, /5b1c8ad4/,
+    match(groups[2].children[2].textContent, /5b1c8ad4/,
           "and it is the worktree the payload put on that rung, not a neighbour");
-    check(!new RegExp(T.webProjectLandedSay).test(groups[1].children[1].textContent)
+    check(!new RegExp(T.webProjectLandedSay).test(groups[2].children[1].textContent)
             && groups[0].children[0].textContent === T.webProjectLanded + "1",
           "the landed rung keeps its own one worktree and gains nothing from the branch that is gone");
 
@@ -695,10 +745,11 @@ const readsInStatic = new Set([...staticSource.matchAll(/\bT\.(webProject[A-Za-z
     .map((m) => m[1]));
 check(readsHere.size >= 25, `view/projects.js draws its words from T: ${readsHere.size} of them`);
 const declared = Object.keys(T).filter((key) => key.startsWith("webProject"));
-equal(declared.length, 41,
-      "this slice added forty-one strings to the fallback table — thirty-one, the six that name "
-      + "where a landing verdict came from, the two for a rung whose branch is gone, and the two "
-      + "for the containments that are not merges");
+equal(declared.length, 48,
+      "this slice added forty-eight strings to the fallback table — thirty-one, the six that name "
+      + "where a landing verdict came from, the two for a rung whose branch is gone, the two for "
+      + "the containments that are not merges, and the seven for a settled delivery and what a "
+      + "row in the block still needs");
 for (const key of declared) {
     check(readsHere.has(key) || readsInStatic.has(key),
           `T.${key} is read by the page it was added for — a string nothing draws is a string nobody translated for a reason`);
