@@ -408,6 +408,9 @@ extension Orchestrator {
     /// Same shape and same locking discipline as ``Orchestrator/usageFeatureTaskFacts()`` above,
     /// and it lives beside it for the same reason that one is not in `Sources/Orchestrator.swift`.
     static func usageLiveTaskRecords() -> [String: UsageLedger.LiveTaskRecord] {
+        // Both stores are read outside the other's lock, and the declared write sets are read
+        // once for the whole snapshot rather than once per task.
+        let retained = OrchestratorLandingQueue.retainedLandingPaths()
         load()
         lock.lock()
         let snapshots = Array(tasks.values)
@@ -418,7 +421,10 @@ extension Orchestrator {
                 landingState: task.landing?.state.rawValue,
                 title: UsageLedger.featureNonEmpty(task.title),
                 isLive: !task.state.isTerminal,
-                nothingToLand: nothingToLandAdmission(for: task).isAdmitted)
+                nothingToLand: nothingToLandAdmission(
+                    for: task,
+                    declaredWritePaths: OrchestratorLandingQueue.landingPaths(
+                        of: task, retainedPaths: retained)).isAdmitted)
         }
         return records
     }

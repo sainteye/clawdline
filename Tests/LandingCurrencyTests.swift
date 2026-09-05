@@ -112,6 +112,26 @@ group("a read-only delivery gets a terminal state, and one that wrote may not us
            refusal(settle(uncounted, raw: ["state": "nothing_to_land"]))?.code,
            "wrote_to_repository")
 
+    // **The list an isolated task declared is not in `claims`.** The broker drops that lease and
+    // hands the paths back as `claims_ignored_for_worktree`, so a worktree child that declared
+    // nine paths is persisted as declared-and-empty — the one spelling that positively means
+    // "writes nothing". Reading `claims` here would have admitted every one of them.
+    let isolated = "20202020-3030-4040-5050-606060606066"
+    var isolatedTask = Orchestrator.Task(
+        id: isolated, state: .success, kind: "custom", title: "a worktree child that declared",
+        assistant: .claude, projectDir: repository.url.path, timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 1), claims: ["Sources/Isolated.swift"],
+        claimsDeclared: true, worktree: checkout(commits: 0, dirty: false),
+        secretHash: Orchestrator.hash(ofSecret: secret))
+    isolatedTask.isolation = .worktree
+    OrchestratorLandingQueue.retainLandingPaths(&isolatedTask)
+    Orchestrator.holdScheduleTaskForTesting(isolatedTask)
+    check("the broker really does store it declared-and-empty",
+          isolatedTask.claims.isEmpty && isolatedTask.claimsDeclared)
+    expect("and its declared write set still refuses the state, from where landing kept it",
+           refusal(settle(isolated, raw: ["state": "nothing_to_land"]))?.code,
+           "wrote_to_repository")
+
     // The predicate itself, which the Projects read consults so that a row can never advise a
     // close this route would refuse.
     var named = Orchestrator.Task(
@@ -123,13 +143,14 @@ group("a read-only delivery gets a terminal state, and one that wrote may not us
         state: .pending, target: "main", delivery: nil, ownerRootKey: "0123abcd",
         since: Date(timeIntervalSince1970: 2), commit: nil, note: nil)
     check("an obligation whose target is already named contradicts having nothing to land",
-          !Orchestrator.nothingToLandAdmission(for: named).isAdmitted)
+          !Orchestrator.nothingToLandAdmission(for: named, declaredWritePaths: []).isAdmitted)
     check("a dirty checkout is evidence too",
           !Orchestrator.nothingToLandAdmission(for: Orchestrator.Task(
             id: "20202020-3030-4040-5050-606060606065", state: .success, kind: "review",
             title: "dirty", assistant: .claude, projectDir: repository.url.path,
             timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
-            worktree: checkout(commits: 0, dirty: true), secretHash: "")).isAdmitted)
+            worktree: checkout(commits: 0, dirty: true), secretHash: ""),
+            declaredWritePaths: []).isAdmitted)
 }
 
 group("a worktree's landing state is the one that is true now, and its row says what the work was") {

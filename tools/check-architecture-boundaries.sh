@@ -114,12 +114,17 @@ main_lines=$(line_count Tests/main.swift)
 # stayed green because the slack check below only refuses a gap over 200 — which is the shape this
 # comment block keeps warning about, found by the reviewer of that very delivery and not by
 # anything here. A relocation lowers the ceiling; only a feature raises it.
+# 10,611 is that same state reading the write set an isolated task actually declared. Seven lines:
+# `claims` is empty by design for a worktree child — the broker drops the lease and hands the list
+# back as `claims_ignored_for_worktree` — so the gate was reading the one spelling that positively
+# means "writes nothing" off every one of them. `OrchestratorLandingQueue.retainedLandingPaths()`
+# is a store with a lock of its own, so it is read before the registry lock rather than inside it.
 # 10,604 is the read-only delivery's landing state. `nothing_to_land` is a feature and not a
 # relocation: nineteen lines of route, all of them inside `updateLanding` — the machine-only
 # credential it shares with `landed`, the field it refuses, and the evidence gate that reads the
 # predicate `Sources/OrchestratorTaskShape.swift` owns. The predicate, the enum case and its
 # reasons went to that file rather than here, which is why the raise is nineteen and not ninety.
-orchestrator_ceiling=10604
+orchestrator_ceiling=10611
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

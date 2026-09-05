@@ -5292,6 +5292,10 @@ enum Orchestrator {
             return .refused(400, "bad_request",
                             "target is not valid when state is nothing_to_land.")
         }
+        // Read before the registry lock, the way the git verification below is: this is another
+        // store with a lock of its own, and it holds the write set an isolated task declared.
+        let retainedPaths = requestedState == .nothingToLand
+            ? OrchestratorLandingQueue.retainedLandingPaths() : [:]
 
         load()
         lock.lock()
@@ -5318,7 +5322,10 @@ enum Orchestrator {
         // of what the registry holds, and `nothingToLandAdmission` says what it can and cannot
         // see; the assertion itself is the machine credential's.
         if requestedState == .nothingToLand,
-           case .refused(let why) = nothingToLandAdmission(for: current) {
+           case .refused(let why) = nothingToLandAdmission(
+            for: current,
+            declaredWritePaths: OrchestratorLandingQueue.landingPaths(
+                of: current, retainedPaths: retainedPaths)) {
             lock.unlock()
             return .refused(409, "wrote_to_repository",
                             "nothing_to_land says this task wrote nothing to land, and \(why).")

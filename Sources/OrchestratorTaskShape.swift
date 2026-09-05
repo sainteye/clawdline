@@ -54,9 +54,18 @@ extension Orchestrator {
     /// dirty checkout, counts it does not have, and an obligation whose target a root has already
     /// named. The remaining assertion is the caller's, which is why the route accepts it only
     /// from the machine credential.
-    static func nothingToLandAdmission(for task: Task) -> NothingToLandAdmission {
-        if !task.claimKeys.isEmpty {
-            return .refused("this task claimed \(task.claimKeys.count) path(s) to write")
+    ///
+    /// **`declaredWritePaths` is passed in and not read off the task**, because for an isolated
+    /// task `claims` is empty by design — the broker drops the lease and hands the list back as
+    /// `claims_ignored_for_worktree`, which
+    /// ``OrchestratorLandingQueue/landingPaths(of:retainedPaths:)`` is the one place that knows
+    /// how to recover. Reading `claims` here would have made every worktree child look like it
+    /// had declared nothing, which is the one spelling that positively means "writes nothing".
+    /// It is also a store behind its own lock, and this runs inside the registry's.
+    static func nothingToLandAdmission(for task: Task,
+                                       declaredWritePaths: [String]) -> NothingToLandAdmission {
+        if !declaredWritePaths.isEmpty {
+            return .refused("this task declared \(declaredWritePaths.count) path(s) to write")
         }
         if let target = task.landing?.target, !target.isEmpty {
             return .refused("its landing obligation already names the target \(target)")
