@@ -1473,7 +1473,7 @@ final class RemoteServer: @unchecked Sendable {
                   let obj = body as? [String: Any], obj["handoff_id"] != nil else {
                 return .error(400, "bad_request", "handoff_id is required.")
             }
-            return answer(Orchestrator.handoff(obj))
+            return answer(Orchestrator.handoff(obj, sender: handoffSenderEvidence))
 
         case ("POST", "/v1/orchestrator/tasks"):
             guard orchestratorAuthed else {

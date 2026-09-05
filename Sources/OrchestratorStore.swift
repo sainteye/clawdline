@@ -257,6 +257,9 @@ enum OrchestratorStore {
         ]
         if let title = envelope.title { out["title"] = title }
         if let from = envelope.fromSession { out["from_session"] = from }
+        // Written only when it is true, so an ordinary envelope keeps the bytes it has always
+        // had and the key's presence is itself the record of a decision.
+        if envelope.coordinatorPlainHandoff { out["coordinator_plain_handoff"] = true }
         return out
     }
 
@@ -578,8 +581,12 @@ enum OrchestratorStore {
         else { return nil }
         let title = (obj["title"] as? String).flatMap { $0.count <= 200 ? $0 : nil }
         let from = (obj["from_session"] as? String).flatMap { $0.count <= 200 ? $0 : nil }
+        // Absent in every envelope written before the sender contract, and in every ordinary one
+        // written since; absent means the assertion was never made.
+        let waived = obj["coordinator_plain_handoff"] as? Bool == true
         return Orchestrator.HandoffEnvelope(id: id, projectDir: projectDir, title: title,
-                               fromSession: from, created: Date(timeIntervalSince1970: created),
+                               fromSession: from, coordinatorPlainHandoff: waived,
+                               created: Date(timeIntervalSince1970: created),
                                state: state)
     }
 

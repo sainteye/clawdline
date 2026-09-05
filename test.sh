@@ -211,14 +211,14 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # time, which is what says the total is the tree's and the two failures were the clock's. A count
 # from a red run is still the count when the run reached the end of its roster; what a red run
 # cannot give you is a green.
-expected_swift_receipt='8946 checks passed'
+expected_swift_receipt='8986 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7096
+expected_swift_receipt_witness=7134
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -643,6 +643,12 @@ node Tests/dispatch-role-contract.mjs
 # seven days telling every root to approximate a mechanism that had already landed, and comparing
 # two copies of a wrong sentence produces agreement, not a red.
 node Tests/attached-follow-up-contract.mjs
+# The same shape, one route further along and for the same reason. `POST /v1/orchestrator/handoffs`
+# grew nine typed refusals when it started requiring a sender, four surfaces were written to
+# describe them, and nothing compared any of the four with the code — so within one review three of
+# them were false, including both shipped guides still teaching that an unrecognised sender is the
+# same as an absent one. That is the sentence the sender of the 2026-09-04 handoff read.
+node Tests/handoff-sender-contract.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/remote-response-write-close.mjs
 # `GET /sw.js`, which was the one of RemotePage's five entry points with no route test — the gap

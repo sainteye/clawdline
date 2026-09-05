@@ -511,9 +511,11 @@ occupied by the other assistant therefore produces no `root.terminalId`; it neve
 under the wrong row.
 
 The same strict conversation resolver is used for list mounting, completion lines, workspace
-overlap lines, root-close cancellation and batch-notification deep links. Handoff receipts are the
-one named compatibility exception: their free-form `from_session` may be either a conversation id
-or a watched terminal id, as the handoff API has always promised.
+overlap lines, root-close cancellation and batch-notification deep links. Handoff is the one named
+exception, and it is a wider namespace rather than a looser one: its `from_session` may be either
+the conversation id or the watched terminal id, and since the sender contract landed it is required
+and must resolve to exactly one of them — the two are compared whole, and anything but one match is
+a typed refusal. See [`docs/handoff.md`](handoff.md#the-route).
 
 `model` is the only free-form string a dispatch puts on a command line, and it is shaped so that
 saying so is not alarming: not a fragment of a command but a name out of a closed alphabet. No

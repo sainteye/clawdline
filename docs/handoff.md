@@ -314,10 +314,15 @@ is by then exactly as full as the one that made this necessary.
 **`POST /v1/orchestrator/handoffs`** — open a session and give it a package to pick up.
 
 ```console
+$ ORCH=$(cat ~/.config/clawdline/orchestrator-token)
+$ conversation_id='<this assistant process-bound conversation id>'
+$ ME=$(curl -fsSG http://127.0.0.1:7717/v1/orchestrator/whoami \
+      -H "X-Clawdline-Orchestrator: $ORCH" \
+      --data-urlencode "conversation_id=$conversation_id" | jq -er .terminal_id)
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/handoffs \
-    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
     -H 'Content-Type: application/json' \
-    -d "{\"handoff_id\":\"$ID\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\"}"
+    -d "{\"handoff_id\":\"$ID\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\",\"from_session\":\"$ME\"}"
 {"ok":true,"handoff":{"id":"7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","state":"opening","projectDir":"/Users/you/code/clawdline","assistant":"codex","dir":"/tmp/.clawdline/handoffs/7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","opened":{"terminalId":"9A1F…","backend":"iterm"}}}
 ```
 
@@ -345,7 +350,9 @@ contents**:
 |---|---|
 | `handoff_id` | the id, which is also the directory name |
 | `project_dir` | where the tab was opened |
-| `title`, `from_session` | as given, if they were given at all |
+| `title` | as given, if it was given at all |
+| `from_session` | the sender, which the route required and resolved before the tab was opened |
+| `coordinator_plain_handoff` | present and `true` only when the sender deliberately sent a plain handoff while holding the coordinator binding |
 | `created` | when the call was accepted |
 | `state` | `opening` while the line is being typed, then `delivered` or `spawn_failed` |
 
@@ -395,20 +402,46 @@ storage](#transport-is-not-storage) would be a promise nothing implements.
 | `assistant` | optional. `claude` or `codex`. Absent is `claude`, the same default [`POST /v1/places/:id/start`](api.md#post-v1placesidstart-post-v1placesidstartassistant) has |
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
 | `title` | optional, ≤ 200 characters. What the tab is called, what the receipt line says, and the only spelling that earns a [durable label](#what-the-app-remembers). Absent, the tab is `handoff` and the first eight characters of the id, the receipt drops its bracket, and nothing durable is stored — that fallback says less about the work than the name the conversation will generate for itself, so it is a fact about this process only |
-| `from_session` | optional, ≤ 200 characters, free-form. Whatever the sending assistant calls the session it is in — it is looked up among the running sessions, not parsed, so no shape is assumed and none is required. Best-effort exactly as `root.session_id` is: absent, unrecognised, or an assistant that has no such id at all, and the handoff runs with nobody getting a typed receipt |
+| `from_session` | **required**, ≤ 200 characters. The session this handoff is sent from, as either the watched terminal-neutral id or the process-bound conversation id. It must resolve to exactly one current assistant session; absent, empty, unresolvable, ambiguous, or from a namespace this Mac does not index are five different refusals under four codes — absent and empty share `from_session_required`, because a caller that sent nothing and a caller that sent whitespace have the same thing to do next |
+| `coordinator_plain_handoff` | optional, and exactly `true` when present. Waives the refusal a plain handoff from the machine's coordinator otherwise gets, and waives nothing else |
 
-`title` and `from_session` are optional for one reason between them: **the app will not open
-`handoff.md` to find out either.** It needs a name for the tab and an address for the receipt, and if
-it is not told, it goes without rather than reading the file. That is the whole of the postman rule,
-written as two nullable fields.
+`title` is optional for one reason: **the app will not open `handoff.md` to find out.** It needs a
+name for the tab, and if it is not told, it goes without rather than reading the file. That is the
+postman rule, written as one nullable field.
 
-`from_session` is deliberately not specified beyond a length, and that is the assistant-neutral
-answer rather than a lax one. Either assistant may send a handoff, they name their sessions
-differently, and a route that insisted on one of those shapes would be a route only one of them could
-call. What the app does with the value is one lookup: if it matches a session it is watching, that
-session gets the receipt; if it matches nothing, nobody does, which is the same outcome as leaving it
-out. A value longer than 200 characters is the one refusal here, and it is a refusal about length
-rather than about form.
+`from_session` used to be the second such field, and that is the hole this route closed. It was
+free-form and optional — "whatever the sending assistant calls the session it is in" — and the
+consequence was not a missing receipt. It was that **the route could not say who sent a handoff**:
+on 2026-09-04 the Clawdfather handed its own line on, named nobody, and nothing could notice that
+the sender was this machine's registered coordinator, so the whole
+`POST /v1/orchestrator/coordinator/successions` sequence — open the receiver, prove the sender
+drained, prove the old binding offline, commit the compare-and-swap — was skipped. The receiving
+root then took a correct `409 coordinator_online` from `rebind` and a person closed the sending tab
+by hand.
+
+The assistant-neutral answer survives without the laxness. Both namespaces are ones this app
+already indexes for both assistants, and the comparison is
+`Orchestrator.handoffSource(_:matches:)` — the one the receipt path already makes, whole values
+only, no prefix, title or tty fallback. `GET /v1/orchestrator/whoami` gives a session its own pair;
+`$ITERM_SESSION_ID` is a cached terminal hint and not an input. Anything but exactly one match is a
+refusal rather than a guess, because the failure of a loose resolver is not that it finds nothing —
+it is that it silently finds the wrong thing.
+
+**A plain handoff whose resolved sender holds the coordinator binding is refused**, with
+`succession_required`, the route that replaces it, and the `coordinator_id`,
+`expected_generation` and `sender_session_id` that request needs. `coordinator_plain_handoff:true`
+is the deliberate exception — the Clawdfather handing a *different* line of work to somebody while
+the role stays where it is — and it is recorded on the envelope so the record can afterwards say it
+was a decision. It never waives resolution.
+
+**If the app cannot tell, it refuses.** No complete current reading of this Mac's sessions, an
+unreadable coordinator record, or a registered coordinator whose process this reading cannot place
+are each their own code and each a refusal. An *offline* coordinator is not one of those and an
+ordinary handoff proceeds — but the word alone does not earn that. `status:"offline"` says no live
+row agreed with the record on every field, and a session that is alive with its conversation id
+unlocated for one round looks exactly like that, so the route wants the bound terminal id absent
+from the reading altogether. Named there but unmatched is `coordinator_liveness_unknown`, and the
+caller retries.
 
 `model` is the only string here that reaches a command line, and it is shaped so that saying so is
 not alarming — a closed alphabet with no character a shell reads. It is checked here and again on the
@@ -422,7 +455,9 @@ Everything it can check without reading the file:
 - `handoff.md` exists inside it, is a regular file, and is not empty — *not empty* meaning it has a
   byte in it, since anything cleverer would be the app reading the document.
 - `project_dir` is an absolute path to a directory that exists.
-- `assistant`, `model`, `title` and `from_session` are in range — the last two by length only.
+- `assistant`, `model` and `title` are in range — the last by length only.
+- `from_session` is present, in range, and resolves to exactly one current assistant session, which
+  is not the machine's online coordinator unless `coordinator_plain_handoff` says so on purpose.
 
 **It does not read `handoff.md`, parse it, check its headings, or summarise it.** The document is
 between the two sessions. An app that validated its shape would be an app that has an opinion about
@@ -474,8 +509,9 @@ and it refuses it with the same `orchestrator_disabled` a dispatch gets.
    for a dispatch, and recorded.
 3. **Confirms the line landed** by finding that first user turn in the assistant's own record —
    Claude Code's transcript, Codex's rollout — rather than trusting that bytes reached a tty.
-4. **Types one receipt line** into the sender's terminal, if `from_session` was given, names a
-   session this app is watching, and that session is not showing a menu. One attempt, never retried,
+4. **Types one receipt line** into the sender's terminal, if that session is not showing a menu —
+   `from_session` was required and resolved before the tab was opened, so by here there is a
+   sender. One attempt, never retried,
    and `orchestrator_notify_root` switches it off along with the dispatch lines.
 5. **Settles the row and writes the audit line** — `delivered` or `spawn_failed`, and then forgets
    the handoff in every other sense. There is no watcher, because after this there is nothing to
@@ -526,15 +562,22 @@ namespace, one route further along:
 | `forbidden` | 403 | `X-Clawdline-Orchestrator` is missing or wrong. Decided at the door, before the body is looked at |
 | `bad_request` | 400 | the body is not JSON, or has no `handoff_id` in it. The route's own check that it was handed a request at all |
 | `orchestrator_disabled` | 403 | the orchestrator is switched off in Settings. One switch over both routes; its label in Settings speaks of dispatch |
-| `bad_task` | 422 | a `handoff_id` that is not a lowercase UUID; a `project_dir` that is absent, relative or not a directory; an `assistant`, `model`, `title` or `from_session` out of range; **or a package directory or `handoff.md` that is not there, or is empty** |
+| `from_session_required` · `from_session_invalid` | 400 | no sender, an empty one, or one that is not a string of at most 200 characters |
+| `from_session_wrong_namespace` · `sender_not_found` | 404 | an Anthropic cloud session id (`session_01…`), or a well-shaped id no current assistant session answers to |
+| `sender_ambiguous` · `sender_unverifiable` | 409 | more than one session answers to it, or this Mac has no complete current reading to resolve it against |
+| `coordinator_store_unreadable` · `coordinator_liveness_unknown` | 409 | the coordinator record cannot be read, or its binding cannot be placed from this reading. Cannot tell is not allow |
+| `succession_required` | 409 | the sender holds the online coordinator binding and did not set `coordinator_plain_handoff` |
+| `bad_task` | 422 | a `handoff_id` that is not a lowercase UUID; a `project_dir` that is absent, relative or not a directory; an `assistant`, `model`, `title` or `coordinator_plain_handoff` out of range; **or a package directory or `handoff.md` that is not there, or is empty** |
 | `rate_limited` | 429 | more than ten calls — dispatches and handoffs together — in ten minutes, or more than one full tree's worth if that is larger |
 | `terminal_closed` · `terminal_unsupported` | 409 | there is no terminal to open a tab in, or not one this can drive. `app` names it |
 | `not_found` | 404 | this build has no handoff route |
 | `internal` | 500, 502 | a tab that would not open |
 
 That is an order and not a list, which is worth two sentences. **The id is checked and a replay
-answered before a ticket is taken**, so retrying a call that already landed costs nothing, and
-everything past that point spends one, refusals included. And **`terminal_closed`,
+answered before a ticket is taken** — and before the sender is checked at all, so a retry after a
+dropped connection cannot be turned into a refusal by a contract the first call already satisfied.
+Retrying a call that already landed costs nothing. Everything past the sender check spends a
+ticket, refusals included; the sender refusals themselves come first and spend none. And **`terminal_closed`,
 `terminal_unsupported` and `internal` are the only three reachable once the package has been read**,
 because by then the terminal is the last thing left that can fail — the typing that follows is past
 the end of this table altogether, and turns into an audit line instead. `not_found` sits outside the

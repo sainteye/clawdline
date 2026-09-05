@@ -302,13 +302,13 @@ group("every broker blocker has a record that produces it, and a closure that cl
     expect("a handoff this session opened and nobody has taken is an obligation",
            obligations(handoffs: [Orchestrator.HandoffEnvelope(
             id: "dddddddd-1111-4111-8111-dddddddddddd", projectDir: "/repo",
-            title: "carry on", fromSession: "ROOT-TAB",
+            title: "carry on", fromSession: "ROOT-TAB", coordinatorPlainHandoff: false,
             created: Date(timeIntervalSince1970: 95), state: .opening)]),
            ["open_handoff"])
     expect("a delivered one is not",
            obligations(handoffs: [Orchestrator.HandoffEnvelope(
             id: "dddddddd-1111-4111-8111-dddddddddddd", projectDir: "/repo",
-            title: "carry on", fromSession: "ROOT-TAB",
+            title: "carry on", fromSession: "ROOT-TAB", coordinatorPlainHandoff: false,
             created: Date(timeIntervalSince1970: 95), state: .delivered)]),
            [])
 

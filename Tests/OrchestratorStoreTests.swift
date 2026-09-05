@@ -81,6 +81,7 @@ private func handoffFields(_ envelope: Orchestrator.HandoffEnvelope?) -> [(Strin
             ("project_dir", envelope.projectDir),
             ("title", fieldText(envelope.title)),
             ("from_session", fieldText(envelope.fromSession)),
+            ("coordinator_plain_handoff", String(envelope.coordinatorPlainHandoff)),
             ("created", stamp(envelope.created)),
             ("state", envelope.state.rawValue)]
 }
@@ -426,10 +427,11 @@ func runOrchestratorStoreTests() {
     group("the handoff envelope codec keeps its two optional halves") {
         let full = Orchestrator.HandoffEnvelope(
             id: taskID, projectDir: "/clawdline-fixture/repo", title: "continue the line",
-            fromSession: "sender-session", created: epoch, state: .delivered)
+            fromSession: "sender-session", coordinatorPlainHandoff: true,
+            created: epoch, state: .delivered)
         let minimal = Orchestrator.HandoffEnvelope(
             id: otherID, projectDir: "/clawdline-fixture/repo", title: nil, fromSession: nil,
-            created: epoch, state: .opening)
+            coordinatorPlainHandoff: false, created: epoch, state: .opening)
         for (label, value) in [("a delivered handoff", full), ("an opening handoff", minimal)] {
             let row = OrchestratorStore.stored(value)
             compareStoreFields(label, handoffFields(OrchestratorStore.handoff(from: row)),
