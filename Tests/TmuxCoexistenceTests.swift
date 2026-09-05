@@ -457,11 +457,18 @@ group("a tmux failure says whether there is no server, or only that nobody could
     let shut = "error connecting to \(socket) (Permission denied)"
 
     expect("a server that was killed leaves its socket behind and says so",
-           Tmux.serverAnswer(io(killed)), .noServer)
+           Tmux.serverAnswer(io(killed)), .noServer(.declaredGone))
     expect("a socket that was never made says something else entirely and means the same",
-           Tmux.serverAnswer(io(neverUsed)), .noServer)
-    expect("the spelling tmux uses while a server is starting is an answer too",
-           Tmux.serverAnswer(io("failed to connect to server")), .noServer)
+           Tmux.serverAnswer(io(neverUsed)), .noServer(.socketPathAbsent))
+    // Not one of the three above, and not tmux 3.6a's either: `strings /opt/homebrew/bin/tmux`
+    // on 2026-09-05 holds `no server running on %s` and `error connecting to %s (%s)` and not
+    // this, the nearest being `connect failed: %s`. It is kept, and kept as a case of its own,
+    // because a value nothing here can produce is exactly the value worth being able to see.
+    expect("the spelling no tmux on this Mac says is still an answer, and its own one",
+           Tmux.serverAnswer(io("failed to connect to server")), .noServer(.connectFailed))
+    check("and all three are still the same conclusion to a caller that only wants one",
+          [killed, neverUsed, "failed to connect to server"]
+              .allSatisfy { Tmux.serverAnswer(io($0)).isNoServer })
     expect("a socket that exists and will not open proves nothing",
            Tmux.serverAnswer(io(shut)), .unreachable)
     expect("and a tmux that never finished proves nothing either",
@@ -512,6 +519,81 @@ group("a tmux failure says whether there is no server, or only that nobody could
           shutPanes.error?.message ?? "nothing")
     check("with the control-mode answer holding the same doubt",
           !Tmux.controlModeObservation().isComplete)
+
+    // **Three failures injected, one per sentence — through the whole path and not into the
+    // classifier.** Each run is a real subprocess that writes tmux's sentence to stderr and exits
+    // 1, so what these prove is `run` -> `serverAnswer` -> `paneObservation`: the empty inventory
+    // that comes back is still complete, still empty, and now says which of the three empties it
+    // is *and* quotes the sentence that made it. That last half is what 2026-09-05 did not have.
+    // The `said:` value is compared whole rather than by substring, so a sentence that reaches
+    // the caller mangled fails here rather than looking like the right kind of empty.
+    func emptinessRefusing(_ refusal: String) -> Tmux.Emptiness? {
+        let fake = makeFakeTmux(refusing: refusal)
+        defer { fake.cleanup() }
+        Tmux.binaryForTesting = fake.binary
+        return Tmux.paneObservation().emptiness
+    }
+    func causeOf(_ emptiness: Tmux.Emptiness?) -> Tmux.NoServerCause? {
+        guard case .noServer(let cause, _)? = emptiness else { return nil }
+        return cause
+    }
+    let refused = "failed to connect to server"
+    let killedEmptiness = emptinessRefusing(killed)
+    let killedWant: Tmux.Emptiness? = .noServer(.declaredGone, said: io(killed))
+    expect("a killed server's empty inventory says a server ran here and is gone",
+           killedEmptiness, killedWant)
+    let refusedEmptiness = emptinessRefusing(refused)
+    let refusedWant: Tmux.Emptiness? = .noServer(.connectFailed, said: io(refused))
+    expect("a server that would not be talked to says that instead",
+           refusedEmptiness, refusedWant)
+    let absentEmptiness = emptinessRefusing(neverUsed)
+    let absentWant: Tmux.Emptiness? = .noServer(.socketPathAbsent, said: io(neverUsed))
+    expect("and a socket path this process cannot see says the third thing",
+           absentEmptiness, absentWant)
+    // The distinctness is asserted over what came *back*, not over what was asked for: comparing
+    // the three expected causes to each other would pass against an implementation that answers
+    // one value for all three, which is the defect being guarded.
+    let seen = [causeOf(killedEmptiness), causeOf(refusedEmptiness), causeOf(absentEmptiness)]
+    check("so three sentences reach three values rather than being flattened into one",
+          seen[0] != seen[1] && seen[1] != seen[2] && seen[0] != seen[2],
+          "\(seen)")
+    check("and every one of them is still the complete empty inventory it was before",
+          [killed, refused, neverUsed].allSatisfy { refusal in
+              let fake = makeFakeTmux(refusing: refusal)
+              defer { fake.cleanup() }
+              Tmux.binaryForTesting = fake.binary
+              let observed = Tmux.paneObservation()
+              return observed.isComplete && observed.sessions.isEmpty && observed.error == nil
+          })
+    // **The sibling reading, which is the one the incident came out of.** `list-clients` is what
+    // `ITerm.ptylessSecondSource` consults before the panel says "tmux reports no control-mode
+    // client that would explain it", and it dropped the same receipt in the same way. It is
+    // checked here rather than in a group of its own because it is the same fact.
+    let ccFake = makeFakeTmux(refusing: neverUsed)
+    Tmux.binaryForTesting = ccFake.binary
+    let ccObserved = Tmux.controlModeObservation()
+    ccFake.cleanup()
+    let ccWant: Tmux.Emptiness? = .noServer(.socketPathAbsent, said: io(neverUsed))
+    expect("the empty control-mode answer says which empty it is too",
+           ccObserved.emptiness, ccWant)
+    check("while still being the complete answer that lets a pty-less row stay unexplained",
+          ccObserved.isComplete && ccObserved.clients.isEmpty)
+    // The one place the two fields disagree on purpose, which is what makes them two fields:
+    // a tmux this app could not find is *not* a complete control-mode answer, and it is still
+    // empty for the same nameable reason.
+    let unaskable = Tmux.controlModeObservationWithoutBinary()
+    check("an unaskable tmux names its emptiness and refuses to be believed at once",
+          unaskable.emptiness == Tmux.Emptiness.noTmuxToAsk && !unaskable.isComplete)
+
+    // The fourth kind of empty has no fixture here on purpose. `Tmux.binary` falls back to four
+    // fixed install paths, so a suite running on a Mac that has tmux cannot reach the
+    // no-binary branch by clearing `binaryForTesting` — it would reach the real server on this
+    // machine instead, which is the one thing a unit run must not do. `Emptiness.noTmuxToAsk`
+    // is why the field is not merely a `NoServerCause?`: *nothing was asked* and *tmux answered*
+    // are different empties, and `nil` is left to mean the ordinary one, a reading that found
+    // no panes.
+    check("the two empties that are not answers are different values",
+          Tmux.Emptiness.noTmuxToAsk != Tmux.Emptiness.noServer(.declaredGone, said: io(killed)))
 }
 
 group("one tmux subprocess answers for every pane in a reading") {
