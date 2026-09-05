@@ -314,10 +314,15 @@ is by then exactly as full as the one that made this necessary.
 **`POST /v1/orchestrator/handoffs`** — open a session and give it a package to pick up.
 
 ```console
+$ ORCH=$(cat ~/.config/clawdline/orchestrator-token)
+$ conversation_id='<this assistant process-bound conversation id>'
+$ ME=$(curl -fsSG http://127.0.0.1:7717/v1/orchestrator/whoami \
+      -H "X-Clawdline-Orchestrator: $ORCH" \
+      --data-urlencode "conversation_id=$conversation_id" | jq -er .terminal_id)
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/handoffs \
-    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
     -H 'Content-Type: application/json' \
-    -d "{\"handoff_id\":\"$ID\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\"}"
+    -d "{\"handoff_id\":\"$ID\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\",\"from_session\":\"$ME\"}"
 {"ok":true,"handoff":{"id":"7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","state":"opening","projectDir":"/Users/you/code/clawdline","assistant":"codex","dir":"/tmp/.clawdline/handoffs/7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","opened":{"terminalId":"9A1F…","backend":"iterm"}}}
 ```
 
@@ -397,7 +402,7 @@ storage](#transport-is-not-storage) would be a promise nothing implements.
 | `assistant` | optional. `claude` or `codex`. Absent is `claude`, the same default [`POST /v1/places/:id/start`](api.md#post-v1placesidstart-post-v1placesidstartassistant) has |
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
 | `title` | optional, ≤ 200 characters. What the tab is called, what the receipt line says, and the only spelling that earns a [durable label](#what-the-app-remembers). Absent, the tab is `handoff` and the first eight characters of the id, the receipt drops its bracket, and nothing durable is stored — that fallback says less about the work than the name the conversation will generate for itself, so it is a fact about this process only |
-| `from_session` | **required**, ≤ 200 characters. The session this handoff is sent from, as either the watched terminal-neutral id or the process-bound conversation id. It must resolve to exactly one current assistant session; absent, empty, unresolvable, ambiguous, or from a namespace this Mac does not index are five different refusals with five different codes |
+| `from_session` | **required**, ≤ 200 characters. The session this handoff is sent from, as either the watched terminal-neutral id or the process-bound conversation id. It must resolve to exactly one current assistant session; absent, empty, unresolvable, ambiguous, or from a namespace this Mac does not index are five different refusals under four codes — absent and empty share `from_session_required`, because a caller that sent nothing and a caller that sent whitespace have the same thing to do next |
 | `coordinator_plain_handoff` | optional, and exactly `true` when present. Waives the refusal a plain handoff from the machine's coordinator otherwise gets, and waives nothing else |
 
 `title` is optional for one reason: **the app will not open `handoff.md` to find out.** It needs a
@@ -431,8 +436,12 @@ was a decision. It never waives resolution.
 
 **If the app cannot tell, it refuses.** No complete current reading of this Mac's sessions, an
 unreadable coordinator record, or a registered coordinator whose process this reading cannot place
-are each their own code and each a refusal. An *offline* coordinator is not one of those: it is a
-fact from a current reading, and an ordinary handoff proceeds.
+are each their own code and each a refusal. An *offline* coordinator is not one of those and an
+ordinary handoff proceeds — but the word alone does not earn that. `status:"offline"` says no live
+row agreed with the record on every field, and a session that is alive with its conversation id
+unlocated for one round looks exactly like that, so the route wants the bound terminal id absent
+from the reading altogether. Named there but unmatched is `coordinator_liveness_unknown`, and the
+caller retries.
 
 `model` is the only string here that reaches a command line, and it is shaped so that saying so is
 not alarming — a closed alphabet with no character a shell reads. It is checked here and again on the

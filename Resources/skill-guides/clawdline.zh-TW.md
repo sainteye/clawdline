@@ -1113,12 +1113,31 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
 ```
 
 `assistant`（`claude`／`codex`，不給就是 `claude`）與 `model` 都是選配。`title` 是分頁的名字——
-不給的話分頁就叫 `handoff` 加 id 前八碼；`from_session` 是收據要打去哪：填你自己這個 session 的
-id，200 字元以內，認不出來就等於沒填。兩個都是 best-effort，因為 **app 不會為了湊出這兩個值去開
-`handoff.md`**。`code` 照 §5 的方式 branch：`forbidden`、`orchestrator_disabled`（Settings 裡那個
-開關連 handoff 一起管）、`bad_request`、`bad_task`（欄位不對，或手交包目錄、`handoff.md` 根本
-不在）、`rate_limited`（跟 dispatch 共用同一個煞車，被擋掉也照吃一格）、`not_found`（這版沒有
-handoff 路由）。
+不給的話分頁就叫 `handoff` 加 id 前八碼；它是 best-effort，因為 **app 不會為了湊出這個值去開
+`handoff.md`**。
+
+**`from_session` 是必填，而且一定要解得出來。** 它是「這次 handoff 從哪個 session 送出」，200 字元
+以內，兩個 namespace 擇一：這台 Mac 盯著的 terminal-neutral id，或 process-bound conversation id；
+`GET /v1/orchestrator/whoami` 會把這一對解給你。解不到剛好一個活著的 assistant session 就是拒絕，
+每一種各有自己的 code，絕不猜——**認不出來不等於沒填**，app 也不會替你湊。`code` 照 §5 的方式
+branch：`forbidden`、`orchestrator_disabled`（Settings 裡那個開關連 handoff 一起管）、
+`bad_request`、`bad_task`（欄位不對，或手交包目錄、`handoff.md` 根本不在）、`rate_limited`（跟
+dispatch 共用同一個煞車，但寄件者的拒絕是在拿票**之前**決定的，不吃格）、`not_found`（這版沒有
+handoff 路由）。寄件者契約另外有九個：
+
+- `from_session_required`（400）——沒填，或填空白。`from_session_invalid`（400）——不是字串，
+  或超過 200 字元。
+- `from_session_wrong_namespace`（404）——`session_01…` 那種 id 指的是 claude.ai 上的對話，
+  不是這台 Mac 上的 session。`sender_not_found`（404）——形狀對，但沒有活著的 session 認領。
+- `sender_ambiguous`（409）——兩個 session 同時認領；改填 terminal-neutral id，那個是唯一的。
+  `sender_unverifiable`（409）——這台 Mac 沒有完整的當前讀取；等下一輪掃描再送，你的請求沒有錯。
+- `coordinator_store_unreadable`（409）與 `coordinator_liveness_unknown`（409）——app 判斷不出
+  你是不是 coordinator，而「判斷不出」不等於「放行」。等完整掃描後重試。
+- `succession_required`（409）——**這不是 `from_session` 的問題。** 它的意思是你**就是**這台機器的
+  coordinator，而搬動那個角色要走 `POST /v1/orchestrator/coordinator/successions`；那個請求要的
+  `coordinator_id`、`expected_generation`、`sender_session_id` 都已經在拒絕的 body 裡了。
+  不要回頭去改 `from_session`。如果 crown 根本沒有要移動、你只是把另一條工作線交出去，
+  就帶 `"coordinator_plain_handoff":true` 重送——必須剛好是 `true`，而且它只 waive 這一個拒絕。
 
 遇到 `not_found` 時，做完第 1–3 步，並把
 [`docs/handoff.md`〈The line〉](../../docs/handoff.md#the-line) 的 canonical 句原封不動交給使用者自行貼上：

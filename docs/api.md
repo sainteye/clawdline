@@ -1683,11 +1683,16 @@ regular file and never reads its contents. The full package and receiving contra
 
 ```console
 $ H=$(uuidgen | tr 'A-Z' 'a-z'); umask 077; mkdir -p /tmp/.clawdline/handoffs/$H
-$ # write a non-empty handoff.md, then:
+$ # write a non-empty handoff.md, then prove which session this is:
+$ ORCH=$(cat ~/.config/clawdline/orchestrator-token)
+$ conversation_id='<this assistant process-bound conversation id>'
+$ ME=$(curl -fsSG http://127.0.0.1:7717/v1/orchestrator/whoami \
+      -H "X-Clawdline-Orchestrator: $ORCH" \
+      --data-urlencode "conversation_id=$conversation_id" | jq -er .terminal_id)
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/handoffs \
-    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
     -H 'Content-Type: application/json' \
-    -d "{\"handoff_id\":\"$H\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\",\"from_session\":\"$MY_SESSION\"}"
+    -d "{\"handoff_id\":\"$H\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\",\"from_session\":\"$ME\"}"
 {"ok":true,"handoff":{"id":"7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","state":"opening","projectDir":"/Users/you/code/clawdline","assistant":"codex","dir":"/tmp/.clawdline/handoffs/7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","opened":{"terminalId":"9A1F…","backend":"iterm"}}}
 ```
 
@@ -1731,8 +1736,11 @@ who the sender was.
 of its sessions, or the coordinator record cannot be read, or a coordinator is registered and this
 reading cannot say which process holds it, the handoff is refused with its own code and the caller
 retries. A guard that allows when it cannot see is the hole this contract closes. An *offline*
-coordinator is not that case — it is a fact from a current reading, its process is gone, and an
-ordinary handoff proceeds.
+coordinator is not that case and an ordinary handoff proceeds — but only where the reading can show
+the absence. `status:"offline"` on its own means no live row agreed with the record on every field,
+which is also what a live session whose conversation id went unlocated for a round looks like, so
+the route asks for more than the word: the bound terminal id has to be missing from the reading
+altogether. A binding still named there but unmatched is `coordinator_liveness_unknown`.
 
 Opening the terminal is synchronous and is named in `opened`; composer waiting, trust confirmation,
 typing, and transcript confirmation happen after this response. The durable registry stores only
