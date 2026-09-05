@@ -666,6 +666,7 @@ struct Indonesian: Copy {
     let webSnippetSave = "Simpan"
     let webSnippetFromLast = "Dari pesan terakhir saya"
     let webSnippetNeedsText = "Frasa perlu judul dan sedikit teks."
+    let webSnippetTooLong = "Terlalu panjang. Judul memuat 60 bita dan teksnya 4000."
     let webSnippetStarterCommitTitle = "Commit, push, deploy"
     let webSnippetStarterCommitBody = "Commit tiap berkas dengan menyebut namanya — jangan pernah git add -A — lalu push dan deploy."
     let webSnippetStarterReportTitle = "Bilang apa yang sudah dikerjakan"

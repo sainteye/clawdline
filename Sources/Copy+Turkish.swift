@@ -666,6 +666,7 @@ struct Turkish: Copy {
     let webSnippetSave = "Kaydet"
     let webSnippetFromLast = "Son mesajımdan"
     let webSnippetNeedsText = "Hazır metin için bir başlık ve biraz metin gerekir."
+    let webSnippetTooLong = "Çok uzun. Başlık 60 bayt, metin 4000 bayt alır."
     let webSnippetStarterCommitTitle = "Commit, push, deploy"
     let webSnippetStarterCommitBody = "Her dosyayı adını yazarak commit et — asla git add -A yapma — sonra push ve deploy."
     let webSnippetStarterReportTitle = "Ne yaptığını söyle"

@@ -669,6 +669,7 @@ struct Portuguese: Copy {
     let webSnippetSave = "Salvar"
     let webSnippetFromLast = "Da minha última mensagem"
     let webSnippetNeedsText = "Uma frase precisa de um título e de algum texto."
+    let webSnippetTooLong = "Longo demais. O título comporta 60 bytes e o texto 4000."
     let webSnippetStarterCommitTitle = "Commit, push, deploy"
     let webSnippetStarterCommitBody = "Faça commit de cada arquivo pelo nome — nunca git add -A — depois push e deploy."
     let webSnippetStarterReportTitle = "Diga o que você fez"

@@ -67,6 +67,49 @@ export function snippetActions(controls, readOnly) {
     };
 }
 
+/* ==========================================================================
+   The project the Mac resolved, kept for the header
+
+   `view/transcript.js:renderDetailHead` names the project on the header's
+   button and hashes its mark, and it had only the session's raw `cwd` to do
+   both with — while the sheet groups under the key the *Mac* resolved. The two
+   disagree exactly where the Mac's rule earns its keep: a session in a
+   subdirectory of an unregistered repository, a session in an isolated
+   worktree, and a session whose `cwd` is the home directory, which announced
+   the account name as a project.
+
+   `GET /v1/snippets?session=<id>` already answers `{"project":{"key","label"}}`,
+   so the header uses that answer rather than deriving a second one — and says
+   nothing about a project until there is one. Only the read's own `project`
+   field is kept, never the fallback the sheet uses for its own heading: on the
+   relay there is no such field, and remembering the fallback would be putting
+   the raw `cwd` back on the header by a longer route.
+
+   One session, because the header draws one session. Nothing here is stored
+   anywhere; a reload asks again.
+   ========================================================================== */
+var resolvedFor = "";
+var resolvedProject = null;
+
+/** Keep what the Mac answered about one session, or forget it when the Mac answered nothing. */
+export function rememberSnippetProject(sessionID, project) {
+    var id = typeof sessionID === "string" ? sessionID : "";
+    if (!id) return;
+    var stated = project && typeof project === "object" ? project : null;
+    var key = stated && typeof stated.key === "string" ? stated.key : "";
+    resolvedFor = id;
+    resolvedProject = key
+        ? { key: key, label: typeof stated.label === "string" && stated.label
+            ? stated.label : labelForKey(key) }
+        : null;
+}
+
+/** What the Mac last said this session's project is, or null while nothing has said. */
+export function snippetProjectFor(sessionID) {
+    var id = typeof sessionID === "string" ? sessionID : "";
+    return id && id === resolvedFor ? resolvedProject : null;
+}
+
 /** The tail of a path, for a project whose answer carried no label of its own. */
 function labelForKey(key) {
     var parts = String(key || "").replace(/\/+$/, "").split("/");
@@ -188,11 +231,52 @@ function groupHeading(scope) {
    happy path would catch.
    ========================================================================== */
 
-/** Both limits are the store's, counted here so the sheet refuses before the Mac has to.
- *  JavaScript counts UTF-16 units where Swift counts characters, so this is the stricter of
- *  the two for anything outside the basic plane — refusing early is safe, allowing late is not. */
+/** Both limits are the store's, **in the store's own unit**, counted here so the sheet refuses
+ *  before the Mac has to. `Sources/Snippets.swift` bounds `title.utf8.count` and
+ *  `body.utf8.count`, because bytes are what the file, the audit line and every snapshot
+ *  broadcast pay for — so counting UTF-16 units here would let this sheet build a draft the Mac
+ *  refuses, which is exactly the shape `From my last message` produces for a message written in
+ *  Han characters: twenty of them are sixty bytes and are the whole of a title. */
 var TITLE_MAX = 60;
 var BODY_MAX = 4000;
+
+/** How many bytes a string is once it is UTF-8, without asking for a `TextEncoder`: this module
+ *  promises to import into a bare Node process, and arithmetic is cheaper than a global. A
+ *  surrogate pair is one character in four bytes; a lone surrogate is what an encoder would
+ *  replace with U+FFFD, which is three. */
+export function byteLength(text) {
+    var value = String(text == null ? "" : text);
+    var bytes = 0;
+    for (var i = 0; i < value.length; i++) {
+        var unit = value.charCodeAt(i);
+        if (unit < 0x80) { bytes += 1; continue; }
+        if (unit < 0x800) { bytes += 2; continue; }
+        if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < value.length) {
+            var low = value.charCodeAt(i + 1);
+            if (low >= 0xdc00 && low <= 0xdfff) { bytes += 4; i += 1; continue; }
+        }
+        bytes += 3;
+    }
+    return bytes;
+}
+
+/** The beginning of a string that fits in `limit` bytes, with the ellipsis that says it was cut
+ *  counted as part of what has to fit. Cut between characters and never inside one. */
+function cutToBytes(text, limit) {
+    var value = String(text == null ? "" : text);
+    if (byteLength(value) <= limit) return value;
+    var room = limit - byteLength("…");
+    var out = "";
+    for (var i = 0; i < value.length; i++) {
+        var unit = value.charCodeAt(i);
+        var pair = unit >= 0xd800 && unit <= 0xdbff && i + 1 < value.length;
+        var step = pair ? value.slice(i, i + 2) : value.charAt(i);
+        if (byteLength(out) + byteLength(step) > room) break;
+        out += step;
+        if (pair) i += 1;
+    }
+    return out + "…";
+}
 
 /** The text a field actually holds, with the whitespace a textarea collects at either end
  *  taken off. A snippet is literal text and every character between those ends is kept. */
@@ -231,7 +315,7 @@ export function snippetDraftProblem(draft) {
     var title = trimmed(made.title);
     var body = trimmed(made.body);
     if (!title || !body) return "empty";
-    if (title.length > TITLE_MAX || body.length > BODY_MAX) return "long";
+    if (byteLength(title) > TITLE_MAX || byteLength(body) > BODY_MAX) return "long";
     if (made.scope === "project" && !trimmed(made.project)) return "scope";
     return "";
 }
@@ -352,7 +436,7 @@ export function snippetStarters() {
 export function snippetDraftFromText(text) {
     var body = trimmed(text);
     var first = snippetSummary(body);
-    var title = first.length > TITLE_MAX ? first.slice(0, TITLE_MAX - 1) + "…" : first;
+    var title = cutToBytes(first, TITLE_MAX);
     return snippetDraft(null, { title: title, body: body, scope: "global" });
 }
 

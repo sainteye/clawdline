@@ -217,6 +217,7 @@ enum RemotePage {
             "webSnippetSave": t.webSnippetSave,
             "webSnippetFromLast": t.webSnippetFromLast,
             "webSnippetNeedsText": t.webSnippetNeedsText,
+            "webSnippetTooLong": t.webSnippetTooLong,
             "webSnippetStarterCommitTitle": t.webSnippetStarterCommitTitle,
             "webSnippetStarterCommitBody": t.webSnippetStarterCommitBody,
             "webSnippetStarterReportTitle": t.webSnippetStarterReportTitle,

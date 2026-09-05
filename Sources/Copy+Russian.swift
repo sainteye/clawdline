@@ -666,6 +666,7 @@ struct Russian: Copy {
     let webSnippetSave = "Сохранить"
     let webSnippetFromLast = "Из последнего моего сообщения"
     let webSnippetNeedsText = "Заготовке нужны название и текст."
+    let webSnippetTooLong = "Слишком длинно. В названии помещается 60 байт, в тексте — 4000."
     let webSnippetStarterCommitTitle = "Commit, push, deploy"
     let webSnippetStarterCommitBody = "Коммить каждый файл по имени — никогда git add -A — потом push и deploy."
     let webSnippetStarterReportTitle = "Расскажи, что сделал"

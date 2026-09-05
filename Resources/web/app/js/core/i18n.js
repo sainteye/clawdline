@@ -94,6 +94,11 @@ export var T = {
     // about to save is usually one they have just finished typing once.
     webSnippetFromLast: "From my last message",
     webSnippetNeedsText: "A snippet needs a title and some text.",
+    // The other half of that refusal. `From my last message` assigns a whole message to the
+    // body, which no `maxlength` can stop, so "too long" is reachable with both fields visibly
+    // full — and it used to be reported as "needs a title and some text". The numbers are in the
+    // sentence because a limit nobody can see is not help.
+    webSnippetTooLong: "Too long. A snippet's title may hold 60 bytes and its text 4000.",
     // The two the design was written from, offered on the empty list as one press each. The
     // English here is the fallback; the fourteen copy files carry what a reader actually sees.
     webSnippetStarterCommitTitle: "Commit, push, deploy",

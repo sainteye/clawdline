@@ -118,23 +118,16 @@ export function generatedMark(key) {
  * The icon to draw for a session: the registered one, or one made up from the project it sits
  * in. One function so that every caller who wants "the mark for this session" asks the same
  * question, and so the fallback cannot drift away from what the header actually draws.
+ *
+ * **`projectKey` is the Mac's answer for this session, when there is one**, and it is what the
+ * generated mark is hashed from. Without it the mark is a function of the session's own `cwd`,
+ * which makes the two sessions of one project — one in the checkout, one in a worktree cut from
+ * it — two different marks for one snippet list. The `cwd` remains the fallback, because a
+ * session that has not been asked about still needs a box to press.
  */
-export function markForSession(session) {
+export function markForSession(session, projectKey) {
     if (!session || typeof session !== "object") return null;
     if (session.icon && session.icon.cells && session.icon.cells.length) return session.icon;
-    return generatedMark(session.cwd);
-}
-
-/**
- * What to call the project on a button, before the Mac has said anything about it.
- *
- * The tail of the path, which is the part that identifies a project — the same choice
- * `shortPath` makes about which end to keep. **This is a label and never a scope key.** The
- * sheet's own heading uses the `project.label` the Mac answers beside the list, because that
- * one has been through the registry match, the subdirectory prefix and the worktree fold; this
- * is only what the header can say about a session it is already showing.
- */
-export function projectLabel(key) {
-    var parts = String(key || "").replace(/\/+$/, "").split("/");
-    return parts[parts.length - 1] || "";
+    var key = typeof projectKey === "string" && projectKey ? projectKey : session.cwd;
+    return generatedMark(key);
 }

@@ -20,11 +20,11 @@ assert.equal(typeof globalThis.document, "undefined",
 assert.equal(typeof globalThis.window, "undefined", "and without a window");
 
 const data = await import("../Resources/web/app/js/view/snippets-data.js");
-const { snippetActions, snippetControls, snippetCreateBody, snippetDraft, snippetDraftFromText,
-    snippetDraftProblem, snippetGroups, snippetOrder, snippetOrderBody, snippetPatchBody,
-    snippetReorder, snippetScopeSwap, snippetStarters, snippetSummary, snippetTitle,
-    snippetsListHTML } = data;
-const { generatedMark, markForSession, projectLabel } =
+const { byteLength, rememberSnippetProject, snippetActions, snippetControls, snippetCreateBody,
+    snippetDraft, snippetDraftFromText, snippetDraftProblem, snippetGroups, snippetOrder,
+    snippetOrderBody, snippetPatchBody, snippetProjectFor, snippetReorder, snippetScopeSwap,
+    snippetStarters, snippetSummary, snippetTitle, snippetsListHTML } = data;
+const { generatedMark, markForSession } =
     await import("../Resources/web/app/js/view/project-mark.js");
 const { appendGap, appendedText } = await import("../Resources/web/app/js/core/compose-text.js");
 const { T } = await import("../Resources/web/app/js/core/i18n.js");
@@ -58,7 +58,7 @@ for (const key of ["webSnippets", "webSnippetsThisProject", "webSnippetsEveryPro
     "webSnippetNew", "webSnippetEditing", "webSnippetMore", "webSnippetEdit", "webSnippetDelete",
     "webSnippetDeleteAsk", "webSnippetUp", "webSnippetDown", "webSnippetToGlobal",
     "webSnippetToProject", "webSnippetTitleLabel", "webSnippetBodyLabel", "webSnippetScopeLabel",
-    "webSnippetSave", "webSnippetFromLast", "webSnippetNeedsText",
+    "webSnippetSave", "webSnippetFromLast", "webSnippetNeedsText", "webSnippetTooLong",
     "webSnippetStarterCommitTitle", "webSnippetStarterCommitBody",
     "webSnippetStarterReportTitle", "webSnippetStarterReportBody"]) {
     assert.equal(typeof T[key], "string", key + " has an English fallback in core/i18n.js");
@@ -123,8 +123,12 @@ for (const name of ["snippets", "createSnippet", "updateSnippet", "deleteSnippet
         "the direct transport carries " + name + "()");
 }
 assert.match(cloudSource, /\n    snippets\(\) \{/, "the cloud transport carries snippets()");
+// The method, not the word. `!cloudSource.includes("createSnippet(")` passed only because that
+// file happens to name these four in prose without parentheses; a comment written as
+// `createSnippet()` would have turned it into a false red. What is pinned is the definition
+// shape asserted one line above for `snippets()`.
 for (const name of ["createSnippet", "updateSnippet", "deleteSnippet", "orderSnippets"]) {
-    assert.ok(!cloudSource.includes(name + "("),
+    assert.doesNotMatch(cloudSource, new RegExp("\\n    " + name + "\\("),
         "the cloud transport does not carry " + name + "() — absent, not rejecting");
 }
 
@@ -488,13 +492,43 @@ assert.equal(fromMessage.body, "跑一次 focused groups\n先看到紅的再看�
 assert.equal(fromMessage.title, "跑一次 focused groups", "and its first line is the title");
 assert.equal(fromMessage.scope, "global");
 const longMessage = snippetDraftFromText("x".repeat(200));
-assert.equal(longMessage.title.length, 60,
-    "a title made from a long first line is cut to the store's sixty");
+assert.ok(byteLength(longMessage.title) <= 60,
+    "a title made from a long first line is cut to the store's sixty bytes");
 assert.ok(longMessage.title.endsWith("…"), "and says that it was cut");
 assert.equal(snippetDraftProblem(longMessage), "",
     "which means the draft it produces is one the store will take");
+// The same sentence in Han characters, which is where the units diverge: sixty bytes is twenty
+// of them and sixty UTF-16 units would be a hundred and eighty bytes. A sheet that cut by the
+// wrong unit would build a draft the Mac refuses, from a button whose whole job is to fill the
+// editor in for somebody.
+const longHan = snippetDraftFromText("字".repeat(200));
+assert.ok(byteLength(longHan.title) <= 60,
+    "and a title made of Han characters is cut to the same sixty bytes, not sixty characters");
+assert.equal(snippetDraftProblem(longHan), "",
+    "so `From my last message` cannot produce a draft the store refuses");
 assert.equal(snippetDraftFromText("").title, "");
 assert.equal(snippetDraftFromText(null).body, "");
+
+/* ---- the two bounds, in the store's own unit ------------------------------ */
+
+// `Sources/Snippets.swift` bounds `title.utf8.count` and `body.utf8.count`, because bytes are
+// what the file, the audit line and every snapshot broadcast pay for. Counting UTF-16 units here
+// would let the sheet send a draft the Mac refuses; counting anything narrower would refuse one
+// the Mac would have taken.
+assert.equal(byteLength("abc"), 3, "ASCII is one byte each");
+assert.equal(byteLength("字"), 3, "a Han character is three");
+assert.equal(byteLength("é"), 2);
+assert.equal(byteLength("😀"), 4, "and a surrogate pair is one character in four bytes");
+assert.equal(byteLength(""), 0);
+assert.equal(byteLength(null), 0);
+assert.equal(snippetDraftProblem({ title: "字".repeat(20), body: "b", scope: "global" }), "",
+    "twenty Han characters are sixty bytes exactly, and fit");
+assert.equal(snippetDraftProblem({ title: "字".repeat(21), body: "b", scope: "global" }), "long",
+    "twenty-one are sixty-three, and the sheet says so before the Mac has to");
+assert.equal(snippetDraftProblem({ title: "t", body: "字".repeat(1334), scope: "global" }), "long",
+    "and a body of 4002 bytes is too long however few characters that is");
+assert.equal(snippetDraftProblem({ title: "t", body: "字".repeat(1333), scope: "global" }), "",
+    "while 3999 is not");
 
 /* ---- what the empty state offers ------------------------------------------ */
 
@@ -532,6 +566,9 @@ assert.ok(!withMenu.includes('data-snippet-up="1"'),
     "the first row of the global group cannot go up — the item is absent, not disabled");
 assert.ok(withMenu.includes('data-snippet-down="1"'), "and it can go down");
 assert.ok(withMenu.includes('aria-expanded="true"'), "the row's own button says it is open");
+assert.ok(withMenu.includes('aria-haspopup="menu"'),
+    "and the row's own ⋯ still says menu, because a menu is what it opens — the header's mark "
+    + "is the one that said menu and opened a dialog");
 
 const lastMenu = snippetsListHTML(grouped, { controls: snippetControls(direct), menuFor: 2 });
 assert.ok(lastMenu.includes('data-snippet-up="2"'));
@@ -598,10 +635,39 @@ assert.equal(markForSession({ cwd: "/Users/x/code/clawdline", icon: registered }
 assert.equal(markForSession({ cwd: "/Users/x", icon: { cells: [] } }).generated, true,
     "an icon record with no cells in it is no icon");
 assert.equal(markForSession(null), null);
+assert.deepEqual(
+    markForSession({ cwd: "/Users/x/code/clawdline/docs", icon: null }, "/Users/x/code/clawdline"),
+    generatedMark("/Users/x/code/clawdline"),
+    "the Mac's resolved key is what the mark is hashed from, so a session in a subdirectory and "
+    + "one at the root of the same project are one mark rather than two");
+assert.deepEqual(markForSession({ cwd: "/Users/x/tmp/notes", icon: null }, ""),
+    generatedMark("/Users/x/tmp/notes"),
+    "and the session's own cwd is the fallback, because a session nothing has answered for yet "
+    + "still needs a box to press");
+assert.equal(markForSession({ cwd: "/Users/x", icon: registered }, "/Users/x/code/clawdline"),
+    registered, "a registered icon still wins over both");
 
-assert.equal(projectLabel("/Users/x/code/clawdline"), "clawdline");
-assert.equal(projectLabel("/Users/x/code/clawdline/"), "clawdline");
-assert.equal(projectLabel(""), "", "and an unknown project is named nothing, not 'undefined'");
+/* ---- what the header may say about the project ---------------------------- */
+
+// The header names the project on its button and hashes the mark from it, and it derived both
+// from the session's raw `cwd` until this pair existed. The sheet groups under the key the Mac
+// resolved, so the two disagreed exactly where that rule earns its keep. Only the read's own
+// `project` is kept — on the relay there is none, and the header then says nothing.
+assert.equal(snippetProjectFor("s1"), null, "nothing is remembered until something answers");
+rememberSnippetProject("s1", { key: "/Users/x/code/clawdline", label: "Clawdline" });
+assert.deepEqual(snippetProjectFor("s1"), { key: "/Users/x/code/clawdline", label: "Clawdline" });
+assert.equal(snippetProjectFor("s2"), null,
+    "and it is an answer about one session, not about the page");
+rememberSnippetProject("s1", null);
+assert.equal(snippetProjectFor("s1"), null,
+    "an answer with no project in it forgets the last one rather than keeping a stale name");
+rememberSnippetProject("s1", { key: "/Users/x/code/atrium" });
+assert.deepEqual(snippetProjectFor("s1"), { key: "/Users/x/code/atrium", label: "atrium" },
+    "a key with no label of its own falls back to the tail of the path");
+rememberSnippetProject("", { key: "/nope", label: "nope" });
+assert.deepEqual(snippetProjectFor("s1"), { key: "/Users/x/code/atrium", label: "atrium" },
+    "and an answer about no session changes nothing");
+rememberSnippetProject("s1", null);
 
 /* ---- the header: pressing the mark is not pressing Session info ----------- */
 
@@ -631,6 +697,21 @@ assert.match(headSource, /els\["detail-snippets"\]\.hidden = !s;/,
     "no session open is no project: the button goes away rather than leaving an empty box");
 assert.match(headSource, /drawIcon\(els\["detail-mark"\], mark, 5\)/,
     "and the mark it draws is markForSession's, so an unregistered project is not a hole");
+assert.match(headSource, /var resolved = s \? snippetProjectFor\(s\.id\) : null;/,
+    "the header asks the Mac's own answer which project this session belongs to");
+assert.match(headSource, /markForSession\(s, resolved \? resolved\.key : ""\)/,
+    "and hashes the mark from that key, so two sessions of one project are one mark");
+assert.match(headSource, /var snippetsFor = resolved \? resolved\.label : "";/,
+    "and names the project only once something has answered — a session in the home directory "
+    + "used to announce the account name as a project");
+assert.ok(!/projectLabel\(/.test(headSource),
+    "rather than deriving a second name from the raw cwd, which is what disagreed with the sheet");
+assert.match(headSource, /setAttribute\("aria-haspopup", "dialog"\)/,
+    "the mark announces the dialog it actually opens; the sheet is role=dialog aria-modal=true");
+// The mutation that stayed green: `renderDetailHead` stops toggling the attribute and an inert
+// mark goes on claiming it opens something.
+assert.match(headSource, /els\["detail-snippets"\]\.removeAttribute\("aria-haspopup"\);/,
+    "and drops the claim entirely on a transport that has no snippets route at all");
 
 assert.match(headStyles, /\.detail-mark-go\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s,
     "the 44px target is a floor and not only padding: drawIcon sizes that canvas from the "
@@ -654,6 +735,42 @@ assert.match(sheetSource,
     "and every control this sheet draws asks one question about the transport and the switch");
 assert.match(sheetSource, /newButton\.hidden = !can\.create/,
     "the ＋ is the one writing control outside the list, so it is hidden by hand");
+// Three source-shape facts that no pure function can hold, each of them a mutation that left
+// the whole suite green. `snippetsListHTML` is tested *given* `readOnly: true`; until this line
+// nothing tested that the sheet ever passes it, so a read-only device's rows could be made
+// pressable and nothing said a word.
+assert.match(sheetSource, /readOnly: S\.write !== true/,
+    "the sheet asks the write switch when it draws the list, not only when it inserts");
+assert.match(sheetSource, /if \(!row \|\| S\.write !== true\) return;/,
+    "and the insert itself is the other half of that same door");
+// Delete has no undo and no route that could add one. `webSnippetDeleteAsk` was asserted to be
+// a non-empty string and nothing asserted it is ever shown: `armDelete` could be made to return
+// true unconditionally — a delete on the first press — with the suite quiet.
+assert.match(sheetSource,
+    /function armDelete\(target\) \{\n    if \(target\.dataset\.armed === "on"\) return true;\n    target\.dataset\.armed = "on";\n    target\.textContent = T\.webSnippetDeleteAsk;\n    return false;\n\}/,
+    "so the first press arms and asks, and only the second one deletes");
+// The keyboard, which every redraw used to drop on `<body>`: nineteen Tab presses back into the
+// sheet, an unannounced menu, and an Escape that fell through to `keys.js` and closed the
+// session behind the sheet.
+assert.match(sheetSource, /list\.innerHTML = snippetsListHTML\([^]*?focusAfterDraw\(\);/,
+    "a redraw puts the keyboard back on the control it destroyed");
+for (const press of [/wantFocus\("data-snippet-more", shown\[at\]\)/,
+    /wantFocus\(delta < 0 \? "data-snippet-up" : "data-snippet-down", row\)/,
+    /wantFocus\("data-snippet-more", row\);\n    write\(function \(\) \{ return api\.updateSnippet/,
+    /menuFor = -1;\n    wantFocus\("data-snippet-more", row\);\n    write\(function \(\) \{ return api\.deleteSnippet/]) {
+    assert.match(sheetSource, press,
+        "every press that redraws says where the keyboard should land: " + press);
+}
+assert.match(sheetSource, /document\.addEventListener\("keydown", function \(event\) \{\n    if \(event\.key !== "Escape"\)[^]*?\}, true\);/,
+    "and Escape is answered on the document in the capture phase, so it works wherever the "
+    + "focus is and gets there before keys.js closes the session behind the sheet");
+assert.ok(!/overlay\.addEventListener\("keydown"/.test(sheetSource),
+    "rather than only when the focus happens to be inside the overlay");
+assert.match(sheetSource, /rememberSnippetProject\(sessionID, answer && answer\.project\);/,
+    "the read hands the header the Mac's own answer, and only that one — the sheet's own "
+    + "fallback would be the raw cwd arriving by a longer route");
+assert.match(sheetSource, /problem === "long" \? T\.webSnippetTooLong : T\.webSnippetNeedsText/,
+    "and a draft that is too long is told so, rather than told its fields are empty");
 assert.match(sheetSource, /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order\)/,
     "reordering sends the full order of one scope");
 assert.match(sheetSource, /userMessageEntries\(/,

@@ -1241,6 +1241,16 @@ protocol Copy {
     /// Both fields are required by the store, so the sheet says it here rather than waiting for
     /// `400 malformed_snippet` to come back from the Mac.
     var webSnippetNeedsText: String { get }
+    /// The other refusal the editor can reach, and for a while the two shared one sentence — a
+    /// snippet that was too long said the fields were empty while both were visibly full.
+    /// ``webSnippetFromLast`` is how it is reached: it assigns a whole message to the body, and
+    /// a value set in code ignores the textarea's `maxlength`.
+    ///
+    /// **Both numbers belong in the sentence, and both count UTF-8 bytes**, which is what
+    /// `Sources/Snippets.swift` counts and what the file, the audit line and every snapshot
+    /// broadcast pay for. A limit somebody cannot see is not help; a limit in units that are not
+    /// the ones being enforced is worse.
+    var webSnippetTooLong: String { get }
     /// The two starters offered on an empty list, one press each.
     ///
     /// **These four are the one place in this file where a literal translation is the wrong

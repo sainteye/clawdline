@@ -664,6 +664,7 @@ struct Japanese: Copy {
     let webSnippetSave = "保存"
     let webSnippetFromLast = "直前に送った文から作る"
     let webSnippetNeedsText = "定型文にはタイトルと本文が必要です。"
+    let webSnippetTooLong = "長すぎます。タイトルは 60 バイト、本文は 4000 バイトまでです。"
     let webSnippetStarterCommitTitle = "Commit、push、deploy"
     let webSnippetStarterCommitBody = "ファイルを一つずつ名前を挙げて commit（git add -A は使わない）、push、deploy まで。"
     let webSnippetStarterReportTitle = "進捗を報告"

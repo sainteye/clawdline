@@ -61,6 +61,25 @@ enum Snippets {
             ?? RemoteAuth.directory.appendingPathComponent("snippets", isDirectory: true)
     }
 
+    /// The three bounds, **counted in UTF-8 bytes** the way `Orchestrator`'s `label` already is.
+    ///
+    /// `String.count` counts grapheme clusters, and every one of this store's downstreams pays
+    /// bytes: the file on disk, the audit line, the orchestrator snapshot every SSE stream and
+    /// every cloud publication carries. Four thousand ZWJ emoji are four thousand characters and
+    /// about a hundred kilobytes, so a bound that counted characters bounded nothing anybody
+    /// pays for. `project` had no bound at all and is the one field that reaches
+    /// `remote-audit.jsonl`, which is append-only and read back in one piece; 1024 is `PATH_MAX`
+    /// on this platform, so it cannot refuse a path that could exist.
+    private static let titleMaxBytes = 60
+    private static let bodyMaxBytes = 4_000
+    private static let projectMaxBytes = 1_024
+    /// `position` is read back off disk and then has 100 added to it by the next create in that
+    /// scope. Every other malformed field isolates its file; an unbounded one was accepted and
+    /// then armed, so a hand-written `9223372036854775807` trapped the app on the next write.
+    /// The rule assigns `(offset + 1) * 100` for at most 100 snippets, so a billion is four
+    /// orders of magnitude past anything this store writes and nowhere near overflowing.
+    private static let positionMax = 1_000_000_000
+
     private static let recordKeys: Set<String> = [
         "id", "title", "body", "scope", "position", "created_at", "updated_at",
     ]
@@ -131,24 +150,42 @@ enum Snippets {
         // Put the dictionary key into a private copy of each row, then ask ProjectIcon itself to
         // choose. That reuses its exact/prefix and longest-match rule instead of keeping a second
         // almost-identical project matcher here.
-        let tagged = Dictionary(uniqueKeysWithValues: rows.map { path, row -> (String, [String: Any]) in
+        //
+        // **Both sides of that comparison are normalized**, because one side alone is not a
+        // comparison: `ProjectIcon.entry` is exact-or-prefix string matching, so a cwd whose
+        // symlinks have been resolved can never match a registry row whose have not. Two
+        // spellings of one directory can collapse onto one key here, so the first wins rather
+        // than trapping the way `uniqueKeysWithValues` would.
+        let tagged = Dictionary(rows.map { path, row -> (String, [String: Any]) in
             var copy = row
             copy["__clawdline_snippet_path"] = path
-            return (path, copy)
-        })
-        if let matched = ProjectIcon.entry(forCwd: normalizedCwd, in: tagged),
-           let rawPath = matched["__clawdline_snippet_path"] as? String,
-           let key = normalized(rawPath) {
-            return ProjectScope(key: key, label: projectLabel(row: matched, path: key))
-        }
+            return (normalized(path) ?? path, copy)
+        }, uniquingKeysWith: { first, _ in first })
+        if let scope = registryScope(forCwd: normalizedCwd, in: tagged) { return scope }
 
         let common: String?
         if let resolver = gitCommonDirectory { common = resolver(normalizedCwd) }
         else { common = Self.gitCommonDirectory(at: normalizedCwd) }
         if let common, let key = checkoutPath(fromGitCommonDirectory: common) {
-            return ProjectScope(key: key, label: pathLabel(key))
+            // The checkout, asked the same question a session sitting in it would ask. Without
+            // this second lookup the two sessions of one project agreed about the key and
+            // disagreed about the name: the branch above answers the registry row's own label,
+            // this one answered the last component of a path, so the sheet's heading read
+            // `Clawdline` in the checkout and `clawdline` in a worktree cut from it.
+            return registryScope(forCwd: key, in: tagged)
+                ?? ProjectScope(key: key, label: pathLabel(key))
         }
         return ProjectScope(key: normalizedCwd, label: pathLabel(normalizedCwd))
+    }
+
+    /// Step 1 of the rule, asked in two places: of the session's own directory, and again of the
+    /// checkout an isolated worktree folds back into.
+    private static func registryScope(forCwd cwd: String,
+                                      in tagged: [String: [String: Any]]) -> ProjectScope? {
+        guard let matched = ProjectIcon.entry(forCwd: cwd, in: tagged),
+              let rawPath = matched["__clawdline_snippet_path"] as? String,
+              let key = normalized(rawPath) else { return nil }
+        return ProjectScope(key: key, label: projectLabel(row: matched, path: key))
     }
 
     private static func projectLabel(row: [String: Any], path: String) -> String {
@@ -166,11 +203,20 @@ enum Snippets {
         return String(common.dropLast("/.git".count))
     }
 
+    /// One spelling for one directory.
+    ///
+    /// `standardizingPath` takes a trailing slash and a `..` off and expands a leading `~`; it
+    /// does **not** follow a symlink, which is why `resolvingSymlinksInPath` runs after it.
+    /// Inside a repository step 2 rescued a cwd entered through a link, because Git answers with
+    /// the real checkout either way — a registered project that is *not* a repository had no
+    /// second chance and silently showed an empty list. Both keep `/tmp` as `/tmp` rather than
+    /// `/private/tmp`, measured on this platform rather than assumed.
     private static func normalized(_ path: String?) -> String? {
         guard let path else { return nil }
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        return (trimmed as NSString).standardizingPath
+        let standardized = (trimmed as NSString).standardizingPath
+        return (standardized as NSString).resolvingSymlinksInPath
     }
 
     /// `--git-common-dir`, not `--show-toplevel`: in an isolated worktree the latter is the
@@ -410,13 +456,16 @@ enum Snippets {
             return .refused(Refusal(status: 400, code: "malformed_snippet",
                                     message: "A snippet title and body cannot be empty.", extra: [:]))
         }
-        guard title.count <= 60, text.count <= 4_000 else {
-            return .refused(Refusal(status: 400, code: "snippet_too_long",
-                                    message: "A snippet title may contain 60 characters and its body 4000.",
-                                    extra: ["title_count": title.count, "body_count": text.count]))
-        }
         let hasProject = body.keys.contains("project")
         let project = normalized(body["project"] as? String)
+        guard title.utf8.count <= titleMaxBytes, text.utf8.count <= bodyMaxBytes,
+              (project?.utf8.count ?? 0) <= projectMaxBytes else {
+            return .refused(Refusal(status: 400, code: "snippet_too_long",
+                                    message: "A snippet title may contain 60 bytes of UTF-8, its body 4000, and its project path 1024.",
+                                    extra: ["title_count": title.utf8.count,
+                                            "body_count": text.utf8.count,
+                                            "project_count": project?.utf8.count ?? 0]))
+        }
         guard (scope == .project && hasProject && project != nil)
                 || (scope == .global && !hasProject) else {
             return .refused(Refusal(status: 400, code: "snippet_scope_mismatch",
@@ -432,14 +481,17 @@ enum Snippets {
         guard let canonical = canonicalID(filenameID), Set(object.keys) == recordKeys
                 .union(object.keys.contains("project") ? ["project"] : []),
               let storedID = object["id"] as? String, canonicalID(storedID) == canonical,
-              let title = object["title"] as? String, !title.isEmpty, title.count <= 60,
-              let body = object["body"] as? String, !body.isEmpty, body.count <= 4_000,
+              let title = object["title"] as? String, !title.isEmpty,
+              title.utf8.count <= titleMaxBytes,
+              let body = object["body"] as? String, !body.isEmpty,
+              body.utf8.count <= bodyMaxBytes,
               let rawScope = object["scope"] as? String, let scope = Scope(rawValue: rawScope),
-              let position = integer(object["position"]),
+              let position = integer(object["position"]), (0...positionMax).contains(position),
               let createdAt = integer(object["created_at"]),
               let updatedAt = integer(object["updated_at"]) else { return nil }
         let hasProject = object.keys.contains("project")
         let project = normalized(object["project"] as? String)
+        guard (project?.utf8.count ?? 0) <= projectMaxBytes else { return nil }
         guard (scope == .project && hasProject && project != nil)
                 || (scope == .global && !hasProject) else { return nil }
         return Record(id: canonical, title: title, body: body, scope: scope,

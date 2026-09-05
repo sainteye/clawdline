@@ -5,10 +5,11 @@ import { byId } from "../view/derive.js";
 import { Optimistic } from "../view/waits.js";
 import { userMessageEntries } from "../view/user-messages-data.js";
 import {
-    snippetActions, snippetControls, snippetCreateBody, snippetDraft, snippetDraftFromText,
-    snippetDraftProblem, snippetGroups, snippetOrder, snippetOrderBody, snippetPatchBody,
-    snippetReorder, snippetScopeSwap, snippetStarters, snippetsListHTML
+    rememberSnippetProject, snippetActions, snippetControls, snippetCreateBody, snippetDraft,
+    snippetDraftFromText, snippetDraftProblem, snippetGroups, snippetOrder, snippetOrderBody,
+    snippetPatchBody, snippetReorder, snippetScopeSwap, snippetStarters, snippetsListHTML
 } from "../view/snippets-data.js";
+import { renderDetailHead } from "../view/transcript.js";
 import { appendMsg } from "./composer.js";
 import { SessionActions } from "./detail-actions.js";
 
@@ -137,6 +138,8 @@ var model = null;
 var menuFor = -1;
 var reading = 0;
 var busy = false;
+/** Which control the keyboard should be standing on after the next redraw — see `focusAfterDraw`. */
+var pendingFocus = null;
 
 /** The row the editor is changing, and the draft it is changing it into. `editing` is null for
  *  a snippet being made — which is also what tells Save whether to POST or to PATCH. */
@@ -236,6 +239,50 @@ function draw(next, options) {
         menuFor: menuFor
     });
     if (!opts.keepScroll) list.scrollTop = 0;
+    focusAfterDraw();
+}
+
+/**
+ * Where the keyboard goes after a redraw, and why one is needed at all.
+ *
+ * Every writing press in this sheet ends in `draw()`, which rewrites `list.innerHTML` — so it
+ * destroys the button the reader is standing on. Focus landed on `<body>`: the menu that had
+ * just opened was announced to nobody, Escape stopped working because its handler was on the
+ * overlay and the event no longer passed through it, and getting back into the sheet cost
+ * nineteen Tab presses through the session list behind the overlay. Measured, not guessed.
+ *
+ * The row is remembered **by id**, because the redraw is what moves it: ↑ and ↓ swap it with a
+ * neighbour and 改成全域 moves it into the other group. If the row itself is gone — a delete —
+ * the same place in the list is the next best answer, and a list with nothing left falls back
+ * to the sheet's own furniture rather than to the page behind it.
+ */
+function wantFocus(attribute, row) {
+    pendingFocus = {
+        attribute: attribute,
+        id: row && typeof row.id === "string" ? row.id : "",
+        at: row ? shown.indexOf(row) : -1
+    };
+}
+
+function focusAfterDraw() {
+    if (!pendingFocus) return;
+    var wanted = pendingFocus;
+    pendingFocus = null;
+    var at = -1;
+    for (var i = 0; i < shown.length && at < 0; i++) {
+        if (shown[i] && shown[i].id === wanted.id) at = i;
+    }
+    if (at < 0) at = Math.min(wanted.at, shown.length - 1);
+    var target = null;
+    if (at >= 0) {
+        // The control it was, then that row's own `⋯`, then the row: ↑ pressed on the second row
+        // is not drawn once the row is first, and the menu is still open on it either way.
+        target = list.querySelector("[" + wanted.attribute + '="' + at + '"]')
+            || list.querySelector('[data-snippet-more="' + at + '"]')
+            || list.querySelector('[data-snippet="' + at + '"]');
+    }
+    if (!target) target = newButton.hidden ? closeButton : newButton;
+    target.focus({ preventScroll: true });
 }
 
 function say(message) {
@@ -276,6 +323,12 @@ function refresh(options) {
         // Two presses, or a session switched while the first read was out: only the newest one
         // may paint, the same ticket rule the transcript reads under.
         if (ticket !== reading || overlay.hidden) return;
+        // The header names this project and hashes its mark, and until this line it derived both
+        // from the session's raw `cwd` — which is not the key this sheet groups under. Only the
+        // read's own `project` is kept: on the relay there is none, and the header then says
+        // nothing about a project rather than saying the wrong one.
+        rememberSnippetProject(sessionID, answer && answer.project);
+        renderDetailHead();
         draw(snippetGroups(answer, {
             machine: session ? session.machine : null,
             project: session ? session.cwd : null
@@ -296,6 +349,7 @@ export function closeSnippets() {
     shown = [];
     model = null;
     menuFor = -1;
+    pendingFocus = null;
     say("");
     reading += 1;
 }
@@ -328,6 +382,8 @@ function write(work, options) {
         return refresh({ keepScroll: opts.keepScroll }).then(function () { return true; });
     }).catch(function (error) {
         busy = false;
+        // Nothing was redrawn, so the button the press came from is still there holding focus.
+        pendingFocus = null;
         var message = (error && error.message) || String(error);
         if (editorOverlay.hidden) say(message);
         else editorSaid.textContent = message;
@@ -338,6 +394,7 @@ function write(work, options) {
 function remove(row) {
     if (!row || !may().remove) return;
     menuFor = -1;
+    wantFocus("data-snippet-more", row);
     write(function () { return api.deleteSnippet(row.id); }, { thenClose: true });
 }
 
@@ -353,6 +410,7 @@ function move(row, delta) {
     // The menu stays open on the row that moved, so a second press is the second step of the
     // same journey rather than three presses to reopen a menu that closed itself.
     menuFor = shown.indexOf(row) + delta;
+    wantFocus(delta < 0 ? "data-snippet-up" : "data-snippet-down", row);
     write(function () {
         return api.orderSnippets(body.scope, body.project || null, body.order);
     }, { keepScroll: true });
@@ -364,6 +422,7 @@ function swapScope(row) {
     var patch = snippetScopeSwap(row, projectKey());
     if (!patch) return;
     menuFor = -1;
+    wantFocus("data-snippet-more", row);
     write(function () { return api.updateSnippet(row.id, patch); });
 }
 
@@ -448,7 +507,13 @@ function save() {
     var made = readEditor();
     var problem = snippetDraftProblem(made);
     if (problem) {
-        editorSaid.textContent = T.webSnippetNeedsText;
+        // Three codes, and until this line all three said "needs a title and some text" — which
+        // a person read with both fields visibly full. `用上一則訊息新增` is how "long" is
+        // reached: it assigns a whole message to the body, and a value set in code ignores the
+        // textarea's `maxlength`. The third, "scope", is unreachable — `drawScope()` refuses to
+        // draw a project chip for a session whose project the Mac did not resolve — so it stays
+        // on the sentence about a field that is missing, which is what it would be.
+        editorSaid.textContent = problem === "long" ? T.webSnippetTooLong : T.webSnippetNeedsText;
         return;
     }
     if (editing) {
@@ -503,6 +568,7 @@ list.addEventListener("click", function (event) {
     if (target.hasAttribute("data-snippet-more")) {
         var at = Number(target.getAttribute("data-snippet-more"));
         menuFor = menuFor === at ? -1 : at;
+        wantFocus("data-snippet-more", shown[at]);
         draw(model, { keepScroll: true });
         return;
     }
@@ -572,21 +638,36 @@ headerMark.addEventListener("click", function (event) {
 overlay.addEventListener("click", closeSnippets);
 sheet.addEventListener("click", function (event) { event.stopPropagation(); });
 closeButton.addEventListener("click", closeSnippets);
-overlay.addEventListener("keydown", function (event) {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    event.stopPropagation();
-    closeSnippets();
-});
 
 editorOverlay.addEventListener("click", closeEditor);
 editorSheet.addEventListener("click", function (event) { event.stopPropagation(); });
-editorOverlay.addEventListener("keydown", function (event) {
+
+/**
+ * Escape, from anywhere.
+ *
+ * These two handlers were on the overlays, which only works while the focus is inside one — and
+ * a redraw used to put it on `<body>`, where the press fell through to `input/keys.js` and
+ * closed the session behind the sheet instead. Focus is restored now, but a sheet whose way out
+ * depends on where the keyboard happens to be is a sheet with a way out that can be lost again.
+ *
+ * Capture, ahead of `keys.js`'s own bubble-phase document listener, which has no case for these
+ * two overlays: the same answer `input/schedule.js` and `input/action-confirm.js` already give
+ * for their nested overlays, copied rather than invented. The editor is over the list, so it
+ * takes the press first — closing both for one press is the thing that order exists to prevent.
+ */
+document.addEventListener("keydown", function (event) {
     if (event.key !== "Escape") return;
+    if (!editorOverlay.hidden) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeEditor();
+        return;
+    }
+    if (overlay.hidden) return;
     event.preventDefault();
     event.stopPropagation();
-    closeEditor();
-});
+    closeSnippets();
+}, true);
 
 // `renderTranscript` fires this after the strings have landed and after every transcript
 // refresh. It is what keeps the menu row's word right, keeps the row itself in step with a

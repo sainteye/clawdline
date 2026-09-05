@@ -7,8 +7,8 @@ import { els } from "../core/dom.js";
 import { ASK_MARK, clockOf, shortPath, tint } from "../core/util.js";
 import { assistantLogo, assistantName, drawIcon, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
 import { byId, taskOfChild, taskWord } from "./derive.js";
-import { markForSession, projectLabel } from "./project-mark.js";
-import { snippetControls } from "./snippets-data.js";
+import { markForSession } from "./project-mark.js";
+import { snippetControls, snippetProjectFor } from "./snippets-data.js";
 import { closingID } from "./list.js";
 import { copyCodeBlock, inlineMd, richText } from "./markdown.js";
 import { Optimistic, Waits, listUnknown, txSkeleton } from "./waits.js";
@@ -48,9 +48,18 @@ export function renderDetailHead() {
     // header is the third thing that used to announce an absence and then fill in a name.
     els["detail-name"].textContent = s ? (s.label || s.tty || s.id)
         : (listUnknown() ? "" : T.webNoSessionOpen);
+    // Which project this session belongs to, as **the Mac answered it** — the registry match,
+    // the subdirectory prefix and the worktree folded back into its checkout. The header used to
+    // derive its own from the raw `cwd`, and the two disagreed exactly where that rule earns its
+    // keep: a subdirectory of an unregistered repository, an isolated worktree, and a session
+    // sitting in the home directory, which announced the account name as a project. It is null
+    // until the sheet has read once for this session, and the header then says nothing about a
+    // project rather than guessing one.
+    var resolved = s ? snippetProjectFor(s.id) : null;
     // The mark's own colour, whether the registry drew that mark or this page did. Two sessions
-    // in two unregistered projects are still two projects, and the title says so.
-    var mark = markForSession(s);
+    // in two unregistered projects are still two projects, and the title says so — and two
+    // sessions of *one* project are one project, which is what the resolved key buys.
+    var mark = markForSession(s, resolved ? resolved.key : "");
     els["detail-name"].style.color = mark ? tint(mark.accent) : "";
     els["detail-clawdfather-crown"].hidden = !coordinatorForSession(s);
     var sub = [];
@@ -117,7 +126,7 @@ export function renderDetailHead() {
     // `data-plain` tells `detail.css` not to fade a mark that is perfectly present. The same
     // `snippetControls` the sheet asks, so the header and the `⋯` row cannot disagree.
     var canSnippet = snippetControls(api).read;
-    var snippetsFor = s ? projectLabel(s.cwd) : "";
+    var snippetsFor = resolved ? resolved.label : "";
     var snippetsSays = !canSnippet ? snippetsFor
         : (snippetsFor ? T.webSnippets + " · " + snippetsFor : T.webSnippets);
     // No session is not a project with no mark: it is no project. The button goes away entirely
@@ -129,7 +138,11 @@ export function renderDetailHead() {
     els["detail-snippets"].title = snippetsSays;
     if (snippetsSays) els["detail-snippets"].setAttribute("aria-label", snippetsSays);
     else els["detail-snippets"].removeAttribute("aria-label");
-    if (canSnippet) els["detail-snippets"].setAttribute("aria-haspopup", "menu");
+    // `dialog`, because that is what it opens: the sheet is `role="dialog" aria-modal="true"`.
+    // `#detail-actions-trigger` next to it says `menu` and opens `role="menu"`, and the row's
+    // own `⋯` inside the sheet says `menu` and opens one too — this is the one that did not
+    // match what it announced.
+    if (canSnippet) els["detail-snippets"].setAttribute("aria-haspopup", "dialog");
     else els["detail-snippets"].removeAttribute("aria-haspopup");
     els["detail-actions-trigger"].disabled = !s || ending;
     els["detail-actions-trigger"].title = T.webSessionActions;
