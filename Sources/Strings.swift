@@ -1493,6 +1493,8 @@ protocol Copy {
     var webProjectDeliveredNone: String { get }
     var webProjectLanded: String { get }
     var webProjectLandedSay: String { get }
+    var webProjectNothingToLand: String { get }
+    var webProjectNothingToLandSay: String { get }
     var webProjectActive: String { get }
     var webProjectActiveSay: String { get }
     var webProjectAbandoned: String { get }
@@ -1531,6 +1533,11 @@ protocol Copy {
     var webProjectEvidenceUnknown: String { get }
     var webProjectRuns: String { get }
     var webProjectSeen: String { get }
+    var webProjectWorkLine: String { get }
+    var webProjectNeeds: String { get }
+    var webProjectNeedsLanding: String { get }
+    var webProjectNeedsNothingToLand: String { get }
+    var webProjectNeedsNoRecord: String { get }
     /// The query ran and matched nothing, which is not the same as a query that never
     /// answered — the receipt beside this sentence is what tells them apart.
     var webProjectNoWorktrees: String { get }

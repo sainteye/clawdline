@@ -139,6 +139,7 @@ clawdline_test_sources=(
   Tests/CoordinatorTests.swift
   Tests/DevStackTests.swift
   Tests/HookTests.swift
+  Tests/LandingCurrencyTests.swift
   Tests/MarkdownTests.swift
   Tests/MascotTests.swift
   Tests/OrchestratorCompletionTests.swift

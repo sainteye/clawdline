@@ -5265,11 +5265,16 @@ enum Orchestrator {
             && RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: secret))
         let machineMatches = verifyDispatch(token: orchestratorToken)
         let requestsLanded = raw["state"] as? String == LandingState.landed.rawValue
-        guard requestsLanded ? machineMatches : (taskSecretMatches || machineMatches) else {
+        // `nothing_to_land` joins `landed` on the machine credential: both are final claims about
+        // a repository, and a child asserting that it wrote nothing is the one witness with an
+        // interest in the answer. The other two remain a child's to declare.
+        let machineOnly = requestsLanded
+            || raw["state"] as? String == LandingState.nothingToLand.rawValue
+        guard machineOnly ? machineMatches : (taskSecretMatches || machineMatches) else {
             RemoteAuth.audit("orchestrator.landing", ["task": taskID, "ok": "0",
                                                        "why": "bad_credential"])
-            let required = requestsLanded
-                ? "Only the orchestrator token may record a landed target."
+            let required = machineOnly
+                ? "Only the orchestrator token may settle a landing on a repository's behalf."
                 : "Use this task's secret or the orchestrator token."
             return .refused(403, "forbidden", required)
         }
@@ -5283,7 +5288,7 @@ enum Orchestrator {
         guard let rawState = raw["state"] as? String,
               let requestedState = LandingState(rawValue: rawState) else {
             return .refused(400, "bad_request",
-                            "state must be pending, landed, or abandoned.")
+                            "state must be pending, landed, abandoned, or nothing_to_land.")
         }
 
         var fields: [String: String] = [:]
@@ -5301,6 +5306,15 @@ enum Orchestrator {
         if requestedState != .landed, fields["commit"] != nil {
             return .refused(400, "bad_request", "commit is valid only when state is landed.")
         }
+        // A branch to land on is exactly the thing this state says did not exist.
+        if requestedState == .nothingToLand, fields["target"] != nil {
+            return .refused(400, "bad_request",
+                            "target is not valid when state is nothing_to_land.")
+        }
+        // Read before the registry lock, the way the git verification below is: this is another
+        // store with a lock of its own, and it holds the write set an isolated task declared.
+        let retainedPaths = requestedState == .nothingToLand
+            ? OrchestratorLandingQueue.retainedLandingPaths() : [:]
 
         load()
         lock.lock()
@@ -5320,8 +5334,7 @@ enum Orchestrator {
             recordLandingInLedger(settled)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
-        if let existing, (existing.state == .landed || existing.state == .abandoned),
-           existing.state != requestedState {
+        if let existing, existing.state.isSettled, existing.state != requestedState {
             lock.unlock()
             return .refused(409, "invalid_transition",
                             "A settled obligation cannot move to another state; open a new task.")
@@ -5329,7 +5342,19 @@ enum Orchestrator {
         if requestedState != .pending, !current.state.isTerminal {
             lock.unlock()
             return .refused(409, "not_terminal",
-                            "Only a terminal task can be marked landed or abandoned.")
+                            "Only a terminal task can settle its landing obligation.")
+        }
+        // The evidence gate for the state a read-only delivery needs. It is a refusal built out
+        // of what the registry holds, and `nothingToLandAdmission` says what it can and cannot
+        // see; the assertion itself is the machine credential's.
+        if requestedState == .nothingToLand,
+           case .refused(let why) = nothingToLandAdmission(
+            for: current,
+            declaredWritePaths: OrchestratorLandingQueue.landingPaths(
+                of: current, retainedPaths: retainedPaths)) {
+            lock.unlock()
+            return .refused(409, "wrote_to_repository",
+                            "nothing_to_land says this task wrote nothing to land, and \(why).")
         }
         if requestedState == .landed, fields["commit"] == nil {
             lock.unlock()
@@ -5343,8 +5368,9 @@ enum Orchestrator {
                             "target is required when state is landed.")
         }
 
-        // Pending and abandoned are declarations, not verification claims; they retain the
-        // existing state-machine behaviour and never persist verification-shaped fields.
+        // Pending, abandoned and nothing_to_land are declarations, not verification claims; they
+        // retain the existing state-machine behaviour and never persist verification-shaped
+        // fields.
         if requestedState != .landed {
             current.landing = Landing(
                 state: requestedState,
@@ -5502,7 +5528,7 @@ enum Orchestrator {
                     childProcStart: task.childProcStart))
                 switch task.landing?.state {
                 case .pending: landing = .known(.pending)
-                case .landed, .abandoned: landing = .known(.settled)
+                case .landed, .abandoned, .nothingToLand: landing = .known(.settled)
                 case nil: landing = .known(.none)
                 }
                 process = OwnedStorage.processStatus(pid: task.childPID,
@@ -5626,7 +5652,7 @@ enum Orchestrator {
         guard state.isTerminal else { return .live }
         if let landing {
             switch landing.state {
-            case .landed, .abandoned: return .settled
+            case .landed, .abandoned, .nothingToLand: return .settled
             case .pending: return .unmerged
             }
         }

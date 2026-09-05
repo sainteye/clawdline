@@ -326,8 +326,8 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
     expect("a complete scan is not partial", byName["status"] as? String, "available")
     expect("and the rule it answered by names both of the sources it may use",
            byName["outcomeRule"] as? String,
-           "landed_by_record_or_nonempty_merged_branch_then_branch_gone_then_delivered_then_"
-             + "live_then_abandoned")
+           "landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_then_"
+             + "branch_gone_then_delivered_then_live_then_abandoned")
     expect("with no branch fact, every verdict rests on the stored columns and says so",
            alphaRow["landingEvidence"] as? String, "record")
     expect("including a Feature whose own rows carry no landing at all",
@@ -394,8 +394,8 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
            betaNoBase["landingEvidence"] as? String, "branch_base_unknown")
     expect("and the rule the payload publishes names what it actually does",
            merged["outcomeRule"] as? String,
-           "landed_by_record_or_nonempty_merged_branch_then_branch_gone_then_delivered_then_"
-             + "live_then_abandoned")
+           "landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_then_"
+             + "branch_gone_then_delivered_then_live_then_abandoned")
 
     // **An accepted Project identity is whatever a person accepted, and this read hands that key
     // to a subprocess.** `repositoryBranches(in:)` makes it the git process's working directory,

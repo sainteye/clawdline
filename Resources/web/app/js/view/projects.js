@@ -76,7 +76,7 @@ import { T, fill } from "../core/i18n.js";
 export var Projects = { escape: function () { } };
 
 /** The outcomes this page draws below the fold, hardest evidence first. */
-var SECONDARY = ["landed", "branch_gone", "active", "abandoned", "unknown"];
+var SECONDARY = ["landed", "nothing_to_land", "branch_gone", "active", "abandoned", "unknown"];
 
 function number(value) {
     if (value === null || value === undefined) return "—";
@@ -98,6 +98,9 @@ function appendText(doc, parent, tag, value, className) {
 /** The words for one rung of the ladder: its name, and what it rests on. */
 function outcomeWords(outcome) {
     if (outcome === "landed") return { name: T.webProjectLanded, say: T.webProjectLandedSay };
+    if (outcome === "nothing_to_land") {
+        return { name: T.webProjectNothingToLand, say: T.webProjectNothingToLandSay };
+    }
     if (outcome === "delivered") return { name: T.webProjectDelivered, say: T.webProjectDeliveredSay };
     if (outcome === "branch_gone") return { name: T.webProjectBranchGone, say: T.webProjectBranchGoneSay };
     if (outcome === "active") return { name: T.webProjectActive, say: T.webProjectActiveSay };
@@ -175,6 +178,33 @@ function featureText(worktree) {
     return names.length ? names.join(" · ") : "";
 }
 
+/**
+ * **What this worktree was doing**, which is not the same question as which work line it
+ * belonged to.
+ *
+ * Nine cards on this Mac read `Clawdfather — handoff 18bde7c3`, all of them, because that label
+ * is the *work line* a classifier grouped by and the page had nothing else to put in the
+ * heading. 「光看標題真的看不出來分別」. The route now carries `work` — the task's own stored
+ * title, newest where a Feature covers several — so the heading is that, and the label it used to
+ * be moves down to a fact under a word that says which of the two it is.
+ *
+ * Where there is no title the heading stays what it was rather than going blank: a task old
+ * enough for the registry to have swept it has no title anywhere, and the label is then the most
+ * this page knows.
+ */
+function workText(worktree) {
+    var work = worktree.work;
+    return typeof work === "string" && work ? work : "";
+}
+
+/** Which of the two things one row in the delivered block needs, in the reader's own words. */
+function needsText(worktree) {
+    if (worktree.needs === "nothing_to_land") return T.webProjectNeedsNothingToLand;
+    if (worktree.needs === "land_or_abandon") return T.webProjectNeedsLanding;
+    if (worktree.needs === "no_record") return T.webProjectNeedsNoRecord;
+    return "";
+}
+
 function fact(doc, parent, label, value, className) {
     var row = doc.createElement("div");
     row.className = "project-fact" + (className ? " " + className : "");
@@ -191,17 +221,27 @@ function worktreeItem(context, worktree) {
     item.dataset.outcome = worktree.outcome || "unknown";
     item.dataset.worktreeId = worktree.id;
     var features = featureText(worktree);
-    if (features) appendText(doc, item, "h3", features, "project-worktree-features");
+    var work = workText(worktree);
+    var heading = work || features;
+    if (heading) appendText(doc, item, "h3", heading, "project-worktree-features");
     var id = appendText(doc, item, "code", String(worktree.id).slice(0, 8), "project-worktree-id");
     id.title = String(worktree.id);
     var facts = doc.createElement("div");
     facts.className = "project-facts";
+    /* Only when the heading is the work itself: printing the same sentence twice under a label
+       that says it is something else is worse than not labelling it at all. */
+    if (work && features) fact(doc, facts, T.webProjectWorkLine, features, "project-fact-line");
     fact(doc, facts, T.webProjectBranch, branchOf(worktree), "project-fact-branch");
     var evidence = fact(doc, facts, T.webProjectEvidence, evidenceText(worktree),
                         "project-fact-evidence");
     evidence.dataset.evidence = worktree.landingEvidence || "unknown";
     fact(doc, facts, T.webProjectRuns, number(worktree.runs));
     fact(doc, facts, T.webProjectSeen, seenText(worktree));
+    /* The row's own next step, and only where the route says there is one. It is the means and
+       not the outcome: nothing on this page closes a landing, because a landing record is durable
+       and terminal and one closed on a guess is worse than a wrong count. */
+    var needs = needsText(worktree);
+    if (needs) fact(doc, facts, T.webProjectNeeds, needs, "project-fact-needs");
     item.appendChild(facts);
     return item;
 }

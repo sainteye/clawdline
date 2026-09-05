@@ -129,7 +129,27 @@ main_lines=$(line_count Tests/main.swift)
 # landing recorded before that wiring existed had no door at all and waited for the next launch,
 # which is the wait the feature was built to remove. Its review found it; the ceiling is what makes
 # the fix visible rather than absorbed.
-orchestrator_ceiling=10618
+#
+# The two paragraphs below were written on the 2026-09-05 branch that was never merged, against a
+# base of 10,585, so their absolute numbers are that tree's and their reasons are this one's:
+#
+# +19 for the read-only delivery's landing state. `nothing_to_land` is a feature and not a
+# relocation: nineteen lines of route, all of them inside `updateLanding` — the machine-only
+# credential it shares with `landed`, the field it refuses, and the evidence gate that reads the
+# predicate `Sources/OrchestratorTaskShape.swift` owns. The predicate, the enum case and its
+# reasons went to that file rather than here, which is why the raise is nineteen and not ninety.
+#
+# +7 for that same state reading the write set an isolated task actually declared. Seven lines:
+# `claims` is empty by design for a worktree child — the broker drops the lease and hands the list
+# back as `claims_ignored_for_worktree` — so the gate was reading the one spelling that positively
+# means "writes nothing" off every one of them. `OrchestratorLandingQueue.retainedLandingPaths()`
+# is a store with a lock of its own, so it is read before the registry lock rather than inside it.
+#
+# 10,644 is this merged tree counted with `line_count` above: 10,618 was counted on the tree the
+# landing verdict landed on, and the 26 lines are the two features that branch brought. Adding
+# would have given 10,644 too; the number here is the measurement rather than the sum, because a
+# sum cannot tell a feature that arrived twice from one that arrived once.
+orchestrator_ceiling=10644
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -285,8 +305,13 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # same answer. `Tests/UsageLedgerTests.swift` stood at 1,998 lines against the 2,000-line limit
 # below, so the three groups that answer for one route moved out whole, in the position they
 # already ran in, rather than being trimmed to fit under it.
-[ "$runner_count" -eq 35 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 35"
+# 36 with the landing-currency slice's runner, which is the same wall again from the other side:
+# `Tests/UsageLedgerTests.swift` and `Tests/OrchestratorLandingTests.swift` were both within a
+# hundred lines of the limit, and its two groups belong beside each other rather than split across
+# two files with no room in either. That branch wrote 33 against a base of 32; this is the merged
+# tree's own count.
+[ "$runner_count" -eq 36 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 36"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -384,8 +409,12 @@ manifest_group_count=$(awk '
 # pane, `%141`, and the fragment now carries it percent-encoded — the group holds the encoding, the
 # unreserved set it uses rather than `.urlFragmentAllowed`, and the ids that carry no per-cent and
 # must not start moving. Counted from the manifest with the awk above, on a tree that had 538.
-[ "$manifest_group_count" -eq 539 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 539"
+# 541 with the landing-currency file's two: the state a read-only delivery settles with, and the
+# read that joins against the live registry instead of the copy a row froze. That branch counted
+# 534 against a base of 532 and this tree counts 541 against 539 — the same two groups, counted
+# where they actually run.
+[ "$manifest_group_count" -eq 541 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 541"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -466,8 +495,11 @@ done
 # groups moved out of Tests/UsageLedgerTests.swift when that file hit the 2,000-line stop-growth
 # limit above. The move keeps the executed group order — the new runner is called between the two
 # it was cut from — so `expectedOrderedTestGroupTitles` is untouched by it.
-[ "$suite_count" -eq 48 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 48"
+# 49 with Tests/LandingCurrencyTests.swift, the 2026-09-05 branch's file. It wrote 46 against a
+# base of 45; this is the merged tree's own count, and the two files that branch never saw are the
+# difference.
+[ "$suite_count" -eq 49 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 49"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

@@ -547,6 +547,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the shapes an older root still writes are the shapes this still reads",
     "a task id is a lowercase UUID, and a task secret is 32 bytes of lower-case hex",
     "claims is required as a present field, which is the one shape every dispatcher can answer",
+    "a read-only delivery gets a terminal state, and one that wrote may not use it",
+    "a worktree's landing state is the one that is true now, and its row says what the work was",
 ]
 
 func validateExecutedTestGroupManifest() {
