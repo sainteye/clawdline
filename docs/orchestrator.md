@@ -2616,8 +2616,9 @@ handoff, paste this into `~/.claude/CLAUDE.md`:
   **child** reports through its own `result.json` instead.
 - To put a **local image** in front of the person — a screenshot you just took, a chart you just
   produced — send it as an image instead of pasting its path, which on a phone is unopenable text.
-  How, in that same guide's `Send a local image as an image, not as a path` section. It applies in
-  **any** repository too.
+  How, in the paragraph of that same guide carrying `images:[{"path":…}]` — an installed guide is a
+  copy and its heading can be a release behind this repository, but that call is in every version of
+  it. It applies in **any** repository too.
 ```
 
 It is optional, it is per-machine, and nothing here breaks without it — a handoff receiver is
