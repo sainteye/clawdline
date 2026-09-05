@@ -1592,3 +1592,76 @@ items:
       the two sheets, the editor over one of them, and whatever the next overlay is. One sheet's
       answer is not worth having.
     opened: 2026-09-05
+
+  - id: B-A-BUILD-CANNOT-SAY-WHAT-TREE-IT-WAS
+    title: The app cannot say which working tree it was built from, so an incident cannot reconstruct the scene
+    problem: >-
+      `build.sh` compiles the live working tree, and on this machine that tree routinely carries
+      several sessions' uncommitted work at once. The installed app records its build stamp and
+      nothing else: not `HEAD`, not whether the tree was clean, not which paths were modified. So
+      when a build misbehaves, the one question that decides everything — *what was actually
+      compiled* — has no answer, and cannot be given one afterwards.
+
+
+      This is not a theoretical gap. It is the reason an entire evening's investigation could
+      eliminate candidates but never conclude.
+    evidence: >-
+      2026-09-05. The session list went empty while 21 assistant sessions were alive.
+      `25bc7408` was built twice eight minutes apart — 19:12 healthy, 19:20 broken from its first
+      scan — with `git reflog` showing HEAD unmoved between 19:11:03 and 19:33:28. Same commit,
+      opposite outcomes, and no way to compare the two inputs. Three sessions spent the evening on
+      it: the committed source was cleared, the transcript-read cost was measured out (27 ms per
+      unrenamed conversation per start, ~0.54 s for twenty), and a deliberate test of the dirty-tree
+      hypothesis came back **healthy**, which neither refuted nor supported it because a different
+      dirty tree is not that dirty tree. At 20:2x the shared tree held 13 modified paths, five of
+      them production Swift and one of them `tools/check-architecture-boundaries.sh` — the guard
+      itself. Anyone pressing build in that minute would have shipped all of it.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      The repair is small and was proposed by the session that hit the wall: have `build.sh` record
+      `HEAD` and `git status --porcelain` at compile time and carry them into the built app, where
+      `/v1/health` or the about panel can show them. Then a build that misbehaves names its own
+      input. The trigger is the next incident that turns on "what was in the tree" — or, better,
+      doing it before there is one, since the whole point is that the evidence cannot be recovered
+      afterwards.
+    opened: 2026-09-05
+
+  - id: B-THE-LOCK-DOES-NOT-COVER-THE-COMPILE-IT-EXISTS-FOR
+    problem: >-
+      `/tmp/clawdline-suite.lock` exists so that this 24 GiB machine never runs two whole-module
+      Swift compiles at once, which has crashed it twice. But the node phase runs a
+      whole-`Sources/` `swiftc -typecheck` at `test.sh:741`, and the lock is not taken until
+      `:802`. So the one compile the lock was written for happens *outside* it, and every
+      concurrent `./test.sh` on this machine typechecks the whole module simultaneously while the
+      lock reports the machine as free.
+
+
+      The failure is not that the lock is wrong about who holds it. It is that "waiting for the
+      lock" and "burning CPU" are the same state and nothing distinguishes them: a coordinator
+      sequencing several lines reads the run-cache, sees one holder, and dispatches a second run
+      into a machine that is already at its limit.
+    title: The suite lock is taken after the compile it was written to serialise
+    evidence: >-
+      Two independent observations on 2026-09-05, one by reading and one by measuring.
+      Reading: `test.sh:741` runs the whole-`Sources/` typecheck; the lock is acquired at `:802`.
+      Measuring: the child of task `294c73a3`, at about 20:12, recorded **six `swift-frontend`
+      processes and 9816 MB of swap** while running `Tests/keychain-rebuild-focused.mjs`, whose
+      whole-Sources typecheck runs before the lock is taken; it killed its own second run rather
+      than find out what happened next. Its report is at
+      `/tmp/.clawdline/294c73a3-12d2-4ac0-a30c-38895a1fce14/artifacts/report.md`, risk 2. The
+      machine did not fall over, but only because that run stopped itself. Separately, the same
+      evening had five isolated lines in flight at once, which is the condition this describes.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Whoever next changes the lock or the node phase. The obvious repair — take the lock before
+      the typecheck — is not free: it lengthens every run's hold, including runs that would
+      otherwise overlap harmlessly, so it should be measured against how long that typecheck
+      actually takes rather than assumed. The check that matters is that the fix can go red: a
+      test that starts two runs and asserts the second does not compile while the first holds the
+      lock. Until then, the standing mitigation is human sequencing, which is what was used the
+      night this was written.
+    opened: 2026-09-05
