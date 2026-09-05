@@ -525,7 +525,18 @@ export var Mock = (function () {
                      ["briefed"], [], "branch_absent"),
             worktree("e4402d71-5c88-4b06-a3e9-71fd0b62c95a", "unknown", 1,
                      "Rewrite the README around what it is for", "2026-07-02T13:00:00Z",
-                     "2026-07-02T13:26:00Z", [])
+                     "2026-07-02T13:26:00Z", []),
+            // The two the 2026-09-06 correction gave words to. A finished delivery whose branch
+            // git can no longer find is its own rung rather than a landing; a branch HEAD
+            // contains because it never received a commit is delivered, not merged — the shape
+            // every Codex worktree child leaves behind, dirty and uncommitted, until a root
+            // records the landing.
+            worktree("5b1c8ad4-3e77-42fa-9d10-8ac6e5721b30", "branch_gone", 2,
+                     "The landing queue's focused runner", "2026-08-21T04:12:00Z",
+                     "2026-08-21T20:03:00Z", ["success"], [], "branch_absent"),
+            worktree("8d3e64f1-90b2-4c55-a7e6-1fd042c7b3a9", "delivered", 1,
+                     "Chat loading latency", "2026-09-05T22:41:00Z", "2026-09-05T23:58:00Z",
+                     ["success"], [], "branch_empty")
         ],
         "/Users/you/code/atrium": [
             worktree("c0aa5f92-7b31-4d68-8e02-45cb1d907e36", "landed", 2,
@@ -1337,7 +1348,8 @@ export var Mock = (function () {
                             schemaVersion: 1,
                             status: mode === "partial" ? "partial" : "available",
                             policy: "one_unambiguous_accepted_head",
-                            outcomeRule: "landed_by_record_or_branch_then_delivered_then_live_then_abandoned",
+                            outcomeRule: "landed_by_record_or_nonempty_merged_branch_then_"
+                                + "branch_gone_then_delivered_then_live_then_abandoned",
                             generatedAt: new Date().toISOString(),
                             range: { from: null, to: null, timezone: "Asia/Taipei" },
                             project: { id: "project-9c1f2e7a4b0d8e35", label: project },

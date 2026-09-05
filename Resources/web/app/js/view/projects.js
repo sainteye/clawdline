@@ -12,13 +12,14 @@ import { T, fill } from "../core/i18n.js";
    `git worktree list` is that this Mac carries 58 managed checkouts and the
    ledger remembers 150, most of which produced nothing anybody kept.
 
-   **The screen has one subject and it is `delivered`.** Sixteen of this
+   **The screen has one subject and it is `delivered`.** Eighteen of this
    repository's hundred and eighteen Feature-carrying worktrees finished their
-   work and are still sitting on a branch git says nothing has merged —
-   measured on 2026-09-05, against the production ledger and the repository
-   together. So that outcome is not one of five equal rows in a table: it is
+   work and are still sitting on a branch out of which git has merged no
+   delivery — sixteen it has not merged at all, and two that never received a
+   commit to merge — measured on 2026-09-06, against the production ledger and
+   the repository together. So that outcome is not one of six equal rows in a table: it is
    the block at the top, open, with its worktrees listed and the branch each
-   one is on. The other four rungs are `<details>` underneath, closed, because
+   one is on. The other five rungs are `<details>` underneath, closed, because
    they are the answer to "and the rest?".
 
    **That number replaced a much bigger one, and the difference is the point.**
@@ -32,6 +33,16 @@ import { T, fill } from "../core/i18n.js";
    land", and they are not the same answer. `git could not be asked` is a
    third answer and is drawn as itself, because a screen that cannot ask
    looks exactly like the screen this change was made to stop.
+
+   **Two of those twenty-four had never received a commit**, and a branch with
+   no commits is contained by HEAD from the moment `git worktree add -b` makes
+   it. That is `branch_empty`, and it is not a landing; on this Mac the same
+   reading found twelve such branches among seventy-five, ten of them with an
+   uncommitted checkout still on disk. And the branches that are *gone* are
+   their own group here rather than folded into `landed`: the app deletes a
+   delivery branch only when it is empty, but the app is not the only thing
+   that deletes branches, so an absence is this side losing sight of the work
+   rather than proof the work arrived.
 
    **An empty answer and an answer that never arrived are drawn differently.**
    The route already refuses rather than returning a blank 200 — `404
@@ -65,7 +76,7 @@ import { T, fill } from "../core/i18n.js";
 export var Projects = { escape: function () { } };
 
 /** The outcomes this page draws below the fold, hardest evidence first. */
-var SECONDARY = ["landed", "active", "abandoned", "unknown"];
+var SECONDARY = ["landed", "branch_gone", "active", "abandoned", "unknown"];
 
 function number(value) {
     if (value === null || value === undefined) return "—";
@@ -88,6 +99,7 @@ function appendText(doc, parent, tag, value, className) {
 function outcomeWords(outcome) {
     if (outcome === "landed") return { name: T.webProjectLanded, say: T.webProjectLandedSay };
     if (outcome === "delivered") return { name: T.webProjectDelivered, say: T.webProjectDeliveredSay };
+    if (outcome === "branch_gone") return { name: T.webProjectBranchGone, say: T.webProjectBranchGoneSay };
     if (outcome === "active") return { name: T.webProjectActive, say: T.webProjectActiveSay };
     if (outcome === "abandoned") return { name: T.webProjectAbandoned, say: T.webProjectAbandonedSay };
     return { name: T.webProjectUnknownOutcome, say: T.webProjectUnknownSay };
@@ -135,6 +147,13 @@ function branchOf(worktree) {
  * --merged HEAD` and recognising a landing nobody wrote down. A reader deciding whether to go and
  * merge something needs to know which of the two they are looking at.
  *
+ * **And the two that look like `branch_merged` and are not.** `branch_empty` is a branch HEAD
+ * contains because it still points at the commit it was cut from, which is every delivery branch
+ * before its first commit; `branch_base_unknown` is that same containment with nothing left on
+ * record to say what it was cut from, so the two cannot be told apart. Both are drawn as
+ * themselves under a `delivered` verdict, because "in HEAD" and "landed" turn out not to be the
+ * same sentence.
+ *
  * An unrecognised value falls through to `unknown` rather than being printed raw: a payload from
  * a newer app must not put a wire token on screen as if it were a sentence.
  */
@@ -142,6 +161,8 @@ function evidenceText(worktree) {
     var evidence = worktree.landingEvidence;
     if (evidence === "record") return T.webProjectEvidenceRecord;
     if (evidence === "branch_merged") return T.webProjectEvidenceBranchMerged;
+    if (evidence === "branch_empty") return T.webProjectEvidenceBranchEmpty;
+    if (evidence === "branch_base_unknown") return T.webProjectEvidenceBranchBaseUnknown;
     if (evidence === "branch_absent") return T.webProjectEvidenceBranchAbsent;
     if (evidence === "branch_unmerged") return T.webProjectEvidenceBranchUnmerged;
     return T.webProjectEvidenceUnknown;

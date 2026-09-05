@@ -4263,8 +4263,10 @@ final class UsageProjectWorktreeService {
 
     /// **How the work in one worktree ended.** The three states the person asked to be able to
     /// tell apart are `landed`, `delivered` and `abandoned`; `active` exists because folding
-    /// work that is running right now into "abandoned" would be a lie, and `unknown` exists
-    /// because a verdict with no evidence behind it must not wear one of the other four's names.
+    /// work that is running right now into "abandoned" would be a lie, `branchGone` exists
+    /// because a delivery whose branch nobody can find any more is not one of the other five,
+    /// and `unknown` exists because a verdict with no evidence behind it must not wear one of
+    /// the others' names.
     ///
     /// The ladder is evaluated in this order, and each rung is a stored fact or a git fact rather
     /// than an inference:
@@ -4272,33 +4274,49 @@ final class UsageProjectWorktreeService {
     /// 1. `landed` — some row carries `landing_state = landed`: a root recorded that this
     ///    delivery reached its target branch. It outranks everything, including a task that
     ///    reported failure, because the branch is in the tree whatever the child said.
-    /// 2. `landed` — git says the delivery branch is already contained by the repository's HEAD.
-    ///    The same reasoning as the rung above, one step weaker in provenance and no weaker in
-    ///    fact: the commits are in the tree whether or not anybody wrote it down.
-    /// 3. `delivered` — some row's task reached `success`, nothing above said it landed, and the
+    /// 2. **A root that wrote `landing_state = abandoned` vetoes the two git rungs below.** Not
+    ///    an outcome of its own: it is a person having looked at this delivery and given the
+    ///    obligation up, and the shape of a repository does not overrule a decision. Without it,
+    ///    a branch somebody merged for unrelated reasons would report the abandoned obligation as
+    ///    `landed`. Everything under the two git rungs is left exactly as it was, so an
+    ///    abandoned obligation on work that succeeded is still `delivered` — see rung 5.
+    /// 3. `landed` — git says the delivery branch carries commits and is already contained by
+    ///    the repository's HEAD. The same reasoning as rung 1, one step weaker in provenance and
+    ///    no weaker in fact: the commits are in the tree whether or not anybody wrote it down.
+    ///    **Carrying commits is half of that rung and not a detail**: `git worktree add -b` cuts
+    ///    the branch at the base commit, so a branch that never received one is an ancestor of
+    ///    HEAD the moment it exists — 12 of this Mac's 75 merged delivery branches on
+    ///    2026-09-06, 10 of them with a dirty checkout still on disk. See ``branchEvidence(worktree:branches:bases:)``.
+    /// 4. `branchGone` — some row's task reached `success` and git says the branch it delivered
+    ///    on is not in the repository at all. **This is not `landed`**: the app deletes a
+    ///    delivery branch only when it carries no commits, but the app is not the only thing that
+    ///    can delete one — 8 branches it explicitly kept because they carried commits (1, 4, 10,
+    ///    63 and 122 of them) are gone from this repository with no removal record anywhere. So
+    ///    absence means *this side cannot see the delivery any more*, which is worth its own word
+    ///    on screen and must not disappear into either neighbour.
+    /// 5. `delivered` — some row's task reached `success`, nothing above settled it, and the
     ///    branch is still there unmerged (or git could not be asked). This is "done, not landed",
     ///    which includes an open landing obligation (`pending`) and one that was given up
-    ///    (`abandoned`); both spellings travel in `landingStates` beside the word. A branch git
-    ///    says is *gone* settles here instead — a delivery leaves the list when its branch is
-    ///    merged or deleted, which is what ``Orchestrator/workVisibility(state:landing:isolated:branchExists:branchMerged:)``
-    ///    has always done for the in-flight list.
-    /// 4. `active` — neither of the above, and one of these tasks is still live in the registry
+    ///    (`abandoned`); both spellings travel in `landingStates` beside the word.
+    /// 6. `active` — neither of the above, and one of these tasks is still live in the registry
     ///    now. Liveness is asked of the registry rather than measured as an age: a task the
     ///    registry does not hold is certainly not running, which is the direction that is safe to
     ///    conclude from an absence.
-    /// 5. `abandoned` — neither landed nor successful, and nothing left running: every task
+    /// 7. `abandoned` — neither landed nor successful, and nothing left running: every task
     ///    either ended without success, or stopped being observed and was never finalized. That
     ///    second shape is what debris looks like in this store — `b57fc96f` sat at `briefed` for
     ///    41 hours because the session died before anything wrote a terminal state.
-    /// 6. `unknown` — no row carried any task state at all.
+    /// 8. `unknown` — no row carried any task state at all.
     ///
-    /// **A branch that is gone only settles work that succeeded**, which is why rung 3 owns that
-    /// case rather than the top of the ladder. `OrchestratorDraft.disposeWorktree` deletes a
-    /// delivery branch exactly when it has no commits on it, so absence is evidence of *nothing
-    /// outstanding* and never of *something landed*: on a task that failed it means the checkout
-    /// was thrown away empty, and that worktree stays `abandoned`.
+    /// **A branch that is gone only settles work that succeeded**, which is why rung 4 asks for
+    /// `success` and the top of the ladder does not own that case. On a task that failed, an
+    /// absent branch is the ordinary shape of debris — the checkout was thrown away empty — and
+    /// that worktree stays `abandoned`.
     enum Outcome: String, CaseIterable {
-        case landed, delivered, active, abandoned, unknown
+        case landed, delivered
+        /// Finished, and the branch it was delivered on is not in the repository any more.
+        case branchGone = "branch_gone"
+        case active, abandoned, unknown
 
         /// Strongest first. A worktree's own outcome is this ladder applied to every row of every
         /// Feature it carries, which is the same answer as the strongest of its Features'.
@@ -4322,8 +4340,17 @@ final class UsageProjectWorktreeService {
     enum LandingEvidence: String {
         /// A root recorded a verified landing: `landing_state = landed`.
         case record
-        /// git says the delivery branch is contained by the repository's current HEAD.
+        /// git says the delivery branch is contained by the repository's current HEAD **and it
+        /// carries at least one commit of its own**, so what HEAD contains is a delivery.
         case branchMerged = "branch_merged"
+        /// git says the branch is contained by HEAD and it still points at the commit it was cut
+        /// from: nothing was ever committed on it. Containment is then a property of how
+        /// `git worktree add -b` makes a branch and says nothing at all about a delivery.
+        case branchEmpty = "branch_empty"
+        /// git says the branch is contained by HEAD and nothing records what it was cut from, so
+        /// a real merge cannot be told apart from the empty branch above. **This is not
+        /// `unknown`**: git answered, and the half that is missing is the registry's.
+        case branchBaseUnknown = "branch_base_unknown"
         /// git answered and the branch is not in the repository at all.
         case branchAbsent = "branch_absent"
         /// git answered, the branch is there, and HEAD does not contain it. **This is the one
@@ -4395,11 +4422,18 @@ final class UsageProjectWorktreeService {
     /// calls for the whole repository rather than one subprocess per worktree, which is what
     /// makes asking git affordable on a read that already joins a hundred thousand rows.
     private let readBranches: (String) -> Orchestrator.RepositoryBranches
+    /// The commit each delivery branch was cut from, which is the one fact git cannot supply
+    /// about its own branches and the one that tells a merged delivery from a branch that never
+    /// received a commit. Injected through the same seam as the two above, and for the third
+    /// time for the same reason: this read must be describable in a test without a registry and
+    /// without a repository. See ``branchEvidence(worktree:branches:bases:)``.
+    private let readWorktreeBases: () -> [String: String]
 
     init() {
         readRows = { UsageLedger.shared.analyticsRead($0) }
         readLiveTaskIDs = { Orchestrator.usageLiveTaskIDs() }
         readBranches = { Orchestrator.repositoryBranches(in: $0) }
+        readWorktreeBases = { Orchestrator.usageWorktreeBases() }
     }
 
     /// Test seam. Production never enters here: the bounded predicate lives in
@@ -4408,13 +4442,21 @@ final class UsageProjectWorktreeService {
     /// `branches` defaults to a repository git never answered for, which is exactly the state
     /// this service was in before it asked: every verdict below then comes out of the stored
     /// columns alone, so a test that says nothing about branches is asserting the old ladder.
+    ///
+    /// `worktreeBases` defaults to a registry that recorded no base for any branch, which is the
+    /// fail-safe half of ``branchEvidence(worktree:branches:bases:)`` rather than a convenience:
+    /// a test that describes a merged branch and says nothing about what it was cut from gets
+    /// `branch_base_unknown` and no upgrade, exactly as production does for a task record the
+    /// registry has swept.
     init(rows: @escaping () -> [UsageLedger.Row],
          acceptedFeatures: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          acceptedProjects: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          liveTaskIDs: @escaping () -> Set<String> = { [] },
          branches: @escaping (String) -> Orchestrator.RepositoryBranches
-             = { _ in Orchestrator.RepositoryBranches() }) {
+             = { _ in Orchestrator.RepositoryBranches() },
+         worktreeBases: @escaping () -> [String: String] = { [:] }) {
         readBranches = branches
+        readWorktreeBases = worktreeBases
         readRows = { _ in
             let rows = rows()
             return UsageLedger.AnalyticsRead(
@@ -4552,12 +4594,23 @@ final class UsageProjectWorktreeService {
         // `for-each-ref` calls answer for every worktree below, and a Project whose work never
         // left the shared checkout costs no subprocess at all. `matched.key` is the canonical
         // repository path the Portfolio resolved, which is the directory these branches live in.
-        let branches = worktrees.isEmpty
+        //
+        // **And only when that key is a path.** `UsageFeatureClassifier.resolveProject` returns
+        // an accepted Project identity unchanged, and an accepted identity is whatever a person
+        // accepted rather than something the type says is a directory. Handing a non-path to
+        // `repositoryBranches(in:)` would run `for-each-ref` in the app's own current directory
+        // — and if that happened to sit inside a repository, another repository's branches would
+        // decide this Project's verdicts with `known == true`. Today nothing can write such an
+        // identity; this is the line that keeps it that way.
+        let branches = worktrees.isEmpty || !matched.key.hasPrefix("/")
             ? Orchestrator.RepositoryBranches() : readBranches(matched.key)
+        // Read once beside the branches, and only when git answered: with no branch facts there
+        // is nothing for a base to qualify.
+        let bases = branches.known ? readWorktreeBases() : [:]
         var payloads: [[String: Any]] = []
         var withoutFeature = 0
         for (id, rows) in worktrees {
-            let branch = Self.branchEvidence(worktree: id, branches: branches)
+            let branch = Self.branchEvidence(worktree: id, branches: branches, bases: bases)
             let features = Self.features(rows, accepted: reading.acceptedFeatures, live: live,
                                          branch: branch)
             guard !features.isEmpty else {
@@ -4586,7 +4639,8 @@ final class UsageProjectWorktreeService {
             // without the store being short. It is never the word for an empty answer.
             "status": truncated ? "partial" : "available",
             "policy": "one_unambiguous_accepted_head",
-            "outcomeRule": "landed_by_record_or_branch_then_delivered_then_live_then_abandoned",
+            "outcomeRule": "landed_by_record_or_nonempty_merged_branch_then_branch_gone_then_"
+                + "delivered_then_live_then_abandoned",
             "generatedAt": formatter.string(from: now),
             "range": range,
             "project": ["id": UsageQueryService.projectID(matched.key),
@@ -4678,12 +4732,30 @@ final class UsageProjectWorktreeService {
         if rows.contains(where: { $0.landingState == Orchestrator.LandingState.landed.rawValue }) {
             return .landed
         }
-        if branch == .branchMerged { return .landed }
+        // **A decision a person made is not overruled by the shape of a repository.** A root that
+        // wrote `abandoned` looked at this delivery and gave the obligation up; the two rungs
+        // this guards would otherwise call the same worktree `landed` because somebody's HEAD
+        // happens to contain the branch, or `branchGone` because somebody deleted it. Both are
+        // git noticing a shape, and neither is news to the root that decided. It guards those two
+        // rungs and nothing under them, so the ladder below is exactly the one that ran before
+        // git was a source: a given-up obligation on work that succeeded is still `delivered`,
+        // with `abandoned` travelling beside it in `landingStates`.
+        let givenUp = rows.contains {
+            $0.landingState == Orchestrator.LandingState.abandoned.rawValue
+        }
+        if !givenUp {
+            if branch == .branchMerged { return .landed }
+            // A delivery whose branch git can no longer find. Not `landed` — the app deletes a
+            // branch only when it is empty, but the app is not the only deleter, and eight
+            // branches it kept for their commits have gone missing on this Mac — and not
+            // `delivered` either, because there is no branch left for anybody to land.
+            if branch == .branchAbsent,
+               rows.contains(where: { $0.taskState == Orchestrator.State.success.rawValue }) {
+                return .branchGone
+            }
+        }
         if rows.contains(where: { $0.taskState == Orchestrator.State.success.rawValue }) {
-            // A delivery whose branch git says is gone has nothing outstanding on it. On work
-            // that did *not* succeed this rung is never reached, because a disposed empty
-            // checkout is debris and not a landing.
-            return branch == .branchAbsent ? .landed : .delivered
+            return .delivered
         }
         if rows.contains(where: { $0.taskID.map(live.contains) == true }) { return .active }
         if rows.contains(where: { $0.taskState?.nonEmpty != nil }) { return .abandoned }
@@ -4707,6 +4779,21 @@ final class UsageProjectWorktreeService {
     /// `branch_absent` — the difference between *git has no such branch* and *this side never
     /// asked about one*.
     ///
+    /// **A branch with no commits on it is contained by HEAD for free, and that is not a
+    /// landing.** `OrchestratorDraft.addWorktree` runs `git worktree add -b <branch> <path>
+    /// <base>`, so a delivery branch begins life pointing at the base commit — an ancestor of
+    /// HEAD from the moment it exists. Reading that as "merged" turns every delivery that has not
+    /// committed yet into a landing: on 2026-09-06 that was 12 of this Mac's 75 contained
+    /// delivery branches, 10 of them with an uncommitted checkout still sitting on disk, which is
+    /// the ordinary shape of a Codex worktree child — `dispatch-policy.md` tells one to leave its
+    /// bytes dirty for the root, because a linked worktree's git metadata is outside what that
+    /// sandbox may write.
+    ///
+    /// So `bases` — the commit each branch was cut from, out of the registry's own task records —
+    /// is what separates the two, and **a base nobody can supply refuses the upgrade rather than
+    /// granting it**. The costs are not symmetric in that direction either: calling an unlanded
+    /// delivery landed costs somebody a day of rebuilding it, and the other way costs a glance.
+    ///
     /// **Two things this cannot see, deliberately.** `--merged HEAD` is ancestry, so a delivery
     /// that was squashed or cherry-picked into the target still reads as unmerged; running
     /// `git cherry` per branch would be one subprocess per worktree on a read that already costs
@@ -4714,12 +4801,18 @@ final class UsageProjectWorktreeService {
     /// on a repository parked on another branch, "merged" means "contained by whatever is checked
     /// out there".
     static func branchEvidence(worktree id: String,
-                               branches: Orchestrator.RepositoryBranches) -> LandingEvidence {
+                               branches: Orchestrator.RepositoryBranches,
+                               bases: [String: String]) -> LandingEvidence {
         guard branches.known, let branch = OrchestratorDraft.worktreeBranch(for: id) else {
             return .unknown
         }
-        if branches.merged.contains(branch) { return .branchMerged }
-        return branches.heads[branch] == nil ? .branchAbsent : .branchUnmerged
+        // The listing of what exists decides absence, before containment is consulted at all: a
+        // name in `merged` that the listing has no line for is a reading that disagrees with
+        // itself, and the safe half of it is that this side cannot see the branch.
+        guard let head = branches.heads[branch] else { return .branchAbsent }
+        guard branches.merged.contains(branch) else { return .branchUnmerged }
+        guard let base = bases[branch] else { return .branchBaseUnknown }
+        return head == base ? .branchEmpty : .branchMerged
     }
 }
 

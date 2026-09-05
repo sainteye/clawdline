@@ -4288,7 +4288,7 @@ analytics query: a misspelled filter must not quietly widen an accounting read.
 ```json
 {"projectWorktrees":{
   "schemaVersion":1,"status":"available","policy":"one_unambiguous_accepted_head",
-  "outcomeRule":"landed_by_record_or_branch_then_delivered_then_live_then_abandoned",
+  "outcomeRule":"landed_by_record_or_nonempty_merged_branch_then_branch_gone_then_delivered_then_live_then_abandoned",
   "generatedAt":"2026-09-04T11:40:00Z",
   "range":{"from":null,"to":null,"timezone":"Asia/Taipei"},
   "project":{"id":"project-9c1f2e7a4b0d8e35","label":"clawdline"},
@@ -4316,17 +4316,18 @@ is the same answer as the strongest of its Features':
 | value | what it rests on |
 |---|---|
 | `landed` | some row carries `landing_state = landed`: a root recorded that this delivery reached its target branch. It outranks the child's own word, including `failure` — two rows on this Mac say exactly that, and what is being asked about is the branch |
-| `landed` | or git says the delivery branch is already contained by the repository's HEAD. The same reasoning one step weaker in provenance and no weaker in fact: the commits are in the tree whether or not anybody wrote it down |
-| `delivered` | some row's task reached `success`, nothing above landed it, and the branch is still there unmerged — or git could not be asked. Done, not landed. An open landing obligation (`pending`) and one that was given up (`abandoned`) both live here, and both spellings travel in `landingStates` beside the word. A branch git says is *gone* settles as `landed` instead, because a delivery leaves the outstanding list when its branch is merged **or deleted** — the same rule [`GET /v1/orchestrator/inflight`](#get-v1orchestratorinflightprojectdir-get-v1orchestratortasksidinflight) has always used |
+| *(veto)* | a row carrying `landing_state = abandoned` and no `landed` stops the two git rungs below from deciding anything. A root looked at this delivery and gave the obligation up; the shape of the repository does not overrule a decision. The rungs under those two are untouched, so a given-up obligation on work that succeeded is still `delivered` |
+| `landed` | or git says the delivery branch **carries commits** and is already contained by the repository's HEAD. The same reasoning one step weaker in provenance and no weaker in fact: the commits are in the tree whether or not anybody wrote it down. The commits half is not a detail — see `branch_empty` below |
+| `branch_gone` | some row's task reached `success` and git says that branch is not in the repository at all. **Not `landed`**: this app deletes a delivery branch only when it carries no commits, and this app is not the only thing that deletes branches — eight branches it kept *because* they carried commits, three of them holding 1, 63 and 122, are gone from this repository with no removal recorded anywhere. Not `delivered` either, because there is no branch left for anybody to land |
+| `delivered` | some row's task reached `success`, nothing above settled it, and the branch is still there unmerged — or git could not be asked, or answered in one of the two ways that cannot support an upgrade. Done, not landed. An open landing obligation (`pending`) and one that was given up (`abandoned`) both live here, and both spellings travel in `landingStates` beside the word |
 | `active` | neither of the above, and one of these tasks is still live in the registry now |
 | `abandoned` | neither landed nor successful, and nothing left running: every task either ended without success, or stopped being observed and was never finalized. That second shape is what debris looks like in this store — a task sitting at `briefed` for 41 hours because the session died before anything wrote a terminal state |
 | `unknown` | no row carried any task state at all |
 
-**A branch that is gone only settles work that succeeded**, which is why it lives on the
-`delivered` rung and not at the top of the ladder. A worktree's branch is deleted exactly when it
-carries no commits, so absence is evidence of *nothing outstanding* and never of *something
-landed*: on a task that failed it means the checkout was thrown away empty, and that worktree stays
-`abandoned`.
+**A branch that is gone only settles work that succeeded.** On a task that failed, an absent
+branch is the ordinary shape of debris — the checkout was thrown away empty — and that worktree
+stays `abandoned`. On work that succeeded it is `branch_gone`, which is this side saying it can no
+longer see the delivery rather than saying the delivery arrived.
 
 **`landingEvidence` says which of those sources answered**, per worktree and per Feature, because
 "a root verified and recorded it" and "this side found the branch merged" are both good answers to
@@ -4335,7 +4336,9 @@ landed*: on a task that failed it means the checkout was thrown away empty, and 
 | value | what it means |
 |---|---|
 | `record` | a root's landing record. The broker writes one only after verifying with a machine credential that the commit resolves in the task's repository and is contained by the named target branch |
-| `branch_merged` | `git for-each-ref --merged HEAD` contains `clawdline/task/<worktree id>` |
+| `branch_merged` | `git for-each-ref --merged HEAD` contains `clawdline/task/<worktree id>`, **and** the branch's tip is not the commit it was cut from — so what HEAD contains is a delivery |
+| `branch_empty` | it is contained by HEAD and still points at its base, so nothing was ever committed on it. `git worktree add -b <branch> <path> <base>` makes every delivery branch an ancestor of HEAD the moment it exists; on 2026-09-06, 12 of this Mac's 75 contained delivery branches were this, 10 with an uncommitted checkout still on disk — the ordinary shape of a worktree child told to leave its bytes dirty for the root |
+| `branch_base_unknown` | it is contained by HEAD and no task record says what it was cut from, so the two rows above cannot be told apart. The base is the registry's to remember and the registry is swept; the upgrade is refused rather than granted, because calling an unlanded delivery landed costs somebody a day and the other direction costs a glance |
 | `branch_absent` | git answered and that branch is not in the repository |
 | `branch_unmerged` | git answered, the branch is there, and HEAD does not contain it. **This is the one `delivered` with a fact behind it** |
 | `unknown` | git was not asked or could not answer. Every verdict then falls back to the stored columns alone, which is the answer this route gave before it asked git at all — the costs are not symmetric, and showing a merged delivery costs a glance while hiding an unmerged one costs somebody a day |

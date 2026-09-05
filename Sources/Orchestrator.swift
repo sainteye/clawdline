@@ -5310,7 +5310,14 @@ enum Orchestrator {
         }
         let existing = current.landing
         if existing?.state == .landed, requestedState == .landed {
+            let settled = current
             lock.unlock()
+            // **The idempotent re-send is the only door left for a landing recorded before this
+            // wiring existed.** Such a record is in the registry and not on its ledger row, and
+            // the write-back below runs on the paths that *change* the landing — which this one,
+            // by definition, does not. Without this line the row waits for the next launch's
+            // backfill, which is exactly the wait this feature was built to remove.
+            recordLandingInLedger(settled)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
         if let existing, (existing.state == .landed || existing.state == .abandoned),
@@ -5393,7 +5400,12 @@ enum Orchestrator {
             return .refused(404, "not_found", "No task named that")
         }
         if verifiedCurrent.landing?.state == .landed {
+            let settled = verifiedCurrent
             lock.unlock()
+            // The same door, reached by the race rather than by a re-send: another caller landed
+            // it while these subprocesses ran. Its write-back is that caller's, and a second one
+            // of the same record changes nothing — `collect(taskRecord:)` is keyed by interval.
+            recordLandingInLedger(settled)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
         guard verifiedCurrent.state == expectedState,
