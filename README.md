@@ -461,6 +461,7 @@ it on, in whatever order you want it.
 | **Typing from a paired device** | Settings → Remote → *Let a paired device write into a session* | [remote.md](docs/remote.md) |
 | **Reaching it from outside** | Settings → Remote → *Reach this Mac from anywhere*; the `cloudflared` it runs is your own install | [remote.md](docs/remote.md#the-tunnel) |
 | **Handing work to another session** | the same *Let a browser…* switch, then one of [the skill's](skills/clawdline/) two files into `~/.claude/skills/clawdline/` | [orchestrator.md](docs/orchestrator.md#the-skill) · [dispatch-permissions.md](docs/dispatch-permissions.md) |
+| **A session saying its turn is done** | nothing, if it is picking up a handoff — the package carries the line. Otherwise the skill above, and optionally [one line in your global `CLAUDE.md`](docs/orchestrator.md#and-one-optional-line-in-your-global-claudemd) | [orchestrator.md](docs/orchestrator.md#the-skill) |
 | **A question noticed in a second rather than twenty** | Settings → Claude Code hooks → *Install* | [hooks.md](docs/hooks.md) |
 | **Two languages in one sentence** | one `brew install`, plus the model file it reads | [whisper.md](docs/whisper.md) |
 

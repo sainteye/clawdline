@@ -1231,6 +1231,27 @@ sender reads and the receiver never sees. The line, near enough verbatim:
 > calling this from inside a turn is *working*, so expect `downstream: "busy"` — and busy is
 > deliberately not queued, so do not retry it in a loop. A person's later `/rename` still wins.
 
+**And a second line, at the other end of the turn.** The same argument decides it: the receiver
+finishes in a project where this guide is not installed, so an instruction that lives only here is
+one it never sees. This actually happened on 2026-09-05 — a receiver made the naming call on
+arrival because the document told it to, then finished reporting nothing, and asked why, said it had
+gone looking for a publishing route and concluded a root had none. Two calls of the same kind, one
+written into the package and one not. Near enough verbatim:
+
+> When this turn is genuinely finished — integration, verification and any commit included — send
+> one **delivery receipt**, which is what puts the *done* check on this session in Clawdline. Two
+> calls, both with `-H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)"`:
+> `GET /v1/orchestrator/whoami?conversation_id=<your own conversation id>` gives back
+> `terminal_id`, and `POST /v1/orchestrator/sessions/<that terminal_id>/complete` with
+> `{"summary":"<one sentence, at most 500 characters>"}` records it. Send it as the last tool
+> action before your final answer, and only for a turn that is actually finished — not for partial
+> work, a diagnosis, a blocker, or a question back to me.
+
+Both lines carry a route rather than a pointer, which is the trade this whole block is: a pointer is
+worth nothing to a session that cannot reach what it points at, and a route can go stale against a
+newer build. Prefer the pointer whenever the receiver *does* have the skill, and say in the document
+which of the two you gave it.
+
 Clawdline already labels the tab it opened with your `title` and now remembers that across a
 restart, so this is not a rescue — it is reach, and it is **the receiver's move, not yours**: you do
 not have its session id, and a name it typed itself is one it can keep true as the work changes.

@@ -2588,6 +2588,32 @@ mkdir -p ~/.claude/skills/clawdline
 cp skills/clawdline/SKILL.md ~/.claude/skills/clawdline/SKILL.md      # or SKILL.zh-TW.md
 ```
 
+### And one optional line in your global `CLAUDE.md`
+
+The stub reaches every project, but a skill description is something a session reads **once**, near
+the start, and decides whether it applies. On 2026-09-05 a session that had just finished a turn
+read this one, saw three clauses about handing work *out*, correctly concluded none of them was it,
+and never looked again — so it never learned that a finished turn is worth reporting. It said
+afterwards where it would have seen it: the file it reads every single time.
+
+That file is yours and this project does not write it. If you want the delivery receipt to reach
+sessions that are not dispatched by Clawdline and are not picking up a handoff, paste this into
+`~/.claude/CLAUDE.md`:
+
+```markdown
+- When a turn is genuinely finished — integration, verification and any commit included — send one
+  **delivery receipt** to Clawdline, which puts the *done* check on that session. It applies in
+  **any** repository, not only Clawdline's own. How, in the clawdline skill guide's
+  `Report the root's completed turn` section — load the guide rather than typing a route from
+  memory. Not for partial work, a diagnosis, a blocker, or a question back to the user; a Clawdline
+  **child** reports through its own `result.json` instead.
+```
+
+It is optional, it is per-machine, and nothing here breaks without it — a handoff receiver is
+reached through its package instead, which is why the guide has the sender write that line into
+`OBJECTIVE`. Ranked by what actually reaches a reader at the moment it matters, the order is: the
+handoff package, then this file, then the stub's trigger list.
+
 **What that copies is a discovery stub, and that is the point.** A file installed into a skills
 directory is a copy, and a copy never updates, so the routes and fields it must not go stale on are
 not in it. They ship with the app instead, and the stub says how to read them from the build that

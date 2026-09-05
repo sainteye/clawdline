@@ -391,6 +391,7 @@ open ~/Applications/Clawdline.app
 | **讓配對過的裝置打字** | 設定 → 遠端 →「讓配對過的裝置寫進 session」 | [remote.md](docs/remote.md) |
 | **從外面連進來** | 設定 → 遠端 →「從任何地方連到這台 Mac」；它跑的 `cloudflared` 是你自己裝的那支 | [remote.md](docs/remote.md#the-tunnel) |
 | **把工作派給另一個 session** | 同一個「讓瀏覽器⋯⋯」開關，然後把 [skill](skills/clawdline/) 那兩個檔案挑一個放進 `~/.claude/skills/clawdline/` | [orchestrator.md](docs/orchestrator.md#the-skill) · [dispatch-permissions.md](docs/dispatch-permissions.md) |
+| **讓一個 session 說自己這輪做完了** | 接手 handoff 的話什麼都不用做——那句話在包裹裡。其他情況裝上面那個 skill，另外可以選擇性地在全域 `CLAUDE.md` 加[一行](docs/orchestrator.md#and-one-optional-line-in-your-global-claudemd) | [orchestrator.md](docs/orchestrator.md#the-skill) |
 | **一秒內就知道有人在等你回答，而不是二十秒** | 設定 → Claude Code Hook →「安裝」 | [hooks.md](docs/hooks.md) |
 | **一句話裡裝得下兩種語言** | 一行 `brew install`，加上它要讀的模型檔 | [whisper.md](docs/whisper.md) |
 

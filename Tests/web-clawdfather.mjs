@@ -482,6 +482,38 @@ for (const guide of ["../Resources/skill-guides/clawdline.md",
     assert.match(text, /docs\/orchestrator\.md/, `${guide} points at the long form`);
 }
 
+// The two lines a handoff sender writes into the package, held here because the package is the only
+// carrier that reaches a receiver in a project where nothing of this project is installed. On
+// 2026-09-05 only the naming line existed: a receiver made that call on arrival and finished
+// reporting nothing, and said afterwards it had searched for a publishing route and concluded a
+// root had none. A shipped guide that stops carrying the second line puts that back, and nothing
+// else would notice — the receipt is not a route any test here calls.
+for (const guide of ["../Resources/skill-guides/clawdline.md",
+                     "../Resources/skill-guides/clawdline.zh-TW.md"]) {
+    const text = await readFile(new URL(guide, import.meta.url), "utf8");
+    assert.match(text, /sessions\/<[^>]*>\/title/,
+        `${guide} no longer gives the sender the naming line to write into the package`);
+    assert.match(text, /sessions\/<[^>]*>\/complete/,
+        `${guide} no longer gives the sender the delivery-receipt line to write into the package`);
+    assert.match(text, /orchestrator\/whoami/,
+        `${guide}: the receipt line does not say how a session resolves its own terminal id, which `
+        + `is the half a receiver cannot look up`);
+}
+
+// And the install step for the one carrier this project does not ship: a global CLAUDE.md is the
+// user's file, so if the documentation stops telling them it exists, the only people who get it
+// are the ones who already knew.
+{
+    const orchestrator = await readFile(new URL("../docs/orchestrator.md", import.meta.url), "utf8");
+    assert.match(orchestrator, /optional line in your global `CLAUDE\.md`/i,
+        "docs/orchestrator.md no longer documents the optional global rule");
+    for (const readme of ["../README.md", "../README.zh-TW.md"]) {
+        const text = await readFile(new URL(readme, import.meta.url), "utf8");
+        assert.ok(text.includes("and-one-optional-line-in-your-global-claudemd"),
+            `${readme} does not point an installer at the optional global rule`);
+    }
+}
+
 // What the stub itself still owes: it must route a reader to that guide rather than teach the
 // procedure, and it must not have quietly grown the detail back.
 for (const stub of ["../skills/clawdline/SKILL.md", "../skills/clawdline/SKILL.zh-TW.md"]) {
