@@ -185,6 +185,102 @@ group("what has already been said in a place") {
     expect("one that was never handed out does not",
            StartPoints.past(withID: "99999999-9999-4999-8999-999999999999", in: place,
                             dir: root, open: []), nil)
+
+    // The same list, named the way every other Clawdline surface names the same conversation.
+    // Until 2026-09-05 this read the transcript's own two titles and nothing this app knows, so
+    // the sheet a person picks a conversation back up from disagreed with the row they had been
+    // reading all week. Both halves were on screen at once, in `atrium`: the session list said
+    // 注射增大問後遺症與硬度 and 工作室出租：劇本裡的網址被模型改寫掉, and the sheet said
+    // `Image review` and `Images` — the raw `aiTitle`s, for the two conversations whose opening
+    // was a pasted screenshot and no words.
+    //
+    // A folder of its own, because the checks above pin this folder's order and its exact count.
+    let ladder = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-past-titles-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: ladder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: ladder) }
+
+    let named = "aaaaaaaa-1111-4111-8111-111111111111"
+    let bothNames = "bbbbbbbb-2222-4222-8222-222222222222"
+    let itsOwn = "cccccccc-3333-4333-8333-333333333333"
+    let weakWithFallback = "dddddddd-4444-4444-8444-444444444444"
+    let weakAlone = "eeeeeeee-5555-4555-8555-555555555555"
+    let unnamed = "ffffffff-6666-4666-8666-666666666666"
+    let superseded = "abababab-7777-4777-8777-777777777777"
+
+    // One pasted screenshot and no words — the turn Claude Code makes `Image #1` out of, and the
+    // only one either `isWeak` clause fires on. The text part really is what Claude Code writes
+    // beside the image; that is what makes the opening a marker rather than prose.
+    let screenshot = #"{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"x"}},{"type":"text","text":"[Image #1]"}]}}"#
+    func said(_ text: String) -> String {
+        #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"\#(text)"}]}}"#
+    }
+    func aiTitle(_ text: String) -> String { #"{"type":"ai-title","aiTitle":"\#(text)"}"# }
+    func renamed(_ text: String) -> String { #"{"customTitle":"\#(text)"}"# }
+    func writeLadder(_ id: String, _ lines: [String], at seconds: TimeInterval) {
+        let url = ladder.appendingPathComponent("\(id).jsonl")
+        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: seconds)], ofItemAtPath: url.path)
+    }
+
+    writeLadder(named, [said("找一下這個 crash"), aiTitle("Crash triage")], at: 7000)
+    writeLadder(bothNames, [said("先看 log"), aiTitle("Log reading"),
+                            renamed("在終端機 /rename 的名字")], at: 6000)
+    writeLadder(itsOwn, [said("lightbox 在 Safari 18 播不動，幫我找原因"),
+                         aiTitle("Lightbox 影片相容性")], at: 5000)
+    writeLadder(weakWithFallback, [screenshot, aiTitle("Image review")], at: 4000)
+    writeLadder(weakAlone, [screenshot, aiTitle("Images")], at: 3000)
+    writeLadder(unnamed, [said("完全沒有標題的一段對話")], at: 2000)
+    writeLadder(superseded, [said("先照舊"), aiTitle("Held still"),
+                             renamed("後來在終端機改的名字")], at: 1000)
+
+    // A private config directory, so these are this suite's stored names and never the person's.
+    let names = ladder.appendingPathComponent("config", isDirectory: true)
+    try? FileManager.default.createDirectory(at: names, withIntermediateDirectories: true)
+    let stored = Config(directoryForTesting: names)
+    // Both rows carry the transcript they were chosen against, which is the shape the app writes:
+    // `seenCustomTitle` is what that file's `/rename` said at the time, and here it still says it.
+    stored.setSessionTitle("在 Clawdline 裡取的名字", sessionID: named, terminalID: "%40",
+                           seenCustomTitle: nil,
+                           seenTranscriptPath: ladder.appendingPathComponent("\(named).jsonl").path)
+    stored.setSessionTitle("Clawdline 的名字贏過 /rename", sessionID: bothNames, terminalID: "%41",
+                           seenCustomTitle: "在終端機 /rename 的名字",
+                           seenTranscriptPath: ladder.appendingPathComponent("\(bothNames).jsonl").path)
+    stored.setAutomaticSessionTitle("注射增大問後遺症與硬度", sessionID: weakWithFallback,
+                                    terminalID: "%42")
+    // The one that gives way: chosen when that transcript carried no `/rename`, and it carries one
+    // now. The newer of two human utterances wins, and it is not this one.
+    stored.setSessionTitle("在 /rename 之前取的名字", sessionID: superseded, terminalID: "%43",
+                           seenCustomTitle: nil,
+                           seenTranscriptPath: ladder.appendingPathComponent("\(superseded).jsonl").path)
+
+    let ladderRows = StartPoints.past(in: place, dir: ladder, open: [], config: stored)
+    func shown(_ id: String) -> String? { ladderRows.first { $0.id == id }?.title }
+
+    expect("a name a person typed in Clawdline outranks the title Claude Code wrote",
+           shown(named), "在 Clawdline 裡取的名字")
+    expect("and outranks a `/rename` in the terminal, which is the rung under it",
+           shown(bothNames), "Clawdline 的名字贏過 /rename")
+    expect("a conversation Clawdline was never asked to name keeps its own title",
+           shown(itsOwn), "Lightbox 影片相容性")
+    expect("a title with nothing behind it gives way to the fallback Clawdline generated",
+           shown(weakWithFallback), "注射增大問後遺症與硬度")
+    // Rung 3 steps aside only when there is something to step aside *for*: `Image #1` says an
+    // image was, and the opening under it says the same thing twice.
+    expect("the same title stands when no fallback was ever generated", shown(weakAlone), "Images")
+    expect("and a conversation with no title of any kind still opens with what was typed into it",
+           shown(unnamed), "完全沒有標題的一段對話")
+    expect("a stored name a later `/rename` superseded gives way to the `/rename`",
+           shown(superseded), "後來在終端機改的名字")
+
+    check("every one of them is still on the list rather than dropped for want of a name",
+          [named, bothNames, itsOwn, weakWithFallback, weakAlone, unnamed, superseded]
+            .allSatisfy { id in ladderRows.contains { $0.id == id } })
+    // What the client sends back is the conversation, not the name it is being shown under.
+    expect("the id is the transcript's, whichever rung named the row",
+           StartPoints.past(withID: weakWithFallback, in: place, dir: ladder, open: [])?.id,
+           weakWithFallback)
 }
 
 group("an agent's turn is not the opening of a conversation") {

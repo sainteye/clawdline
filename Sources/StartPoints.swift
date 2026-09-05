@@ -511,9 +511,11 @@ enum StartPoints {
         /// The session's own id, which is also what its transcript is named. The only part a
         /// client ever sends back.
         let id: String
-        /// What to show. The title Claude Code gave it, the title somebody renamed it to, or —
-        /// for the few transcripts that carry neither — the opening of the first thing that was
-        /// typed into it.
+        /// What to show: the name every other Clawdline surface shows for this conversation,
+        /// down the ladder in ``displayedTitle(ofTranscript:conversationID:opening:config:)`` —
+        /// a name a person typed here, the transcript's own `/rename` or `aiTitle`, the fallback
+        /// Clawdline generated for it, and for the few transcripts with none of those, the
+        /// opening of the first thing that was typed into it.
         let title: String
         /// When it was last written to, which is what the list is sorted by.
         let at: Date
@@ -545,10 +547,12 @@ enum StartPoints {
     /// for that reason: the front of every candidate has to be read to know whether it counts,
     /// and most of them do not.
     ///
-    /// `dir` and `open` are parameters so a test can describe a project folder and a set of
-    /// live transcripts instead of having to produce either. Neither is passed in the app.
+    /// `dir`, `open` and `config` are parameters so a test can describe a project folder, a set
+    /// of live transcripts and a person's stored names instead of having to produce any of them.
+    /// None of the three is passed in the app.
     static func past(in place: Place, limit: Int = 200, scan: Int = 400,
-                     dir: URL? = nil, open: Set<String>? = nil) -> [Past] {
+                     dir: URL? = nil, open: Set<String>? = nil,
+                     config: Config = .shared) -> [Past] {
         let dir = dir ?? Transcript.projectDirectory(forCwd: place.path)
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return [] }
@@ -572,12 +576,60 @@ enum StartPoints {
             // answered by one record at the very top of the file.
             let front = cachedFront(of: file.url)
             guard front.isConversation else { continue }
-            guard let title = Transcript.title(ofTranscript: file.url) ?? front.opening,
-                  !title.isEmpty else { continue }
+            guard let title = displayedTitle(ofTranscript: file.url, conversationID: file.id,
+                                             opening: front.opening, config: config)
+            else { continue }
             out.append(Past(id: file.id, title: title, at: file.at,
                             live: open.contains(file.url.resolvingSymlinksInPath().path)))
         }
         return out
+    }
+
+    /// What this list calls one conversation that is not open anywhere.
+    ///
+    /// The order is ``TargetSession/preferredDisplayLabel(manualTitle:orchestratorTitle:conversationTitle:threadName:handle:coordinate:)``'s,
+    /// which is where it is argued; this is that ladder with the rungs a finished conversation
+    /// can still answer. Until 2026-09-05 the row was `Transcript.title(ofTranscript:) ??
+    /// front.opening` — the transcript's own two names and nothing this app knows — so a
+    /// conversation Clawdline had named was called one thing in the session list and another in
+    /// the sheet somebody picks it back up from. Both halves of that were on screen at once, in
+    /// `atrium`: `Image review` here, 注射增大問後遺症與硬度 everywhere else, one conversation.
+    ///
+    /// Which rungs are missing, and why each is absent rather than passed as `nil`:
+    ///
+    /// - **An orchestrator title** names the task a *tab* was opened for; there is no tab.
+    /// - **A handle** — `~/.claude/sessions/<pid>.json` — is keyed by a pid that has exited.
+    /// - **A coordinate** is where a tab is. `opening` is the last rung instead: one line of the
+    ///   first thing somebody typed, which is what this list has always ended with.
+    /// - **A terminal title** is not a source anywhere, and there is nowhere to pass one.
+    ///
+    /// **A row costs what it cost before, plus one lock and one scan of a bounded list.**
+    /// ``Transcript/title(ofTranscript:tailBytes:)`` is the half-megabyte read this list already
+    /// paid for every row, and it is still paid exactly once; ``Transcript/customTitle(ofTranscript:)``
+    /// reads its answer back out of the cache that call has just filled. The one genuinely new
+    /// file read is the weakness test, which reads the head of the transcript — so it is asked
+    /// only where its answer can change the row, and without a fallback underneath it cannot:
+    /// ``TargetSession/displayedConversationTitle(_:isWeak:fallback:)`` hands a weak title
+    /// straight back when there is nothing better to put in its place, so this list would pay
+    /// for a verdict it then discards. `&&` is what keeps that promise, not a comment.
+    static func displayedTitle(ofTranscript url: URL, conversationID: String,
+                               opening: String?, config: Config = .shared) -> String? {
+        let manual = config.sessionTitle(conversationID: conversationID) { path in
+            Transcript.customTitle(ofTranscript: URL(fileURLWithPath: path))
+        }
+        let recorded = Transcript.title(ofTranscript: url)
+        let fallback = config.automaticSessionTitle(sessionID: conversationID)
+        let weak = !(fallback ?? "").isEmpty
+            && Transcript.titleIsWeak(ofTranscript: url, title: recorded,
+                                      customTitle: Transcript.customTitle(ofTranscript: url))
+        let conversation = TargetSession.displayedConversationTitle(recorded, isWeak: weak,
+                                                                   fallback: fallback)
+        for candidate in [manual, conversation, fallback, opening] {
+            guard let candidate = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !candidate.isEmpty else { continue }
+            return candidate
+        }
+        return nil
     }
 
     /// What one assistant has already recorded in a place, newest first.
