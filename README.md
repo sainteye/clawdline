@@ -408,19 +408,13 @@ less install.sh          # inspect the exact script before your Shell runs it
 bash install.sh          # or: bash install.sh ~/Applications
 ```
 
-**Homebrew**
+**By hand** — download the `.zip` from
+[Releases](https://github.com/sainteye/clawdline/releases/latest) and unzip it into
+`/Applications`. If the check below says `adhoc`, clear the quarantine flag once:
 
 ```sh
-brew install --cask sainteye/tap/clawdline
-xattr -dr com.apple.quarantine /Applications/Clawdline.app   # only while the check below says adhoc
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
 ```
-
-The cask is updated by hand and can trail [Releases](https://github.com/sainteye/clawdline/releases/latest)
-by a version or two; `brew info --cask sainteye/tap/clawdline` says which one it would give you.
-
-**By hand** — download the `.zip` from
-[Releases](https://github.com/sainteye/clawdline/releases/latest), unzip it into `/Applications`,
-then run the `xattr` line above if the check below says you need it.
 
 **From source** — no package manager, no dependencies, a few seconds:
 

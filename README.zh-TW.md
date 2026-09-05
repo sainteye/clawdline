@@ -341,18 +341,12 @@ less install.sh          # 先看過 Shell 即將執行的完整腳本
 bash install.sh          # 或 bash install.sh ~/Applications
 ```
 
-**Homebrew**
+**手動** —— 從 [Releases](https://github.com/sainteye/clawdline/releases/latest) 下載 `.zip`，
+解開丟進 `/Applications`。**如果下面那個判準說 `adhoc`**，才需要清一次隔離屬性：
 
 ```sh
-brew install --cask sainteye/tap/clawdline
-xattr -dr com.apple.quarantine /Applications/Clawdline.app   # 只在下面那個判準說 adhoc 的時候
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
 ```
-
-cask 是手動更新的，可能落後 [Releases](https://github.com/sainteye/clawdline/releases/latest)
-一兩個版本；`brew info --cask sainteye/tap/clawdline` 會告訴你它現在會給你哪一版。
-
-**手動** —— 從 [Releases](https://github.com/sainteye/clawdline/releases/latest) 下載 `.zip`，
-解開丟進 `/Applications`，然後**如果下面那個判準說你需要**，才跑上面那行 `xattr`。
 
 **自己編** —— 沒有套件管理器、沒有相依套件，幾秒鐘：
 
