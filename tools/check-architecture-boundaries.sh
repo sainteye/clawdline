@@ -361,8 +361,13 @@ manifest_group_count=$(awk '
 # sharing the write gate with their typed refusals, and the snapshot carrying a list a session
 # read is already filtered from. One branch wrote 536 and the other 534, from the same 532; the
 # number here is the awk's answer on the merged manifest, which is the only tree that has both.
-[ "$manifest_group_count" -eq 538 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 538"
+# 539 with the blindness group: one group, and it is the first test in this tree that reads the
+# automation circuit as a *detector* rather than as a subject — there is no `iterm.js` beside the
+# test binary, so an inventory that was actually taken arms the circuit, which is how the group
+# tells "the cadence read skipped the probe" from "the probe ran and failed". Counted from the
+# manifest with the awk above rather than added to 538, which is the mistake several paragraphs up.
+[ "$manifest_group_count" -eq 539 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 539"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

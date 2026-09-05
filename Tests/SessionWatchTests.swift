@@ -1206,4 +1206,123 @@ group("what a terminal's spend is filed under, and what the backfill hands over"
     check("and none of them carries a credential",
           backfill.allSatisfy { $0["secret_hash"] == nil && $0["queued_secret"] == nil })
 }
+
+// MARK: - Blind, and staying blind
+
+/// **The 2026-09-05 blindness, driven in a fixture, and the latch standing behind it.**
+///
+/// That evening the session list stood at zero for ten minutes with twenty-one live assistant
+/// sessions on the machine, logging `observed 0, preserved 0` beside `23 iTerm2 sessions had no
+/// pty and tmux reports no control-mode client that would explain it`. Two independent facts
+/// produce that sentence, and this group holds each of them still while the other is unchanged.
+///
+/// **First half — what an incomplete inventory publishes.** ``SessionWatch/read()`` falls back to
+/// the ordinary shells a walk *did* see only when the inventory came back complete, and
+/// ``Targets/reconcile(previous:scanned:complete:confirmedAbsent:)`` can only ever carry a
+/// *previous* population across an incomplete one. A cold start therefore publishes nothing at
+/// all while anything is lowering confidence — including a reason, like a pty-less row nothing
+/// could attribute, that says nothing whatever about the rows the walk could read. The two
+/// readings below differ in one bit and in nothing else.
+///
+/// **Second half — why the automation circuit cannot heal itself.** The circuit at
+/// `Sources/ITerm.swift:466` opens on an Apple-event timeout or a malformed `list`, and exactly
+/// one thing closes it again without a person: a `list` that comes back well-formed, at
+/// `Sources/ITerm.swift:1363`. The only repeating caller of that probe is the cadence read in
+/// this file, and it returns before taking any terminal inventory whenever the process scan is
+/// incomplete — so a `ps` that keeps failing holds an *iTerm2* circuit open, and iTerm2
+/// recovering cannot close it. There is no `iterm.js` beside this test binary, so an inventory
+/// that really is taken fails and arms the circuit; that is what makes the circuit a detector of
+/// whether the probe ran at all, rather than a restatement of the guard that skipped it.
+group("an incomplete inventory publishes nothing it can see, and its probe sits behind ps") {
+    SessionWatch.shared.stop()
+    let retained = SessionWatch.shared.targets
+    let previousInventory = SessionWatch.inventoryForTesting
+    let previousProcessRun = ITerm.assistantProcessRunForTesting
+    let previousTmuxBinary = Tmux.binaryForTesting
+
+    /// One reading, taken and waited for. `stop()` first because the completed-read floor would
+    /// otherwise defer the second and third of these by 1.2 s each into a timer this test would
+    /// have to outlive; stopping clears the floor without touching what has been published.
+    func reading() -> Bool {
+        SessionWatch.shared.stop()
+        let receipt = SessionWatch.shared.refresh()
+        return eventually(timeout: 15) {
+            SessionWatch.shared.completedScanSequence > receipt.completedScanSequence
+        }
+    }
+
+    /// A reading whose two halves are supplied rather than measured, for the first question:
+    /// what a population does when the only thing that changes is the confidence bit.
+    func fixtureReading(_ sessions: [TargetSession], complete: Bool) -> Bool {
+        SessionWatch.inventoryForTesting = {
+            (scan: ITerm.AssistantProcessScan(assistants: [:], error: nil),
+             snapshot: Targets.Snapshot(sessions: sessions, currentID: nil, error: nil,
+                                        isComplete: complete))
+        }
+        return reading()
+    }
+
+    // A tmux pane iTerm2 is drawing: it is on the machine, it has a tty, and it is not an
+    // assistant — which is every pty-less row's second source in the incident, and every
+    // `zsh` pane in an ordinary reading.
+    let shellPane = TargetSession(
+        backend: .tmux, id: "%501", name: "clawdline:3.0", tty: "/dev/ttys501",
+        windowIndex: 3, tabIndex: 0, assistant: nil, cwd: nil)
+
+    // Start from the cold machine the broken build started from: nothing published, so nothing
+    // an incomplete reading could be preserving.
+    check("a complete empty reading leaves the cold start this is about",
+          fixtureReading([], complete: true) && SessionWatch.shared.targets.isEmpty)
+
+    check("an incomplete reading publishes none of the rows it did see",
+          fixtureReading([shellPane], complete: false)
+            && SessionWatch.shared.targets.isEmpty,
+          "targets=\(SessionWatch.shared.targets.map(\.id))")
+    check("and says so honestly rather than calling the empty list authoritative",
+          !SessionWatch.shared.emptyInventoryAuthoritative && !SessionWatch.shared.scanComplete)
+
+    // The same rows, the same absent assistant, one bit different.
+    check("the same walk marked complete publishes them",
+          fixtureReading([shellPane], complete: true)
+            && SessionWatch.shared.targets.map(\.id) == ["%501"],
+          "targets=\(SessionWatch.shared.targets.map(\.id))")
+
+    // Second half. From here the production readers answer, because the question is which of
+    // them one reading actually reaches.
+    SessionWatch.inventoryForTesting = nil
+    // Nothing on the machine running this suite is asked about tmux.
+    Tmux.binaryForTesting = "/nonexistent/clawdline-suite-tmux"
+
+    // Arm A — `ps` did not answer.
+    ITerm.assistantProcessRunForTesting = (out: "", timedOut: true, status: nil)
+    _ = ITerm.resetAssistantProcessScanForTesting()
+    ITerm.completeInventoryForTesting()
+    check("the automation circuit starts closed", ITerm.automationReady)
+    check("and a ps that did not answer is an incomplete scan",
+          !ITerm.assistantProcessScan().isComplete)
+    _ = ITerm.resetAssistantProcessScanForTesting()
+    check("a reading still completes on top of it", reading())
+    check("but it took no terminal inventory, so the circuit that inventory clears is untouched",
+          ITerm.automationReady)
+
+    // Arm B — the same reading, the same absent iterm.js, a ps that answered.
+    ITerm.assistantProcessRunForTesting = (out: "?? 1 0 Mon Jan  1 00:00:00 2024 /sbin/launchd",
+                                           timedOut: false, status: 0)
+    _ = ITerm.resetAssistantProcessScanForTesting()
+    check("a ps that answered is a complete scan", ITerm.assistantProcessScan().isComplete)
+    check("and the reading behind it completes too", reading())
+    check("this time the inventory was taken — nothing else in this group touches the circuit",
+          !ITerm.automationReady)
+
+    ITerm.assistantProcessRunForTesting = previousProcessRun
+    Tmux.binaryForTesting = previousTmuxBinary
+    _ = ITerm.resetAssistantProcessScanForTesting()
+    ITerm.completeInventoryForTesting()
+    // Put back the population the asynchronous crossings probe is about to ask for. It is a
+    // restoration and not an assertion, but a silent one would hide a restoration that failed.
+    check("the population this group borrowed is put back",
+          fixtureReading(retained, complete: true)
+            && SessionWatch.shared.targets.map(\.id) == retained.map(\.id))
+    SessionWatch.inventoryForTesting = previousInventory
+}
 }
