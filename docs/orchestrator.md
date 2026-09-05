@@ -2596,9 +2596,16 @@ read this one, saw three clauses about handing work *out*, correctly concluded n
 and never looked again — so it never learned that a finished turn is worth reporting. It said
 afterwards where it would have seen it: the file it reads every single time.
 
-That file is yours and this project does not write it. If you want the delivery receipt to reach
-sessions that are not dispatched by Clawdline and are not picking up a handoff, paste this into
-`~/.claude/CLAUDE.md`:
+**Later the same day the same paragraph cost a second thing.** A session that had just taken four
+screenshots *for the person* finished its turn by pasting `/var/folders/…` paths at someone reading
+on a phone. It had read this description once, concluded that none of it was about a picture —
+which was true when it read it — and never reopened it. Both clauses are in the trigger list now
+and a guard in `Tests/dispatch-role-contract.mjs` holds them there, but a trigger list is the last
+of the three places to reach a reader, not the first.
+
+That file is yours and this project does not write it. If you want the delivery receipt and the
+picture route to reach sessions that are not dispatched by Clawdline and are not picking up a
+handoff, paste this into `~/.claude/CLAUDE.md`:
 
 ```markdown
 - When a turn is genuinely finished — integration, verification and any commit included — send one
@@ -2607,6 +2614,11 @@ sessions that are not dispatched by Clawdline and are not picking up a handoff, 
   `Report the root's completed turn` section — load the guide rather than typing a route from
   memory. Not for partial work, a diagnosis, a blocker, or a question back to the user; a Clawdline
   **child** reports through its own `result.json` instead.
+- To put a **local image** in front of the person — a screenshot you just took, a chart you just
+  produced — send it as an image instead of pasting its path, which on a phone is unopenable text.
+  How, in the paragraph of that same guide carrying `images:[{"path":…}]` — an installed guide is a
+  copy and its heading can be a release behind this repository, but that call is in every version of
+  it. It applies in **any** repository too.
 ```
 
 It is optional, it is per-machine, and nothing here breaks without it — a handoff receiver is

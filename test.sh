@@ -568,211 +568,39 @@ if [ "${1:-}" = "--verify-suite-roster" ]; then
 fi
 
 # Everything above this line is either a definition or one of the two narrow modes, which run
-# nothing and must therefore say nothing. From here down this is a run, and the block below is
-# how it says so. It sits after the `cd` because the file is keyed by the working directory.
-# >>> clawdline run file >>>
-# What this run is doing, where a person can see it while it happens:
-# `~/.claude/statusline-cache/run-<key>.json`. `./test.sh` is 288 seconds and `./build.sh` is not
-# much quicker, and until now the person who started one had nothing to look at anywhere but the
-# terminal they started it in.
+# nothing and must therefore say nothing. From here down this is a run, and the two lines below are
+# how it says so. They sit after the `cd` because the file is keyed by the working directory.
 #
-# **The seventh project status file**, beside `ghrun-`, `backlog-`, `health-` and `milestone-`, and
-# it reuses their rules on purpose so this project has one set of rules rather than two: every field
-# optional except `state`; a state a reader does not recognise means *draw nothing*, never a cross;
-# and a producer writes a temporary name and renames it into place, so a reader sees the whole of
-# the old file or the whole of the new one and never half of each.
+# **The traps live in the helper, not here.** They used to be a marked block copied byte for byte
+# into `build.sh`, which is how a duplicated construct usually starts; `Resources/clawdline-progress.sh`
+# is that block with an interface on it, and anything else with a slow command to run can have the
+# same bar for one line. What is left here is what is actually this script's: its name and its
+# measured duration.
 #
-# **Keyed by working directory, not by git remote.** `ghrun-` is keyed by the remote, and this
-# machine routinely has several worktrees of one repository compiling at once — one remote, several
-# trees, and a reader with no way to tell them apart. `<key>` is `$PWD` with every `/` turned into a
-# `-`: the same shape `backlog-`, `health-` and `milestone-` already use, which is
-# `ProjectStatus.key(forPath:)` on the Swift side.
+# **Sourced from the checkout, never from the installed app.** The bundle ships the same file, and
+# a suite that could only run on a Mac with Clawdline installed would be a suite CI cannot run.
 #
-# **The one rule that is new lives in the reader**: a `running` row whose `updated_at` is older than
-# `stale_after` is ignored. Nothing polls this file and nothing tidies up after this script, so a
-# `kill -9`'d run would otherwise sit in the bar for ever. That ceiling is also why there is no
-# `producer` field — `ghrun-` needs one because two writers compete for it; this file has one writer
-# and a staleness rule instead.
+# `progress_start` arms the ERR, INT, TERM **and** EXIT traps. That last one is what closes the
+# window every guard below this line used to fall through: no ERR trap ever sees a deliberate
+# `exit`, so a guard that stops on `exit 1` above the suite lock's own handler used to leave a
+# `running` row for the reader's staleness ceiling to retire fifteen minutes later. Every EXIT trap
+# installed further down **replaces** this one rather than joining it — bash keeps exactly one — so
+# each of them composes `clawdline_run_file_exit` and is a superset of it, and
+# `Tests/run-file-producer.mjs` holds all of them to that in both scripts.
 #
-# **This block is the same text in `test.sh` and in `build.sh`**, and `Tests/run-file-producer.mjs`
-# compares the two byte for byte rather than trusting that it stayed so. What differs between the
-# two scripts is the label and the phases; the phases are calls outside the block, and the label is
-# derived rather than passed, so that one text can say `test` in one file and `build` in the other.
-CLAWDLINE_RUN_DIR="${CLAWDLINE_STATUS_DIR:-${HOME:-}/.claude/statusline-cache}"
-# The name of the script that is running: `test` here, `build` there, and whatever a harness calls
-# its copy. `label` is producer text drawn verbatim in every language, so this adds no sentence
-# anybody has to translate.
-CLAWDLINE_RUN_LABEL="${CLAWDLINE_RUN_LABEL:-$(basename "$0" .sh)}"
-CLAWDLINE_RUN_FILE="$CLAWDLINE_RUN_DIR/run-$(printf '%s' "$PWD" | tr '/' '-').json"
-CLAWDLINE_RUN_STARTED=$(date +%s)
-# 900 is what a reader with no field to read uses anyway; it is written out because a file that says
-# what it means costs twelve bytes and saves the next reader a trip to the documentation.
-CLAWDLINE_RUN_STALE_AFTER="${CLAWDLINE_RUN_STALE_AFTER:-900}"
-# **Validated for the same reason `typical_seconds` is**: this value is interpolated into the file
-# with `%s`, so anything that is not a JSON number makes the whole row unparseable — and a row that
-# does not parse is drawn as nothing at all, which looks exactly like no run. The contract's rule
-# for the reader is that a malformed value is an absent one, and an absent `stale_after` has a
-# documented default; the producer follows the same rule rather than a second one.
-#
-# The sign is split off so one pattern can judge the digits. What JSON accepts is `-5`, `0` and
-# `900`; what it refuses — and a person would not think twice about — is `+5`, `007` and `5.5`.
-# **`0` is kept, and that is a decision rather than an oversight**: a producer that writes `0` means
-# *expire immediately*, and treating it as missing would be the falsy-therefore-default accident
-# this format has already ruled out once. A negative is a number too, and the reader has a
-# documented answer for it, so it travels rather than being replaced.
-clawdline_run_stale_digits="${CLAWDLINE_RUN_STALE_AFTER#-}"
-case "$clawdline_run_stale_digits" in
-  0) ;;
-  "" | *[!0-9]* | 0*) CLAWDLINE_RUN_STALE_AFTER=900 ;;
-esac
-unset clawdline_run_stale_digits
-# **How long this usually takes — measured, and here is where it was measured.** 288 s is one green
-# `./test.sh` on 2026-09-03, receipt `8353 checks passed`, in a detached worktree pinned at
-# `d97d0afb`; a second run in the shared tree two changes older read 289.55 s with the same four
-# boundaries. Both are in `docs/suite-runtime.md`, which is also where the phase names below come
-# from. **Nobody has ever measured `./build.sh`**, so it writes no `typical_seconds` at all: the
-# field is optional, and an invented number is indistinguishable from a measured one to every reader
-# of this file.
-case "$CLAWDLINE_RUN_LABEL" in
-  test) CLAWDLINE_RUN_TYPICAL="${CLAWDLINE_RUN_TYPICAL:-288}" ;;
-  *) CLAWDLINE_RUN_TYPICAL="${CLAWDLINE_RUN_TYPICAL:-}" ;;
-esac
-# A `typical_seconds` that is not a number would be a file that does not parse, and a file that does
-# not parse is drawn as nothing at all — which looks exactly like no run. Same three patterns the
-# compile ceiling uses: a non-digit anywhere, a leading zero, or nothing.
-case "$CLAWDLINE_RUN_TYPICAL" in "" | *[!0-9]* | 0*) CLAWDLINE_RUN_TYPICAL="" ;; esac
-# Which session started it. A terminal identity is worth more here than a username, for the reason
-# the suite lock's holder line gives: it is somebody to go and ask.
-clawdline_run_file_holder() {
-  local who where
-  who="${USER:-$(id -un 2>/dev/null || echo unknown)}"
-  if [ -n "${ITERM_SESSION_ID:-}" ]; then
-    where="iTerm2 ${ITERM_SESSION_ID#*:}"
-  elif [ -n "${TMUX_PANE:-}" ]; then
-    where="tmux ${TMUX_PANE}"
-  else
-    where="no tty"
-  fi
-  printf '%s (%s)' "$who" "$where"
-}
-CLAWDLINE_RUN_HOLDER="${CLAWDLINE_RUN_HOLDER:-$(clawdline_run_file_holder)}"
-# The log this run is writing, once it has one. `test.sh` sets it beside its own `$LOG`, so the
-# early phases carry no `log` and every phase after it does; `build.sh` has no log and never sets it.
-CLAWDLINE_RUN_LOG="${CLAWDLINE_RUN_LOG:-}"
-CLAWDLINE_RUN_FINISHED=0
-
-clawdline_run_file_json() {
-  # Free text into a JSON string. A tree path may hold a quote or a backslash — this machine has
-  # directories with spaces in them already — and a file that does not parse is drawn as nothing,
-  # which is the failure that looks like no failure. Backslashes first, then quotes: the other order
-  # escapes the escapes.
-  printf '%s' "$1" | LC_ALL=C tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
-}
-
-clawdline_run_file_write() {
-  # One state, one optional phase, one whole file. Written to a temporary name **in the same
-  # directory** and renamed into place, because a rename within a directory is atomic and a reader
-  # racing this write has to see one complete file or the other — the rule `ghrun-` already keeps.
-  #
-  # It never fails the run it is reporting on. A missing `$HOME`, an unwritable cache directory or a
-  # full disk costs the person the bar and nothing else, so every path here ends `return 0`.
-  local state=$1 phase=${2:-} temp
-  [ -n "${CLAWDLINE_RUN_FILE:-}" ] || return 0
-  mkdir -p "$CLAWDLINE_RUN_DIR" 2>/dev/null || return 0
-  temp="$CLAWDLINE_RUN_FILE.$$.tmp"
-  {
-    printf '{"state": "%s"' "$state"
-    printf ', "label": "%s"' "$(clawdline_run_file_json "$CLAWDLINE_RUN_LABEL")"
-    [ -z "$phase" ] || printf ', "phase": "%s"' "$(clawdline_run_file_json "$phase")"
-    printf ', "started_at": %s' "$CLAWDLINE_RUN_STARTED"
-    [ -z "$CLAWDLINE_RUN_TYPICAL" ] || printf ', "typical_seconds": %s' "$CLAWDLINE_RUN_TYPICAL"
-    printf ', "updated_at": %s' "$(date +%s)"
-    printf ', "stale_after": %s' "$CLAWDLINE_RUN_STALE_AFTER"
-    [ -z "$CLAWDLINE_RUN_LOG" ] || printf ', "log": "%s"' "$(clawdline_run_file_json "$CLAWDLINE_RUN_LOG")"
-    printf ', "holder": "%s"' "$(clawdline_run_file_json "$CLAWDLINE_RUN_HOLDER")"
-    printf ', "tree": "%s"' "$(clawdline_run_file_json "$PWD")"
-    printf '}\n'
-  } > "$temp" 2>/dev/null || { rm -f "$temp" 2>/dev/null || true; return 0; }
-  mv -f "$temp" "$CLAWDLINE_RUN_FILE" 2>/dev/null || rm -f "$temp" 2>/dev/null || true
-  return 0
-}
-
-clawdline_run_file_phase() {
-  # A phase boundary: still running, doing something else now. `phase` is drawn verbatim in place of
-  # the percentage, so these words are for a person and are never translated.
-  clawdline_run_file_write running "$1"
-  return 0
-}
-
-clawdline_run_file_clear() {
-  # Take the row away entirely. Neither script calls it — a finished run leaves `ok` or `fail`
-  # behind on purpose, and that is what a reader draws — so it is here for a person with a row from
-  # a run that no longer exists, and for the suite that drives this block.
-  rm -f "$CLAWDLINE_RUN_FILE" 2>/dev/null || true
-  return 0
-}
-
-clawdline_run_file_finish() {
-  # The last write, and only ever one of them: the signal handlers below exit, an exit runs whatever
-  # EXIT handler the script keeps, and that handler calls this too. Without the guard the second
-  # call would overwrite a `fail` with an `ok` a moment later.
-  [ "$CLAWDLINE_RUN_FINISHED" = 0 ] || return 0
-  CLAWDLINE_RUN_FINISHED=1
-  clawdline_run_file_write "$1" ""
-  return 0
-}
-
-clawdline_run_file_exit() {
-  # **Composed into whichever EXIT handler the script already keeps, rather than installed as a
-  # trap of its own: bash keeps exactly one EXIT trap and a second `trap … EXIT` silently replaces
-  # the first.** In `test.sh` that would throw away the machine lock's release on every run, which
-  # is the accident its own comments record; in `build.sh` there are three EXIT traps in sequence.
-  #
-  # And it is the EXIT path rather than the ERR trap that carries most of what goes wrong here.
-  # Measured on this Mac on 2026-09-05: under `set -e`, a command failing *inside a function* ends
-  # the script without firing ERR at all unless `set -E` is also on — and every deliberate
-  # `exit 1` in these two scripts misses ERR by construction.
-  local status=${1:-0}
-  case "$status" in
-    0) clawdline_run_file_finish ok ;;
-    *) clawdline_run_file_finish fail ;;
-  esac
-  return 0
-}
-
-clawdline_run_file_signal() {
-  # **The `exit` is the point of this function.** Without it a `TERM` handler returns into the
-  # script, which carries on from where it was interrupted and finishes by declaring success. That
-  # was measured while claude-bestiary's `docs/producers.md` was being written; it is not to be
-  # rediscovered here.
-  local status=${1:-1}
-  # A handler that exits 0 would report the interruption as a clean finish. `ERR` cannot deliver a
-  # zero status, but a failure that reports success is exactly what this function exists to prevent.
-  case "$status" in "" | 0) status=1 ;; esac
-  clawdline_run_file_finish fail
-  exit "$status"
-}
-
-trap 'clawdline_run_file_signal "$?"' ERR
-trap 'clawdline_run_file_signal 130' INT
-trap 'clawdline_run_file_signal 143' TERM
-# <<< clawdline run file <<<
-
-# The run file's own way out, from here rather than from the EXIT handler installed further down.
-# **A window before the first EXIT trap is a window in which an `exit` is caught by nothing.** No
-# ERR trap ever sees a deliberate `exit`, and both scripts have guards above their real handler
-# that end that way — so a run that stopped there left a `running` row behind for the reader's
-# staleness ceiling to retire fifteen minutes later, which reads as a run still going.
-#
-# Every EXIT trap installed below **replaces** this one rather than joining it: bash keeps exactly
-# one, so each of them composes `clawdline_run_file_exit` and is a superset of this line.
-# `Tests/run-file-producer.mjs` holds all of them to that, in both scripts.
-trap 'clawdline_run_file_exit "$?"' EXIT
+# **288 seconds is measured and here is where.** One green `./test.sh` on 2026-09-03, receipt
+# `8353 checks passed`, in a detached worktree pinned at `d97d0afb`; a second run in the shared tree
+# two changes older read 289.55 s with the same four boundaries. Both are in `docs/suite-runtime.md`,
+# which is also where the phase names below come from. `./build.sh` passes no `--typical` at all,
+# because nobody has ever measured it and an invented number is indistinguishable from a measured
+# one to every reader of that file.
+. ./Resources/clawdline-progress.sh
+progress_start --label test --typical 288
 
 # (d) in `docs/suite-runtime.md`: the manifest, the architecture guard, the trailing-comma scan, the
 # three Python guards and the protocol vectors. Three seconds of the 288, and the phase exists so
 # that a run which dies in them is not drawn as a run that died in the compile.
-clawdline_run_file_phase guards
+progress_phase guards
 . tools/swift-source-manifest.sh
 verify_swift_source_manifest full
 bash tools/check-architecture-boundaries.sh
@@ -807,7 +635,7 @@ tools/check-web-ids.py
 verify_suite_roster
 # (c) in `docs/suite-runtime.md`: 129 s of the 288, before the compile the machine lock exists for
 # has even started. Two of these suites are 119 s of it.
-clawdline_run_file_phase 'node suites'
+progress_phase 'node suites'
 node Tests/docs-ui-labels.mjs
 # The two READMEs are one document in two languages, and the file above pins eleven strings in
 # them by hand. That catches a pinned sentence disappearing and nothing else: on 2026-09-04 a
@@ -954,10 +782,16 @@ node Tests/web-close-confirm-explanation.mjs
 # before it starts queueing.
 node Tests/test-sh-streaming.mjs
 node Tests/test-sh-lock.mjs
-# And that both scripts still say how far they have got: the marked block is lifted out of each of
-# them and driven against a scratch directory, the way the two above lift out the pipeline and the
-# lock. It runs before the lock is taken, so a checkout whose producer is broken is told so before
-# it starts queueing for a compiler.
+# And that anything with a slow command to run can still say how far it has got. The helper both
+# this script and `build.sh` source is driven in both its forms — wrapping a whole command, and
+# sourced by a script with phases of its own — against a scratch directory, with a copy of it
+# mutated once per trap so that every check in it has been seen to go red.
+node Tests/progress-helper.mjs
+# And that these two scripts are the helper's first callers rather than its documentation: that they
+# source it from the checkout, name themselves, arm it before anything that could exit, and that
+# every EXIT trap either of them installs further down is a superset of the one it armed. Both run
+# before the lock is taken, so a checkout whose producer is broken is told so before it starts
+# queueing for a compiler.
 node Tests/run-file-producer.mjs
 
 # >>> clawdline suite lock >>>
@@ -1984,7 +1818,7 @@ clawdline_suite_jobs_flags=(-j "$clawdline_compile_jobs")
 echo "test.sh: compile job ceiling: ${clawdline_compile_jobs}, ${clawdline_compile_jobs_source}"
 # <<< clawdline compile ceiling <<<
 
-clawdline_run_file_phase compiling
+progress_phase compiling
 clawdline_suite_lock_phase compiling
 swiftc \
   -swift-version 5 \
@@ -2000,7 +1834,7 @@ swiftc \
 # expensive thing starts.
 clawdline_confirm_suite_lock || exit $?
 clawdline_suite_lock_phase analysing
-clawdline_run_file_phase analysing
+progress_phase analysing
 
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
 # ends the script right there, before what it captured has been printed — so a red suite exited

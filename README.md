@@ -150,10 +150,16 @@ Also:
   process of its own; it runs the commands your repo declares in `.devstack.json`.
   [Format →](docs/devstack.md) · [Adopting it →](docs/devstack-adopting.md)
 - **Which project, not just which task** — the bar names the repository, its branch, what is
-  uncommitted, a deploy in flight, the test run going in another tab, and a backlog, with the
-  project's own icon and colour; the browser page and a paired phone add a milestone. Seven kinds
-  of small file, and a project writes as many of them as it has something to say through.
-  [Format →](docs/project-status.md) · [All seven →](docs/connect.md)
+  uncommitted, a deploy in flight, whatever long thing is running in another tab, and a backlog,
+  with the project's own icon and colour; the browser page and a paired phone add a milestone.
+  Seven kinds of small file, and a project writes as many of them as it has something to say
+  through. [Format →](docs/project-status.md) · [All seven →](docs/connect.md)
+- **A progress bar for anything that takes minutes** — a test run, a build, a data import, a long
+  encode, a deploy script of your own: whatever is taking the time writes one small file and the bar
+  draws how far it has got, phase by phase, with a tick or a cross at the end. It is a protocol
+  rather than a test-runner feature, so the assistant in the next tab can use it too — instead of
+  four silent minutes, the person watching gets to see where the job is.
+  [`clawdline-progress` and the format →](docs/project-status.md#a-long-local-operation-in-flight--run-pathjson)
 - **The terminal's tab follows** — move through the list and iTerm2 moves with you, without coming
   to the front. The bar's target and the tab in front of you stop being two different sessions.
 - **Images and files** — drop a file on the window or paste an image. Images arrive in Claude Code
@@ -464,7 +470,7 @@ it on, in whatever order you want it.
 | | Where you turn it on | The page for it |
 | --- | --- | --- |
 | **The bar** — see, send, read back | nothing; macOS asks once for iTerm2 | — |
-| **Your project's own row** — servers, branch, mark, deploy, local test runs, backlog; the browser page and a paired phone add a milestone | seven kinds of small JSON file in and beside your repo; paste this repository at an agent and it writes them | [connect.md](docs/connect.md) |
+| **Your project's own row** — servers, branch, mark, deploy, whatever long job is running here, backlog; the browser page and a paired phone add a milestone | seven kinds of small JSON file in and beside your repo; paste this repository at an agent and it writes them | [connect.md](docs/connect.md) |
 | **The page, here or on a phone** | Settings → Remote → *Let a browser or your phone see your sessions*, then *Open in a browser* or *Pair a phone…* | [remote.md](docs/remote.md) |
 | **Typing from a paired device** | Settings → Remote → *Let a paired device write into a session* | [remote.md](docs/remote.md) |
 | **Reaching it from outside** | Settings → Remote → *Reach this Mac from anywhere*; the `cloudflared` it runs is your own install | [remote.md](docs/remote.md#the-tunnel) |
@@ -846,7 +852,7 @@ link to them.
 | [Where a dispatched session stops](docs/dispatch-permissions.md) | the four gates in order, and the flag that means the opposite on the cheapest model |
 | [Connecting a project](docs/connect.md) | written for an agent: all seven files a project can write, in order, and how to check its own work |
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |
-| [Project status files](docs/project-status.md) | the other six: the mark and the colour, a deploy, a local test or build, a backlog, a milestone, a health check |
+| [Project status files](docs/project-status.md) | the other six: the mark and the colour, a deploy, any long local operation, a backlog, a milestone, a health check |
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
 | [Clawdline Cloud](docs/cloud.md) | the bridge on the Mac, the hosted console, the key handover, and what has never been run against a real account |
 | [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |

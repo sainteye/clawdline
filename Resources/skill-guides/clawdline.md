@@ -221,8 +221,9 @@ place the name gets dropped. So write **「MongoDB 現代化與平台收尾」(`
 first time it appears in a message or a report, and the short form after that. Machine addressing is
 unchanged — `to_session` still takes the exact id and no route ever matches on a title.
 
-**Send a generated raster as a local image, not as prose.** When ImageGen or another local tool
-has produced a PNG/JPEG/WebP/GIF/TIFF that another live session should see, call
+**Send a local image as an image, not as a path.** A screenshot you just took for the person, a
+chart ImageGen or another local tool just produced — any local PNG/JPEG/WebP/GIF/TIFF that a live
+session should see. A `/var/folders/…` path is not something a phone can open, so call
 `POST /v1/orchestrator/messages` with `images:[{"path":"/absolute/local/path.png"}]` and the
 ordinary source/target ids, token and idempotency key above. Never paste base64, invent or persist
 a public URL, or fall back to legacy `/send`: Clawdline reads the local file, normalizes it into

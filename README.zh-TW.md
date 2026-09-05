@@ -133,9 +133,14 @@ Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kb
   每個 port 都是連結，還有啟動／停止／重啟。**Clawdline 從來不自己開行程**，它跑的是你的 repo
   在 `.devstack.json` 裡宣告的指令。[格式 →](docs/devstack.md) · [怎麼導入 →](docs/devstack-adopting.md)
 - **是哪個專案，不只是哪個任務** —— 輸入條會講出 repo、分支、未提交數量、進行中的部署、
-  在另一個分頁跑著的那輪測試，還有 backlog 與那個專案自己的圖示與顏色；網頁與配對過的手機上
+  在另一個分頁跑著的那件長工作，還有 backlog 與那個專案自己的圖示與顏色；網頁與配對過的手機上
   再多一個 milestone。總共七種小檔案，一個專案有多少話要說就寫幾種。
   [格式 →](docs/project-status.md) · [七種都在這 →](docs/connect.md)
+- **只要會跑上幾分鐘的事，都可以有一條進度條** —— 一輪測試、一次建置、一批資料匯入、一段長轉檔、
+  你自己那支部署腳本：花時間的那個東西自己寫一個小檔案，輸入條就把它跑到哪裡畫出來，一個階段
+  接一個階段，最後是一個勾或一個叉。它是一個協定，不是測試工具附帶的功能，所以隔壁分頁那個 AI
+  也用得上——本來是四分鐘的沉默，現在看得到那件事走到哪裡了。
+  [`clawdline-progress` 與格式 →](docs/project-status.md#a-long-local-operation-in-flight--run-pathjson)
 - **終端機的分頁跟著走** —— 在清單裡移動，iTerm2 就跟著換分頁，而且不會跳到前景。輸入條瞄準的
   那個和你眼前那個分頁，不再是兩個不同的 session。
 - **圖片與檔案** —— 視窗上任何地方都能丟檔案、也能貼圖。圖片進到 Claude Code 是 `[Image #3]`，
@@ -393,7 +398,7 @@ open ~/Applications/Clawdline.app
 | | 在哪裡打開 | 對應的說明 |
 | --- | --- | --- |
 | **輸入條**——看得到、送得出、讀得回來 | 不用打開；macOS 只在第一次問一次 iTerm2 | — |
-| **你自己專案的那一行**——伺服器、分支、圖示、部署、本機測試、backlog；網頁與配對過的手機上再多一個 milestone | repo 內外七種小 JSON 檔；把這個 repo 的網址貼給 agent，它會幫你寫 | [connect.md](docs/connect.md) |
+| **你自己專案的那一行**——伺服器、分支、圖示、部署、本機正在跑的那件長工作、backlog；網頁與配對過的手機上再多一個 milestone | repo 內外七種小 JSON 檔；把這個 repo 的網址貼給 agent，它會幫你寫 | [connect.md](docs/connect.md) |
 | **那個網頁，在這台 Mac 或手機上** | 設定 → 遠端 →「讓瀏覽器或你的手機看得到你的 session」，再按「用瀏覽器打開」或「配對手機……」 | [remote.md](docs/remote.md) |
 | **讓配對過的裝置打字** | 設定 → 遠端 →「讓配對過的裝置寫進 session」 | [remote.md](docs/remote.md) |
 | **從外面連進來** | 設定 → 遠端 →「從任何地方連到這台 Mac」；它跑的 `cloudflared` 是你自己裝的那支 | [remote.md](docs/remote.md#the-tunnel) |
@@ -735,7 +740,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [被派出去的 session 會在哪停](docs/dispatch-permissions.md) | 四道門依序是什麼，以及那個在最便宜的模型上意思相反的 flag |
 | [把專案接上來](docs/connect.md) | 寫給 agent 看的：一個專案能寫的七種檔案依序走一遍，以及怎麼驗自己有沒有做對 |
 | [開發環境](docs/devstack.md) · [怎麼導入](docs/devstack-adopting.md) | `.devstack.json`，以及導入的三種深度 |
-| [專案狀態檔](docs/project-status.md) | 另外六種：圖示與顏色、部署、本機的測試或建置、backlog、milestone、健康檢查 |
+| [專案狀態檔](docs/project-status.md) | 另外六種：圖示與顏色、部署、任何在本機長跑的工作、backlog、milestone、健康檢查 |
 | [從別的地方連進來](docs/remote.md) · [API](docs/api.md) | 完整的威脅模型，以及那層 HTTP 介面 |
 | [Clawdline Cloud](docs/cloud.md) | Mac 這端的橋接、雲端主控台、金鑰交接，以及哪些事還沒對真的帳號跑過 |
 | [Hook](docs/hooks.md) | 那八個事件，以及為什麼說了算的仍然是螢幕 |
