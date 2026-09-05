@@ -13,6 +13,11 @@ enum ScheduleResumeTestFailure: Error, CustomStringConvertible {
 /// Focused regression checks for the schedule-detail exception to the ordinary conversation
 /// picker. Kept in its own file because these checks need temporary transcript bytes and several
 /// task-registry variants, while the schedule arithmetic table in `main.swift` does not.
+///
+/// It also holds, at the end, the two claims about the machine-token door — see
+/// `checkMachineScheduleDoorClaims`. They belong beside the schedule groups in
+/// `Tests/ScheduledDispatchTests.swift`; they are here because that file is a handful of lines
+/// under the 2,000-line stop-growth limit, which is that limit doing exactly what it is for.
 func runScheduleResumeTests() throws -> Int {
     var checks = 0
     func expect(_ name: String, _ condition: @autoclosure () -> Bool) throws {
@@ -131,5 +136,46 @@ func runScheduleResumeTests() throws -> Int {
     try expect("detail stops handing out a missing conversation id",
                removed?["session_id"] == nil)
 
+    try checkMachineScheduleDoorClaims { name, condition in
+        checks += 1
+        if !condition() { throw ScheduleResumeTestFailure.failed(name) }
+    }
     return checks
+}
+
+/// **What the machine-token door admits, and what the pages may no longer claim about it.**
+///
+/// The delivery this corrects justified refusing that token a *repeating* schedule as protection
+/// against unattended nightly recurrence, and said so in four passages. It is not that. The gate
+/// reads one request at a time and counts nothing, so the session a one-shot opens can post the
+/// next, and the night after that one can post another — recurrence by composition, with no
+/// repeating file anywhere. Nor did the refusal bound it before this door existed: the session
+/// that hit it hand-wrote the schedule at mode 0644, and a hand-written file may carry
+/// `when.days`. The gate only ever decided which artifact the capability produced.
+///
+/// So there is nothing here to close, and these checks pin the two things that are true instead:
+/// the gate as it really behaves, and the pages as they now read. The second pair is a guard on
+/// prose, which is unusual and is the point — prose is what went wrong, and prose is the only
+/// part of this delivery nothing could go red about.
+private func checkMachineScheduleDoorClaims(
+    _ expect: (String, @autoclosure () -> Bool) throws -> Void) throws {
+    try expect("the machine door admits a one-shot and counts nothing that already exists",
+               Orchestrator.machineScheduleRefusal(
+                method: "POST", id: nil, body: ["on": "2026-09-07", "at": "01:30"]) == nil)
+    try expect("while a repeating one is refused whatever else exists",
+               Orchestrator.machineScheduleRefusal(
+                method: "POST", id: nil, body: ["days": "daily", "at": "01:30"]) != nil)
+    let schedulesPage = try String(contentsOfFile: "docs/schedules.md", encoding: .utf8)
+    let apiPage = try String(contentsOfFile: "docs/api.md", encoding: .utf8)
+    try expect("schedules.md has dropped the sentence saying the token cannot pass those gates",
+               !schedulesPage.contains("is not a way past those"))
+    try expect("and says instead that the second door passes neither of them",
+               schedulesPage.contains("neither the device gate nor the write switch"))
+    try expect("and says what the refusal does buy, rather than what it does not",
+               schedulesPage.contains("What the refusal does buy"))
+    try expect("api.md calls the write switch a device-door answer on the schedule routes",
+               apiPage.contains("device-door answer"))
+    try expect("and neither page still offers nightly recurrence as the reason for the refusal",
+               !schedulesPage.contains("could arrange to be woken every night forever")
+                   && !apiPage.contains("woken every night"))
 }

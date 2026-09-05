@@ -122,6 +122,7 @@ group("schedule files are strict and carry an ordinary task template") {
     // one they mean, which is the arithmetic this feature exists because somebody got wrong.
     var single = base
     single["when"] = ["at": "01:30", "on": "2026-09-06"]
+    var unstamped: Date?
     switch Orchestrator.schedule(from: single, filename: "\(id).json",
                                  isDirectory: { $0 == "/tmp" }) {
     case .bad(let why): check("a schedule that runs once parses", false, why)
@@ -129,14 +130,18 @@ group("schedule files are strict and carry an ordinary task template") {
         expect("and carries the day it names",
                parsed.when, .once(Orchestrator.ScheduleDay(year: 2026, month: 9, day: 6)))
         check("and it says it runs once", parsed.when.runsOnce)
-        check("and it has not run", parsed.firedAt == nil)
+        unstamped = parsed.firedAt
     }
     var spent = single
     spent["fired_at"] = 1_788_600_000
+    // The two arms differ in one key and are asserted together on purpose: "it has not run" alone
+    // passes for a parser that never reads `fired_at` at all, which is how it was first written.
+    // The pair goes red for that parser, for one that invents a stamp, and for one off by a day.
     if case .ok(let parsed) = Orchestrator.schedule(from: spent, filename: "\(id).json",
                                                     isDirectory: { $0 == "/tmp" }) {
-        expect("a file that has already run carries the instant it ran",
-               parsed.firedAt, Date(timeIntervalSince1970: 1_788_600_000))
+        check("the ran-at is read off the file rather than assumed either way",
+              unstamped == nil && parsed.firedAt == Date(timeIntervalSince1970: 1_788_600_000),
+              String(describing: parsed.firedAt))
     } else {
         check("a file that has already run carries the instant it ran", false)
     }
@@ -781,6 +786,75 @@ group("bad schedule files are isolated and the routes use orchestrator envelopes
           spentDetail?["once"] as? Bool == true && spentDetail?["fired_at"] is Int
             && (spentDetail?["when"] as? [String: Any])?["on"] as? String
                 == localDay.string(from: timerFire))
+
+    // **The re-arm cycle, walked end to end, because prose about it is what let it through.** The
+    // one-shot above has fired. The session it opened moves it to tomorrow — the machine door
+    // admits a `PATCH` of a one-shot — and the next night's beat comes round. While the save took
+    // the stamp off, that loop was a nightly wake-up nobody arranged.
+    let place = StartPoints.Place(id: StartPoints.id(for: "/tmp"), path: "/tmp", label: "tmp",
+                                  at: Date(timeIntervalSince1970: 1))
+    let rearmBody: [String: Any] = [
+        "title": "nightly", "at": "01:30",
+        "on": localDay.string(from: timerFire.addingTimeInterval(86_400)),
+        "place_id": place.id, "assistant": "codex", "instructions": "do the nightly work",
+    ]
+    func save(_ target: String, _ body: [String: Any]) -> (Int, String) {
+        guard case .refused(let status, let code, _, _) = Orchestrator.updateSchedule(
+            id: target, from: body, places: [place], now: timerNow,
+            isDirectory: { $0 == "/tmp" }) else { return (200, "ok") }
+        return (status, code)
+    }
+    func onDisk(_ target: String) -> [String: Any] {
+        (try? Data(contentsOf: directory.appendingPathComponent("\(target).json")))
+            .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+    }
+    let rearm = save(onceID, rearmBody)
+    check("a save that re-arms a spent one-shot is refused, with the run route's own code",
+          rearm == (409, "schedule_spent"), String(describing: rearm))
+    check("the file still names the day it ran, and still carries the stamp",
+          (onDisk(onceID)["when"] as? [String: Any])?["on"] as? String
+              == localDay.string(from: timerFire) && onDisk(onceID)["fired_at"] is Int,
+          String(describing: onDisk(onceID)["when"]))
+    Orchestrator.forget()
+    onceRuns.removeAll()
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { onceRuns.append($0.id); return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: timerNow.addingTimeInterval(86_400))
+    expect("so the next night's beat opens nothing, which is where the second session came from",
+           onceRuns.filter { $0 == onceID }.count, 0)
+
+    // **The occurrence the timer chose is not the one the queue runs.** Queued at 01:30 and
+    // retimed to tomorrow while the terminal channel was busy, dispatching would open a session
+    // for a time nobody is scheduled for and stamp the old day onto the new file — spending
+    // tomorrow before it happens. A second one-shot, because this needs one that has not run.
+    let laterID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbd"
+    var laterSource = valid
+    laterSource["schedule_id"] = laterID
+    laterSource["when"] = ["at": "01:30", "on": localDay.string(from: timerFire)]
+    try! JSONSerialization.data(withJSONObject: laterSource)
+        .write(to: directory.appendingPathComponent("\(laterID).json"))
+    defer { try? FileManager.default.removeItem(
+        at: directory.appendingPathComponent("\(laterID).json")) }
+    Orchestrator.forget()
+    var queued: [() -> Void] = []
+    var laterRuns: [String] = []
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { queued.append($0) }
+    Orchestrator.scheduleRunnerForTesting = { laterRuns.append($0.id); return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: timerNow)
+    let retimed = save(laterID, rearmBody)
+    check("a save may still move a one-shot that has not run", retimed == (200, "ok"),
+          String(describing: retimed))
+    queued.forEach { $0() }
+    // The daily schedule beside it is the control: same queue, same pass, so a green here
+    // cannot be a harness that ran nothing.
+    check("the work that was waiting drops the occurrence it lost, and only that one",
+          laterRuns.contains(id) && !laterRuns.contains(laterID), String(describing: laterRuns))
+    check("and nothing stamped the old day onto the retimed file",
+          onDisk(laterID)["fired_at"] == nil, String(describing: onDisk(laterID)["fired_at"]))
+    check("the skip names which of the two reasons it was",
+          RemoteAuth.recentAudit(limit: 2_000).contains {
+              $0["event"] as? String == "orchestrator.schedule.skipped"
+                  && $0["schedule"] as? String == laterID && $0["why"] as? String == "retimed" })
     Orchestrator.forget()
 }
 
@@ -1330,8 +1404,12 @@ group("one schedule can be read in full, and the write route is behind the write
     let machineOnce = postOnce(key: UUID().uuidString)
     expect("while one that runs once reaches the parser on that same token",
            machineOnce.status, 400)
-    expect("and stops on the place id rather than on the credential",
-           remoteErrorCode(machineOnce), "bad_request")
+    // By its sentence, not only by its status: this route has `400`s of its own, so a gate
+    // replaced by a constant `400 bad_request` would keep a status-only check green.
+    check("and stops on the place id rather than on the credential",
+          remoteErrorCode(machineOnce) == "bad_request"
+            && remoteErrorMessage(machineOnce).contains("place_id"),
+          remoteErrorMessage(machineOnce))
     let machineNoKey = postOnce(key: nil)
     expect("a machine write with no idempotency key is refused too", machineNoKey.status, 400)
     check("for the header rather than for the body",
@@ -1340,7 +1418,9 @@ group("one schedule can be read in full, and the write route is behind the write
     Config.shared.remoteWrite = false
     let switchedOff = postOnce(key: UUID().uuidString)
     check("and the remote write switch is a fact about devices, not about this Mac's own token",
-          switchedOff.status == 400 && remoteErrorCode(switchedOff) == "bad_request")
+          switchedOff.status == 400 && remoteErrorCode(switchedOff) == "bad_request"
+            && remoteErrorMessage(switchedOff).contains("place_id"),
+          remoteErrorMessage(switchedOff))
     Config.shared.remoteWrite = true
     expect("a device that may read and not send is refused",
            remoteErrorCode(post(reader.token, key: UUID().uuidString)), "forbidden")
