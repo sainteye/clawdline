@@ -1606,44 +1606,6 @@ group("a Feature is scoped by the Project rule the Portfolio uses") {
                 != suppressed[keys["scope-one"]!]?.featureID)
 }
 
-// A row as it actually lands in the ledger for a task that ran inside a Clawdline-managed
-// worktree: `working_dir` is the checkout, `project_key` is the canonical repository, and the two
-// state words are what the broker record said when the row was collected.
-func worktreeRow(_ key: String, at: Date, worktree: String, task: String,
-                 project: String? = "/private/acme/widget", state: String? = "success",
-                 landing: String? = nil) -> UsageLedger.Row {
-    var row = UsageLedger.Row()
-    row.intervalKey = key
-    row.assistant = "claude"
-    row.sessionID = "private-session-\(key)"
-    row.boundaryKind = "task"
-    row.boundaryID = task
-    row.taskID = task
-    row.origin = "dispatch"
-    row.projectKey = project
-    row.workingDir = worktree.isEmpty
-        ? project.map { $0 + "/checkout" }
-        : "/Users/tester/Library/Application Support/Clawdline/worktrees/widget-9f1c/" + worktree
-    row.isolation = worktree.isEmpty ? "none" : "worktree"
-    row.taskState = state
-    row.landingState = landing
-    row.model = "claude-opus-5"
-    row.counts = .init(inputNew: 1, output: 2, cacheRead: 3, cacheWrite: 4)
-    row.total = row.counts.total
-    row.costBasis = "unknown"
-    row.missingReason = "no_cost_recorded"
-    row.coverage = "complete"
-    row.startedAt = at
-    row.updatedAt = at.addingTimeInterval(30)
-    row.localDay = UsageLedger.localDay(of: at)
-    row.sealed = true
-    return row
-}
-
-func acceptedFeature(_ id: String, _ label: String) -> UsageLedger.AcceptedAttribution {
-    UsageLedger.AcceptedAttribution(id: id, label: label)
-}
-
 group("a worktree's outcome tells landed from delivered from debris") {
     let at = ISO8601DateFormatter().date(from: "2026-09-01T09:00:00Z")!
     func outcome(_ rows: [UsageLedger.Row], live: Set<String> = []) -> String {
@@ -1880,4 +1842,46 @@ group("an empty worktree list says the query ran, and an unknown Project is refu
     expect("as a bad request", remoteErrorCode(misspelled), "bad_request")
 }
 
+}
+
+// A row as it actually lands in the ledger for a task that ran inside a Clawdline-managed
+// worktree: `working_dir` is the checkout, `project_key` is the canonical repository, and the two
+// state words are what the broker record said when the row was collected.
+//
+// At file scope rather than inside the suite above, because `Tests/LandingCurrencyTests.swift`
+// reads the same route from the other side and a second copy of a fixture is a second thing to
+// keep true.
+func worktreeRow(_ key: String, at: Date, worktree: String, task: String,
+                 project: String? = "/private/acme/widget", state: String? = "success",
+                 landing: String? = nil) -> UsageLedger.Row {
+    var row = UsageLedger.Row()
+    row.intervalKey = key
+    row.assistant = "claude"
+    row.sessionID = "private-session-\(key)"
+    row.boundaryKind = "task"
+    row.boundaryID = task
+    row.taskID = task
+    row.origin = "dispatch"
+    row.projectKey = project
+    row.workingDir = worktree.isEmpty
+        ? project.map { $0 + "/checkout" }
+        : "/Users/tester/Library/Application Support/Clawdline/worktrees/widget-9f1c/" + worktree
+    row.isolation = worktree.isEmpty ? "none" : "worktree"
+    row.taskState = state
+    row.landingState = landing
+    row.model = "claude-opus-5"
+    row.counts = .init(inputNew: 1, output: 2, cacheRead: 3, cacheWrite: 4)
+    row.total = row.counts.total
+    row.costBasis = "unknown"
+    row.missingReason = "no_cost_recorded"
+    row.coverage = "complete"
+    row.startedAt = at
+    row.updatedAt = at.addingTimeInterval(30)
+    row.localDay = UsageLedger.localDay(of: at)
+    row.sealed = true
+    return row
+}
+
+func acceptedFeature(_ id: String, _ label: String) -> UsageLedger.AcceptedAttribution {
+    UsageLedger.AcceptedAttribution(id: id, label: label)
 }
