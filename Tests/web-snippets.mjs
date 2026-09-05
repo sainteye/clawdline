@@ -679,9 +679,20 @@ for (const name of ["createSnippet", "updateSnippet", "deleteSnippet", "orderSni
 }
 assert.match(mockSource, /snippets"\) === "readonly"/,
     "and one URL takes the writing half away, which is the Cloud path's shape");
-assert.match(mockSource, /snippet_scope_mismatch/,
-    "the fixture refuses a project beside a global scope the way the store does — that is the "
-    + "shape a body built by copying a row takes, and a fixture that accepted it would teach "
-    + "this page a habit Sources/Snippets.swift breaks on the first real Mac");
+// The rule and not the word. A first draft of this asserted that "snippet_scope_mismatch"
+// appeared somewhere in the fixture, and a mutation that took the refusal out of createSnippet
+// left it green — the string was still there, in the route next door. What is pinned now is the
+// predicate itself: `project` present if and only if the scope is project, with a `project: null`
+// counting as present. That is the shape a body built by copying a row and overwriting two
+// fields takes, and a fixture that accepted it would teach this page a habit
+// `Sources/Snippets.swift` breaks on the first real Mac.
+assert.match(mockSource,
+    /function snippetScopeOK\(body\) \{[^]*?hasProject && !!body\.project;[^]*?return !hasProject;/,
+    "the fixture holds the store's exact key rule for project and scope");
+for (const route of ["createSnippet", "updateSnippet"]) {
+    const source = new RegExp("Mock\\." + route + " = function[^]*?\\n\\};").exec(mockSource)[0];
+    assert.ok(/snippetScopeOK\(/.test(source) && /snippet_scope_mismatch/.test(source),
+        route + "() asks it, and refuses with the store's own code when the answer is no");
+}
 
 console.log("web snippet tests passed");

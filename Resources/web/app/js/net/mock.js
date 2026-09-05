@@ -1895,8 +1895,10 @@ function snippetPosition(scope, project) {
 function snippetScopeOK(body) {
     var hasProject = Object.prototype.hasOwnProperty.call(body, "project");
     if (body.scope === "project") return hasProject && !!body.project;
-    if (body.scope === "global") return !hasProject;
-    return false;
+    if (body.scope !== "global") return false;
+    // `project: null` counts as present. That is the whole trap: a body assembled by copying a
+    // row and overwriting two fields carries the key even when it carries no value.
+    return !hasProject;
 }
 
 Mock.createSnippet = function (snippet) {
