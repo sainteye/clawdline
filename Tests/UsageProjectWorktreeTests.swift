@@ -161,13 +161,17 @@ group("a worktree's outcome tells landed from delivered from debris") {
                                  state: "success", landing: "abandoned")],
                     branch: .branchMerged), "branch_merged")
 
-    // **The settled rung is read above the two git rungs, and that ordering is this merge's own
-    // decision.** Neither branch could have asserted it: `nothing_to_land` and the git rungs
-    // arrived on two trees that never saw each other. The reason is the veto's reason one rung
-    // up — a settlement somebody recorded is a decision, and the shape of a branch is not an
-    // appeal against one. A read-only delivery commits nothing, so in practice its branch is
-    // `branch_empty` and no git rung would have claimed it; the pairs below are what say the
-    // order is the reason rather than the coincidence.
+    // **The settled rung sits between the two git rungs, and the one branch fact that refutes it
+    // is the one its own write gate refuses.** `nothing_to_land` is not the same kind of sentence
+    // as the veto above it: `abandoned` records a *decision*, which evidence cannot make false,
+    // while this asserts *what happened* — that the delivery wrote to no repository — and a
+    // commit refutes it. The route that writes the state says so itself, answering
+    // `409 wrote_to_repository` for `commits > 0`
+    // (`Orchestrator.nothingToLandAdmission(for:)`, `Sources/OrchestratorTaskShape.swift`), and
+    // `branch_merged` is defined as `head != base`: the same fact, read later. So the settlement
+    // loses to `branch_merged` and beats `branch_absent`, and every pair below differs in exactly
+    // one variable — `settled` and `unsettled` share every field but `landing:` and the
+    // `intervalKey`, which no rung reads.
     let settled = [worktreeRow("settled", at: at, worktree: "w9", task: "t9",
                                state: "success", landing: "nothing_to_land")]
     let unsettled = [worktreeRow("unsettled", at: at, worktree: "w9", task: "t9",
@@ -176,12 +180,65 @@ group("a worktree's outcome tells landed from delivered from debris") {
              + "its branch", outcome(settled, branch: .branchAbsent), "nothing_to_land")
     expect("while the same rows without that settlement take the rung it would have taken",
            outcome(unsettled, branch: .branchAbsent), "branch_gone")
-    expect("it stays settled when git says the branch is in HEAD with commits on it",
-           outcome(settled, branch: .branchMerged), "nothing_to_land")
-    expect("where the same rows without it are landed by that branch",
+    expect("but a branch git says is in HEAD with commits of its own refutes the settlement, "
+             + "because that is the fact its own route refuses to settle over",
+           outcome(settled, branch: .branchMerged), "landed")
+    expect("which is exactly what the same rows say without it, and that is the point",
            outcome(unsettled, branch: .branchMerged), "landed")
+    expect("with the branch named as what put it there, never a record nobody wrote",
+           evidence(settled, branch: .branchMerged), "branch_merged")
+    // **The other four branch facts refute nothing**, so none of them may touch the settlement.
+    // Without this the rung could have been written as "any git answer wins" and every assertion
+    // above would still be green.
+    for fact in [UsageProjectWorktreeService.LandingEvidence.branchEmpty, .branchBaseUnknown,
+                 .branchUnmerged, .unknown] {
+        expect("a settlement survives \(fact.rawValue), which says nothing about what was written",
+               outcome(settled, branch: fact), "nothing_to_land")
+        expect("while the same rows without it are delivered under \(fact.rawValue)",
+               outcome(unsettled, branch: fact), "delivered")
+    }
+    // **The verdict and what it rests on are two axes.** `evidence()` returns the branch fact for
+    // everything except a landing record, whichever way the ladder is written — so the branch
+    // fact beside a settled verdict cannot tell the two orders apart on its own, and is asserted
+    // here for what it does say: the settlement does not overwrite git's word, and git's word
+    // does not depend on the settlement.
     expect("and the branch fact travels beside the settlement rather than being overwritten by it",
            evidence(settled, branch: .branchEmpty), "branch_empty")
+    expect("which is the same word the same branch gets with no settlement on it at all",
+           evidence(unsettled, branch: .branchEmpty), "branch_empty")
+
+    // **Two roots settling one worktree two ways, and git.** Nothing said this pair was
+    // deliberate. The veto stops `landed`, because a decision stands; the merged branch stops
+    // `nothing_to_land`, because a commit refutes a claim that nothing was written. What is left
+    // is `delivered` — the block where `needs` answers and a person decides, which is the honest
+    // place for two settlements that contradict each other and the repository.
+    let bothSettlements = [worktreeRow("settled-audit", at: at, worktree: "w10", task: "t10",
+                                       state: "success", landing: "nothing_to_land"),
+                           worktreeRow("given-up", at: at, worktree: "w10", task: "t11",
+                                       state: "success", landing: "abandoned")]
+    expect("a worktree settled both ways, on a branch git says is merged, is neither settlement",
+           outcome(bothSettlements, branch: .branchMerged), "delivered")
+    expect("the given-up row alone is what stops it being landed",
+           outcome([bothSettlements[1]], branch: .branchMerged), "delivered")
+    expect("and the merged branch alone is what stops it being settled",
+           outcome([bothSettlements[0]], branch: .branchMerged), "landed")
+    expect("while on a branch fact that refutes nothing the settlement still outranks the veto",
+           outcome(bothSettlements, branch: .branchAbsent), "nothing_to_land")
+
+    // **A verified landing record outranks a settlement saying nothing was written**, and rung 1
+    // is the only thing that makes it so. `LandingCurrencyTests` pins the *rank* of these two
+    // words against each other; nothing fed both into the ladder at once.
+    let recordAndSettlement = [worktreeRow("recorded-sibling", at: at, worktree: "w11",
+                                           task: "t12", state: "success", landing: "landed"),
+                               worktreeRow("settled-sibling", at: at, worktree: "w11",
+                                           task: "t13", state: "success",
+                                           landing: "nothing_to_land")]
+    expect("a recorded landing beside a settlement is the landing",
+           outcome(recordAndSettlement, branch: .unknown), "landed")
+    expect("named as the record it is, not as the branch under it",
+           evidence(recordAndSettlement, branch: .branchEmpty), "record")
+    expect("while the settlement on its own, under the same branch fact, is the settlement",
+           outcome([recordAndSettlement[1]], branch: .unknown), "nothing_to_land")
 
     // **`needs` asks the ladder the payload published**, which is the merge's second decision.
     // Without the branch fact it computes `delivered` for a worktree git has already shown to be
@@ -361,7 +418,7 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
     expect("a complete scan is not partial", byName["status"] as? String, "available")
     expect("and the rule it answered by names both of the sources it may use",
            byName["outcomeRule"] as? String,
-           "landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_then_"
+           "landed_by_record_then_landed_by_nonempty_merged_branch_then_settled_then_"
              + "branch_gone_then_delivered_then_live_then_abandoned")
     expect("with no branch fact, every verdict rests on the stored columns and says so",
            alphaRow["landingEvidence"] as? String, "record")
@@ -429,8 +486,36 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
            betaNoBase["landingEvidence"] as? String, "branch_base_unknown")
     expect("and the rule the payload publishes names what it actually does",
            merged["outcomeRule"] as? String,
-           "landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_then_"
+           "landed_by_record_then_landed_by_nonempty_merged_branch_then_settled_then_"
              + "branch_gone_then_delivered_then_live_then_abandoned")
+
+    // **The branch fact has to reach `needs`, and nothing above walks the path that carries it
+    // there.** Every `needs` assertion in this file calls the static function with a branch fact
+    // handed to it by the test; the payload builds one inside `worktree(id:rows:features:live:
+    // branch:)`, and a wiring that dropped it there would leave all of them green while the page
+    // advised somebody to land a worktree it had just called landed. Its own rows and its own
+    // service, so no count above moves.
+    let solo = "77777777-2222-4333-8444-555555555555"
+    let soloBranch = "clawdline/task/" + solo
+    let soloRows = [worktreeRow("solo", at: at, worktree: solo, task: solo)]
+    func soloNeeds(_ branches: Orchestrator.RepositoryBranches,
+                   bases: [String: String] = [:]) -> Any? {
+        let payload = UsageProjectWorktreeService(
+            rows: { soloRows },
+            acceptedFeatures: { ["solo": acceptedFeature("feature-d", "The focused runner")] },
+            branches: { _ in branches }, worktreeBases: { bases })
+            .read(.init(project: "widget", timezoneID: "UTC"), now: at).payload ?? [:]
+        return ((payload["worktrees"] as? [[String: Any]]) ?? [])
+            .first { $0["id"] as? String == solo }?["needs"]
+    }
+    expect("a delivered worktree is advised through the payload and not only through the ladder",
+           soloNeeds(Orchestrator.RepositoryBranches(heads: [soloBranch: "cafed00d"],
+                                                     merged: [], known: true)) as? String,
+           "no_record")
+    check("while the same rows on a branch git says is merged are advised nothing at all",
+          soloNeeds(Orchestrator.RepositoryBranches(heads: [soloBranch: "cafed00d"],
+                                                    merged: [soloBranch], known: true),
+                    bases: [soloBranch: "0ddba5e"]) is NSNull)
 
     // **An accepted Project identity is whatever a person accepted, and this read hands that key
     // to a subprocess.** `repositoryBranches(in:)` makes it the git process's working directory,
