@@ -705,7 +705,8 @@ curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks"
  "spawnedAt":1787100002,"dir":"/tmp/.clawdline/…","child":{"terminalId":"…","backend":"iterm"}}}
 ```
 
-失敗一律是 `{"error":{"code":…,"message":…,"request_id":…}}`。**branch 在 `code` 上**：
+失敗一律是 `{"error":{"code":…,"message":…,"request_id":…}}`，印在一行 `curl: (22) …` 下面
+——指令失敗了，而 body 還在。**branch 在 `code` 上，不是在結束碼上**：
 
 | `code` | 意思 | 做什麼 |
 |---|---|---|

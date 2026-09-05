@@ -656,6 +656,26 @@ def swift_literal_projection(text):
                     continue
                 i += 1
             continue
+        if c == "#" and i + 1 < n:
+            # A raw string. Its delimiter carries the same number of `#`, and nothing inside it is
+            # an escape — including a `"""` in the middle of one, which is the shape that walked
+            # this parser out of step and hid every command after it in the file.
+            j = i
+            while j < n and text[j] == "#":
+                j += 1
+            hashes = j - i
+            if j < n and text[j] == '"':
+                triple = text[j:j + 3] == '"""'
+                closing = ('"""' if triple else '"') + "#" * hashes
+                body = j + (3 if triple else 1)
+                k = text.find(closing, body)
+                for m in range(body, n if k == -1 else k):
+                    if text[m] != "\n":
+                        out[m] = text[m]
+                i = n if k == -1 else k + len(closing)
+                continue
+            i = j
+            continue
         if text[i:i + 3] == '"""':
             i += 3
             while i < n and text[i:i + 3] != '"""':
@@ -898,6 +918,10 @@ INSTRUCTION_SELF_TEST = [
     (".swift", '/* curl -s http://x */\nlet x = 1', [], "nor a block comment"),
     (".swift", 'let cmd = "curl -s http://x"', [],
      "a one-line literal carries no code block, so it is out of this domain and named in the docs"),
+    (".swift",
+     'let t = #"""\n"""\nx\n"""#\nlet brief = """\n  ```bash\n  curl -s http://x\n  ```\n  """',
+     ["unchecked"],
+     "a raw string holding a bare triple quote walked this parser out of step and hid the rest"),
 ]
 
 def self_test():

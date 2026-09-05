@@ -803,7 +803,9 @@ Success looks like this (`state` will be `queued` or `spawning`; the tab is not 
  "spawnedAt":1787100002,"dir":"/tmp/.clawdline/…","child":{"terminalId":"…","backend":"iterm"}}}
 ```
 
-Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`. **Branch on `code`:**
+Failure is always `{"error":{"code":…,"message":…,"request_id":…}}`, printed underneath a
+`curl: (22) …` line — the command failed, and the body is still there. **Branch on `code`,
+not on the exit status:**
 
 | `code` | Means | Do |
 |---|---|---|
