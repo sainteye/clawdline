@@ -1292,6 +1292,33 @@ listener must report `complete` before the script succeeds. Only an exact 404 fr
 runtime takes the one-time bootstrap path: the script uses its legacy queued/spawning preflight for
 the replacement that installs this route, then every later build uses the durable receipt.
 
+**The adopter's own half is: accepted is not observed.** A client that does not see the answer to
+its POST has learned nothing about whether the intent exists — and on 2026-09-05 one that read the
+two as the same thing printed `refused (HTTP 000)`, exited, and left admission closed machine-wide
+for the 146 seconds its drain actually took, with the id it had generated printed nowhere. So the
+script writes its request id to `~/.config/clawdline/last-build-maintenance` *before* the POST
+leaves, spends one budget across the POST and the `ready` poll rather than a short timeout on each,
+prints the id on every path that can leave one behind, and resolves a timeout by reading the
+standing intent instead of assuming. Its exit handler aborts on the request having *left* rather
+than on an answer having been observed — holding an id is not the same fact, because the id is
+generated before the pre-check that can refuse and exit without knocking at all.
+
+**What `DELETE` being scoped to one id protects is the intent, and only the intent.** The route
+answers `409` for any other id, so no build can end another's window through it; but a client that
+reads curl's exit status rather than the HTTP code sees that refusal as an ending, and everything
+it then does on the strength of it — reopening admission in its output, removing the note under
+`~/.config/clawdline` — is outside what the route can protect. So the adopter judges the status
+code, and removes the note only when the note still records its own id.
+
+Before it asks, it looks. A standing intent whose writing process is still alive is never touched.
+One this machine wrote, whose writer is gone, is aborted and replaced with a fresh window. An
+unclaimed one is aborted only past a staleness gate derived from the admission budget — the
+longest window one build can hold, worked out from the timeouts it actually spends, plus a budget
+of margin — and only when it belongs to the app instance answering now. The two are one knob for
+that reason: a gate fixed independently of the budget becomes a promise to abort live windows the
+moment somebody raises the budget past it. Everything else stops the
+build and prints the exact `DELETE` that ends it.
+
 ### A branch, not a diff
 
 An isolated child's delivery is `clawdline/task/<task-id>`. A Claude child commits early, only on
