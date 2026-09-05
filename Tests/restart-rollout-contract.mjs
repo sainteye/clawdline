@@ -366,6 +366,13 @@ function deadPid() {
   throw new Error('could not obtain a pid that is not running');
 }
 
+/** A deleted note is the failure these scenarios are about, so it has to arrive as a sentence
+ *  rather than as `ENOENT` out of `readFileSync` — a red that does not say what it means costs the
+ *  next person the same half hour every time. */
+function noteAt(path) {
+  return existsSync(path) ? readFileSync(path, 'utf8') : '(no note: it was deleted)';
+}
+
 function readLog(path) {
   if (!existsSync(path)) return [];
   return readFileSync(path, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
@@ -585,7 +592,7 @@ assert.match(live.run.stdout, new RegExp(`another \\./build\\.sh \\(pid ${holder
 assert.ok(!live.requests.some((r) => r.method === 'DELETE' || r.method === 'POST'),
   'and must send neither a DELETE nor a POST — the window is not this build\'s to touch');
 // "Nothing has been changed" has to be true of the whole run, exit handler included.
-assert.equal(readFileSync(live.statePath, 'utf8'), `request_id=${liveId}\npid=${holder.pid}\n`,
+assert.equal(noteAt(live.statePath), `request_id=${liveId}\npid=${holder.pid}\n`,
   'and must leave the other build\'s note exactly as it found it');
 
 assert.notEqual(liveWithIdAlone.run.status, 0, 'the control must still refuse the build');
@@ -597,11 +604,11 @@ assert.ok(liveWithIdAlone.requests.some((r) => r.method === 'DELETE' && r.reques
 // Three separate lines stand between that knock and the other build's note, and each control below
 // removes exactly one more of them — so what each one demonstrates is one line, not "the fix".
 const otherBuildsNote = `request_id=${liveId}\npid=${holder.pid}\n`;
-assert.equal(readFileSync(liveWithIdAlone.statePath, 'utf8'), otherBuildsNote,
+assert.equal(noteAt(liveWithIdAlone.statePath), otherBuildsNote,
   'the note survives the knock, and the line that saves it here is the abort reading its 409');
 assert.match(liveWithIdAlone.run.stderr, /could not end restart maintenance .* \(HTTP 409\)/,
   'which is what it says: the window it knocked for was never its own');
-assert.equal(readFileSync(liveWithBlindAbort.statePath, 'utf8'), otherBuildsNote,
+assert.equal(noteAt(liveWithBlindAbort.statePath), otherBuildsNote,
   'take that away too and the note still survives, now on the id comparison alone');
 assert.ok(!/could not end restart maintenance/.test(liveWithBlindAbort.run.stderr),
   'and this control must believe it ended something, or it is not exercising the comparison');
