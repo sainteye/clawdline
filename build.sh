@@ -752,27 +752,37 @@ cleanup_build() {
   # file installs three in sequence.
   local clawdline_build_status=$?
   clawdline_run_file_exit "$clawdline_build_status" || true
-  # **An id, not a belief.** This used to fire only when `MAINTENANCE_ACTIVE` was 1 — that is,
-  # only when the POST's answer had been *observed* — which is precisely the case that did not
-  # happen on 2026-09-05: the request was accepted, curl timed out before the answer arrived,
-  # `MAINTENANCE_ACTIVE` stayed 0, and the exit handler walked past a window it had opened and
-  # left dispatch admission closed machine-wide. Holding the id is enough reason to end it, and
-  # ending it is safe by construction rather than by care here: `DELETE` is scoped to one id and
-  # the route answers `409 restart_in_progress` for any other, so this cannot close a window that
-  # is not this build's. On its own, this one condition would have ended that night's incident.
-  if [ -n "${MAINTENANCE_REQUEST_ID:-}" ] && [ -r "${TOKEN_FILE:-}" ] && [ -n "${PORT:-}" ]; then
-    if curl -sS --connect-timeout 5 --max-time 30 -X DELETE \
-      "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
-      -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
-      -H 'Content-Type: application/json' \
-      -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}" >/dev/null 2>&1; then
-      rm -f "${MAINTENANCE_STATE_FILE:-}" 2>/dev/null || true
+  # >>> clawdline maintenance cleanup >>>
+  # **A request that left, not a belief and not an id.** This used to fire only when
+  # `MAINTENANCE_ACTIVE` was 1 — that is, only when the POST's answer had been *observed* — which is
+  # precisely the case that did not happen on 2026-09-05: the request was accepted, curl timed out
+  # before the answer arrived, `MAINTENANCE_ACTIVE` stayed 0, and the exit handler walked past a
+  # window it had opened and left dispatch admission closed machine-wide. So it fired on holding the
+  # id instead — and the id is generated before the pre-check even reads the standing intent, so
+  # every early `exit 1` up there walked in here carrying an id the server had never seen, sent a
+  # `DELETE` for it, read the `409` that came back as "ended", and deleted the note that belonged to
+  # the live build it had just correctly refused to disturb — while printing "Nothing has been
+  # changed". `MAINTENANCE_POSTED` is set on the one line where the request leaves this process, and
+  # cleared again only when the server has answered that there is no window under this id.
+  #
+  # **And an answer is not a yes.** `curl -sS` exits 0 for `409` and `401` alike, which is how the
+  # branch below used to reach `rm` for a `DELETE` nothing had accepted. `maintenance_abort` judges
+  # the HTTP status, and the note is removed by id rather than by position, so what is forgotten
+  # here is this run's note or nothing.
+  if [ -n "${MAINTENANCE_POSTED:-}" ] && [ -n "${MAINTENANCE_REQUEST_ID:-}" ] \
+      && [ -r "${TOKEN_FILE:-}" ] && [ -n "${PORT:-}" ]; then
+    # 30 s rather than the admission budget: this runs on the way out, and a person waiting for
+    # their prompt back is not waiting for a window that is already lost.
+    if maintenance_abort "$MAINTENANCE_REQUEST_ID" 30; then
+      maintenance_forget "$MAINTENANCE_REQUEST_ID"
     else
       # Say it, rather than leaving the next run to discover it as a 409. The id is the only
-      # handle on a window this process cannot close.
-      echo "!! could not end restart maintenance $MAINTENANCE_REQUEST_ID; dispatch admission may still be closed" >&2
+      # handle on a window this process cannot close, and the note is left behind on purpose:
+      # the next run reads it, finds this pid gone, and reclaims what this one could not end.
+      echo "!! could not end restart maintenance $MAINTENANCE_REQUEST_ID (HTTP ${MAINTENANCE_ABORT_STATUS:-none}); dispatch admission may still be closed" >&2
     fi
   fi
+  # <<< clawdline maintenance cleanup <<<
   clawdline_lease_release
   rm -rf "$STAGE_ROOT"
 }
@@ -1105,6 +1115,13 @@ fi
 #      intent from somebody else's live one without a person in the loop.
 MAINTENANCE_REQUEST_ID=
 MAINTENANCE_ACTIVE=0
+# Whether the POST left this process. Not the same question as whether an id exists — the id is
+# generated before the pre-check, which can refuse and exit without ever knocking — and not the
+# same question as whether an answer was seen. It is the exit handler's condition; see it there.
+MAINTENANCE_POSTED=
+# The HTTP code the last abort came back with, so the message that reports a failed abort can say
+# what the server actually said rather than "it did not work".
+MAINTENANCE_ABORT_STATUS=
 # 300 s: the measured 146-second drain doubled, with margin. It is the whole of the client's
 # patience for admission — the POST and the `ready` poll spend it between them rather than each
 # having its own — and it is deliberately larger than any drain seen so far rather than tuned to
@@ -1113,12 +1130,42 @@ MAINTENANCE_BUDGET="${CLAWDLINE_MAINTENANCE_BUDGET:-300}"
 # Connecting is not draining. A Clawdline that is not listening at all must still fail in seconds,
 # so the connect phase keeps its own small ceiling and only the answer gets the long one.
 MAINTENANCE_CONNECT_SECONDS="${CLAWDLINE_MAINTENANCE_CONNECT_SECONDS:-5}"
-# How old an unclaimed intent has to be before this script will clear it. One live `./build.sh`
-# holds a window from its POST to its reconciliation: the admission budget above, the replacement
-# itself, and up to 180 s of executor reconciliation below — under 500 s in the worst case. 900 s
-# is that window with room to spare, and it is only ever consulted for an intent whose writer this
-# machine has no live process for.
-MAINTENANCE_STALE_SECONDS="${CLAWDLINE_MAINTENANCE_STALE_SECONDS:-900}"
+# A read taken after the budget is spent still has to be able to answer: the recovery read after a
+# timed-out POST is the one that decides whether this run holds a window at all. It gets this floor
+# rather than whatever is left, because `--max-time 0` is not a zero-second ceiling — curl reads it
+# as no ceiling, which is how a clamp stops being a clamp. Not overridable: the worst case below is
+# derived from it.
+MAINTENANCE_READ_FLOOR=10
+# The reconciliation wait after the replacement is listening, as a wall-clock bound rather than a
+# count of attempts. 180 attempts of `--max-time 5` with a second of sleep between them is 1080 s,
+# not 180, and the number below is quoted in the derivation that guards the gate.
+MAINTENANCE_RECONCILE_SECONDS="${CLAWDLINE_MAINTENANCE_RECONCILE_SECONDS:-180}"
+# **The longest one build can hold a window, derived rather than asserted.** The comment here used
+# to claim "under 500 s" against a poll loop that handed every read a fresh full budget; the real
+# figure was about 790 s. Worse, nothing connected the claim to the gate below, so raising
+# `CLAWDLINE_MAINTENANCE_BUDGET` on its own was enough to guarantee that a live window would look
+# abandoned to the next build — which then aborts it on age alone, without ever asking about a pid.
+# Every term is a timeout this script really spends, counted from the POST that creates the intent,
+# because that is when the age this gate reads starts:
+#   budget x 2      the POST and the `ready` poll that share its deadline, then the abort that ends
+#                   the window, which spends the same budget
+#   read floor      the one read that may still be running when that deadline passes
+#   6 + 5           waiting for the old process to go, and for the replacement to answer
+#   reconcile + 5   the reconciliation wait, and the read that may start just before its deadline
+MAINTENANCE_WORST_WINDOW=$(( MAINTENANCE_BUDGET * 2 + MAINTENANCE_READ_FLOOR + 6 + 5 + MAINTENANCE_RECONCILE_SECONDS + 5 ))
+# How old an unclaimed intent has to be before this script will clear it: the worst window above
+# plus one more admission budget of margin, so the gate moves when either knob moves instead of
+# being a constant that happens to be larger today. It is only ever consulted for an intent whose
+# writer this machine has no live process for.
+MAINTENANCE_STALE_SECONDS="${CLAWDLINE_MAINTENANCE_STALE_SECONDS:-$(( MAINTENANCE_WORST_WINDOW + MAINTENANCE_BUDGET ))}"
+if [ "$MAINTENANCE_STALE_SECONDS" -le "$MAINTENANCE_WORST_WINDOW" ]; then
+  # An override can still put the two knobs the wrong way round, and what that buys is the
+  # dangerous direction: a window a build could legitimately still be inside, judged abandoned by
+  # the next one. Say it here, where both numbers are in hand, rather than leaving it to be read
+  # off an aborted window later.
+  echo "!! CLAWDLINE_MAINTENANCE_STALE_SECONDS=$MAINTENANCE_STALE_SECONDS is not longer than the ${MAINTENANCE_WORST_WINDOW}s this build can hold a maintenance window"
+  echo "   a live window can be judged abandoned on age alone; raise it above ${MAINTENANCE_WORST_WINDOW}s or lower CLAWDLINE_MAINTENANCE_BUDGET"
+fi
 # Beside the token this block already reads, because it has to outlive the run that wrote it: the
 # whole point is that the *next* process can recognise this one's leftover. `$STAGE_ROOT` cannot
 # hold it — that is the directory whose deletion by `cleanup_build` destroyed the only copy of the
@@ -1153,25 +1200,59 @@ if isinstance(err, dict):
     print("%s: %s" % (err.get("code", "unknown"), err.get("message", "no message")))' "$1" 2>/dev/null || return 0
 }
 
+# What one read may spend: whatever is left of the admission budget, never less than the floor, and
+# the whole budget before the deadline exists (the pre-check runs before any window is asked for).
+#
+# **The poll loop used to hand every read a fresh full budget.** So "one budget of patience" was
+# true at the deadline check and nowhere else: a POST that spent 299 of its 300 seconds could still
+# be followed by a read allowed another 300, which is where the 790-second worst case came from.
+maintenance_read_seconds() {
+  local remaining
+  if [ -z "${MAINTENANCE_DEADLINE:-}" ]; then
+    printf '%s' "$MAINTENANCE_BUDGET"
+    return 0
+  fi
+  remaining=$(( MAINTENANCE_DEADLINE - $(date +%s) ))
+  if [ "$remaining" -lt "$MAINTENANCE_READ_FLOOR" ]; then
+    remaining=$MAINTENANCE_READ_FLOOR
+  fi
+  printf '%s' "$remaining"
+}
+
 # Read the standing intent into "$1". Prints the HTTP code; returns curl's own status, which is
 # how "the server said no" is told apart from "nothing answered".
 maintenance_read() {
-  curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" --max-time "$MAINTENANCE_BUDGET" \
+  curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" --max-time "$(maintenance_read_seconds)" \
     -o "$1" -w '%{http_code}' \
     "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
     -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null
 }
 
-# Abort one intent by id. The server refuses to abort an id that is not the standing one
-# (`409 restart_in_progress`), so this can never end somebody else's window by accident — the
-# safety is the route's, not this script's.
+# Abort one intent by id, and say whether the server ended it. `$2` is an optional ceiling for
+# callers that must not wait a whole admission budget.
+#
+# **An answer is not a yes.** The server refuses to abort an id that is not the standing one
+# (`409 restart_in_progress`), so this can never end somebody else's window — that safety is the
+# route's, not this script's. But `curl -sS` exits 0 for that refusal exactly as it does for a
+# `200`, and for `401`, and for `503`: every caller that read only curl's status was reading a
+# constant. One announced `dispatch admission is open again` for a window nothing had touched, and
+# the exit handler read it as permission to delete another build's note. The status code is the
+# answer; `$MAINTENANCE_ABORT_STATUS` carries it so the failure can be reported with what the
+# server actually said. This is the same mistake as reading a client timeout as a refusal, one
+# layer down: there, no answer was taken for "no"; here, any answer was taken for "yes".
 maintenance_abort() {
-  curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" --max-time "$MAINTENANCE_BUDGET" \
-    -o /dev/null -X DELETE \
+  local abort_curl=0
+  MAINTENANCE_ABORT_STATUS=$(curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" \
+    --max-time "${2:-$MAINTENANCE_BUDGET}" -o /dev/null -w '%{http_code}' -X DELETE \
     "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
     -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
     -H 'Content-Type: application/json' \
-    -d "{\"request_id\":\"$1\"}" >/dev/null 2>&1
+    -d "{\"request_id\":\"$1\"}" 2>/dev/null) || abort_curl=$?
+  [ "$abort_curl" = 0 ] || return 1
+  case "${MAINTENANCE_ABORT_STATUS:-}" in
+    2??) return 0 ;;
+  esac
+  return 1
 }
 
 # Which app process is answering right now. A receipt's `requested_instance_id` is only meaningful
@@ -1187,9 +1268,44 @@ except Exception:
     pass' 2>/dev/null || return 0
 }
 
+# **Written whole, or said out loud.** `printf > file` truncates before it writes, so a reader
+# arriving in that gap read an empty note, found no id in it, and fell through to the age gate —
+# the one branch that never asks about a pid. And both halves ended in `|| true`, so on a machine
+# where `~/.config/clawdline` cannot be written the note simply did not exist and nothing said so:
+# the recovery this whole block is about quietly became "wait 900 seconds". Write beside the file
+# and rename, so a reader sees either the old note or the new one, and report a failure to write —
+# the build still goes on, because the id is printed on every path that can leave one behind, but
+# the person is told that this run's window has no note behind it.
 maintenance_remember() {
-  mkdir -p "$(dirname "$MAINTENANCE_STATE_FILE")" 2>/dev/null || true
-  printf 'request_id=%s\npid=%s\n' "$1" "$$" >"$MAINTENANCE_STATE_FILE" 2>/dev/null || true
+  local dir tmp
+  dir=$(dirname "$MAINTENANCE_STATE_FILE")
+  if ! mkdir -p "$dir" 2>/dev/null; then
+    echo "!! could not create $dir; if this build is killed, $1 is the only handle on its window" >&2
+    return 1
+  fi
+  tmp=$(mktemp "$MAINTENANCE_STATE_FILE.XXXXXX" 2>/dev/null) || {
+    echo "!! could not write beside $MAINTENANCE_STATE_FILE; if this build is killed, $1 is the only handle on its window" >&2
+    return 1
+  }
+  if printf 'request_id=%s\npid=%s\n' "$1" "$$" >"$tmp" 2>/dev/null \
+      && mv "$tmp" "$MAINTENANCE_STATE_FILE" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+  echo "!! could not write $MAINTENANCE_STATE_FILE; if this build is killed, $1 is the only handle on its window" >&2
+  return 1
+}
+
+# **Forget by id, or not at all.** There is one note for the whole machine, and three places used
+# to `rm -f` it without reading it first — including the exit handler, which runs on paths where
+# this build never had a window. Removing another build's note is not a lost file: it is the only
+# machine-readable evidence that its window has an owner, and without it the next run has nothing
+# left but the age gate.
+maintenance_forget() {
+  [ -n "${MAINTENANCE_STATE_FILE:-}" ] || return 0
+  [ -r "$MAINTENANCE_STATE_FILE" ] || return 0
+  [ "$(maintenance_remembered request_id)" = "$1" ] || return 0
+  rm -f "$MAINTENANCE_STATE_FILE" 2>/dev/null || true
 }
 
 maintenance_remembered() {
@@ -1269,7 +1385,7 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
         fi
         echo "   reclaiming it: $MAINTENANCE_RECLAIM"
         if ! maintenance_abort "$STANDING_ID"; then
-          echo "!! the abandoned intent could not be ended; nothing has been changed"
+          echo "!! the abandoned intent could not be ended (HTTP ${MAINTENANCE_ABORT_STATUS:-none}); nothing has been changed"
           echo "   request_id: ${STANDING_ID:-unknown}"
           exit 1
         fi
@@ -1281,7 +1397,10 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
   # ---- Ask for the window. ---------------------------------------------------------------------
   # Written down before it is sent: a request that is accepted and never observed is exactly the
   # case this file exists to survive, and the id is the only handle on it.
-  maintenance_remember "$MAINTENANCE_REQUEST_ID"
+  # A note that could not be written does not stop the build: the id is printed on every path that
+  # can leave a window behind, so a person still has the handle. `maintenance_remember` has already
+  # said which one it is.
+  maintenance_remember "$MAINTENANCE_REQUEST_ID" || true
   MAINTENANCE_STARTED=$(date +%s)
   MAINTENANCE_DEADLINE=$(( MAINTENANCE_STARTED + MAINTENANCE_BUDGET ))
   MAINTENANCE_CURL=0
@@ -1291,6 +1410,10 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
       -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
       -H 'Content-Type: application/json' \
       -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}") || MAINTENANCE_CURL=$?
+  # It has left. Whatever this process saw next — an answer, a timeout, nothing — a window may now
+  # exist under that id, and this is the fact the exit handler ends on. Cleared again below only
+  # where the server has answered that there is none.
+  MAINTENANCE_POSTED=1
   if [ "$MAINTENANCE_CURL" != 0 ]; then
     # **Not a refusal — an unobserved answer.** The server may well have taken it, in which case
     # admission is closed right now under an id only this process knows. Go and read.
@@ -1317,10 +1440,15 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
   fi
   if [ "$MAINTENANCE_STATUS" = 404 ]; then
     echo "→ installed runtime has no restart-maintenance route; using one-time bootstrap preflight"
+    maintenance_forget "$MAINTENANCE_REQUEST_ID"
     MAINTENANCE_REQUEST_ID=
-    rm -f "$MAINTENANCE_STATE_FILE" 2>/dev/null || true
+    MAINTENANCE_POSTED=
   elif [ "$MAINTENANCE_STATUS" != 200 ]; then
-    # The other half of the split: the server answered, and what it answered was no.
+    # The other half of the split: the server answered, and what it answered was no. Observed and
+    # negative, so there is no window under this id and the exit handler must not knock for one —
+    # a `DELETE` from here could only come back as a second refusal, and be reported as a window
+    # this build might still be holding.
+    MAINTENANCE_POSTED=
     echo "!! restart maintenance was refused by the app (HTTP $MAINTENANCE_STATUS)"
     echo "   request_id: $MAINTENANCE_REQUEST_ID"
     maintenance_error "$MAINTENANCE_REPLY" | sed 's/^/   /'
@@ -1336,8 +1464,15 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
       maintenance_read "$MAINTENANCE_REPLY" >/dev/null 2>&1 || true
     done
     if [ "${PHASE:-}" != ready ]; then
-      maintenance_abort "$MAINTENANCE_REQUEST_ID" || true
-      echo "!! the terminal broker did not drain within ${MAINTENANCE_BUDGET}s; maintenance $MAINTENANCE_REQUEST_ID was aborted and nothing was replaced"
+      # `|| true` and an unconditional "was aborted" is how a script says a thing it has not
+      # checked. The abort is allowed to fail — the exit handler tries again — but the line the
+      # person reads has to be the one that happened.
+      if maintenance_abort "$MAINTENANCE_REQUEST_ID"; then
+        echo "!! the terminal broker did not drain within ${MAINTENANCE_BUDGET}s; maintenance $MAINTENANCE_REQUEST_ID was aborted and nothing was replaced"
+      else
+        echo "!! the terminal broker did not drain within ${MAINTENANCE_BUDGET}s and maintenance $MAINTENANCE_REQUEST_ID could not be ended (HTTP ${MAINTENANCE_ABORT_STATUS:-none}); nothing was replaced"
+        echo "   dispatch admission may still be closed under that id"
+      fi
       exit 1
     fi
   fi
@@ -1391,31 +1526,41 @@ if [ "$WAS_RUNNING" = "1" ]; then
   if pgrep -x Clawdline >/dev/null 2>&1; then
     if [ "$MAINTENANCE_ACTIVE" = 1 ]; then
       echo "→ replacement is listening; waiting for fresh executor reconciliation"
+      # **180 seconds, as a clock rather than as a count.** `seq 1 180` with a five-second read and
+      # a second of sleep inside it is 1080 seconds in the worst case, and the number this loop is
+      # named after is the one `MAINTENANCE_WORST_WINDOW` is derived from — so the count has to be
+      # a bound on the wait, not on the attempts.
+      RECONCILE_DEADLINE=$(( $(date +%s) + MAINTENANCE_RECONCILE_SECONDS ))
       RECONCILED=0
-      for _ in $(seq 1 180); do
-        RESTART_REPLY=$(curl -sS --max-time 5 \
+      while :; do
+        RESTART_REPLY=$(curl -sS --connect-timeout "$MAINTENANCE_CONNECT_SECONDS" --max-time 5 \
           "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
           -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" || true)
         PHASE=$(printf '%s' "$RESTART_REPLY" | /usr/bin/python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("restart",{}).get("phase",""))
 except Exception: pass')
         if [ "$PHASE" = complete ]; then RECONCILED=1; break; fi
+        [ "$(date +%s)" -ge "$RECONCILE_DEADLINE" ] && break
         sleep 1
       done
       if [ "$RECONCILED" != 1 ]; then
-        curl -sS --max-time 5 -X DELETE \
-          "http://127.0.0.1:$PORT/v1/orchestrator/maintenance/restart" \
-          -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" \
-          -H 'Content-Type: application/json' \
-          -d "{\"request_id\":\"$MAINTENANCE_REQUEST_ID\"}" >/dev/null || true
-        echo "!! replacement did not reconcile in 180s; maintenance $MAINTENANCE_REQUEST_ID was explicitly aborted"
+        # Same rule as the drain timeout above: the abort is allowed to fail, the sentence is not
+        # allowed to be wrong about it.
+        if maintenance_abort "$MAINTENANCE_REQUEST_ID" 5; then
+          echo "!! replacement did not reconcile in ${MAINTENANCE_RECONCILE_SECONDS}s; maintenance $MAINTENANCE_REQUEST_ID was explicitly aborted"
+        else
+          echo "!! replacement did not reconcile in ${MAINTENANCE_RECONCILE_SECONDS}s and maintenance $MAINTENANCE_REQUEST_ID could not be ended (HTTP ${MAINTENANCE_ABORT_STATUS:-none})"
+          echo "   dispatch admission may still be closed under that id"
+        fi
         exit 1
       fi
       MAINTENANCE_ACTIVE=0
       # The window is closed and the receipt is `complete`. Forget the id so `cleanup_build` has
-      # nothing to end, and forget the note the next run would have read as an abandoned intent.
+      # nothing to end, and forget the note the next run would have read as an abandoned intent —
+      # by id, because by the time a build gets here another one may have written its own.
+      maintenance_forget "$MAINTENANCE_REQUEST_ID"
       MAINTENANCE_REQUEST_ID=
-      rm -f "${MAINTENANCE_STATE_FILE:-}" 2>/dev/null || true
+      MAINTENANCE_POSTED=
     fi
     echo "✓ done (relaunched, since it was running before)"
   else
