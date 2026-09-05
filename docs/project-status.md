@@ -275,9 +275,8 @@ row and of nothing else.** `ok` and `fail` are not alive and do not decay, so th
 old they are and whether or not `updated_at` is there: a verdict is not a claim about something still
 moving, so there is nothing to hold it to a ceiling with. "The last run of this tree failed" stays
 true until the next run overwrites the file — and every run rewrites it, so a verdict only survives
-while there has been nothing newer to say. The deploy chip
-beside it already behaves this way, and two neighbouring chips with two expiry rules is a thing no
-reader will ever get right.
+while there has been nothing newer to say. The deploy chip beside it already behaves this way, and
+two neighbouring chips with two expiry rules is a thing no reader will ever get right.
 
 Write to a temporary name and rename it into place, as with every other file on this page.
 
@@ -287,9 +286,10 @@ own vocabulary gets that vocabulary in the bar. A row with no `label` is drawn a
 `phase` is the same as no `phase` at all.
 
 **Optional does not always mean free.** `started_at` is optional the way the required list above
-says — a row without it is still drawn — but it is what the bar is measured from, so a `running` row
-that omits it draws a *full* bar on the Mac and an unknown one on the browser page. Write it. It is
-one call to `date +%s` and it is the difference between a bar and a decoration.
+says — a row without it is still drawn — but it is what the bar is measured *from*. A `running` row
+that carries `typical_seconds` and no `started_at` draws a **full** bar on the Mac, because the
+elapsed time is then counted from the epoch; the browser page draws its unknown bar instead. Write
+it. It is one call to `date +%s`, and it is the difference between a bar and a decoration.
 
 Working example: [`examples/run--Users-you-code-atrium.json`](examples/run--Users-you-code-atrium.json).
 
