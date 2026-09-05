@@ -98,6 +98,32 @@ for (const [file] of skillTriggers) {
         `${file}: the stub has copied the receipt route instead of pointing at the guide`);
 }
 
+// The same shape, the same day, a second clause. On 2026-09-05 a session that had just taken four
+// screenshots *for the person* read this list, saw handing work out and a delivery receipt,
+// correctly concluded neither was it, and ended its turn pasting `/var/folders/…` paths at someone
+// reading on a phone. It could not have known: until now nothing in the description said a picture
+// was one of the things this route carries. A trigger that reaches a reader who is not dispatching
+// is the whole mechanism, so it is held here in both spellings — and held to going red when
+// removed, because the first clause above was lost exactly once by a rewrite that meant no harm.
+const imageTriggers = [
+    ["skills/clawdline/SKILL.md", ["local image", "screenshot"]],
+    ["skills/clawdline/SKILL.zh-TW.md", ["本機圖片", "截圖"]],
+];
+const carriesImageTrigger = (text, phrase, file) => {
+    const frontmatter = text.split("---")[1]?.toLowerCase() ?? "";
+    assert.ok(frontmatter.includes(phrase.toLowerCase()),
+        `${file}: nothing in the trigger list would make a session that just took a screenshot `
+        + `look up how to put it in front of the person`);
+};
+for (const [file, phrases] of imageTriggers) {
+    const text = fs.readFileSync(path.join(root, file), "utf8");
+    for (const phrase of phrases) {
+        carriesImageTrigger(text, phrase, file);
+        assert.throws(() => carriesImageTrigger(text.replaceAll(phrase, "removed"), phrase, file),
+            `${file}: removing the "${phrase}" trigger must make this red`);
+    }
+}
+
 for (const file of ["skills/clawdline/SKILL.md", "skills/clawdline/SKILL.zh-TW.md"]) {
     const text = fs.readFileSync(path.join(root, file), "utf8");
     assert.ok(text.includes("POST /v1/orchestrator/detached-tasks"),

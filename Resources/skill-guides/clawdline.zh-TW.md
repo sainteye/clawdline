@@ -194,8 +194,9 @@ terminal id 每次 app 重啟就重發，label 活得比它久。線上的協定
 它時寫**「MongoDB 現代化與平台收尾」（`%88`，~/code/foodblogs）**，之後再用簡稱。機器定址不變——
 `to_session` 還是只吃精確的 id，沒有任何路由會用標題去比對。
 
-**生成的點陣圖要當本機圖片送，不要塞進文字。** ImageGen 或其他本機工具產生
-PNG／JPEG／WebP／GIF／TIFF 後，若要讓另一個 live session 看見，請用上面同一組來源／目標 id、
+**本機圖片要當圖片送，不要貼路徑。** 你剛為使用者拍的截圖、ImageGen 或其他本機工具剛產生的圖表——
+任何要讓 live session 看見的本機 PNG／JPEG／WebP／GIF／TIFF。`/var/folders/…` 那種路徑手機打不開，
+所以請用上面同一組來源／目標 id、
 token 與 idempotency key 呼叫 `POST /v1/orchestrator/messages`，並帶
 `images:[{"path":"/絕對/本機/路徑.png"}]`。絕不貼 base64、不自造或保存 public URL，也不退回
 舊的 `/send`：Clawdline 會讀本機檔、正規化後放進自己管理的 store，訊息只帶 opaque、會過期的
