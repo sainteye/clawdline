@@ -332,7 +332,8 @@ enum Targets {
         // A capture that fails, or a screen that no longer parses, takes the numbered path: that
         // is what this did before this branch existed, and a dialog the reader is looking at right
         // now is far more likely to be the common shape than a shape nothing could read.
-        let seen = capture(session).flatMap {
+        let screen = capture(session)
+        let seen = screen.flatMap {
             SessionState.menu($0, assistant: session.assistant ?? .claude, hookWaiting: true)
         }
         // **This path had no record of itself, and that is what let it fail silently.** Answering
@@ -345,7 +346,8 @@ enum Targets {
         // decision that exists.
         Log.write("answer: want=\(want) read=\(seen == nil ? "no" : "yes")"
                   + (seen.map { " numbered=\($0.numbered) caret=\($0.selected.map(String.init) ?? "-")"
-                                + " steps=\($0.steps.count) submit=\($0.submit == nil ? "no" : "yes")" } ?? ""))
+                                + " steps=\($0.steps.count) submit=\($0.submit == nil ? "no" : "yes")" }
+                     ?? " — " + (screen.map(shape(of:)) ?? "nothing was captured")))
         if let menu = seen, !menu.numbered { return highlight(row: want, of: menu, on: session) }
         if let failure = keystroke(bytes, to: session) { return failure }
 
@@ -357,6 +359,22 @@ enum Targets {
         // are sent by the button under them, and that is ``submitMenu(on:)``'s job.
         if seen?.submit != nil { return nil }
         return confirmSelection(want, on: session, asked: seen)
+    }
+
+    /// What a screen looked like to a parser that could not read it.
+    ///
+    /// **"That screen no longer reads as a menu" names a verdict without naming its evidence.**
+    /// The same capture read correctly a fraction of a second earlier, so the interesting fact is
+    /// not that it failed — it is which way the screen differs from the one that worked. These
+    /// four separate the shapes that failure comes in: a read that came back short, a screen that
+    /// scrolled, a dialog that closed, and rows that are still there under something new.
+    private static func shape(of screen: String) -> String {
+        let plain = Ansi.plain(screen)
+        let lines = plain.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let filled = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let last = filled.last.map { String($0.trimmingCharacters(in: .whitespaces).prefix(28)) }
+        return "bytes=\(screen.utf8.count) lines=\(lines.count) filled=\(filled.count)"
+            + " last=\(last.map { "\u{22}\($0)\u{22}" } ?? "-")"
     }
 
     /// Answer a picker that does not take digits, by moving its highlight onto the row and
@@ -462,7 +480,14 @@ enum Targets {
             // guards against calling a screen a menu unprompted, which is not this.
             guard let menu = SessionState.menu(screen, assistant: session.assistant ?? .claude,
                                                hookWaiting: true) else {
-                Log.write("answer: confirm \(attempt) — that screen no longer reads as a menu")
+                // **No menu is two different answers wearing one sentence.** The picker may have
+                // closed because the digit answered the question — the common, correct outcome on
+                // an ordinary row — or the screen may have become unreadable, which is the bug
+                // this logging was added to find. Read on 2026-09-05 as the second when it was
+                // the first, and the log then said an answer had been given up on seconds after
+                // it landed. The shape is printed either way; the sentence no longer guesses.
+                Log.write("answer: confirm \(attempt) — no menu on that screen; it was either"
+                          + " answered or is unreadable — \(shape(of: screen))")
                 continue
             }
             let verdict = confirmation(want: want, asked: asked, now: menu)
@@ -474,9 +499,12 @@ enum Targets {
             case .notYet: continue
             }
         }
-        // Two readings and neither could commit: the highlight never arrived where it was asked
-        // for. Said out loud, because the caller is about to be told the keystroke was delivered.
-        Log.write("answer: gave up without confirming want=\(want)")
+        // Two readings and neither could commit. **This is not necessarily a failure**: a digit
+        // that answered its question outright leaves no picker to confirm, and that path arrives
+        // here too. It is said out loud because the caller is about to be told the keystroke was
+        // delivered, and this is the one line that distinguishes "delivered and finished" from
+        // "delivered and stranded" — which the two readings above have already described.
+        Log.write("answer: sent no Return for want=\(want); see the two readings above")
         return nil
     }
 
