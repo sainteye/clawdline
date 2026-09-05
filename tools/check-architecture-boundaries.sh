@@ -114,7 +114,12 @@ main_lines=$(line_count Tests/main.swift)
 # stayed green because the slack check below only refuses a gap over 200 — which is the shape this
 # comment block keeps warning about, found by the reviewer of that very delivery and not by
 # anything here. A relocation lowers the ceiling; only a feature raises it.
-orchestrator_ceiling=10585
+# 10,604 is the read-only delivery's landing state. `nothing_to_land` is a feature and not a
+# relocation: nineteen lines of route, all of them inside `updateLanding` — the machine-only
+# credential it shares with `landed`, the field it refuses, and the evidence gate that reads the
+# predicate `Sources/OrchestratorTaskShape.swift` owns. The predicate, the enum case and its
+# reasons went to that file rather than here, which is why the raise is nineteen and not ninety.
+orchestrator_ceiling=10604
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

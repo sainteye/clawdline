@@ -30,6 +30,41 @@ private enum FeatureAttributionSchedule {
 }
 
 extension UsageLedger {
+    /// **What the registry says about one task now**, as against the copy a ledger row froze when
+    /// that task ended.
+    ///
+    /// The ledger's `landing_state` is a point-in-time sample taken at `collect(taskRecord:)`,
+    /// which runs when a task reaches a terminal state — and a landing is closed *after* the work
+    /// ends, so the field is almost always absent at sampling time. The only thing that ever
+    /// filled it in was the backfill import on launch. Measured on 2026-09-05 over this Mac's own
+    /// store: of the tasks whose landing closed before the last launch, 79 of 79 carried the
+    /// copy; of those closed after it, 0 of 6 did, and two of them were sitting in the Projects
+    /// page's "done, never landed" block while the broker held a verified `landed` for each.
+    ///
+    /// So this is the live half of a read-time join, and the stored copy stays what it always
+    /// was: history. Same shape and same locking discipline as ``UsageLedger/TaskFacts``.
+    struct LiveTaskRecord: Equatable {
+        /// The obligation's state right now, or nil when the record carries no landing at all.
+        var landingState: String?
+        /// The task's own title — what the work *was*, as against which root owned it.
+        var title: String?
+        /// Whether the task is still running, so one reader answers both questions from one
+        /// registry snapshot.
+        var isLive: Bool
+        /// Whether this Mac holds no durable evidence that the task wrote to a repository, by
+        /// ``Orchestrator/nothingToLandAdmission(for:)`` — the same predicate the landing route
+        /// admits `nothing_to_land` by, so a row cannot advise a close the route would refuse.
+        var nothingToLand: Bool
+
+        init(landingState: String? = nil, title: String? = nil, isLive: Bool = false,
+             nothingToLand: Bool = false) {
+            self.landingState = landingState
+            self.title = title
+            self.isLive = isLive
+            self.nothingToLand = nothingToLand
+        }
+    }
+
     /// What the durable broker record contributes to one row's evidence. Six fields, and no
     /// prompt, instruction body, transcript, working directory or file path among them.
     struct TaskFacts: Equatable {
@@ -358,22 +393,32 @@ extension Orchestrator {
         return facts
     }
 
-    /// **The tasks this Mac still has running**, so a worktree that is being worked in right now
-    /// is not reported as debris.
+    /// **The live half of the Projects read's join**, one entry per task the registry still
+    /// holds: its landing obligation, its title, whether it is running, and whether anything it
+    /// wrote is on record.
     ///
-    /// The absence of an id here is the half of this answer that is safe to trust: the registry
-    /// holds every live task, so a task it does not hold is certainly not running. Its presence
-    /// is bounded by retention — a task old enough to have been swept is gone from here whatever
-    /// happened to it — and that is the right direction for this reader, which asks the question
-    /// only about work no stored row has already called finished.
+    /// Absence means the registry no longer holds that task — it is capped and swept — not that
+    /// the task never landed. A reader that finds no entry here must fall back to the row's own
+    /// frozen copy and say which of the two it is showing; ``UsageProjectWorktreeService`` does
+    /// both. `isLive` is the half of the liveness answer that is safe to trust in the other
+    /// direction too: the registry holds every live task, so one it does not hold is certainly
+    /// not running.
     ///
     /// Same shape and same locking discipline as ``Orchestrator/usageFeatureTaskFacts()`` above,
     /// and it lives beside it for the same reason that one is not in `Sources/Orchestrator.swift`.
-    static func usageLiveTaskIDs() -> Set<String> {
+    static func usageLiveTaskRecords() -> [String: UsageLedger.LiveTaskRecord] {
         load()
         lock.lock()
         let snapshots = Array(tasks.values)
         lock.unlock()
-        return Set(snapshots.filter { !$0.state.isTerminal }.map(\.id))
+        var records: [String: UsageLedger.LiveTaskRecord] = [:]
+        for task in snapshots {
+            records[task.id] = UsageLedger.LiveTaskRecord(
+                landingState: task.landing?.state.rawValue,
+                title: UsageLedger.featureNonEmpty(task.title),
+                isLive: !task.state.isTerminal,
+                nothingToLand: nothingToLandAdmission(for: task).isAdmitted)
+        }
+        return records
     }
 }

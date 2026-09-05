@@ -4262,9 +4262,14 @@ final class UsageProjectWorktreeService {
     /// The ladder is evaluated in this order, and each rung is a stored fact rather than an
     /// inference:
     ///
-    /// 1. `landed` — some row carries `landing_state = landed`: a root recorded that this
+    /// 1. `landed` — some row's task carries `landing = landed`: a root recorded that this
     ///    delivery reached its target branch. It outranks everything, including a task that
     ///    reported failure, because the branch is in the tree whatever the child said.
+    /// 1a. `nothing_to_land` — some row's task was settled as having had nothing to land, and
+    ///    none landed. A read-only audit has no target and no commit, so `landed` cannot say
+    ///    this and `abandoned` would say the work was given up when its artifact shipped. It
+    ///    sits beside `landed` rather than above `delivered` for one reason: both are closed
+    ///    obligations, and this block exists to list the open ones.
     /// 2. `delivered` — some row's task reached `success`, and no landing says it landed. This is
     ///    "done, not landed", which includes an open landing obligation (`pending`) and one that
     ///    was given up (`abandoned`); both spellings travel in `landingStates` beside the word.
@@ -4277,8 +4282,16 @@ final class UsageProjectWorktreeService {
     ///    second shape is what debris looks like in this store — `b57fc96f` sat at `briefed` for
     ///    41 hours because the session died before anything wrote a terminal state.
     /// 5. `unknown` — no row carried any task state at all.
+    ///
+    /// **Every rung is read from the live registry record where there still is one**, and from
+    /// the row's frozen copy only where the registry has swept the task. `landingStates` is what
+    /// is true now, `storedLandingStates` is what the row recorded, and `landingBasis` says which
+    /// of the two each verdict rests on — because a stored copy that can disagree with the live
+    /// record must not be handed over as the current answer without saying so.
     enum Outcome: String, CaseIterable {
-        case landed, delivered, active, abandoned, unknown
+        case landed
+        case nothingToLand = "nothing_to_land"
+        case delivered, active, abandoned, unknown
 
         /// Strongest first. A worktree's own outcome is this ladder applied to every row of every
         /// Feature it carries, which is the same answer as the strongest of its Features'.
@@ -4333,13 +4346,15 @@ final class UsageProjectWorktreeService {
     static let schemaVersion = 1
 
     private let readRows: (UsageLedger.AnalyticsFilter) -> UsageLedger.AnalyticsRead
-    /// The ids of tasks this Mac still has running. Injected the way `UsageQueryService` injects
-    /// its schedule labels: a test says which tasks are live without a registry existing.
-    private let readLiveTaskIDs: () -> Set<String>
+    /// What the task registry says right now about the tasks these rows belong to: the landing
+    /// obligation, the title, whether it is still running, and whether anything it wrote is on
+    /// record. Injected the way `UsageQueryService` injects its schedule labels: a test says what
+    /// the registry holds without a registry existing.
+    private let readLiveTaskRecords: () -> [String: UsageLedger.LiveTaskRecord]
 
     init() {
         readRows = { UsageLedger.shared.analyticsRead($0) }
-        readLiveTaskIDs = { Orchestrator.usageLiveTaskIDs() }
+        readLiveTaskRecords = { Orchestrator.usageLiveTaskRecords() }
     }
 
     /// Test seam. Production never enters here: the bounded predicate lives in
@@ -4347,7 +4362,8 @@ final class UsageProjectWorktreeService {
     init(rows: @escaping () -> [UsageLedger.Row],
          acceptedFeatures: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
          acceptedProjects: @escaping () -> [String: UsageLedger.AcceptedAttribution] = { [:] },
-         liveTaskIDs: @escaping () -> Set<String> = { [] }) {
+         liveTaskIDs: @escaping () -> Set<String> = { [] },
+         liveTaskRecords: @escaping () -> [String: UsageLedger.LiveTaskRecord] = { [:] }) {
         readRows = { _ in
             let rows = rows()
             return UsageLedger.AnalyticsRead(
@@ -4355,7 +4371,16 @@ final class UsageProjectWorktreeService {
                 latestLedgerObservation: rows.map(\.updatedAt).max(),
                 acceptedFeatures: acceptedFeatures(), acceptedProjects: acceptedProjects())
         }
-        readLiveTaskIDs = liveTaskIDs
+        // A test that names live ids and nothing else is naming exactly that: those tasks are
+        // running, and the registry holds no landing for them. Anything it does not name has no
+        // record at all, which is the case where the row's own frozen copy is all there is.
+        readLiveTaskRecords = {
+            var records = liveTaskRecords()
+            for id in liveTaskIDs() where records[id] == nil {
+                records[id] = UsageLedger.LiveTaskRecord(isLive: true)
+            }
+            return records
+        }
     }
 
     /// A closed query, refused on an unknown or repeated key for the same reason the analytics
@@ -4480,17 +4505,21 @@ final class UsageProjectWorktreeService {
             worktrees[id, default: []].append(row)
         }
 
-        let live = readLiveTaskIDs()
+        // **The join that makes this read current.** One registry snapshot, applied to every row
+        // below: `records` is what is true now and the rows keep what they froze.
+        let records = readLiveTaskRecords()
+        let live = Set(records.filter { $0.value.isLive }.keys)
         var payloads: [[String: Any]] = []
         var withoutFeature = 0
         for (id, rows) in worktrees {
-            let features = Self.features(rows, accepted: reading.acceptedFeatures, live: live)
+            let readings = rows.map { Reading($0, records: records) }
+            let features = Self.features(readings, accepted: reading.acceptedFeatures, live: live)
             guard !features.isEmpty else {
                 // The 58-checkout answer the person did not ask for. Counted, never listed.
                 withoutFeature += 1
                 continue
             }
-            let carried = rows.filter { reading.acceptedFeatures[$0.intervalKey] != nil }
+            let carried = readings.filter { reading.acceptedFeatures[$0.row.intervalKey] != nil }
             payloads.append(Self.worktree(id: id, rows: carried, features: features, live: live))
         }
         payloads.sort {
@@ -4532,13 +4561,48 @@ final class UsageProjectWorktreeService {
         ])
     }
 
+    /// **One ledger row read together with the registry record for the task that produced it.**
+    ///
+    /// The row is history and is never edited — this store is append-only, and a sealed row's
+    /// numbers may already have been quoted in a month's total. The record is the answer. Both
+    /// travel together so that the payload can say which of the two each verdict rests on, which
+    /// is the difference between a stale reading and a stale reading that admits it.
+    struct Reading {
+        let row: UsageLedger.Row
+        let live: UsageLedger.LiveTaskRecord?
+
+        init(_ row: UsageLedger.Row, records: [String: UsageLedger.LiveTaskRecord]) {
+            self.row = row
+            self.live = row.taskID?.nonEmpty.flatMap { records[$0] }
+        }
+
+        /// The stored-copy-only reading: what a row says when the registry no longer holds its
+        /// task, and the shape a unit test drives the ladder with.
+        init(stored row: UsageLedger.Row) {
+            self.row = row
+            self.live = nil
+        }
+
+        /// The obligation as it stands now. The registry wins wherever it still has the task —
+        /// including when it holds no landing at all, which is then the true answer and not an
+        /// absence to paper over with the copy.
+        var landingState: String? {
+            guard let live else { return row.landingState?.nonEmpty }
+            return live.landingState?.nonEmpty
+        }
+
+        var storedLandingState: String? { row.landingState?.nonEmpty }
+        /// `live` where the registry answered for this row, `stored` where only the copy is left.
+        var basis: String { live == nil ? "stored" : "live" }
+    }
+
     /// The Features one worktree carries, each with the outcome of its own rows.
-    private static func features(_ rows: [UsageLedger.Row],
+    private static func features(_ rows: [Reading],
                                  accepted: [String: UsageLedger.AcceptedAttribution],
                                  live: Set<String>) -> [[String: Any]] {
-        var grouped: [String: (label: String, rows: [UsageLedger.Row])] = [:]
+        var grouped: [String: (label: String, rows: [Reading])] = [:]
         for row in rows {
-            guard let head = accepted[row.intervalKey] else { continue }
+            guard let head = accepted[row.row.intervalKey] else { continue }
             if grouped[head.id] == nil { grouped[head.id] = (head.label, []) }
             grouped[head.id]?.rows.append(row)
         }
@@ -4554,47 +4618,112 @@ final class UsageProjectWorktreeService {
         }
     }
 
-    private static func worktree(id: String, rows: [UsageLedger.Row],
+    private static func worktree(id: String, rows: [Reading],
                                  features: [[String: Any]], live: Set<String>) -> [String: Any] {
         var payload = summary(rows, live: live)
         payload["id"] = id
         payload["features"] = features
+        payload["needs"] = needs(rows, live: live) as Any? ?? NSNull()
         return payload
     }
 
-    /// The shape both a worktree and one of its Features report: the verdict, the stored words it
-    /// was read from, and the tasks and instants behind it.
-    private static func summary(_ rows: [UsageLedger.Row], live: Set<String>) -> [String: Any] {
+    /// **What would take one row out of the "done, never landed" block**, or nil where nothing
+    /// would: a row that is already settled needs nothing, and this says so by not answering.
+    ///
+    /// It is the means and not the outcome. Nothing here closes anything: a landing record is
+    /// durable and terminal, and one closed on a guess is worse than a wrong count. What it does
+    /// is tell the two cases apart using the same predicate the landing route admits
+    /// `nothing_to_land` by, so a row can never advise a close the route would refuse.
+    ///
+    /// * `no_record` — the registry has swept at least one of these tasks. There is nothing left
+    ///   to call `POST /v1/orchestrator/tasks/:id/landing` with, so this row is history now.
+    /// * `nothing_to_land` — every one of its tasks is admissible: no claims, no commits on the
+    ///   branch, no dirty checkout, no target already named.
+    /// * `land_or_abandon` — something here wrote, so a person decides. That is the whole of the
+    ///   remaining backlog once the two above are taken out.
+    static func needs(_ rows: [Reading], live: Set<String>) -> String? {
+        guard outcome(rows, live: live) == .delivered else { return nil }
+        let tasks = Set(rows.compactMap { $0.row.taskID?.nonEmpty })
+        guard !tasks.isEmpty else { return "no_record" }
+        let known = rows.compactMap { $0.live }
+        guard known.count == rows.filter({ $0.row.taskID?.nonEmpty != nil }).count else {
+            return "no_record"
+        }
+        return known.allSatisfy(\.nothingToLand) ? "nothing_to_land" : "land_or_abandon"
+    }
+
+    /// The shape both a worktree and one of its Features report: the verdict, the words it was
+    /// read from, what the work itself was, and the tasks and instants behind it.
+    private static func summary(_ rows: [Reading], live: Set<String>) -> [String: Any] {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        let tasks = Set(rows.compactMap { $0.taskID?.nonEmpty }).sorted()
-        let landingStates = Set(rows.compactMap { $0.landingState?.nonEmpty }).sorted()
-        let taskStates = Set(rows.compactMap { $0.taskState?.nonEmpty }).sorted()
+        let tasks = Set(rows.compactMap { $0.row.taskID?.nonEmpty }).sorted()
+        let landingStates = Set(rows.compactMap(\.landingState)).sorted()
+        let stored = Set(rows.compactMap(\.storedLandingState)).sorted()
+        let taskStates = Set(rows.compactMap { $0.row.taskState?.nonEmpty }).sorted()
+        let bases = Set(rows.filter { $0.row.taskID?.nonEmpty != nil }.map(\.basis))
         return [
             "outcome": outcome(rows, live: live).rawValue,
             "runs": tasks.isEmpty ? rows.count : tasks.count,
             "tasks": tasks,
             "liveTasks": tasks.filter(live.contains),
             "taskStates": taskStates,
+            // What is true now, what the rows froze, and which of the two the verdict rests on.
             "landingStates": landingStates,
-            "firstSeenAt": rows.map(\.startedAt).min().map(formatter.string(from:))
+            "storedLandingStates": stored,
+            "landingBasis": bases.count == 1 ? (bases.first ?? "none")
+                : (bases.isEmpty ? "none" : "mixed"),
+            "work": work(rows) as Any? ?? NSNull(),
+            "firstSeenAt": rows.map(\.row.startedAt).min().map(formatter.string(from:))
                 as Any? ?? NSNull(),
-            "lastSeenAt": rows.map(\.startedAt).max().map(formatter.string(from:))
+            "lastSeenAt": rows.map(\.row.startedAt).max().map(formatter.string(from:))
                 as Any? ?? NSNull(),
         ]
     }
 
+    /// **What the work was**, as against which root owned it.
+    ///
+    /// Every card on the Projects page was titled with the accepted head's label — `Clawdfather —
+    /// handoff 18bde7c3` on nine of them at once — because that label is the *work line* a
+    /// classifier grouped by, and a work line is not an answer to "what is this". The task's own
+    /// title is, and it is already stored: `6769836c` calls itself 「一輪 correction：handoff
+    /// sender contract 的八個 finding」.
+    ///
+    /// **The rule where one Feature covers several tasks is the most recently seen one**, and it
+    /// is a headline rather than a summary: nothing here invents a sentence, and the alternatives
+    /// stay one lookup away because `tasks` is in the same payload. Most such groups are a
+    /// delivery and its corrections, and the newest is the one somebody is deciding about.
+    ///
+    /// A title lives only in the registry — the ledger stores none — so this is empty for a task
+    /// old enough to have been swept, and empty is what it says rather than borrowing the label
+    /// above it.
+    private static func work(_ rows: [Reading]) -> String? {
+        rows.filter { $0.live?.title != nil }
+            .max { $0.row.startedAt < $1.row.startedAt }?.live?.title
+    }
+
     /// The ladder in ``Outcome``, and the only place it is written down.
-    static func outcome(_ rows: [UsageLedger.Row], live: Set<String>) -> Outcome {
+    static func outcome(_ rows: [Reading], live: Set<String>) -> Outcome {
         if rows.contains(where: { $0.landingState == Orchestrator.LandingState.landed.rawValue }) {
             return .landed
         }
-        if rows.contains(where: { $0.taskState == Orchestrator.State.success.rawValue }) {
+        if rows.contains(where: {
+            $0.landingState == Orchestrator.LandingState.nothingToLand.rawValue
+        }) {
+            return .nothingToLand
+        }
+        if rows.contains(where: { $0.row.taskState == Orchestrator.State.success.rawValue }) {
             return .delivered
         }
-        if rows.contains(where: { $0.taskID.map(live.contains) == true }) { return .active }
-        if rows.contains(where: { $0.taskState?.nonEmpty != nil }) { return .abandoned }
+        if rows.contains(where: { $0.row.taskID.map(live.contains) == true }) { return .active }
+        if rows.contains(where: { $0.row.taskState?.nonEmpty != nil }) { return .abandoned }
         return .unknown
+    }
+
+    /// The ladder read from stored rows alone, which is what a row carries once the registry has
+    /// swept its task.
+    static func outcome(_ rows: [UsageLedger.Row], live: Set<String>) -> Outcome {
+        outcome(rows.map(Reading.init(stored:)), live: live)
     }
 }
 

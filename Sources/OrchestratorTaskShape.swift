@@ -22,8 +22,62 @@ extension Orchestrator {
         case none, worktree
     }
 
+    /// **The obligation's four spellings, three of which are final.**
+    ///
+    /// `nothingToLand` is the one a read-only delivery needs, and it was added because five
+    /// children on this Mac had no honest state at all: they audited, wrote nothing to any
+    /// repository, and shipped an artifact under somebody else's commit. `landed` wants a target
+    /// and a commit they do not have; `abandoned` says the work was given up, which is a false
+    /// sentence about an audit that was read and acted on. So they sat in the Projects page's
+    /// "done, never landed" block for ever, and a block that cannot be emptied is one nobody
+    /// reads.
+    ///
+    /// It is as final as the other two — see the settled check in
+    /// ``Orchestrator/updateLanding(taskID:secret:orchestratorToken:raw:now:)`` — and it is
+    /// admissible only where this Mac holds no durable evidence that the task wrote anything;
+    /// ``Orchestrator/nothingToLandAdmission(for:)`` is the one place that rule is written down.
     enum LandingState: String {
         case pending, landed, abandoned
+        case nothingToLand = "nothing_to_land"
+
+        /// Whether this obligation is closed. A settled state may never move to another one.
+        var isSettled: Bool { self != .pending }
+    }
+
+    /// Whether a task may be closed as having had nothing to land, and if not, the stored fact
+    /// that says otherwise.
+    ///
+    /// **This is a refusal built out of evidence, not a proof of innocence.** A task that ran in
+    /// the shared checkout leaves no record here of what it wrote — `git status` in that tree is
+    /// the only witness, and it belongs to nobody in particular — so what this can do is refuse
+    /// every case the registry *can* see: a declared claim, commits on the delivery branch, a
+    /// dirty checkout, counts it does not have, and an obligation whose target a root has already
+    /// named. The remaining assertion is the caller's, which is why the route accepts it only
+    /// from the machine credential.
+    static func nothingToLandAdmission(for task: Task) -> NothingToLandAdmission {
+        if !task.claimKeys.isEmpty {
+            return .refused("this task claimed \(task.claimKeys.count) path(s) to write")
+        }
+        if let target = task.landing?.target, !target.isEmpty {
+            return .refused("its landing obligation already names the target \(target)")
+        }
+        if let worktree = task.worktree {
+            guard let commits = worktree.commits, let dirty = worktree.dirty else {
+                return .refused("this Mac has no commit count for its checkout, and an unknown "
+                                + "count is not permission")
+            }
+            if commits > 0 { return .refused("its branch carries \(commits) commit(s)") }
+            if dirty { return .refused("its checkout has uncommitted changes") }
+        }
+        return .admitted
+    }
+
+    enum NothingToLandAdmission: Equatable {
+        case admitted
+        /// The stored fact that contradicts "there was nothing to land".
+        case refused(String)
+
+        var isAdmitted: Bool { self == .admitted }
     }
 
     /// The root-owned obligation after a child has delivered. This is deliberately observational:
