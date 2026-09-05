@@ -4539,7 +4539,7 @@ final class UsageProjectWorktreeService {
             // without the store being short. It is never the word for an empty answer.
             "status": truncated ? "partial" : "available",
             "policy": "one_unambiguous_accepted_head",
-            "outcomeRule": "landed_then_delivered_then_live_then_abandoned",
+            "outcomeRule": "landed_then_settled_then_delivered_then_live_then_abandoned",
             "generatedAt": formatter.string(from: now),
             "range": range,
             "project": ["id": UsageQueryService.projectID(matched.key),

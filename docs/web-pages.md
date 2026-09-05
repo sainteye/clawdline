@@ -196,8 +196,21 @@ ledger, alongside 35 `landed` and 6 debris, out of 150 worktrees the ledger reme
 on the disk. Thirteen more resolved to no Project at all. So it is the open block at the
 top, with the branch each one is on. The payload carries no `branch` on purpose (the ledger stores
 none and the registry that does is swept), so what is drawn is the convention
-`clawdline/task/<worktree id>` under a label that says it is one. The other four rungs are closed
+`clawdline/task/<worktree id>` under a label that says it is one. The other five rungs are closed
 `<details>` underneath, each with the stored fact it rests on rather than a description of itself.
+
+**Each card is headed by what the task was doing.** Until 2026-09-05 it was headed by the Feature's
+label, which is the *work line* a classifier grouped by: nine cards in a row read `Clawdfather —
+handoff 18bde7c3` and 「光看標題真的看不出來分別」. The heading is now the task's own stored title
+(`work` in the payload), and the label keeps its place one line down under a word saying which of
+the two it is. A task old enough for the registry to have swept it has no title anywhere, and then
+the label is the heading again rather than the card going blank.
+
+**And every row in the block says which of the two things it needs**, because the block exists to
+be emptied: a person's landing decision where something wrote, a close as `nothing_to_land` where
+this Mac holds no evidence anything did, and nothing at all where the registry has swept the task
+and there is no record left to close. Nothing on this page closes anything — a landing record is
+durable and terminal, and one closed on a guess is worse than a wrong count.
 
 **An empty answer and an answer that never arrived are drawn differently**, which is the half of
 the route's work a page throws away most easily. Every answer carries a `read` receipt; it is on

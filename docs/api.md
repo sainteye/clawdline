@@ -135,7 +135,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/completion/ack` | orchestrator token | — |
-| `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret **or** orchestrator token for pending/abandoned; **orchestrator token only for landed** | — |
+| `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret **or** orchestrator token for pending/abandoned; **orchestrator token only for landed and nothing_to_land** | — |
 | `POST` | `/v1/orchestrator/tasks/:id/progress` | that task's secret | — |
 | `GET` | `/v1/orchestrator/tasks/:id/inflight` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/respawn` | orchestrator token | — |
@@ -3565,7 +3565,7 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/landing \
 ```
 
 The body accepts only `state`, `target`, `delivery`, `commit`, and `note`. `state` is required and
-is `pending`, `landed`, or `abandoned`. `target` and `commit` are non-empty strings up to 200
+is `pending`, `landed`, `abandoned`, or `nothing_to_land`. `target` and `commit` are non-empty strings up to 200
 characters and are both required for `landed` (a target already present on `pending` may be
 reused); `delivery` and `note` are optional non-empty strings up to 500 characters. A
 repeated request for `pending` or `abandoned` preserves the original `since` while
@@ -3592,13 +3592,34 @@ the write if its pending record changed meanwhile.
 
 | `code` | status | |
 |---|---|---|
-| `bad_request` | 400 | missing/unknown state, unknown field, invalid optional text, a commit on a non-landed state, or no target/commit for landed |
-| `forbidden` | 403 | no accepted credential was supplied; in particular a task secret is never accepted for `landed` |
+| `bad_request` | 400 | missing/unknown state, unknown field, invalid optional text, a commit on a non-landed state, a target on `nothing_to_land`, or no target/commit for landed |
+| `forbidden` | 403 | no accepted credential was supplied; in particular a task secret is never accepted for `landed` or `nothing_to_land` |
 | `not_found` | 404 | no retained task with that id |
-| `not_terminal` | 409 | `landed` or `abandoned` was requested while the child task is still live |
-| `invalid_transition` | 409 | a `landed` or `abandoned` receipt was asked to move to another state |
+| `not_terminal` | 409 | a settling state was requested while the child task is still live |
+| `invalid_transition` | 409 | a settled receipt was asked to move to another state |
+| `wrote_to_repository` | 409 | `nothing_to_land` was asked for a task this Mac has evidence wrote: a declared claim, commits on its branch, a dirty checkout, a count it never took, or an obligation whose target a root already named |
 | `unverified_landing` | 409 | commit or local target did not resolve in the task repository, or commit was not contained by target |
 | `stale_write` | 409 | the landing changed while git verification ran; retry against the new receipt |
+
+**`nothing_to_land` is the state a read-only delivery has**, and it exists because five children
+on one Mac had none. They audited, wrote to no repository, and shipped their finding under
+somebody else's commit: `landed` wants a target and a commit they do not have, and `abandoned`
+says the work was given up, which is a false sentence about an audit that was read and acted on.
+With neither available they sat in the Projects page's "done, never landed" block for ever, and a
+block that cannot be emptied is one nobody reads.
+
+It is final in exactly the way `landed` and `abandoned` are, takes no `target` and no `commit`
+(a branch to land on is the thing it says did not exist), and accepts **only** the machine
+credential — it is a final claim about a repository, and a child asserting that it wrote nothing
+is the one witness with an interest in the answer.
+
+**Its gate is a refusal built out of evidence, not a proof of innocence.** The broker refuses it
+for a task with a declared claim, with commits on its delivery branch, with a dirty checkout,
+with a checkout whose counts this Mac never took (unknown is not permission), or with an
+obligation whose target a root has already named. What it cannot see is a task that ran in the
+shared checkout: nothing here records what such a task wrote, and `git status` in that tree is the
+only witness. So the remaining assertion is the caller's, which is what the machine credential is
+for and why this route says so out loud rather than implying a check it did not make.
 
 ### `GET /v1/orchestrator/landings`
 
@@ -3993,8 +4014,26 @@ something, and what was it, and did it reach the tree.*
 It is a read-time join over the store the analytics routes already read, and it needed no new
 column. `usage_intervals.working_dir` is the checkout a task ran in — for a Clawdline-managed
 worktree, the path ending in the task UUID that names it; `project_key` is the canonical
-repository; `usage_attribution_events` carries the accepted Feature head; `task_state` and
-`landing_state` say how each of those tasks ended. What made the worktree invisible until now is
+repository; `usage_attribution_events` carries the accepted Feature head; `task_state` says how
+each of those tasks ended, and the **live task registry** says what became of its landing.
+
+**The landing is read from the registry and not from the row, and that is a correction.**
+`usage_intervals.landing_state` is a point-in-time copy taken when a task reaches a terminal
+state — and a landing closes *after* the work ends, so the field is almost always absent when the
+sample is written. Nothing filled it in afterwards except the backfill import that runs on launch,
+which made an app restart the only route by which a closed landing reached this read. Measured
+over one Mac's own store on 2026-09-05: of the tasks whose landing closed before the last launch,
+79 of 79 carried the copy; of those closed after it, 0 of 6 did, and two of them were sitting in
+this page's "done, never landed" block while the broker held a verified `landed` for each. The
+store stays append-only — a sealed row is history and is never edited to make a read current — so
+the join is where the currency comes from, and the payload says which of the two each verdict
+rests on:
+
+| field | meaning |
+|---|---|
+| `landingStates` | the obligations as they stand **now**: the registry's answer for every task it still holds, and the row's own frozen copy for the rest |
+| `storedLandingStates` | what the rows themselves recorded. History, kept rather than corrected |
+| `landingBasis` | `live` where the registry answered for every row, `stored` where it has swept every one of these tasks, `mixed` where it is some of each, `none` where no row names a task | What made the worktree invisible until now is
 that resolving a row's Project *consumes* that identity and discards it — a managed worktree path
 resolves to no Project rather than to one of its own — so nothing in the store is filed under a
 worktree. The column it was read from is still there.
@@ -4011,7 +4050,7 @@ analytics query: a misspelled filter must not quietly widen an accounting read.
 ```json
 {"projectWorktrees":{
   "schemaVersion":1,"status":"available","policy":"one_unambiguous_accepted_head",
-  "outcomeRule":"landed_then_delivered_then_live_then_abandoned",
+  "outcomeRule":"landed_then_settled_then_delivered_then_live_then_abandoned",
   "generatedAt":"2026-09-04T11:40:00Z",
   "range":{"from":null,"to":null,"timezone":"Asia/Taipei"},
   "project":{"id":"project-9c1f2e7a4b0d8e35","label":"clawdline"},
@@ -4020,11 +4059,15 @@ analytics query: a misspelled filter must not quietly widen an accounting read.
   "worktrees":[
     {"id":"b1103ab1-…","outcome":"delivered","runs":2,
      "tasks":["b1103ab1-…","6f2c…"],"liveTasks":[],
-     "taskStates":["spawning","success"],"landingStates":[],
+     "taskStates":["spawning","success"],"landingStates":["pending"],
+     "storedLandingStates":[],"landingBasis":"live",
+     "work":"The succession a dead coordinator leaves behind","needs":"land_or_abandon",
      "firstSeenAt":"2026-09-03T09:08:09Z","lastSeenAt":"2026-09-03T09:13:12Z",
      "features":[{"id":"feature-34ccefd0…","label":"Clawdfather: machine coordinator",
                   "outcome":"delivered","runs":2,"tasks":["b1103ab1-…"],"liveTasks":[],
-                  "taskStates":["spawning","success"],"landingStates":[],
+                  "taskStates":["spawning","success"],"landingStates":["pending"],
+                  "storedLandingStates":[],"landingBasis":"live",
+                  "work":"The succession a dead coordinator leaves behind",
                   "firstSeenAt":"…","lastSeenAt":"…"}]}],
   "excluded":{"worktreesWithoutFeature":31,"reason":"no_unambiguous_accepted_head"},
   "unattributed":{"worktrees":13,
@@ -4037,11 +4080,31 @@ answer as the strongest of its Features':
 
 | value | what it rests on |
 |---|---|
-| `landed` | some row carries `landing_state = landed`: a root recorded that this delivery reached its target branch. It outranks the child's own word, including `failure` — two rows on this Mac say exactly that, and what is being asked about is the branch |
+| `landed` | some row's task carries `landing = landed`: a root recorded that this delivery reached its target branch. It outranks the child's own word, including `failure` — two rows on this Mac say exactly that, and what is being asked about is the branch |
+| `nothing_to_land` | some row's task was settled as `nothing_to_land` and none landed: a read-only delivery that wrote to no repository. It sits beside `landed` rather than above `delivered` because both are closed obligations, and the block above exists to list the open ones |
 | `delivered` | some row's task reached `success` and no landing says it landed. Done, not landed. An open landing obligation (`pending`) and one that was given up (`abandoned`) both live here, and both spellings travel in `landingStates` beside the word |
 | `active` | neither of the above, and one of these tasks is still live in the registry now |
 | `abandoned` | neither landed nor successful, and nothing left running: every task either ended without success, or stopped being observed and was never finalized. That second shape is what debris looks like in this store — a task sitting at `briefed` for 41 hours because the session died before anything wrote a terminal state |
 | `unknown` | no row carried any task state at all |
+
+**`work` is what the task was doing, and it is not the same field as the Feature's label.** The
+label is the work line a Feature was grouped by — nine cards on one Mac read `Clawdfather —
+handoff 18bde7c3`, all of them — and `work` is the task's own stored title. Where one Feature
+covers several tasks the rule is **the most recently seen one**: it is a headline and not a
+summary, nothing is invented, and the alternatives stay one lookup away because `tasks` is in the
+same payload. A title lives only in the registry, so `work` is `null` for a task old enough to
+have been swept rather than borrowing the label above it.
+
+**`needs` says what would take one row out of the "done, never landed" block**, and is `null` for
+a row that is already settled. It is the means and not the outcome: nothing in this read closes
+anything, because a landing record is durable and terminal and one closed on a guess is worse than
+a wrong count.
+
+| value | what it means |
+|---|---|
+| `land_or_abandon` | something here wrote — a declared claim, commits on the delivery branch, a dirty checkout, or a count this Mac never took. A person decides |
+| `nothing_to_land` | every one of its tasks is admissible for [`POST /v1/orchestrator/tasks/:id/landing`](#post-v1orchestratortasksidlanding)'s `nothing_to_land`, by that route's own predicate, so a row can never advise a close the route would refuse |
+| `no_record` | the registry has swept at least one of these tasks. There is nothing left to call the landing route with, and this row is history |
 
 Liveness is asked of the live registry rather than measured as an age. The half of that answer
 worth trusting is the absence: the registry holds every live task, so a task it does not hold is

@@ -149,7 +149,7 @@ function answer(overrides) {
             schemaVersion: 1,
             status: "available",
             policy: "one_unambiguous_accepted_head",
-            outcomeRule: "landed_then_delivered_then_live_then_abandoned",
+            outcomeRule: "landed_then_settled_then_delivered_then_live_then_abandoned",
             project: { id: "project-9c1f2e7a4b0d8e35", label: "clawdline" },
             read: { rows: 726, projectRows: 237, worktreeRows: 240, featureRows: 190,
                     truncated: false, maxScannedRows: 100000 },

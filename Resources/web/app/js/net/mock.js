@@ -1330,7 +1330,7 @@ export var Mock = (function () {
                             schemaVersion: 1,
                             status: mode === "partial" ? "partial" : "available",
                             policy: "one_unambiguous_accepted_head",
-                            outcomeRule: "landed_then_delivered_then_live_then_abandoned",
+                            outcomeRule: "landed_then_settled_then_delivered_then_live_then_abandoned",
                             generatedAt: new Date().toISOString(),
                             range: { from: null, to: null, timezone: "Asia/Taipei" },
                             project: { id: "project-9c1f2e7a4b0d8e35", label: project },
