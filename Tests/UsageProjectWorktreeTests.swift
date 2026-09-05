@@ -161,6 +161,41 @@ group("a worktree's outcome tells landed from delivered from debris") {
                                  state: "success", landing: "abandoned")],
                     branch: .branchMerged), "branch_merged")
 
+    // **The settled rung is read above the two git rungs, and that ordering is this merge's own
+    // decision.** Neither branch could have asserted it: `nothing_to_land` and the git rungs
+    // arrived on two trees that never saw each other. The reason is the veto's reason one rung
+    // up — a settlement somebody recorded is a decision, and the shape of a branch is not an
+    // appeal against one. A read-only delivery commits nothing, so in practice its branch is
+    // `branch_empty` and no git rung would have claimed it; the pairs below are what say the
+    // order is the reason rather than the coincidence.
+    let settled = [worktreeRow("settled", at: at, worktree: "w9", task: "t9",
+                               state: "success", landing: "nothing_to_land")]
+    let unsettled = [worktreeRow("unsettled", at: at, worktree: "w9", task: "t9",
+                                 state: "success")]
+    expect("a delivery settled as having had nothing to land stays settled when git cannot find "
+             + "its branch", outcome(settled, branch: .branchAbsent), "nothing_to_land")
+    expect("while the same rows without that settlement take the rung it would have taken",
+           outcome(unsettled, branch: .branchAbsent), "branch_gone")
+    expect("it stays settled when git says the branch is in HEAD with commits on it",
+           outcome(settled, branch: .branchMerged), "nothing_to_land")
+    expect("where the same rows without it are landed by that branch",
+           outcome(unsettled, branch: .branchMerged), "landed")
+    expect("and the branch fact travels beside the settlement rather than being overwritten by it",
+           evidence(settled, branch: .branchEmpty), "branch_empty")
+
+    // **`needs` asks the ladder the payload published**, which is the merge's second decision.
+    // Without the branch fact it computes `delivered` for a worktree git has already shown to be
+    // landed, and advises landing it on the same screen that calls it landed.
+    func needs(_ rows: [UsageLedger.Row],
+               branch: UsageProjectWorktreeService.LandingEvidence) -> String? {
+        UsageProjectWorktreeService.needs(
+            rows.map(UsageProjectWorktreeService.Reading.init(stored:)), live: [], branch: branch)
+    }
+    expect("a delivery git says is merged is advised to do nothing, because it has landed",
+           needs(finished, branch: .branchMerged), nil)
+    expect("while the same rows on a branch nobody merged still name what would clear them",
+           needs(finished, branch: .branchUnmerged), "no_record")
+
     let recorded = [worktreeRow("recorded", at: at, worktree: "w7", task: "t7",
                                 state: "success", landing: "landed")]
     expect("a root's record outranks a branch this side merely found unmerged",
