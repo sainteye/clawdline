@@ -327,8 +327,13 @@ manifest_group_count=$(awk '
 # 533 with the local run's one: the seventh project status file, its staleness ceiling at both
 # sides of the boundary, and the link row that carries no address. Counted from the manifest with
 # the awk above rather than added to 532, which is the mistake three paragraphs up.
-[ "$manifest_group_count" -eq 533 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 533"
+# 534 with the allow-list group beside it: an unrecognised state draws nothing for the deploy and
+# health rows too, not only for the run row. It sits second in `ProjectRunTests.swift`, so it sits
+# second in the manifest — the runtime check compares the two orders, not the two totals, and a
+# name in the wrong place fails it exactly as a missing name does. Counted from the manifest with
+# the awk above.
+[ "$manifest_group_count" -eq 534 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 534"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

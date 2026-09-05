@@ -211,14 +211,26 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # time, which is what says the total is the tree's and the two failures were the clock's. A count
 # from a red run is still the count when the run reached the end of its roster; what a red run
 # cannot give you is a green.
-expected_swift_receipt='9069 checks passed'
+# The seventh project status file — `run-<path>.json`, a local `./test.sh` or `./build.sh` in
+# flight — adds 61 across two groups: the reader and its staleness ceiling, and the allow-list that
+# stops an unrecognised state drawing a mark for the deploy and health rows as well. 9,069 -> 9,130,
+# measured by the run, not computed.
+# That run was red, and the same two checks were red on `9e42f5b3` with nothing of this delivery in
+# it: `the dedicated automation door accepts an explicit poll-only task` wants 200 and gets 409, and
+# the executor it should open stays at 0. A control tree was built and run for exactly this question
+# rather than reasoned about, because the first two explanations that came to mind — a claims
+# collision from a busy dispatch hour, then a group-ordering change leaking shared state — were both
+# plausible and both wrong. `main` reported `2 of 9069`; this tree reports `2 of 9130`, the same two.
+# So the roster was reached and the total is this tree's; the pair of reds belongs to the
+# orchestrator's detached door and is nobody's here.
+expected_swift_receipt='9130 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7212
+expected_swift_receipt_witness=7273
 
 count_exact_receipt_lines() {
   local receipt=$1

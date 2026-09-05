@@ -108,6 +108,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "newest first",
     "the transcript pane's text view",
     "a local run is read from its own file, and a dead one stops being drawn",
+    "a state a reader has not heard of draws nothing, in every one of these files",
     "documents leave one of two roots and a path chooses only inside one",
     "devstack: a project describes its stack",
     "devstack: a file with nothing but a name still works",
