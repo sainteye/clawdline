@@ -1479,3 +1479,34 @@ items:
       searchable alias. The trigger is anybody reading "update the milestone" and reaching for a
       file — if that happens again after the copy change, the label is the thing left to move.
     opened: 2026-09-05
+
+  - id: B-A-PROBE-TAKES-THE-IDEMPOTENT-SLOT
+    title: A throwaway value sent to find out what a write accepts becomes the value that write keeps
+    problem: >-
+      `POST /v1/orchestrator/sessions/:id/closure` is idempotent per turn and obligation clock: a
+      repeat returns `created:false` with the original `attestation_id`. That is the right
+      behaviour for a retry. It also means the **first** accepted body wins permanently, so a
+      caller that sends a small probe to discover what the route accepts has spent the slot, and
+      the real content it writes afterwards is accepted-and-ignored rather than refused. The
+      receipt exists, is valid, and carries a placeholder — which is worse than either a refusal
+      or a correction, because nothing about it looks wrong.
+    evidence: >-
+      2026-09-05. A root closing its session sent a full account as its `note`, got
+      `400 bad_request`, and probed with the literal string `probe`, which succeeded. Reading
+      `Orchestrator.swift:2218` it found `closureNoteLimit = 200`, rewrote the note to 154
+      characters and resent: `created:false`, original id, `probe` still stored. It reported the
+      real content to its coordinator in a message instead. Note that the refusal itself was not
+      at fault — it says `note must be one line of 1–200 characters.` — the caller's `jq`
+      projected only `.error.code` and dropped it, which is why probing looked like the cheap way
+      to find out. This is therefore not an instance of
+      `B-LANDING-NOTE-LIMIT-IS-UNNAMED`, whose complaint is the opposite one.
+    severity: noise
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Any receipt found carrying an obviously placeholder note. The cheap repair is not to make
+      the note mutable — a receipt that can be edited afterwards is a worse thing — but to let a
+      caller ask what the route accepts without writing: a validation-only mode, or a refusal that
+      is impossible to lose in projection. Reconsider when a second placeholder shows up in a
+      durable receipt.
+    opened: 2026-09-05
