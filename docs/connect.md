@@ -256,13 +256,20 @@ overwrites.
 wrapper is a file that reports on the runs somebody remembered to start it with, which is not the
 same thing as what the project is doing.
 
+This is the one kind on the page where connecting the project means **editing a file the project
+already has** rather than adding one beside it. Say so before you do it, keep the change to the few
+lines below, and make sure a failure to write the status file cannot fail the test run — nobody's
+suite should go red because a status file could not be written.
+
 ```bash
 run=~/.claude/statusline-cache/run-$(pwd | tr / -).json
 started=$(date +%s)
+mkdir -p "$(dirname "$run")" 2>/dev/null || :   # absent on a machine with nothing else writing there
 
 say() {   # say <state> [phase]
-  printf '{"state":"%s","label":"test","phase":"%s","started_at":%d,"typical_seconds":288,"updated_at":%d}\n' \
-    "$1" "$2" "$started" "$(date +%s)" > "$run.tmp" && mv "$run.tmp" "$run"
+  { printf '{"state":"%s","label":"test","phase":"%s","started_at":%d,"typical_seconds":288,"updated_at":%d}\n' \
+      "$1" "$2" "$started" "$(date +%s)" > "$run.tmp" && mv "$run.tmp" "$run"; } 2>/dev/null
+  return 0   # a status file must never be able to fail the run it is reporting on
 }
 
 trap 'say fail interrupted; exit 130' INT TERM
@@ -273,7 +280,7 @@ say running "running tests"
 say ok
 ```
 
-Three things in that sketch are the whole point of it:
+Four things in that sketch are the whole point of it:
 
 - **The `trap`.** A run interrupted with `Ctrl-C` must write `fail` and leave, or it leaves
   `running` in the bar behind it. `INT` and `TERM` are the two that matter; `KILL` cannot be
@@ -285,6 +292,14 @@ Three things in that sketch are the whole point of it:
   build takes longer than fifteen minutes, either write from inside it or set `stale_after` to
   something that fits, but do not leave the row unable to say it is still alive.
 - **`.tmp` then `mv`.** As with every file on this page.
+- **The `mkdir -p` and the `return 0`.** `~/.claude/statusline-cache/` does not exist on a machine
+  where nothing else has ever written there, so without the `mkdir` this whole section quietly does
+  nothing on exactly the machines it was needed on. And under `set -e` — which a test script very
+  often has — a full disk or an unwritable home would otherwise take the suite down with it, and
+  the user would be debugging their tests over a status chip. Redirect the group's stderr as well:
+  a failed redirection prints from the shell rather than from the command, so silencing only the
+  `printf` still leaves three lines of noise in the middle of somebody's test output. The chip is
+  allowed to be absent; the run is not allowed to be wrong about itself, or noisy about it.
 
 `none`, and every state a reader does not recognise, draws nothing at all. Do not invent states:
 an unrecognised one is not an error the user gets told about, it is a row that silently disappears.
