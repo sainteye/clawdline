@@ -2144,6 +2144,45 @@ final class RemoteServer: @unchecked Sendable {
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return answer(reply)
 
+        // Snippets are Mac settings: reads use the ordinary paired-device door above, while all
+        // four mutations pass through the same switch, send capability and idempotency key as a
+        // prompt. The store owns validation, the disk brake and the audit line so the native app
+        // and HTTP route cannot acquire different meanings later.
+        case ("GET", "/v1/snippets"):
+            guard let rawSession = request.query["session"] else {
+                return .json(["snippets": Snippets.records()])
+            }
+            let sessionID = rawSession.removingPercentEncoding ?? rawSession
+            guard let session = self.session(withID: sessionID),
+                  let cwd = Targets.workingDirectory(of: session) else {
+                return .error(404, "not_found", "No session named that")
+            }
+            let project = Snippets.project(forCwd: cwd)
+            return .json(["project": project.json,
+                          "snippets": Snippets.records(for: project)])
+
+        case ("POST", "/v1/snippets"):
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.answer(Snippets.create(from: body))
+            }
+
+        case ("POST", "/v1/snippets/order"):
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.answer(Snippets.reorder(from: body))
+            }
+
+        case ("PATCH", let path) where path.hasPrefix("/v1/snippets/"):
+            let id = String(path.dropFirst("/v1/snippets/".count))
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.answer(Snippets.update(id: id.removingPercentEncoding ?? id, from: body))
+            }
+
+        case ("DELETE", let path) where path.hasPrefix("/v1/snippets/"):
+            let id = String(path.dropFirst("/v1/snippets/".count))
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { _ in
+                self.answer(Snippets.delete(id: id.removingPercentEncoding ?? id))
+            }
+
         case ("GET", "/v1/orchestrator/schedules"):
             return .json(["schedules": Orchestrator.scheduleRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
@@ -3990,6 +4029,16 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
+    /// A snippet reply uses the same public success and error envelopes as orchestrator writes.
+    func answer(_ reply: Snippets.Reply) -> Response {
+        switch reply {
+        case .ok(let obj):
+            return .json(obj)
+        case .refused(let status, let code, let message, let extra):
+            return .error(status, code, message, extra: extra)
+        }
+    }
+
     /// Turn a message with pictures in it into the pieces the sender already understands.
     ///
     /// Each image arrives as a `data:` URL and leaves as a file, because that is what
@@ -5387,6 +5436,7 @@ final class RemoteServer: @unchecked Sendable {
     static func orchestratorSnapshot(now: Date = Date()) -> [String: Any] {
         ["tasks": Orchestrator.records(),
          "schedules": Orchestrator.scheduleRecords(now: now),
+         "snippets": Snippets.records(),
          "at": Int(now.timeIntervalSince1970),
          "app": appStamp()]
     }
