@@ -177,7 +177,7 @@ const runScript = (w, script, env = {}) => {
 // trapped — so an INT scenario written the obvious way measures bash's job control rather than the
 // helper's handler. With it the job gets its own process group and the default disposition, and the
 // signal goes to the group, which is what a person pressing ⌃C at a terminal actually sends.
-const driveAndKill = (w, argv, signal, target = "group") => {
+const driveAndKill = (w, argv, signal, target = "group", settle = "0.3") => {
     const driver = join(w.dir, `drive-${signal}.sh`);
     writeFileSync(driver, [
         "#!/bin/bash",
@@ -185,7 +185,7 @@ const driveAndKill = (w, argv, signal, target = "group") => {
         `${argv.map((a) => JSON.stringify(a)).join(" ")} &`,
         "p=$!",
         `for _ in $(seq 1 200); do [ -f ${JSON.stringify(w.file)} ] && break; sleep 0.05; done`,
-        "sleep 0.3",
+        `sleep ${settle}`,
         target === "group" ? `kill -${signal} -"$p" 2>/dev/null || true`
                            : `kill -${signal} "$p" 2>/dev/null || true`,
         'wait "$p"',
@@ -551,10 +551,194 @@ try {
               ceiling("negative", "-5").stale_after === -5);
     }
 
+
     // ---------------------------------------------------------------------------------------
-    // 6. Positive controls. Every check above is worth exactly what its ability to go red is
-    //    worth, so each of the four lines that carry the feature is taken out of a copy of the
+    // 6. The heartbeat. `updated_at` is what the reader measures staleness against, and the
+    //    producer used to move it only when it wrote the file — at the start, at a phase
+    //    boundary, and at the end. The wrapper form has no phases at all, so **any wrapped
+    //    command longer than `stale_after` vanished from the bar partway through while it was
+    //    still running**, which is the case the wrapper form exists for: a data import, a video
+    //    encode, a twenty-minute migration. Measured before the beat existed, `--stale-after 3`
+    //    around a six-second command: at t=5 the row was four seconds old and drawn nowhere.
+    //
+    //    Every scenario here sets a short ceiling so the suite can watch a whole staleness
+    //    window go past in a few seconds. The interval is a fifth of the ceiling and never less
+    //    than a second, so a ceiling of 3 beats once a second and one of 900 beats every 30.
+
+    // Samples the row **from inside the run**, with the time each sample was taken beside it —
+    // the only place that can see the row while the row is the point. `cat` of a file that is
+    // replaced by a rename reads one whole version of it, which is the property the format was
+    // built around and the reason a sample can be parsed at all.
+    const samplerLines = (file, count, gap) => [
+        `for _ in $(seq 1 ${count}); do`,
+        `  sleep ${gap}`,
+        `  printf '%s %s\\n' "$(date +%s)" "$(cat ${JSON.stringify(file)})" >> "$PWD/samples.txt"`,
+        "done",
+    ];
+    const samplerCommand = (w, count, gap) => {
+        const path = join(w.dir, "sample.sh");
+        writeFileSync(path, ["#!/bin/bash", ...samplerLines(w.file, count, gap), ""].join("\n"));
+        chmodSync(path, 0o755);
+        return path;
+    };
+    const samplesOf = (w) => (existsSync(join(w.dir, "samples.txt"))
+        ? readFileSync(join(w.dir, "samples.txt"), "utf8").trim().split("\n")
+        : []).map((l) => ({ at: Number(l.slice(0, l.indexOf(" "))), row: JSON.parse(l.slice(l.indexOf(" ") + 1)) }));
+    // How old the row was when it was sampled — the exact quantity the reader compares against
+    // `stale_after`, computed the way the reader computes it.
+    const ageOf = (s) => s.at - s.row.updated_at;
+    // Everything a beat is not allowed to move, which is every field but `updated_at`. A
+    // heartbeat is a liveness claim and not a progress claim, so `phase` and `started_at` in
+    // particular have to come back out of the file exactly as the run put them in.
+    const exceptUpdatedAt = (row) => JSON.stringify({ ...row, updated_at: 0 });
+
+    {
+        // **The measurement in the brief, driven forwards.** Thirteen samples 0.4s apart around a
+        // ceiling of three seconds: without a beat the row is stale from about the fourth sample
+        // on, and the command has another two seconds to run.
+        const w = workdir("beat-wrapper");
+        const r = runHelper(w, ["run", "--label", "import", "--stale-after", "3", "--",
+                                samplerCommand(w, 13, 0.4)]);
+        const s = samplesOf(w);
+        check("a wrapped command outlives its own staleness ceiling, so the question is a real one",
+              r.code === 0 && s.length === 13 && s[s.length - 1].at - s[0].row.started_at > 3);
+        check("and every sample of it was fresh: no sample was older than the ceiling it set",
+              s.every((x) => ageOf(x) <= 3));
+        check("because updated_at moved while the command ran and nothing else wrote the file",
+              new Set(s.map((x) => x.row.updated_at)).size >= 4);
+        check("every sample said running, and no beat moved anything but updated_at",
+              s.every((x) => x.row.state === "running")
+                && new Set(s.map((x) => exceptUpdatedAt(x.row))).size === 1);
+    }
+    {
+        // The sourced form with **no `progress_phase` calls at all**, which is the shape a script
+        // that has one long thing to do writes. Nothing but the beat can move `updated_at` here.
+        const w = workdir("beat-sourced");
+        const script = sourced(w, ["progress_start --label migrate --stale-after 3",
+                                   ...samplerLines(w.file, 13, 0.4)].join("\n"));
+        const r = runScript(w, script);
+        const s = samplesOf(w);
+        check("a sourced run that never calls progress_phase stays fresh for its whole length",
+              r.code === 0 && s.length === 13 && s[s.length - 1].at - s[0].row.started_at > 3
+                && s.every((x) => ageOf(x) <= 3 && x.row.state === "running"));
+        // **The beat has to be gone before the finish is written**, or a beat still in flight
+        // overwrites `ok` with `running` and leaves a finished run in the bar until the ceiling
+        // retires it. The stop is a kill and a `wait`, so the finish cannot race it.
+        const finished = rowOf(w.file);
+        spawnSync("/bin/sleep", ["2"]);
+        const later = rowOf(w.file);
+        check("and the beat stops when the run does: two intervals later the ok row is untouched",
+              finished !== null && finished.state === "ok" && later !== null
+                && later.state === "ok" && later.updated_at === finished.updated_at);
+    }
+    {
+        // **A beat is a liveness claim, not a progress claim.** `phase` is drawn in place of the
+        // percentage, so a beat that wrote the row from its own memory would take the phase off
+        // the bar every time it fired.
+        const w = workdir("beat-phase");
+        const script = sourced(w, ["progress_start --label test --typical 288 --stale-after 3",
+                                   "progress_phase compiling",
+                                   ...samplerLines(w.file, 11, 0.4)].join("\n"));
+        runScript(w, script);
+        const s = samplesOf(w);
+        check("a beat under a phase leaves the phase exactly where the run put it",
+              s.length === 11 && s.every((x) => x.row.phase === "compiling"));
+        check("and started_at stays where the run started while updated_at moves under it",
+              new Set(s.map((x) => x.row.started_at)).size === 1
+                && new Set(s.map((x) => x.row.updated_at)).size >= 3);
+        check("and every other field — label, typical_seconds, stale_after, tree, holder — is untouched",
+              new Set(s.map((x) => exceptUpdatedAt(x.row))).size === 1);
+    }
+    {
+        // **`kill -9` is the case with no trap in it**, and it is the case the staleness ceiling
+        // exists for. The signal goes to the run's shell alone rather than to its process group,
+        // so the beat is left an orphan and has to notice by itself — which is the whole of what
+        // "the beat dies with the run" has to mean.
+        const w = workdir("beat-killed-9");
+        const out = driveAndKill(w, ["/bin/bash", helperPath, "run", "--label", "encode",
+                                     "--stale-after", "3", "--", slowCommand(w.dir)],
+                                 "KILL", "pid", "2.5");
+        spawnSync("/bin/sleep", ["2"]);
+        const orphaned = rowOf(w.file);
+        spawnSync("/bin/sleep", ["2"]);
+        const later = rowOf(w.file);
+        check("a run killed with -9 writes nothing on the way out, so its row still says running",
+              /status=137/.test(out) && orphaned !== null && orphaned.state === "running"
+                && orphaned.updated_at > orphaned.started_at);
+        check("and the beat it left behind stops: two intervals later updated_at has not moved",
+              later !== null && later.updated_at === orphaned.updated_at);
+        check("so the row goes stale on schedule, which is what retracts a killed run from the bar",
+              later !== null && Math.floor(Date.now() / 1000) - later.updated_at > later.stale_after);
+    }
+    {
+        // A ceiling of zero means the row expires the moment it is written — a producer that
+        // writes it means *expire now* — so there is nothing for a beat to keep alive and none is
+        // started. A write a second for a row no reader draws is cost with nothing on the other
+        // side of it.
+        const w = workdir("beat-zero-ceiling");
+        const script = sourced(w, ["progress_start --label expired --stale-after 0",
+                                   ...samplerLines(w.file, 5, 0.4)].join("\n"));
+        runScript(w, script);
+        const s = samplesOf(w);
+        check("a ceiling of zero starts no beat at all: updated_at never moves",
+              s.length === 5 && new Set(s.map((x) => x.row.updated_at)).size === 1);
+    }
+    {
+        // **The interval is a fifth of the ceiling, not a fixed second.** At the 900-second
+        // default that is 30 seconds — capped there because past it the beat costs nothing worth
+        // counting — so a run of a couple of seconds writes exactly once, as it always did.
+        const w = workdir("beat-default-ceiling");
+        const script = sourced(w, ["progress_start --label suite",
+                                   ...samplerLines(w.file, 5, 0.4)].join("\n"));
+        runScript(w, script);
+        const s = samplesOf(w);
+        check("at the default ceiling the beat is 30 seconds away, so a two-second run writes once",
+              s.length === 5 && s.every((x) => x.row.stale_after === 900)
+                && new Set(s.map((x) => x.row.updated_at)).size === 1);
+    }
+    {
+        // **A beat keeps a row alive; it never brings one back.** `progress_clear` takes the row
+        // away from a run that is still going, and a beat that rebuilt the file from its own
+        // memory would put it straight back.
+        const w = workdir("beat-cleared");
+        const script = sourced(w, [
+            "progress_start --label lint --stale-after 3",
+            "sleep 1.2",
+            "progress_clear",
+            "sleep 2",
+            "# The finish has to be spent for the EXIT composition to leave the row gone.",
+            "CLAWDLINE_RUN_FINISHED=1",
+        ].join("\n"));
+        const r = runScript(w, script);
+        check("a cleared row stays cleared: a beat writes nothing that is not already there",
+              r.code === 0 && !existsSync(w.file));
+    }
+    check("and no beat left a temporary file behind beside the rows it wrote",
+          readdirSync(cache).filter((n) => n.includes(".tmp")).length === 0);
+
+    // ---------------------------------------------------------------------------------------
+    // 7. Positive controls. Every check above is worth exactly what its ability to go red is
+    //    worth, so each of the five lines that carry the feature is taken out of a copy of the
     //    helper and the defect is driven until it happens.
+    {
+        // **The measurement this heartbeat exists because of**, driven against a copy with the beat
+        // taken out: the row is written once, and from about the fourth sample on it is older than
+        // the ceiling its own producer set while the command has two seconds left to run. At the
+        // 900-second default that is every wrapped command longer than fifteen minutes.
+        const m = mutantHelper("no-heartbeat", (t) => t.replace(
+            /\n *if \[ "\$state" = running \]; then\n *clawdline_run_file_beat_start\n *fi\n/, "\n"));
+        check("control: the beat can be taken out of the helper, and the helper still runs without it",
+              !/\n\s*clawdline_run_file_beat_start\n/.test(m.text)
+                && spawnSync("/bin/bash", ["-n", m.path]).status === 0);
+        const w = workdir("control-no-heartbeat");
+        runHelper(w, ["run", "--label", "import", "--stale-after", "3", "--",
+                      samplerCommand(w, 13, 0.4)], {}, m.path);
+        const s = samplesOf(w);
+        check("control: and without it a six-second command goes stale halfway through, while it runs",
+              s.length === 13 && new Set(s.map((x) => x.row.updated_at)).size === 1
+                && s.filter((x) => ageOf(x) > 3).length > 0
+                && s[s.length - 1].row.state === "running");
+    }
     {
         // **The measurement the `exit` exists because of.** Without it the TERM handler returns
         // into the script, which runs the rest of itself and ends by declaring success.

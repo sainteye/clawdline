@@ -54,6 +54,17 @@
 # `kill -9`'d run would otherwise sit in the bar for ever. That ceiling is also why there is no
 # `producer` field — `ghrun-` needs one because two writers compete for it; this file has one writer
 # and a staleness rule instead.
+#
+# **And the producer's half of that rule is a heartbeat.** Writing `updated_at` at the start, at
+# each phase and at the end says nothing about the hours in between: measured here with
+# `--stale-after 3` around a six-second command, the row was four seconds old at t=5 and drawn
+# nowhere while the command was still running — which at the 900-second default is every wrapped
+# command longer than fifteen minutes disappearing from the bar partway through. So a run refreshes
+# `updated_at`, **and only `updated_at`**, every fifth of its own ceiling, from a background
+# supervisor that dies with it. `clawdline_run_file_beat_interval` derives the number and
+# `clawdline_run_file_beat_loop` is where dying with the run is guaranteed; a beat that outlived its
+# run would defeat the ceiling above, which is the reason this file kind exists rather than reusing
+# `ghrun-`.
 
 clawdline_run_file_json() {
     # Free text into a JSON string. A tree path may hold a quote or a backslash — this machine has
@@ -85,8 +96,13 @@ clawdline_run_file_write() {
     #
     # It never fails the run it is reporting on. A missing `$HOME`, an unwritable cache directory or a
     # full disk costs the person the bar and nothing else, so every path here ends `return 0`.
+    #
+    # **The beat is stopped before every write and started again after a `running` one**, so the run
+    # and its heartbeat are never both writing this file. That ordering is what the beat's own
+    # comments below rest on.
     local state=$1 phase=${2:-} temp
     [ -n "${CLAWDLINE_RUN_FILE:-}" ] || return 0
+    clawdline_run_file_beat_stop
     mkdir -p "$CLAWDLINE_RUN_DIR" 2>/dev/null || return 0
     temp="$CLAWDLINE_RUN_FILE.$$.tmp"
     {
@@ -103,6 +119,152 @@ clawdline_run_file_write() {
         printf '}\n'
     } > "$temp" 2>/dev/null || { rm -f "$temp" 2>/dev/null || true; return 0; }
     mv -f "$temp" "$CLAWDLINE_RUN_FILE" 2>/dev/null || rm -f "$temp" 2>/dev/null || true
+    if [ "$state" = running ]; then
+        clawdline_run_file_beat_start
+    fi
+    return 0
+}
+
+clawdline_run_file_beat_interval() {
+    # **How often the beat fires, derived from the ceiling it defends rather than chosen.** The
+    # reader ignores a `running` row whose `updated_at` is older than `stale_after`, so a live run
+    # has to touch the file more often than that — and *comfortably* more often, because a beat can
+    # be late: this Mac runs several suites at once and has been in swap with four compilers on it.
+    # **A fifth of the ceiling** is the rule, so four beats in a row can be lost before a run that
+    # is still going is retired.
+    #
+    # **Never less than a second**, because `updated_at` is whole seconds — `date +%s` — and a
+    # second beat inside the same second cannot change the number it writes. **Never more than 30**,
+    # which is where the fifth stops buying anything: at the 900-second default that is still a
+    # margin of thirty beats, and holding it costs one rewrite of a 200-byte row every half minute.
+    # Measured on this Mac on 2026-09-05: 100 refreshes in 1.0s, so about 10ms of one core each, or
+    # 0.03% of it at 30 seconds apart. The twenty-minute import this facility exists for pays 40
+    # writes for staying on the screen the whole way.
+    #
+    # A ceiling of zero or less means the row expires the moment it is written, and no beat can make
+    # a row fresh that is defined to be stale on arrival: no interval is returned and none is started.
+    local stale=${1:-900} interval
+    [ "$stale" -gt 0 ] 2>/dev/null || return 0
+    interval=$(( stale / 5 ))
+    [ "$interval" -ge 1 ] || interval=1
+    [ "$interval" -le 30 ] || interval=30
+    printf '%s' "$interval"
+    return 0
+}
+
+clawdline_run_file_beat_refresh() {
+    # **One beat: the row that is on disk, rewritten with a new `updated_at` and nothing else.**
+    # It reads the file rather than writing one from memory, and that is the whole of how a
+    # heartbeat stays a liveness claim instead of quietly becoming a progress claim. The beat has no
+    # `phase` of its own to write, so it cannot move one: a run that reached `compiling` after the
+    # beat started is still `compiling` after the very next beat.
+    #
+    # And it refreshes **its own run's `running` row, or nothing**. A finished row is not
+    # resurrected, a row `progress_clear` took away is not written back, and a row that a second run
+    # in this directory has taken over is left to that run's own beat. Every one of those returns
+    # non-zero, which is how the loop below learns there is nothing left to keep alive.
+    local row head tail temp
+    [ -n "${CLAWDLINE_RUN_FILE:-}" ] || return 1
+    read -r row < "$CLAWDLINE_RUN_FILE" 2>/dev/null || return 1
+    case "$row" in
+        '{"state": "running"'*', "started_at": '"$CLAWDLINE_RUN_STARTED"','*) ;;
+        *) return 1 ;;
+    esac
+    # Split the line on its own `updated_at` and put a new number between the halves. **The
+    # producer's escaping is what makes that safe**: free text reaches this file with its quotes
+    # backslashed, so a label or a tree path spelling `"updated_at": 5` arrives as `\"updated_at\"`
+    # and no split can land inside it.
+    head=${row%%', "updated_at": '*}
+    [ "$head" != "$row" ] || return 1
+    tail=${row#*', "updated_at": '}
+    while :; do
+        case "$tail" in [0-9]*) tail=${tail#?} ;; *) break ;; esac
+    done
+    # A temporary name of its own, not the writer's: two processes truncating one path would
+    # interleave their bytes and publish a row that does not parse, which is drawn as nothing at all
+    # — the failure that looks like no failure. The rename is the same atomic publish as everywhere.
+    temp="$CLAWDLINE_RUN_FILE.$$.beat.tmp"
+    printf '%s, "updated_at": %s%s\n' "$head" "$(date +%s)" "$tail" > "$temp" 2>/dev/null || {
+        rm -f "$temp" 2>/dev/null || true; return 0; }
+    mv -f "$temp" "$CLAWDLINE_RUN_FILE" 2>/dev/null || rm -f "$temp" 2>/dev/null || true
+    return 0
+}
+
+clawdline_run_file_beat_loop() {
+    # **A supervisor, not a timer** — the shape `test.sh`'s suite-lock renewer already uses in this
+    # repository, and for the same reason: a beat that carries on after the work it stands for has
+    # died is worse than no beat, because it defeats the one rule that ever retracts a `kill -9`'d
+    # run. `while :; do touch; sleep; done` is that defect in new clothes.
+    #
+    # **How the beat is guaranteed to die with the run, including the `kill -9` that fires no
+    # trap.** Two questions before anything is written, on every tick:
+    #
+    #   * `kill -0` on the run's own shell. It is a builtin and one syscall — it forks nothing, so
+    #     it cannot fail for want of memory on the loaded machine where this matters most — and a
+    #     `no` is conclusive. A run killed with `-9` is therefore stopped following within one
+    #     interval, which is at most a fifth of the ceiling the reader was going to wait anyway: the
+    #     staleness rule is delayed by 20% of itself, never defeated.
+    #   * and, when this Mac will answer, whether that pid is still the **same process**. Pids are
+    #     reused, and an orphaned beat that read a stranger's pid as its own run would be immortal,
+    #     which is precisely the failure being ruled out. `ps -o lstart=` is compared against the
+    #     reading taken when the run started. A tick that cannot read it costs a tick and never the
+    #     beat: an unreadable probe is not evidence, and the `kill -0` above still stands. Both
+    #     would have to fail together — a reused pid *and* a `ps` that never answers again — for
+    #     the beat to outlive its run.
+    #
+    # The third way it stops is the file: a row that is finished, cleared, or another run's is a row
+    # with nothing to keep alive, and `clawdline_run_file_beat_refresh` says so by returning 1.
+    local run_pid=$1 run_started=$2 interval=$3 started_now
+    while :; do
+        sleep "$interval"
+        kill -0 "$run_pid" 2>/dev/null || return 0
+        if [ -n "$run_started" ]; then
+            started_now=$(LC_ALL=C ps -o lstart= -p "$run_pid" 2>/dev/null) || started_now=""
+            [ -z "$started_now" ] || [ "$started_now" = "$run_started" ] || return 0
+        fi
+        clawdline_run_file_beat_refresh || return 0
+    done
+}
+
+clawdline_run_file_beat_start() {
+    # One beat per run, started only by a write that has just left a `running` row behind, so its
+    # first act can never be to refresh a row that is not there yet.
+    [ -n "${CLAWDLINE_RUN_BEAT_SECONDS:-}" ] || return 0
+    [ -z "${CLAWDLINE_RUN_BEAT_PID:-}" ] || return 0
+    (
+        # **The traps first.** This file's EXIT handler writes the run's last row, and a beat that
+        # inherited it would report the whole run finished the moment it stopped beating. An
+        # asynchronous subshell resets traps by itself on this Mac's bash 3.2.57 — measured on
+        # 2026-09-05 — and `test.sh`'s renewer clears them anyway; a line that costs nothing is
+        # cheaper than a reader having to know which of those two facts is load-bearing.
+        trap - EXIT ERR INT TERM
+        # Errexit off: every probe in the loop below is allowed to answer `no`.
+        set +e
+        clawdline_run_file_beat_loop "$CLAWDLINE_RUN_PID" "$CLAWDLINE_RUN_PID_STARTED" \
+                                     "$CLAWDLINE_RUN_BEAT_SECONDS"
+    ) >/dev/null 2>&1 </dev/null &
+    # **Detached from the run's own three streams**, because a background job holds whatever it
+    # inherited: `./test.sh | tee` would otherwise wait for the beat before it saw the end of the run.
+    CLAWDLINE_RUN_BEAT_PID=$!
+    return 0
+}
+
+clawdline_run_file_beat_stop() {
+    # **The `wait` is the point of this function, not the tidying.** The run and its beat both write
+    # this file, and the one order that must never happen is a beat landing after the finish: a run
+    # that ended half an hour ago, left in the bar saying `running` until the ceiling retires it.
+    # `kill` does not give that ordering — the beat may be between its `printf` and its `mv` — and
+    # `wait` does: when it returns the beat is gone and cannot write again. This is why **every**
+    # write stops the beat first and not only the last one, and it is what makes "a beat never moves
+    # the phase" a fact about the code rather than a race that is usually won.
+    local pid=${CLAWDLINE_RUN_BEAT_PID:-}
+    [ -n "$pid" ] || return 0
+    CLAWDLINE_RUN_BEAT_PID=""
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    # A beat killed between its write and its rename leaves the temporary file behind; it is named
+    # for this run, so this run can take it away.
+    rm -f "${CLAWDLINE_RUN_FILE:-}.$$.beat.tmp" 2>/dev/null || true
     return 0
 }
 
@@ -117,6 +279,7 @@ clawdline_run_file_clear() {
     # Take the row away entirely. Neither script calls it — a finished run leaves `ok` or `fail`
     # behind on purpose, and that is what a reader draws — so it is here for a person with a row from
     # a run that no longer exists, and for the suites that drive this file.
+    clawdline_run_file_beat_stop
     rm -f "${CLAWDLINE_RUN_FILE:-}" 2>/dev/null || true
     return 0
 }
@@ -225,6 +388,14 @@ clawdline_run_file_start() {
     # early phases carry no `log` and every phase after it does; `build.sh` has no log and sets none.
     CLAWDLINE_RUN_LOG="${CLAWDLINE_RUN_LOG:-$log}"
     CLAWDLINE_RUN_FINISHED=0
+    # **Who the beat supervises, read once, here.** `$$` is the run's own shell in both forms: this
+    # helper when it wrapped a command, the sourcing script when it did not. The start time beside it
+    # is what tells that process from a later one wearing its pid; a machine that will not answer
+    # leaves it empty and the beat falls back to liveness alone, which it says so in its own words.
+    CLAWDLINE_RUN_PID=$$
+    CLAWDLINE_RUN_PID_STARTED=$(LC_ALL=C ps -o lstart= -p $$ 2>/dev/null) || CLAWDLINE_RUN_PID_STARTED=""
+    CLAWDLINE_RUN_BEAT_SECONDS=$(clawdline_run_file_beat_interval "$CLAWDLINE_RUN_STALE_AFTER")
+    CLAWDLINE_RUN_BEAT_PID=""
 
     # **All four traps, and the EXIT one is not belt and braces.** Measured on this Mac on
     # 2026-09-05: a killed bash script still runs its EXIT trap and `$?` inside it is **0**, so a
