@@ -90,6 +90,10 @@ group("snippet files are strict, bounded, atomic, and addressed only by UUID") {
     ]))
     expect("sixty-six Han characters are 198 bytes of title and fit",
            fittingWideTitle.status, 200)
+    // Taken straight back out: every count below this line is a count of what the store holds,
+    // and a fixture that stays behind makes them all say one more than they mean.
+    _ = Snippets.delete(id: fittingWideTitle.body["id"] as? String ?? "",
+                        now: Date(timeIntervalSince1970: 1_789_700_001))
     let wideTitle = snippetReply(Snippets.create(from: [
         "title": String(repeating: "字", count: 67), "body": "y", "scope": "global",
     ]))

@@ -465,14 +465,22 @@ enum Snippets {
                                     message: "A snippet title and body cannot be empty.", extra: [:]))
         }
         let hasProject = body.keys.contains("project")
-        let project = normalized(body["project"] as? String)
+        let rawProject = body["project"] as? String
+        let project = normalized(rawProject)
+        // **`project` is measured as it arrived, and `title` and `body` after nothing at all.**
+        // `standardizingPath` truncates at `PATH_MAX` and says nothing about it, so a bound taken
+        // on the normalized value can never fire — 2,005 bytes come back as 1,024, pass a 1,024
+        // bound, and the snippet is then filed under a path the client never sent. Whether that
+        // truncation happens at all turned out to depend on the process: the same 2,005-byte
+        // input was refused on one tree and accepted on another, which is exactly why the
+        // measurement may not be taken after a transformation nobody controls.
         guard title.utf8.count <= titleMaxBytes, text.utf8.count <= bodyMaxBytes,
-              (project?.utf8.count ?? 0) <= projectMaxBytes else {
+              (rawProject?.utf8.count ?? 0) <= projectMaxBytes else {
             return .refused(Refusal(status: 400, code: "snippet_too_long",
                                     message: "A snippet title may contain 200 bytes of UTF-8, its body 4000, and its project path 1024.",
                                     extra: ["title_count": title.utf8.count,
                                             "body_count": text.utf8.count,
-                                            "project_count": project?.utf8.count ?? 0]))
+                                            "project_count": rawProject?.utf8.count ?? 0]))
         }
         guard (scope == .project && hasProject && project != nil)
                 || (scope == .global && !hasProject) else {
@@ -498,8 +506,10 @@ enum Snippets {
               let createdAt = integer(object["created_at"]),
               let updatedAt = integer(object["updated_at"]) else { return nil }
         let hasProject = object.keys.contains("project")
-        let project = normalized(object["project"] as? String)
-        guard (project?.utf8.count ?? 0) <= projectMaxBytes else { return nil }
+        // The same rule on the read side: measure what the file holds, before normalizing it.
+        let storedProject = object["project"] as? String
+        let project = normalized(storedProject)
+        guard (storedProject?.utf8.count ?? 0) <= projectMaxBytes else { return nil }
         guard (scope == .project && hasProject && project != nil)
                 || (scope == .global && !hasProject) else { return nil }
         return Record(id: canonical, title: title, body: body, scope: scope,
