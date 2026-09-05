@@ -1646,8 +1646,13 @@ func acceptedFeature(_ id: String, _ label: String) -> UsageLedger.AcceptedAttri
 
 group("a worktree's outcome tells landed from delivered from debris") {
     let at = ISO8601DateFormatter().date(from: "2026-09-01T09:00:00Z")!
-    func outcome(_ rows: [UsageLedger.Row], live: Set<String> = []) -> String {
-        UsageProjectWorktreeService.outcome(rows, live: live).rawValue
+    func outcome(_ rows: [UsageLedger.Row], live: Set<String> = [],
+                 branch: UsageProjectWorktreeService.LandingEvidence = .unknown) -> String {
+        UsageProjectWorktreeService.outcome(rows, live: live, branch: branch).rawValue
+    }
+    func evidence(_ rows: [UsageLedger.Row],
+                  branch: UsageProjectWorktreeService.LandingEvidence) -> String {
+        UsageProjectWorktreeService.evidence(rows, branch: branch).rawValue
     }
     // A landing record outranks the child's own word about itself. Two rows on this Mac say
     // `failure` beside `landed`: the child reported failure and the root integrated the branch
@@ -1683,6 +1688,70 @@ group("a worktree's outcome tells landed from delivered from debris") {
     expect("a row carrying no state at all claims none of the four",
            outcome([worktreeRow("silent", at: at, worktree: "w4", task: "t4", state: nil)]),
            "unknown")
+
+    // **The half of the ladder that asks git rather than asking whether anybody wrote it down.**
+    // On 2026-09-05 this route called 53 of one repository's worktrees "delivered, not landed"
+    // while git said 24 of those branches were already ancestors of HEAD and 13 were gone.
+    let finished = [worktreeRow("finished", at: at, worktree: "w5", task: "t5", state: "success")]
+    expect("a delivery whose branch git says is merged has landed, with nobody recording it",
+           outcome(finished, branch: .branchMerged), "landed")
+    expect("and says which of the two sources answered",
+           evidence(finished, branch: .branchMerged), "branch_merged")
+    expect("a delivery whose branch git says is gone has nothing outstanding on it",
+           outcome(finished, branch: .branchAbsent), "landed")
+    expect("named as the branch's absence and never as a record",
+           evidence(finished, branch: .branchAbsent), "branch_absent")
+    expect("a branch that is there and unmerged is the one delivered with a fact behind it",
+           outcome(finished, branch: .branchUnmerged), "delivered")
+    expect("and that fact travels beside it", evidence(finished, branch: .branchUnmerged),
+           "branch_unmerged")
+    // The direction that costs a day if it is wrong: git not answering must never read as
+    // settled. This is the same fail-safe `workVisibility` takes with deletion.
+    expect("git failing to answer leaves the verdict exactly where it was",
+           outcome(finished, branch: .unknown), "delivered")
+    expect("and says so rather than implying nothing landed it",
+           evidence(finished, branch: .unknown), "unknown")
+    // **A deleted branch settles only work that succeeded.** `disposeWorktree` deletes a delivery
+    // branch exactly when it carries no commits, so on a failed task absence means the checkout
+    // was thrown away empty — debris, and not a landing.
+    let failed = [worktreeRow("failed", at: at, worktree: "w6", task: "t6", state: "failure")]
+    expect("a failed task whose branch is gone is still debris",
+           outcome(failed, branch: .branchAbsent), "abandoned")
+    expect("even though the branch fact beside it is exactly the same word",
+           evidence(failed, branch: .branchAbsent), "branch_absent")
+    expect("while a failed task whose branch is merged landed, for the reason a record does",
+           outcome(failed, branch: .branchMerged), "landed")
+    let recorded = [worktreeRow("recorded", at: at, worktree: "w7", task: "t7",
+                                state: "success", landing: "landed")]
+    expect("a root's record outranks a branch this side merely found unmerged",
+           outcome(recorded, branch: .branchUnmerged), "landed")
+    expect("and is reported as the record it is",
+           evidence(recorded, branch: .branchUnmerged), "record")
+
+    // The branch name is a convention, and this is the only place that turns a worktree id into
+    // one. A repository git never answered for says nothing about any of its branches.
+    let known = Orchestrator.RepositoryBranches(
+        heads: ["clawdline/task/11111111-2222-4333-8444-555555555555": "d00dfeed",
+                "clawdline/task/22222222-2222-4333-8444-555555555555": "cafed00d"],
+        merged: ["clawdline/task/22222222-2222-4333-8444-555555555555"], known: true)
+    func branchFact(_ id: String, _ branches: Orchestrator.RepositoryBranches) -> String {
+        UsageProjectWorktreeService.branchEvidence(worktree: id, branches: branches).rawValue
+    }
+    expect("a listed branch HEAD contains is merged",
+           branchFact("22222222-2222-4333-8444-555555555555", known), "branch_merged")
+    expect("a listed branch it does not contain is unmerged",
+           branchFact("11111111-2222-4333-8444-555555555555", known), "branch_unmerged")
+    expect("a branch the listing has no line for is gone",
+           branchFact("33333333-2222-4333-8444-555555555555", known), "branch_absent")
+    expect("a repository git could not read says nothing about any of them",
+           branchFact("22222222-2222-4333-8444-555555555555",
+                      Orchestrator.RepositoryBranches()), "unknown")
+    // *Absent* is a fact about the repository; *unknown* is a fact about this side. A worktree id
+    // that builds no branch name is the second, and reading it as the first would settle a
+    // delivery nobody ever asked about.
+    expect("an id no branch name can be built from is unknown, not absent",
+           branchFact("not-a-task-id", known), "unknown")
+
     check("and the ladder is ordered strongest first",
           UsageProjectWorktreeService.Outcome.landed.rank
             < UsageProjectWorktreeService.Outcome.delivered.rank
@@ -1781,6 +1850,52 @@ group("a Project's worktrees are joined at read time and named by the Portfolio'
     expect("how much of that ran in a worktree", receipt["worktreeRows"] as? Int, 4)
     expect("and how much of that carried a Feature", receipt["featureRows"] as? Int, 3)
     expect("a complete scan is not partial", byName["status"] as? String, "available")
+    expect("and the rule it answered by names both of the sources it may use",
+           byName["outcomeRule"] as? String,
+           "landed_by_record_or_branch_then_delivered_then_live_then_abandoned")
+    expect("with no branch fact, every verdict rests on the stored columns and says so",
+           alphaRow["landingEvidence"] as? String, "record")
+    expect("including a Feature whose own rows carry no landing at all",
+           alphaFeatures.first { $0["id"] as? String == "feature-b" }?["landingEvidence"] as? String,
+           "unknown")
+
+    // **The same rows, once the repository is allowed to answer.** `beta`'s branch is there and
+    // unmerged; `alpha`'s is not there at all.
+    var asked: [String] = []
+    func withGit(_ branches: Orchestrator.RepositoryBranches) -> [String: Any] {
+        UsageProjectWorktreeService(
+            rows: { rows }, acceptedFeatures: { features },
+            branches: { repository in asked.append(repository); return branches })
+            .read(.init(project: "widget", timezoneID: "UTC"), now: at).payload ?? [:]
+    }
+    let gitAnswered = withGit(Orchestrator.RepositoryBranches(
+        heads: ["clawdline/task/" + beta: "cafed00d"], merged: [], known: true))
+    expect("git is asked about the Project's own canonical repository, once", asked, [repository])
+    let seen = (gitAnswered["worktrees"] as? [[String: Any]]) ?? []
+    let alphaSeen = seen.first { $0["id"] as? String == alpha } ?? [:]
+    let betaSeen = seen.first { $0["id"] as? String == beta } ?? [:]
+    expect("a worktree carrying a landing record still says the record, not the branch",
+           alphaSeen["landingEvidence"] as? String, "record")
+    let grandchild = (alphaSeen["features"] as? [[String: Any]] ?? [])
+        .first { $0["id"] as? String == "feature-b" } ?? [:]
+    expect("while the Feature with no record of its own is settled by the missing branch",
+           grandchild["outcome"] as? String, "landed")
+    expect("saying which fact settled it", grandchild["landingEvidence"] as? String,
+           "branch_absent")
+    expect("a stalled worktree whose branch is still sitting there stays debris",
+           betaSeen["outcome"] as? String, "abandoned")
+    expect("and reports the branch fact rather than pretending there is none",
+           betaSeen["landingEvidence"] as? String, "branch_unmerged")
+
+    let merged = withGit(Orchestrator.RepositoryBranches(
+        heads: ["clawdline/task/" + beta: "cafed00d"],
+        merged: ["clawdline/task/" + beta], known: true))
+    let betaMerged = ((merged["worktrees"] as? [[String: Any]]) ?? [])
+        .first { $0["id"] as? String == beta } ?? [:]
+    expect("a branch HEAD already contains landed, whatever the task record says",
+           betaMerged["outcome"] as? String, "landed")
+    expect("on the branch's evidence and not on a record nobody wrote",
+           betaMerged["landingEvidence"] as? String, "branch_merged")
 }
 
 group("an empty worktree list says the query ran, and an unknown Project is refused") {

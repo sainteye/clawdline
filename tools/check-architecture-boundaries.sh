@@ -114,7 +114,14 @@ main_lines=$(line_count Tests/main.swift)
 # stayed green because the slack check below only refuses a gap over 200 — which is the shape this
 # comment block keeps warning about, found by the reviewer of that very delivery and not by
 # anything here. A relocation lowers the ceiling; only a feature raises it.
-orchestrator_ceiling=10585
+#
+# 10,606 is a landing reaching the ledger when it is written instead of at the next launch (+21:
+# two call sites of one line each in `updateLanding`, and `recordLandingInLedger` — 3 lines of
+# code and 16 of comment saying why all three landing states go over and why this is wiring rather
+# than a mechanism). Nine landings sat invisible to every ledger reader on 2026-09-05 until a
+# rebuild happened to run the backfill, because finalize — the only other writer — always runs
+# before anybody can land the work. A feature, so it raises rather than being absorbed.
+orchestrator_ceiling=10606
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

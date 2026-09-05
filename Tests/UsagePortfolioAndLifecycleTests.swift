@@ -1078,6 +1078,53 @@ group("finalize files a task in the ledger without being told anybody heard abou
     expect("naming that as the reason", row?.missingReason, "plan_billed")
     expect("the ledger's own copy is a task boundary", row?.boundaryKind, "task")
     expect("filed under the session the work ran in", row?.sessionID, "sess-finalize")
+
+    // **And a landing reaches the ledger when it is written, not at the next launch.** Finalize
+    // above always runs *before* anybody can land the work, so until this the only other writer
+    // was the startup backfill: a landing recorded at 23:11 on 2026-09-05 was invisible to every
+    // ledger reader until a rebuild at 23:29 brought nine of them over at once, and until then
+    // the Projects page called work carrying a verified landing receipt "delivered, not landed".
+    let repository = makeLandingRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
+    let landedID = "77779e7f-2222-4333-8444-555555555555"
+    var landing = Orchestrator.Task(id: landedID, state: .briefed, kind: "custom",
+                                    title: "landing write-back", assistant: .claude,
+                                    projectDir: repository.url.path, timeoutMinutes: 30,
+                                    created: Date(),
+                                    secretHash: String(repeating: "0", count: 64))
+    landing.childSessionId = "sess-landing"
+    landing.usage = usage
+    Orchestrator.holdScheduleTaskForTesting(landing)
+    Orchestrator.finalize(landedID, as: .success, summary: "delivered")
+    check("the delivery is in the ledger as soon as the task ends",
+          eventually { UsageLedger.shared.rows(taskID: landedID).count == 1 })
+    // The control: without it, a landing_state that was there all along would prove nothing.
+    check("carrying no landing state, because nothing has landed it yet",
+          UsageLedger.shared.rows(taskID: landedID).first?.landingState == nil,
+          "\(String(describing: UsageLedger.shared.rows(taskID: landedID).first?.landingState))")
+
+    func landingState(_ reply: Orchestrator.Reply) -> String? {
+        guard case .ok(let body) = reply, let task = body["task"] as? [String: Any],
+              let record = task["landing"] as? [String: Any] else { return nil }
+        return record["state"] as? String
+    }
+    let token = Orchestrator.dispatchToken()
+    expect("an open landing obligation is recorded",
+           landingState(Orchestrator.updateLanding(
+             taskID: landedID, secret: "", orchestratorToken: token,
+             raw: ["state": "pending", "target": "main"])), "pending")
+    check("and the obligation is on the ledger row without waiting for a restart",
+          eventually { UsageLedger.shared.rows(taskID: landedID).first?.landingState == "pending" },
+          "\(String(describing: UsageLedger.shared.rows(taskID: landedID).first?.landingState))")
+    expect("the verified landing is recorded",
+           landingState(Orchestrator.updateLanding(
+             taskID: landedID, secret: "", orchestratorToken: token,
+             raw: ["state": "landed", "target": "main", "commit": repository.commit])), "landed")
+    check("and it advances the same row, which is what the Projects page reads",
+          eventually { UsageLedger.shared.rows(taskID: landedID).first?.landingState == "landed" },
+          "\(String(describing: UsageLedger.shared.rows(taskID: landedID).first?.landingState))")
+    expect("without a second row being invented for the same task",
+           UsageLedger.shared.rows(taskID: landedID).count, 1)
 }
 
 group("a row with one part unknown keeps its unknown through every reader") {
