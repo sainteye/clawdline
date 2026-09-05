@@ -175,15 +175,90 @@ final class CodexNaming {
     /// Whether Claude Code has had its own opportunity to name this conversation. Waiting for
     /// idle makes the fallback exceptional: it does not spend a Codex turn while Claude's first
     /// response — and its ordinary `aiTitle` write — is still in flight.
-    static func shouldGenerateClaudeTitle(systemTitle: String?, request: String?,
-                                          state: SessionState) -> Bool {
+    ///
+    /// The half of ``shouldGenerateClaudeTitle(systemTitle:request:state:)`` that needs nothing
+    /// off the disk, split out because it is the half that has to be asked *in front of* the
+    /// reading rather than after it. See ``namingTurn(for:weak:systemTitle:state:opening:reply:)``.
+    static func claudeMayBeNamedNow(systemTitle: String?, state: SessionState) -> Bool {
         let hasSystemTitle = !(systemTitle ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard state == .idle, !hasSystemTitle,
+        return state == .idle && !hasSystemTitle
+    }
+
+    /// The same question with the material in hand: idle, unnamed, and something to name from.
+    static func shouldGenerateClaudeTitle(systemTitle: String?, request: String?,
+                                          state: SessionState) -> Bool {
+        guard claudeMayBeNamedNow(systemTitle: systemTitle, state: state),
               let request,
               !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return false }
         return true
+    }
+
+    /// Whether Claude Code's own name for a conversation ends the fallback namer's interest in
+    /// it. **A non-empty title used to be the whole of this question**, and that is what made
+    /// `Image #1` permanent: the namer marked the conversation finished the instant it saw any
+    /// title, so the one thing that could still describe it never ran. A title that does not
+    /// describe the work finishes nothing. See ``ConversationTitle``.
+    ///
+    /// Both places in ``considerClaude(_:state:)`` that ask it — before the model turn and again
+    /// after, in case Claude wrote one while that turn was running — ask it here, so the two
+    /// cannot drift into different answers to one question.
+    static func nativeTitleIsFinal(_ title: String?, weak: Bool) -> Bool {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return false }
+        return !weak
+    }
+
+    /// What a weak-titled conversation is named from.
+    ///
+    /// ``generateTitle(request:target:codexExecutable:codexServer:)`` takes an arbitrary string,
+    /// and for these conversations the opening user message is by definition not one worth
+    /// having: `[Image #1]` is the whole of what Claude Code had, and `Image #1` is what it made
+    /// of it. The conversation's first answer is the material that is actually about the work —
+    /// for `a6d1ed3f` it opens 「我看到了：這是「真人接手後講出來的那一句⋯」, which is a title.
+    ///
+    /// Both halves are optional and both are kept when present. The opening is not dropped even
+    /// when it is only a marker: *an image was the subject* is a true thing to say about the
+    /// session, and a conversation Claude has not answered yet has nothing else.
+    static func namingMaterial(opening: String?, reply: String?) -> String? {
+        let parts = [opening, reply]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
+    /// Reserve a naming turn for one conversation and, **only if that succeeded**, read what it
+    /// would be named from.
+    ///
+    /// The order of those two is the whole of this function. ``reserve(_:)`` is the only place
+    /// that consults `finishedThreads` and `retryAfter`, so it is the only thing that bounds how
+    /// often a conversation is considered — and until 2026-09-05 it was asked *after* both
+    /// readers below. Each of those is a two-megabyte `String` and an eager `split` of the whole
+    /// buffer, on a path ``SessionWatch/read()`` re-enters every 1.2 seconds; so the five-minute
+    /// backoff a failed naming turn leaves behind bounded the model turns and bounded none of the
+    /// reading. The window it did not bound is exactly "no fallback has been stored yet", which
+    /// is "the session is busy" or "the naming turn keeps failing" — either of which lasts as
+    /// long as it lasts.
+    ///
+    /// `reserved` is reported separately from `request` because they fail differently. A
+    /// transcript that answered nothing has still taken the reservation, and its caller still
+    /// owes ``finishReservation(_:done:retryDelay:)``; only `reserved == false` means nothing was
+    /// taken — and, the point of the ordering, that nothing was read to find out.
+    func namingTurn(for key: String, weak: Bool, systemTitle: String?, state: SessionState,
+                    opening: () -> String?, reply: () -> String?)
+        -> (reserved: Bool, request: String?) {
+        guard Self.claudeMayBeNamedNow(systemTitle: systemTitle, state: state),
+              reserve(key) else { return (false, nil) }
+        // A weak title is exactly the case where the opening request is not naming material —
+        // that is what made it weak — so the conversation's first answer goes in beside it, and
+        // is not read at all for a title that stands.
+        let opened = opening()
+        let request = weak ? Self.namingMaterial(opening: opened, reply: reply()) : opened
+        guard Self.shouldGenerateClaudeTitle(systemTitle: systemTitle, request: request,
+                                             state: state)
+        else { return (true, nil) }
+        return (true, request)
     }
 
     private func considerClaude(_ target: TargetSession, state: SessionState) {
@@ -195,9 +270,17 @@ final class CodexNaming {
         let key = identityKey(.claude, sessionID)
 
         // Claude's own title is authoritative and already reaches the display through
-        // `SessionNaming`. Mark this conversation finished without putting a second title under it.
-        if let title = Transcript.title(ofTranscript: record.url),
-           !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // `SessionNaming` — *when it describes the work*. It is written once, from whatever the
+        // first user message held, and never revised, so a turn that opened with a pasted image
+        // and no words is called `Image #1` for the rest of its life. Finishing on any non-empty
+        // title is what made that permanent: it is the fallback namer below, and nothing else,
+        // that can still describe such a conversation. So finish on a title that says something,
+        // and fall through on one that does not.
+        let native = Transcript.title(ofTranscript: record.url)
+        let weak = Transcript.titleIsWeak(
+            ofTranscript: record.url, title: native,
+            customTitle: Transcript.customTitle(ofTranscript: record.url))
+        if Self.nativeTitleIsFinal(native, weak: weak) {
             markFinished(key)
             return
         }
@@ -207,21 +290,31 @@ final class CodexNaming {
             return
         }
 
-        let request = Transcript.firstUserMessage(of: record.url)
-        guard Self.shouldGenerateClaudeTitle(systemTitle: nil, request: request, state: state),
-              let request else { return }
-        guard reserve(key) else { return }
+        // The gate first, the transcript afterwards. Both readers cost a two-megabyte string and
+        // a split of the whole of it, and this runs every 1.2 seconds; see ``namingTurn``.
+        let turn = namingTurn(for: key, weak: weak, systemTitle: nil, state: state,
+                              opening: { Transcript.firstUserMessage(of: record.url) },
+                              reply: { Transcript.firstAssistantMessage(of: record.url) })
+        guard turn.reserved else { return }
 
         var done = false
         defer { finishReservation(key, done: done, retryDelay: 5 * 60) }
+        // A transcript that answers nothing has already taken the turn, so it leaves with the
+        // same five-minute backoff a failed one does rather than being asked again in 1.2
+        // seconds. Nothing about an unreadable opening changes that fast.
+        guard let request = turn.request else { return }
         guard Config.shared.codexAutoName,
               let made = generateTitle(request: request, target: target)
         else { return }
 
         // Claude may have written `aiTitle` while the model turn was running. Its own answer wins,
-        // and the paid fallback is discarded rather than flashed briefly underneath it.
-        if let native = Transcript.title(ofTranscript: record.url),
-           !native.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // and the paid fallback is discarded rather than flashed briefly underneath it — unless
+        // what arrived is another weak one, in which case discarding this would put `Image #1`
+        // back on the row and nothing would ever replace it.
+        let arrived = Transcript.title(ofTranscript: record.url)
+        if Self.nativeTitleIsFinal(arrived, weak: Transcript.titleIsWeak(
+               ofTranscript: record.url, title: arrived,
+               customTitle: Transcript.customTitle(ofTranscript: record.url))) {
             done = true
             return
         }
@@ -325,6 +418,13 @@ final class CodexNaming {
 
     func rememberClaudeForTesting(_ title: String, sessionID: String, targetID: String) {
         remember(title, assistant: .claude, conversationID: sessionID, targetID: targetID)
+    }
+
+    /// Give a reserved naming turn back the way ``considerClaude(_:state:)`` does, so a check can
+    /// put a conversation into the backoff a failed turn leaves behind and then ask what the
+    /// reading after it costs. Reaching that state otherwise means a model turn.
+    func finishNamingTurnForTesting(_ key: String, done: Bool, retryDelay: TimeInterval) {
+        finishReservation(key, done: done, retryDelay: retryDelay)
     }
 
     /// Put the title selected in the resume sheet onto the terminal that was just opened.

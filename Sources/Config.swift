@@ -992,11 +992,7 @@ final class Config {
         if let sessionID,
            let row = sessionTitles.last(where: { !$0.automatic && $0.sessionID == sessionID }) {
             sessionTitleLock.unlock()
-            if Self.staleAfterRename(row, currentCustomTitle: currentCustomTitle) {
-                forgetSessionTitle(row)
-                return nil
-            }
-            return row.title
+            return unlessSuperseded(row, currentCustomTitle: currentCustomTitle)
         }
         // A row that names a conversation this is not stays out of the fallback entirely. A row
         // that names none is still a candidate: a title can be set in the moment before the hook
@@ -1009,11 +1005,46 @@ final class Config {
         guard let candidate,
               Self.sameConversation(candidate.startedAt, conversationStart())
         else { return nil }
-        if Self.staleAfterRename(candidate, currentCustomTitle: currentCustomTitle) {
-            forgetSessionTitle(candidate)
+        return unlessSuperseded(candidate, currentCustomTitle: currentCustomTitle)
+    }
+
+    /// The name a person gave **a conversation**, addressed by the conversation and by nothing
+    /// else. What the resume list asks, through ``StartPoints/displayedTitle(ofTranscript:conversationID:opening:config:)``.
+    ///
+    /// ``sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)`` answers the
+    /// same question for a session somebody has open, and it needs a terminal id for its *second*
+    /// proof — the row belonging to a conversation whose hook id has not arrived yet, believed
+    /// only for as long as the assistant process that was in that tab is still running. **A past
+    /// conversation has no such proof to offer.** Nothing is running, so there is no start time
+    /// to compare; the tab that once held it may be closed, or may hold somebody else's work by
+    /// now. Handing that function an invented terminal id would not be a shortcut past a
+    /// parameter, it would be an assertion about a tab nobody looked at — and the row it would
+    /// then match is exactly the one that has not proved which conversation it belongs to. So
+    /// this reads the branch that needs no tab, and stops where that branch stops.
+    ///
+    /// Everything else is deliberately unchanged: the row still gives way to a later `/rename`,
+    /// because the newer of two human utterances wins wherever the name is read.
+    func sessionTitle(conversationID: String,
+                      currentCustomTitle: (String) -> String? = { _ in nil }) -> String? {
+        guard !conversationID.isEmpty else { return nil }
+        sessionTitleLock.lock()
+        let row = sessionTitles.last { !$0.automatic && $0.sessionID == conversationID }
+        sessionTitleLock.unlock()
+        return unlessSuperseded(row, currentCustomTitle: currentCustomTitle)
+    }
+
+    /// A stored name, unless a `/rename` has superseded it since — the rule all three lookups
+    /// above share, kept in one place so no caller can end up with half of it. A row that has
+    /// been superseded is dropped here rather than merely refused, so the next read finds nothing
+    /// and falls straight through instead of repeating this comparison on every redraw.
+    private func unlessSuperseded(_ row: SessionTitle?,
+                                  currentCustomTitle: (String) -> String?) -> String? {
+        guard let row else { return nil }
+        if Self.staleAfterRename(row, currentCustomTitle: currentCustomTitle) {
+            forgetSessionTitle(row)
             return nil
         }
-        return candidate.title
+        return row.title
     }
 
     /// A model-generated Claude fallback, addressed only by the transcript's durable conversation
@@ -1035,11 +1066,12 @@ final class Config {
         return currentCustomTitle(path) != row.seenCustomTitle
     }
 
-    /// Drop a name a later `/rename` has superseded, keyed by value rather than by index: both
-    /// callers above already unlocked once to find the row, and re-finding it by identity here
-    /// is simpler than threading an index through that unlock. So the next read finds no row at
-    /// all and falls straight through to the automatic label, instead of repeating this same
-    /// comparison and the same answer on every redraw.
+    /// Drop a name a later `/rename` has superseded, keyed by value rather than by index:
+    /// ``unlessSuperseded(_:currentCustomTitle:)`` is handed a row its own caller already
+    /// unlocked to find, and re-finding it by identity here is simpler than threading an index
+    /// through that unlock. So the next read finds no row at all and falls straight through to
+    /// the automatic label, instead of repeating this same comparison and the same answer on
+    /// every redraw.
     private func forgetSessionTitle(_ row: SessionTitle) {
         sessionTitleLock.lock()
         sessionTitles.removeAll { $0 == row }

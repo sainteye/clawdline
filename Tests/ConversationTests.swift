@@ -146,7 +146,18 @@ group("what has already been said in a place") {
     write("notes.jsonl", [#"{"type":"ai-title","aiTitle":"not a session"}"#])
 
     let place = StartPoints.Place(id: "p", path: "/Users/me/code/thing", label: "thing", at: Date())
-    let rows = StartPoints.past(in: place, dir: root, open: [])
+
+    // **A config of this suite's own, and every call below passes it.** `past`'s default is
+    // `Config.shared`, which is the person's real `~/.config/clawdline/config.json` — so from
+    // 2026-09-05, when `past` started naming rows through the ladder, these checks were reading a
+    // file outside the repository. Nothing here can match it (the ids are invented) and nothing
+    // writes to it, so the rows would be the same either way. But "would be the same either way"
+    // is a thing somebody has to go and establish, and it stops being true the day a check uses a
+    // plausible id. An empty directory costs a line and the question never comes up again.
+    let unstored = Config(directoryForTesting: URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-past-unstored-\(UUID().uuidString)",
+                                isDirectory: true))
+    let rows = StartPoints.past(in: place, dir: root, open: [], config: unstored)
 
     expect("the ones that can be named, newest first", rows.map(\.id), [
         "11111111-1111-4111-8111-111111111111",
@@ -167,24 +178,129 @@ group("what has already been said in a place") {
     check("nothing is open, so nothing says it is", rows.allSatisfy { !$0.live })
     let busy = StartPoints.past(in: place, dir: root,
                                 open: [root.appendingPathComponent(titled)
-                                        .resolvingSymlinksInPath().path])
+                                        .resolvingSymlinksInPath().path],
+                                config: unstored)
     expect("and the one being written to is the one that says so",
            busy.filter(\.live).map(\.id), ["11111111-1111-4111-8111-111111111111"])
 
     // The cap is what the reply pages against: `pastPayload` asks for one more than it sends and
     // says `more` when it got it, so a list that stops is one that says so rather than one that
     // quietly ends. That only works if the cap is exact.
-    expect("the cap is a cap", StartPoints.past(in: place, limit: 2, dir: root, open: []).count, 2)
+    expect("the cap is a cap",
+           StartPoints.past(in: place, limit: 2, dir: root, open: [], config: unstored).count, 2)
     expect("and asking for one more gets one more",
-           StartPoints.past(in: place, limit: 3, dir: root, open: []).count, 3)
+           StartPoints.past(in: place, limit: 3, dir: root, open: [], config: unstored).count, 3)
 
     expect("an id off the list resolves",
            StartPoints.past(withID: "22222222-2222-4222-8222-222222222222", in: place,
-                            dir: root, open: [])?.title,
+                            dir: root, open: [], config: unstored)?.title,
            "What a person called it")
     expect("one that was never handed out does not",
            StartPoints.past(withID: "99999999-9999-4999-8999-999999999999", in: place,
-                            dir: root, open: []), nil)
+                            dir: root, open: [], config: unstored), nil)
+
+    // The same list, named the way every other Clawdline surface names the same conversation.
+    // Until 2026-09-05 this read the transcript's own two titles and nothing this app knows, so
+    // the sheet a person picks a conversation back up from disagreed with the row they had been
+    // reading all week. Both halves were on screen at once, in `atrium`: the session list said
+    // 注射增大問後遺症與硬度 and 工作室出租：劇本裡的網址被模型改寫掉, and the sheet said
+    // `Image review` and `Images` — the raw `aiTitle`s, for the two conversations whose opening
+    // was a pasted screenshot and no words.
+    //
+    // A folder of its own, because the checks above pin this folder's order and its exact count.
+    let ladder = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-past-titles-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: ladder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: ladder) }
+
+    let named = "aaaaaaaa-1111-4111-8111-111111111111"
+    let bothNames = "bbbbbbbb-2222-4222-8222-222222222222"
+    let itsOwn = "cccccccc-3333-4333-8333-333333333333"
+    let weakWithFallback = "dddddddd-4444-4444-8444-444444444444"
+    let weakAlone = "eeeeeeee-5555-4555-8555-555555555555"
+    let unnamed = "ffffffff-6666-4666-8666-666666666666"
+    let superseded = "abababab-7777-4777-8777-777777777777"
+
+    // One pasted screenshot and no words — the turn Claude Code makes `Image #1` out of, and the
+    // only one either `isWeak` clause fires on. The text part really is what Claude Code writes
+    // beside the image; that is what makes the opening a marker rather than prose.
+    let screenshot = #"{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"x"}},{"type":"text","text":"[Image #1]"}]}}"#
+    func said(_ text: String) -> String {
+        #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"\#(text)"}]}}"#
+    }
+    func aiTitle(_ text: String) -> String { #"{"type":"ai-title","aiTitle":"\#(text)"}"# }
+    func renamedTo(_ text: String) -> String { #"{"customTitle":"\#(text)"}"# }
+    func writeLadder(_ id: String, _ lines: [String], at seconds: TimeInterval) {
+        let url = ladder.appendingPathComponent("\(id).jsonl")
+        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: seconds)], ofItemAtPath: url.path)
+    }
+
+    writeLadder(named, [said("找一下這個 crash"), aiTitle("Crash triage")], at: 7000)
+    writeLadder(bothNames, [said("先看 log"), aiTitle("Log reading"),
+                            renamedTo("在終端機 /rename 的名字")], at: 6000)
+    writeLadder(itsOwn, [said("lightbox 在 Safari 18 播不動，幫我找原因"),
+                         aiTitle("Lightbox 影片相容性")], at: 5000)
+    writeLadder(weakWithFallback, [screenshot, aiTitle("Image review")], at: 4000)
+    writeLadder(weakAlone, [screenshot, aiTitle("Images")], at: 3000)
+    writeLadder(unnamed, [said("完全沒有標題的一段對話")], at: 2000)
+    writeLadder(superseded, [said("先照舊"), aiTitle("Held still"),
+                             renamedTo("後來在終端機改的名字")], at: 1000)
+
+    // A private config directory, so these are this suite's stored names and never the person's.
+    let names = ladder.appendingPathComponent("config", isDirectory: true)
+    try? FileManager.default.createDirectory(at: names, withIntermediateDirectories: true)
+    let stored = Config(directoryForTesting: names)
+    // Both rows carry the transcript they were chosen against, which is the shape the app writes:
+    // `seenCustomTitle` is what that file's `/rename` said at the time, and here it still says it.
+    stored.setSessionTitle("在 Clawdline 裡取的名字", sessionID: named, terminalID: "%40",
+                           seenCustomTitle: nil,
+                           seenTranscriptPath: ladder.appendingPathComponent("\(named).jsonl").path)
+    stored.setSessionTitle("Clawdline 的名字贏過 /rename", sessionID: bothNames, terminalID: "%41",
+                           seenCustomTitle: "在終端機 /rename 的名字",
+                           seenTranscriptPath: ladder.appendingPathComponent("\(bothNames).jsonl").path)
+    stored.setAutomaticSessionTitle("注射增大問後遺症與硬度", sessionID: weakWithFallback,
+                                    terminalID: "%42")
+    // The one that gives way: chosen when that transcript carried no `/rename`, and it carries one
+    // now. The newer of two human utterances wins, and it is not this one.
+    stored.setSessionTitle("在 /rename 之前取的名字", sessionID: superseded, terminalID: "%43",
+                           seenCustomTitle: nil,
+                           seenTranscriptPath: ladder.appendingPathComponent("\(superseded).jsonl").path)
+
+    let ladderRows = StartPoints.past(in: place, dir: ladder, open: [], config: stored)
+    func shown(_ id: String) -> String? { ladderRows.first { $0.id == id }?.title }
+
+    expect("a name a person typed in Clawdline outranks the title Claude Code wrote",
+           shown(named), "在 Clawdline 裡取的名字")
+    expect("and outranks a `/rename` in the terminal, which is the rung under it",
+           shown(bothNames), "Clawdline 的名字贏過 /rename")
+    expect("a conversation Clawdline was never asked to name keeps its own title",
+           shown(itsOwn), "Lightbox 影片相容性")
+    expect("a title with nothing behind it gives way to the fallback Clawdline generated",
+           shown(weakWithFallback), "注射增大問後遺症與硬度")
+    // Rung 3 steps aside only when there is something to step aside *for*: `Image #1` says an
+    // image was, and the opening under it says the same thing twice.
+    expect("the same title stands when no fallback was ever generated", shown(weakAlone), "Images")
+    expect("and a conversation with no title of any kind still opens with what was typed into it",
+           shown(unnamed), "完全沒有標題的一段對話")
+    expect("a stored name a later `/rename` superseded gives way to the `/rename`",
+           shown(superseded), "後來在終端機改的名字")
+
+    check("every one of them is still on the list rather than dropped for want of a name",
+          [named, bothNames, itsOwn, weakWithFallback, weakAlone, unnamed, superseded]
+            .allSatisfy { id in ladderRows.contains { $0.id == id } })
+    // What the client sends back is the conversation, not the name it is being shown under.
+    expect("the id is the transcript's, whichever rung named the row",
+           StartPoints.past(withID: weakWithFallback, in: place, dir: ladder, open: [],
+                            config: stored)?.id,
+           weakWithFallback)
+    // And the same ladder names it, because the lookup by id is the listing filtered — which is
+    // only true while the stored names reach it too.
+    expect("a row resolved by id is named the way the list named it",
+           StartPoints.past(withID: bothNames, in: place, dir: ladder, open: [],
+                            config: stored)?.title,
+           "Clawdline 的名字贏過 /rename")
 }
 
 group("an agent's turn is not the opening of a conversation") {
@@ -274,6 +390,30 @@ group("the first turn is found however far in it sits") {
            StartPoints.front(inRecord: ["type": "file-history-snapshot",
                                         "message": ["role": "user", "content": "hello"]])?.opening,
            nil)
+
+    // And the answer to that turn, which is what names a conversation whose opening request was
+    // one pasted screenshot and no words. Same row parser as the user side, so the same things
+    // are excluded — and tool calls are not the assistant talking.
+    let answered = [
+        #"{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"x"}},{"type":"text","text":"[Image #1]"}]}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"我看到了：素材缺一條"}]}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"再來查判準"}]}}"#,
+    ].joined(separator: "\n")
+    expect("a turn that opens by running a command is stepped over until it says something",
+           Transcript.firstAssistantMessage(in: answered), "我看到了：素材缺一條")
+    expect("the user side of the same transcript is unchanged",
+           Transcript.firstUserMessage(in: answered), "[Image #1]")
+    expect("a sidechain is not this conversation's answer",
+           Transcript.firstAssistantMessage(in: #"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"an agent"}]}}"#),
+           nil)
+    expect("and a conversation nobody has answered yet has none",
+           Transcript.firstAssistantMessage(in: #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#),
+           nil)
+    let onDisk = root.appendingPathComponent("answered.jsonl")
+    try? answered.write(to: onDisk, atomically: true, encoding: .utf8)
+    expect("the bounded file reader agrees with the parser above",
+           Transcript.firstAssistantMessage(of: onDisk), "我看到了：素材缺一條")
 }
 
 group("a rename is found wherever it was made") {

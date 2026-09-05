@@ -49,6 +49,11 @@ final class SessionWatch {
         let conversationID: String?
         let conversationTitle: String?
         let customTitle: String?
+        /// Whether that title describes the work, judged where the transcript is already open.
+        /// The judgement belongs here rather than in ``labels(of:identities:evidence:)`` for the
+        /// same reason every other field does: the label assembly reads captured evidence and
+        /// never opens a file of its own. See ``ConversationTitle``.
+        let conversationTitleIsWeak: Bool
         let handle: String?
     }
 
@@ -413,7 +418,7 @@ final class SessionWatch {
             guard let assistant = session.assistant, let process = running(session) else {
                 labelEvidence[session.id] = LabelEvidence(
                     processStart: nil, conversationID: nil, conversationTitle: nil,
-                    customTitle: nil, handle: nil)
+                    customTitle: nil, conversationTitleIsWeak: false, handle: nil)
                 continue
             }
             let conversationID: String?
@@ -481,9 +486,15 @@ final class SessionWatch {
             let customTitle = recordURL.flatMap { url in
                 assistant == .claude ? Transcript.customTitle(ofTranscript: url) : nil
             }
+            let conversationTitleIsWeak = recordURL.map { url in
+                assistant == .claude
+                    && Transcript.titleIsWeak(ofTranscript: url, title: conversationTitle,
+                                              customTitle: customTitle)
+            } ?? false
             labelEvidence[session.id] = LabelEvidence(
                 processStart: process.processStart, conversationID: conversationID,
-                conversationTitle: conversationTitle, customTitle: customTitle, handle: handle)
+                conversationTitle: conversationTitle, customTitle: customTitle,
+                conversationTitleIsWeak: conversationTitleIsWeak, handle: handle)
             result[session.id] = PublishedIdentity(
                 assistant: assistant, tty: session.tty, pid: process.pid,
                 processStart: process.processStart, conversationID: conversationID,
@@ -510,7 +521,10 @@ final class SessionWatch {
                 conversationID: label?.conversationID)
             return (session.id, TargetSession.preferredDisplayLabel(
                 manualTitle: manual, orchestratorTitle: Orchestrator.title(forTerminal: session.id),
-                conversationTitle: label?.conversationTitle, threadName: thread,
+                conversationTitle: TargetSession.displayedConversationTitle(
+                    label?.conversationTitle, isWeak: label?.conversationTitleIsWeak ?? false,
+                    fallback: thread),
+                threadName: thread,
                 handle: label?.handle, coordinate: session.coordinate))
         })
     }
@@ -890,7 +904,8 @@ final class SessionWatch {
             let identity = identities[target.id]
             return (target.id, LabelEvidence(
                 processStart: identity?.processStart, conversationID: identity?.conversationID,
-                conversationTitle: nil, customTitle: nil, handle: nil))
+                conversationTitle: nil, customTitle: nil, conversationTitleIsWeak: false,
+                handle: nil))
         })
         self.publishedLabels = Dictionary(uniqueKeysWithValues: targets.map { target in
             (target.id, labels[target.id] ?? target.coordinate)
