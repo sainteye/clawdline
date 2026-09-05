@@ -136,9 +136,9 @@ func runScheduleResumeTests() throws -> Int {
     try expect("detail stops handing out a missing conversation id",
                removed?["session_id"] == nil)
 
-    try checkMachineScheduleDoorClaims { name, condition in
+    try checkMachineScheduleDoorClaims { name, ok in
         checks += 1
-        if !condition() { throw ScheduleResumeTestFailure.failed(name) }
+        if !ok { throw ScheduleResumeTestFailure.failed(name) }
     }
     return checks
 }
@@ -157,8 +157,7 @@ func runScheduleResumeTests() throws -> Int {
 /// the gate as it really behaves, and the pages as they now read. The second pair is a guard on
 /// prose, which is unusual and is the point — prose is what went wrong, and prose is the only
 /// part of this delivery nothing could go red about.
-private func checkMachineScheduleDoorClaims(
-    _ expect: (String, @autoclosure () -> Bool) throws -> Void) throws {
+private func checkMachineScheduleDoorClaims(_ expect: (String, Bool) throws -> Void) throws {
     try expect("the machine door admits a one-shot and counts nothing that already exists",
                Orchestrator.machineScheduleRefusal(
                 method: "POST", id: nil, body: ["on": "2026-09-07", "at": "01:30"]) == nil)

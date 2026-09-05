@@ -836,15 +836,15 @@ group("bad schedule files are isolated and the routes use orchestrator envelopes
     defer { try? FileManager.default.removeItem(
         at: directory.appendingPathComponent("\(laterID).json")) }
     Orchestrator.forget()
-    var queued: [() -> Void] = []
+    var waitingWork: [() -> Void] = []
     var laterRuns: [String] = []
-    Orchestrator.scheduleDispatchEnqueuerForTesting = { queued.append($0) }
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { waitingWork.append($0) }
     Orchestrator.scheduleRunnerForTesting = { laterRuns.append($0.id); return .ok(["ok": true]) }
     Orchestrator.scheduleBeat(now: timerNow)
     let retimed = save(laterID, rearmBody)
     check("a save may still move a one-shot that has not run", retimed == (200, "ok"),
           String(describing: retimed))
-    queued.forEach { $0() }
+    waitingWork.forEach { $0() }
     // The daily schedule beside it is the control: same queue, same pass, so a green here
     // cannot be a harness that ran nothing.
     check("the work that was waiting drops the occurrence it lost, and only that one",
