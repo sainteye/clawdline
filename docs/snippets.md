@@ -246,11 +246,13 @@ A read-only device shows the sheet and its rows, with the insert disabled and th
 
 ## Words
 
-⚠ **Twenty-six, not the twelve this said.** The menu row, the sheet title, the two scope headings,
-two empty states, the read-only reason, the editor's three field labels and its two headings, the
-row menu's six actions, Save, the delete confirmation, 用上一則訊息新增, the "needs a title and some
-text" refusal — and the two starters, which are four strings on their own because each has a title
-and a body. The twelve was an estimate made before the editor and the empty state existed.
+⚠ **Twenty-six, not the twelve this said**, and they add up: the `⋯` row and the sheet's title, one
+word between them (1); the two scope headings (3); the two empty states (5); the read-only reason
+(6); the editor's two headings (8) and its three field labels (11); Save (12); 用上一則訊息新增
+(13); the "needs a title and some text" refusal (14); a row's own `⋯` label (15) and the six actions
+behind it (21); the second press that confirms a delete (22); and the two starters, which are four
+strings because each has a title and a body (26). The twelve was an estimate made before the editor
+and the empty state existed.
 
 They are in `Sources/Strings.swift` and the fourteen `Copy` structs across thirteen `Copy+*.swift`
 files — Chinese carries Traditional and Simplified in one file — with the English baked into
