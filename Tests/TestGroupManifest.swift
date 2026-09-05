@@ -160,6 +160,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a burst of finishes becomes one push, not one each",
     "smart notification health is visible where the switch is",
     "a push payload keeps the beginning of a sentence that does not fit",
+    "a notification's deep link carries a session id a browser can read back",
     "push-service receipts distinguish acceptance from refusal",
     "a project mark small enough to be a URL",
     "state hook: finding the program",

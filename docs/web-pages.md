@@ -123,6 +123,38 @@ Opening a session goes home first. `#session=…` means the session list with th
 it, and without that line a push arriving while somebody is reading Usage would load the
 transcript underneath a page that is still on screen.
 
+### The session id in the fragment is percent-encoded
+
+`#session=<id>` carries the id **encoded**, and the encoding is not decoration. The sessions this
+app watches are usually tmux panes, and a pane id is `%141` — `Sources/Tmux.swift` calls `%12`
+"stable for the life of the pane". Written raw, the address read `/#session=%141`, and the reader
+here answers a fragment with `decodeURIComponent`, which does not refuse that: `%14` is a complete
+escape, so the id the page went looking for was U+0014 followed by `1`. No session has ever had
+that id, so `byId` found nothing, the first whole list let go of the request, and tapping a
+notification stopped on the session list with nothing on screen to say why. iTerm's ids —
+`w0t0p0:<UUID>` — have no per-cent in them and survived both roads unchanged, which is why this
+only ever happened on the machines running tmux and never against a fixture like `abc`.
+
+`WebPush.sessionURL(forSessionID:)` is the one place the address is written, and all four pushes
+that name a session go through it. Its allowed set is the **unreserved** characters of RFC 3986 —
+alphanumerics plus `-._~` — rather than `.urlFragmentAllowed`, which permits `&`, `=` and `#`: the
+reader is `/(?:^|[#&])session=([^&]*)/`, so any of those three inside an id would cut the fragment
+in half. The `tag` beside it in each caller is not a URL and is left alone.
+
+Reading it back takes **two candidates, not one**: the decoding first, and the text exactly as it
+was written after it. A notification already delivered to somebody's phone carries the old
+spelling and gets tapped days later, so `route.js` holds both across the wait for the first
+session list and tries them in that order.
+
+**The second candidate is kept only where the decoding is impossible**, which is what an old link
+looks like: `%141` decodes to U+0014 and a `1`, a control character no session id contains. A link
+written since the encoding decodes to a real id instead — `%25141` to `%141` — and there the raw
+text names a *different real session*: `%252` is how `%2` is spelled now, and on a machine that has
+reached pane `%252` the raw reading would open that stranger the day `%2` closes, with nothing on
+screen to say so. The cost of the rule is one narrow range — an old link naming `%20`–`%39`
+decodes to a printable character and is not rescued — and that is the behaviour this had before
+the encoding existed, which is "does not route", never "routes somewhere else".
+
 ## Adding a page
 
 Three things, and no new mechanism. The **Projects page** was the first one added this way, and it

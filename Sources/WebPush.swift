@@ -486,6 +486,41 @@ enum WebPush {
         return String(base64url(Data(digest)).prefix(32))
     }
 
+    /// The deep link a notification about a session carries, with the id encoded.
+    ///
+    /// **A session id is not URL text, and on this Mac it usually is not even close.** The
+    /// sessions this app watches are tmux panes, and a pane id is `%141` — see
+    /// ``Tmux`` on `%12` being "stable for the life of the pane". Written straight into a
+    /// fragment the address reads `/#session=%141`, and the web app answers that with
+    /// `decodeURIComponent`, which does not refuse it: `%14` is a complete escape, so the id
+    /// the page went looking for was U+0014 followed by `1`. No session has ever had that id,
+    /// the first whole session list let go of the request, and the tap stopped on the list with
+    /// nothing on screen to say why. iTerm ids — `w0t0p0:<UUID>` — carry no per-cent and went
+    /// through unharmed, which is why this only ever happened on the machines that use tmux and
+    /// never in a test.
+    ///
+    /// **The allowed set is the unreserved characters of RFC 3986 and nothing else**, rather
+    /// than `.urlFragmentAllowed`. A fragment is allowed to contain `&`, `=` and `#`, and the
+    /// reader at the other end is `/(?:^|[#&])session=([^&]*)/` — so an id containing any of
+    /// them would be cut in half by the very characters that set permits.
+    ///
+    /// The `tag` beside this in every caller is deliberately left alone: it is a key for
+    /// replacing one notification with another, hashed by ``topic(for:)``, and never a URL.
+    static func sessionURL(forSessionID id: String) -> String {
+        // Percent-encoding cannot fail for a Swift `String` — it is well-formed Unicode by
+        // construction — but the API is optional, and the fallback has to be something other
+        // than the raw id, which is the bug this function exists to end.
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: unreservedForSessionID)
+        return "/#session=" + (encoded ?? "")
+    }
+
+    /// RFC 3986 §2.3: the characters that never need encoding anywhere in a URI.
+    private static let unreservedForSessionID: CharacterSet = {
+        var set = CharacterSet.alphanumerics
+        set.insert(charactersIn: "-._~")
+        return set
+    }()
+
     /// Build the bytes every subscription receives. Decorations are expendable first; if the
     /// sentence still does not fit, keep its beginning and discard only its tail. The binary
     /// search is over Swift Characters, so it never splits an emoji or a composed character.

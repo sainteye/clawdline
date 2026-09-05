@@ -1028,6 +1028,41 @@ group("a push payload keeps the beginning of a sentence that does not fit") {
     check("and discards the tail", !shortened.hasSuffix(ending))
 }
 
+group("a notification's deep link carries a session id a browser can read back") {
+    // The id this Mac actually watches. `Sources/Tmux.swift` calls `%12` "stable for the life of
+    // the pane", and `tmux list-panes -a -F '#{pane_id}'` prints `%141` here.
+    expect("a tmux pane id arrives with its per-cent encoded",
+           WebPush.sessionURL(forSessionID: "%141"), "/#session=%25141")
+    // What the fragment used to say, and the whole of the bug: `decodeURIComponent("%141")` does
+    // not throw — `%14` is a complete escape — so the page went looking for a session whose id is
+    // U+0014 followed by "1", found none, and stopped on the list.
+    check("which is not the raw id the page could not find",
+          WebPush.sessionURL(forSessionID: "%141") != "/#session=%141")
+    // The control group: the ids that were never broken must not start moving now. An iTerm
+    // session id is `w0t0p0:<UUID>`, and every character of it is either unreserved or a colon.
+    expect("an iTerm session id is untouched by the encoding",
+           WebPush.sessionURL(forSessionID: "w0t0p0:1234-ABCD"),
+           "/#session=w0t0p0%3A1234-ABCD")
+    expect("and its unreserved characters stay themselves",
+           WebPush.sessionURL(forSessionID: "a-z_0.9~Q"), "/#session=a-z_0.9~Q")
+
+    // Why the allowed set is unreserved rather than `.urlFragmentAllowed`, which permits all
+    // three of these: the reader is `/(?:^|[#&])session=([^&]*)/`, so an id carrying one of them
+    // would be cut in half by the character that was let through.
+    for cutter in ["&", "=", "#"] {
+        let made = WebPush.sessionURL(forSessionID: "a\(cutter)b")
+        check("a session id containing \(cutter) does not carry it into the fragment",
+              !made.dropFirst("/#session=".count).contains(cutter))
+    }
+
+    // What the web app does with it, spelled out here because the two halves live in different
+    // languages and only agreeing makes either of them right.
+    let written = WebPush.sessionURL(forSessionID: "%141")
+    let fragment = String(written.dropFirst("/#session=".count))
+    expect("and the fragment decodes back to exactly the pane it named",
+           fragment.removingPercentEncoding, "%141")
+}
+
 group("push-service receipts distinguish acceptance from refusal") {
     check("a 201 is an accepted push receipt", WebPush.serviceAccepted(status: 201))
     check("a service-side 4xx is a failed push receipt", !WebPush.serviceAccepted(status: 403))

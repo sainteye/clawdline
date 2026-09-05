@@ -9015,7 +9015,7 @@ enum Orchestrator {
                              resolution: .task,
                              among: rootTargets(),
                              sessionID: Transcript.sessionID(of:)) {
-            url = "/#session=\(root.id)"
+            url = WebPush.sessionURL(forSessionID: root.id)
         }
         // Keyed on the root and not on a task, so a second fan-out from the same session replaces
         // the first rather than stacking under it. Smart output and the ordinary count share the
@@ -9057,8 +9057,8 @@ enum Orchestrator {
         }
         // Its own tag rather than the session's, so a delivery never quietly replaces a "waiting
         // for an answer" that is still unanswered on the same phone.
-        WebPush.send(title: message.title, body: message.body, url: "/#session=\(id)",
-                     tag: "delivery-\(id)",
+        WebPush.send(title: message.title, body: message.body,
+                     url: WebPush.sessionURL(forSessionID: id), tag: "delivery-\(id)",
                      icon: RemoteIcon.projectPath(
                          for: session.flatMap(Targets.workingDirectory(of:))
                              .flatMap(ProjectIcon.grid(forCwd:))))

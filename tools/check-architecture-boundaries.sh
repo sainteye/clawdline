@@ -361,8 +361,12 @@ manifest_group_count=$(awk '
 # sharing the write gate with their typed refusals, and the snapshot carrying a list a session
 # read is already filtered from. One branch wrote 536 and the other 534, from the same 532; the
 # number here is the awk's answer on the merged manifest, which is the only tree that has both.
-[ "$manifest_group_count" -eq 538 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 538"
+# 539 with the deep link's one: a notification names a session by an id that is usually a tmux
+# pane, `%141`, and the fragment now carries it percent-encoded — the group holds the encoding, the
+# unreserved set it uses rather than `.urlFragmentAllowed`, and the ids that carry no per-cent and
+# must not start moving. Counted from the manifest with the awk above, on a tree that had 538.
+[ "$manifest_group_count" -eq 539 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 539"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:

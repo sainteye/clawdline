@@ -314,7 +314,7 @@ enum StateHook {
         let message = pushMessage(for: session, project: projectName(for: session), event: event)
         WebPush.send(title: message.title,
                      body: message.body,
-                     url: "/#session=\(session.id)",
+                     url: WebPush.sessionURL(forSessionID: session.id),
                      tag: session.id,
                      icon: RemoteIcon.projectPath(for: projectMark(for: session)))
     }

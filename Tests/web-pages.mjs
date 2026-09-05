@@ -469,5 +469,136 @@ check(!moves.test(scrim || ""),
 check(!moves.test(panel || ""),
       "and the panel does not slide in — the same failure, found in an iframe Chrome had decided not to animate");
 
+/* ---- the id in the fragment is written encoded, and read both ways ---------
+   A notification about a session carries `/#session=<id>`, and on this Mac an id is usually a
+   tmux pane — `%141`. Written raw, the fragment reads `#session=%141`, and the reader below
+   answers it with `decodeURIComponent`, which does not throw on that: `%14` is a complete escape,
+   so `%141` decodes to U+0014 followed by `1` — a session id that has never existed. `byId` found
+   nothing, the first list cleared the request, and the tap stopped on the session list. Nothing
+   was red: every fixture in this file used ids like `abc`, which survive the round trip unchanged.
+
+   So the address is written percent-encoded (`WebPush.sessionURL(forSessionID:)`), and read as
+   two candidates rather than one — the decoding, and the text exactly as written — because the
+   notifications already delivered to a phone carry the old spelling and are tapped days later.
+
+   The module is imported with its three imports and its three browser globals replaced, because
+   `session/open.js` reaches the whole app and importing it here never returns. */
+const routeStandalone =
+    "const window = globalThis.__routeEnv.window;\n" +
+    "const location = globalThis.__routeEnv.location;\n" +
+    "const navigator = globalThis.__routeEnv.navigator;\n" +
+    routeSource
+        .replace('import { Pages, pageInHash } from "../core/pages.js";',
+            "const Pages = globalThis.__routeEnv.Pages;\n" +
+            "const pageInHash = globalThis.__routeEnv.pageInHash;")
+        .replace('import { byId } from "../view/derive.js";',
+            "const byId = globalThis.__routeEnv.byId;")
+        .replace('import { openSession } from "../session/open.js";',
+            "const openSession = globalThis.__routeEnv.openSession;");
+check(!/^import /m.test(routeStandalone),
+      "every import in route.js was replaced — one left behind would pull the whole app in and hang");
+
+const listed = new Set();
+const opened = [];
+globalThis.__routeEnv = {
+    Pages: { knows: () => true, go: () => {}, goHome: () => {}, current: () => "sessions",
+             home: () => "sessions" },
+    pageInHash: () => null,
+    byId: (id) => (listed.has(id) ? { id: id } : null),
+    openSession: (id) => { opened.push(id); },
+    window: { addEventListener: () => {} },
+    location: { hash: "" },
+    navigator: {},
+};
+const route = await import(
+    "data:text/javascript;base64," + Buffer.from(routeStandalone).toString("base64"));
+
+// The pane really is what this Mac watches: `Sources/Tmux.swift` calls `%12` "stable for the life
+// of the pane", and `%141` is what `tmux list-panes` prints here.
+const pane = "%141";
+equal(decodeURIComponent(encodeURIComponent(pane)), pane,
+      "the encoding this rests on round-trips the id a tmux pane really has");
+
+listed.add(pane);
+opened.length = 0;
+route.routeTo("#session=%25141");
+equal(opened.join(","), pane,
+      "a notification written today opens the pane it names — its per-cent arrives as %25");
+
+// The half that cannot be re-issued: a notification already sitting on a phone was written before
+// this, and tapping it a day later has to land in the same place.
+opened.length = 0;
+route.routeTo("#session=%141");
+equal(opened.join(","), pane,
+      "and a notification delivered before the encoding still opens it, read as written");
+
+// Nothing about an id with no per-cent in it changes: iTerm's ids are the control group.
+const iterm = "w0t0p0:1234-ABCD";
+listed.add(iterm);
+opened.length = 0;
+route.routeTo("#session=" + iterm);
+equal(opened.join(","), iterm, "an id that needs no encoding is untouched by either road");
+
+// A cold start routes before it knows what sessions exist, so both candidates have to survive the
+// wait — `openWanted` is called again with every list.
+listed.clear();
+opened.length = 0;
+route.routeTo("#session=%141");
+equal(opened.length, 0, "a session the list has not brought yet is not opened");
+check(!!route.wantedSession,
+      "but it is held — `view/list.js` reads this to know somebody asked for a session");
+equal(route.openWanted(), false, "and asking again while it is still missing is still no");
+listed.add(pane);
+equal(route.openWanted(), true, "the list arrives, and the request is answered");
+equal(opened.join(","), pane, "with the id as written, not as decoded");
+
+// A second request replaces the first, both halves of it. `routeTo` runs again on every
+// hashchange, and a raw candidate left over from the request before it would answer a question
+// nobody is asking any more — with a different session, which is worse than answering nothing.
+listed.clear();
+route.routeTo("#session=%141");            // held: nothing is in the list yet
+listed.add(pane);                          // and now the pane it named is
+opened.length = 0;
+route.routeTo("#session=ghost");           // but somebody has asked for a session that is not
+equal(opened.length, 0,
+      "a request naming a session the list does not have opens nothing — not the one asked for before it");
+
+// And letting go lets go. `view/list.js` clears the request when the first whole list does not
+// contain the session it names — a tab somebody has since closed — so that a session which is
+// never coming does not hold the default open hostage.
+listed.clear();
+route.routeTo("#session=%25141");
+route.setWantedSession(null);
+listed.add(pane);
+opened.length = 0;
+equal(route.openWanted(), false, "a request that was let go stays let go");
+equal(opened.length, 0, "and nothing is opened behind it");
+
+// The raw text is a rescue for links written before the encoding, not a second guess at the ones
+// written after it. `%252` is how `%2` is spelled now, and pane ids count up from 1 — so a machine
+// that has reached pane `%252` holds both readings of that link as real, live sessions. The day
+// `%2` closes, the raw reading names a stranger, and the screen would say nothing about it.
+listed.clear();
+route.setWantedSession(null);
+listed.add("%252");
+opened.length = 0;
+route.routeTo("#session=%252");
+equal(opened.length, 0,
+      "a link whose pane has closed opens nothing — not the pane whose id is how that one is now spelled");
+
+// And the request it did make is the right one, still waiting for a list that has it.
+listed.add("%2");
+equal(route.openWanted(), true, "the pane it actually named arrives, and the request is answered");
+equal(opened.join(","), "%2", "with the id the link meant");
+
+// The old spelling keeps its second candidate, because decoding it produces something no session
+// could be called — U+0014 and a `1` — and that impossibility is the evidence the text is raw.
+listed.clear();
+route.setWantedSession(null);
+listed.add(pane);
+opened.length = 0;
+route.routeTo("#session=%141");
+equal(opened.join(","), pane, "an old notification is still read as written, on the strength of that");
+
 console.log(`${failed ? "not ok" : "ok"}: web pages and sidebar, ${checks} checks`);
 if (failed) process.exit(1);
