@@ -131,16 +131,21 @@ It is the same schedule in every other respect, and deliberately so.
   the ordinary audited and notified `missed`. `created_at` and `when_changed_at` gate it the same
   way too — an occurrence from before the file existed, or from before the save that moved it, is
   not one anybody missed.
-- **It retires itself, and the row says so.** When the session really opens, Clawdline writes
+- **It retires itself, and the file says so.** When the session really opens, Clawdline writes
   `fired_at` into the file. After that the schedule cannot fire again: the minute timer says so,
-  and `POST …/run` refuses with `409 schedule_spent`. The stamp is on disk rather than in memory
+  `POST …/run` refuses with `409 schedule_spent`, and so does a save that would move its date. The stamp is on disk rather than in memory
   because the timer's record of which occurrences it has handled does not survive a restart, and
   a Mac that relaunches while the fire is still inside its catch-up window would otherwise open a
   second session for a run that already happened.
-- **A spent row and a paused row are not the same row.** `GET` gives a schedule that runs once
-  `once: true`, and a spent one `fired_at` as well, while `next_fire` is simply absent. Turning a
-  schedule off by hand used to be the only way to retire one, so *finished* and *somebody paused
-  this* were the same `enabled: false` and nothing said which you were looking at.
+- **A spent row and a paused row are not the same row — in the payload.** `GET` gives a schedule
+  that runs once `once: true`, and a spent one `fired_at` as well, while `next_fire` is simply
+  absent. Turning a schedule off by hand used to be the only way to retire one, so *finished* and
+  *somebody paused this* were the same `enabled: false` and nothing said which you were looking at.
+  **Neither screen draws the difference yet.** The Mac's schedule list and the browser's both build
+  their row from `enabled`, `next_fire` and the last run, and neither reads `once` or `fired_at`,
+  so a spent one-shot is an enabled row with no next run — the same picture as one that is waiting
+  for a date it will never reach. Drawing it needs a label in every language this app ships and a
+  change in both lists, and until that lands this bullet is about the API and nothing else.
 - **A dispatch this Mac refused does not spend it.** `fired_at` is Clawdline's statement that the
   work ran. A refusal consumes the occurrence in memory exactly as it does for a recurring
   schedule and writes no stamp, so the row goes on saying the run has not happened.
@@ -181,22 +186,37 @@ curl -s -X POST "http://127.0.0.1:$port/v1/orchestrator/schedules" \
 **Two doors, and the second one only opens onto a schedule that runs once.** A paired device
 passes the three gates `POST /v1/voice` and `POST /v1/intents` already sit behind: the write
 switch in Settings → Remote, the `send` capability on the device, and an `Idempotency-Key`. That
-is what this route was built for, and the orchestrator token — a `0600` file on this Mac, which
-is what makes it a proof of being local — is not a way past those.
+is what this route was built for.
 
-This Mac's own orchestrator token opens the other door, with the same `Idempotency-Key` and no
-device gate, and it reaches a schedule with `when.on` and no other. The line is drawn around what
-a schedule *is*. A repeating one is unattended execution somebody arranges once and that runs
-afterwards with nobody watching, and an assistant session can read this token off the disk it runs
-on, so a session able to mint one could arrange to be woken every night forever. A schedule that
-runs **once** is one dispatch at a named time — and the same token already opens a session
-immediately with `POST /v1/orchestrator/tasks` and already runs any schedule on the spot with
-`POST …/run`. Refusing it *at half past one* while allowing *now* protects nothing.
+This Mac's own orchestrator token opens the other door, with the same `Idempotency-Key` and — like
+every other orchestrator route — **neither the device gate nor the write switch**. That is worth
+saying plainly rather than leaving to be inferred: turning Settings → Remote → writes off stops a
+*phone* creating, changing and removing schedules, and does not stop a session on this Mac doing
+it. What the second door reaches is a schedule with `when.on` and no other. A schedule that runs
+**once** is one dispatch at a named time, and the same token already opens a session immediately
+with `POST /v1/orchestrator/tasks` and already runs any schedule on the spot with `POST …/run`.
+Refusing it *at half past one* while allowing *now* protects nothing.
 
-What that refusal actually produced is on the record and is the other half of the argument: the
-session that hit it wrote the JSON file by hand instead — mode 0644, no `created_at`, unvalidated,
-never read back, and in no audit line. This route does all five of those things. So a repeating
-schedule stays a person's to arrange, and the refusal now says so and says where to go:
+**And refusing it a repeating schedule does not protect against recurrence either, which is what
+the first version of this page claimed.** The claim was: an assistant session can read this token
+off the disk it runs on, so a session able to mint a repeating schedule could arrange to be woken
+every night forever. The sentence is true and it is not what the refusal stops. A session can post
+a one-shot for tomorrow, and the session *that one opens* can post the next — nothing bounds how
+many one-shots exist, every fired session holds the same token, and ten writes in ten minutes is
+no brake at one write a day. Nor did the refusal bound it before this door existed: the session
+that hit it wrote the schedule file by hand instead, and a hand-written file may carry `when.days`.
+**The gate only ever decided which artifact the capability produced.**
+
+What the refusal does buy is two things, and they are why it stays:
+
+- **A person's repeating rows are not an agent's to edit or delete.** `PATCH` and `DELETE` read
+  the kind of the file being changed, so the nightly schedule somebody arranged in Settings cannot
+  be retimed, disabled or removed out from under them by a session on this Mac.
+- **An agent's deferred work is validated, stamped, read back and audited.** The hand-written file
+  on the record was mode 0644, with no `created_at`, unvalidated, never read back, and in no audit
+  line. This route does all five of those things, at `0600`.
+
+So a repeating schedule stays a person's to arrange, and the refusal says so and says where to go:
 
 ```text
 403 forbidden — This Mac's orchestrator token may make, change and remove a schedule that runs
@@ -296,9 +316,18 @@ level up: neither the Mac's schedule sheet nor the phone's has a control for a o
 a save from either would send `days` and convert it silently, having never shown the field it was
 replacing. Removing it and making a new one is the honest way to say this is different work.
 
-`fired_at` is carried across exactly when the occurrence it names is still this schedule's own. A
-save that leaves `when` alone leaves the schedule spent; a save that moves the date is asking for
-a single run that has not happened yet, and the stamp comes off with the old day.
+**A save may not move a one-shot that has already run.** `fired_at` is the record that a schedule
+which runs once has run — it answers for the schedule, not for one occurrence of it, because a
+one-shot only ever has one. A save that leaves `when` alone carries the stamp across and leaves the
+schedule spent; a save that moves the date is asking a row that has run for a second run, and is
+refused `409 schedule_spent` — the same code `POST …/run` gives, for the same reason. Renaming a
+spent schedule, or rewriting what its session is told to do, is an ordinary save and still works.
+
+The stamp used to come off with the old day instead, which made this a re-arm primitive rather than
+a schedule: the session a one-shot opened could `PATCH` it to tomorrow, be woken, and do it again —
+a nightly wake-up that both lists draw as one run on a date that keeps moving. Retiming a spent
+one-shot **by hand** still works, because the file is still yours; what changed is that the route
+will not do it for a caller.
 
 **`schedule_id`, `created_at` and `when_changed_at` are the Mac's and are not fields a request may
 carry** — naming any of them is refused as an unknown field, alongside `project_dir`. The last two
@@ -409,6 +438,14 @@ A schedule that runs once takes exactly the same minute. Its one occurrence runs
 writes `fired_at` into the file, and from then on every beat sees a schedule that has spent
 itself and does nothing — including the first beat after a restart, which is the case the stamp
 exists for.
+
+**The occurrence is checked again when the work reaches the queue, not only when the timer chose
+it.** The terminal channel can be busy for minutes, and a save can land in that gap. So the file is
+re-read at the front of the dispatch, and an occurrence that is no longer the file's — one already
+spent, or one older than a `when_changed_at` that arrived while it waited — is dropped and audited
+as `skipped … why=retimed`. Without that, a one-shot due at 09:00 and retimed to tomorrow at 21:00
+while its work was queued would open a session for a nine o'clock nobody was scheduled for, and
+stamp `fired_at` with the old day, spending tomorrow's run before it happened.
 
 The honest boundary is the app process: **if Clawdline is not open, nothing fires.** Opening it
 later can catch up only while the most recent occurrence remains inside its window. This is not a
