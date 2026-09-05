@@ -87,6 +87,7 @@ clawdline_production_sources=(
   Sources/RemoteServer.swift
   Sources/RemoteTunnel.swift
   Sources/Scratch.swift
+  Sources/Schedules.swift
   Sources/SessionClosePolicy.swift
   Sources/SessionImageArtifact.swift
   Sources/SessionImagePreview.swift
