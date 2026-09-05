@@ -5,6 +5,21 @@ import SQLite3
 
 
 
+/// What one walk through the ordinary and the detached dispatch doors observed, in the group
+/// "owned child dispatch and detached automation use different doors" below. It is a named type
+/// rather than a tuple so the two walks that group makes — one under a forced `exhausted` quota
+/// reading, one under a forced `ok` one — can be compared as a single `Equatable` value, and so
+/// that a field added to it is compared without anybody remembering to come back for it.
+private struct DetachedDoorOutcome: Equatable {
+    var ordinaryStatus: Int
+    var ordinaryCode: String
+    var openedAfterOrdinary: Int
+    var ordinaryRegistered: Bool
+    var detachedStatus: Int
+    var openedAfterDetached: Int
+    var detachedOwnerless: Bool
+}
+
 func runOrchestratorCompletionTests() {
 group("task completion ingress and delivery are durable protocol facts") {
     let physical = OrchestratorDraft.RootIdentityEvidence(
@@ -196,16 +211,46 @@ group("task completion ingress and delivery are durable protocol facts") {
 }
 
 group("owned child dispatch and detached automation use different doors") {
+    // **This group is about which door a task comes through, and it used to be about this Mac's
+    // Codex balance as well without saying so.** The fixture named `codex`, `RemoteServer.route`
+    // runs the real `Orchestrator.dispatch`, and that gate reads `AssistantQuota.current(for:)`
+    // before it ever reaches a starter. So on the nights this account sat at `7d 100%`, the
+    // detached door answered 409 `assistant_exhausted`, the starter was never called, and both
+    // "wants 200" and "wants exactly one executor" went red — on three different trees at once,
+    // referenced by nobody's diff, for about 37 hours until the weekly window reset. A check whose
+    // colour is a reading of an account balance is not a check of anything in this file.
+    //
+    // Two changes answer two different halves of that, and only the second one is a proof:
+    //
+    // 1. The fixtures declare `ignore_quota: true` — the product's own override, the one
+    //    `assistantOverrideWarning` exists to explain. It is honest here in a way it would not be
+    //    in production: `taskStarterForTesting` means no terminal opens and no quota is spent, so
+    //    "send it anyway" costs the account nothing. It costs no coverage either. Whether the gate
+    //    refuses on `exhausted`, honours `ignore_quota`, and stays quiet on `unknown` is the entire
+    //    subject of "the dispatch gate actually reads the quota it computed, rather than only its
+    //    helpers" in `Tests/SessionCloseAndQuotaTests.swift`, which drives the real
+    //    `Orchestrator.dispatch` through all three against forced readings. Asserting it a second
+    //    time here bought nothing and cost this file its determinism.
+    //
+    // 2. The doors are then walked twice — once under a forced `exhausted` reading, once under a
+    //    forced `ok` one — and the two walks are compared as one value. That is the part that
+    //    keeps (1) true. Pinning the quota alone would only say *this run* did not consult the
+    //    account; walking both poles and demanding one answer is a statement about every run, and
+    //    it is what goes red if somebody removes the override again.
+    //    `AssistantQuota.setOverrideForTesting` is the existing seam for it — the same idea as
+    //    `taskStarterForTesting` below, already used by three other test files.
     Orchestrator.forget()
     let wasEnabled = Config.shared.orchestratorEnabled
     Config.shared.orchestratorEnabled = true
     let store = Orchestrator.storeURL
     let storedBefore = try? Data(contentsOf: store)
-    let ownedID = UUID().uuidString.lowercased()
-    let detachedID = UUID().uuidString.lowercased()
-    let taskIDs = [ownedID, detachedID]
+    // The assistant the fixture names and the assistant whose reading is forced are one constant,
+    // because a drift between them would force a reading the gate never asks for and leave this
+    // group quietly back on the live account.
+    let probeAssistant = Assistant.codex
+    var writtenTaskIDs: [String] = []
     defer {
-        for id in taskIDs {
+        for id in writtenTaskIDs {
             try? FileManager.default.removeItem(
                 at: Orchestrator.root.appendingPathComponent(id, isDirectory: true))
         }
@@ -214,6 +259,7 @@ group("owned child dispatch and detached automation use different doors") {
         } else {
             try? FileManager.default.removeItem(at: store)
         }
+        AssistantQuota.clearOverridesForTesting()
         Config.shared.orchestratorEnabled = wasEnabled
         Orchestrator.forget()
     }
@@ -224,44 +270,102 @@ group("owned child dispatch and detached automation use different doors") {
                                                  withIntermediateDirectories: true)
         let task: [String: Any] = [
             "clawdline_protocol": 1, "task_id": id, "kind": "custom",
-            "assistant": "codex", "project_dir": "/tmp", "title": "poll-only probe",
+            "assistant": probeAssistant.rawValue, "project_dir": "/tmp",
+            "title": "poll-only probe",
             "instructions": "the test starter prevents a real terminal", "timeout_minutes": 5,
             "claims": ["artifacts/poll-only"],
+            // Says out loud that this probe is not about quota — see (1) at the top of the group.
+            "ignore_quota": true,
             "root": ["session_id": NSNull(), "poll_only": true,
                      "label": "unattended fixture"],
         ]
         try! JSONSerialization.data(withJSONObject: task)
             .write(to: directory.appendingPathComponent("task.json"), options: .atomic)
-    }
-    taskIDs.forEach(writeDetachedTask)
-
-    var opened = 0
-    Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
-        opened += 1
-        return .started(id: "TEST-DETACHED-\(opened)", backend: .iterm, attach: nil)
-    }
-    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
-    let secret = String(repeating: "da", count: 32)
-    func body(_ id: String) -> String {
-        "{\"task_id\":\"\(id)\",\"secret\":\"\(secret)\"}"
+        writtenTaskIDs.append(id)
     }
 
-    let ordinary = RemoteServer.shared.route(remoteRequest(
-        "POST", "/v1/orchestrator/tasks", headers: auth, body: body(ownedID)))
-    expect("ordinary child dispatch refuses poll-only mode", ordinary.status, 422)
-    expect("the wrong door has a typed correction", remoteErrorCode(ordinary),
-           "detached_route_required")
-    expect("the ordinary door opens no detached executor", opened, 0)
-    check("the ordinary refusal registers no detached task",
-          Orchestrator.record(id: ownedID) == nil)
+    /// A reading this Mac did not produce. Only `availability` is the variable under test; the rest
+    /// is shaped like what `AssistantQuota.codex(sessionsRoot:now:)` builds from a real rollout, so
+    /// that the two arms differ in one field and not in an accidental second one.
+    func forcedQuota(_ availability: Availability) -> AssistantQuota {
+        AssistantQuota(assistant: probeAssistant, installed: true, loggedIn: nil, plan: nil,
+                       availability: availability, source: .observed,
+                       observedAt: Int(Date().timeIntervalSince1970) - 60,
+                       resetsAt: Int(Date().timeIntervalSince1970) + 3_600,
+                       detail: "forced \(availability.rawValue) for the door probe", windows: [])
+    }
 
-    let detached = RemoteServer.shared.route(remoteRequest(
-        "POST", "/v1/orchestrator/detached-tasks", headers: auth, body: body(detachedID)))
-    expect("the dedicated automation door accepts an explicit poll-only task",
-           detached.status, 200)
-    expect("the dedicated door opens exactly one executor", opened, 1)
-    check("the detached task remains deliberately ownerless",
-          (Orchestrator.record(id: detachedID)?["root"] as? [String: Any])?["sessionId"] == nil)
+    /// One walk through both doors, under one forced reading. Each walk starts from a forgotten
+    /// broker and an empty store: the first walk registers a detached task holding
+    /// `artifacts/poll-only`, and a second walk that could still see it would be refused
+    /// `workspace_busy` — the arms would then differ for a reason that has nothing to do with what
+    /// this group asks.
+    func walkBothDoors(quota availability: Availability) -> DetachedDoorOutcome {
+        try? FileManager.default.removeItem(at: store)
+        Orchestrator.forget()
+        Config.shared.orchestratorEnabled = true
+        AssistantQuota.setOverrideForTesting(forcedQuota(availability), for: probeAssistant)
+        defer { AssistantQuota.clearOverridesForTesting() }
+
+        let ownedID = UUID().uuidString.lowercased()
+        let detachedID = UUID().uuidString.lowercased()
+        [ownedID, detachedID].forEach(writeDetachedTask)
+
+        var opened = 0
+        Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
+            opened += 1
+            return .started(id: "TEST-DETACHED-\(opened)", backend: .iterm, attach: nil)
+        }
+        let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+        let secret = String(repeating: "da", count: 32)
+        func body(_ id: String) -> String {
+            "{\"task_id\":\"\(id)\",\"secret\":\"\(secret)\"}"
+        }
+
+        let ordinary = RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/orchestrator/tasks", headers: auth, body: body(ownedID)))
+        let openedAfterOrdinary = opened
+        let ordinaryRegistered = Orchestrator.record(id: ownedID) != nil
+
+        let detached = RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/orchestrator/detached-tasks", headers: auth, body: body(detachedID)))
+        let ownerless =
+            (Orchestrator.record(id: detachedID)?["root"] as? [String: Any])?["sessionId"] == nil
+
+        return DetachedDoorOutcome(
+            ordinaryStatus: ordinary.status, ordinaryCode: remoteErrorCode(ordinary),
+            openedAfterOrdinary: openedAfterOrdinary, ordinaryRegistered: ordinaryRegistered,
+            detachedStatus: detached.status, openedAfterDetached: opened,
+            detachedOwnerless: ownerless)
+    }
+
+    // Both arms are named in every check they produce: a failure that does not say which reading
+    // it ran under sends the next person back to run the pair again to find out.
+    let arms: [(String, DetachedDoorOutcome)] = [
+        ("quota exhausted", walkBothDoors(quota: .exhausted)),
+        ("quota ok", walkBothDoors(quota: .ok)),
+    ]
+    for (arm, outcome) in arms {
+        expect("ordinary child dispatch refuses poll-only mode (\(arm))",
+               outcome.ordinaryStatus, 422)
+        expect("the wrong door has a typed correction (\(arm))",
+               outcome.ordinaryCode, "detached_route_required")
+        expect("the ordinary door opens no detached executor (\(arm))",
+               outcome.openedAfterOrdinary, 0)
+        check("the ordinary refusal registers no detached task (\(arm))",
+              !outcome.ordinaryRegistered)
+        expect("the dedicated automation door accepts an explicit poll-only task (\(arm))",
+               outcome.detachedStatus, 200)
+        expect("the dedicated door opens exactly one executor (\(arm))",
+               outcome.openedAfterDetached, 1)
+        check("the detached task remains deliberately ownerless (\(arm))",
+              outcome.detachedOwnerless)
+    }
+    // The whole point, in one line: the doors answer the same thing whatever this Mac's account
+    // says. Compared as one value rather than field by field, so a field added to the outcome
+    // above is covered here without anybody remembering to come back for it.
+    expect("both doors answer the same whatever this Mac's quota says",
+           arms[0].1, arms[1].1)
     check("detached automation uses the bounded terminal-worker lane",
           RemoteServer.isOrchestratorTerminalWorkerRoute(
             "/v1/orchestrator/detached-tasks"))
