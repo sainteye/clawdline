@@ -79,11 +79,11 @@ extension Orchestrator {
         // refused rather than quietly treated as absent: a caller that typed it meant something,
         // and the two spellings of "no" must not be a place where intent goes missing.
         var coordinatorPlainHandoff = false
-        if let raw = obj["coordinator_plain_handoff"] {
-            guard let flag = raw as? Bool, flag else {
+        if obj["coordinator_plain_handoff"] != nil {
+            guard handoffWaiverAsserted(obj["coordinator_plain_handoff"]) else {
                 return .bad("coordinator_plain_handoff is set to true or left out entirely")
             }
-            coordinatorPlainHandoff = flag
+            coordinatorPlainHandoff = true
         }
         let ready = packageIsReady?(id) ?? handoffPackageReady(id: id)
         guard ready else {
@@ -93,6 +93,27 @@ extension Orchestrator {
         return .ok(HandoffDraft(id: id, projectDir: projectDir, assistant: assistant,
                                 model: model, title: title, fromSession: fromSession,
                                 coordinatorPlainHandoff: coordinatorPlainHandoff))
+    }
+
+    /// Whether `coordinator_plain_handoff` is the JSON boolean `true` itself, and not a value that
+    /// merely casts to it.
+    ///
+    /// `as? Bool` is not that question. `JSONSerialization` returns `NSNumber` for both `true` and
+    /// `1`, and `NSNumber(1) as? Bool` is `true` in Swift — so the plain cast reads
+    /// `"coordinator_plain_handoff": 1` as the waiver, and a client that serialises booleans as
+    /// 0 and 1 could waive the one refusal protecting the coordinator binding by accident. Three
+    /// surfaces promise this field must be exactly `true`, and the whole reason it exists is that
+    /// somebody *decided* something; a decision inferred from a number is not one. `CFGetTypeID`
+    /// is how the rest of this tree separates a JSON boolean from a JSON number
+    /// (`Sources/Settings.swift`, `Sources/SessionImageArtifact.swift`), asked here in the
+    /// direction that keeps a caller building the dictionary in-process — with a native `Bool`
+    /// rather than a bridged one — reading as the assertion it is.
+    static func handoffWaiverAsserted(_ raw: Any?) -> Bool {
+        guard let raw else { return false }
+        if let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
+            return false
+        }
+        return raw as? Bool == true
     }
 
     // MARK: - Who sent a handoff
@@ -234,11 +255,24 @@ extension Orchestrator {
     /// comparison requires the terminal ids to be equal — so an online binding's published id
     /// names one proved process.
     ///
-    /// An **offline** coordinator is accepted, deliberately. The refusal exists to stop the crown
-    /// moving by accident, and a binding whose process is gone is not a crown this letter can
-    /// move: the receiver's route back is `rebind`, and the succession route named by the refusal
-    /// would itself refuse a sender that is not currently online. Pointing a caller at a route
-    /// that cannot take it would be a worse answer than allowing an ordinary handoff.
+    /// An **offline** coordinator is accepted, deliberately, but only where this reading can say
+    /// that word means what it sounds like. The refusal exists to stop the crown moving by
+    /// accident, and a binding whose process is gone is not a crown this letter can move: the
+    /// receiver's route back is `rebind`, and the succession route named by the refusal would
+    /// itself refuse a sender that is not currently online. Pointing a caller at a route that
+    /// cannot take it would be a worse answer than allowing an ordinary handoff.
+    ///
+    /// **`status:"offline"` is not that fact on its own.** `Coordinator` publishes it whenever a
+    /// current observation holds no row agreeing with the record on assistant, terminal, tty, pid,
+    /// process start *and* conversation — which covers both *the process is gone* and *this
+    /// reading could not prove the row it can see is the one*. A live Claude session whose
+    /// transcript could not be located this round has no conversation id, so it stops agreeing
+    /// while it is still very much alive, and reading that as offline would accept exactly the
+    /// plain handoff of 2026-09-04 from the code written to refuse it. So the word is believed
+    /// only with positive evidence of absence: the bound terminal id missing from this reading
+    /// altogether. Present but unmatched is the third answer — `coordinatorLivenessUnknown`,
+    /// refuse and retry — because *cannot tell* has never been *allow*. Teaching `Coordinator` to
+    /// publish a fourth word for the middle case belongs to that projection, not to this decision.
     static func handoffSenderVerdict(_ obj: [String: Any],
                                      evidence: HandoffSenderEvidence) -> HandoffSenderVerdict {
         guard let raw = obj["from_session"] else { return .missing }
@@ -278,13 +312,20 @@ extension Orchestrator {
             return .coordinatorStoreUnreadable
         }
         switch status {
-        case "offline": return .accepted(sessionID: sender.terminalID)
+        case "offline":
+            // Only an absence this reading can actually show. A row still bearing the bound
+            // terminal id means the machine has something there it could not match, not that the
+            // binding's process ended.
+            guard !evidence.identities.contains(where: { $0.terminalID == bound }) else {
+                return .coordinatorLivenessUnknown
+            }
+            return .accepted(sessionID: sender.terminalID)
         case "online": break
         // "unknown", and any word a later build adds that this one has not been taught.
         default: return .coordinatorLivenessUnknown
         }
         guard bound == sender.terminalID else { return .accepted(sessionID: sender.terminalID) }
-        guard obj["coordinator_plain_handoff"] as? Bool == true else {
+        guard handoffWaiverAsserted(obj["coordinator_plain_handoff"]) else {
             return .successionRequired(sessionID: sender.terminalID,
                                        coordinatorID: coordinatorID, generation: generation)
         }

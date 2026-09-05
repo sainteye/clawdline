@@ -1524,6 +1524,24 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
     expect("an offline coordinator is a fact, and an ordinary handoff proceeds",
            verdict(anonymousID, ",\"from_session\":\"RECEIVER\""),
            .accepted(sessionID: "RECEIVER"))
+    // …and it is that fixture, not the word, that makes it a fact: SENDER is absent from the
+    // reading altogether. `offline` covers every current reading holding no row that agrees with
+    // the record on assistant, terminal, tty, pid, process start *and* conversation, so a live
+    // Claude session whose transcript went unlocated this round stops agreeing while it is still
+    // running — the review's `REVIEW PROBE A`, red on the delivered bytes as `accepted("SENDER")`.
+    let unprovedSender = Coordinator.LiveSession(
+        identity: Orchestrator.SessionWorkIdentity(
+            terminalID: "SENDER", assistant: .codex, tty: "/dev/ttys301", pid: 3_001,
+            processStart: Date(timeIntervalSince1970: 1_780_003_001), conversationID: nil),
+        label: "ordinary work", cwd: "/Users/me/code/clawdline", workState: .ready,
+        waitingOnSession: false, hasWaiters: false, closeability: nil)
+    RemoteServer.coordinatorSessionsForTesting = [unprovedSender, receiver]
+    expect("a live coordinator this reading cannot place is not a coordinator that is gone",
+           verdict(anonymousID, ",\"from_session\":\"SENDER\""), .coordinatorLivenessUnknown)
+    expect("and an ordinary sender is refused by it too, because what cannot be placed is the "
+           + "binding and not the asker",
+           verdict(anonymousID, ",\"from_session\":\"RECEIVER\""), .coordinatorLivenessUnknown)
+    RemoteServer.coordinatorSessionsForTesting = [receiver]
     let corruptStore = directory.appendingPathComponent("coordinator-corrupt.json")
     try! Data("{".utf8).write(to: corruptStore, options: .atomic)
     Coordinator.storeURLOverrideForTesting = corruptStore
@@ -1605,6 +1623,25 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
             from: ["handoff_id": anonymousID, "project_dir": "/tmp",
                    "from_session": "SENDER", "coordinator_plain_handoff": false],
             isDirectory: { _ in true }, packageIsReady: { _ in true }).isBad)
+    // The waiver's *value*, a different question from its position. `JSONSerialization` returns
+    // `NSNumber` for a JSON `true` and a JSON `1` alike and `NSNumber(1) as? Bool` is `true`, so
+    // the old cast let a client serialising booleans as 0 and 1 waive the only refusal protecting
+    // the binding without deciding anything — the review's `PROBE B` and `PROBE C`, red here.
+    let numericWaiver = (try? JSONSerialization.jsonObject(with: Data(handoffBody(
+        anonymousID, ",\"from_session\":\"SENDER\",\"coordinator_plain_handoff\":1").utf8)))
+        as? [String: Any] ?? [:]
+    check("a JSON 1 is not the exactly-true this field is documented to take",
+          Orchestrator.handoffDraft(from: numericWaiver, isDirectory: { _ in true },
+                                    packageIsReady: { _ in true }).isBad)
+    expect("and a JSON 1 does not waive the succession refusal either",
+           Orchestrator.handoffSenderVerdict(
+            numericWaiver, evidence: RemoteServer.shared.handoffSenderEvidence()),
+           .successionRequired(sessionID: "SENDER", coordinatorID: coordinatorID, generation: 1))
+    check("the strictness is about the value, so a native true still asserts",
+          Orchestrator.handoffWaiverAsserted(true)
+            && !Orchestrator.handoffWaiverAsserted(false)
+            && !Orchestrator.handoffWaiverAsserted(1) && !Orchestrator.handoffWaiverAsserted("true")
+            && !Orchestrator.handoffWaiverAsserted(NSNumber(value: 1)))
 
     let requestID = "88888888-9999-4aaa-8bbb-cccccccccccc"
     let handoffID = "99999999-aaaa-4bbb-8ccc-dddddddddddd"
