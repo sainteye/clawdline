@@ -643,6 +643,12 @@ node Tests/dispatch-role-contract.mjs
 # seven days telling every root to approximate a mechanism that had already landed, and comparing
 # two copies of a wrong sentence produces agreement, not a red.
 node Tests/attached-follow-up-contract.mjs
+# The same shape, one route further along and for the same reason. `POST /v1/orchestrator/handoffs`
+# grew nine typed refusals when it started requiring a sender, four surfaces were written to
+# describe them, and nothing compared any of the four with the code — so within one review three of
+# them were false, including both shipped guides still teaching that an unrecognised sender is the
+# same as an absent one. That is the sentence the sender of the 2026-09-04 handoff read.
+node Tests/handoff-sender-contract.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/remote-response-write-close.mjs
 # `GET /sw.js`, which was the one of RemotePage's five entry points with no route test — the gap

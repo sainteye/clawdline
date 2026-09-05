@@ -1116,6 +1116,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
 不給的話分頁就叫 `handoff` 加 id 前八碼；它是 best-effort，因為 **app 不會為了湊出這個值去開
 `handoff.md`**。
 
+<!-- clawdline-handoff-sender-contract:v1 -->
 **`from_session` 是必填，而且一定要解得出來。** 它是「這次 handoff 從哪個 session 送出」，200 字元
 以內，兩個 namespace 擇一：這台 Mac 盯著的 terminal-neutral id，或 process-bound conversation id；
 `GET /v1/orchestrator/whoami` 會把這一對解給你。解不到剛好一個活著的 assistant session 就是拒絕，
@@ -1138,6 +1139,7 @@ handoff 路由）。寄件者契約另外有九個：
   `coordinator_id`、`expected_generation`、`sender_session_id` 都已經在拒絕的 body 裡了。
   不要回頭去改 `from_session`。如果 crown 根本沒有要移動、你只是把另一條工作線交出去，
   就帶 `"coordinator_plain_handoff":true` 重送——必須剛好是 `true`，而且它只 waive 這一個拒絕。
+<!-- /clawdline-handoff-sender-contract:v1 -->
 
 遇到 `not_found` 時，做完第 1–3 步，並把
 [`docs/handoff.md`〈The line〉](../../docs/handoff.md#the-line) 的 canonical 句原封不動交給使用者自行貼上：

@@ -1269,6 +1269,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
 — without it the tab is `handoff` and the first eight characters of the id — and it is best-effort,
 because **the app will not open `handoff.md` to work it out**.
 
+<!-- clawdline-handoff-sender-contract:v1 -->
 **`from_session` is required and must resolve.** It is the session this handoff is sent *from*, ≤ 200
 characters, in either namespace this Mac indexes — the watched terminal-neutral id or the
 process-bound conversation id — and `GET /v1/orchestrator/whoami` resolves the pair for you.
@@ -1295,6 +1296,7 @@ route. The sender contract adds nine of its own:
   Do not go looking for a different `from_session`. If the crown is staying where it is and you are
   simply handing a different line of work on, resend with `"coordinator_plain_handoff":true` —
   exactly `true`, and it waives that one refusal and nothing else.
+<!-- /clawdline-handoff-sender-contract:v1 -->
 
 On `not_found`, finish steps 1–3 and give the user the canonical sentence from
 [`docs/handoff.md` § “The line”](../../docs/handoff.md#the-line) verbatim to paste themselves:
