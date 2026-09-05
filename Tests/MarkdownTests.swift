@@ -1534,8 +1534,15 @@ group("the documented example files") {
     // A producer emits this constantly — no workflow, no run on this branch, gh not installed.
     // A consumer that has not heard of it draws a cross for a project that simply has no CI,
     // which is a red mark that is always wrong.
-    let quiet = ProjectStatus.deploy(load("ghrun-you-quiet.json"))
-    expect("nothing to say is its own state", quiet?.state, "none")
+    //
+    // **This asserted the opposite until 2026-09-05**, and pinned the defect in place while
+    // reading like a test of it: `state == "none"` proved the field survived parsing, and the
+    // footer's `state == "ok" ? "✓" : "✗"` then drew every one of them as a failure. Measured on
+    // the machine this was written on: twelve of the fifteen `ghrun-` files in the cache were
+    // exactly this row. The row draws nothing now, which is what the page has always said it
+    // means, so this asks for nothing rather than for the state it kept.
+    check("nothing to say draws nothing at all",
+          ProjectStatus.deploy(load("ghrun-you-quiet.json")) == nil)
     expect("and a bar to draw", ProjectStatus.bar(0.5, width: 8), "▰▰▰▰▱▱▱▱")
 
     let backlog = ProjectStatus.backlog(load("backlog--Users-you-code-atrium.json"))

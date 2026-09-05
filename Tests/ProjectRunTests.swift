@@ -58,8 +58,35 @@ group("a local run is read from its own file, and a dead one stops being drawn")
     check("and nowhere to send anybody",
           (bare?.log ?? nil) == nil && (bare?.tree ?? nil) == nil)
     expect("an absent ceiling is the documented default", bare?.staleAfter, 900)
+    // **`updated_at` is required, and it is required of a `running` row only.** The contract said
+    // so and, two lines later, that every field but `state` was optional; two implementations
+    // resolved that in opposite directions and each guarded its own answer. This is the answer:
+    // making it required is what a liveness ceiling a reader can trust is made of, and falling
+    // back to `started_at` — which this reader did — makes "required" mean nothing. A finished
+    // verdict is not measured against it, so it does not need one.
     check("a running row that never says when is not evidence of anything running",
           ProjectStatus.run(read(#"{"state":"running"}"#), now: inside) == nil)
+    check("not even one that started a moment ago, which is where the old fallback hid",
+          ProjectStatus.run(read(#"{"state":"running","started_at":\#(inside - 5)}"#),
+                            now: inside) == nil)
+    check("and a malformed updated_at is an absent one, the same rule as everywhere else",
+          ProjectStatus.run(read(#"{"state":"running","started_at":\#(inside - 5),"updated_at":"soon"}"#),
+                            now: inside) == nil)
+    check("while a verdict keeps being drawn without one, because it is not alive to decay",
+          ProjectStatus.run(read(#"{"state":"fail"}"#), now: inside) != nil)
+    // `stale_after` has a default and `updated_at` has none, which is the whole of why the two
+    // malformed cases end differently. `0` is a value a producer meant, not a missing field:
+    // "falsy therefore default" is a language accident rather than a decision.
+    check("a ceiling of zero expires the instant anything moves",
+          ProjectStatus.run(read(#"{"state":"running","updated_at":\#(inside),"stale_after":0}"#),
+                            now: inside) != nil
+            && ProjectStatus.run(read(#"{"state":"running","updated_at":\#(inside - 1),"stale_after":0}"#),
+                                 now: inside) == nil)
+    check("while a malformed ceiling falls back to the documented 900",
+          ProjectStatus.run(read(#"{"state":"running","updated_at":\#(inside - 900),"stale_after":"soon"}"#),
+                            now: inside) != nil
+            && ProjectStatus.run(read(#"{"state":"running","updated_at":\#(inside - 901),"stale_after":"soon"}"#),
+                                 now: inside) == nil)
     check("and an empty phase is not a phase",
           (ProjectStatus.run(read(#"{"state":"ok","phase":""}"#), now: inside)?.phase ?? nil)
               == nil)
@@ -152,6 +179,65 @@ group("a local run is read from its own file, and a dead one stops being drawn")
     check("a run nobody has touched for an hour is gone from the reader",
           ProjectStatus.read(cwd: project.path, remote: nil).run == nil)
     check("and gone from the page's list with it", linkRow() == nil)
+}
+
+// The rule the `run-` reader was written with, applied to the two readers beside it that never had
+// it. `docs/project-status.md` has said for a long time that an unrecognised state must draw
+// nothing, "because a consumer that has not heard of `none` will draw a cross for a project that
+// simply has no CI, which is a red mark that is always wrong" — and it says it now as a property
+// of all seven files. `ghrun-` and health did not honour it: `deploy(_:)` accepted any string and
+// the footer drew `state == "ok" ? "✓" : "✗"` over the result.
+//
+// **The cost was not hypothetical.** Measured in `~/.claude/statusline-cache/` on 2026-09-05:
+// fifteen `ghrun-*.json` files, twelve of them exactly `{"state":"none"}`, so twelve projects were
+// each drawing a red ✗ in the Mac footer at that moment.
+group("a state a reader has not heard of draws nothing, in every one of these files") {
+    func read(_ json: String) -> [String: Any]? {
+        (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]
+    }
+
+    // The real shape, not an invented one: this is what claude-bestiary writes for a project with
+    // no workflow, and it is the row `docs/examples/ghrun-you-quiet.json` ships.
+    check("the row twelve projects on this Mac were drawing a cross for draws nothing",
+          ProjectStatus.deploy(read(#"{"state":"none","why":"no-runs"}"#)) == nil)
+    check("and neither does a deploy state nobody has heard of",
+          ProjectStatus.deploy(read(#"{"state":"cancelled"}"#)) == nil)
+    check("or a deploy row with no state at all",
+          ProjectStatus.deploy(read(#"{"label":"deploy"}"#)) == nil)
+    check("while the three a reader does know still parse",
+          ["running", "ok", "fail"].allSatisfy {
+              ProjectStatus.deploy(read("{\"state\":\"\($0)\"}")) != nil
+          })
+
+    // Health carries two vocabularies, because two producers write these files and both are on
+    // this machine: the page documents `ok | sick | offline | unknown`, and the multi-surface
+    // receipt clawdline-cloud writes uses `online | not_deployed | unhealthy | unreachable`. The
+    // allow-list names both — what it is for is that a state from neither draws nothing.
+    check("a health state nobody has heard of draws nothing rather than a red dot",
+          ProjectStatus.health(read(#"{"state":"none"}"#)) == nil
+            && ProjectStatus.health(read(#"{"state":"degraded"}"#)) == nil)
+    check("and neither does one that only means it has not been checked yet",
+          ProjectStatus.health(read(#"{"state":"unknown"}"#)) == nil)
+    check("while every state either producer actually writes still parses",
+          ["ok", "sick", "offline", "online", "not_deployed", "unhealthy", "unreachable"]
+              .allSatisfy { ProjectStatus.health(read("{\"state\":\"\($0)\"}")) != nil })
+    check("a component whose state nobody recognises is dropped, not drawn",
+          ProjectStatus.healthComponents(read(#"""
+          {"state":"ok","components":[{"label":"a","state":"online"},{"label":"b","state":"none"}]}
+          """#)).count == 1)
+
+    // One vocabulary for "is it up", because there were two and they disagreed: `linkRow()` has
+    // mapped `online` to `ok` since the multi-surface receipt arrived, while the Mac footer asked
+    // `state == "ok"` and drew a red dot for a site that was answering.
+    expect("an online site is up, on both surfaces",
+           ProjectStatus.health(read(#"{"state":"online"}"#))?.visualState, "ok")
+    expect("and so is one whose producer spells it ok",
+           ProjectStatus.health(read(#"{"state":"ok"}"#))?.visualState, "ok")
+    expect("while not deployed stays distinct from an outage",
+           ProjectStatus.health(read(#"{"state":"not_deployed"}"#))?.visualState, "down")
+    expect("and the Links sheet keeps reading the same property",
+           ProjectStatus.health(read(#"{"state":"online","url":"https://example.com/"}"#))?
+               .linkRow()?["state"] as? String, "ok")
 }
 
 }

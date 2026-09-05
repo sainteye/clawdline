@@ -61,19 +61,23 @@ enum ProjectStatus {
         }
         func elapsed(now: Double) -> Int { max(0, Int(now - startedAt)) }
 
-        /// When the producer last said anything. `updated_at` is the field for it; a producer
-        /// that wrote only `started_at` still gets a bounded life rather than an endless one.
-        var touchedAt: Double { updatedAt > 0 ? updatedAt : startedAt }
-
         /// The one rule this file has that `ghrun-` does not.
         ///
         /// Clawdline has no poller to tidy up after a producer, so a `kill -9`'d run would
         /// otherwise spin in the bar forever. The ceiling lives in the reader on purpose: every
         /// reader gets it, including the ones nobody has written yet. A finished row is never
         /// stale — `ok` and `fail` are an answer, not a claim about something still moving.
+        ///
+        /// **Measured against `updated_at` and nothing else.** This used to fall back to
+        /// `started_at`, which is defensible and was the other half of a contract that had not
+        /// decided: the page said `updated_at` was required and, two lines later, that every field
+        /// but `state` was optional. Falling back makes "required" mean nothing, and a liveness
+        /// ceiling a reader can trust is the whole reason this format exists rather than reusing
+        /// `ghrun-`. So a `running` row without one does not arrive here at all — `run(_:now:)`
+        /// refuses it — and the arithmetic below has one input.
         func isFresh(now: Double) -> Bool {
             guard state == "running" else { return true }
-            return now - touchedAt <= staleAfter
+            return now - updatedAt <= staleAfter
         }
     }
 
@@ -124,17 +128,25 @@ enum ProjectStatus {
         var kind: String?
         var reason: String?
 
+        /// Is this thing up, in the one vocabulary both surfaces read.
+        ///
+        /// **It was two, and they disagreed.** This mapping lived inside `linkRow()`, where it has
+        /// turned `online` into `ok` since the multi-surface receipt arrived — while the Mac
+        /// footer asked `state == "ok"` directly and drew a red dot for a site that was answering.
+        /// Two defences with two answers is worse than one, so there is one, and it is here.
+        var visualState: String {
+            switch state {
+            case "online": return "ok"
+            case "not_deployed": return "down"
+            case "unhealthy", "unreachable": return "fail"
+            default: return state
+            }
+        }
+
         /// One row for the browser's Links sheet. The receipt's vocabulary stays in `status`;
         /// the older visual state is only the colour of its dot.
         func linkRow() -> [String: Any]? {
             guard let url, !url.isEmpty else { return nil }
-            let visualState: String
-            switch state {
-            case "online": visualState = "ok"
-            case "not_deployed": visualState = "down"
-            case "unhealthy", "unreachable": visualState = "fail"
-            default: visualState = state
-            }
             var row: [String: Any] = [
                 "label": label,
                 "url": url,
@@ -212,8 +224,21 @@ enum ProjectStatus {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
+    /// The deploy states this reader knows, and `none` is not among them for the same reason it is
+    /// not among `runStates`: a producer with nothing to say writes it, and what it asks for is
+    /// silence.
+    ///
+    /// **Without this list every state parsed, and `state == "ok" ? "✓" : "✗"` drew the rest as
+    /// failures.** Measured on this Mac while the correction was written: of the fifteen `ghrun-`
+    /// files in `~/.claude/statusline-cache/`, twelve were exactly `{"state":"none"}` — `atrium`,
+    /// `cairn`, `claude-bestiary`, `clawdline-cloud`, `clawdline` itself and seven more — so
+    /// twelve projects with no CI at all were each drawing a red ✗ in the footer. A red mark that
+    /// is always wrong is the thing `none` was invented to prevent.
+    static let deployStates: Set<String> = ["running", "ok", "fail"]
+
     static func deploy(_ row: [String: Any]?) -> Deploy? {
-        guard let row, let state = row["state"] as? String else { return nil }
+        guard let row, let state = row["state"] as? String,
+              deployStates.contains(state) else { return nil }
         return Deploy(label: row["label"] as? String ?? "deploy",
                       state: state,
                       startedAt: row["started_at"] as? Double ?? 0,
@@ -236,13 +261,20 @@ enum ProjectStatus {
         guard let row, let state = row["state"] as? String, runStates.contains(state) else {
             return nil
         }
+        // **`updated_at` is required, and a malformed value is an absent one.** Required only of a
+        // `running` row: it is what the liveness ceiling above is measured against, and `ok` or
+        // `fail` is a verdict rather than a claim about something still moving, so there is
+        // nothing to measure it against. A row that says it is running and will not say when is
+        // malformed rather than merely thin, and malformed is drawn as nothing.
+        let updated = row["updated_at"] as? Double
+        if state == "running" && updated == nil { return nil }
         let phase = row["phase"] as? String
         let parsed = Run(label: row["label"] as? String ?? "run",
                          state: state,
                          phase: (phase?.isEmpty ?? true) ? nil : phase,
                          startedAt: row["started_at"] as? Double ?? 0,
                          typicalSeconds: row["typical_seconds"] as? Double ?? 0,
-                         updatedAt: row["updated_at"] as? Double ?? 0,
+                         updatedAt: updated ?? 0,
                          staleAfter: row["stale_after"] as? Double ?? Run.defaultStaleAfter,
                          log: row["log"] as? String,
                          holder: row["holder"] as? String,
@@ -269,8 +301,25 @@ enum ProjectStatus {
                          artifact: row["artifact"] as? String)
     }
 
+    /// The health states this reader knows.
+    ///
+    /// Two vocabularies are in this set because two producers write these files and both are on
+    /// this Mac: `docs/project-status.md` documents `ok | sick | offline | unknown`, and the
+    /// multi-surface receipt `clawdline-cloud` writes uses `online | not_deployed | unhealthy |
+    /// unreachable`. Naming both is what the allow-list is for — the point is not to choose a
+    /// winner, it is that a state from *neither* list draws nothing rather than a red dot.
+    ///
+    /// `none` and `unknown` are deliberately out: both mean *nothing to say*, `unknown` because
+    /// "not checked yet" is not a verdict, and a dot for it would be the red mark that is always
+    /// wrong wearing a different word.
+    static let healthStates: Set<String> = [
+        "ok", "sick", "offline",
+        "online", "not_deployed", "unhealthy", "unreachable",
+    ]
+
     static func health(_ row: [String: Any]?, registry: [String: Any]? = nil) -> Health? {
-        guard let row, let state = row["state"] as? String else { return nil }
+        guard let row, let state = row["state"] as? String,
+              healthStates.contains(state) else { return nil }
         return Health(label: row["label"] as? String
                         ?? registry?["label"] as? String ?? "health",
                       state: state,
