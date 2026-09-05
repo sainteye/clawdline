@@ -236,8 +236,8 @@ function groupHeading(scope) {
  *  `body.utf8.count`, because bytes are what the file, the audit line and every snapshot
  *  broadcast pay for — so counting UTF-16 units here would let this sheet build a draft the Mac
  *  refuses, which is exactly the shape `From my last message` produces for a message written in
- *  Han characters: twenty of them are sixty bytes and are the whole of a title. */
-var TITLE_MAX = 60;
+ *  Han characters, where a title is sixty-odd of them rather than two hundred. */
+var TITLE_MAX = 200;
 var BODY_MAX = 4000;
 
 /** How many bytes a string is once it is UTF-8, without asking for a `TextEncoder`: this module

@@ -382,10 +382,10 @@ assert.equal(snippetDraftProblem({ title: "  ", body: "b", scope: "global" }), "
     "a title of spaces is not a title");
 assert.equal(snippetDraftProblem({ title: "t", body: "\n \n", scope: "global" }), "empty",
     "and a body of blank lines is not a body");
-assert.equal(snippetDraftProblem({ title: "x".repeat(61), body: "b", scope: "global" }), "long",
-    "sixty characters is the store's limit, counted here so the Mac never has to refuse it");
-assert.equal(snippetDraftProblem({ title: "x".repeat(60), body: "b", scope: "global" }), "",
-    "and exactly sixty is inside it");
+assert.equal(snippetDraftProblem({ title: "x".repeat(201), body: "b", scope: "global" }), "long",
+    "two hundred bytes is the store's limit, counted here so the Mac never has to refuse it");
+assert.equal(snippetDraftProblem({ title: "x".repeat(200), body: "b", scope: "global" }), "",
+    "and exactly two hundred is inside it");
 assert.equal(snippetDraftProblem({ title: "t", body: "b".repeat(4001), scope: "global" }), "long");
 assert.equal(snippetDraftProblem({ title: "t", body: "b", scope: "project", project: "" }),
     "scope", "a project scope with no project is the store's snippet_scope_mismatch");
@@ -491,19 +491,19 @@ assert.equal(fromMessage.body, "跑一次 focused groups\n先看到紅的再看�
     "the whole message is the body, with only the whitespace at its ends taken off");
 assert.equal(fromMessage.title, "跑一次 focused groups", "and its first line is the title");
 assert.equal(fromMessage.scope, "global");
-const longMessage = snippetDraftFromText("x".repeat(200));
-assert.ok(byteLength(longMessage.title) <= 60,
-    "a title made from a long first line is cut to the store's sixty bytes");
+const longMessage = snippetDraftFromText("x".repeat(400));
+assert.ok(byteLength(longMessage.title) <= 200,
+    "a title made from a long first line is cut to the store's two hundred bytes");
 assert.ok(longMessage.title.endsWith("…"), "and says that it was cut");
 assert.equal(snippetDraftProblem(longMessage), "",
     "which means the draft it produces is one the store will take");
-// The same sentence in Han characters, which is where the units diverge: sixty bytes is twenty
-// of them and sixty UTF-16 units would be a hundred and eighty bytes. A sheet that cut by the
-// wrong unit would build a draft the Mac refuses, from a button whose whole job is to fill the
-// editor in for somebody.
-const longHan = snippetDraftFromText("字".repeat(200));
-assert.ok(byteLength(longHan.title) <= 60,
-    "and a title made of Han characters is cut to the same sixty bytes, not sixty characters");
+// The same sentence in Han characters, which is where the units diverge: two hundred bytes is
+// sixty-six of them and two hundred UTF-16 units would be six hundred bytes. A sheet that cut by
+// the wrong unit would build a draft the Mac refuses, from a button whose whole job is to fill
+// the editor in for somebody.
+const longHan = snippetDraftFromText("字".repeat(400));
+assert.ok(byteLength(longHan.title) <= 200,
+    "and a title of Han characters is cut to the same two hundred bytes, not two hundred characters");
 assert.equal(snippetDraftProblem(longHan), "",
     "so `From my last message` cannot produce a draft the store refuses");
 assert.equal(snippetDraftFromText("").title, "");
@@ -521,10 +521,10 @@ assert.equal(byteLength("é"), 2);
 assert.equal(byteLength("😀"), 4, "and a surrogate pair is one character in four bytes");
 assert.equal(byteLength(""), 0);
 assert.equal(byteLength(null), 0);
-assert.equal(snippetDraftProblem({ title: "字".repeat(20), body: "b", scope: "global" }), "",
-    "twenty Han characters are sixty bytes exactly, and fit");
-assert.equal(snippetDraftProblem({ title: "字".repeat(21), body: "b", scope: "global" }), "long",
-    "twenty-one are sixty-three, and the sheet says so before the Mac has to");
+assert.equal(snippetDraftProblem({ title: "字".repeat(66), body: "b", scope: "global" }), "",
+    "sixty-six Han characters are 198 bytes, and fit");
+assert.equal(snippetDraftProblem({ title: "字".repeat(67), body: "b", scope: "global" }), "long",
+    "sixty-seven are 201, and the sheet says so before the Mac has to");
 assert.equal(snippetDraftProblem({ title: "t", body: "字".repeat(1334), scope: "global" }), "long",
     "and a body of 4002 bytes is too long however few characters that is");
 assert.equal(snippetDraftProblem({ title: "t", body: "字".repeat(1333), scope: "global" }), "",

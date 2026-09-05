@@ -92,7 +92,7 @@ editorOverlay.innerHTML =
     'aria-modal="true" aria-labelledby="snippet-editor-title">' +
     '<h2 id="snippet-editor-title"></h2>' +
     '<div class="block"><span class="field-label" id="snippet-title-label"></span>' +
-    '<input class="find" id="snippet-title" type="text" maxlength="60" autocomplete="off" ' +
+    '<input class="find" id="snippet-title" type="text" maxlength="200" autocomplete="off" ' +
     'autocapitalize="sentences" spellcheck="false" data-1p-ignore data-lpignore="true" ' +
     "data-bwignore></div>" +
     '<div class="block"><span class="field-label" id="snippet-body-label"></span>' +

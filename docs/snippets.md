@@ -174,8 +174,12 @@ here blocks it; see the last section.
   so did the store: `String.count` counts grapheme clusters, so four thousand ZWJ emoji were four
   thousand "characters" and about a hundred kilobytes on a disk, in an append-only audit file and
   on every snapshot broadcast — none of which pay in characters. `project` had no bound at all.
-  The cost of counting bytes is real and worth saying out loud: sixty bytes is twenty Han
-  characters, so a title in Chinese, Japanese or Korean is a third as long as one in English. ⚠ The `id` above read `3F2A…`; every id this
+  ⚠ The title's bound also read 60, and changing the unit without changing the number would have
+  been a quiet demotion: sixty bytes is sixty Latin letters and twenty Han characters, so the same
+  figure is a title in one language and a fifth of a sentence in another. It is **200 bytes**,
+  which gives a Han title the sixty-odd characters a Latin one already had. The body stays at
+  4,000 — about 1,333 Han characters — because unlike the title it rides every snapshot broadcast,
+  and widening it is paid for on every stream by everybody. ⚠ The `id` above read `3F2A…`; every id this
   store writes or accepts is a **lowercased** UUID, and one sent in any other case is canonicalised
   before it addresses anything.
 - **The key set is exact.** An unknown key is `400 malformed_snippet` rather than a field quietly
@@ -230,8 +234,8 @@ included, where `DELETE /v1/orchestrator/schedules/:id` is deliberately not brak
 **The quantity is not nothing, and this page used to say it was.** The 453 bytes in
 `RemoteServer.swift`'s comment are a *measured* schedules payload beside a measured 1,056,958-byte
 task payload — 0.043%. Snippets have no such measurement and a much larger ceiling: this page's
-own limits are 100 records, each of them up to 60 bytes of title, 4,000 of body and 1,024 of
-project path, which with the field names and punctuation is on the order of **520 KB — about half
+own limits are 100 records, each of them up to 200 bytes of title, 4,000 of body and 1,024 of
+project path, which with the field names and punctuation is on the order of **540 KB — about half
 the task payload, not a twenty-fifth of one percent of it.** The inventory is unfiltered by scope,
 so every SSE stream and every cloud publication carries all of it. What makes that acceptable is
 not the ratio: it is that a Mac with a hundred four-thousand-byte snippets is not a Mac anybody

@@ -70,7 +70,15 @@ enum Snippets {
     /// pays for. `project` had no bound at all and is the one field that reaches
     /// `remote-audit.jsonl`, which is append-only and read back in one piece; 1024 is `PATH_MAX`
     /// on this platform, so it cannot refuse a path that could exist.
-    private static let titleMaxBytes = 60
+    ///
+    /// **The title's number moved when its unit did, and leaving it at 60 would have been a
+    /// quiet demotion.** Sixty bytes is sixty Latin letters and twenty Han characters, so the
+    /// bound that reads as a generous title in one language is a fifth of a sentence in another;
+    /// 200 gives a Han title the sixty-odd characters a Latin one already had. The body stays at
+    /// 4,000 — about 1,333 Han characters, longer than anything this sheet is for — because
+    /// unlike the title it rides every snapshot broadcast, and widening it is paid for on every
+    /// stream by everybody.
+    private static let titleMaxBytes = 200
     private static let bodyMaxBytes = 4_000
     private static let projectMaxBytes = 1_024
     /// `position` is read back off disk and then has 100 added to it by the next create in that
@@ -461,7 +469,7 @@ enum Snippets {
         guard title.utf8.count <= titleMaxBytes, text.utf8.count <= bodyMaxBytes,
               (project?.utf8.count ?? 0) <= projectMaxBytes else {
             return .refused(Refusal(status: 400, code: "snippet_too_long",
-                                    message: "A snippet title may contain 60 bytes of UTF-8, its body 4000, and its project path 1024.",
+                                    message: "A snippet title may contain 200 bytes of UTF-8, its body 4000, and its project path 1024.",
                                     extra: ["title_count": title.utf8.count,
                                             "body_count": text.utf8.count,
                                             "project_count": project?.utf8.count ?? 0]))

@@ -3380,7 +3380,9 @@ store can be held to: `title.utf8.count <= 60`, `body.utf8.count <= 4000`,
 were four thousand of them and about a hundred kilobytes on disk, in an append-only audit file
 and on every snapshot broadcast — none of which pays in characters — and `project`, the one
 field of the four that reaches `remote-audit.jsonl`, had no bound at all. What it costs is worth
-knowing before you write a client: sixty bytes is sixty Latin letters and twenty Han characters.
+knowing before you write a client: a byte is a Latin letter and a Han character is three, which is
+why the title's bound is 200 rather than the 60 the design first wrote — the same figure would have
+been a full title in English and twenty characters in Chinese.
 
 `project` is measured **as you sent it**, before the path is standardised. Standardising truncates
 at `PATH_MAX` without saying so — measured on macOS, a 2,005-byte path comes back as exactly 1,024
@@ -3401,7 +3403,7 @@ no path, is `snippet_scope_mismatch` rather than a field quietly dropped.
 |---|---|
 | `400 bad_request` | no `Idempotency-Key` |
 | `400 malformed_snippet` | an unknown field, a missing `title`, `body` or `scope`, a `scope` that is neither word, or a title or body that is empty |
-| `400 snippet_too_long` | a title over 60 **bytes of UTF-8**, a body over 4000, or a `project` path over 1024. `title_count`, `body_count` and `project_count` sit beside the code with the lengths actually counted |
+| `400 snippet_too_long` | a title over 200 **bytes of UTF-8**, a body over 4000, or a `project` path over 1024. `title_count`, `body_count` and `project_count` sit beside the code with the lengths actually counted |
 | `400 snippet_scope_mismatch` | `"project"` with no `project`, or a `project` beside `"global"` |
 | `401 unauthorized` | no token, or one this Mac does not know |
 | `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |

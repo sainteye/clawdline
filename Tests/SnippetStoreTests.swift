@@ -80,15 +80,23 @@ group("snippet files are strict, bounded, atomic, and addressed only by UUID") {
            ])).code, "snippet_scope_mismatch")
 
     // The three bounds count UTF-8 bytes, which is what the file, the audit line and every
-    // snapshot broadcast actually pay for. Twenty Han characters are sixty bytes and fit;
-    // twenty-one are sixty-three and do not, and the count beside the code says so.
-    let wideTitle = snippetReply(Snippets.create(from: [
-        "title": String(repeating: "字", count: 21), "body": "y", "scope": "global",
+    // snapshot broadcast actually pay for. Sixty-six Han characters are 198 bytes of title and
+    // fit; sixty-seven are 201 and do not, and the count beside the code says so. The title's
+    // number is 200 rather than 60 because the unit changed under it: sixty bytes is sixty Latin
+    // letters and twenty Han characters, and a bound that is a title in one language and a fifth
+    // of one in another is not the same bound.
+    let fittingWideTitle = snippetReply(Snippets.create(from: [
+        "title": String(repeating: "字", count: 66), "body": "y", "scope": "global",
     ]))
-    expect("twenty-one Han characters are sixty-three bytes of title and too long",
+    expect("sixty-six Han characters are 198 bytes of title and fit",
+           fittingWideTitle.status, 200)
+    let wideTitle = snippetReply(Snippets.create(from: [
+        "title": String(repeating: "字", count: 67), "body": "y", "scope": "global",
+    ]))
+    expect("sixty-seven Han characters are 201 bytes of title and too long",
            wideTitle.code, "snippet_too_long")
     expect("and the count beside the code is the bytes it counted",
-           wideTitle.body["title_count"] as? Int, 63)
+           wideTitle.body["title_count"] as? Int, 201)
     let widePath = snippetReply(Snippets.create(from: [
         "title": "x", "body": "y", "scope": "project",
         "project": "/tmp/" + String(repeating: "p", count: 2_000),
