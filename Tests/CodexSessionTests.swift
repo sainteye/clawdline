@@ -724,6 +724,16 @@ group("an unnamed Claude conversation gets a durable model fallback") {
     check("the same title against a request that says more is not weak",
           !ConversationTitle.isWeak(title: "sleep 300", opening: spelledOut))
 
+    // **The containment runs one way, and the direction is which of the two is the source.** The
+    // opening is what Claude Code had; the title is what it made of it. A title the opening
+    // already contains added nothing to its source — that is what restating is. A title that
+    // contains the whole opening said everything the opening did *and more*, which is a good
+    // title and the only thing the other direction can throw away. Neither of these is
+    // hypothetical arithmetic: of the seven transcripts clause (b) selects on this Mac, six are
+    // opening ⊇ title and the seventh satisfies both, so nothing measured needs it.
+    check("a title that says more than the opening it came from is not a restatement",
+          !ConversationTitle.isWeak(title: "Fix the bug in the parser", opening: "fix the bug"))
+
     // A name somebody typed is not a description Claude Code failed to write.
     check("a person's `/rename` is never weak, however short",
           !ConversationTitle.isWeak(title: "Ok", customTitle: "Ok",
@@ -763,6 +773,45 @@ group("an unnamed Claude conversation gets a durable model fallback") {
            "先去查素材與判準")
     expect("two blanks are not material", CodexNaming.namingMaterial(opening: "  ", reply: " \n "),
            nil)
+
+    // **When the reading happens, not what it returns.** Both readers are a two-megabyte string
+    // and an eager split of the whole buffer, on a path `SessionWatch.read()` re-enters every 1.2
+    // seconds; `reserve` is the only thing that consults the five-minute backoff a failed naming
+    // turn leaves behind. Until 2026-09-05 it was asked after them, so that backoff bounded the
+    // model turns and bounded none of the reading. What is counted here is therefore the reads —
+    // a check on the verdict alone stays green whichever order the two are in.
+    var openings = 0
+    var replies = 0
+    func turn(_ key: String, weak: Bool = true, state: SessionState = .idle)
+        -> (reserved: Bool, request: String?) {
+        CodexNaming.shared.namingTurn(
+            for: key, weak: weak, systemTitle: nil, state: state,
+            opening: { openings += 1; return "[Image #1]" },
+            reply: { replies += 1; return "我看到了：這是素材缺一條的證據" })
+    }
+    let busy = "claude:naming-turn-busy-\(UUID().uuidString)"
+    let whileWorking = turn(busy, state: .working("Working"))
+    check("a session still answering is not read to find out that it is",
+          !whileWorking.reserved && whileWorking.request == nil && openings == 0 && replies == 0)
+
+    let idle = "claude:naming-turn-idle-\(UUID().uuidString)"
+    expect("an idle one is read once the turn is its to spend", turn(idle).request,
+           "[Image #1]\n\n我看到了：這是素材缺一條的證據")
+    expect("and each half of the material was read exactly once", [openings, replies], [1, 1])
+    check("a second reading while the first turn is still running reads nothing",
+          !turn(idle).reserved && openings == 1 && replies == 1)
+
+    CodexNaming.shared.finishNamingTurnForTesting(idle, done: false, retryDelay: 5 * 60)
+    check("and neither does one inside the backoff a failed turn left behind",
+          !turn(idle).reserved && openings == 1 && replies == 1)
+
+    // The other half of the same ordering: a title that stands is named from its opening alone,
+    // so the first answer — the material only a weak title needs — is not read for it either.
+    let standing = "claude:naming-turn-standing-\(UUID().uuidString)"
+    let stands = turn(standing, weak: false)
+    check("a conversation whose own title stands is named from its opening alone",
+          stands.request == "[Image #1]" && openings == 2 && replies == 1)
+    CodexNaming.shared.finishNamingTurnForTesting(standing, done: true, retryDelay: 0)
 
     // The same verdict off a real file, which is where the two halves — the title from the tail,
     // the opening from the head — are actually read.
@@ -821,6 +870,17 @@ group("an unnamed Claude conversation gets a durable model fallback") {
     expect("the transcript now calls itself something else",
            Transcript.title(ofTranscript: moved), "Cloudflare 憑證輪替失敗")
     check("and a title that moved is judged again rather than remembered", !weak(moved))
+
+    // The read bound is part of the question, so it is part of the key. Ten bytes cannot reach
+    // the opening at all, and the `false` that comes back is *no evidence*, not a title that
+    // describes something — an answer the caller asking for the whole head must not be handed.
+    // Both callers pass the default today, so this is the collision arriving before its trigger.
+    let bounded = write("bounded.jsonl", [pastedImage, #"{"type":"ai-title","aiTitle":"Image #1"}"#])
+    check("a bound too small to reach the opening is not evidence of anything",
+          !Transcript.titleIsWeak(ofTranscript: bounded, title: "Image #1", customTitle: nil,
+                                  bytes: 10))
+    check("and the verdict measured against ten bytes is not handed to the whole head",
+          Transcript.titleIsWeak(ofTranscript: bounded, title: "Image #1", customTitle: nil))
 }
 
 group("a Codex npm shim starts with Finder's cold PATH") {
@@ -1063,6 +1123,19 @@ group("a session's name never comes from its terminal's tab title") {
     SessionNaming.lookForTesting = { _ in SessionNaming.Name(title: "not this one", handle: nil) }
     expect("a Codex tab with no name of its own says where it is, not what the tab is called",
            tab("Default (node)", assistant: .codex, tab: 6).displayLabel, "⌘1-7")
+
+    // **One row, one look.** The label needs the title, whether that title is weak, and the
+    // handle; asked one at a time those are three looks, and three looks are three moments — the
+    // weakness verdict can end up belonging to a title the row is no longer showing. `Name`
+    // promises the two travel together, and only a single look keeps that promise at the call
+    // site. What makes it countable is that `reconcile` remembers nothing empty, so with `.none`
+    // coming back every question really does reach the source instead of the cache.
+    SessionNaming.forgetForTesting()
+    var looks = 0
+    SessionNaming.lookForTesting = { _ in looks += 1; return .none }
+    expect("a row nothing can name still says where it is",
+           tab("Default (python)", tab: 7).observedDisplayLabel, "⌘1-8")
+    expect("and one look answered it, not one look per field", looks, 1)
 }
 
 group("a name is read from what proves identity, and from nothing else") {

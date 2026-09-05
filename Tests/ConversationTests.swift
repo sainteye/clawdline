@@ -146,7 +146,18 @@ group("what has already been said in a place") {
     write("notes.jsonl", [#"{"type":"ai-title","aiTitle":"not a session"}"#])
 
     let place = StartPoints.Place(id: "p", path: "/Users/me/code/thing", label: "thing", at: Date())
-    let rows = StartPoints.past(in: place, dir: root, open: [])
+
+    // **A config of this suite's own, and every call below passes it.** `past`'s default is
+    // `Config.shared`, which is the person's real `~/.config/clawdline/config.json` — so from
+    // 2026-09-05, when `past` started naming rows through the ladder, these checks were reading a
+    // file outside the repository. Nothing here can match it (the ids are invented) and nothing
+    // writes to it, so the rows would be the same either way. But "would be the same either way"
+    // is a thing somebody has to go and establish, and it stops being true the day a check uses a
+    // plausible id. An empty directory costs a line and the question never comes up again.
+    let unstored = Config(directoryForTesting: URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-past-unstored-\(UUID().uuidString)",
+                                isDirectory: true))
+    let rows = StartPoints.past(in: place, dir: root, open: [], config: unstored)
 
     expect("the ones that can be named, newest first", rows.map(\.id), [
         "11111111-1111-4111-8111-111111111111",
@@ -167,24 +178,26 @@ group("what has already been said in a place") {
     check("nothing is open, so nothing says it is", rows.allSatisfy { !$0.live })
     let busy = StartPoints.past(in: place, dir: root,
                                 open: [root.appendingPathComponent(titled)
-                                        .resolvingSymlinksInPath().path])
+                                        .resolvingSymlinksInPath().path],
+                                config: unstored)
     expect("and the one being written to is the one that says so",
            busy.filter(\.live).map(\.id), ["11111111-1111-4111-8111-111111111111"])
 
     // The cap is what the reply pages against: `pastPayload` asks for one more than it sends and
     // says `more` when it got it, so a list that stops is one that says so rather than one that
     // quietly ends. That only works if the cap is exact.
-    expect("the cap is a cap", StartPoints.past(in: place, limit: 2, dir: root, open: []).count, 2)
+    expect("the cap is a cap",
+           StartPoints.past(in: place, limit: 2, dir: root, open: [], config: unstored).count, 2)
     expect("and asking for one more gets one more",
-           StartPoints.past(in: place, limit: 3, dir: root, open: []).count, 3)
+           StartPoints.past(in: place, limit: 3, dir: root, open: [], config: unstored).count, 3)
 
     expect("an id off the list resolves",
            StartPoints.past(withID: "22222222-2222-4222-8222-222222222222", in: place,
-                            dir: root, open: [])?.title,
+                            dir: root, open: [], config: unstored)?.title,
            "What a person called it")
     expect("one that was never handed out does not",
            StartPoints.past(withID: "99999999-9999-4999-8999-999999999999", in: place,
-                            dir: root, open: []), nil)
+                            dir: root, open: [], config: unstored), nil)
 
     // The same list, named the way every other Clawdline surface names the same conversation.
     // Until 2026-09-05 this read the transcript's own two titles and nothing this app knows, so
@@ -279,8 +292,15 @@ group("what has already been said in a place") {
             .allSatisfy { id in ladderRows.contains { $0.id == id } })
     // What the client sends back is the conversation, not the name it is being shown under.
     expect("the id is the transcript's, whichever rung named the row",
-           StartPoints.past(withID: weakWithFallback, in: place, dir: ladder, open: [])?.id,
+           StartPoints.past(withID: weakWithFallback, in: place, dir: ladder, open: [],
+                            config: stored)?.id,
            weakWithFallback)
+    // And the same ladder names it, because the lookup by id is the listing filtered — which is
+    // only true while the stored names reach it too.
+    expect("a row resolved by id is named the way the list named it",
+           StartPoints.past(withID: bothNames, in: place, dir: ladder, open: [],
+                            config: stored)?.title,
+           "Clawdline 的名字贏過 /rename")
 }
 
 group("an agent's turn is not the opening of a conversation") {

@@ -653,10 +653,17 @@ enum StartPoints {
     /// Resolved against a listing built now, for the same reason ``place(withID:)`` is: a
     /// transcript can be deleted between two looks, and the answer for one that is gone is the
     /// same `404` as an id that was never real.
-    static func past(withID id: String, in place: Place,
-                     dir: URL? = nil, open: Set<String>? = nil) -> Past? {
+    ///
+    /// `config` is here for the same reason `dir` and `open` are, and it arrived later for a
+    /// reason worth writing down: the default is ``Config/shared``, which is the person's real
+    /// `~/.config/clawdline/config.json`, so without a parameter here every check that resolves a
+    /// row by id reads a file outside the repository. It cannot match — those ids are invented —
+    /// but "cannot match" is something a reader has to go and establish, and a suite whose inputs
+    /// are all in the repository is one nobody has to. The app passes none of the four.
+    static func past(withID id: String, in place: Place, dir: URL? = nil,
+                     open: Set<String>? = nil, config: Config = .shared) -> Past? {
         guard sessionName(id) != nil else { return nil }
-        return past(in: place, dir: dir, open: open).first { $0.id == id }
+        return past(in: place, dir: dir, open: open, config: config).first { $0.id == id }
     }
 
     static func past(withID id: String, in place: Place, assistant: Assistant) -> Past? {

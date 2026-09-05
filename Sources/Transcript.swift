@@ -534,6 +534,13 @@ enum Transcript {
     /// only when the title does — a `/rename` arriving, or a different conversation reusing the
     /// path — and a signature key would re-read two megabytes off a busy transcript on every
     /// reading to reach the same verdict as last time.
+    ///
+    /// **`bytes` is in the key**, the way `tailBytes` is in ``titleCache``'s, because it is not a
+    /// tuning knob but part of the question: it says how much of the head the verdict was
+    /// measured against, and a bound too small to reach the opening answers `false` for want of
+    /// evidence rather than because the title describes anything. Every caller passes the
+    /// default today, so nothing collides now; a smaller bound added later would otherwise be
+    /// handed an answer somebody else measured.
     private static var weakTitleCache: [String: (title: String, weak: Bool)] = [:]
 
     static func titleIsWeak(ofTranscript url: URL, title: String?, customTitle: String?,
@@ -544,14 +551,15 @@ enum Transcript {
         // nothing to say so without a file read or a cache entry standing behind it.
         if let customTitle = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
            !customTitle.isEmpty { return false }
+        let cacheKey = "\(url.path)\u{0}\(bytes)"
         titleLock.lock()
-        let remembered = weakTitleCache[url.path]
+        let remembered = weakTitleCache[cacheKey]
         titleLock.unlock()
         if let remembered, remembered.title == title { return remembered.weak }
         let weak = ConversationTitle.isWeak(title: title, customTitle: nil,
                                             opening: firstUserMessage(of: url, bytes: bytes))
         titleLock.lock()
-        weakTitleCache[url.path] = (title, weak)
+        weakTitleCache[cacheKey] = (title, weak)
         titleLock.unlock()
         return weak
     }
@@ -1736,6 +1744,18 @@ enum ConversationTitle {
     /// **A missing opening is not an empty one.** `nil` means no user turn could be read, which
     /// is a lookup that answered nothing; `""` means one was read and it held nothing. The first
     /// is not evidence about the title and returns `false`, the second is clause (a).
+    ///
+    /// **And clause (b)'s containment runs one way**, because the two strings are not
+    /// interchangeable: the opening is the source Claude Code was naming from, and the title is
+    /// what it made of that source. A title the opening already contains added nothing to it,
+    /// which is what *restating* means. The other direction — a title that contains the whole
+    /// opening — is a title that said everything the opening did **and more**, which is the good
+    /// case; testing it too is the only way this predicate can throw away a better name than the
+    /// one it was given. `Fix the bug in the parser` over an opening of `fix the bug` is that
+    /// shape. Of the seven transcripts clause (b) selects on this Mac, none needs the other
+    /// direction: six are opening ⊇ title, and the seventh
+    /// (`準備好開始接下來的工作` over `準備好開始接下來的工作。`) satisfies both, so the one-way
+    /// rule reproduces the measured set exactly.
     static func isWeak(title: String?, customTitle: String? = nil, opening: String?) -> Bool {
         guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else { return false }
@@ -1750,7 +1770,7 @@ enum ConversationTitle {
         let named = comparable(title)
         let said = comparable(prose)
         guard !named.isEmpty, !said.isEmpty else { return false }
-        return named.contains(said) || said.contains(named)
+        return said.contains(named)
     }
 
     /// What is left of an opening message once Claude Code's attachment markers come off.

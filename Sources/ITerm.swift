@@ -82,14 +82,21 @@ struct TargetSession: Equatable, Identifiable {
     /// the next publication. Consumers use ``displayLabel`` and therefore cannot repeat it.
     var observedDisplayLabel: String {
         let threadName = CodexNaming.shared.title(for: self)
+        // **One look, and every field off that one.** `titleIsWeak` is a fact about the title
+        // beside it in the same ``SessionNaming/Name`` — the opening it was judged against was
+        // read from the same transcript at the same moment — and asking for the two separately
+        // takes two looks, with a twenty-second TTL and a lock between them. Worst shape: a
+        // `/rename` lands in the gap, and the new `customTitle` is paired with the previous
+        // look's `titleIsWeak == true`, so the row gives way to the fallback for one refresh.
+        // `SessionWatch.labels` takes both off one `LabelEvidence` for the same reason.
+        let name = SessionNaming.name(of: self)
         return Self.preferredDisplayLabel(
             manualTitle: Config.shared.sessionTitle(for: self),
             orchestratorTitle: Orchestrator.title(forTerminal: id),
             conversationTitle: Self.displayedConversationTitle(
-                SessionNaming.title(of: self), isWeak: SessionNaming.titleIsWeak(of: self),
-                fallback: threadName),
+                name.title, isWeak: name.titleIsWeak, fallback: threadName),
             threadName: threadName,
-            handle: SessionNaming.handle(of: self),
+            handle: name.handle,
             coordinate: coordinate)
     }
 
@@ -244,7 +251,12 @@ enum SessionNaming {
     private static var remembered: [String: Remembered] = [:]
 
     /// The whole of the impure part: decide whether to look, look, reconcile, keep.
-    private static func name(of target: TargetSession, now: Date = Date()) -> Name {
+    ///
+    /// **A caller that needs more than one field asks this, not the accessors under it.** Each of
+    /// those is a look of its own, and two looks are two moments: what they return can disagree
+    /// across the TTL, and ``Name``'s promise that the weakness verdict belongs to the title
+    /// beside it holds only within one of them.
+    static func name(of target: TargetSession, now: Date = Date()) -> Name {
         // A tab with no Claude Code in it has no conversation to name, and a tab whose session
         // has exited must not keep wearing its name. Forgetting here rather than in `reconcile`
         // keeps that case out of the pure function, where "no assistant" and "the lookup failed"
@@ -276,6 +288,8 @@ enum SessionNaming {
         return kept?.name ?? .none
     }
 
+    /// One field of a look, for a caller that wants exactly one. Two of these is two looks, which
+    /// is what ``name(of:now:)`` above is for.
     static func title(of target: TargetSession) -> String? { name(of: target).title }
     static func handle(of target: TargetSession) -> String? { name(of: target).handle }
     static func titleIsWeak(of target: TargetSession) -> Bool { name(of: target).titleIsWeak }
