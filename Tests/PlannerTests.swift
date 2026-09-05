@@ -1258,6 +1258,174 @@ group("a picker's tab bar says which of its questions are answered") {
     expect("a set whose bar ticked a question off is not confirmed",
            Targets.confirmation(want: 1, asked: previewAsked, now: previewMovedOn), .movedOn)
 
+    // **The screen exactly as `Targets.capture` hands it over, indentation included.**
+    //
+    // The first version of this fixture was indented four columns deeper than the terminal draws
+    // it, because a Swift multiline literal strips whatever the closing delimiter is indented by
+    // and the two did not match. Four columns is not cosmetic here: it turned the picker's
+    // flush-left caret into an indented one, and those take **different branches** — the indented
+    // branch is unconditional, the flush-left branch demands a frame above it. So the fixture
+    // passed on a screen no terminal produces while the real one failed, and the fix it was
+    // guarding shipped broken. Keep the closing delimiter at this block's own indentation.
+    //
+    // Captured 2026-09-05 from tmux, `capture-pane -p -e -J -S -0`, which is the call
+    // ``Targets/visibleScreen(of:)`` makes: the whole visible pane, banner included, because a
+    // young session has not filled its screen yet.
+    let wholePane = """
+
+         ▐▛███▛█   Claude Code v2.1.261
+        ▝▜██████▀  Haiku 4.5 · Claude Max
+          ▝▝ ▝▝    ~/code/clawdline
+
+
+        ❯ 這是 preview 選單修正的驗收用 session。請直接用 AskUserQuestion 一次問兩題：第一題 header「驗收」，問「從手機點選項 2 會發生什麼」，三個選項，每個選項都要帶 preview 欄位（畫個 ASCII 方塊即可）；第二題 header「收尾」，隨便問三個選項，不要
+          preview。除了問這兩題以外什麼都不要做。
+
+        ⏺ User declined to answer questions
+          ⎿  · 從手機點選項 2 會發生什麼？ (選項展開並高亮 / 選項會消失 / 頁面跳轉到詳情頁)
+             · 這輪驗收後需要進行的後續動作是什麼？ (合併到主分支 / 部署到測試環境 / 記錄已完成並等待下一輪)
+
+        ✻ Baked for 9s · done 下午6:11
+
+        ❯ 再問一次同樣的兩題：第一題 header「驗收」，問「從手機點選項 2 會發生什麼」，三個選項，每個都要帶 preview 欄位；第二題 header「收尾」，三個選項不帶 preview。除此之外什麼都不要做。
+
+        ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        ←  ☐ 驗收  ☐ 收尾  ✔ Submit  →
+
+        從手機點選項 2 會發生什麼？
+
+          1. 選項展開並高亮               ┌──────────────────────────────────────────┐
+        ❯ 2. 選項會消失                   │ ┌─────────────────────┐                  │
+          3. 頁面跳轉到詳情頁             │ │ 選項 1              │                  │
+                                          │ ├─────────────────────┤                  │
+                                          │ │ 選項 3              │                  │
+                                          │ ├─────────────────────┤                  │
+                                          │ │ [已移除]            │                  │
+                                          │ └─────────────────────┘                  │
+                                          └──────────────────────────────────────────┘
+
+                                          Notes: press n to add notes
+
+        ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+          Chat about this
+
+        Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel
+        """
+    expect("the pane as captured reads as a menu",
+           SessionState.menu(wholePane, assistant: .claude, hookWaiting: true) != nil, true)
+    // The same screen from the dialog's own rule down, which is all a long conversation leaves
+    // inside the thirty-line tail. This one has always worked; it is here as the control that
+    // says the difference is the top of the screen and not the dialog.
+    let dialogOnly = """
+        ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        ←  ☐ 驗收  ☐ 收尾  ✔ Submit  →
+
+        從手機點選項 2 會發生什麼？
+
+          1. 選項展開並高亮               ┌──────────────────────────────────────────┐
+        ❯ 2. 選項會消失                   │ ┌─────────────────────┐                  │
+          3. 頁面跳轉到詳情頁             │ │ 選項 1              │                  │
+                                          │ ├─────────────────────┤                  │
+                                          │ │ 選項 3              │                  │
+                                          │ ├─────────────────────┤                  │
+                                          │ │ [已移除]            │                  │
+                                          │ └─────────────────────┘                  │
+                                          └──────────────────────────────────────────┘
+
+                                          Notes: press n to add notes
+
+        ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+          Chat about this
+
+        Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel
+        """
+    expect("and so does the dialog on its own",
+           SessionState.menu(dialogOnly, assistant: .claude, hookWaiting: true) != nil, true)
+    if let whole = SessionState.menu(wholePane, assistant: .claude, hookWaiting: true) {
+        expect("its three rows are read", whole.options.count, 3)
+        expect("the caret is read where the terminal drew it", whole.selected, 2)
+        expect("the tab bar is not mistaken for a multi-select's button", whole.submit == nil, true)
+        expect("both questions of the set are read", whole.steps.count, 2)
+        expect("answering the row the caret is on confirms",
+               Targets.confirmation(want: 2, asked: whole, now: whole), .send)
+    }
+
+    // **The same pane, captured the way the answering path captures it: with its colour still on.**
+    //
+    // `Targets.capture` asks tmux for `-e`, because the panel draws that screen for a person, and
+    // hands the result straight to this parser — which strips no escapes of its own. Every reader
+    // that worked went through ``SessionState/read(_:assistant:hookWaiting:)`` first, and that is
+    // where the one `Ansi.plain` lived, so the dependency was invisible: the same screen read
+    // correctly on the path that polls and not at all on the path that answers.
+    //
+    // What it costs is exact. `\u{1b}[38;5;153m\u{276F}` puts an escape where ``option(_:)``
+    // looks for the caret, so the row is not an option, so there are no options, so there is no
+    // menu — and the phone's tap reached the tty and stopped there, twice, in front of somebody
+    // waiting for it. Captured 2026-09-05 from tmux 3.6a, Claude Code v2.1.261.
+    let colouredPane = """
+
+        \u{1b}[38;5;174m ▐\u{1b}[48;5;16m▛███▛█\u{1b}[39m\u{1b}[49m   \u{1b}[1mClaude Code\u{1b}[0m \u{1b}[38;5;246mv2.1.261
+        \u{1b}[38;5;174m▝▜\u{1b}[48;5;16m█████\u{1b}[49m█▀\u{1b}[39m  \u{1b}[38;5;246mHaiku 4.5 · Claude Max
+        \u{1b}[38;5;174m  ▝▝ ▝▝  \u{1b}[39m  \u{1b}[38;5;246m~/code/clawdline
+
+
+        \u{1b}[38;5;239m\u{1b}[48;5;237m❯ \u{1b}[38;5;231m這是 preview 選單修正的驗收用 session。請直接用 AskUserQuestion 一次問兩題：第一題 header「驗收」，問「從手機點選項 2 會發生什麼」，三個選項，每個選項都要帶 preview 欄位（畫個 ASCII 方塊即可）；第二題 header「收尾」，隨便問三個選項，不要 \u{1b}[39m   
+          \u{1b}[38;5;231mpreview。除了問這兩題以外什麼都不要做。\u{1b}[39m                                                                                                                                                                                                          
+
+        \u{1b}[38;5;246m\u{1b}[49m⏺ \u{1b}[39mUser declined to answer questions                                                                                                                                                                                                                
+        \u{1b}[38;5;246m  ⎿  · 從手機點選項 2 會發生什麼？ (選項展開並高亮 / 選項會消失 / 頁面跳轉到詳情頁)
+        \u{1b}[39m     \u{1b}[38;5;246m· 這輪驗收後需要進行的後續動作是什麼？ (合併到主分支 / 部署到測試環境 / 記錄已完成並等待下一輪)
+
+        ✻\u{1b}[39m \u{1b}[38;5;246mBaked for 9s · done 下午6:11
+        \u{1b}[39m                                                                              
+        \u{1b}[38;5;239m\u{1b}[48;5;237m❯ \u{1b}[38;5;231m再問一次同樣的兩題：第一題 header「驗收」，問「從手機點選項 2 會發生什麼」，三個選項，每個都要帶 preview 欄位；第二題 header「收尾」，三個選項不帶 preview。除此之外什麼都不要做。\u{1b}[39m                                                               
+        \u{1b}[49m                                                                              
+        \u{1b}[38;5;246m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        ← \u{1b}[38;5;16m\u{1b}[48;5;153m ☐ 驗收 \u{1b}[39m\u{1b}[49m ☐ 收尾  ✔ Submit  →                                                
+                                                                                      
+        \u{1b}[1m\u{1b}[38;5;231m從手機點選項 2 會發生什麼？
+        \u{1b}[0m                                                                              
+        \u{1b}[38;5;153m❯\u{1b}[38;5;246m 1.\u{1b}[1m\u{1b}[38;5;153m 選項展開並高亮\u{1b}[0m               \u{1b}[38;5;246m┌──────────────────────────────────────────┐
+        \u{1b}[39m \u{1b}[38;5;246m 2.\u{1b}[39m 選項會消失                   \u{1b}[38;5;246m│ \u{1b}[39m┌─────────────────────┐\u{1b}[38;5;246m                  │
+        \u{1b}[39m \u{1b}[38;5;246m 3.\u{1b}[39m 頁面跳轉到詳情頁             \u{1b}[38;5;246m│ \u{1b}[39m│ 選項 1              │\u{1b}[38;5;246m                  │
+        \u{1b}[39m                                  \u{1b}[38;5;246m│ \u{1b}[39m├─────────────────────┤\u{1b}[38;5;246m                  │
+        \u{1b}[39m                                  \u{1b}[38;5;246m│ \u{1b}[39m│ 選項 2 [選中]       │\u{1b}[38;5;246m                  │
+        \u{1b}[39m                                  \u{1b}[38;5;246m│ \u{1b}[39m│ ↓ 詳細內容          │\u{1b}[38;5;246m                  │\u{1b}[39m                                                                                                                                                                     
+                                          \u{1b}[38;5;246m│ \u{1b}[39m├─────────────────────┤\u{1b}[38;5;246m                  │
+        \u{1b}[39m                                  \u{1b}[38;5;246m│ \u{1b}[39m│ 選項 3              │\u{1b}[38;5;246m                  │
+        \u{1b}[39m                                  \u{1b}[38;5;246m│ \u{1b}[39m└─────────────────────┘\u{1b}[38;5;246m                  │
+        \u{1b}[39m                                  \u{1b}[38;5;246m└──────────────────────────────────────────┘
+        \u{1b}[39m                                                             
+                                          \u{1b}[38;5;153mNotes:\u{1b}[39m \u{1b}[3m\u{1b}[38;5;246mpress n to add notes
+
+        \u{1b}[0m\u{1b}[38;5;246m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        \u{1b}[39m  Chat about this
+
+        \u{1b}[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        \u{1b}[39m                                                                           
+        """
+    check("the fixture really does still carry its escapes", colouredPane.contains("\u{1b}"))
+    let readColoured = SessionState.menu(colouredPane, assistant: .claude, hookWaiting: true)
+    expect("a coloured capture reads as a menu", readColoured != nil, true)
+    expect("its rows survive the colour", readColoured?.options.count, 3)
+    expect("and so does the caret", readColoured?.selected != nil, true)
+
     // Answering one question of several changes the bar and nothing else on screen. Without the
     // steps in the revision, a client that trusts it never learns the answer landed.
     var answered = menu!

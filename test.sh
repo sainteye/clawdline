@@ -236,14 +236,14 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # measured on two trees neither of which is this one. The same two detached-door checks were red
 # here too, on this tree, on the snippets branch before the merge, and on `9e42f5b3` with none of
 # it: two sessions reached that conclusion separately, each by building a control tree.
-expected_swift_receipt='9215 checks passed'
+expected_swift_receipt='9226 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7349
+expected_swift_receipt_witness=7360
 
 count_exact_receipt_lines() {
   local receipt=$1

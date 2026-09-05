@@ -335,6 +335,17 @@ enum Targets {
         let seen = capture(session).flatMap {
             SessionState.menu($0, assistant: session.assistant ?? .claude, hookWaiting: true)
         }
+        // **This path had no record of itself, and that is what let it fail silently.** Answering
+        // from a phone is one HTTP call whose whole effect happens on somebody else's screen: the
+        // caller is told the keystroke was delivered, which is true, and nothing anywhere says
+        // what the app decided to do after that. On 2026-09-05 a tap that reached the tty and
+        // stopped there was indistinguishable in the log from one that answered the question, and
+        // it took a person tapping twice and a picker sitting for six minutes to notice. A menu
+        // is answered a few times an hour, so this costs nothing and is the only account of the
+        // decision that exists.
+        Log.write("answer: want=\(want) read=\(seen == nil ? "no" : "yes")"
+                  + (seen.map { " numbered=\($0.numbered) caret=\($0.selected.map(String.init) ?? "-")"
+                                + " steps=\($0.steps.count) submit=\($0.submit == nil ? "no" : "yes")" } ?? ""))
         if let menu = seen, !menu.numbered { return highlight(row: want, of: menu, on: session) }
         if let failure = keystroke(bytes, to: session) { return failure }
 
@@ -442,18 +453,30 @@ enum Targets {
                                          asked: SessionState.Menu?) -> String? {
         for attempt in 0..<2 {
             Thread.sleep(forTimeInterval: attempt == 0 ? 0.12 : 0.25)
-            guard let screen = capture(session) else { continue }
+            guard let screen = capture(session) else {
+                Log.write("answer: confirm \(attempt) — the screen could not be captured")
+                continue
+            }
             // `hookWaiting` is true here because this path only exists behind a menu the app
             // already drew buttons for: the reader pressed one of them a moment ago. The gate
             // guards against calling a screen a menu unprompted, which is not this.
             guard let menu = SessionState.menu(screen, assistant: session.assistant ?? .claude,
-                                               hookWaiting: true) else { continue }
-            switch confirmation(want: want, asked: asked, now: menu) {
+                                               hookWaiting: true) else {
+                Log.write("answer: confirm \(attempt) — that screen no longer reads as a menu")
+                continue
+            }
+            let verdict = confirmation(want: want, asked: asked, now: menu)
+            Log.write("answer: confirm \(attempt) — \(verdict) (caret="
+                      + "\(menu.selected.map(String.init) ?? "-") want=\(want))")
+            switch verdict {
             case .send: return keystroke(13, to: session)
             case .movedOn: return nil
             case .notYet: continue
             }
         }
+        // Two readings and neither could commit: the highlight never arrived where it was asked
+        // for. Said out loud, because the caller is about to be told the keystroke was delivered.
+        Log.write("answer: gave up without confirming want=\(want)")
         return nil
     }
 

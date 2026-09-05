@@ -868,7 +868,7 @@ link to them.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 9215 checks, minutes rather than seconds
+./test.sh     # 9226 checks, minutes rather than seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```

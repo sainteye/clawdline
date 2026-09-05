@@ -41,6 +41,29 @@ tap" — both of those were declined rather than postponed, and the reasons are 
 The sheet speaks all fourteen languages. The two starters an empty list offers are the exception to
 how the rest of this app is translated: they are text a person sends to an assistant rather than
 the interface talking, so each language says what somebody there would actually type.
+### Fixed: a key pressed from a phone could reach the terminal and do nothing at all
+
+The panel asks tmux for a screen **with its colour still on**, because it draws that screen for a
+person to read. The parser that decides what a screen is showing strips no escapes of its own — it
+was always handed text somebody else had already cleaned. Exactly one caller did that cleaning, the
+one that polls every session a second at a time, so every reader that mattered was clean and the
+dependency was invisible.
+
+The path that answers a question is the one that did not go through that door. It captured the
+screen, handed it over with the colour attached, and `\u{1b}[38;5;153m` sat in the column the
+parser looks for a selection caret in. So no row was an option, so there were no options, so there
+was no menu — and a key pressed from a phone was written into the terminal and then abandoned,
+because the app could no longer see the question it had just answered. Nothing failed: the request
+returned success, the keystroke really had been delivered, and the picker sat there.
+
+It only ever showed up where the digit alone was not enough. An ordinary row answers on the digit,
+so those taps worked and this stayed invisible; a row with a `preview` panel needs the Return that
+follows, and that Return is what was never sent.
+
+The colour now comes off inside the parser, where every caller gets it, and the answering path
+writes down what it decided — what it read, where the caret was, whether it confirmed — because
+this failure was silent in the one place with no record of itself.
+
 ### Fixed: an answer sent from a phone stopped landing when the question carried a preview
 
 Tapping an option on a phone sends that row's digit into the picker, and Claude Code's
@@ -52,9 +75,12 @@ set of questions can hold one of each.
 Clawdline sends the Return that commits an answer only when it can see the picker did *not* move on
 by itself — and it read "this question is one of a set" as proof that it had. On a preview question
 that is exactly backwards: the highlight had moved, nothing had been committed, and the one thing
-withheld was the Return the picker was waiting for. The phone reported the answer as sent, honestly,
-because the keystroke had been delivered; the Mac then sat on the same three options for six minutes
-with both questions still unanswered. Measured 2026-09-05 against Claude Code v2.1.261.
+withheld was the Return the picker was waiting for. Measured 2026-09-05 against Claude Code
+v2.1.261.
+
+**The six unanswered minutes that found this were not this.** They belonged to the entry below,
+which was hiding underneath it: the answering path could not read that screen at all, so it never
+reached the decision described here. This one is what would have stopped the next tap.
 
 What decides it now is the picker's own tab bar, which moves for exactly one of the two: a digit
 that answered ticks its question off, and a digit that only moved a highlight leaves every box as it
