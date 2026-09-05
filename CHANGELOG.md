@@ -9,6 +9,37 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: the sentence you type several times a day, one press away
+
+Two of them get typed into a phone all day, one thumb at a time: *commit（逐檔指名，不要 git
+add -A）、push、deploy。* and *回報你剛剛做了什麼、什麼還沒做、接下來要做什麼。* Now you write one
+once and press it.
+
+The project mark on a session's header — the pixel icon that already means *this project* — is a
+button of its own and opens that project's snippets. `⋯` → **Snippets** opens the same sheet, which
+is the entrance that still works in a project nobody ever gave a mark. Pressing a row puts its text
+in the composer and closes the sheet. **It does not send.** Sending is the second press, on the
+button that already says so — a mis-tap on a phone in a pocket cannot run `commit, push, deploy` in
+the wrong session, and the ordinary case of *snippet plus one more sentence*, "…, 但先跑測試",
+needs no separate feature.
+
+A snippet belongs to one project or to every project, and the Mac decides which project a session
+is in by the mark's own rule — so a session running in an isolated worktree sees the snippets of
+the checkout it was cut from rather than an empty list of its own. They live beside your schedules,
+one file each in `~/.config/clawdline/snippets/`, and the list rides the snapshot the page already
+receives: the sheet opens with nothing to wait for, and a phone on the relay can press one too.
+Making and changing them stays on the direct path, and a device that may only read still sees the
+list and is told why it cannot insert.
+
+**Clawdline never reads what a snippet says.** It puts the words in the box; what they mean is
+between you and the assistant. There is no expansion, no placeholder and no per-snippet "send on
+tap" — both of those were declined rather than postponed, and the reasons are in
+[`docs/snippets.md`](docs/snippets.md).
+
+The sheet speaks all fourteen languages. The two starters an empty list offers are the exception to
+how the rest of this app is translated: they are text a person sends to an assistant rather than
+the interface talking, so each language says what somebody there would actually type.
+
 ### Added: this app can tell you it has been left behind
 
 An installed copy had no way of finding out that a newer one exists. It arrives as a zip from a

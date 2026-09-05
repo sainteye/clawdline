@@ -178,6 +178,12 @@ Also:
   `SKILL.md` — opening a menu never opens a skill's body. The same list is on the phone.
 - **Prompt history** — <kbd>↑</kbd> and <kbd>↓</kbd> walk back through what you have sent, and those
   same words are what dictation is told to expect.
+- **Press it instead of typing it again** — the project mark on a session's header opens that
+  project's snippets: the lines you type several times a day, one press each. A press puts the
+  words in the composer and the send button is still the only thing that sends, so a mis-tap in a
+  pocket cannot run `commit, push, deploy` in the wrong session. Kept on the Mac, scoped to one
+  project or to every one, and readable on a phone over the relay.
+  [What the mark does →](docs/interface.md#the-mark-in-a-sessions-header) · [The routes →](docs/api.md#the-snippets-a-session-can-press)
 - **Bring your own mascot** — the character is one JSON file: a pixel grid, a palette and seven
   routines. No fork required. [Format →](docs/mascots.md) · [Gallery →](docs/gallery.md)
 - **Fourteen languages** — English, Chinese (Traditional and Simplified), Japanese, Korean,
