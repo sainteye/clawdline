@@ -1122,6 +1122,12 @@ MAINTENANCE_POSTED=
 # The HTTP code the last abort came back with, so the message that reports a failed abort can say
 # what the server actually said rather than "it did not work".
 MAINTENANCE_ABORT_STATUS=
+# The note this run's own note displaced, held in memory so it can be put back on the paths where
+# the server answers that this run holds no window at all. There is one note for the whole machine
+# and it is written before the POST leaves, so the write lands on runs that turn out to have
+# changed nothing; `maintenance_restore` is what makes that true of the note as well. Empty means
+# there was nothing there to displace.
+MAINTENANCE_DISPLACED=
 # 300 s: the measured 146-second drain doubled, with margin. It is the whole of the client's
 # patience for admission — the POST and the `ready` poll spend it between them rather than each
 # having its own — and it is deliberately larger than any drain seen so far rather than tuned to
@@ -1140,31 +1146,70 @@ MAINTENANCE_READ_FLOOR=10
 # count of attempts. 180 attempts of `--max-time 5` with a second of sleep between them is 1080 s,
 # not 180, and the number below is quoted in the derivation that guards the gate.
 MAINTENANCE_RECONCILE_SECONDS="${CLAWDLINE_MAINTENANCE_RECONCILE_SECONDS:-180}"
-# **The longest one build can hold a window, derived rather than asserted.** The comment here used
-# to claim "under 500 s" against a poll loop that handed every read a fresh full budget; the real
-# figure was about 790 s. Worse, nothing connected the claim to the gate below, so raising
+# **The longest one build can hold a window, added up along each path it can take.** The comment
+# here used to claim "under 500 s" against a poll loop that handed every read a fresh full budget;
+# the real figure was about 790 s. Worse, nothing connected the claim to the gate below, so raising
 # `CLAWDLINE_MAINTENANCE_BUDGET` on its own was enough to guarantee that a live window would look
 # abandoned to the next build — which then aborts it on age alone, without ever asking about a pid.
+#
+# That was replaced by one formula, and the formula was wrong in the other direction. It charged a
+# second admission budget to every path, when only the drain timeout spends one; and it left out
+# the abort `cleanup_build` takes on the way out, which is 30 seconds this script really spends
+# with the window still open. The two mistakes cancelled at the default knobs and came apart as
+# soon as the budget was lowered: at `CLAWDLINE_MAINTENANCE_BUDGET=10` the gate below stood at
+# 236 s while a build could still be inside its own window at 251 s.
+#
+# **And nothing said so, because the check compared the gate against the figure the gate was
+# derived from.** `MAINTENANCE_STALE_SECONDS` defaults to `worst + budget`, so `stale > worst` is
+# an identity for any positive budget — a comparison that cannot come out false, which on screen is
+# indistinguishable from one that came out true. So the two paths are summed separately below, and
+# the check is asked about `MAINTENANCE_WORST_REAL`, which no default is derived from.
+#
+# The two aborts that were missing, named once so both sums can spend them:
+MAINTENANCE_CLEANUP_ABORT_SECONDS=30
+MAINTENANCE_RECONCILE_ABORT_SECONDS=5
 # Every term is a timeout this script really spends, counted from the POST that creates the intent,
-# because that is when the age this gate reads starts:
-#   budget x 2      the POST and the `ready` poll that share its deadline, then the abort that ends
-#                   the window, which spends the same budget
+# because that is when the age this gate reads starts.
+#
+# The drain timeout:
+#   budget          the POST and the `ready` poll, which share one deadline
 #   read floor      the one read that may still be running when that deadline passes
+#   budget          the abort that ends the window, which spends the same budget
+#   cleanup abort   and the exit handler's, because this path leaves through it
+MAINTENANCE_WORST_DRAIN=$(( MAINTENANCE_BUDGET + MAINTENANCE_READ_FLOOR + MAINTENANCE_BUDGET \
+  + MAINTENANCE_CLEANUP_ABORT_SECONDS ))
+# The reconciliation timeout:
+#   budget + floor  the same admission wait, this time answered
 #   6 + 5           waiting for the old process to go, and for the replacement to answer
 #   reconcile + 5   the reconciliation wait, and the read that may start just before its deadline
-MAINTENANCE_WORST_WINDOW=$(( MAINTENANCE_BUDGET * 2 + MAINTENANCE_READ_FLOOR + 6 + 5 + MAINTENANCE_RECONCILE_SECONDS + 5 ))
+#   5 + cleanup     that path's own short abort, then the exit handler's again
+MAINTENANCE_WORST_RECONCILE=$(( MAINTENANCE_BUDGET + MAINTENANCE_READ_FLOOR + 6 + 5 \
+  + MAINTENANCE_RECONCILE_SECONDS + 5 + MAINTENANCE_RECONCILE_ABORT_SECONDS \
+  + MAINTENANCE_CLEANUP_ABORT_SECONDS ))
+if [ "$MAINTENANCE_WORST_RECONCILE" -gt "$MAINTENANCE_WORST_DRAIN" ]; then
+  MAINTENANCE_WORST_REAL=$MAINTENANCE_WORST_RECONCILE
+else
+  MAINTENANCE_WORST_REAL=$MAINTENANCE_WORST_DRAIN
+fi
+MAINTENANCE_WORST_WINDOW=$MAINTENANCE_WORST_REAL
 # How old an unclaimed intent has to be before this script will clear it: the worst window above
 # plus one more admission budget of margin, so the gate moves when either knob moves instead of
 # being a constant that happens to be larger today. It is only ever consulted for an intent whose
 # writer this machine has no live process for.
 MAINTENANCE_STALE_SECONDS="${CLAWDLINE_MAINTENANCE_STALE_SECONDS:-$(( MAINTENANCE_WORST_WINDOW + MAINTENANCE_BUDGET ))}"
-if [ "$MAINTENANCE_STALE_SECONDS" -le "$MAINTENANCE_WORST_WINDOW" ]; then
+if [ "$MAINTENANCE_STALE_SECONDS" -le "$MAINTENANCE_WORST_REAL" ]; then
   # An override can still put the two knobs the wrong way round, and what that buys is the
   # dangerous direction: a window a build could legitimately still be inside, judged abandoned by
   # the next one. Say it here, where both numbers are in hand, rather than leaving it to be read
   # off an aborted window later.
-  echo "!! CLAWDLINE_MAINTENANCE_STALE_SECONDS=$MAINTENANCE_STALE_SECONDS is not longer than the ${MAINTENANCE_WORST_WINDOW}s this build can hold a maintenance window"
-  echo "   a live window can be judged abandoned on age alone; raise it above ${MAINTENANCE_WORST_WINDOW}s or lower CLAWDLINE_MAINTENANCE_BUDGET"
+  #
+  # **The subject is `MAINTENANCE_WORST_REAL`, not `MAINTENANCE_WORST_WINDOW`.** They hold the same
+  # number today and they are not the same claim: one is what the timeouts add up to, the other is
+  # what this block publishes and derives the gate from. Comparing the gate against the second is
+  # the identity described above; against the first, a derivation that understates a path is
+  # something this line can still object to.
+  echo "!! CLAWDLINE_MAINTENANCE_STALE_SECONDS=$MAINTENANCE_STALE_SECONDS is not longer than the ${MAINTENANCE_WORST_REAL}s this build can hold a maintenance window"
+  echo "   a live window can be judged abandoned on age alone; raise it above ${MAINTENANCE_WORST_REAL}s or lower CLAWDLINE_MAINTENANCE_BUDGET"
 fi
 # Beside the token this block already reads, because it has to outlive the run that wrote it: the
 # whole point is that the *next* process can recognise this one's leftover. `$STAGE_ROOT` cannot
@@ -1281,6 +1326,14 @@ except Exception:
 maintenance_remember() {
   local dir tmp
   dir=$(dirname "$MAINTENANCE_STATE_FILE")
+  # **Keep what is about to be displaced.** This write happens before the POST is answered, which
+  # is deliberate, and it therefore also happens on every run the server then refuses. Read the
+  # standing note first so `maintenance_restore` can put it back; the round trip is exact because
+  # both ends of it are this same two-line format.
+  MAINTENANCE_DISPLACED=
+  if [ -r "$MAINTENANCE_STATE_FILE" ]; then
+    MAINTENANCE_DISPLACED=$(cat "$MAINTENANCE_STATE_FILE" 2>/dev/null || true)
+  fi
   if ! mkdir -p "$dir" 2>/dev/null; then
     echo "!! could not create $dir; if this build is killed, $1 is the only handle on its window" >&2
     return 1
@@ -1296,6 +1349,45 @@ maintenance_remember() {
   rm -f "$tmp" 2>/dev/null || true
   echo "!! could not write $MAINTENANCE_STATE_FILE; if this build is killed, $1 is the only handle on its window" >&2
   return 1
+}
+
+# **Put back what this run displaced, once the server has said this run holds nothing.** The mirror
+# of `maintenance_forget`, and it asks the same question first: is the standing note still this
+# run's? A build refused with `409 restart_in_progress` or `503 restart_store_failed` has changed
+# nothing on the server — it never held a window — and until this existed it still overwrote a live
+# build's note on the way past. That is not a lost file: the note is the only machine-readable
+# evidence that a window has an owner, and what replaced it (an id the server is not holding, a pid
+# that dies a second later) is worse than an absence, because it sends the next run down the age
+# branch, the one that never asks about a pid.
+#
+# One machine-wide note is what makes this necessary at all: a file per request id would leave
+# nobody to displace. That is a design change and it is not this one; this closes the path where
+# the loss is caused by a build that did nothing.
+maintenance_restore() {
+  local tmp
+  [ -n "${MAINTENANCE_STATE_FILE:-}" ] || return 0
+  # Somebody may have written since. Then it is not this run's note to put anything back over.
+  [ "$(maintenance_remembered request_id)" = "$1" ] || return 0
+  if [ -z "$MAINTENANCE_DISPLACED" ]; then
+    # Nothing was displaced, so the truthful state is no note rather than this run's: the id it
+    # names is one the server has just said it is not holding.
+    maintenance_forget "$1"
+    return 0
+  fi
+  tmp=$(mktemp "$MAINTENANCE_STATE_FILE.XXXXXX" 2>/dev/null) || {
+    echo "!! could not put back the note this build displaced at $MAINTENANCE_STATE_FILE" >&2
+    return 0
+  }
+  if printf '%s\n' "$MAINTENANCE_DISPLACED" >"$tmp" 2>/dev/null \
+      && mv "$tmp" "$MAINTENANCE_STATE_FILE" 2>/dev/null; then
+    MAINTENANCE_DISPLACED=
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+  # The build is failing anyway; what this line adds is that the next run's recovery evidence went
+  # with it, and whose it was.
+  echo "!! could not put back the note this build displaced at $MAINTENANCE_STATE_FILE" >&2
+  return 0
 }
 
 # **Forget by id, or not at all.** There is one note for the whole machine, and three places used
@@ -1442,7 +1534,7 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
   fi
   if [ "$MAINTENANCE_STATUS" = 404 ]; then
     echo "→ installed runtime has no restart-maintenance route; using one-time bootstrap preflight"
-    maintenance_forget "$MAINTENANCE_REQUEST_ID"
+    maintenance_restore "$MAINTENANCE_REQUEST_ID"
     MAINTENANCE_REQUEST_ID=
     MAINTENANCE_POSTED=
   elif [ "$MAINTENANCE_STATUS" != 200 ]; then
@@ -1455,9 +1547,13 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
     # response at all, and reading it as a status is how the whole of 2026-09-05 happened. Nothing
     # reaches this branch with `000` while the split above is intact — which is exactly why the
     # condition has to say so rather than rely on it.
+    #
+    # **And the note goes back with it.** Observed and negative means this run never held a window,
+    # so the note it wrote on the way in is both worthless and in somebody else's place.
     case "$MAINTENANCE_STATUS" in
       "" | 000) : ;;
-      *) MAINTENANCE_POSTED= ;;
+      *) MAINTENANCE_POSTED=
+         maintenance_restore "$MAINTENANCE_REQUEST_ID" ;;
     esac
     echo "!! restart maintenance was refused by the app (HTTP $MAINTENANCE_STATUS)"
     echo "   request_id: $MAINTENANCE_REQUEST_ID"

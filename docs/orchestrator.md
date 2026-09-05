@@ -1310,6 +1310,14 @@ it then does on the strength of it — reopening admission in its output, removi
 `~/.config/clawdline` — is outside what the route can protect. So the adopter judges the status
 code, and removes the note only when the note still records its own id.
 
+**Writing the note is the same question as removing it.** There is one note for the machine and it
+is written before the POST leaves, which is what makes an accepted-but-unobserved request
+recoverable — and also means the write lands on every run the app then refuses. A build answered
+`409` or `503` has changed nothing on the server, so it puts back the note it displaced (or removes
+its own, when there was nothing to put back) before it exits, under the same id test. A file per
+request id would remove the displacement rather than repair it; that is a design change and is not
+what ships here.
+
 Before it asks, it looks. A standing intent whose writing process is still alive is never touched.
 One this machine wrote, whose writer is gone, is aborted and replaced with a fresh window. An
 unclaimed one is aborted only past a staleness gate derived from the admission budget — the

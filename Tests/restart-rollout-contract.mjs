@@ -350,6 +350,12 @@ const IGNORE_ABORT_STATUS = [
   '  return 1',
 ].join('\n');
 const FORGET_BY_ID = 'maintenance_forget "$MAINTENANCE_REQUEST_ID"';
+/** The fourth: the line that puts back what the note write displaced, on the one path where the
+ *  server has answered that this run holds nothing at all. */
+const RESTORE_ON_REFUSAL = [
+  '      *) MAINTENANCE_POSTED=',
+  '         maintenance_restore "$MAINTENANCE_REQUEST_ID" ;;',
+].join('\n');
 
 /** A pid that is certainly not running: a shell that has already exited, confirmed dead here. */
 function deadPid() {
@@ -654,6 +660,53 @@ assert.match(refused.run.stdout, /restart_store_failed/,
 assert.match(refused.run.stdout, /request_id: [0-9a-f-]{36}/,
   'with the id, because a refusal can still leave one behind');
 
+// --- A refused build changes nothing on the server, and nothing beside it. ---------------------
+// The note is written before the POST leaves, and that is right: a request that is accepted and
+// never observed is the whole reason this block keeps one. But it was written *unconditionally*,
+// and there is one note for the entire machine — so a build that then got a `503` or a `409`,
+// having changed not one byte on the server, still replaced a live build's note with its own id
+// and its own about-to-die pid. Being refused is not a rare path; it is the ordinary answer when
+// somebody else is already inside a window.
+//
+// What is left behind is worse than nothing: a dead pid under an id the server is not holding,
+// which is exactly the shape that sends the next run to the age gate — the one branch that never
+// asks about a pid.
+const displacedId = '66666666-6666-4666-8666-666666666666';
+const displacedHolder = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+const displacedNote = `request_id=${displacedId}\npid=${displacedHolder.pid}\n`;
+let refusedWithoutRestore;
+try {
+  const refusedOverOther = driveBlock({
+    config: { post: 'refuse' },
+    remembered: { request_id: displacedId, pid: String(displacedHolder.pid) },
+  });
+  assert.notEqual(refusedOverOther.run.status, 0, 'a typed refusal must still stop the build');
+  assert.match(refusedOverOther.run.stdout, /refused by the app \(HTTP 503\)/,
+    'and must still be reported as the refusal it is');
+  assert.ok(!refusedOverOther.requests.some((r) => r.method === 'DELETE'),
+    'a build holding no window knocks for none');
+  assert.equal(noteAt(refusedOverOther.statePath), displacedNote,
+    'and must leave the live build\'s note exactly as it found it: a run that changed nothing on'
+    + ' the server may have changed nothing here either');
+  assert.deepEqual(
+    readdirSync(refusedOverOther.room).filter((name) => name.startsWith('last-build-maintenance')),
+    ['last-build-maintenance'],
+    'and must put it back by rename, leaving nothing half-written beside it');
+  // Control, built only once the assertions above have had their say: take the restore out and
+  // the write stands, which is what every refused build used to do.
+  refusedWithoutRestore = driveBlock({
+    config: { post: 'refuse' },
+    block: mutate(maintenanceBlock, RESTORE_ON_REFUSAL, '      *) MAINTENANCE_POSTED= ;;'),
+    remembered: { request_id: displacedId, pid: String(displacedHolder.pid) },
+  });
+} finally {
+  displacedHolder.kill('SIGKILL');
+}
+assert.ok(!noteAt(refusedWithoutRestore.statePath).includes(displacedId),
+  'the control must lose the other build\'s note, or this scenario proves nothing');
+assert.match(noteAt(refusedWithoutRestore.statePath), /request_id=[0-9a-f-]{36}\npid=\d+\n/,
+  `and must leave this run's own id and pid in its place: ${noteAt(refusedWithoutRestore.statePath)}`);
+
 // --- 6. An abort the server refused is not an abort. -------------------------------------------
 // The mirror of scenario 1, one layer down: there, no answer was read as "no"; here, any answer at
 // all was read as "yes". `curl -sS` exits 0 for a `409`, so the reclaim path announced `dispatch
@@ -783,6 +836,64 @@ assert.ok(uncoupled.stale <= uncoupled.worst,
   'with a constant gate, raising the budget must put a live window past it — or this proves nothing');
 assert.match(uncoupled.stdout, /is not longer than the \d+s this build can hold a maintenance window/,
   'and the script must say so rather than leaving it to be read off an aborted window');
+
+// --- And the gate must outlast the window that is really held. ---------------------------------
+// **`stale > worst` is an identity, and an identity looks exactly like a passing check.** The gate
+// defaults to `worst + budget`, so for any positive budget the assertion above is true whatever
+// `worst` is — including when `worst` is not an upper bound at all. It was not one: the derivation
+// counted a second admission budget that only the drain path ever spends, and left out the
+// 30-second abort `cleanup_build` takes on the way out with the window still open. The two errors
+// cancelled at the default knobs and came apart as soon as the budget was lowered — at
+// `CLAWDLINE_MAINTENANCE_BUDGET=10` the gate stood at 236s while a build could still be inside its
+// own window at 251s, which is a live window abortable on age alone. Nothing warned, because the
+// number the check compared against was the number the gate had been derived from.
+//
+// So the timeouts are added up here instead, path by path, from the script's own knobs. This is
+// not the script's arithmetic restated: it is the two routes through the block walked separately,
+// and it is what the gate is asked about below.
+const CLEANUP_ABORT_SECONDS = 30;    // `cleanup_build`: `maintenance_abort "$…" 30`
+const RECONCILE_ABORT_SECONDS = 5;   // the reconciliation timeout's own: `maintenance_abort "$…" 5`
+function heldFor(budget, reconcile = 180) {
+  return {
+    // The POST and the `ready` poll share one deadline; the read that outlives it gets the floor;
+    // the abort that ends the window spends another whole budget; then the exit handler's.
+    drain: budget + 10 + budget + CLEANUP_ABORT_SECONDS,
+    // The same admission wait, this time answered; 6s for the old process to go and 5s for the
+    // replacement to answer; the reconciliation clock plus the read that may start just before its
+    // deadline; that path's own short abort; then the exit handler's again.
+    reconcile: budget + 10 + 6 + 5 + reconcile + 5 + RECONCILE_ABORT_SECONDS + CLEANUP_ABORT_SECONDS,
+  };
+}
+for (const budget of [null, '5', '10', '18', '600', '1200']) {
+  const seconds = budget ? Number(budget) : 300;
+  const derived = derive(budget ? { CLAWDLINE_MAINTENANCE_BUDGET: budget } : {});
+  const held = heldFor(seconds);
+  const reallyHeld = Math.max(held.drain, held.reconcile);
+  assert.ok(derived.worst >= reallyHeld,
+    `at a budget of ${budget || 'default'} the derived worst window (${derived.worst}s) must cover`
+    + ` the ${reallyHeld}s a build really holds one — drain ${held.drain}s, reconcile ${held.reconcile}s`);
+  assert.ok(derived.stale > reallyHeld,
+    `and the staleness gate (${derived.stale}s) must outlast that ${reallyHeld}s, or a window a`
+    + ' build is still inside is abortable on age alone');
+  assert.ok(!/is not longer than/.test(derived.stdout),
+    `with nothing for the script to warn about: ${derived.stdout}`);
+}
+
+// Control: put back the derivation that left the exit handler's abort out. The gate follows it
+// down, and at a budget of 10 it lands under the window a build can really hold — the state this
+// suite used to call green. It is red twice over now: the assertion below fails, and the script
+// itself objects, because the warning no longer compares the gate against the figure the gate came
+// from.
+const PRE_FIX_WORST_WINDOW = 'MAINTENANCE_WORST_WINDOW=$(( MAINTENANCE_BUDGET * 2 +'
+  + ' MAINTENANCE_READ_FLOOR + 6 + 5 + MAINTENANCE_RECONCILE_SECONDS + 5 ))';
+const understated = derive({ CLAWDLINE_MAINTENANCE_BUDGET: '10' },
+  mutate(constantsBlock, 'MAINTENANCE_WORST_WINDOW=$MAINTENANCE_WORST_REAL', PRE_FIX_WORST_WINDOW));
+const understatedHeld = Math.max(...Object.values(heldFor(10)));
+assert.ok(understated.stale <= understatedHeld,
+  `the control must put the gate (${understated.stale}s) under the ${understatedHeld}s a build can`
+  + ' hold a window, or it proves nothing about the derivation');
+assert.match(understated.stdout, /is not longer than the \d+s this build can hold a maintenance window/,
+  `and the script must object to its own derivation rather than agree with it: ${understated.stdout}`);
 
 // One budget, and it is spent rather than reissued. Every read in the poll loop used to be handed a
 // fresh full `MAINTENANCE_BUDGET`, so a POST that spent 299 of its 300 seconds could still be
