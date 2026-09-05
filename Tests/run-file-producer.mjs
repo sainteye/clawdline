@@ -30,6 +30,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
+// `fileURLToPath`, not `URL.pathname`: this checkout lives under `Application Support`, and a
+// percent-encoded space is a path bash cannot open — it answered 127 and the check went red for
+// a reason that had nothing to do with test.sh.
+import { fileURLToPath } from "node:url";
 
 let failures = 0;
 let checks = 0;
@@ -500,6 +504,22 @@ try {
         // a clean one, and the three traps are not belt and braces.
         check("control: with no TERM trap, the EXIT handler alone calls the killed run ok",
               (rowOf(h.file) || {}).state === "ok");
+    }
+
+    // The two narrow modes of `test.sh` run nothing and must therefore say nothing. This is the one
+    // scenario that runs the real script rather than the lifted block — both modes exit above the
+    // block, compile nothing and take no lock, so it costs a few milliseconds.
+    {
+        const narrow = join(scratch, "narrow-cache");
+        mkdirSync(narrow, { recursive: true });
+        const testSh = fileURLToPath(new URL("../test.sh", import.meta.url));
+        const modes = [["--verify-suite-roster"], ["--verify-completion-receipts", "/dev/null"]];
+        const statuses = modes.map((args) => spawnSync("/bin/bash", [testSh, ...args], {
+            encoding: "utf8",
+            env: { ...process.env, CLAWDLINE_STATUS_DIR: narrow },
+        }).status);
+        check("the two narrow modes of test.sh answer their question and write no run file at all",
+              statuses[0] === 0 && statuses[1] === 125 && readdirSync(narrow).length === 0);
     }
 
     // And the containment this file promised at the top: the real cache directory was not touched.
