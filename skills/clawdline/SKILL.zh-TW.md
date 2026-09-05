@@ -3,10 +3,12 @@ name: clawdline
 description: |
   使用 Clawdline 派 bounded child（目前 Root 保留綜合、整合與 landing）、把既有工作線完整 handoff
   給下一個 session，或傳送 message、report、status、finding、coordination note
-  給另一個 live session，或把這個 session 自己做完的一輪送成**交付回報**——**讓這個 session 在
+  給另一個 live session，或把**本機圖片**（截圖、產生的圖表）放到人真的看得到的地方——他正在讀的
+  那支手機上——而不是貼一行檔案路徑，或把這個 session 自己做完的一輪送成**交付回報**——**讓這個 session 在
   Clawdline 畫面上出現「已完成」的勾**——**任何一個** Clawdline 看得到的 repository 都適用，
   不限於它自己那個。觸發語句包括「派任務」「開 child」「叫 Codex review」「使用 Clawdline Handoff」
-  「交接給下一個 session」「回報這一輪做完了」「更新 milestone」「在 Clawdline 上顯示完成」及等義英文。
+  「交接給下一個 session」「回報這一輪做完了」「更新 milestone」「在 Clawdline 上顯示完成」
+  「把這張截圖給他看」及等義英文。
   Handoff 會移轉 sender 的 REFERENCES、VERIFICATION、OPEN THREADS。poll-only detached task 只供
   無人值守 automation，絕不是 Root 或 Major Feature owner。Root Assignment / Feature Launch 會
   啟動獨立 ordinary Root；不得用 child、detached automation 或假 handoff 冒充。這條對話能直接做、provider-native

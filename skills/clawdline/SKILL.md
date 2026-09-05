@@ -3,15 +3,17 @@ name: clawdline
 description: |
   Use Clawdline to dispatch a bounded child task when the current Root keeps synthesis,
   integration, and landing; to hand off an existing work line for full continuation; or to send a
-  message, report, status, finding, or coordination note to another live session; or to record this
+  message, report, status, finding, or coordination note to another live session; or to put a
+  **local image** — a screenshot, a generated chart — where the person can actually see it, on the
+  phone they are reading on, rather than pasting its file path; or to record this
   session's own finished turn as a delivery receipt — **the check that says this session is done on
   Clawdline's own screen** — which applies in **any** repository Clawdline is watching, not only its
   own. Triggers include
   "dispatch a task", "open a child session", "get Codex to review this", "use Clawdline Handoff",
   "report my milestone", "record this turn as delivered", "show this session as finished in
-  Clawdline", and the equivalent Chinese
+  Clawdline", "show the user this screenshot", and the equivalent Chinese
   requests 「派任務」「開 child」「使用 Clawdline Handoff」「交接給下一個 session」「回報這一輪做完了」
-  「更新 milestone」「在 Clawdline 上顯示完成」. A handoff transfers
+  「更新 milestone」「在 Clawdline 上顯示完成」「把這張截圖給他看」. A handoff transfers
   the sender's REFERENCES, VERIFICATION, and OPEN THREADS. Detached poll-only tasks are unattended
   automation, never Root or Major Feature owners. Root Assignment / Feature Launch opens an
   independent ordinary Root and must not be faked with a child, detached automation, or handoff. Do not use for
