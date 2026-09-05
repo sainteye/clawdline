@@ -339,6 +339,18 @@ with open(port_path, "w") as fh:
 server.serve_forever()
 `;
 
+/** The three lines that stand between a build that touched nothing and another build's note. Each
+ *  control below removes exactly one more of them, in the order they are met. */
+const KNOCK_ONLY_IF_POSTED = '[ -n "${MAINTENANCE_POSTED:-}" ] && ';
+const IGNORE_ABORT_STATUS = [
+  '  [ "$abort_curl" = 0 ] || return 1',
+  '  case "${MAINTENANCE_ABORT_STATUS:-}" in',
+  '    2??) return 0 ;;',
+  '  esac',
+  '  return 1',
+].join('\n');
+const FORGET_BY_ID = 'maintenance_forget "$MAINTENANCE_REQUEST_ID"';
+
 /** A pid that is certainly not running: a shell that has already exited, confirmed dead here. */
 function deadPid() {
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -543,7 +555,7 @@ const liveScenario = () => ({
 });
 let live;
 let liveWithIdAlone;
-let liveWithIdAndBlindRm;
+let liveWithBlindAbort;
 let liveWithAllThreeGone;
 try {
   live = driveBlock(liveScenario());
@@ -552,24 +564,17 @@ try {
   // clean refusal sends a `DELETE` for an id the server has never seen, reads the `409` as an
   // ending, and deletes the note the live build depends on. That is not a hypothetical: it is the
   // run recorded in the review's `cleanup-build-proof.txt`, reproduced here so it stays fixed.
-  liveWithIdAlone = driveBlock({
+  const knockingClause = mutate(cleanupClause, KNOCK_ONLY_IF_POSTED, '');
+  liveWithIdAlone = driveBlock({ ...liveScenario(), cleanup: knockingClause });
+  liveWithBlindAbort = driveBlock({
     ...liveScenario(),
-    cleanup: mutate(cleanupClause, '[ -n "${MAINTENANCE_POSTED:-}" ] && ', ''),
-  });
-  liveWithIdAndBlindRm = driveBlock({
-    ...liveScenario(),
-    cleanup: mutate(mutate(cleanupClause, '[ -n "${MAINTENANCE_POSTED:-}" ] && ', ''),
-      'maintenance_forget "$MAINTENANCE_REQUEST_ID"',
-      'rm -f "${MAINTENANCE_STATE_FILE:-}" 2>/dev/null || true'),
+    cleanup: knockingClause,
+    block: mutate(maintenanceBlock, IGNORE_ABORT_STATUS, '  return 0'),
   });
   liveWithAllThreeGone = driveBlock({
     ...liveScenario(),
-    block: mutate(maintenanceBlock,
-      '  [ "$abort_curl" = 0 ] || return 1\n  case "${MAINTENANCE_ABORT_STATUS:-}" in\n    2??) return 0 ;;\n  esac\n  return 1\n',
-      '  return 0\n'),
-    cleanup: mutate(mutate(cleanupClause, '[ -n "${MAINTENANCE_POSTED:-}" ] && ', ''),
-      'maintenance_forget "$MAINTENANCE_REQUEST_ID"',
-      'rm -f "${MAINTENANCE_STATE_FILE:-}" 2>/dev/null || true'),
+    cleanup: mutate(knockingClause, FORGET_BY_ID, 'rm -f "${MAINTENANCE_STATE_FILE:-}" 2>/dev/null || true'),
+    block: mutate(maintenanceBlock, IGNORE_ABORT_STATUS, '  return 0'),
   });
 } finally {
   holder.kill('SIGKILL');
@@ -589,15 +594,20 @@ assert.match(liveWithIdAlone.run.stdout, /Nothing has been changed/,
 assert.ok(liveWithIdAlone.requests.some((r) => r.method === 'DELETE' && r.request_id !== liveId
     && /^[0-9a-f-]{36}$/.test(r.request_id || '')),
   'while knocking with a fresh id the server has never seen — or this is not driving the handler');
-// Three separate things had to be wrong at once for that knock to reach the other build's note,
-// which is why one control is not enough: each of the three stops it on its own.
-assert.equal(readFileSync(liveWithIdAlone.statePath, 'utf8'), `request_id=${liveId}\npid=${holder.pid}\n`,
-  'and the note survives it, because a note is now forgotten by id rather than by position');
-assert.equal(readFileSync(liveWithIdAndBlindRm.statePath, 'utf8'), `request_id=${liveId}\npid=${holder.pid}\n`,
-  'it survives an unconditional rm too, because the 409 is no longer read as an ending');
+// Three separate lines stand between that knock and the other build's note, and each control below
+// removes exactly one more of them — so what each one demonstrates is one line, not "the fix".
+const otherBuildsNote = `request_id=${liveId}\npid=${holder.pid}\n`;
+assert.equal(readFileSync(liveWithIdAlone.statePath, 'utf8'), otherBuildsNote,
+  'the note survives the knock, and the line that saves it here is the abort reading its 409');
+assert.match(liveWithIdAlone.run.stderr, /could not end restart maintenance .* \(HTTP 409\)/,
+  'which is what it says: the window it knocked for was never its own');
+assert.equal(readFileSync(liveWithBlindAbort.statePath, 'utf8'), otherBuildsNote,
+  'take that away too and the note still survives, now on the id comparison alone');
+assert.ok(!/could not end restart maintenance/.test(liveWithBlindAbort.run.stderr),
+  'and this control must believe it ended something, or it is not exercising the comparison');
 assert.equal(existsSync(liveWithAllThreeGone.statePath), false,
-  'and with all three gone the note is deleted — which is the run in the review\'s proof file,'
-  + ' reproduced here so that fixing it stays fixed');
+  'with all three gone the note is deleted — the run in the review\'s proof file, reproduced'
+  + ' here so that fixing it stays fixed');
 
 // --- 4. An unclaimed intent is refused while it is young, and reclaimed only once it is old. ----
 const orphanId = '33333333-3333-4333-8333-333333333333';
@@ -637,4 +647,179 @@ assert.match(refused.run.stdout, /restart_store_failed/,
 assert.match(refused.run.stdout, /request_id: [0-9a-f-]{36}/,
   'with the id, because a refusal can still leave one behind');
 
+// --- 6. An abort the server refused is not an abort. -------------------------------------------
+// The mirror of scenario 1, one layer down: there, no answer was read as "no"; here, any answer at
+// all was read as "yes". `curl -sS` exits 0 for a `409`, so the reclaim path announced `dispatch
+// admission is open again` for a window it had not touched, and then ran into that same window's
+// `409` on the POST — two sentences in one run that cannot both be true.
+const stuckId = '55555555-5555-4555-8555-555555555555';
+const stuckConfig = () => ({
+  intent: {
+    request_id: stuckId, phase: 'draining', requested_instance_id: 'stub-instance',
+    requested_at: Math.floor(Date.now() / 1000) - 60, outstanding: 1, channels: {},
+    admission_closed: true,
+  },
+  post_phase: 'ready',
+  delete: 'refuse',
+});
+const notEnded = driveBlock({
+  config: stuckConfig(),
+  env: { CLAWDLINE_MAINTENANCE_STALE_SECONDS: '10' },
+});
+assert.notEqual(notEnded.run.status, 0, 'a reclaim whose abort was refused must stop the build');
+assert.match(notEnded.run.stdout, /the abandoned intent could not be ended \(HTTP 409\)/,
+  `and must say what the server actually answered: ${notEnded.run.stdout}`);
+assert.ok(!/dispatch admission is open again/.test(notEnded.run.stdout),
+  'and must not announce an opening that did not happen');
+assert.ok(!notEnded.requests.some((r) => r.method === 'POST'),
+  'and must not ask for a window behind a refusal it read as success');
+
+// Control: read curl's exit status instead of the answer, and the run says both things.
+const announced = driveBlock({
+  config: stuckConfig(),
+  block: mutate(maintenanceBlock, IGNORE_ABORT_STATUS, '  return 0'),
+  env: { CLAWDLINE_MAINTENANCE_STALE_SECONDS: '10' },
+});
+assert.match(announced.run.stdout, /dispatch admission is open again/,
+  `the control must announce the opening: ${announced.run.stdout}`);
+assert.match(announced.run.stdout, /refused by the app \(HTTP 409\)/,
+  'and then meet the window it just said it had ended — the contradiction, in one run');
+
+// --- 7. A note that cannot be written is said out loud. ----------------------------------------
+// The recovery this whole block describes rests on one file. When `~/.config/clawdline` could not
+// be written, both halves ended in `|| true`, and what the person got was whatever bash said about
+// the redirection on its own account: `Permission denied` against a path, with no id, no name for
+// what had just been lost, and a build carrying on as though the note were behind it.
+const PRE_FIX_REMEMBER = [
+  'maintenance_remember() {',
+  '  mkdir -p "$(dirname "$MAINTENANCE_STATE_FILE")" 2>/dev/null || true',
+  '  printf \'request_id=%s\\npid=%s\\n\' "$1" "$$" >"$MAINTENANCE_STATE_FILE" 2>/dev/null || true',
+  '}',
+].join('\n');
+const REMEMBER_OPEN = 'maintenance_remember() {';
+const rememberAt = maintenanceBlock.indexOf(REMEMBER_OPEN);
+assert.notEqual(rememberAt, -1, 'build.sh no longer defines maintenance_remember; update this check');
+const rememberBody = maintenanceBlock.slice(rememberAt,
+  maintenanceBlock.indexOf('\n}\n', rememberAt) + 2);
+const unwritable = mkdtempSync(join(tmpdir(), 'clawdline-unwritable-'));
+let saidSo;
+let saidNothing;
+try {
+  chmodSync(unwritable, 0o500);
+  const notePath = join(unwritable, 'last-build-maintenance');
+  saidSo = driveBlock({
+    config: { post_phase: 'ready' },
+    env: { CLAWDLINE_MAINTENANCE_STATE_FILE: notePath },
+  });
+  saidNothing = driveBlock({
+    config: { post_phase: 'ready' },
+    block: mutate(maintenanceBlock, rememberBody, PRE_FIX_REMEMBER),
+    env: { CLAWDLINE_MAINTENANCE_STATE_FILE: notePath },
+  });
+} finally {
+  chmodSync(unwritable, 0o700);
+  rmSync(unwritable, { recursive: true, force: true });
+}
+assert.equal(saidSo.run.status, 0,
+  `an unwritable note must not stop a build that can still have the window: ${saidSo.run.stderr}`);
+assert.match(saidSo.run.stderr, /could not write beside .*last-build-maintenance/,
+  `it must say the note could not be written: ${saidSo.run.stderr}`);
+assert.match(saidSo.run.stderr, /if this build is killed, [0-9a-f-]{36} is the only handle on its window/,
+  'and must carry the id, because that is now the only handle there is');
+assert.equal(saidNothing.run.status, 0, 'the control must also survive the unwritable directory');
+assert.match(saidNothing.run.stderr, /Permission denied/,
+  `the control must fail the same way underneath: ${saidNothing.run.stderr}`);
+assert.ok(!/only handle on its window/.test(saidNothing.run.stderr),
+  'while saying nothing about what was lost or which id is now unrecoverable, which is the whole'
+  + ` difference between the two: ${saidNothing.run.stderr}`);
+
+// --- The two knobs are one knob. ---------------------------------------------------------------
+// `MAINTENANCE_STALE_SECONDS` decides when an intent nobody claims may be aborted on age alone —
+// the one branch that never asks about a pid — and it used to be the constant 900 beside a comment
+// claiming a worst case "under 500 s" that was really about 790. Both were overridable, and
+// neither knew about the other: `CLAWDLINE_MAINTENANCE_BUDGET=1200` alone was enough to guarantee
+// that a live window would look abandoned to the next build. The gate is derived from the budget
+// now, and this re-derives it from the script's own constants rather than restating the formula.
+const CONSTANTS_END = 'maintenance_field() {';
+assert.ok(maintenanceBlock.includes(CONSTANTS_END), 'the maintenance block no longer opens with its constants');
+const constantsBlock = maintenanceBlock.slice(0, maintenanceBlock.indexOf(CONSTANTS_END));
+assert.ok(constantsBlock.includes('MAINTENANCE_WORST_WINDOW='),
+  'the block must derive the worst window it can hold, not assert it in a comment');
+
+function derive(env = {}, block = constantsBlock) {
+  const run = spawnSync('/bin/bash', ['-c', [
+    'set -euo pipefail',
+    block,
+    'echo "DERIVED stale=$MAINTENANCE_STALE_SECONDS worst=$MAINTENANCE_WORST_WINDOW"',
+  ].join('\n')], { encoding: 'utf8', env: { ...cleanEnv, ...env } });
+  assert.equal(run.status, 0, `the constants must evaluate on their own: ${run.stderr}`);
+  const seen = run.stdout.match(/DERIVED stale=(\d+) worst=(\d+)/);
+  assert.ok(seen, `the constants must derive both numbers: ${run.stdout}`);
+  return { stale: Number(seen[1]), worst: Number(seen[2]), stdout: run.stdout };
+}
+
+for (const budget of [null, '5', '600', '1200']) {
+  const derived = derive(budget ? { CLAWDLINE_MAINTENANCE_BUDGET: budget } : {});
+  assert.ok(derived.stale > derived.worst,
+    `at a budget of ${budget || 'default'} the staleness gate must outlast the ${derived.worst}s`
+    + ` a build can hold a window; it is ${derived.stale}s`);
+  assert.ok(!/is not longer than/.test(derived.stdout),
+    `and a derived gate must not warn about itself: ${derived.stdout}`);
+}
+
+// Control: put the constant back and the coupling is gone — at the default budget it still looks
+// right, which is why this needs the raised budget to show it.
+const uncoupled = derive({ CLAWDLINE_MAINTENANCE_BUDGET: '1200' },
+  mutate(constantsBlock, 'MAINTENANCE_STALE_SECONDS="${CLAWDLINE_MAINTENANCE_STALE_SECONDS:-$(( MAINTENANCE_WORST_WINDOW + MAINTENANCE_BUDGET ))}"',
+    'MAINTENANCE_STALE_SECONDS="${CLAWDLINE_MAINTENANCE_STALE_SECONDS:-900}"'));
+assert.ok(uncoupled.stale <= uncoupled.worst,
+  'with a constant gate, raising the budget must put a live window past it — or this proves nothing');
+assert.match(uncoupled.stdout, /is not longer than the \d+s this build can hold a maintenance window/,
+  'and the script must say so rather than leaving it to be read off an aborted window');
+
+// One budget, and it is spent rather than reissued. Every read in the poll loop used to be handed a
+// fresh full `MAINTENANCE_BUDGET`, so a POST that spent 299 of its 300 seconds could still be
+// followed by a read allowed another 300 — which is where the worst case the gate above is derived
+// from came from. `WAS_RUNNING=0` here defines the constants and the functions and runs none of the
+// flow, so this asks the real function what it would give a real read.
+assert.ok(maintenanceBlock.includes('--max-time "$(maintenance_read_seconds)"'),
+  'the reads must spend what the function says, not a constant of their own');
+
+function readSeconds(env = {}, block = maintenanceBlock) {
+  const run = spawnSync('/bin/bash', ['-c', [
+    'set -euo pipefail',
+    'WAS_RUNNING=0',
+    block,
+    'echo "READ $(maintenance_read_seconds)"',
+  ].join('\n')], { encoding: 'utf8', env: { ...cleanEnv, ...env } });
+  assert.equal(run.status, 0, `maintenance_read_seconds must answer: ${run.stderr}`);
+  const seen = run.stdout.match(/READ (-?\d+)/);
+  assert.ok(seen, `and must answer with a number: ${run.stdout}`);
+  return Number(seen[1]);
+}
+
+const now = Math.floor(Date.now() / 1000);
+assert.equal(readSeconds(), 300,
+  'before a window is asked for there is no deadline, so a read may spend the whole budget');
+const leftOfBudget = readSeconds({ MAINTENANCE_DEADLINE: String(now + 100) });
+assert.ok(leftOfBudget > 90 && leftOfBudget <= 100,
+  `inside a window a read may spend what is left of the budget, not another one: ${leftOfBudget}`);
+// **And never zero.** `curl --max-time 0` is not a zero-second ceiling, it is no ceiling — a clamp
+// that hands out the remaining seconds without a floor stops being a clamp exactly when the budget
+// runs out, which is the moment the recovery read is taken.
+assert.equal(readSeconds({ MAINTENANCE_DEADLINE: String(now - 600) }), 10,
+  'a read taken after the budget is spent gets the floor, never 0 and never a negative');
+
+// Control: hand every read the whole budget again, as the poll loop used to.
+const reissued = mutate(maintenanceBlock,
+  'remaining=$(( MAINTENANCE_DEADLINE - $(date +%s) ))', 'remaining=$MAINTENANCE_BUDGET');
+assert.equal(readSeconds({ MAINTENANCE_DEADLINE: String(now + 100) }, reissued), 300,
+  'the control must reissue the budget, or this proves nothing about spending it');
+
+// An explicit override can still be wrong, and is still told so.
+assert.match(derive({ CLAWDLINE_MAINTENANCE_STALE_SECONDS: '60' }).stdout,
+  /a live window can be judged abandoned on age alone/,
+  'an override below the worst window must be reported');
+
 console.log('restart maintenance: an unobserved answer is not a refusal, an abandoned intent is reclaimed, a live one is untouchable');
+console.log('maintenance cleanup: a build that changed nothing knocks for nothing, a refused abort is not an abort, and the staleness gate is derived from the budget');

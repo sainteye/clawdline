@@ -1271,8 +1271,10 @@ except Exception:
 # **Written whole, or said out loud.** `printf > file` truncates before it writes, so a reader
 # arriving in that gap read an empty note, found no id in it, and fell through to the age gate —
 # the one branch that never asks about a pid. And both halves ended in `|| true`, so on a machine
-# where `~/.config/clawdline` cannot be written the note simply did not exist and nothing said so:
-# the recovery this whole block is about quietly became "wait 900 seconds". Write beside the file
+# where `~/.config/clawdline` cannot be written the build carried on as though the note were behind
+# it, with nothing said about the loss beyond whatever bash printed about the redirection on its
+# own account — a path and `Permission denied`, no id, and no hint that the recovery this block is
+# about had just become "wait for the age gate". Write beside the file
 # and rename, so a reader sees either the old note or the new one, and report a failure to write —
 # the build still goes on, because the id is printed on every path that can leave one behind, but
 # the person is told that this run's window has no note behind it.

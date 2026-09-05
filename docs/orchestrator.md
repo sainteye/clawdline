@@ -1299,14 +1299,24 @@ for the 146 seconds its drain actually took, with the id it had generated printe
 script writes its request id to `~/.config/clawdline/last-build-maintenance` *before* the POST
 leaves, spends one budget across the POST and the `ready` poll rather than a short timeout on each,
 prints the id on every path that can leave one behind, and resolves a timeout by reading the
-standing intent instead of assuming. Its exit handler aborts on holding an id rather than on having
-observed an answer; that cannot end somebody else's window, because `DELETE` is scoped to one id
-and the route answers `409` for any other.
+standing intent instead of assuming. Its exit handler aborts on the request having *left* rather
+than on an answer having been observed — holding an id is not the same fact, because the id is
+generated before the pre-check that can refuse and exit without knocking at all.
+
+**What `DELETE` being scoped to one id protects is the intent, and only the intent.** The route
+answers `409` for any other id, so no build can end another's window through it; but a client that
+reads curl's exit status rather than the HTTP code sees that refusal as an ending, and everything
+it then does on the strength of it — reopening admission in its output, removing the note under
+`~/.config/clawdline` — is outside what the route can protect. So the adopter judges the status
+code, and removes the note only when the note still records its own id.
 
 Before it asks, it looks. A standing intent whose writing process is still alive is never touched.
 One this machine wrote, whose writer is gone, is aborted and replaced with a fresh window. An
-unclaimed one is aborted only past 900 seconds — longer than any run can still be inside its own
-window — and only when it belongs to the app instance answering now. Everything else stops the
+unclaimed one is aborted only past a staleness gate derived from the admission budget — the
+longest window one build can hold, worked out from the timeouts it actually spends, plus a budget
+of margin — and only when it belongs to the app instance answering now. The two are one knob for
+that reason: a gate fixed independently of the budget becomes a promise to abort live windows the
+moment somebody raises the budget past it. Everything else stops the
 build and prints the exact `DELETE` that ends it.
 
 ### A branch, not a diff
