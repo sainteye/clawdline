@@ -215,6 +215,20 @@ func ledgerSample(_ assistant: Assistant, session: String,
 /// Run SQL against a usage store directly, around the ledger rather than through it. Only the
 /// migration group needs this: everywhere else, asking the store something through anything but
 /// `Row.measurement` is the defect the seam exists to stop.
+///
+/// **The busy timeout is the whole of what stops three checks going red at random.** This opens a
+/// second connection to a store `UsageLedger.shared` is also open on, and the 60k-row fixture's
+/// script begins `BEGIN IMMEDIATE` — a demand for the write lock at statement one. Without a busy
+/// handler SQLite does not wait for it: it returns `SQLITE_BUSY` at once, `sqlite3_exec` stops at
+/// that first statement, and the INSERT after it never runs. That is exactly what the log showed
+/// on 2026-09-06 — `sqlite: database is locked` and `seconds=0.011` against the usual ~3.9 — and
+/// it needs only some other thread to hold the lock for a millisecond, which is why the same tree
+/// ran green, then red, then green again.
+///
+/// The ledger's own connection sets `busy_timeout=5000` (`Sources/UsageLedger.swift`), so the
+/// asymmetry decided which side lost every time. Matching it here is the fix that works whatever
+/// held the lock — and nothing about *which* writer it was needs to be known for this to be right,
+/// which is precisely why it is the one of the two suggested repairs that is worth making.
 @discardableResult
 func usageStoreExec(_ url: URL, _ sql: String) -> Bool {
     var db: OpaquePointer?
@@ -222,6 +236,7 @@ func usageStoreExec(_ url: URL, _ sql: String) -> Bool {
                           SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK
     else { sqlite3_close(db); return false }
     defer { sqlite3_close(db) }
+    sqlite3_busy_timeout(db, 5_000)
     var error: UnsafeMutablePointer<CChar>?
     let ok = sqlite3_exec(db, sql, nil, nil, &error) == SQLITE_OK
     if let error { print("      sqlite: \(String(cString: error))"); sqlite3_free(error) }
