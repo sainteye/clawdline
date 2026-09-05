@@ -4242,7 +4242,9 @@ final class UsageQueryService {
 ///
 /// **The last of those is not the only source, because it is not the only fact.** `landing_state`
 /// says whether anybody recorded a landing; git says whether the delivery is in the tree, and the
-/// two disagreed about 26 of one repository's 53 "delivered" worktrees on 2026-09-05. So this
+/// two had different answers for 35 of one repository's 53 "delivered" worktrees on 2026-09-06 —
+/// 22 on branches HEAD already contained with commits of their own, and 13 on branches that had
+/// gone from the repository entirely, which are two different answers and not one. So this
 /// read also asks the repository what it knows about its own `clawdline/task/…` branches, through
 /// the same two `for-each-ref` calls the in-flight list uses, and says in ``LandingEvidence``
 /// which of the two each verdict came from.
