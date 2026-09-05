@@ -1510,6 +1510,9 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     _ = update(onceID, movedDay)
     check("and a save that moves it takes the stamp off",
           source(onceID)["fired_at"] == nil, String(describing: source(onceID)["fired_at"]))
+    // Taken away again: the checks further down this group are about which files a removal leaves
+    // behind, and a schedule this block made would be one of them.
+    try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(onceID).json"))
     Orchestrator.forget()
 
     var changed = made
@@ -1878,7 +1881,7 @@ group("changing and removing a schedule pass the same three gates as making one"
     expect("a machine PATCH of a one-shot reaches the parser", machineEdit.status, 400)
     check("and what stops it is the body rather than the credential",
           remoteErrorCode(machineEdit) == "bad_request"
-            && remoteErrorMessage(machineEdit).contains("runs once"),
+            && remoteErrorMessage(machineEdit).contains("place_id"),
           remoteErrorMessage(machineEdit))
     let machineDelete = call("DELETE", nil, key: UUID().uuidString, target: onceID, header: auth)
     expect("and a machine DELETE of one takes it away", machineDelete.status, 200)
