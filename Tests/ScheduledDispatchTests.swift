@@ -38,7 +38,7 @@ group("schedule files are strict and carry an ordinary task template") {
         expect("the default close policy is on-success", schedule.closeTab, .onSuccess)
         expect("the default catch-up window is six hours", schedule.catchUpHours, 6)
         expect("the default failure notification is on", schedule.notifyOnFailure, true)
-        expect("weekday names become Calendar weekday numbers", schedule.weekdays, Set([2, 4, 6]))
+        expect("weekday names become Calendar weekday numbers", schedule.when, .weekly([2, 4, 6]))
         // Every schedule file written before this field existed, and every one somebody typed in
         // an editor, is this case. It has to keep meaning "as far back as anyone knows".
         check("a file that never said when it was made parses and says so",
@@ -116,6 +116,73 @@ group("schedule files are strict and carry an ordinary task template") {
             check("rejects \(name)", true)
         }
     }
+    // A schedule that runs once names a date instead of a pattern, and everything else about the
+    // file is the same file. `when.on` is what a maintenance window actually is — half past one
+    // on the sixth — and it is what keeps a caller from having to work out which Sunday is the
+    // one they mean, which is the arithmetic this feature exists because somebody got wrong.
+    var single = base
+    single["when"] = ["at": "01:30", "on": "2026-09-06"]
+    var unstamped: Date?
+    switch Orchestrator.schedule(from: single, filename: "\(id).json",
+                                 isDirectory: { $0 == "/tmp" }) {
+    case .bad(let why): check("a schedule that runs once parses", false, why)
+    case .ok(let parsed):
+        expect("and carries the day it names",
+               parsed.when, .once(Orchestrator.ScheduleDay(year: 2026, month: 9, day: 6)))
+        check("and it says it runs once", parsed.when.runsOnce)
+        unstamped = parsed.firedAt
+    }
+    var spent = single
+    spent["fired_at"] = 1_788_600_000
+    // Asserted together on purpose: "it has not run" alone passes for a parser that never reads
+    // `fired_at`, which is how it was first written. The pair goes red for that parser too.
+    if case .ok(let parsed) = Orchestrator.schedule(from: spent, filename: "\(id).json",
+                                                    isDirectory: { $0 == "/tmp" }) {
+        check("the ran-at is read off the file rather than assumed either way",
+              unstamped == nil && parsed.firedAt == Date(timeIntervalSince1970: 1_788_600_000),
+              String(describing: parsed.firedAt))
+    } else {
+        check("a file that has already run carries the instant it ran", false)
+    }
+    for (name, when) in [
+        ("both a pattern and a date", ["at": "01:30", "days": "daily", "on": "2026-09-06"] as [String: Any]),
+        ("neither of them", ["at": "01:30"]),
+        ("a date that is not a date", ["at": "01:30", "on": "tomorrow"]),
+        ("a date spelled loosely", ["at": "01:30", "on": "2026-9-6"]),
+        ("a day that month does not have", ["at": "01:30", "on": "2026-02-30"]),
+        ("a month nobody has", ["at": "01:30", "on": "2026-13-01"]),
+        ("a date that is a number", ["at": "01:30", "on": 20_260_906]),
+    ] {
+        var broken = base
+        broken["when"] = when
+        if case .ok = Orchestrator.schedule(from: broken, filename: "\(id).json",
+                                            isDirectory: { $0 == "/tmp" }) {
+            check("rejects \(name)", false)
+        } else {
+            check("rejects \(name)", true)
+        }
+    }
+    // `fired_at` says *the* run happened, so a schedule with more occurrences coming has no such
+    // run to name — and a file carrying it anyway is a file this app would be lying about.
+    var stampedWeekly = base
+    stampedWeekly["fired_at"] = 1_788_600_000
+    if case .ok = Orchestrator.schedule(from: stampedWeekly, filename: "\(id).json",
+                                        isDirectory: { $0 == "/tmp" }) {
+        check("rejects a repeating schedule that claims it already ran", false)
+    } else {
+        check("rejects a repeating schedule that claims it already ran", true)
+    }
+    for (name, value) in [("a written date", "2026-09-06T01:30:00Z" as Any),
+                          ("a fraction", 1.5), ("a boolean", true), ("one before 1970", -1)] {
+        var broken = single
+        broken["fired_at"] = value
+        if case .ok = Orchestrator.schedule(from: broken, filename: "\(id).json",
+                                            isDirectory: { $0 == "/tmp" }) {
+            check("rejects \(name) where the ran-at goes", false)
+        } else {
+            check("rejects \(name) where the ran-at goes", true)
+        }
+    }
 }
 
 group("schedule fire arithmetic crosses midnight and filters days") {
@@ -124,17 +191,94 @@ group("schedule fire arithmetic crosses midnight and filters days") {
     let formatter = ISO8601DateFormatter()
     func date(_ value: String) -> Date { formatter.date(from: value)! }
     let daily = Orchestrator.Schedule(id: "a", title: "a", hour: 23, minute: 45,
-        weekdays: nil, taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+        when: .daily, taskTemplate: [:], enabled: true, closeTab: .onSuccess,
         catchUpHours: 6, notifyOnFailure: true, createdAt: nil, whenChangedAt: nil)
     expect("after midnight sees yesterday's fire",
            Orchestrator.latestFire(of: daily, at: date("2026-08-26T00:15:00Z"), calendar: calendar),
            date("2026-08-25T23:45:00Z"))
     let monday = Orchestrator.Schedule(id: "b", title: "b", hour: 9, minute: 0,
-        weekdays: Set([2]), taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+        when: .weekly([2]), taskTemplate: [:], enabled: true, closeTab: .onSuccess,
         catchUpHours: 6, notifyOnFailure: true, createdAt: nil, whenChangedAt: nil)
     expect("Tuesday looks back to the selected Monday",
            Orchestrator.latestFire(of: monday, at: date("2026-08-25T10:00:00Z"), calendar: calendar),
            date("2026-08-24T09:00:00Z"))
+    // **Does the name in the file mean the day it says?** Seven schedules, one per weekday name,
+    // written as JSON and read by the real parser — and the day each one lands on is read back by
+    // a formatter rather than by the same `Calendar.component(.weekday:)` call the arithmetic
+    // uses, so the check has an independent opinion instead of agreeing with itself. The locale
+    // is pinned because `EEE` in another one is another alphabet, and the answer would be a fact
+    // about the Mac running the suite.
+    let english = DateFormatter()
+    english.calendar = calendar
+    english.timeZone = calendar.timeZone
+    english.locale = Locale(identifier: "en_US_POSIX")
+    english.dateFormat = "EEE"
+    let template: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        "title": "one day a week", "task": ["assistant": "codex", "project_dir": "/tmp",
+                                            "instructions": "do the thing"],
+        "enabled": true,
+    ]
+    // From a Wednesday: three of the seven are later this week, three are next week, and one is
+    // the day itself — so the loop crosses the week boundary in both directions.
+    let wednesday = date("2026-08-26T12:00:00Z")
+    for (index, code) in Orchestrator.scheduleDayNames.enumerated() {
+        var source = template
+        source["when"] = ["at": "09:00", "days": [code]]
+        guard case .ok(let parsed) = Orchestrator.schedule(
+                from: source, filename: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.json",
+                isDirectory: { $0 == "/tmp" }),
+              let fire = Orchestrator.nextFire(of: parsed, after: wednesday, calendar: calendar),
+              let previous = Orchestrator.latestFire(of: parsed, at: wednesday, calendar: calendar)
+        else {
+            check("a schedule for \(code) parses and has occurrences either side of today", false)
+            continue
+        }
+        expect("\(code) in the file is the weekday Calendar numbers \(index + 1)",
+               parsed.when, .weekly([index + 1]))
+        expect("a schedule for \(code) fires next on a \(code)",
+               english.string(from: fire).lowercased(), code)
+        expect("and its previous occurrence was a \(code) too",
+               english.string(from: previous).lowercased(), code)
+        expect("and the row draws the day the file wrote",
+               Orchestrator.scheduleWhenObject(parsed.when, hour: 9, minute: 0)["days"] as? [String],
+               [code])
+        // The negative control, because a check that cannot fail is worse than no check: an
+        // off-by-one table would move every name along by a day, and this is that mistake made on
+        // purpose beside the real answer. Without it the loop above would stay green with the
+        // formatter, the parser and the arithmetic all agreeing on the wrong day.
+        let shifted = Orchestrator.Schedule(id: "shifted", title: "shifted", hour: 9, minute: 0,
+            when: .weekly([(index + 1) % 7 + 1]), taskTemplate: [:], enabled: true,
+            closeTab: .onSuccess, catchUpHours: 6, notifyOnFailure: true, createdAt: nil,
+            whenChangedAt: nil)
+        check("and the day next to it is not the day \(code) means",
+              Orchestrator.nextFire(of: shifted, after: wednesday, calendar: calendar)
+                  .map { english.string(from: $0).lowercased() } != code)
+    }
+
+    // A schedule that runs once has exactly one occurrence, and both halves of the arithmetic say
+    // so: before it, there is nothing behind; after it, there is nothing ahead.
+    let once = Orchestrator.Schedule(id: "f", title: "f", hour: 1, minute: 30,
+        when: .once(Orchestrator.ScheduleDay(year: 2026, month: 9, day: 6)), taskTemplate: [:],
+        enabled: true, closeTab: .onSuccess, catchUpHours: 6, notifyOnFailure: true,
+        createdAt: nil, whenChangedAt: nil)
+    let moment = date("2026-09-06T01:30:00Z")
+    check("before its day there is nothing behind it",
+          Orchestrator.latestFire(of: once, at: date("2026-09-05T23:00:00Z"),
+                                  calendar: calendar) == nil)
+    expect("and the one occurrence is ahead",
+           Orchestrator.nextFire(of: once, after: date("2026-09-05T23:00:00Z"),
+                                 calendar: calendar), moment)
+    expect("at its minute it is the occurrence behind",
+           Orchestrator.latestFire(of: once, at: moment, calendar: calendar), moment)
+    check("and there is never another one ahead",
+          Orchestrator.nextFire(of: once, after: moment, calendar: calendar) == nil
+            && Orchestrator.nextFire(of: once, after: date("2027-09-06T00:00:00Z"),
+                                     calendar: calendar) == nil)
+    check("a date the calendar does not have is not a schedule",
+          Orchestrator.scheduleDay(from: "2026-02-30") == nil
+            && Orchestrator.scheduleDay(from: "2026-13-01") == nil
+            && Orchestrator.scheduleDay(from: "2026-9-06") == nil)
 }
 
 group("catch-up, active-task and close-tab policies are explicit") {
@@ -192,6 +336,22 @@ group("catch-up, active-task and close-tab policies are explicit") {
                                        catchUpHours: 0, lastRunCreated: nil,
                                        lastRunTerminal: nil, createdAt: nil,
                                        whenChangedAt: nil), .missed)
+    // A schedule that runs once and already has cannot run again, and that is read before every
+    // other reason: there is no occurrence left for the others to have an opinion about. This is
+    // the restart case — the timer's memory of what it handled is gone, the registry has been
+    // swept, and the clock still says the fire is inside its window.
+    expect("a schedule that has already run is spent",
+           Orchestrator.scheduleAction(now: fire.addingTimeInterval(60), fire: fire,
+                                       catchUpHours: 6, lastRunCreated: nil,
+                                       lastRunTerminal: nil, createdAt: nil,
+                                       whenChangedAt: nil, firedAt: fire), .spent)
+    // The control beside it: the same occurrence, the same window, the same empty registry, and
+    // without the stamp it runs. What the stamp does is the difference between these two lines.
+    expect("and without the stamp that very occurrence runs",
+           Orchestrator.scheduleAction(now: fire.addingTimeInterval(60), fire: fire,
+                                       catchUpHours: 6, lastRunCreated: nil,
+                                       lastRunTerminal: nil, createdAt: nil,
+                                       whenChangedAt: nil), .run)
 
     let scheduleID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb"
     let row: [String: Any] = [
@@ -224,7 +384,7 @@ group("no occurrence from before a schedule was made is an occurrence it missed"
     let formatter = ISO8601DateFormatter()
     func date(_ value: String) -> Date { formatter.date(from: value)! }
     func nine(madeAt: Date?, changedAt: Date? = nil) -> Orchestrator.Schedule {
-        Orchestrator.Schedule(id: "c", title: "c", hour: 9, minute: 0, weekdays: nil,
+        Orchestrator.Schedule(id: "c", title: "c", hour: 9, minute: 0, when: .daily,
                               taskTemplate: [:], enabled: true, closeTab: .onSuccess,
                               catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt,
                               whenChangedAt: changedAt)
@@ -295,7 +455,7 @@ group("an edit does not fire the occurrence it has just invented") {
     let madeAt = date("2026-08-25T08:00:00Z")
     let ranYesterday = date("2026-08-25T21:00:00Z")
     func schedule(hour: Int, changedAt: Date?) -> Orchestrator.Schedule {
-        Orchestrator.Schedule(id: "d", title: "d", hour: hour, minute: 0, weekdays: nil,
+        Orchestrator.Schedule(id: "d", title: "d", hour: hour, minute: 0, when: .daily,
                               taskTemplate: [:], enabled: true, closeTab: .onSuccess,
                               catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt,
                               whenChangedAt: changedAt)
@@ -330,7 +490,7 @@ group("an edit does not fire the occurrence it has just invented") {
     let savedAt = date("2026-08-26T14:00:00Z")
     let beat = savedAt.addingTimeInterval(60)
     expect("a schedule created at 14:00 was already safe, and still is",
-           beatWould(Orchestrator.Schedule(id: "e", title: "e", hour: 9, minute: 0, weekdays: nil,
+           beatWould(Orchestrator.Schedule(id: "e", title: "e", hour: 9, minute: 0, when: .daily,
                                            taskTemplate: [:], enabled: true, closeTab: .onSuccess,
                                            catchUpHours: 6, notifyOnFailure: true,
                                            createdAt: savedAt, whenChangedAt: nil),
@@ -567,6 +727,133 @@ group("bad schedule files are isolated and the routes use orchestrator envelopes
     _ = Orchestrator.runSchedule(id: id)
     check("a successful manual run records the current occurrence",
           Orchestrator.handledScheduleFireForTesting(id) != nil)
+    // **A schedule that runs once, from the file to the stamp it leaves behind.** The occurrence
+    // is today's 01:30, the same minute the rest of this group uses, so the beat is the ordinary
+    // beat and nothing here is a special path through it.
+    let localDay = DateFormatter()
+    localDay.calendar = Calendar(identifier: .gregorian)
+    localDay.locale = Locale(identifier: "en_US_POSIX")
+    localDay.timeZone = calendar.timeZone
+    localDay.dateFormat = "yyyy-MM-dd"
+    let onceID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbc"
+    var onceSource = valid
+    onceSource["schedule_id"] = onceID
+    onceSource["when"] = ["at": "01:30", "on": localDay.string(from: timerFire)]
+    try! JSONSerialization.data(withJSONObject: onceSource)
+        .write(to: directory.appendingPathComponent("\(onceID).json"))
+    defer { try? FileManager.default.removeItem(
+        at: directory.appendingPathComponent("\(onceID).json")) }
+    Orchestrator.forget()
+    var onceRuns: [String] = []
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { onceRuns.append($0.id); return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: timerNow)
+    expect("the one occurrence a one-shot has does fire",
+           onceRuns.filter { $0 == onceID }.count, 1)
+    check("and the file it came from now says it ran",
+          Orchestrator.schedules().first { $0.id == onceID }?.firedAt != nil)
+    // The restart. `forget()` empties exactly what a relaunch empties — the handled-occurrence
+    // table, the registry, the test seams — and leaves the file. Without `fired_at` on disk the
+    // next beat inside the catch-up window opens a second session for a run that already
+    // happened, which is the one failure a schedule promising to run once cannot have.
+    Orchestrator.forget()
+    onceRuns.removeAll()
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { onceRuns.append($0.id); return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: timerNow.addingTimeInterval(120))
+    expect("and a restart inside its catch-up window opens nothing",
+           onceRuns.filter { $0 == onceID }.count, 0)
+    let rows = Orchestrator.scheduleRecords(now: timerNow)
+    let spentRow = rows.first { $0["id"] as? String == onceID } ?? [:]
+    check("the row says it ran rather than merely falling quiet",
+          spentRow["once"] as? Bool == true && spentRow["fired_at"] is Int
+            && spentRow["enabled"] as? Bool == true && spentRow["next_fire"] == nil,
+          String(describing: spentRow))
+    // A row somebody turned off and a row that has finished were the same row until this existed:
+    // `enabled: false`, no explanation, and nothing to say which of the two you were looking at.
+    let recurringRow = rows.first { $0["id"] as? String == id } ?? [:]
+    check("while a recurring row carries neither of those two keys",
+          recurringRow["fired_at"] == nil && recurringRow["once"] == nil)
+    let spentRun = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/schedules/\(onceID)/run", headers: auth))
+    expect("a manual run of a spent one-shot is refused", spentRun.status, 409)
+    expect("and it is its own typed code", remoteErrorCode(spentRun), "schedule_spent")
+    // The detail route is the one screen where somebody checks what they made, so the same two
+    // facts have to reach it.
+    let spentDetail = Orchestrator.scheduleRecord(id: onceID, now: timerNow)
+    check("the detail says the same thing in the file's own spelling",
+          spentDetail?["once"] as? Bool == true && spentDetail?["fired_at"] is Int
+            && (spentDetail?["when"] as? [String: Any])?["on"] as? String
+                == localDay.string(from: timerFire))
+
+    // **The re-arm cycle, walked end to end, because prose about it is what let it through.** The
+    // one-shot above has fired. The session it opened moves it to tomorrow — the machine door
+    // admits a `PATCH` of a one-shot — and the next night's beat comes round. While the save took
+    // the stamp off, that loop was a nightly wake-up nobody arranged.
+    let place = StartPoints.Place(id: StartPoints.id(for: "/tmp"), path: "/tmp", label: "tmp",
+                                  at: Date(timeIntervalSince1970: 1))
+    let rearmBody: [String: Any] = [
+        "title": "nightly", "at": "01:30",
+        "on": localDay.string(from: timerFire.addingTimeInterval(86_400)),
+        "place_id": place.id, "assistant": "codex", "instructions": "do the nightly work",
+    ]
+    func save(_ target: String, _ body: [String: Any]) -> (Int, String) {
+        guard case .refused(let status, let code, _, _) = Orchestrator.updateSchedule(
+            id: target, from: body, places: [place], now: timerNow,
+            isDirectory: { $0 == "/tmp" }) else { return (200, "ok") }
+        return (status, code)
+    }
+    func onDisk(_ target: String) -> [String: Any] {
+        (try? Data(contentsOf: directory.appendingPathComponent("\(target).json")))
+            .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+    }
+    let rearm = save(onceID, rearmBody)
+    check("a save that re-arms a spent one-shot is refused, with the run route's own code",
+          rearm == (409, "schedule_spent"), String(describing: rearm))
+    check("the file still names the day it ran, and still carries the stamp",
+          (onDisk(onceID)["when"] as? [String: Any])?["on"] as? String
+              == localDay.string(from: timerFire) && onDisk(onceID)["fired_at"] is Int,
+          String(describing: onDisk(onceID)["when"]))
+    Orchestrator.forget()
+    onceRuns.removeAll()
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { onceRuns.append($0.id); return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: timerNow.addingTimeInterval(86_400))
+    expect("so the next night's beat opens nothing, which is where the second session came from",
+           onceRuns.filter { $0 == onceID }.count, 0)
+
+    // **The occurrence the timer chose is not the one the queue runs.** Queued at 01:30 and
+    // retimed to tomorrow while the terminal channel was busy, dispatching would open a session
+    // for a time nobody is scheduled for and stamp the old day onto the new file — spending
+    // tomorrow before it happens. A second one-shot, because this needs one that has not run.
+    let laterID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbd"
+    var laterSource = valid
+    laterSource["schedule_id"] = laterID
+    laterSource["when"] = ["at": "01:30", "on": localDay.string(from: timerFire)]
+    try! JSONSerialization.data(withJSONObject: laterSource)
+        .write(to: directory.appendingPathComponent("\(laterID).json"))
+    defer { try? FileManager.default.removeItem(
+        at: directory.appendingPathComponent("\(laterID).json")) }
+    Orchestrator.forget()
+    var waitingWork: [() -> Void] = []
+    var laterRuns: [String] = []
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { waitingWork.append($0) }
+    Orchestrator.scheduleRunnerForTesting = { laterRuns.append($0.id); return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: timerNow)
+    let retimed = save(laterID, rearmBody)
+    check("a save may still move a one-shot that has not run", retimed == (200, "ok"),
+          String(describing: retimed))
+    waitingWork.forEach { $0() }
+    // The daily schedule beside it is the control: same queue, same pass, so a green here cannot
+    // be a harness that ran nothing.
+    check("the work that was waiting drops the occurrence it lost, and only that one",
+          laterRuns.contains(id) && !laterRuns.contains(laterID), String(describing: laterRuns))
+    check("and nothing stamped the old day onto the retimed file",
+          onDisk(laterID)["fired_at"] == nil, String(describing: onDisk(laterID)["fired_at"]))
+    check("the skip names which of the two reasons it was",
+          RemoteAuth.recentAudit(limit: 2_000).contains {
+              $0["event"] as? String == "orchestrator.schedule.skipped"
+                  && $0["schedule"] as? String == laterID && $0["why"] as? String == "retimed" })
     Orchestrator.forget()
 }
 
@@ -695,7 +982,8 @@ group("a schedule made over HTTP is one the parser above would have accepted") {
     expect("the file is named after the id it generated", files(), ["\(madeID).json"])
     let loaded = Orchestrator.schedules()
     expect("and it is loaded back off disk by the ordinary inventory", loaded.count, 1)
-    expect("with the weekdays it was asked for", loaded.first?.weekdays, Set([2, 4]))
+    expect("with the weekdays it was asked for", loaded.first?.when,
+           Orchestrator.ScheduleWhen.weekly([2, 4]))
     expect("the hour survived the round trip", loaded.first?.hour, 9)
     expect("and the minute", loaded.first?.minute, 30)
     expect("the place id became the project directory, and never came from the request",
@@ -812,7 +1100,7 @@ group("a schedule made over HTTP is one the parser above would have accepted") {
     expect("both schedules are on disk", both.count, 2)
     let second = both.first { $0.id != madeID }
     check("daily is a schedule with no weekday filter",
-          second != nil && second?.weekdays == nil)
+          second != nil && second?.when == .daily)
     expect("the close policy came through", second?.closeTab, .always)
     expect("the catch-up window came through", second?.catchUpHours, 12)
     expect("the failure notification came through", second?.notifyOnFailure, false)
@@ -1089,13 +1377,50 @@ group("one schedule can be read in full, and the write route is behind the write
     Config.shared.remoteWrite = true
     expect("making a schedule with no token at all is refused",
            post(nil, key: UUID().uuidString).status, 401)
-    // The one that would quietly undo the argument in the plan: this route is for the phone, so
-    // the local credential is not a way past the gate the phone has to pass.
+    // The line the machine credential stops at, and it is drawn around what a schedule *is*:
+    // a repeating one is unattended execution somebody arranges once, and stays a person's.
     let orchestratorOnly = post(nil, key: UUID().uuidString, header: auth)
     expect("and the orchestrator token is not a way around the write gate",
            orchestratorOnly.status, 403)
     expect("it is refused as a device that may not send",
            remoteErrorCode(orchestratorOnly), "forbidden")
+    check("and its refusal names the supported path instead of stopping at a capability",
+          remoteErrorMessage(orchestratorOnly).contains(directory.path)
+            && remoteErrorMessage(orchestratorOnly).contains("GET /v1/orchestrator/schedules/:id"),
+          remoteErrorMessage(orchestratorOnly))
+    // The other side of that line. A schedule that runs once is one dispatch at a named time, and
+    // this token already opens a session immediately and already runs any schedule on the spot —
+    // so it reaches the parser, and what stops it here is the `place_id` nobody handed it.
+    let onceBody = "{\"title\":\"x\",\"at\":\"01:30\",\"on\":\"2026-09-06\","
+        + "\"place_id\":\"nope\",\"assistant\":\"claude\",\"instructions\":\"do a thing\"}"
+    func postOnce(key: String?) -> RemoteServer.Response {
+        var headers = auth
+        if let key { headers["Idempotency-Key"] = key }
+        headers["Content-Type"] = "application/json"
+        return RemoteServer.shared.route(remoteRequest("POST", "/v1/orchestrator/schedules",
+                                                       headers: headers, body: onceBody))
+    }
+    let machineOnce = postOnce(key: UUID().uuidString)
+    expect("while one that runs once reaches the parser on that same token",
+           machineOnce.status, 400)
+    // By its sentence, not only by its status: this route has `400`s of its own, so a gate
+    // replaced by a constant `400 bad_request` would keep a status-only check green.
+    check("and stops on the place id rather than on the credential",
+          remoteErrorCode(machineOnce) == "bad_request"
+            && remoteErrorMessage(machineOnce).contains("place_id"),
+          remoteErrorMessage(machineOnce))
+    let machineNoKey = postOnce(key: nil)
+    expect("a machine write with no idempotency key is refused too", machineNoKey.status, 400)
+    check("for the header rather than for the body",
+          remoteErrorMessage(machineNoKey).contains("Idempotency-Key"),
+          remoteErrorMessage(machineNoKey))
+    Config.shared.remoteWrite = false
+    let switchedOff = postOnce(key: UUID().uuidString)
+    check("and the remote write switch is a fact about devices, not about this Mac's own token",
+          switchedOff.status == 400 && remoteErrorCode(switchedOff) == "bad_request"
+            && remoteErrorMessage(switchedOff).contains("place_id"),
+          remoteErrorMessage(switchedOff))
+    Config.shared.remoteWrite = true
     expect("a device that may read and not send is refused",
            remoteErrorCode(post(reader.token, key: UUID().uuidString)), "forbidden")
     Config.shared.remoteWrite = false
@@ -1223,6 +1548,57 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     // Nothing has been retimed, so there is nothing to say about it. A create writing this field
     // would be answering a question nobody asked and putting a second stamp in every file.
     check("and says nothing about having been retimed", source(id)["when_changed_at"] == nil)
+    // **A save may change when a schedule runs, and not whether it repeats.** Neither form that
+    // reaches this route has a control for a one-shot's date, so both would send `days` and
+    // convert one silently, having never shown the field they replaced — which is the shape the
+    // carried task fields already exist to refuse, one level up.
+    var onceBody = made
+    onceBody.removeValue(forKey: "days")
+    onceBody["on"] = "2026-09-06"
+    let onceID = create(onceBody)
+    check("a schedule that runs once is made the same way", !onceID.isEmpty)
+    expect("and its file says the day rather than a pattern",
+           (source(onceID)["when"] as? [String: Any])?["on"] as? String, "2026-09-06")
+    check("and nothing wrote a pattern beside it",
+          (source(onceID)["when"] as? [String: Any])?["days"] == nil)
+    let converted = refusal(update(onceID, made))
+    expect("a save that would make it repeat is refused", converted?.status, 400)
+    check("and the refusal says what it is and what to do instead",
+          converted?.message.contains("runs once") == true
+            && converted?.message.contains("2026-09-06") == true,
+          converted?.message ?? "")
+    let reversed = refusal(update(id, onceBody))
+    expect("and a save that would make a repeating one a single run is refused too",
+           reversed?.status, 400)
+    // The stamp is the schedule's, not the save's: an edit that leaves the occurrence alone
+    // leaves it spent, and one that moves the occurrence is asking for a run that has not
+    // happened. Written here rather than through the beat because the beat's own end-to-end is
+    // in the inventory group; this is the arithmetic of what a save carries.
+    var spentFile = source(onceID)
+    spentFile["fired_at"] = 1_788_600_000
+    try! JSONSerialization.data(withJSONObject: spentFile)
+        .write(to: directory.appendingPathComponent("\(onceID).json"))
+    Orchestrator.forget()
+    var sameDay = onceBody
+    sameDay["title"] = "the same run, renamed"
+    _ = update(onceID, sameDay)
+    expect("a save that leaves the day alone leaves the schedule spent",
+           source(onceID)["fired_at"] as? Int, 1_788_600_000)
+    var movedDay = onceBody
+    movedDay["on"] = "2026-09-13"
+    // This used to take the stamp off, on the reading that `fired_at` named one occurrence rather
+    // than the schedule — which made the route a re-arm primitive. The cycle is in the beat group.
+    let moved = refusal(update(onceID, movedDay))
+    check("and a save that moves it is refused with the run route's own code",
+          moved?.status == 409 && moved?.code == "schedule_spent", String(describing: moved))
+    check("and the stamp and the day are exactly where they were",
+          source(onceID)["fired_at"] as? Int == 1_788_600_000
+            && (source(onceID)["when"] as? [String: Any])?["on"] as? String == "2026-09-06",
+          String(describing: source(onceID)["when"]))
+    // Taken away again: the checks further down this group are about which files a removal leaves
+    // behind, and a schedule this block made would be one of them.
+    try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(onceID).json"))
+    Orchestrator.forget()
 
     var changed = made
     changed["title"] = "publish the newsletter"
@@ -1254,7 +1630,7 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     check("the rewritten file is one the ordinary inventory reads back", reloaded != nil)
     expect("the new hour is on disk", reloaded?.hour, 7)
     expect("and the new minute", reloaded?.minute, 5)
-    check("daily replaced the two weekdays", reloaded?.weekdays == nil)
+    check("daily replaced the two weekdays", reloaded?.when == .daily)
     expect("the new place became the project directory, and never came from the request",
            reloaded?.taskTemplate["project_dir"] as? String, "/usr")
     expect("and the close policy came through", reloaded?.closeTab, .always)
@@ -1554,8 +1930,8 @@ group("changing and removing a schedule pass the same three gates as making one"
     for method in ["PATCH", "DELETE"] {
         expect("\(method) with no token at all is refused",
                call(method, nil, key: UUID().uuidString).status, 401)
-        // The one that would quietly undo the argument these routes are built on: they are for
-        // the phone, so the local credential is not a way past the gate the phone has to pass.
+        // The same line the create route draws, and for the same reason: what this token may
+        // not do is arrange execution that repeats with nobody watching it.
         let orchestratorOnly = call(method, nil, key: UUID().uuidString, header: auth)
         expect("\(method) with the orchestrator token is not a way around the write gate",
                orchestratorOnly.status, 403)
@@ -1577,6 +1953,25 @@ group("changing and removing a schedule pass the same three gates as making one"
         check("nothing reached the file through any of those", exists())
     }
 
+    // The other side of it, end to end: a schedule that runs once, removed on this Mac's own
+    // token and nothing else. Its own file, so the recurring one this group is about is still
+    // there for the assertions below.
+    let onceID = "cccccccc-dddd-4eee-8fff-bbbbbbbbbbbc"
+    var onceSource = source
+    onceSource["schedule_id"] = onceID
+    onceSource["when"] = ["at": "01:30", "on": "2026-09-06"]
+    let onceFile = directory.appendingPathComponent("\(onceID).json")
+    try! JSONSerialization.data(withJSONObject: onceSource).write(to: onceFile)
+    let machineEdit = call("PATCH", nil, key: UUID().uuidString, target: onceID, header: auth)
+    expect("a machine PATCH of a one-shot reaches the parser", machineEdit.status, 400)
+    check("and what stops it is the body rather than the credential",
+          remoteErrorCode(machineEdit) == "bad_request"
+            && remoteErrorMessage(machineEdit).contains("place_id"),
+          remoteErrorMessage(machineEdit))
+    let machineDelete = call("DELETE", nil, key: UUID().uuidString, target: onceID, header: auth)
+    expect("and a machine DELETE of one takes it away", machineDelete.status, 200)
+    check("the file really went", !FileManager.default.fileExists(atPath: onceFile.path))
+    check("while the repeating schedule beside it is untouched", exists())
     // Past all three gates. PATCH still answers to the parser, and a `place_id` nobody was
     // handed is the same bad request it is on the route that makes one.
     let unknownPlace = call("PATCH", writer.token, key: UUID().uuidString)

@@ -2195,22 +2195,16 @@ final class RemoteServer: @unchecked Sendable {
             return .json(["schedules": Orchestrator.scheduleRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
 
-        // **The first way anything but a text editor makes a schedule.**
-        //
-        // Gated by the three gates every other paired-device write goes through, and
-        // deliberately *not* by the orchestrator token: that token is a `0600` file on this Mac,
-        // which is exactly what makes it a proof of being local, and a phone cannot have one.
-        // This route is for the phone. What it adds to a paired device's reach is real and is
-        // said out loud in docs/schedules.md — a phone can now arrange work that runs later with
-        // nobody watching it — and what it does not add is anywhere to write a path: the body
-        // carries a `place_id` from `/v1/places` and the directory is looked up on this side.
-        //
-        // `429` and the two `write_failed` fives are the answers not filed under the key, for the
-        // reason `transcribe` spells out: they are facts about this machine at this moment rather
-        // than about the request, and a cached one would tell the retry that was supposed to work
-        // that the brake is still on long after it let go.
+        // **The first way anything but a text editor makes a schedule.** Two doors: the three
+        // gates every paired-device write passes — the write switch, a device that may `send`, an
+        // idempotency key — and this Mac's orchestrator token, which reaches a schedule that runs
+        // **once** and no other. `Orchestrator.machineScheduleRefusal(method:id:body:)` holds the
+        // argument for where that line sits; docs/schedules.md says what the phone's door adds and
+        // why the body names a `place_id` rather than a path. `429` and the two `write_failed`
+        // fives stay out of the key's ten-minute table: facts about this Mac, not about the request.
         case ("POST", "/v1/orchestrator/schedules"):
-            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+            return schedulingWrite(request, machine: orchestratorAuthed, method: "POST", id: nil,
+                                   keeping: { $0.status != 429 && $0.status < 500 }) { body in
                 self.answer(RemoteServer.scheduleAnswer(
                     Orchestrator.createSchedule(from: body),
                     dispatchEnabled: Config.shared.orchestratorEnabled))
@@ -2225,31 +2219,25 @@ final class RemoteServer: @unchecked Sendable {
             else { return .error(404, "not_found", "No schedule named that") }
             return .json(["schedule": record])
 
-        // **Changing one, and taking one away.** Behind the same three gates as the route that
-        // makes one and deliberately not behind the orchestrator token, for the same reason: a
-        // phone cannot hold a `0600` file, and these are for the phone. Until these existed the
-        // only way to fix a wrong time was a text editor on this Mac, so every mistaken creation
-        // had to be cleaned up back at the desk.
-        //
-        // PATCH takes the body POST takes. `schedule_id` and `created_at` are not fields it may
-        // carry — they are read off the file being replaced, and `Orchestrator.updateSchedule`
-        // says why the second of those matters.
-        //
-        // The same answers are kept out of the ten-minute idempotency table as on the create
-        // route: `429` and the fives are facts about this machine at this moment rather than
-        // about the request, and a cached one would tell the retry that was supposed to work
-        // that the brake is still on long after it let go.
+        // **Changing one, and taking one away**, through the same two doors. PATCH takes the
+        // body POST takes and rewrites the whole file; `schedule_id` and `created_at` are read
+        // off the file being replaced, and `Orchestrator.updateSchedule` says why that matters
+        // and why a save may change when a schedule runs but not whether it repeats. The same
+        // answers stay out of the idempotency table as on the create route.
         case ("PATCH", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
             let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
             let cleaned = id.removingPercentEncoding ?? id
-            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+            return schedulingWrite(request, machine: orchestratorAuthed, method: "PATCH",
+                                   id: cleaned,
+                                   keeping: { $0.status != 429 && $0.status < 500 }) { body in
                 self.answer(Orchestrator.updateSchedule(id: cleaned, from: body))
             }
 
         case ("DELETE", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
             let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
             let cleaned = id.removingPercentEncoding ?? id
-            return writing(request, keeping: { $0.status < 500 }) { _ in
+            return schedulingWrite(request, machine: orchestratorAuthed, method: "DELETE",
+                                   id: cleaned, keeping: { $0.status < 500 }) { _ in
                 self.answer(Orchestrator.deleteSchedule(id: cleaned))
             }
 
@@ -3593,6 +3581,18 @@ final class RemoteServer: @unchecked Sendable {
         let response = body(parsed)
         remember(response, under: key, for: request, by: "orchestrator")
         return response
+    }
+
+    /// One schedule write, through whichever of its two doors the caller came in by — shared by
+    /// all three routes, because a route that chose differently would be a way past the other two.
+    private func schedulingWrite(_ request: Request, machine: Bool, method: String, id: String?,
+                                 keeping keep: @escaping (Response) -> Bool,
+                                 _ body: @escaping ([String: Any]) -> Response) -> Response {
+        guard machine else { return writing(request, keeping: keep, body) }
+        return orchestratorWriting(request) { parsed in
+            Orchestrator.machineScheduleRefusal(method: method, id: id, body: parsed)
+                .map(self.answer) ?? body(parsed)
+        }
     }
 
     private var idempotent: [String: (at: Date, response: Response)] = [:]

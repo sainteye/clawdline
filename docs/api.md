@@ -173,9 +173,9 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/waits/:id/cancel` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/schedules` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/schedules/:id` | orchestrator token, **or** token | `read` |
-| `POST` | `/v1/orchestrator/schedules` | token + key | `send` **and** the write switch |
-| `PATCH` | `/v1/orchestrator/schedules/:id` | token + key | `send` **and** the write switch |
-| `DELETE` | `/v1/orchestrator/schedules/:id` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/orchestrator/schedules` | token + key, **or** orchestrator token + key when `when.on` | `send` **and** the write switch — the second door passes neither |
+| `PATCH` | `/v1/orchestrator/schedules/:id` | token + key, **or** orchestrator token + key when the schedule has `when.on` | `send` **and** the write switch — the second door passes neither |
+| `DELETE` | `/v1/orchestrator/schedules/:id` | token + key, **or** orchestrator token + key when the schedule has `when.on` | `send` **and** the write switch — the second door passes neither |
 | `POST` | `/v1/orchestrator/schedules/:id/run` | orchestrator token | — |
 | `GET` | `/v1/snippets` | token | `read` |
 | `POST` | `/v1/snippets` | token + key | `send` **and** the write switch |
@@ -3004,12 +3004,21 @@ calculations are returned as epoch seconds:
   }, {
     "file": "broken.json",
     "state": "invalid",
-    "error": "when must contain exactly at and days",
+    "error": "when must contain at and exactly one of days or on",
     "error_kind": "schema"
   }],
   "at": 1787797800
 }
 ```
+
+A schedule that runs once carries `once: true`, and one that has run carries `fired_at` as well
+while `next_fire` is simply absent — see [a schedule that runs
+once](schedules.md#a-schedule-that-runs-once). A row somebody paused says `enabled: false` and
+nothing else; the two used to be the same row. **This is true of the payload and not yet of any
+screen**: neither the Mac's schedule list nor the browser's reads `once` or `fired_at`, so on both
+of them a spent one-shot is still an enabled row with no next run, which is exactly what a paused
+one and a never-run one look like. A client that wants to draw the distinction has the two keys;
+this app does not use them yet.
 
 `last_missed_at` is absent until an occurrence expires outside its catch-up window. It is an
 independent schedule fact, not a `last_run.state`. `last_run` is absent before the first dispatched task and may become absent again after the
@@ -3052,6 +3061,9 @@ id at all.
                       "terminal_id":"9A1F…","session_id":"105344fb-c769-4b37-b766-403b410897eb"}]}}
 ```
 
+`when` comes back in the file's own spelling, so a schedule that runs once reads
+`{"at":"01:30","on":"2026-09-06"}` and carries `once: true`, plus `fired_at` once it has run.
+
 Every run remains visible while its task record is retained. `terminal_id` names the tab Clawdline
 opened and lets a client go to it if it is still on `/v1/sessions`. `session_id` is stricter: it is
 present only for terminal work whose transcript or rollout still exists and is proved to belong to
@@ -3078,8 +3090,12 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/schedules \
 {"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,"next_fire":1787880600},"dispatch_enabled":true}
 ```
 
-Required: `title`, `at` as `HH:MM` in the Mac's local time, `days` as `"daily"` or a non-empty
-weekday array, `place_id`, `assistant`, `instructions`. Optional: `enabled` (default `true`),
+Required: `title`, `at` as `HH:MM` in the Mac's local time, `place_id`, `assistant`,
+`instructions`, and exactly one of `days` (`"daily"` or a non-empty weekday array — a schedule
+that repeats) or `on` (`YYYY-MM-DD` — [a schedule that runs
+once](schedules.md#a-schedule-that-runs-once), which retires itself after its one run rather than
+waiting to be turned off). A body carrying both is refused with the parser's own sentence.
+Optional: `enabled` (default `true`),
 `close_tab`, `catch_up_hours`, `notify_on_failure`, `timeout_minutes`, `model`. An empty `model`
 is left out of the file rather than written into it. `days` has no default — picking `daily` for
 somebody would be choosing how often their work runs — while `enabled` does, because a schedule
@@ -3095,10 +3111,25 @@ It is absent from a refusal, because a refusal made nothing to say it about, and
 `PATCH` either: an edit is a change to a file that already exists, and the create is where somebody
 is told what they have just arranged.
 
-**The write gate, not the orchestrator token** — [all three gates](#writing-three-gates-in-this-order),
-like `/send` and `/v1/voice`. The orchestrator token is a `0600` file on this Mac, which is what
-makes it a proof of being local, and a phone cannot have one; this route is for the phone. Sending
-the orchestrator header in place of a device token is refused as a device that may not send.
+**Two doors, and the second one passes neither the switch nor the device gate.** A paired device
+passes [all three gates](#writing-three-gates-in-this-order), like `/send` and `/v1/voice`; this
+route was built for the phone. This Mac's orchestrator token opens the second door with the same
+`Idempotency-Key`, no device gate and — like every other orchestrator route — no remote-write
+switch, so the `403 write_disabled` in the table below is a device-door answer and cannot be
+reached through this one. **Turning Settings → Remote → writes off does not stop a session on this
+Mac from creating or removing a one-shot.** The second door reaches a body carrying `on` and no
+other: a single run at a named time is one dispatch, and that credential already dispatches and
+already runs any schedule on the spot. The refusal on the other side of that line names the file
+path and this page's read route rather than stopping at the caller's capability.
+
+**What that line does not buy, because saying that it did was wrong.** It does not stop a session
+arranging unattended nightly work: nothing bounds how many one-shots exist and every fired session
+holds the same token, so the run of one-shot *n* can post one-shot *n + 1*, at one write a day and
+well inside the rate brake. What it does buy is that a person's repeating rows are not an agent's
+to retime, disable or remove, and that an agent's deferred work is validated, stamped, read back
+and audited at `0600` instead of hand-written at `0644` — which is what the refusal it replaced
+actually produced. [`schedules.md`](schedules.md#making-one-without-a-text-editor) carries the
+whole argument and the sentence itself.
 
 **A `place_id`, never a path.** It is an id from [`/v1/places`](#get-v1places), resolved against
 that list on the Mac. There is nowhere in the body to write a directory, and `project_dir`,
@@ -3111,7 +3142,7 @@ that runs later with nobody watching.
 |---|---|
 | `400 bad_request` | no `Idempotency-Key`; an unknown field; a `place_id` that is not on the list; or any field the [schedule parser](schedules.md#the-file) refuses — the refusal carries that parser's own sentence |
 | `401 unauthorized` | no token, or one this Mac does not know |
-| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `403 write_disabled`, `403 forbidden` | the write switch is off, or this device may read and not send — **both are device-door answers and neither is reachable through the machine door**; or the orchestrator token was used for a schedule that repeats, in which case the message names the file path and `GET /v1/orchestrator/schedules/:id` |
 | `429 rate_limited` | ten schedules have been made in the last ten minutes. A sliding window of counted writes, like the dispatch brake and unlike `busy`, which is a queue with something already in it |
 | `500 write_failed` | the file could not be written, or could not be read back through the parser afterwards — in which case it has been removed |
 
@@ -3172,8 +3203,21 @@ with `"permission_mode": "full"`, and those instructions run under that permissi
 alternative was a save that silently stripped the field, which is worse; the trade is real and is
 written down rather than left in a commit message.
 
-**`schedule_id`, `created_at` and `when_changed_at` are the Mac's and are not fields this request
-may carry** — naming any of them is a `400` for an unknown field, like `project_dir`. The last two
+**A save may change when a schedule runs, and not whether it repeats.** A `PATCH` of a schedule
+with `when.on` must carry `on`, and one of a schedule with `when.days` must carry `days`; the
+other way round is a `400` naming which kind it is and saying to remove it and make a new one.
+Neither form that reaches this route has a control for a one-shot's date, so a save from either
+would send `days` and convert it silently — the same shape the carried fields above refuse, one
+level up. **And a save may not move a one-shot that has already run.** `fired_at` is the record
+that a schedule which runs once has run, so a save that leaves `when` alone carries it across and
+leaves the schedule spent, while one that moves the date is asking for a second run and is refused
+`409 schedule_spent` — the same code `POST …/run` gives, for the same reason. Renaming a spent
+schedule, or rewriting what its session is told to do, is still an ordinary save. This closed a
+re-arm loop: the stamp used to come off with the old day, so the session a one-shot opened could
+`PATCH` it to tomorrow and be woken again, and again.
+
+**`schedule_id`, `created_at`, `when_changed_at` and `fired_at` are the Mac's and are not fields
+this request may carry** — naming any of them is a `400` for an unknown field, like `project_dir`. The last two
 matter beyond tidiness. `created_at` is what makes the minute timer ignore an occurrence older
 than the schedule, so a save that restamped it would make editing a `09:00` schedule at lunchtime
 open a session for this morning. A hand-written file with no `created_at` does not acquire one by
@@ -3197,9 +3241,10 @@ that now-incompatible hidden override so the assistant change can be saved witho
 
 | | when |
 |---|---|
-| `400 bad_request` | no `Idempotency-Key`; an unknown field, `schedule_id`, `created_at` and `when_changed_at` among them; a `place_id` that is not on the list; or any field the [schedule parser](schedules.md#the-file) refuses, carrying that parser's own sentence |
+| `400 bad_request` | no `Idempotency-Key`; an unknown field, `schedule_id`, `created_at`, `when_changed_at` and `fired_at` among them; a `place_id` that is not on the list; a save that would change whether this schedule repeats; or any field the [schedule parser](schedules.md#the-file) refuses, carrying that parser's own sentence |
+| `409 schedule_spent` | this schedule runs once and already ran, and the save moves when it runs. Change its title or its instructions freely; make a new schedule to ask for another run |
 | `401 unauthorized` | no token, or one this Mac does not know |
-| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `403 write_disabled`, `403 forbidden` | the write switch is off, or this device may read and not send — **both are device-door answers, unreachable through the machine door**; or the orchestrator token was used on a schedule that repeats |
 | `404 not_found` | no schedule with that id, an id that is not an id, or a source file this app cannot itself parse — see below |
 | `429 rate_limited` | a save spends the same ten-in-ten-minutes ticket a create does |
 | `500 write_failed` | the change could not be written, or could not be read back through the parser afterwards — in which case **the previous file has been put back** |
@@ -3230,7 +3275,7 @@ $ curl -s -X DELETE http://127.0.0.1:7717/v1/orchestrator/schedules/4d2f54ce-…
 |---|---|
 | `400 bad_request` | no `Idempotency-Key` |
 | `401 unauthorized` | no token, or one this Mac does not know |
-| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `403 write_disabled`, `403 forbidden` | the write switch is off, or this device may read and not send — **both are device-door answers, unreachable through the machine door**; or the orchestrator token was used on a schedule that repeats |
 | `404 not_found` | there was no such schedule — including an id that is not an id at all |
 | `500 delete_failed` | the file is there and would not go |
 
@@ -3260,8 +3305,10 @@ Runs one valid schedule immediately, ignoring `enabled` and the wall clock. This
 `X-Clawdline-Orchestrator`; a successful response is the ordinary dispatch response. It returns
 `404 not_found` for an unknown or invalid schedule, `403 orchestrator_disabled` when dispatch is
 off, and `409 schedule_active` while any task from the schedule is non-terminal or its dispatch is
-already queued. A successful manual run records the current occurrence as handled when it is at or
-after that occurrence; running before the next scheduled time does not consume that future fire.
+already queued. It also returns `409 schedule_spent` for a schedule that runs once and already
+has: running once is the whole of what that schedule promised. A successful manual run records the
+current occurrence as handled when it is at or after that occurrence; running before the next
+scheduled time does not consume that future fire, and so does not spend a one-shot either.
 
 ### The snippets a session can press
 

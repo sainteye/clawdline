@@ -33,8 +33,8 @@ enum Orchestrator {
         let title: String
         let hour: Int
         let minute: Int
-        /// Calendar weekday numbers (1 = Sunday ... 7 = Saturday), or nil for every day.
-        let weekdays: Set<Int>?
+        /// Every day, some weekdays, or one named date — see ``Orchestrator/ScheduleWhen``.
+        let when: ScheduleWhen
         let taskTemplate: [String: Any]
         let enabled: Bool
         let closeTab: ScheduleCloseTab
@@ -59,6 +59,10 @@ enum Orchestrator {
         /// changes a title must not, or fixing a typo at eleven would swallow the nine o'clock run
         /// that was genuinely missed at nine.
         let whenChangedAt: Date?
+        /// When a schedule that runs once actually opened its session, or nil for one that has
+        /// not — and for every recurring schedule, which the parser refuses the field outright.
+        /// See ``Orchestrator/markScheduleFired(id:at:)`` for why it is on the file.
+        var firedAt: Date? = nil
     }
 
     enum ScheduleDraftOutcome {
@@ -87,10 +91,11 @@ enum Orchestrator {
 
     enum ScheduleAction: Equatable {
         /// `beforeCreation` is "the schedule did not exist yet"; `beforeRetiming` is "this
-        /// occurrence did not exist yet". They are one line apart in the timer and identical in
-        /// what they do — nothing — but they are different sentences about why, and a reader of an
-        /// audit or a test is owed the right one.
-        case run, alreadyHandled, active, missed, beforeCreation, beforeRetiming
+        /// occurrence did not exist yet"; `spent` is "this one ran, and it only ever had one".
+        /// They are three lines apart in the timer and identical in what they do — nothing — but
+        /// they are different sentences about why, and a reader of an audit or a test is owed the
+        /// right one.
+        case run, alreadyHandled, active, missed, beforeCreation, beforeRetiming, spent
     }
 
     private static func scheduleBool(_ raw: Any?) -> Bool? {
@@ -117,7 +122,7 @@ enum Orchestrator {
         -> ScheduleDraftOutcome {
         let allowed = Set(["clawdline_schedule", "schedule_id", "title", "when", "task",
                            "enabled", "close_tab", "catch_up_hours", "notify_on_failure",
-                           "created_at", "when_changed_at"])
+                           "created_at", "when_changed_at", "fired_at"])
         let unknown = Set(obj.keys).subtracting(allowed).sorted()
         guard unknown.isEmpty else { return .bad("unknown field: \(unknown.joined(separator: ", "))") }
         guard scheduleInt(obj["clawdline_schedule"]) == 1 else {
@@ -130,35 +135,21 @@ enum Orchestrator {
         guard let title = obj["title"] as? String, !title.isEmpty, title.count <= 120 else {
             return .bad("title must be a non-empty string of at most 120 characters")
         }
-        guard let when = obj["when"] as? [String: Any],
-              Set(when.keys).isSubset(of: Set(["at", "days"])), when.count == 2,
-              let at = when["at"] as? String else {
-            return .bad("when must contain exactly at and days")
+        // How often, in `Sources/Schedules.swift` — one table of weekday names read in both
+        // directions, and the one place `when.on` becomes a date rather than a pattern.
+        let when: ScheduleWhen
+        switch scheduleWhen(from: obj["when"]) {
+        case .bad(let why): return .bad(why)
+        case .ok(let value): when = value
+        }
+        guard let at = (obj["when"] as? [String: Any])?["at"] as? String else {
+            return .bad("when.at must be HH:MM in local time")
         }
         let parts = at.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2, parts[0].count == 2, parts[1].count == 2,
               let hour = Int(parts[0]), let minute = Int(parts[1]),
               (0...23).contains(hour), (0...59).contains(minute) else {
             return .bad("when.at must be HH:MM in local time")
-        }
-        let weekdayNumbers = ["sun": 1, "mon": 2, "tue": 3, "wed": 4,
-                              "thu": 5, "fri": 6, "sat": 7]
-        let weekdays: Set<Int>?
-        if let days = when["days"] as? String, days == "daily" {
-            weekdays = nil
-        } else if let days = when["days"] as? [Any], !days.isEmpty {
-            var found: Set<Int> = []
-            for (index, raw) in days.enumerated() {
-                guard let name = raw as? String, let number = weekdayNumbers[name] else {
-                    return .bad("when.days[\(index)] must be sun, mon, tue, wed, thu, fri or sat")
-                }
-                guard found.insert(number).inserted else {
-                    return .bad("when.days must not contain duplicates")
-                }
-            }
-            weekdays = found
-        } else {
-            return .bad("when.days must be daily or a non-empty weekday array")
         }
         guard let task = obj["task"] as? [String: Any] else {
             return .bad("task must be an object")
@@ -240,12 +231,19 @@ enum Orchestrator {
         }
         let createdAt = stamp("created_at")
         let whenChangedAt = stamp("when_changed_at")
+        // The third stamp, and the only one that decides whether a schedule may ever fire again.
+        // It is refused on a recurring file rather than ignored there: `fired_at` says *the* run
+        // happened, and a schedule with more occurrences coming has no such run to name.
+        let firedAt = stamp("fired_at")
         if let badStamp { return .bad(badStamp) }
+        if firedAt != nil, !when.runsOnce {
+            return .bad("fired_at belongs to a schedule that runs once; this one has when.days")
+        }
         return .ok(Schedule(id: id, title: title, hour: hour, minute: minute,
-                            weekdays: weekdays, taskTemplate: task, enabled: enabled,
+                            when: when, taskTemplate: task, enabled: enabled,
                             closeTab: closeTab, catchUpHours: catchUpHours,
                             notifyOnFailure: notify, createdAt: createdAt,
-                            whenChangedAt: whenChangedAt))
+                            whenChangedAt: whenChangedAt, firedAt: firedAt))
     }
 
     /// What ``Orchestrator/scheduleObject(from:id:createdAt:places:isDirectory:)`` decided.
@@ -287,7 +285,7 @@ enum Orchestrator {
                                        carrying previous: [String: Any] = [:],
                                        places: [StartPoints.Place],
                                        isDirectory: (String) -> Bool) -> ScheduleObject {
-        let allowed = Set(["title", "at", "days", "place_id", "assistant", "instructions",
+        let allowed = Set(["title", "at", "days", "on", "place_id", "assistant", "instructions",
                            "enabled", "close_tab", "catch_up_hours", "notify_on_failure",
                            "timeout_minutes", "model"])
         let unknown = Set(body.keys).subtracting(allowed).sorted()
@@ -341,6 +339,11 @@ enum Orchestrator {
            let kept = previous["reasoning_effort"] {
             task["reasoning_effort"] = kept
         }
+        var whenObject: [String: Any] = ["at": body["at"] ?? "", "days": body["days"] ?? ""]
+        if let on = body["on"] {
+            whenObject["on"] = on
+            if body["days"] == nil { whenObject.removeValue(forKey: "days") }
+        }
         var obj: [String: Any] = [
             "clawdline_schedule": 1,
             "schedule_id": id,
@@ -349,8 +352,10 @@ enum Orchestrator {
             // request that did not say when, and the parser has a sentence for each; picking
             // `daily` on their behalf would be this route quietly choosing how often somebody
             // else's work runs. `enabled` is the opposite and is defaulted below: a schedule
-            // somebody has just asked for is on.
-            "when": ["at": body["at"] ?? "", "days": body["days"] ?? ""],
+            // somebody has just asked for is on. A body carrying `on` is asking for a single run
+            // on that date, and one carrying both is handed to the parser with both still in it
+            // rather than having one of them quietly dropped here.
+            "when": whenObject,
             "task": task,
             "enabled": body["enabled"] ?? true,
         ]
@@ -553,13 +558,25 @@ enum Orchestrator {
         // A file that never had one is stamped here, unlike `created_at`, and the difference is
         // what the two fields claim. `created_at` would be a guess about a past this app was not
         // there for; this is a fact it is watching happen.
-        if made.hour == existing.hour, made.minute == existing.minute,
-           made.weekdays == existing.weekdays {
+        //
+        // The two things a save may not do to `when` — change whether the schedule repeats, and
+        // move a one-shot that has already run — are refused in `Schedules.swift`, beside the
+        // grammar they are about, and that is where both arguments are written down.
+        let movesWhen = made.hour != existing.hour || made.minute != existing.minute
+            || made.when != existing.when
+        if let refusal = scheduleWhenSaveRefusal(existing: existing, made: made,
+                                                 movesWhen: movesWhen) {
+            return refusal
+        }
+        if movesWhen {
+            obj["when_changed_at"] = Int(now.timeIntervalSince1970)
+        } else {
             if let unchanged = existing.whenChangedAt {
                 obj["when_changed_at"] = Int(unchanged.timeIntervalSince1970)
             }
-        } else {
-            obj["when_changed_at"] = Int(now.timeIntervalSince1970)
+            if let fired = existing.firedAt {
+                obj["fired_at"] = Int(fired.timeIntervalSince1970)
+            }
         }
         // The same brake as a create, and for the same reason: what it bounds is a client
         // retrying in a loop with a fresh key each time, and a loop of saves writes a file per
@@ -663,15 +680,13 @@ enum Orchestrator {
                                   "close_tab": schedule.closeTab.rawValue,
                                   "catch_up_hours": schedule.catchUpHours,
                                   "notify_on_failure": schedule.notifyOnFailure]
-        let names = [1: "sun", 2: "mon", 3: "tue", 4: "wed", 5: "thu", 6: "fri", 7: "sat"]
-        let time = String(format: "%02d:%02d", schedule.hour, schedule.minute)
         // Back in the shape the file used and the form sends, rather than the Calendar numbers
         // this holds in memory: a page that had to know Sunday is 1 would be a second place the
-        // weekday order is written down.
-        out["when"] = ["at": time,
-                       "days": schedule.weekdays.map { found in
-                           (1...7).compactMap { found.contains($0) ? names[$0] : nil }
-                       } ?? "daily"]
+        // weekday order is written down, and `Schedules.swift` is the first.
+        out["when"] = scheduleWhenObject(schedule.when, hour: schedule.hour,
+                                         minute: schedule.minute)
+        if schedule.when.runsOnce { out["once"] = true }
+        if let fired = schedule.firedAt { out["fired_at"] = Int(fired.timeIntervalSince1970) }
         if let next = nextFire(of: schedule, after: now) {
             out["next_fire"] = Int(next.timeIntervalSince1970)
         }
@@ -756,48 +771,6 @@ enum Orchestrator {
         return session
     }
 
-    static func latestFire(of schedule: Schedule, at now: Date,
-                           calendar: Calendar = .autoupdatingCurrent) -> Date? {
-        let start = calendar.startOfDay(for: now)
-        for daysAgo in 0...7 {
-            guard let day = calendar.date(byAdding: .day, value: -daysAgo, to: start),
-                  let candidate = calendar.date(bySettingHour: schedule.hour,
-                                                minute: schedule.minute, second: 0, of: day),
-                  candidate <= now else { continue }
-            if let weekdays = schedule.weekdays,
-               !weekdays.contains(calendar.component(.weekday, from: candidate)) { continue }
-            return candidate
-        }
-        return nil
-    }
-
-    /// What the minute timer should do about one occurrence of one schedule.
-    ///
-    /// `createdAt` is the schedule's own age, and it is read first: an occurrence from before the
-    /// file existed is not a run this Mac slept through, because there was nothing there to sleep.
-    /// Without it, "09:00 daily" made at lunchtime is inside the six-hour catch-up window and
-    /// dispatches within the minute — while the 200 that created it said the next run was tomorrow
-    /// — and made in the evening it instead pushes that a run was missed and shows "last missed 1
-    /// day ago". A nil `createdAt` is a file that never said when it was made, and keeps the
-    /// behaviour every hand-written schedule has always had.
-    ///
-    /// `whenChangedAt` is the same gate one question further along, and it is read second because
-    /// the two answer different things: the first is "was there a schedule here", the second is
-    /// "was there an occurrence here". A save that moves `21:00` to `09:00` at two in the
-    /// afternoon leaves `created_at` correctly alone — the schedule is days old — and invents an
-    /// occurrence six hours in the past, which is inside the default catch-up window and so was
-    /// dispatched within the minute. Nobody missed a nine o'clock that did not exist at nine.
-    static func scheduleAction(now: Date, fire: Date, catchUpHours: Int,
-                               lastRunCreated: Date?, lastRunTerminal: Bool?,
-                               createdAt: Date?, whenChangedAt: Date?) -> ScheduleAction {
-        if let createdAt, fire < createdAt { return .beforeCreation }
-        if let whenChangedAt, fire < whenChangedAt { return .beforeRetiming }
-        if let created = lastRunCreated, created >= fire { return .alreadyHandled }
-        if lastRunTerminal == false { return .active }
-        let window = TimeInterval(max(60, catchUpHours * 3600))
-        return now.timeIntervalSince(fire) <= window ? .run : .missed
-    }
-
     static func scheduledCloseAt(policy: ScheduleCloseTab, outcome: State,
                                  now: Date, hasChild: Bool, linger: TimeInterval = 180,
                                  briefed: Bool = true) -> Date? {
@@ -812,21 +785,6 @@ enum Orchestrator {
             }
             return outcome == .spawnFailed && !briefed ? now : nil
         }
-    }
-
-    static func nextFire(of schedule: Schedule, after now: Date,
-                         calendar: Calendar = .autoupdatingCurrent) -> Date? {
-        let start = calendar.startOfDay(for: now)
-        for daysAhead in 0...7 {
-            guard let day = calendar.date(byAdding: .day, value: daysAhead, to: start),
-                  let candidate = calendar.date(bySettingHour: schedule.hour,
-                                                minute: schedule.minute, second: 0, of: day),
-                  candidate > now else { continue }
-            if let weekdays = schedule.weekdays,
-               !weekdays.contains(calendar.component(.weekday, from: candidate)) { continue }
-            return candidate
-        }
-        return nil
     }
 
     /// Read every source file independently. A malformed neighbor cannot hide a valid schedule.
@@ -928,6 +886,13 @@ enum Orchestrator {
             if let next = nextFire(of: schedule, after: now) {
                 out["next_fire"] = Int(next.timeIntervalSince1970)
             }
+            // A row that has spent itself says so **in this payload**: `once`, `fired_at`, and
+            // no `next_fire`. Neither screen reads those two keys yet, so on both of them a spent
+            // one-shot is still an enabled row with nothing scheduled — which is what a paused row
+            // and a never-run one look like too. `docs/schedules.md` says so rather than implying
+            // the screens changed with the API.
+            if schedule.when.runsOnce { out["once"] = true }
+            if let fired = schedule.firedAt { out["fired_at"] = Int(fired.timeIntervalSince1970) }
             if let last = snapshots.filter({ $0.scheduleID == schedule.id })
                 .max(by: { $0.created < $1.created }) {
                 out["last_run"] = ["task_id": last.id, "state": last.state.rawValue,
@@ -998,6 +963,14 @@ enum Orchestrator {
         guard let schedule = scheduleNamed(id) else {
             return .refused(404, "not_found", "No schedule named that")
         }
+        // A manual run ignores `enabled` and the clock, and does not ignore this. "Runs once" is
+        // the whole of what the schedule promised, and a button that fires a spent one a second
+        // time would make the promise a suggestion.
+        if let fired = schedule.firedAt {
+            return .refused(409, "schedule_spent",
+                            "This schedule was made to run once and already ran at "
+                            + "\(Int(fired.timeIntervalSince1970)). Make a new one.")
+        }
         lock.lock()
         if hasActiveScheduleTaskLocked(id) || dispatchingSchedules.contains(id)
             || pendingScheduleFires[id] != nil {
@@ -1011,10 +984,16 @@ enum Orchestrator {
         let reply = scheduleRunnerForTesting?(schedule) ?? dispatch(schedule)
         lock.lock()
         dispatchingSchedules.remove(id)
+        var consumed: Date?
         if case .ok = reply, let fire = latestFire(of: schedule, at: Date()) {
             handledScheduleFires[id] = fire
+            consumed = fire
         }
         lock.unlock()
+        // Outside the lock, and only for an occurrence a run really consumed: a validation press
+        // before the scheduled time does not consume the upcoming one, so it does not spend a
+        // one-shot either.
+        if let consumed, schedule.when.runsOnce { markScheduleFired(id: id, at: consumed) }
         return reply
     }
 
@@ -1036,7 +1015,8 @@ enum Orchestrator {
                                         lastRunCreated: latest?.created,
                                         lastRunTerminal: active ? false : latest.map { _ in true },
                                         createdAt: schedule.createdAt,
-                                        whenChangedAt: schedule.whenChangedAt)
+                                        whenChangedAt: schedule.whenChangedAt,
+                                        firedAt: schedule.firedAt)
             // Only the two outcomes that *consume* an occurrence write it down. An occurrence
             // from before the schedule was made — or from before the save that invented it — is
             // not one of them: nothing missed it, so it leaves no `last_missed_at` behind for the
@@ -1075,7 +1055,9 @@ enum Orchestrator {
                     sendSchedulePush(schedule, body: "Scheduled run missed its catch-up window.",
                                      tag: "schedule-\(schedule.id)-missed")
                 }
-            case .alreadyHandled, .beforeCreation, .beforeRetiming: break
+            // `spent` joins them: a one-shot whose session already opened has nothing left to
+            // decide, and saying so costs one beat's arithmetic and no audit line.
+            case .alreadyHandled, .beforeCreation, .beforeRetiming, .spent: break
             }
         }
     }
@@ -1089,12 +1071,17 @@ enum Orchestrator {
         // a route somebody presses when they want work to stop, and a session opening out of a
         // schedule that was removed a second earlier would be the one way pressing it is not
         // enough. Asked outside the lock: the inventory takes it for itself.
-        guard scheduleNamed(schedule.id) != nil else {
+        //
+        // **Existence was not enough**, and `scheduleFireIsStale` says why: a save landing in the
+        // wait can move this occurrence off the file, and dispatching it then runs a time nobody
+        // is scheduled for and stamps the old day onto the new one.
+        guard let fresh = scheduleNamed(schedule.id), !scheduleFireIsStale(fresh, fire: fire) else {
             lock.lock()
             pendingScheduleFires.removeValue(forKey: schedule.id)
             lock.unlock()
             RemoteAuth.audit("orchestrator.schedule.skipped",
-                             ["schedule": schedule.id, "why": "removed"])
+                             ["schedule": schedule.id,
+                              "why": scheduleNamed(schedule.id) == nil ? "removed" : "retimed"])
             return
         }
         lock.lock()
@@ -1122,6 +1109,12 @@ enum Orchestrator {
         if !overCapacity { handledScheduleFires[schedule.id] = fire }
         lock.unlock()
 
+        // Only a session that really opened spends a one-shot. A dispatch this Mac refused
+        // consumes the occurrence in memory exactly as it does for a recurring schedule and
+        // leaves no stamp, because `fired_at` is this app's statement that the work ran.
+        if case .ok = reply, fresh.when.runsOnce {
+            markScheduleFired(id: schedule.id, at: fire)
+        }
         guard case .refused(_, let code, let message, _) = reply else { return }
         if overCapacity {
             RemoteAuth.audit("orchestrator.schedule.retry",
