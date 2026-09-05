@@ -16,6 +16,11 @@ private struct DetachedDoorOutcome: Equatable {
     var openedAfterOrdinary: Int
     var ordinaryRegistered: Bool
     var detachedStatus: Int
+    /// The `code` out of the detached door's error envelope, and "" when it did not refuse. It is
+    /// on the outcome because a status alone cannot be argued with: two sessions read the same
+    /// `got 409, want 200` on the same night and typed two different causes under it —
+    /// `assistant_exhausted` and `workspace_busy` — and neither had the string. One field ends it.
+    var detachedCode: String
     var openedAfterDetached: Int
     var detachedOwnerless: Bool
 }
@@ -335,8 +340,8 @@ group("owned child dispatch and detached automation use different doors") {
         return DetachedDoorOutcome(
             ordinaryStatus: ordinary.status, ordinaryCode: remoteErrorCode(ordinary),
             openedAfterOrdinary: openedAfterOrdinary, ordinaryRegistered: ordinaryRegistered,
-            detachedStatus: detached.status, openedAfterDetached: opened,
-            detachedOwnerless: ownerless)
+            detachedStatus: detached.status, detachedCode: remoteErrorCode(detached),
+            openedAfterDetached: opened, detachedOwnerless: ownerless)
     }
 
     // Both arms are named in every check they produce: a failure that does not say which reading
@@ -356,6 +361,9 @@ group("owned child dispatch and detached automation use different doors") {
               !outcome.ordinaryRegistered)
         expect("the dedicated automation door accepts an explicit poll-only task (\(arm))",
                outcome.detachedStatus, 200)
+        // Names the refusal when there is one. `200` carries no envelope, so "" is the pass, and a
+        // failure here prints the word instead of leaving the next reader to infer it from 409.
+        expect("and refuses under no code at all (\(arm))", outcome.detachedCode, "")
         expect("the dedicated door opens exactly one executor (\(arm))",
                outcome.openedAfterDetached, 1)
         check("the detached task remains deliberately ownerless (\(arm))",
