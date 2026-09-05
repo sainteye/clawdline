@@ -448,6 +448,76 @@ dragThenClick.dialog.emit("click", { target: dragThenClick.dialog });
 equal(dragThenClick.dialog.hidden, true,
     "and the very next press on the backdrop, having moved nothing, closes it");
 
+// The same misjudgement in the case the arithmetic cannot see, found by dragging a real picture
+// in a real browser on 2026-09-05 and not by any of the assertions above. This picture is 16:9 in
+// a 4:3 frame, so a little over the fit it is still shorter than the frame and has no vertical
+// travel at all: a drag straight up moves nothing, `panBy` answers false, and the release lands on
+// the backdrop as an ordinary click. "Moved the picture" is the wrong question. "Travelled" is the
+// right one, and it is the same question whether the picture had anywhere to go.
+const draggedNowhere = lightboxFixture();
+draggedNowhere.open();
+draggedNowhere.dialog.emit("wheel", { deltaY: -100, deltaMode: 0, clientX: 200, clientY: 150 });
+equal(draggedNowhere.view().y, 0, "just above the fit there is no vertical travel to be had");
+draggedNowhere.dialog.emit("pointerdown", { pointerType: "mouse", clientX: 200, clientY: 150 });
+draggedNowhere.doc.emit("pointermove", { pointerType: "mouse", clientX: 200, clientY: 40 });
+draggedNowhere.doc.emit("pointerup", { pointerType: "mouse" });
+draggedNowhere.dialog.emit("click", { target: draggedNowhere.dialog });
+equal(draggedNowhere.dialog.hidden, false,
+    "and a drag that moved nothing is still a drag rather than a press to close");
+
+// Which is true of a fitted picture too, where no drag ever starts.
+const sweptAtFit = lightboxFixture();
+sweptAtFit.open();
+sweptAtFit.dialog.emit("pointerdown", { pointerType: "mouse", clientX: 200, clientY: 150 });
+sweptAtFit.doc.emit("pointermove", { pointerType: "mouse", clientX: 40, clientY: 40 });
+sweptAtFit.doc.emit("pointerup", { pointerType: "mouse" });
+sweptAtFit.dialog.emit("click", { target: sweptAtFit.dialog });
+equal(sweptAtFit.dialog.hidden, false, "sweeping across a fitted picture is not a press either");
+
+// And a hand that is not perfectly still is still pressing. Without a slop the preview becomes a
+// thing that sometimes does not close, which is worse than one that sometimes does.
+const wobbled = lightboxFixture();
+wobbled.open();
+wobbled.dialog.emit("pointerdown", { pointerType: "mouse", clientX: 200, clientY: 150 });
+wobbled.doc.emit("pointermove", { pointerType: "mouse", clientX: 203, clientY: 152 });
+wobbled.doc.emit("pointerup", { pointerType: "mouse" });
+wobbled.dialog.emit("click", { target: wobbled.dialog });
+equal(wobbled.dialog.hidden, true, "three pixels of hand is a press on the backdrop");
+
+// The finger's version of the same. A one-finger drag on a picture with no travel left reaches
+// `touchmove` and returns before it ever asks the model to move anything.
+const fingerNowhere = lightboxFixture();
+fingerNowhere.open();
+fingerNowhere.dialog.emit("touchstart", touchEvent([touch(200, 150)]));
+fingerNowhere.dialog.emit("touchmove", touchEvent([touch(200, 40)]));
+fingerNowhere.dialog.emit("touchend", touchEvent([], [touch(200, 40)]));
+fingerNowhere.dialog.emit("click", { target: fingerNowhere.dialog });
+equal(fingerNowhere.dialog.hidden, false, "a finger swept across a fitted picture is not a tap");
+
+// Two fingers are never a press, whatever they did or failed to do to the picture.
+const twoFingers = lightboxFixture();
+twoFingers.open();
+twoFingers.dialog.emit("touchstart", touchEvent([touch(150, 150), touch(250, 150)]));
+twoFingers.dialog.emit("touchend", touchEvent([], [touch(250, 150)]));
+twoFingers.dialog.emit("touchend", touchEvent([], [touch(150, 150)]));
+twoFingers.dialog.emit("click", { target: twoFingers.dialog });
+equal(twoFingers.dialog.hidden, false, "and a pinch that ends on the backdrop does not close it");
+
+// A press whose travel was somebody else's gesture must not be carried into the next one.
+const thenPressed = lightboxFixture();
+thenPressed.open();
+thenPressed.dialog.emit("pointerdown", { pointerType: "mouse", clientX: 200, clientY: 150 });
+thenPressed.doc.emit("pointermove", { pointerType: "mouse", clientX: 40, clientY: 40 });
+thenPressed.doc.emit("pointerup", { pointerType: "mouse" });
+thenPressed.doc.emit("pointermove", { pointerType: "mouse", clientX: 300, clientY: 250 });
+thenPressed.dialog.emit("click", { target: thenPressed.dialog });
+equal(thenPressed.dialog.hidden, false, "the swept press still swallows its own click");
+thenPressed.dialog.emit("pointerdown", { pointerType: "mouse", clientX: 300, clientY: 250 });
+thenPressed.doc.emit("pointerup", { pointerType: "mouse" });
+thenPressed.dialog.emit("click", { target: thenPressed.dialog });
+equal(thenPressed.dialog.hidden, true,
+    "and a pointer wandering between presses does not disarm the next one");
+
 // Pressing the picture itself never closed the preview and still does not, zoomed or not.
 const pressedPicture = lightboxFixture();
 pressedPicture.open();

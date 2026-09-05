@@ -450,7 +450,28 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
     var drag = null;    // one held pointer button: where it last was
     var tap = null;     // a tap in progress: where it started and when
     var lastTap = null; // the last completed tap, waiting to be half of a double one
-    var moved = false;  // did this gesture move the picture? a press that did is not a press
+    var press = null;   // where the press now underway began, whatever it has become since
+    var moved = false;  // has that press travelled far enough to stop being a press?
+
+    /**
+     * Whether the press underway is still a press.
+     *
+     * The question is travel, not effect. Asking whether the picture moved is the same question
+     * almost everywhere and wrong in the one place a browser found it: a 16:9 picture a little
+     * over the fit in a 4:3 frame has no vertical travel at all, so a drag straight up moves
+     * nothing, and the release on the backdrop reads as an ordinary press and closes the preview
+     * mid-gesture. `tap` below asks something adjacent and is not this — it carries a clock and a
+     * target because a double tap has to know when and on what, and it does not exist at all while
+     * two fingers are down.
+     */
+    function pressBegan(x, y) {
+        press = { x: x, y: y };
+        moved = false;
+    }
+
+    function pressReached(x, y) {
+        if (press && apart({ x: x, y: y }, press) > TAP_SLOP) moved = true;
+    }
 
     function draw() {
         var view = zoom.state();
@@ -503,6 +524,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         drag = null;
         tap = null;
         lastTap = null;
+        press = null;
         moved = false;
         animate(false);
         draw();
@@ -531,11 +553,13 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
 
     function onTouchStart(event) {
         if (dialog.hidden) return;
-        moved = false;
         animate(false);
         relayout();
         var touches = touchPoints(event.touches);
         if (touches.length >= 2) {
+            // Two fingers are never a press, whatever they go on to do to the picture.
+            press = null;
+            moved = true;
             pinch = {
                 span: apart(touches[0], touches[1]),
                 scale: zoom.state().scale,
@@ -549,6 +573,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         pinch = null;
         finger = touches.length === 1 ? { x: touches[0].x, y: touches[0].y } : null;
         tap = finger ? { x: finger.x, y: finger.y, at: clock(), on: event.target } : null;
+        if (finger) pressBegan(finger.x, finger.y);
     }
 
     function onTouchMove(event) {
@@ -566,20 +591,21 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
             if (zoom.panBy(middle.x - pinch.middle.x, middle.y - pinch.middle.y)) changed = true;
             pinch.middle = middle;
             tap = null;
-            if (changed) { moved = true; draw(); }
+            if (changed) draw();
             stopGesture(event);
             return;
         }
         if (!finger || touches.length !== 1) return;
         var dx = touches[0].x - finger.x;
         var dy = touches[0].y - finger.y;
+        pressReached(touches[0].x, touches[0].y);
         if (tap && apart(touches[0], tap) > TAP_SLOP) tap = null;
         finger.x = touches[0].x;
         finger.y = touches[0].y;
         // A fitted picture has nowhere to go, and taking the event anyway would be taking it from
         // whatever the page would rather do with a finger that is only resting on the backdrop.
         if (!zoom.zoomed()) return;
-        if (zoom.panBy(dx, dy)) { moved = true; draw(); }
+        if (zoom.panBy(dx, dy)) draw();
         stopGesture(event);
     }
 
@@ -597,6 +623,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         }
         pinch = null;
         finger = null;
+        press = null;
         var ended = touchPoints(event.changedTouches)[0] || null;
         var candidate = tap;
         tap = null;
@@ -625,6 +652,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
     function onTouchCancel() {
         pinch = null;
         finger = null;
+        press = null;
         tap = null;
         lastTap = null;
     }
@@ -651,7 +679,9 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         // A finger arrives here as well as through the touch handlers, which can do more with it.
         // Answering both drags the picture twice as far as the finger went.
         if (dialog.hidden || event.pointerType === "touch") return;
-        moved = false;
+        // Recorded before the picture is asked whether it can move: a sweep across a fitted
+        // picture starts no drag at all and is still not a press on what is behind it.
+        pressBegan(event.clientX, event.clientY);
         animate(false);
         relayout();
         if (!zoom.zoomed()) return;
@@ -660,15 +690,20 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
     }
 
     function onPointerMove(event) {
-        if (!drag || dialog.hidden) return;
+        if (dialog.hidden) return;
+        pressReached(event.clientX, event.clientY);
+        if (!drag) return;
         var dx = event.clientX - drag.x;
         var dy = event.clientY - drag.y;
         drag.x = event.clientX;
         drag.y = event.clientY;
-        if (zoom.panBy(dx, dy)) { moved = true; draw(); }
+        if (zoom.panBy(dx, dy)) draw();
     }
 
     function onPointerUp() {
+        // The press is over here rather than at the click, so that a pointer wandering across the
+        // page between two presses cannot arm the guard against the second one.
+        press = null;
         if (!drag) return;
         drag = null;
         if (image.dataset) image.dataset.panning = "false";
@@ -686,12 +721,12 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
 
     closeButton.addEventListener("click", close);
     dialog.addEventListener("click", function (event) {
-        // A press that moved the picture is not a press on the backdrop, whatever the browser
-        // decides the common ancestor was. Dragging an enlarged picture from the picture out onto
-        // the padding around it produces exactly that: a click whose target is the dialog, which
-        // is the test this handler was already making, and the preview closes mid-drag. `moved` is
-        // cleared at the start of every press, so it can only ever swallow the click of the
-        // gesture that set it.
+        // A press that travelled is not a press on the backdrop, whatever the browser decides the
+        // common ancestor of where it started and where it ended was. Dragging an enlarged picture
+        // out onto the padding around it produces exactly that — a click whose target is the
+        // dialog, which is the test this handler was already making — and the preview closes
+        // mid-drag. `moved` is cleared at the start of every press, so it can only ever swallow
+        // the click of the gesture that set it.
         if (moved) { moved = false; return; }
         if (event.target === dialog) close();
     });
