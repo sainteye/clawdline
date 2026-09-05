@@ -458,7 +458,7 @@ it on, in whatever order you want it.
 | | Where you turn it on | The page for it |
 | --- | --- | --- |
 | **The bar** — see, send, read back | nothing; macOS asks once for iTerm2 | — |
-| **Your project's own row** — servers, branch, mark, deploy, local test runs, backlog, milestone | seven kinds of small JSON file in and beside your repo; paste this repository at an agent and it writes them | [connect.md](docs/connect.md) |
+| **Your project's own row** — servers, branch, mark, deploy, local test runs, backlog; the browser page and a paired phone add a milestone | seven kinds of small JSON file in and beside your repo; paste this repository at an agent and it writes them | [connect.md](docs/connect.md) |
 | **The page, here or on a phone** | Settings → Remote → *Let a browser or your phone see your sessions*, then *Open in a browser* or *Pair a phone…* | [remote.md](docs/remote.md) |
 | **Typing from a paired device** | Settings → Remote → *Let a paired device write into a session* | [remote.md](docs/remote.md) |
 | **Reaching it from outside** | Settings → Remote → *Reach this Mac from anywhere*; the `cloudflared` it runs is your own install | [remote.md](docs/remote.md#the-tunnel) |

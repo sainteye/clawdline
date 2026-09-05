@@ -388,7 +388,7 @@ open ~/Applications/Clawdline.app
 | | 在哪裡打開 | 對應的說明 |
 | --- | --- | --- |
 | **輸入條**——看得到、送得出、讀得回來 | 不用打開；macOS 只在第一次問一次 iTerm2 | — |
-| **你自己專案的那一行**——伺服器、分支、圖示、部署、本機測試、backlog、milestone | repo 內外七種小 JSON 檔；把這個 repo 的網址貼給 agent，它會幫你寫 | [connect.md](docs/connect.md) |
+| **你自己專案的那一行**——伺服器、分支、圖示、部署、本機測試、backlog；網頁與配對過的手機上再多一個 milestone | repo 內外七種小 JSON 檔；把這個 repo 的網址貼給 agent，它會幫你寫 | [connect.md](docs/connect.md) |
 | **那個網頁，在這台 Mac 或手機上** | 設定 → 遠端 →「讓瀏覽器或你的手機看得到你的 session」，再按「用瀏覽器打開」或「配對手機……」 | [remote.md](docs/remote.md) |
 | **讓配對過的裝置打字** | 設定 → 遠端 →「讓配對過的裝置寫進 session」 | [remote.md](docs/remote.md) |
 | **從外面連進來** | 設定 → 遠端 →「從任何地方連到這台 Mac」；它跑的 `cloudflared` 是你自己裝的那支 | [remote.md](docs/remote.md#the-tunnel) |
