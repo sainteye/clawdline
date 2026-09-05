@@ -283,7 +283,13 @@ Write to a temporary name and rename it into place, as with every other file on 
 
 `label` and `phase` are the producer's own words and are drawn **verbatim, in every language** —
 `test`, `build`, `compiling`, `編譯中`. Nothing here is translated, so a producer that writes its
-own vocabulary gets that vocabulary in the bar.
+own vocabulary gets that vocabulary in the bar. A row with no `label` is drawn as `run`, and an empty
+`phase` is the same as no `phase` at all.
+
+**Optional does not always mean free.** `started_at` is optional the way the required list above
+says — a row without it is still drawn — but it is what the bar is measured from, so a `running` row
+that omits it draws a *full* bar on the Mac and an unknown one on the browser page. Write it. It is
+one call to `date +%s` and it is the difference between a bar and a decoration.
 
 Working example: [`examples/run--Users-you-code-atrium.json`](examples/run--Users-you-code-atrium.json).
 
