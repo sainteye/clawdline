@@ -65,6 +65,12 @@
 # `clawdline_run_file_beat_loop` is where dying with the run is guaranteed; a beat that outlived its
 # run would defeat the ceiling above, which is the reason this file kind exists rather than reusing
 # `ghrun-`.
+#
+# **And it is a second process writing this file, which is the thing the missing `producer` field
+# would have arbitrated** — so the two are never writing at once rather than being told apart after
+# the fact: every write here stops the beat first and starts it again only after a `running` one,
+# and the beat itself never composes a row, it rewrites the one it finds. Both halves are the same
+# run, so the record still has one writer in the only sense a reader cares about.
 
 clawdline_run_file_json() {
     # Free text into a JSON string. A tree path may hold a quote or a backslash — this machine has
