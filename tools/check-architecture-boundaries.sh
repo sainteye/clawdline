@@ -258,10 +258,16 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # file came out at 2,005 lines against the 2,000-line stop-growth limit below — which is the
 # limit doing exactly what it is for, so the group moved into its own file rather than being
 # trimmed to fit under a wall it would have left the next person standing at.
-# 33 once snippets arrived: a store with its own file, its own bounds and its own scope rule gets
-# its own runner rather than a group wedged into somebody else's suite.
-[ "$runner_count" -eq 33 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 33"
+# 33 once the local-run status file got a suite of its own. It belongs beside the project-status
+# group in `Tests/MarkdownTests.swift`, which stood at 1,950 lines against the 2,000-line limit
+# below — the same wall the document route met, and the same answer: a file of its own rather
+# than a group trimmed to fit under it.
+# 34 once snippets arrived beside it: a store with its own file, its own bounds and its own scope
+# rule gets its own runner too. **Both branches wrote 33 and neither was wrong on its own tree**,
+# which is precisely why this number is counted on the merged one rather than carried over from
+# whichever side merged second.
+[ "$runner_count" -eq 34 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 34"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -342,12 +348,21 @@ manifest_group_count=$(awk '
 # two named artifact slots before it could not be asked for a path at all.
 # 532 is this merged tree counted with the awk above: 531 was counted on the tree the Projects
 # page landed on, and the documents group is the one this branch brought.
-# 536 once snippets landed their four: the store's strictness and its UUID-only addressing, the
-# scope rule that follows the mark and then the git common directory, the routes sharing the write
-# gate with their typed refusals, and the snapshot carrying a list a session read is already
-# filtered from.
-[ "$manifest_group_count" -eq 536 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 536"
+# 533 with the local run's one: the seventh project status file, its staleness ceiling at both
+# sides of the boundary, and the link row that carries no address. Counted from the manifest with
+# the awk above rather than added to 532, which is the mistake three paragraphs up.
+# 534 with the allow-list group beside it: an unrecognised state draws nothing for the deploy and
+# health rows too, not only for the run row. It sits second in `ProjectRunTests.swift`, so it sits
+# second in the manifest — the runtime check compares the two orders, not the two totals, and a
+# name in the wrong place fails it exactly as a missing name does. Counted from the manifest with
+# the awk above.
+# 538 with the snippets branch's four beside them: the store's strictness and its UUID-only
+# addressing, the scope rule that follows the mark and then the git common directory, the routes
+# sharing the write gate with their typed refusals, and the snapshot carrying a list a session
+# read is already filtered from. One branch wrote 536 and the other 534, from the same 532; the
+# number here is the awk's answer on the merged manifest, which is the only tree that has both.
+[ "$manifest_group_count" -eq 538 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 538"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -421,9 +436,11 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-# 46 once Tests/SnippetStoreTests.swift arrived with the store it proves.
-[ "$suite_count" -eq 46 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 46"
+# 46 with Tests/ProjectRunTests.swift; see the runner-count note above for why it is its own file.
+# 47 with Tests/SnippetStoreTests.swift, which arrived on another branch with the store it proves.
+# Two branches, one number each, both 46: counted here on the tree that holds both files.
+[ "$suite_count" -eq 47 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 47"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

@@ -2972,8 +2972,42 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                      + "/" + ProjectStatus.duration(Int(d.typicalSeconds)),
                      .tertiaryLabelColor, link: d.url)
             } else {
+                // A tick or a cross, and the ternary is exhaustive rather than optimistic:
+                // `ProjectStatus.deployStates` admits only `running`, `ok` and `fail`, so what
+                // reaches this branch is `ok` or `fail` and nothing else. It used to admit any
+                // string, which drew a cross for the twelve projects on this Mac whose `ghrun-`
+                // file says `{"state":"none"}` because they have no CI at all.
                 chip(d.state == "ok" ? "✓" : "✗",
                      d.state == "ok" ? .systemGreen : .systemRed, link: d.url)
+            }
+        }
+        // The same chip for a test or a build running on this Mac. It sits beside the deploy
+        // rather than replacing it: one is happening here and the other in somebody's cloud, and
+        // the footer has room to say both. `log` is a path, so it opens the way the backlog
+        // artifact does; there is no web page to send anybody to.
+        if let r = status.run {
+            let now = Date().timeIntervalSince1970
+            let link = r.log.map { "file://" + $0 }
+            chip("   " + r.label + " ",
+                 r.state == "fail" ? .systemRed : NSColor.secondaryLabelColor, link: link)
+            if r.state == "running" {
+                chip(ProjectStatus.bar(r.progress(now: now)), Style.accent, link: link, font: mono)
+                // A phase takes the place of the clock, the way it takes the place of the
+                // percentage on the page: the bar is already saying how far along this is, and
+                // "compiling" answers a question the elapsed seconds cannot.
+                if let phase = r.phase, !phase.isEmpty {
+                    chip(" " + phase, .tertiaryLabelColor, link: link)
+                } else {
+                    chip(" " + ProjectStatus.duration(r.elapsed(now: now))
+                         + "/" + ProjectStatus.duration(Int(r.typicalSeconds)),
+                         .tertiaryLabelColor, link: link)
+                }
+            } else {
+                // Exhaustive for the same reason: `ProjectStatus.runStates` has admitted only the
+                // three since this chip was written, which is why the local run never had the
+                // deploy chip's defect.
+                chip(r.state == "ok" ? "✓" : "✗",
+                     r.state == "ok" ? .systemGreen : .systemRed, link: link)
             }
         }
         if let b = status.backlog {
@@ -2986,7 +3020,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             }
         }
         if let h = status.health {
-            let live = h.state == "ok"
+            // `visualState`, not `state`: `online` is what the multi-surface receipt writes for a
+            // site that is answering, and the Links sheet has read it that way for as long as it
+            // has existed while this line drew it red. One vocabulary, one answer. What makes
+            // "anything else is red" safe here is `ProjectStatus.healthStates` — a state from
+            // neither producer's vocabulary no longer reaches this chip at all.
+            let live = h.visualState == "ok"
             chip("   ● ", live ? .systemGreen : .systemRed, link: h.url)
             // Coloured and underlined when there is somewhere to go, the way the terminal's own
             // status line marks it — a link that does not look like one is a link nobody presses.

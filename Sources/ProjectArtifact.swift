@@ -25,6 +25,23 @@ extension RemoteServer {
             }
             out.append(row)
         }
+        // The local run, and the one row here that has nowhere to go.
+        //
+        // The deploy row above is behind `guard let url` because a GitHub run without its
+        // Actions page is a chip that does nothing. A local test has no such page — its `log` is
+        // a filesystem path, not an http address, and the page only makes anchors out of
+        // http(s) — so requiring a URL here would emit nothing at all, which is exactly why a
+        // local run written in the `ghrun-` shape reaches the Mac footer and never the phone.
+        if let run = status.run {
+            var row: [String: Any] = ["label": run.label, "kind": "run",
+                                      "state": run.state, "local": true]
+            if run.state == "running" {
+                if let phase = run.phase, !phase.isEmpty { row["phase"] = phase }
+                row["startedAt"] = run.startedAt
+                row["typicalSeconds"] = run.typicalSeconds
+            }
+            out.append(row)
+        }
         let stack = DevStack.find(fromCwd: cwd).flatMap { spec in
             DevStack.isTrusted(spec) ? DevStack.read(spec) : nil
         }

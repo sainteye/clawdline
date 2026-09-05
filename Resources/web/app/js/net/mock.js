@@ -583,6 +583,12 @@ export var Mock = (function () {
         "8F3A-1C": [
             { label: "site", url: "https://clawdline.example.com", kind: "site", state: "ok", local: false },
             { label: "ci", url: "https://github.com/example/clawdline/actions/runs/32206093368", kind: "deploy", state: "fail", local: false },
+            // A test running on this Mac. No `url` at all — its log is a path and not a web page
+            // — and a phase where a deploy has a percentage. It sits on the session whose deploy
+            // has already finished, so `?mock=1` shows this chip and the deploy one at once
+            // rather than one hiding the other.
+            { label: "test", kind: "run", state: "running", local: true,
+              phase: "compiling", startedAt: now - 96, typicalSeconds: 288 },
             { label: "web", url: "http://127.0.0.1:5173", kind: "server", state: "ok", local: true },
             { label: "api", url: "http://127.0.0.1:8787", kind: "server", state: "down", local: true, why: "build-web: bash: npm: command not found" },
             { label: "backlog", url: "file:///Users/you/code/clawdline/artifacts/backlog.html", kind: "artifact", state: "", local: true }

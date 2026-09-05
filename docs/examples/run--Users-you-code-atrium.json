@@ -1,0 +1,12 @@
+{
+  "state": "running",
+  "label": "test",
+  "phase": "compiling",
+  "started_at": 1788105600,
+  "typical_seconds": 288,
+  "updated_at": 1788105640,
+  "stale_after": 900,
+  "log": "/tmp/atrium-tests-31981.log",
+  "holder": "atrium-8d",
+  "tree": "/Users/you/code/atrium"
+}

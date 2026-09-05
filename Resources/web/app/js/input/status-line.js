@@ -27,6 +27,65 @@ export var SessionFacts = createTieredSessionFacts(
 );
 
 /**
+ * The one row the chip at the foot of the page is drawn from, out of everything the project has
+ * an address for.
+ *
+ * **A local run wins over a deploy.** Both are "something is happening", but only one of them is
+ * happening on the machine in front of the person, started by the person, and holding up the
+ * next thing they were going to do; a deploy running in somebody's cloud can wait for the Links
+ * sheet. There is one chip and this is how it is spent.
+ */
+export function runningDeploy(d) {
+    var rows = (d && (d.links || d.deploy)) || [];
+    var running = rows.filter(function (row) {
+        return row && row.state === "running" &&
+            (row.kind === "run" || row.kind === "deploy" || row.kind === "ci");
+    });
+    return running.filter(function (row) { return row.kind === "run"; })[0] ||
+        running[0] || null;
+}
+
+export function deployProgress(row) {
+    var started = Number(row && row.startedAt), typical = Number(row && row.typicalSeconds);
+    if (!Number.isFinite(started) || !Number.isFinite(typical) || started <= 0 || typical <= 0) return null;
+    return Math.max(0, Math.min(1, (Date.now() / 1000 - started) / typical));
+}
+
+/**
+ * Draw it, or empty the node. `target` is the seam the test drives; the page always passes none.
+ *
+ * `phase` is producer text and is drawn verbatim, in every language, in place of the percentage
+ * — the bar is already saying how far along this is, and "compiling" answers the question a
+ * percentage cannot. `data-kind` is what the stylesheet reads to keep a local run from being
+ * mistaken for a deploy at a glance.
+ */
+export function drawDeploy(row, target) {
+    var node = target || els["status-line-deploy"];
+    if (!node) return;
+    node.hidden = !row;
+    if (!row) {
+        node.removeAttribute("href");
+        node.dataset.kind = "";
+        node.innerHTML = "";
+        return;
+    }
+    var progress = deployProgress(row), known = progress !== null;
+    var pct = known ? Math.round(progress * 100) : null;
+    var label = row.label || "deploy";
+    var phase = String(row.phase == null ? "" : row.phase).trim();
+    node.dataset.known = known ? "true" : "false";
+    node.dataset.kind = row.kind || "deploy";
+    if (/^https?:\/\//i.test(String(row.url || ""))) node.href = row.url;
+    else node.removeAttribute("href");
+    node.innerHTML = '<span class="label">' + esc(label) + '</span>' +
+        '<span class="track" aria-hidden="true"><i style="--w:' + (known ? pct : 0) + '%"></i></span>' +
+        '<span class="pct">' + (phase ? esc(phase) : (known ? pct + "%" : "…")) + "</span>";
+    var said = label + " " + (phase || (known ? pct + "%" : T.webLinkRunning));
+    node.title = said;
+    node.setAttribute("aria-label", said);
+}
+
+/**
  * The persistent status line under the open transcript. This is the compact reading of the
  * Session info card: model, current context use and cost, working-tree summary, and the plan
  * windows. The whole row opens the card, just as clicking a terminal status line asks for the
@@ -107,41 +166,6 @@ export var StatusLine = (function () {
             return '<span class="limit" data-level="' + level + '">' + esc(w.name) + " " +
                 '<b>' + (pct === null ? esc(T.webInfoUnknown) : pct + "%") + "</b></span>";
         }).join("");
-    }
-
-    function runningDeploy(d) {
-        var rows = (d && (d.links || d.deploy)) || [];
-        return rows.filter(function (row) {
-            return row && row.state === "running" && (row.kind === "deploy" || row.kind === "ci");
-        })[0] || null;
-    }
-
-    function deployProgress(row) {
-        var started = Number(row && row.startedAt), typical = Number(row && row.typicalSeconds);
-        if (!Number.isFinite(started) || !Number.isFinite(typical) || started <= 0 || typical <= 0) return null;
-        return Math.max(0, Math.min(1, (Date.now() / 1000 - started) / typical));
-    }
-
-    function drawDeploy(row) {
-        var node = els["status-line-deploy"];
-        node.hidden = !row;
-        if (!row) {
-            node.removeAttribute("href");
-            node.innerHTML = "";
-            return;
-        }
-        var progress = deployProgress(row), known = progress !== null;
-        var pct = known ? Math.round(progress * 100) : null;
-        var label = row.label || "deploy";
-        node.dataset.known = known ? "true" : "false";
-        if (/^https?:\/\//i.test(String(row.url || ""))) node.href = row.url;
-        else node.removeAttribute("href");
-        node.innerHTML = '<span class="label">' + esc(label) + '</span>' +
-            '<span class="track" aria-hidden="true"><i style="--w:' + (known ? pct : 0) + '%"></i></span>' +
-            '<span class="pct">' + (known ? pct + "%" : "…") + "</span>";
-        var said = label + " " + (known ? pct + "%" : T.webLinkRunning);
-        node.title = said;
-        node.setAttribute("aria-label", said);
     }
 
     function syncDeployTicker(row) {

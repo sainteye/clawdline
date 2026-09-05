@@ -8,9 +8,19 @@
 // So the block is lifted out of `test.sh` by content and executed with a crashing stand-in for the
 // binary. If somebody puts the capture-and-echo back, or reads `PIPESTATUS` a member at a time,
 // this goes red for the reason it claims to.
+//
+// **And the shell it runs in has test.sh's traps in it**, which for a year it did not. The lifted
+// block was executed in a bare `set -euo pipefail` shell, so the one thing the `set +e` window is
+// most exposed to was the one thing this file was structurally unable to see: `set +e` turns off
+// errexit and leaves the ERR trap armed, the handler ends in `exit`, and every line after the
+// pipeline — the path of the log, the receipt-direction report, the whole `exit 126` branch for a
+// `tee` that could not write — became unreachable on exactly the runs they exist for. A guard that
+// cannot go red is worse than no guard, so the run-file block is now lifted too and the harness
+// runs under the same three traps `./test.sh` does.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync }
+    from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,7 +59,26 @@ check("test.sh runs the suite through tee and acts on the status in one block",
 check("and no live line captures the whole run into a variable first",
       !code.some(l => /\bout=\$\(/.test(l)));
 
-if (!block) {
+// The traps the block actually runs under, lifted by their own markers rather than retyped. This
+// is the whole of the repair to this file: without them the harness below is a shell in which the
+// regression being guarded against cannot happen.
+const trapStart = script.indexOf("# >>> clawdline run file >>>");
+const trapEnd = script.indexOf("# <<< clawdline run file <<<");
+const runFileBlock = trapStart >= 0 && trapEnd > trapStart ? script.slice(trapStart, trapEnd) : "";
+check("the guard found the run-file block test.sh installs its traps in",
+      runFileBlock !== "");
+// Asked of the text as well as driven, because "the harness has the trap in it" is the premise of
+// every behavioural check below and a silently empty lift would make them all pass again.
+check("and that block arms an ERR trap, so this harness is not a shell without one",
+      /^trap 'clawdline_run_file_signal "\$\?"' ERR$/m.test(runFileBlock));
+
+// `set +e` and `trap - ERR` are one switch that bash does not couple. The pairing is asserted on
+// the lifted block, so a disarm that drifts above `set +e` — where this file would never execute
+// it — is a red check rather than a harness quietly proving nothing.
+check("the block turns the ERR trap off with errexit and puts it back with it",
+      /set \+e\ntrap - ERR\n/.test(block) && /\nset -e\ntrap 'clawdline_run_file_signal "\$\?"' ERR\n/.test(block));
+
+if (!block || !runFileBlock) {
     console.log("test.sh streaming: cannot find the block to run; the rest is not checked");
     process.exit(1);
 }
@@ -83,31 +112,53 @@ try {
         + "expected_swift_receipt='0 checks passed'\nexpected_cloud_receipt=''\n";
     const rewritten = block.replace(/"\$BIN" Resources\/mascots/, '"$BIN"');
     check("the guard rewrote the suite invocation to its stand-in", rewritten !== block);
-    const harness = join(dir, "harness.sh");
-    writeFileSync(harness, [
-        "#!/bin/bash",
-        "set -euo pipefail",
+    // One shape for every scenario, because the harness is now the thing under test as much as the
+    // block is: the run-file block first, so the ERR, INT and TERM traps are armed exactly as they
+    // are in `./test.sh` by the time the pipeline runs.
+    //
+    // `CLAWDLINE_STATUS_DIR` is not tidiness. Without it the lifted block resolves its directory
+    // from `$HOME` and every run of this file would write a row into the real
+    // `~/.claude/statusline-cache`, where a scratch harness would appear in the footer as a run of
+    // this tree.
+    const cache = join(dir, "statusline-cache");
+    mkdirSync(cache, { recursive: true });
+    const drive = (name, lines, blockText = rewritten) => {
+        const path = join(dir, name);
+        writeFileSync(path, ["#!/bin/bash", "set -euo pipefail", runFileBlock,
+                             // The block writes nothing until something calls it, and test.sh has
+                             // moved the phase four times before it reaches the pipeline.
+                             "clawdline_run_file_phase 'running the suite'",
+                             ...lines, blockText,
+                             'echo "reached the end without exiting"', ""].join("\n"));
+        chmodSync(path, 0o755);
+        // stderr is kept **and shown**. A previous version captured it and never printed it, and
+        // the check standing over that could not fail: the healthy path alone puts 34 bytes on
+        // stdout, so `(err + out).length > 0` was true in every situation anyone tried. Measured
+        // cost: a harness broken by an undefined variable printed three ✗ and never the words
+        // `unbound variable`, which were sitting in `err` the whole time.
+        try {
+            return { out: execFileSync("/bin/bash", [path], {
+                encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+                env: { ...process.env, CLAWDLINE_STATUS_DIR: cache },
+            }), err: "", code: 0 };
+        } catch (e) {
+            return { out: e.stdout ?? "", err: e.stderr ?? "", code: e.status ?? -1 };
+        }
+    };
+
+    const first = drive("harness.sh", [
         `BIN=${JSON.stringify(crasher)}`,
         `STORE=${JSON.stringify(dir)}`,
         `LOG=${JSON.stringify(log)}`,
         `CLAWDLINE_REMOTE_DIR=""`,
         receiptDirection,
-        rewritten,
-        'echo "reached the end without exiting"',
-        "",
-    ].join("\n"));
-    chmodSync(harness, 0o755);
-    // stderr is kept **and shown**. The previous version captured it and never printed it, and the
-    // check standing over that could not fail: the healthy path alone puts 34 bytes on stdout, so
-    // `(err + out).length > 0` was true in every situation anyone tried. Measured cost: a harness
-    // broken by an undefined variable printed three ✗ and never the words `unbound variable`,
-    // which were sitting in `err` the whole time.
-    let out = "", err = "", exitCode = 0;
-    try {
-        out = execFileSync("/bin/bash", [harness], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    } catch (e) {
-        out = e.stdout ?? ""; err = e.stderr ?? ""; exitCode = e.status ?? -1;
-    }
+    ]);
+    const out = first.out, err = first.err, exitCode = first.code;
+    // The premise, read back off the disk: the traps were live in that shell. A lift that produced
+    // an empty string, or a block that stopped writing, would otherwise leave every check below
+    // passing for the old reason — the shell without a trap in it.
+    check("the harness really ran under test.sh's own run-file block",
+          readdirSync(cache).some(n => n.startsWith("run-")));
 
     const kept = existsSync(log) ? readFileSync(log, "utf8") : "";
     check("what the run printed before it died is on disk",
@@ -134,27 +185,44 @@ try {
     writeFileSync(passer, "#!/bin/bash\necho \"all good\"\n");
     chmodSync(passer, 0o755);
     const unwritable = join(dir, "no-such-directory", "suite.log");
-    const harness2 = join(dir, "harness2.sh");
-    writeFileSync(harness2, [
-        "#!/bin/bash",
-        "set -euo pipefail",
+    const second = drive("harness2.sh", [
         `BIN=${JSON.stringify(passer)}`,
         `STORE=${JSON.stringify(dir)}`,
         `LOG=${JSON.stringify(unwritable)}`,
         `CLAWDLINE_REMOTE_DIR=""`,
-        rewritten,
-        'echo "reached the end without exiting"',
-        "",
-    ].join("\n"));
-    chmodSync(harness2, 0o755);
-    let code2 = 0, out2 = "", err2 = "";
-    try {
-        out2 = execFileSync("/bin/bash", [harness2], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    } catch (e) { out2 = e.stdout ?? ""; err2 = e.stderr ?? ""; code2 = e.status ?? -1; }
+    ]);
+    const out2 = second.out, err2 = second.err, code2 = second.code;
     check("a log that cannot be written ends the run on its own number, not the suite's",
           code2 === 126 && !out2.includes("reached the end"));
     check("and it says the suite itself passed, so nobody hunts a failure that did not happen",
           /passed/.test(err2));
+
+    // **Positive control, and the reason this file was rewritten.** Both scenarios above are asked
+    // again of a block with the `trap - ERR` taken out, which is what `56df2b6c` shipped. The ERR
+    // trap is still armed inside the `set +e` window there, its handler ends in `exit "$status"`,
+    // and so the pipeline's own failure leaves the block before any of the lines that act on it:
+    // no path to the log, no receipt-direction report, and the `exit 126` branch unreachable.
+    // Measured here rather than described, because a control that is only described is a claim.
+    const mutant = rewritten.replace(/(^|\n)set \+e\ntrap - ERR\n/, "$1set +e\n");
+    check("control: the guard can go red — a block that leaves the ERR trap armed fails it",
+          mutant !== rewritten);
+    const trapped = drive("harness-trapped.sh", [
+        `BIN=${JSON.stringify(crasher)}`,
+        `STORE=${JSON.stringify(dir)}`,
+        `LOG=${JSON.stringify(join(dir, "trapped.log"))}`,
+        `CLAWDLINE_REMOTE_DIR=""`,
+        receiptDirection,
+    ], mutant);
+    check("control: with the trap armed, a red run never reaches the line naming its log",
+          !trapped.err.includes(join(dir, "trapped.log")));
+    const trapped2 = drive("harness-trapped2.sh", [
+        `BIN=${JSON.stringify(passer)}`,
+        `STORE=${JSON.stringify(dir)}`,
+        `LOG=${JSON.stringify(unwritable)}`,
+        `CLAWDLINE_REMOTE_DIR=""`,
+    ], mutant);
+    check("control: and a tee that cannot write reports the suite's status instead of 126",
+          trapped2.code !== 126);
 
     // **Last, and covering both scenarios.** The previous version printed only the first
     // scenario's stderr, and printed it *before* the last check ran — so a review measured a decoy

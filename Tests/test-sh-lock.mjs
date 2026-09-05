@@ -116,9 +116,23 @@ check("the compiler probe matches the process's own name, not anything with the 
 // Bash keeps one EXIT trap and installing a second silently replaces the first. That is not a
 // hypothetical here: test.sh used to install `trap 'rm -rf "$STORE"' EXIT` after this block, which
 // would have thrown the lock's release away on every run.
+//
+// **Counting to one was the wrong way to say it, and the cost was measured.** The run file's own
+// handler has to be armed from the top of the script — no ERR trap sees a deliberate `exit`, and
+// two guards above this block end that way — so there is now an earlier `trap … EXIT` that this
+// one replaces. What actually has to hold is that *replacing* is always widening: every EXIT trap
+// installed writes the run file, and the last one installed is the composed cleanup that also
+// releases the lock. A second handler that dropped either would still fail this.
 const installs = lines.filter((l) => /^\s*trap\s+[^-]/.test(l) && /\bEXIT\b/.test(l) && !/^\s*#/.test(l));
-check("test.sh installs exactly one EXIT trap, and it is the composed one",
-      installs.length === 1 && /clawdline_suite_exit_cleanup/.test(installs[0]));
+check("every EXIT trap test.sh installs writes the run file, and the last one is the composed cleanup",
+      installs.length >= 1
+        && installs.every((l) => /clawdline_run_file_exit|clawdline_suite_exit_cleanup/.test(l))
+        && /clawdline_suite_exit_cleanup/.test(installs[installs.length - 1]));
+// And nothing takes the EXIT trap off again at the top level: a bare `trap - EXIT` reopens exactly
+// the window the early one closed. The renewer's own `trap - EXIT` is inside its subshell and is
+// indented, which is why this asks for a line in column one.
+check("and no line puts test.sh back to having no EXIT trap at all",
+      !/^trap - EXIT$/m.test(script));
 check("and that one trap still removes $STORE, so composing it did not drop the store cleanup",
       /rm -rf "\$STORE"/.test(block));
 check("the lock is taken before the compile it exists to serialise",
