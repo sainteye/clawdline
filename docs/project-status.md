@@ -8,7 +8,7 @@ comes from files you write, and there are **seven kinds of them**:
 |---|---|
 | the mark and the colour | `~/.claude/project-icons.json` |
 | a deploy or CI run in flight | `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json` |
-| a local test or build in flight | `~/.claude/statusline-cache/run-<path>.json` |
+| anything long running here: a test, a build, an import, an encode | `~/.claude/statusline-cache/run-<path>.json` |
 | a backlog | `~/.claude/statusline-cache/backlog-<path>.json` |
 | a finite milestone | `~/.claude/statusline-cache/milestone-<path>.json` |
 | a health check | `~/.claude/statusline-cache/health-<path>.json` |
@@ -85,7 +85,7 @@ need:
 
 | | reads | documented in |
 |---|---|---|
-| **Clawdline** — the bar | `state`, `label`, `url`, `started_at`, `typical_seconds` | this page |
+| **Clawdline** — the bar | `state`, `label`, `url`, `started_at`, `typical_seconds`, and from `run-` also `phase`, `updated_at`, `stale_after` and `log` | this page |
 | **[claude-bestiary](https://github.com/sainteye/claude-bestiary)** — the terminal status line | those, **plus** `producer`, `steps`, `sha`, `head_in_run` | [its own docs](https://github.com/sainteye/claude-bestiary/blob/main/docs/producers.md) |
 
 **Write for the one you want to see it in.** A file with only the fields on this page is complete
@@ -111,8 +111,9 @@ description of how many programs have implemented it today.
 
 ## What is happening right now
 
-`~/.claude/statusline-cache/`, and five of the seven live here: a deploy, a local run, a backlog, a
-milestone, a health check. Each file is optional; absent means the bar has one less thing to show.
+`~/.claude/statusline-cache/`, and five of the seven live here: a deploy, a long local operation, a
+backlog, a milestone, a health check. Each file is optional; absent means the bar has one less thing
+to show.
 
 **Two rules hold across every file on this page**, and the sections below rely on them rather than
 restating them:
@@ -168,19 +169,71 @@ where somebody will be *sitting* when they want to know, so: write the file for 
 work in. If both are places you work, write both — the file is a few hundred bytes and two copies
 of the truth is better than one copy in the wrong place.
 
-### A local test or build in flight — `run-<path>.json`
+### A long local operation in flight — `run-<path>.json`
 
-The deploy above happens on somebody else's machines. This one is the run in front of you —
-`./test.sh`, a build, a long migration — started in one tab and watched from the bar while you work
-in another.
+The deploy above happens on somebody else's machines. This one is **the progress protocol for work
+happening here**: one small file, written by whatever is taking the time, so that something started
+in one tab is a bar you can watch from another.
+
+**A test run and a build are the worked example, not the definition.** `label` and `phase` are free
+text and nothing on either side of this file knows what they mean, so a lint pass, a data import, a
+schema migration, a long encode, a model download and a deploy script of your own all fit it exactly
+as `./test.sh` does. If it takes long enough that somebody would wonder how much is left, it belongs
+here.
+
+**That includes the assistant in the next tab.** An agent about to run something that takes four
+minutes has, until it writes this file, no way to say so except by printing into a terminal nobody
+is watching — and what the person is left with is the one question this file exists to answer: *how
+much longer?* If you are an assistant reading this page and what you are about to start is slow,
+this is the tool for showing the person where it has got to.
+
+**The short way, and the one to reach for first.** This repository ships a helper,
+`Resources/clawdline-progress.sh`, which writes the file correctly in two shapes:
+
+```sh
+# wrap the slow thing — nothing inside it changes
+clawdline-progress run --label lint --typical 120 -- ./scripts/lint.sh
+
+# or source it into a script that has phases worth naming
+. "$CLAWDLINE_PROGRESS"
+progress_start --label test --typical 288
+progress_phase compiling
+```
+
+The wrapper form is the whole of what somebody who just wants a progress bar has to know: the
+command it runs is not edited and knows nothing about any of this, and the state the row lands on is
+that command's own exit status rather than a line somebody remembered to write. The sourced form is
+for a script that already knows what its own phases are called; `$CLAWDLINE_PROGRESS` is wherever
+your copy of the helper is, and if nothing on the machine sets it, set it yourself — sourcing needs
+a path to that file and nothing else.
+
+**Why a helper at all, when the format below is ten lines of JSON.** Because the JSON is the easy
+half. The hard half is the shell around it, and it fails in the direction that looks like success:
+two separate agents, each holding this whole contract, got the traps wrong on their first attempt on
+this machine's `bash 3.2.57`. Measured today against `/bin/bash` 3.2.57(1)-release, one script each:
+
+- **An `EXIT` trap on its own reads a killed run as a clean one.** A script whose only handler is
+  `trap 'finish "$?"' EXIT`, sent `TERM`, runs that handler with `$?` set to `0` — so the last thing
+  it writes is `ok`, and the bar reports a tick for a run somebody killed.
+- **`set -e` does not fire `ERR` inside a function.** A command failing inside one ends the script
+  without the `ERR` trap running at all unless `set -E` is on too, so a producer that hangs its
+  `fail` on `ERR` writes nothing and leaves `running` behind for the ceiling to clear up.
+- **A signal handler that returns lets the run declare success.** `trap 'finish fail' TERM` with no
+  `exit` in it: the handler runs, the script carries on from where the signal interrupted it,
+  reaches its own `exit 0`, and the *last* write is `ok`.
+
+That is a fact about shell rather than about those two agents, and it is the argument for the
+helper. **The format stays open regardless** — anything may write this file, and that openness is
+the whole reason these formats are written down at all — but a producer written by hand has to get
+all three of those right, and nothing tells it when it has not.
 
 ```jsonc
 {
   "state": "running",                        // required — running | ok | fail | none
-  "label": "test",                           // free text, drawn exactly as written
+  "label": "test",                           // free text — `lint`, `import`; drawn as written
   "phase": "compiling",                      // optional free text, drawn in place of the percentage
   "started_at": 1757040000,                  // unix seconds
-  "typical_seconds": 288,                    // how long this usually takes
+  "typical_seconds": 288,                    // optional — measured; leave it out if you have not
   "updated_at": 1757040100,                  // required while running — keep it moving
   "stale_after": 900,                        // optional seconds; 900 when absent, 0 means "expire now"
   "log": "/tmp/clawdline-tests-8d.log",      // optional, a path for a person to open
@@ -193,21 +246,36 @@ in another.
 shows how far through it is, this one shows `phase` verbatim when the producer sets one. `ok` and
 `fail` draw a tick or a cross.
 
+**`typical_seconds` is optional, and a producer that has not measured itself should leave it out
+rather than guess.** It is the only thing the bar is drawn against, so an invented number is a bar
+that is confidently wrong — full four minutes into a twenty-minute job, then pinned at the end for
+the rest of it — and no reader can tell an invented number from a measured one. Leaving it out costs
+the bar and nothing else: the row still names what is running, `phase` still says where it has got
+to, and the bar stays empty instead of lying. This repository does it both ways on purpose:
+`./test.sh` writes `288`, which is one measured green run recorded in
+[`suite-runtime.md`](suite-runtime.md), and **`./build.sh` has never been timed and writes no
+`typical_seconds` at all** — a decision, not an oversight, and one to copy rather than to fix. What
+an absent one looks like is worth seeing before you choose it: the Mac footer draws the empty bar
+and an elapsed clock with nothing to count against — `1m 4s/0s` — and the browser page draws the
+empty bar with `…` where the percentage would be.
+
 `none`, and every state a reader does not recognise, draws nothing at all — the second shared rule
 above, and this file is not an exception to it.
 
-**`state` and `updated_at` are the two fields this format cannot do without; every other one is
-optional.** `updated_at` is what the ceiling below is measured against, so a `running` row that does
-not carry a usable number there is malformed rather than merely thin, and **is not drawn at all** —
-there is nothing to hold it to a liveness ceiling with, and the ceiling is the whole reason this
-format exists rather than reusing `ghrun-`. Falling back to `started_at` looks kinder and is not: it
-makes "required" mean nothing, and it draws a run whose producer died before it ever said it was
-alive.
+**`state` is required always. `updated_at` is required while that state is `running`, and only
+then. Every other field is optional.** `updated_at` is what the ceiling below is measured against, so
+a `running` row that does not carry a usable number there is malformed rather than merely thin, and
+**is not drawn at all** — there is nothing to hold it to a liveness ceiling with, and the ceiling is
+the whole reason this format exists rather than reusing `ghrun-`. Falling back to `started_at` looks
+kinder and is not: it makes "required" mean nothing, and it draws a run whose producer died before it
+ever said it was alive.
 
-**A finished verdict is the exception, in the other direction.** `ok` and `fail` are not alive and
-do not decay, so they are drawn however old they are and whether or not `updated_at` is there. "The
-last run of this tree failed" stays true until the next run overwrites the file — and every run
-rewrites it, so a verdict only survives while there has been nothing newer to say. The deploy chip
+**A finished verdict runs the other way, and that is why `updated_at` is required of a `running`
+row and of nothing else.** `ok` and `fail` are not alive and do not decay, so they are drawn however
+old they are and whether or not `updated_at` is there: a verdict is not a claim about something still
+moving, so there is nothing to hold it to a ceiling with. "The last run of this tree failed" stays
+true until the next run overwrites the file — and every run rewrites it, so a verdict only survives
+while there has been nothing newer to say. The deploy chip
 beside it already behaves this way, and two neighbouring chips with two expiry rules is a thing no
 reader will ever get right.
 
@@ -361,11 +429,15 @@ Write to a temporary file and rename it into place. A reader that catches a half
 shows nothing for one refresh, which is harmless — but only because the file is either the old
 one or the new one, never half of each.
 
-`run-<path>.json` is the one whose producer is not a cron job or a hook but **the script that is
-running** — three lines at the top of it, one at each phase boundary, and a `trap` on `INT`/`TERM`
-so an interrupted run writes `fail` instead of leaving `running` behind for the staleness rule to
-clear up fifteen minutes later. [connect.md](connect.md#4-the-local-test-or-build) has that sketch
-in full.
+`run-<path>.json` is the one whose producer is not a cron job or a hook but **the thing that is
+taking the time**, and it is the one with a helper: `clawdline-progress run --label lint --typical
+120 -- ./scripts/lint.sh` wraps a command that knows nothing about any of this, and
+`. "$CLAWDLINE_PROGRESS"` puts `progress_start` and `progress_phase` inside a script that does.
+Writing it by hand is three lines at the top of the script, one at each phase boundary, and traps on
+`EXIT`, `INT` and `TERM` that each `exit` rather than return — so an interrupted run writes `fail`
+instead of a tick, and instead of leaving `running` behind for the staleness rule to clear up
+fifteen minutes later. [connect.md](connect.md#4-the-long-local-run) has both, and the sketch in
+full.
 
 If you would rather not write any of this yourself,
 [claude-bestiary](https://github.com/sainteye/claude-bestiary) already does: it keeps these files
