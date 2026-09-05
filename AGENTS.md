@@ -163,6 +163,12 @@ git diff --binary --full-index --no-ext-diff HEAD \
 # broke.
 git ls-files --others --exclude-standard -z \
   | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
+# `tools/check-version-strings.py` asks git for the files it scans (`git ls-files -z`), so a
+# snapshot that is not a repository makes it fail closed — `version_scan_no_files`, exit 2 — and
+# `test.sh` aborts before running a single check. This `git` only ever touches the private
+# snapshot; no command here reads or writes the shared index. Staging is enough: nothing needs a
+# commit, because `ls-files` reads the index this creates.
+(cd "$snapshot_dir" && git init -q && git add -A)
 (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
 ```
 
@@ -185,8 +191,15 @@ neither can a green suite run inside it. Root is staging anyway, so the index is
 ```sh
 snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
 git archive "$(git write-tree)" | tar -x -C "$snapshot_dir"
+(cd "$snapshot_dir" && git init -q && git add -A)   # see the note in the child recipe above
 (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
 ```
+
+Both recipes need that `git init`, and it was found twice on 2026-09-05 by two sessions that did
+not know about each other: a child following this recipe and a root building a landing snapshot
+both watched the whole suite abort on `version_scan_no_files` before a single check ran. The
+scanner is right to fail closed — a version scan that silently finds no files is the failure it
+was written to prevent — so the recipe is what was wrong.
 
 Use a new, private `TMPDIR` for every `./test.sh` run.
 The script writes its test binary to the fixed path `${TMPDIR}/clawdline-tests`; shared `TMPDIR`
