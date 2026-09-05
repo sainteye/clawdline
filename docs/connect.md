@@ -15,16 +15,34 @@ the reference. But the reason this page exists is so you do not have to.
 
 Clawdline is a macOS bar that manages several Claude Code sessions. It shows, for the project a
 session is working in: its name and mark, which of its servers are up, whether its site is
-healthy, how far a deploy has got, and how much is in its backlog.
+healthy, how far a deploy has got, how far the test run in the next tab has got, how much is in
+its backlog, and how much of a milestone is left.
 
 **It reads files. It never calls you.** There is no SDK, no package, no webhook to register, and
 nothing to add to the project's dependencies. Every integration below is "write a small JSON file
 where Clawdline looks". A project with none of them still works; it simply has less to say.
 
+**There are seven kinds and this page walks all seven**, in the order worth doing them:
+
+| # | what it says | where it lives |
+|---|---|---|
+| [1](#1-the-servers--devstackjson) | the dev stack: servers, ports, start/stop/status | `.devstack.json`, in the repository |
+| [2](#2-the-health-check) | whether what this project deploys is answering | `~/.claude/statusline-cache/health-<path>.json` |
+| [3](#3-the-deploy-or-ci-run) | a deploy or CI run in flight | `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json` |
+| [4](#4-the-local-test-or-build) | a local test or build in flight | `~/.claude/statusline-cache/run-<path>.json` |
+| [5](#5-the-backlog) | a backlog | `~/.claude/statusline-cache/backlog-<path>.json` |
+| [6](#6-the-finite-milestone) | a finite milestone | `~/.claude/statusline-cache/milestone-<path>.json` |
+| [7](#7-the-mark-and-the-colour) | the mark and the colour | `~/.claude/project-icons.json` |
+
+You will not write all seven for most projects, and you should not pretend otherwise. What you owe
+the user is the list: which ones you wired, which ones this project has nothing to say through, and
+which you skipped and why. The last section of this page is how you check the ones you did.
+
 Two pages are the authority, and where this page and they disagree, they win:
 
 - **[docs/devstack.md](devstack.md)** — the servers a project declares
-- **[docs/project-status.md](project-status.md)** — the mark, the health check, the deploy, the backlog
+- **[docs/project-status.md](project-status.md)** — the other six: the mark, the health check, the
+  deploy, the local run, the backlog and the milestone
 
 ---
 
@@ -41,20 +59,32 @@ ls ~/.claude/statusline-cache/ 2>/dev/null   # what already exists for this proj
 The last one matters, and the next section is about why: something may already be writing these
 files, and **a second writer for the same file is a race** whose loser is whichever ran first.
 
-Several filenames below contain the project's path with `/` turned into `-`. For
-`/Users/you/code/thing` that is `-Users-you-code-thing`, so the file is
-`health--Users-you-code-thing.json`. **The doubled dash is not a typo**: the prefix ends in one
-and the path begins with one.
+Four of the filenames below — `health-`, `run-`, `backlog-`, `milestone-` — contain the project's
+path with `/` turned into `-`. For `/Users/you/code/thing` that is `-Users-you-code-thing`, so the
+file is `health--Users-you-code-thing.json`. **The doubled dash is not a typo**: the prefix ends in
+one and the path begins with one. `pwd | tr / -` prints it, and that is worth using rather than
+typing, because a name that is wrong by one character is a file nothing ever reads and nothing ever
+complains about.
+
+`ghrun-` is the one that is keyed differently — by `<owner>-<repo>` from the `origin` remote,
+because a deploy is a fact about a repository rather than about one checkout. Section 4 says why
+the local run goes the other way.
 
 ---
 
 ## The shortcut: is claude-bestiary installed?
 
-Three of the four things below — the health check, the deploy, the mark — are small files that
-have to be *kept current*, and keeping them current is most of the work.
+Three of the seven below — the health check (2), the deploy (3) and the mark (7) — are small files
+that have to be *kept current*, and keeping them current is most of the work.
 [claude-bestiary](https://github.com/sainteye/claude-bestiary) already does it. It writes these
 files for its own terminal status line, and Clawdline reads the same ones, so installing it
-connects three of four with nothing left for you to maintain.
+connects three of the seven with nothing left for you to maintain.
+
+**The other four are yours either way.** `.devstack.json` (1) states this project's own
+commands; the backlog (5) and the milestone (6) count this project's own work; and the local run
+(4) is written by the script that is running, because nothing polls for a test that started
+thirty seconds ago in the next tab. Check what is actually in the cache directory before you decide
+who owns a file; a second writer for one file is a race whose loser is whichever ran first.
 
 **Check first, then recommend it:**
 
@@ -196,7 +226,144 @@ The natural place to write it is a step in the workflow itself, or a git hook af
 
 ---
 
-## 4. The mark and the colour
+## 4. The local test or build
+
+Section 3 is a run on somebody else's machines. This one is the run in front of the user —
+`./test.sh`, a build, a long migration — so that a suite started in one tab is visible from the bar
+while they work in another. It is the file to write for a project whose tests take minutes.
+
+`~/.claude/statusline-cache/run-<path>.json`, keyed by the working directory:
+
+```jsonc
+{
+  "state": "running",       // running | ok | fail | none
+  "label": "test",          // free text, drawn exactly as written, never translated
+  "phase": "compiling",     // optional, drawn where a percentage would be
+  "started_at": 1757040000, // unix seconds
+  "typical_seconds": 288,   // how long this usually takes — time one honest run and use that
+  "updated_at": 1757040100  // unix seconds; keep it moving while the run is alive
+}
+```
+
+**Keyed by the working directory, not by the `origin` remote**, and that is the difference from
+section 3 rather than an inconsistency: a machine that has three worktrees of one repository
+compiling at once gets three rows, where a remote-keyed name would give one row that each run
+overwrites.
+
+### Where it is written from
+
+**The project's own test or build command**, not a wrapper the user has to remember to type. A
+wrapper is a file that reports on the runs somebody remembered to start it with, which is not the
+same thing as what the project is doing.
+
+```bash
+run=~/.claude/statusline-cache/run-$(pwd | tr / -).json
+started=$(date +%s)
+
+say() {   # say <state> [phase]
+  printf '{"state":"%s","label":"test","phase":"%s","started_at":%d,"typical_seconds":288,"updated_at":%d}\n' \
+    "$1" "$2" "$started" "$(date +%s)" > "$run.tmp" && mv "$run.tmp" "$run"
+}
+
+trap 'say fail interrupted; exit 130' INT TERM
+say running compiling
+# … compile …
+say running "running tests"
+# … run …
+say ok
+```
+
+Three things in that sketch are the whole point of it:
+
+- **The `trap`.** A run interrupted with `Ctrl-C` must write `fail` and leave, or it leaves
+  `running` in the bar behind it. `INT` and `TERM` are the two that matter; `KILL` cannot be
+  trapped, which is what the next bullet is for.
+- **`updated_at` on every write.** A reader ignores a `running` row whose `updated_at` is older
+  than `stale_after` — 900 seconds when that field is absent — because a run killed with `kill -9`
+  writes nothing on the way out and nothing else ever retracts it. That ceiling is the only thing
+  standing between the user and a progress bar that runs forever. If a phase of this project's
+  build takes longer than fifteen minutes, either write from inside it or set `stale_after` to
+  something that fits, but do not leave the row unable to say it is still alive.
+- **`.tmp` then `mv`.** As with every file on this page.
+
+`none`, and every state a reader does not recognise, draws nothing at all. Do not invent states:
+an unrecognised one is not an error the user gets told about, it is a row that silently disappears.
+
+There is deliberately **no `producer` field** here, unlike `ghrun-`. That field exists to arbitrate
+between two writers of one file; this file has one writer, which is the script itself.
+
+---
+
+## 5. The backlog
+
+`~/.claude/statusline-cache/backlog-<path>.json`:
+
+```jsonc
+{
+  "total": 44,
+  "lanes": { "now": 2, "scheduled": 6, "waiting": 17, "drop": 19 },
+  "artifact": "/Users/you/code/thing/artifacts/backlog.html"
+}
+```
+
+`≡44` in the bar with `now 2` beside it in the project's accent colour, and the chip opens
+`artifact`. Only the `now` lane is highlighted, which is the design: a backlog's enemy is not being
+long, it is being unread.
+
+`total` is the one field that must be there and must be a number — a row without it is dropped
+whole rather than drawn as zero. The other lane names are free.
+
+**Do not hand-write the counts.** A backlog file typed once is a number that was true on the
+afternoon somebody wired this up, and it will still be on the screen next spring. If this project
+keeps its backlog in a file — a YAML list, a `TODO.md`, GitHub issues — write the few lines that
+count it and say in your report what runs them. If it does not keep one anywhere, this is a kind
+this project has nothing to say through: skip it and say so.
+
+`artifact` is optional and is what the chip opens. It must be a regular `.html` file **inside the
+project's directory**: on the Mac the chip opens it directly, and for the browser page and a paired
+phone Clawdline serves it back through an authenticated same-origin route with scripts disabled,
+which refuses paths outside the project and symlink escapes. A path elsewhere works on the Mac and
+is a link to nothing from the phone, which is the worst of the two failures because the person who
+wired it never sees it.
+
+---
+
+## 6. The finite milestone
+
+`~/.claude/statusline-cache/milestone-<path>.json`:
+
+```jsonc
+{
+  "total": 8,
+  "complete": 3,
+  "waiting_on_user": 2,
+  "artifact": "/Users/you/code/thing/artifacts/launch-milestone.html"
+}
+```
+
+A backlog and a milestone answer different questions, which is why they are two files rather than
+one with a flag: a backlog is an unbounded inventory, a milestone is a **finite definition of
+done**. "Ship the beta" is a milestone. "Everything we might do" is not.
+
+`total` and `complete` must both be present, both be numbers, and satisfy `0 ≤ complete ≤ total`. A
+row that fails any of that is dropped whole — deliberately, because a milestone drawn wrong is
+worse than one not drawn, and it is the reason to compute these two rather than maintain them.
+
+`waiting_on_user` is a separate count on purpose, and it is the field worth wiring properly. Work
+stopped on a credential, a spend approval or a product decision is not slow implementation, and
+folded into "incomplete" it looks exactly like it. Kept separate it reads *2 waiting on you*, which
+is a thing the user can act on in a minute.
+
+**The milestone is a row in the Links sheet, not a chip in the Mac's bar** — it shows as
+`milestone 3/8` on the browser page and on a paired phone, and the Mac shows the backlog rather
+than this. Say that when you report, or the user goes looking in the bar for something that was
+never going to be there.
+
+`artifact` follows the same rule as the backlog's: a regular `.html` file inside the project.
+
+---
+
+## 7. The mark and the colour
 
 Each project gets a pixel mark that appears next to it everywhere in the bar. It lives in
 `~/.claude/project-icons.json`, and the format is in `project-status.md`.
@@ -228,18 +395,50 @@ Do not report success without evidence. For each file you created:
 
 1. Print its contents.
 2. Confirm it parses: `python3 -m json.tool < the-file`.
-3. If `.devstack.json` names a `status` command, **run it**, show what it printed, and confirm
+3. **Confirm the name is the name Clawdline looks for.** For the four path-keyed files, print
+   `ls -l ~/.claude/statusline-cache/<prefix>-$(pwd | tr / -).json` and show that it exists —
+   naming it by hand and getting one character wrong produces a file that is read by nothing and
+   complained about by nobody. For `ghrun-`, the key is `<owner>-<repo>` from `git remote get-url
+   origin`, so print that too.
+4. If `.devstack.json` names a `status` command, **run it**, show what it printed, and confirm
    every process state is one of the six.
-4. **Run every other command the file names**, and show it worked: `up` from stopped, then
+5. **Run every other command the file names**, and show it worked: `up` from stopped, then
    `status` again to show the row goes green; `restart` on one process; `logs` returning
    something. A command in that file is a button somebody will press, and an untested one is a
    button that fails in front of them.
-5. For anything that is supposed to stay current, **run its update path once** and show that the
-   file's modification time moved.
+6. For anything that is supposed to stay current, **run its update path once** and show that the
+   file's modification time moved. That covers the health check's poller, the deploy's workflow
+   step or hook, and whatever counts the backlog and the milestone — a status file nothing updates
+   reports that everything is fine, forever, including during the outage.
+7. **For the run file, prove it is written by something still alive**, which is a different
+   question from "does it parse". Start the project's own test or build command, and while it is
+   still going:
 
-Then tell the user, in plain terms: what now appears in their bar, what they still have to do
-themselves (a cron entry, a workflow change, granting trust the first time they press ⌘S), and
-anything you deliberately skipped and why.
+   ```bash
+   run=~/.claude/statusline-cache/run-$(pwd | tr / -).json
+   python3 - "$run" <<'PY'
+   import json, sys, time
+   row = json.load(open(sys.argv[1]))
+   age = time.time() - row.get("updated_at", 0)
+   print(row["state"], row.get("phase", ""), "updated", round(age), "s ago,",
+         "ceiling", row.get("stale_after", 900), "s")
+   PY
+   ```
+
+   Read it twice, a few seconds apart, and show that `updated_at` **moved**. A `running` row whose
+   age is already past its ceiling is a row every reader ignores, and one that never moves is what
+   a dead producer leaves behind. Then let the run finish and show the state landing on `ok`, and
+   interrupt one with `Ctrl-C` and show it landing on `fail` rather than staying `running` — the
+   `trap` is the half of this wiring that only shows up on the bad day.
+8. **Say which of the seven you did not write, and which of those were nothing to say rather than
+   nothing done.** A project with no deployed service has no health check, and that is a complete
+   answer; a project whose backlog you could not find a source for is an open item. They read
+   identically in a report that only lists what was created.
+
+Then tell the user, in plain terms: what now appears in their bar, what appears only on the browser
+page and a paired phone (the milestone, and anything whose artifact they will open from there),
+what they still have to do themselves (a cron entry, a workflow change, granting trust the first
+time they press ⌘S), and anything you deliberately skipped and why.
 
 **If any part of the two contract pages left you guessing, say which part.** That is a defect in
 the documentation and the maintainers want to hear about it.
