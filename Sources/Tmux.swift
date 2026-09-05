@@ -119,34 +119,6 @@ enum Tmux {
         run(args, timeout: timeout)
     }
 
-    /// What a failed tmux command says about the server behind it — three answers, not a flag.
-    ///
-    /// The difference decides what an empty answer is worth everywhere on this path: *no server*
-    /// is a complete inventory that happens to hold nothing, while a timeout or an I/O failure
-    /// has no authority to prove a pane, a client or a screen absent. Three readers ask it, and
-    /// they asked it as three copies of the same pair of substrings until this was pulled out.
-    ///
-    /// **The vocabulary is tmux's, so this reads tmux's distinction rather than collecting its
-    /// sentences** — which is the whole of why a pair of substrings was the wrong shape. Measured
-    /// on tmux 3.6a, 2026-09-02, and `list-sessions`, `list-panes -a`, `list-clients` and
-    /// `source-file -` all answer identically:
-    ///
-    /// | the socket | what tmux prints |
-    /// |---|---|
-    /// | a server ran and was killed — tmux leaves the file behind | `no server running on <path>` |
-    /// | no file: tmux has never run here | `error connecting to <path> (No such file or directory)` |
-    /// | the file is there and will not open | `error connecting to <path> (Permission denied)` |
-    ///
-    /// The last two are the *same sentence*, and taking it as a third substring would have made
-    /// an unreadable socket say the server is absent — the distinction ``paneObservation()``
-    /// exists to protect. What separates them is the parenthesised half, which is
-    /// `strerror(errno)` from tmux's own `connect(2)`: `ENOENT` is the strongest proof of absence
-    /// there is, because a socket file that does not exist has never had a server on it, and
-    /// every other errno is a socket this process could not get to.
-    ///
-    /// So the rule is stated once, in one place, and an unrecognised message falls to
-    /// ``ServerAnswer/reached`` — tmux answering about the command rather than about the server —
-    /// which is the reading that lets no caller claim anything it has not been told.
     /// Which of the three sentences carried *there is no server here* — because they are three
     /// different worlds, and only one value used to come out the other side.
     ///
@@ -183,6 +155,34 @@ enum Tmux {
         case socketPathAbsent
     }
 
+    /// What a failed tmux command says about the server behind it — three answers, not a flag.
+    ///
+    /// The difference decides what an empty answer is worth everywhere on this path: *no server*
+    /// is a complete inventory that happens to hold nothing, while a timeout or an I/O failure
+    /// has no authority to prove a pane, a client or a screen absent. Three readers ask it, and
+    /// they asked it as three copies of the same pair of substrings until this was pulled out.
+    ///
+    /// **The vocabulary is tmux's, so this reads tmux's distinction rather than collecting its
+    /// sentences** — which is the whole of why a pair of substrings was the wrong shape. Measured
+    /// on tmux 3.6a, 2026-09-02, and `list-sessions`, `list-panes -a`, `list-clients` and
+    /// `source-file -` all answer identically:
+    ///
+    /// | the socket | what tmux prints |
+    /// |---|---|
+    /// | a server ran and was killed — tmux leaves the file behind | `no server running on <path>` |
+    /// | no file: tmux has never run here | `error connecting to <path> (No such file or directory)` |
+    /// | the file is there and will not open | `error connecting to <path> (Permission denied)` |
+    ///
+    /// The last two are the *same sentence*, and taking it as a third substring would have made
+    /// an unreadable socket say the server is absent — the distinction ``paneObservation()``
+    /// exists to protect. What separates them is the parenthesised half, which is
+    /// `strerror(errno)` from tmux's own `connect(2)`: `ENOENT` is the strongest proof of absence
+    /// there is, because a socket file that does not exist has never had a server on it, and
+    /// every other errno is a socket this process could not get to.
+    ///
+    /// So the rule is stated once, in one place, and an unrecognised message falls to
+    /// ``ServerAnswer/reached`` — tmux answering about the command rather than about the server —
+    /// which is the reading that lets no caller claim anything it has not been told.
     enum ServerAnswer: Equatable {
         /// tmux got as far as the socket path and there is no server on it. A complete empty
         /// inventory: nothing to list, and nothing a second attempt would find. The cause says
