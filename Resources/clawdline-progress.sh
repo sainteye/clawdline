@@ -277,7 +277,7 @@ USAGE
 
 clawdline_progress_run() {
     local -a opts cmd
-    local status label_given=0 first
+    local status label_given=0 first errexit
     opts=()
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -311,10 +311,15 @@ clawdline_progress_run() {
     # reach the traps above; the caller writes no handler and can get none of them wrong. `set +e`
     # is here so that a failing command reaches the `exit` below rather than the errexit path — the
     # row it leaves is the same either way, and this way the status is read once, in one place.
+    #
+    # Errexit is put back **only if it was on**. This function is reachable from a sourced script
+    # as well as from the executed form, and a helper that switched errexit on in a shell that had
+    # deliberately switched it off would be changing its caller behind its back.
+    case "$-" in *e*) errexit=1 ;; *) errexit=0 ;; esac
     set +e
     "${cmd[@]}"
     status=$?
-    set -e
+    [ "$errexit" = 0 ] || set -e
     # No `clawdline_run_file_finish` call: the EXIT trap `progress_start` armed decides from the
     # status, which is the same single way out a sourced script gets.
     exit "$status"
