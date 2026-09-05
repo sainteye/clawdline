@@ -1217,7 +1217,7 @@ if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1 && [ -r "${TOKEN_FI
   # on every build from then on. So read it, say whose it is, and clear it only on evidence.
   MAINTENANCE_STANDING_CURL=0
   MAINTENANCE_STANDING_STATUS=$(maintenance_read "$MAINTENANCE_REPLY") || MAINTENANCE_STANDING_CURL=$?
-  if [ "$MAINTENANCE_STANDING_CURL" != 0 ] && [ "$MAINTENANCE_STANDING_STATUS" != 404 ]; then
+  if [ "$MAINTENANCE_STANDING_CURL" != 0 ]; then
     # Reading is the cheapest thing this block does. If even that did not answer, nothing below
     # can be reasoned about, and the POST would be guessing.
     echo "!! Clawdline did not answer a read of its restart-maintenance state (curl exit $MAINTENANCE_STANDING_CURL)"
