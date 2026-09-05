@@ -694,6 +694,40 @@ try {
               later !== null && Math.floor(Date.now() / 1000) - later.updated_at > later.stale_after);
     }
     {
+        // **The pid is not enough on its own, and this is the branch that says so.** Pids come
+        // round again; an orphaned beat that read a stranger's pid as its own run would be
+        // immortal, and immortal is the one thing a heartbeat must never be. The loop is driven
+        // here directly, once with the run's real start time and once with a start time belonging
+        // to nothing, so that the answer is the identity check and not the liveness one — the pid
+        // is alive and the same in both.
+        const w = workdir("beat-identity");
+        const probe = (started, name) => {
+            const script = sourced(w, [
+                "progress_start --label probe --stale-after 3",
+                'test -n "$CLAWDLINE_RUN_PID_STARTED" || { echo "no start time was read at all" >&2; exit 1; }',
+                "# The run's own beat is stopped so that the loop driven below is the only writer.",
+                "clawdline_run_file_beat_stop",
+                'before=$(sed -e \'s/.*"updated_at": \\([0-9]*\\).*/\\1/\' "$CLAWDLINE_RUN_FILE")',
+                `clawdline_run_file_beat_loop "$$" ${started} 1 &`,
+                "driven=$!",
+                "sleep 2.5",
+                'kill "$driven" 2>/dev/null || true',
+                'after=$(sed -e \'s/.*"updated_at": \\([0-9]*\\).*/\\1/\' "$CLAWDLINE_RUN_FILE")',
+                'echo "moved=$(( after - before ))"',
+                "CLAWDLINE_RUN_FINISHED=1",
+            ].join("\n"), helperPath, `${name}.sh`);
+            return runScript(w, script);
+        };
+        const same = probe('"$CLAWDLINE_RUN_PID_STARTED"', "identity-same");
+        const other = probe('"a start time belonging to nothing"', "identity-other");
+        check("the run reads its own start time, so there is an identity to check at all",
+              same.code === 0 && other.code === 0);
+        check("a beat whose run is the same process it started for keeps beating",
+              /moved=[1-9]/.test(same.out));
+        check("and one whose pid is alive but is somebody else's process now stops, writing nothing",
+              /moved=0/.test(other.out));
+    }
+    {
         // A ceiling of zero means the row expires the moment it is written — a producer that
         // writes it means *expire now* — so there is nothing for a beat to keep alive and none is
         // started. A write a second for a row no reader draws is cost with nothing on the other
