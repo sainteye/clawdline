@@ -132,8 +132,10 @@ Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kb
 - **開發用的那些伺服器，就在你已經在打字的地方** —— `⌘S` 列出每個專案的長跑行程、跑了多久、
   每個 port 都是連結，還有啟動／停止／重啟。**Clawdline 從來不自己開行程**，它跑的是你的 repo
   在 `.devstack.json` 裡宣告的指令。[格式 →](docs/devstack.md) · [怎麼導入 →](docs/devstack-adopting.md)
-- **是哪個專案，不只是哪個任務** —— 輸入條會講出 repo、分支、未提交數量、進行中的部署與
-  backlog，還有那個專案自己的圖示與顏色。[格式 →](docs/project-status.md)
+- **是哪個專案，不只是哪個任務** —— 輸入條會講出 repo、分支、未提交數量、進行中的部署、
+  在另一個分頁跑著的那輪測試，還有 backlog 與那個專案自己的圖示與顏色；網頁與配對過的手機上
+  再多一個 milestone。總共七種小檔案，一個專案有多少話要說就寫幾種。
+  [格式 →](docs/project-status.md) · [七種都在這 →](docs/connect.md)
 - **終端機的分頁跟著走** —— 在清單裡移動，iTerm2 就跟著換分頁，而且不會跳到前景。輸入條瞄準的
   那個和你眼前那個分頁，不再是兩個不同的 session。
 - **圖片與檔案** —— 視窗上任何地方都能丟檔案、也能貼圖。圖片進到 Claude Code 是 `[Image #3]`，
@@ -165,9 +167,9 @@ Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kb
 > ### 把你自己的專案接上來
 >
 > 把這個 repo 的網址貼給你的 Claude Code agent，叫它把你的專案接上去。
-> **[docs/connect.md](docs/connect.md) 就是寫給它看的**——要建哪些檔、格式是什麼、以及怎麼驗
-> 自己有沒有做對。每一個整合都只是一個 Clawdline 會去讀的小 JSON 檔；它不會安裝任何東西，
-> 也不會替你的專案增加任何相依。
+> **[docs/connect.md](docs/connect.md) 就是寫給它看的**——一個專案能寫的七種檔案、格式是什麼、
+> 以及怎麼驗自己有沒有做對。每一個整合都只是一個 Clawdline 會去讀的小 JSON 檔；它不會安裝任何
+> 東西，也不會替你的專案增加任何相依。
 >
 > *「把這個專案接上 Clawdline —— https://github.com/sainteye/clawdline」* 這一句就夠了。
 
@@ -386,7 +388,7 @@ open ~/Applications/Clawdline.app
 | | 在哪裡打開 | 對應的說明 |
 | --- | --- | --- |
 | **輸入條**——看得到、送得出、讀得回來 | 不用打開；macOS 只在第一次問一次 iTerm2 | — |
-| **你自己專案的那一行**——伺服器、分支、圖示、部署 | repo 內外的幾個小 JSON 檔；把這個 repo 的網址貼給 agent，它會幫你寫 | [connect.md](docs/connect.md) |
+| **你自己專案的那一行**——伺服器、分支、圖示、部署、本機測試、backlog、milestone | repo 內外七種小 JSON 檔；把這個 repo 的網址貼給 agent，它會幫你寫 | [connect.md](docs/connect.md) |
 | **那個網頁，在這台 Mac 或手機上** | 設定 → 遠端 →「讓瀏覽器或你的手機看得到你的 session」，再按「用瀏覽器打開」或「配對手機……」 | [remote.md](docs/remote.md) |
 | **讓配對過的裝置打字** | 設定 → 遠端 →「讓配對過的裝置寫進 session」 | [remote.md](docs/remote.md) |
 | **從外面連進來** | 設定 → 遠端 →「從任何地方連到這台 Mac」；它跑的 `cloudflared` 是你自己裝的那支 | [remote.md](docs/remote.md#the-tunnel) |
@@ -726,9 +728,9 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [排程的任務](docs/schedules.md) | 按本地時間派出的 task 模板、睡眠補課與收 tab 政策 |
 | [交給新 session 接著做](docs/handoff.md) | 把整條工作的現況交給下一個 session 繼續 |
 | [被派出去的 session 會在哪停](docs/dispatch-permissions.md) | 四道門依序是什麼，以及那個在最便宜的模型上意思相反的 flag |
-| [把專案接上來](docs/connect.md) | 寫給 agent 看的：要建哪些檔、怎麼驗自己有沒有做對 |
+| [把專案接上來](docs/connect.md) | 寫給 agent 看的：一個專案能寫的七種檔案依序走一遍，以及怎麼驗自己有沒有做對 |
 | [開發環境](docs/devstack.md) · [怎麼導入](docs/devstack-adopting.md) | `.devstack.json`，以及導入的三種深度 |
-| [專案狀態檔](docs/project-status.md) | 圖示、顏色、部署、backlog |
+| [專案狀態檔](docs/project-status.md) | 另外六種：圖示與顏色、部署、本機的測試或建置、backlog、milestone、健康檢查 |
 | [從別的地方連進來](docs/remote.md) · [API](docs/api.md) | 完整的威脅模型，以及那層 HTTP 介面 |
 | [Clawdline Cloud](docs/cloud.md) | Mac 這端的橋接、雲端主控台、金鑰交接，以及哪些事還沒對真的帳號跑過 |
 | [Hook](docs/hooks.md) | 那八個事件，以及為什麼說了算的仍然是螢幕 |

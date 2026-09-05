@@ -150,8 +150,10 @@ Also:
   process of its own; it runs the commands your repo declares in `.devstack.json`.
   [Format →](docs/devstack.md) · [Adopting it →](docs/devstack-adopting.md)
 - **Which project, not just which task** — the bar names the repository, its branch, what is
-  uncommitted, a deploy in flight and a backlog, with the project's own icon and colour.
-  [Format →](docs/project-status.md)
+  uncommitted, a deploy in flight, the test run going in another tab, and a backlog, with the
+  project's own icon and colour; the browser page and a paired phone add a milestone. Seven kinds
+  of small file, and a project writes as many of them as it has something to say through.
+  [Format →](docs/project-status.md) · [All seven →](docs/connect.md)
 - **The terminal's tab follows** — move through the list and iTerm2 moves with you, without coming
   to the front. The bar's target and the tab in front of you stop being two different sessions.
 - **Images and files** — drop a file on the window or paste an image. Images arrive in Claude Code
@@ -187,9 +189,9 @@ Also:
 > ### Connecting your own project
 >
 > Paste this repository's address at your Claude Code agent and ask it to connect your project.
-> **[docs/connect.md](docs/connect.md) is written for it** — the files to create, the formats, and
-> how to check its own work. Every integration is a small JSON file that Clawdline reads; nothing is
-> installed and no dependency is added to your project.
+> **[docs/connect.md](docs/connect.md) is written for it** — all seven files a project can write,
+> the formats, and how to check its own work. Every integration is a small JSON file that Clawdline
+> reads; nothing is installed and no dependency is added to your project.
 >
 > *"Connect this project to Clawdline — https://github.com/sainteye/clawdline"* is the whole
 > instruction.
@@ -456,7 +458,7 @@ it on, in whatever order you want it.
 | | Where you turn it on | The page for it |
 | --- | --- | --- |
 | **The bar** — see, send, read back | nothing; macOS asks once for iTerm2 | — |
-| **Your project's own row** — servers, branch, mark, deploy | small JSON files in and beside your repo; paste this repository at an agent and it writes them | [connect.md](docs/connect.md) |
+| **Your project's own row** — servers, branch, mark, deploy, local test runs, backlog, milestone | seven kinds of small JSON file in and beside your repo; paste this repository at an agent and it writes them | [connect.md](docs/connect.md) |
 | **The page, here or on a phone** | Settings → Remote → *Let a browser or your phone see your sessions*, then *Open in a browser* or *Pair a phone…* | [remote.md](docs/remote.md) |
 | **Typing from a paired device** | Settings → Remote → *Let a paired device write into a session* | [remote.md](docs/remote.md) |
 | **Reaching it from outside** | Settings → Remote → *Reach this Mac from anywhere*; the `cloudflared` it runs is your own install | [remote.md](docs/remote.md#the-tunnel) |
@@ -836,9 +838,9 @@ link to them.
 | [Scheduled tasks](docs/schedules.md) | task templates that dispatch on local wall-clock time, catch-up, and tab-close policy |
 | [Continuing work in a new session](docs/handoff.md) | one session handing its whole line of work to the next |
 | [Where a dispatched session stops](docs/dispatch-permissions.md) | the four gates in order, and the flag that means the opposite on the cheapest model |
-| [Connecting a project](docs/connect.md) | written for an agent: the files to create and how to check them |
+| [Connecting a project](docs/connect.md) | written for an agent: all seven files a project can write, in order, and how to check its own work |
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |
-| [Project status files](docs/project-status.md) | the mark, the colour, the deploy, the backlog |
+| [Project status files](docs/project-status.md) | the other six: the mark and the colour, a deploy, a local test or build, a backlog, a milestone, a health check |
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
 | [Clawdline Cloud](docs/cloud.md) | the bridge on the Mac, the hosted console, the key handover, and what has never been run against a real account |
 | [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |
