@@ -2144,6 +2144,53 @@ final class RemoteServer: @unchecked Sendable {
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return answer(reply)
 
+        // Snippets are Mac settings: reads use the ordinary paired-device door above, while all
+        // four mutations pass through the same switch, send capability and idempotency key as a
+        // prompt. The store owns validation, the disk brake and the audit line so the native app
+        // and HTTP route cannot acquire different meanings later.
+        //
+        // **`session` is used exactly as the parser handed it over.** Query values are already
+        // percent-decoded in `parse(_:)` — path components are not, which is why every other
+        // `removingPercentEncoding` in this file is on a path and is right. Decoding this one a
+        // second time turned tmux's pane ids, which are literally `%150`, into control
+        // characters: panes `%1`–`%9` happened to survive it and every pane from `%10` up
+        // answered `404 not_found`, so snippets were missing on every tmux-hosted terminal.
+        case ("GET", "/v1/snippets"):
+            guard let sessionID = request.query["session"] else {
+                return .json(["snippets": Snippets.records()])
+            }
+            guard let session = self.session(withID: sessionID),
+                  let cwd = Targets.workingDirectory(of: session) else {
+                return .error(404, "not_found", "No session named that")
+            }
+            let project = Snippets.project(forCwd: cwd)
+            return .json(["project": project.json,
+                          "snippets": Snippets.records(for: project)])
+
+        case ("POST", "/v1/snippets"):
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.republishing(self.answer(Snippets.create(from: body)))
+            }
+
+        case ("POST", "/v1/snippets/order"):
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.republishing(self.answer(Snippets.reorder(from: body)))
+            }
+
+        case ("PATCH", let path) where path.hasPrefix("/v1/snippets/"):
+            let id = String(path.dropFirst("/v1/snippets/".count))
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.republishing(
+                    self.answer(Snippets.update(id: id.removingPercentEncoding ?? id, from: body)))
+            }
+
+        case ("DELETE", let path) where path.hasPrefix("/v1/snippets/"):
+            let id = String(path.dropFirst("/v1/snippets/".count))
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { _ in
+                self.republishing(
+                    self.answer(Snippets.delete(id: id.removingPercentEncoding ?? id)))
+            }
+
         case ("GET", "/v1/orchestrator/schedules"):
             return .json(["schedules": Orchestrator.scheduleRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
@@ -3990,6 +4037,41 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
+    /// A snippet reply uses the same public success and error envelopes as orchestrator writes.
+    func answer(_ reply: Snippets.Reply) -> Response {
+        switch reply {
+        case .ok(let obj):
+            return .json(obj)
+        case .refused(let status, let code, let message, let extra):
+            return .error(status, code, message, extra: extra)
+        }
+    }
+
+    /// Republish the snapshot the snippet list rides on, when a write actually changed it.
+    ///
+    /// `snippets` sits in ``orchestratorSnapshot(now:)`` beside `schedules`, and nothing was
+    /// republishing it: a browser on the Cloud path reads its whole list out of the published
+    /// `orch/<machine>` rows, so a snippet made, edited, removed or reordered on the direct path
+    /// stayed invisible over there until some unrelated orchestrator event repainted the
+    /// snapshot. Reconnecting rebuilt it, which is the ceiling on how long that lasted.
+    ///
+    /// **Called from the route and not from ``Snippets``**, and that is not a style choice: the
+    /// snapshot reads `Snippets.records()`, which takes the store's lock, and every write holds
+    /// that same lock for the whole of its body. Broadcasting from inside one would be the store
+    /// waiting on itself.
+    private func republishing(_ response: Response) -> Response {
+        guard response.status < 300 else { return response }
+        Self.snippetRepublishCountForTesting += 1
+        broadcastOrchestrator()
+        return response
+    }
+
+    /// How many snippet writes have republished the snapshot. A suite cannot hold an SSE stream
+    /// open, and what the broadcast does is write to sockets and hand a body to the cloud
+    /// bridge; the fact worth pinning is which answers ask for one — every success, and no
+    /// refusal, because a refusal changed nothing to republish.
+    static var snippetRepublishCountForTesting = 0
+
     /// Turn a message with pictures in it into the pieces the sender already understands.
     ///
     /// Each image arrives as a `data:` URL and leaves as a file, because that is what
@@ -5387,6 +5469,7 @@ final class RemoteServer: @unchecked Sendable {
     static func orchestratorSnapshot(now: Date = Date()) -> [String: Any] {
         ["tasks": Orchestrator.records(),
          "schedules": Orchestrator.scheduleRecords(now: now),
+         "snippets": Snippets.records(),
          "at": Int(now.timeIntervalSince1970),
          "app": appStamp()]
     }

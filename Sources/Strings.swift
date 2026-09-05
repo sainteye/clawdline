@@ -1184,6 +1184,85 @@ protocol Copy {
     var webScheduleFri: String { get }
     var webScheduleSat: String { get }
 
+    // Snippets — the pieces of text somebody wrote once and presses instead of typing again. The
+    // sheet is reached two ways, from the `⋯` menu and from the project mark in the session
+    // header, and the mark is why these live here rather than in a copy table of the view's own:
+    // it is the first thing a reader who does not read English will press.
+    //
+    // **Nothing here may say or imply that pressing one sends it.** A press puts the words in the
+    // composer and closes the sheet; the send button stays the only thing that types into a
+    // session. A translation that reads as "send this" describes a feature that was declined.
+    var webSnippets: String { get }
+    /// The two headings the sheet groups under, and the two halves of the editor's scope control.
+    /// `webSnippetsThisProject` is the project the *Mac* resolved — the one the header's mark
+    /// stands for, with an isolated worktree folded back into the checkout it was cut from — so
+    /// it means *this project* and never *the folder this session happens to sit in*.
+    var webSnippetsThisProject: String { get }
+    var webSnippetsEveryProject: String { get }
+    /// Two empty states, because there are two different facts to say. A device that cannot write
+    /// is told where snippets come from; a device that can is shown the door and two starters.
+    var webSnippetsEmpty: String { get }
+    var webSnippetsEmptyNew: String { get }
+    /// Why the rows do nothing on a device the Mac granted `read` and not `send`. It names the
+    /// box rather than the snippet, because the composer this would insert into is disabled too —
+    /// the honest sentence is about what this device may do, not about the list being broken.
+    var webSnippetsReadOnly: String { get }
+    /// The editor. Everything from here to ``webSnippetNeedsText`` is drawn only where the
+    /// transport can write, so a reader on the relay sees none of it at all.
+    var webSnippetNew: String { get }
+    /// The same sheet's heading when it is changing a snippet rather than making one.
+    var webSnippetEditing: String { get }
+    /// The `⋯` on a row, and the five things behind it.
+    var webSnippetMore: String { get }
+    var webSnippetEdit: String { get }
+    var webSnippetDelete: String { get }
+    /// What the Delete row says once it has been pressed once. There is no undo and no route
+    /// that could add one, so the button becomes the question rather than a dialog appearing in
+    /// front of it — which means this has to read as a warning on a button, not as a label.
+    var webSnippetDeleteAsk: String { get }
+    /// Buttons rather than drag: dragging inside a scrolling sheet on a phone is a fight nobody
+    /// wins. Each one moves the row a single place, inside its own scope.
+    var webSnippetUp: String { get }
+    var webSnippetDown: String { get }
+    /// A row's scope, offered as the move it would make. Only ever one of the two on screen: a
+    /// project snippet is offered ``webSnippetToGlobal``, a global one ``webSnippetToProject``.
+    var webSnippetToGlobal: String { get }
+    var webSnippetToProject: String { get }
+    /// The editor's three fields. ``webSnippetBodyLabel`` is the text that will land in the
+    /// composer, so it is named after what somebody typed — calling it content, payload or body
+    /// would describe the stored record instead.
+    var webSnippetTitleLabel: String { get }
+    var webSnippetBodyLabel: String { get }
+    var webSnippetScopeLabel: String { get }
+    var webSnippetSave: String { get }
+    /// Fills the editor from the newest thing this person sent in this session — the sentence
+    /// somebody is about to save is usually one they have just finished typing once.
+    var webSnippetFromLast: String { get }
+    /// Both fields are required by the store, so the sheet says it here rather than waiting for
+    /// `400 malformed_snippet` to come back from the Mac.
+    var webSnippetNeedsText: String { get }
+    /// The other refusal the editor can reach, and for a while the two shared one sentence — a
+    /// snippet that was too long said the fields were empty while both were visibly full.
+    /// ``webSnippetFromLast`` is how it is reached: it assigns a whole message to the body, and
+    /// a value set in code ignores the textarea's `maxlength`.
+    ///
+    /// **Both numbers belong in the sentence, and both count UTF-8 bytes**, which is what
+    /// `Sources/Snippets.swift` counts and what the file, the audit line and every snapshot
+    /// broadcast pay for. A limit somebody cannot see is not help; a limit in units that are not
+    /// the ones being enforced is worse.
+    var webSnippetTooLong: String { get }
+    /// The two starters offered on an empty list, one press each.
+    ///
+    /// **These four are the one place in this file where a literal translation is the wrong
+    /// answer.** Everything above is the interface talking; these are text a person sends to an
+    /// assistant, so each language writes what somebody there would actually type — the same two
+    /// instructions, in that language's own register, rather than the English rendered word by
+    /// word. `git add -A` is a command and stays spelled that way in all of them.
+    var webSnippetStarterCommitTitle: String { get }
+    var webSnippetStarterCommitBody: String { get }
+    var webSnippetStarterReportTitle: String { get }
+    var webSnippetStarterReportBody: String { get }
+
     // The addresses a project has — see `GET /v1/sessions/:id/links` and the sheet the Links
     // chip opens. `webLinksLocal` and `webLinksFile` are the two that matter: one address only
     // resolves on the Mac's network and the other is not a web address at all, and a link that

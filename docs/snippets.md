@@ -1,9 +1,18 @@
 # Snippets
 
-**This page is a design. None of it is built yet.** It is written as a spec so the sessions that
-implement it read one description rather than five, and so the decisions already taken are not
-retaken. Every "does", "answers" and "rides" below is what the feature *will* do; nothing here can
-be verified against a running app today.
+**This shipped.** It was written as a design first — one description for the sessions that built
+it, so the decisions already taken were not retaken — and it is kept as one, because the reasons
+are the part worth having written down and a reader who has only the code re-derives them wrong.
+Every "does", "answers" and "rides" below is now something you can check against a running app.
+
+**Where this page and the code disagree, the code is right**, and the seven places they did are
+marked ⚠ in the text below rather than quietly corrected: a design that is silently edited to
+match what was built stops being evidence of anything. Two *other* sentences were not
+divergences but plain mistakes — arithmetic that did not hold and a claim about a request that is
+made — and those are replaced rather than marked, because there is nothing about the design to
+preserve in a wrong number. The wire is
+[`api.md`](api.md#the-snippets-a-session-can-press), which was written from
+[`Snippets.swift`](../Sources/Snippets.swift) and the route cases rather than from here.
 
 - [What a snippet is](#what-a-snippet-is)
 - [Where you press one](#where-you-press-one)
@@ -65,6 +74,26 @@ Two things fall out of that split and both must be handled, not discovered later
   neutral glyph, or sessions in projects that were never registered in
   `~/.claude/project-icons.json` get an invisible shortcut. The `⋯` row still works there, which
   is exactly why the menu entrance is not optional.
+
+  ⚠ **What shipped is better than a neutral glyph, and the paragraph above still describes the
+  plan it replaced.** `Resources/web/app/js/view/project-mark.js` draws a *generated* mark: a
+  pure function of the project path — FNV-1a over its code units, `Math.imul`, no randomness and
+  no state — giving four rows of seven cells mirrored about the middle column, an ink and a
+  ground from one hue, and an `accent` the session name is tinted with. So two sessions in two
+  unregistered projects look like two projects rather than like the same "no icon" glyph twice.
+  A registered icon always wins: `markForSession` returns `session.icon` whenever it has cells,
+  and only reaches the generator when it does not. Its density is clamped to between 5 and 12 of
+  the sixteen decided cells, because an empty mark is an invisible button and a full one is a
+  rectangle — both identify nothing, which is the failure the neutral glyph would also have had.
+  Measured over 20,000 paths, the worst ink-against-ground contrast is 3.71:1, past the 3:1
+  non-text threshold. **The `⋯` row is still not optional** — a transport with no snippets route
+  has no sheet to open from either entrance — but the sentence "the entrance that still works in
+  a project nobody ever gave a mark", which `CHANGELOG.md` and `docs/interface.md` also carried,
+  described a mark entrance that fails and there is no longer one.
+
+  What the generator is hashed from is the project key **the Mac resolved**, once the sheet has
+  read for that session — not the session's own `cwd`. Two sessions of one project, one of them
+  in a worktree cut from its checkout, are then one mark and one name.
 
 ## What a press does, and what it deliberately does not do
 
@@ -129,7 +158,7 @@ here blocks it; see the last section.
 
 ```json
 {
-  "id": "3F2A…",
+  "id": "3f2a91c4-7e0b-4d68-8b41-6d0a2c9e5f31",
   "title": "Commit, push, deploy",
   "body": "commit（逐檔指名，不要 git add -A）、push、deploy。",
   "scope": "project",
@@ -140,8 +169,19 @@ here blocks it; see the last section.
 }
 ```
 
-- `title` 1–60 characters; `body` 1–4000; `scope` exactly `"global"` or `"project"`; `project`
-  present if and only if `scope` is `"project"`.
+- `title` 1–60 **bytes of UTF-8**; `body` 1–4000; `project` 1–1024, and present if and only if
+  `scope` is `"project"`; `scope` exactly `"global"` or `"project"`. ⚠ This read *characters*, and
+  so did the store: `String.count` counts grapheme clusters, so four thousand ZWJ emoji were four
+  thousand "characters" and about a hundred kilobytes on a disk, in an append-only audit file and
+  on every snapshot broadcast — none of which pay in characters. `project` had no bound at all.
+  ⚠ The title's bound also read 60, and changing the unit without changing the number would have
+  been a quiet demotion: sixty bytes is sixty Latin letters and twenty Han characters, so the same
+  figure is a title in one language and a fifth of a sentence in another. It is **200 bytes**,
+  which gives a Han title the sixty-odd characters a Latin one already had. The body stays at
+  4,000 — about 1,333 Han characters — because unlike the title it rides every snapshot broadcast,
+  and widening it is paid for on every stream by everybody. ⚠ The `id` above read `3F2A…`; every id this
+  store writes or accepts is a **lowercased** UUID, and one sent in any other case is canonicalised
+  before it addresses anything.
 - **The key set is exact.** An unknown key is `400 malformed_snippet` rather than a field quietly
   dropped, the way every other written object in this API behaves.
 - At most **100** snippets on a Mac and **50** in one scope; over that is `409 snippet_limit_reached`
@@ -149,7 +189,13 @@ here blocks it; see the last section.
 - Typed refusals, each with a code of its own so a sheet can say which it hit:
   `malformed_snippet`, `snippet_not_found`, `snippet_too_long`, `snippet_limit_reached`,
   `snippet_scope_mismatch` (a `project` scope with no path, or a path with `scope: "global"`).
-- Writes are atomic — write to a temporary file, `replaceItemAt`. Deletes resolve `<id>.json` and
+  ⚠ Three more came with the writing: `rate_limited` for the brake, and `write_failed` and
+  `delete_failed` for a disk that would not take it — listed in
+  [`api.md`](api.md#the-snippets-a-session-can-press) with what each one means.
+- Writes are atomic — write to a temporary file, `replaceItemAt` — **and read back off disk
+  through the same check that reads the list before the request is answered**, so a file this app
+  cannot itself parse never survives the request that made it: a create removes it, an edit puts
+  the previous bytes back. Deletes resolve `<id>.json` and
   nothing else, which is the whole of the path handling, exactly as
   [`docs/schedules.md`](schedules.md) does it. A file whose name is not a UUID has no id and is
   skipped rather than repaired.
@@ -172,18 +218,38 @@ session: both change what is on this Mac, and a device that may only read must n
 rewrite the owner's snippets. A brake of ten writes in ten minutes, copied from
 `POST /v1/orchestrator/schedules`, keeps a looping client off the disk.
 
-`docs/api.md` gains one section for the set, placed beside the schedules routes.
+[`docs/api.md`](api.md#the-snippets-a-session-can-press) carries one section for the set, beside
+the schedules routes.
+
+⚠ **Two things this section got wrong.** These are paired-device routes and are *not* under
+`/v1/orchestrator/`, so unlike the schedules reads the orchestrator token opens none of them — it
+is never read here. And the brake is one bucket for all four writes rather than a copy of the
+schedules one: ten writes in ten minutes across create, edit, delete and reorder together, `DELETE`
+included, where `DELETE /v1/orchestrator/schedules/:id` is deliberately not braked at all.
 
 ## The list rides the snapshot
 
-`RemoteServer.orchestratorSnapshot` gains `"snippets": Snippets.records()`, next to `"schedules"`,
-and for the same reason its comment already gives: the list moves a few times a week, the snapshot
-is republished every few seconds, so *the ratio is bad and the quantity is nothing* — a few hundred
-bytes beside a megabyte of tasks.
+`RemoteServer.orchestratorSnapshot` gains `"snippets": Snippets.records()`, next to `"schedules"`.
+
+**The quantity is not nothing, and this page used to say it was.** The 453 bytes in
+`RemoteServer.swift`'s comment are a *measured* schedules payload beside a measured 1,056,958-byte
+task payload — 0.043%. Snippets have no such measurement and a much larger ceiling: this page's
+own limits are 100 records, each of them up to 200 bytes of title, 4,000 of body and 1,024 of
+project path, which with the field names and punctuation is on the order of **540 KB — about half
+the task payload, not a twenty-fifth of one percent of it.** The inventory is unfiltered by scope,
+so every SSE stream and every cloud publication carries all of it. What makes that acceptable is
+not the ratio: it is that a Mac with a hundred four-thousand-byte snippets is not a Mac anybody
+has, and that the alternative on the Cloud path is no list at all. If somebody ever does fill the
+store, this is the field to filter or to move off the snapshot.
 
 Two things follow, and the second is the reason to do it this way:
 
-- **The sheet opens with no request.** A shortcut that spins is not a shortcut.
+- **On the Cloud path the sheet opens with no request.** `net/cloud-client.js` reads the rows out
+  of the published snapshot, so there is nothing to wait for. **On the direct path it does make
+  one**: `LocalClient.snippets` is a real `GET /v1/snippets?session=<id>`, because that is the
+  answer that carries the resolved project and the per-session filtering the snapshot's unsorted
+  inventory does not. It comes back in a few milliseconds from a server on the same machine, and
+  the sheet is drawn before it arrives either way — but "no request" was never true here.
 - **The Cloud path gets the list for free.** `net/cloud-client.js` already serves `schedules()` out
   of the published `orch/<machine>` rows; snippets arrive the same way, so a phone on the relay —
   which speaks no HTTP to the Mac at all and may ask for only [seven
@@ -203,9 +269,11 @@ Two things follow, and the second is the reason to do it this way:
 | `index.html` | the mark comes out of `#detail-info` into `#detail-snippets`. |
 | `app/css/detail.css` | the two buttons read as one block; the new button gets its 44px box and its no-mark placeholder. |
 | `app/js/view/transcript.js` | `renderDetailHead` sets `disabled`, `title` and `aria-label` on the new button the way it does for the two it already owns. |
-| `app/js/net/client.js` | `snippets()`, `createSnippet()`, `updateSnippet()`, `deleteSnippet()`, `orderSnippets()`. **Not** added to `ClawdlineClient.methods`, which is the contract every transport must satisfy. |
+| `app/js/net/live.js` | `snippets()`, `createSnippet()`, `updateSnippet()`, `deleteSnippet()`, `orderSnippets()`, on `LocalClient`. **Not** added to `ClawdlineClient.methods` in `net/client.js`, which is the contract every transport must satisfy. ⚠ This row said `net/client.js`; that file is the contract, and the direct transport is `net/live.js`. |
 | `app/js/net/cloud-client.js` | `snippets()` only, from the published rows. |
 | `app/js/net/mock.js` | a fixture: a couple of global snippets and one project-scoped, so `?mock=1` exercises the sheet, the grouping and the empty state without a Mac. |
+| `app/js/view/project-mark.js` | new, and not in this table until the correction round. `generatedMark(key)` and `markForSession(session, projectKey)` — the mark a project has until somebody draws it one. Pure, importable into a bare Node process, and read by `Tests/web-snippets.mjs`. |
+| `app/js/view/snippets-data.js` | new. The sheet's arithmetic with no document in it, plus the one thing the header borrows: the project the Mac last resolved for the open session. |
 
 The sheet itself: a row is the title in the accent colour with the first line of the body under it;
 pressing it inserts and closes. A row's own `⋯` gives 編輯 / 刪除 / 改成全域 / 上移 / 下移 — buttons
@@ -225,14 +293,29 @@ A read-only device shows the sheet and its rows, with the insert disabled and th
 
 ## Words
 
-About twelve strings: the menu row, the sheet title, the two scope headings, 新增 / 編輯 / 刪除 /
-上移 / 下移, the empty state, the limit message, the read-only reason.
+⚠ **Twenty-seven, not the twelve this said**, and they add up: the `⋯` row and the sheet's title,
+one word between them (1); the two scope headings (3); the two empty states (5); the read-only
+reason (6); the editor's two headings (8) and its three field labels (11); Save (12);
+用上一則訊息新增 (13); the "needs a title and some text" refusal (14) and the "too long" one that
+used to share its sentence (15); a row's own `⋯` label (16) and the six actions behind it (22);
+the second press that confirms a delete (23); and the two starters, which are four strings because
+each has a title and a body (27). The twelve was an estimate made before the editor and the empty
+state existed; twenty-six was right until the correction round separated the two refusals, which
+is what made a snippet with both fields full stop being told they were empty.
 
-They belong in `Sources/Strings.swift` and its fourteen `Copy+*.swift` files, with the English baked
-into `core/i18n.js` as the fallback — the house rule, and the `⋯` menu is a shipped surface where
-every other row already comes from there. `input/user-messages.js` carries its own two-language copy
-table instead; that was the right call for a sheet reached from one place, and it is the wrong one
-here, because the shortcut on the header is the first thing a non-English reader will press.
+They are in `Sources/Strings.swift` and the fourteen `Copy` structs across thirteen `Copy+*.swift`
+files — Chinese carries Traditional and Simplified in one file — with the English baked into
+`core/i18n.js` as the fallback, and `RemotePage.swift` answering all twenty-seven on
+`/v1/strings`.
+That is the house rule, and the `⋯` menu is a shipped surface where every other row already comes
+from there. `input/user-messages.js` carries its own two-language copy table instead; that was the
+right call for a sheet reached from one place, and it is the wrong one here, because the shortcut on
+the header is the first thing a non-English reader will press.
+
+**The two starters are the one place a literal translation is the wrong answer.** Every other string
+is the interface talking; those two are text a person sends to an assistant, so each language says
+what somebody there would actually type. `Strings.swift` carries that instruction beside the
+declarations so the next translator reads it before writing over them.
 
 ## Tests
 
@@ -244,12 +327,21 @@ here, because the shortcut on the header is the first thing a non-English reader
   composer already holds text, the guard that leaves the editing controls undrawn on a transport
   that lacks them, and the DOM contract that pressing the mark is not pressing Session info.
 
+The correction round added to both. On the Swift side: a `%`-shaped tmux pane id end to end
+through the route, the byte bounds and the bound on `project`, a `position` past its bound
+isolating its file rather than trapping the next create, a project entered through a symlink, and
+a counter proving each successful write republishes the snapshot and no refusal does. On the
+browser side: the byte arithmetic against a second implementation of it, what the header may say
+about a project, and three source-shape assertions for mutations that used to leave the suite
+green — the read-only wiring reaching `draw`, the delete confirmation being reachable at all, and
+the inert mark dropping its `aria-haspopup`.
+
 One file each. `./test.sh` compiles every source file together with the tests in one `swiftc`
 invocation with no cache between runs, so a second Swift test file is a real cost and this feature
 does not need one.
 
-`docs/interface.md` gains a paragraph under the session header; `README.md` and `README.zh-TW.md`
-gain the same feature line in both; `CHANGELOG.md` gains the entry.
+[`docs/interface.md`](interface.md#the-mark-in-a-sessions-header) carries the paragraph on what the
+mark opens; both READMEs carry the same feature line; `CHANGELOG.md` carries the entry.
 
 ## Not in v1, and what each would cost
 
@@ -278,15 +370,15 @@ Two of these were **declined outright on 2026-09-05**, not merely postponed, and
 
 ## Build order
 
-Six pieces, each verifiable on its own, in this order:
+Six pieces, each verifiable on its own, in this order — all six landed:
 
 1. **Store and routes**, Swift only, no UI — provable with `curl` and the new test file.
 2. **The snapshot field and the transports**, including the mock fixture.
 3. **The sheet and the `⋯` row** — inserting works end to end; the editor is not there yet.
 4. **The mark as a shortcut** — the header split, the tap target, the no-mark box.
 5. **The editor** — create, edit, delete, reorder, the empty-state starters, `用上一則訊息新增`.
-6. **The words and the pages** — the fourteen copy files, `docs/api.md`, `docs/interface.md`, both
+6. **The words and the pages** — the fourteen languages, `docs/api.md`, `docs/interface.md`, both
    READMEs, `CHANGELOG.md`.
 
-Steps 3 and 4 are the ones a person can judge by looking, and step 4 is the one that touches a
-header that already works — it should land after the sheet has been used, not before.
+Steps 3 and 4 are the ones a person can judge by looking, and step 4 is the one that touched a
+header that already worked — it landed after the sheet had been used, not before.

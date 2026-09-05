@@ -2,8 +2,8 @@
 
 The [README](../README.md) says what each part is for. This page is the rest of it: how the bar
 picks the session it types into, what the session list means by each state, how the <kbd>⌘</kbd><kbd>J</kbd>
-pane decides what to draw, what dictation is doing while you speak, and what the notch is up to
-when it looks asleep.
+pane decides what to draw, what the project mark on the page's session header opens, what
+dictation is doing while you speak, and what the notch is up to when it looks asleep.
 
 Nothing here needs reading to use the app. It is here because most of it is a decision that could
 have gone the other way, and a decision with no reason written down is one the next person deletes.
@@ -13,6 +13,7 @@ have gone the other way, and a decision with no reason written down is one the n
 - [When there is no tmux server yet](#when-there-is-no-tmux-server-yet)
 - [Which session wants you](#which-session-wants-you)
 - [Reading a session back](#reading-a-session-back)
+- [The mark in a session's header](#the-mark-in-a-sessions-header)
 - [Talk instead of type](#talk-instead-of-type)
 - [Dropping in a file or an image](#dropping-in-a-file-or-an-image)
 - [The notch](#the-notch)
@@ -340,6 +341,33 @@ than by what the terminal drew.
 Set `output_font` to whatever your terminal uses. The default is Menlo; a status line built out of
 box-drawing characters comes out at the wrong widths in anything with different metrics, which is
 what makes it look broken.
+
+## The mark in a session's header
+
+This one is on the page rather than in the bar — the browser or phone from
+[remote.md](remote.md), where a session's header carries the project's pixel mark, its name and
+its path. **The mark is a button of its own now, and it opens that project's snippets**: the
+pieces of text you wrote once and press instead of typing again. It used to be a picture inside
+the identity block, so pressing anywhere on that block opened Session info; the block is two
+buttons now, the mark and everything beside it, and neither press has to guess which of the two
+you meant. `⋯` → **Snippets** opens the same sheet, and it is the discoverable entrance rather than
+the fallback one: **a project the icon registry has never seen gets a mark of its own anyway**,
+drawn from the project's path, so two unregistered projects look like two projects instead of like
+two blanks. A registered icon always wins over it.
+
+Pressing a row **puts its text in the composer and closes the sheet. It does not send.** Sending is
+the second press, on the button that already sends — so a mis-tap on a phone in a pocket cannot
+run `commit, push, deploy` in the wrong session, and *snippet plus one more sentence* needs no
+separate feature. Clawdline never reads what a snippet says: the words go in the box the way
+dictation's do, and what they mean is the assistant's business.
+
+The sheet groups **this project** above **every project**, and the Mac decides which project that
+is by the mark's own rule — the icon registry first, then the repository a worktree was cut from,
+so a child session in an isolated checkout sees the snippets of the project it came from rather
+than an empty list of its own. A device the Mac granted `read` and not `send` still sees the list,
+with the insert disabled and the reason on screen, because the composer it would insert into is
+disabled too. [snippets.md](snippets.md) is the whole feature; the routes are in
+[api.md](api.md#the-snippets-a-session-can-press).
 
 ## Talk instead of type
 

@@ -15,14 +15,18 @@
 // errexit and leaves the ERR trap armed, the handler ends in `exit`, and every line after the
 // pipeline — the path of the log, the receipt-direction report, the whole `exit 126` branch for a
 // `tee` that could not write — became unreachable on exactly the runs they exist for. A guard that
-// cannot go red is worse than no guard, so the run-file block is now lifted too and the harness
-// runs under the same three traps `./test.sh` does.
+// cannot go red is worse than no guard, so the harness sources the same
+// `Resources/clawdline-progress.sh` `./test.sh` does and opens the row with test.sh's own
+// `progress_start` line, and therefore runs under the same four traps.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync }
     from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+// `fileURLToPath`, not `URL.pathname`: this checkout lives under `Application Support`, and a
+// percent-encoded space is a path bash cannot open.
+import { fileURLToPath } from "node:url";
 
 let failures = 0;
 const check = (what, ok) => {
@@ -59,18 +63,22 @@ check("test.sh runs the suite through tee and acts on the status in one block",
 check("and no live line captures the whole run into a variable first",
       !code.some(l => /\bout=\$\(/.test(l)));
 
-// The traps the block actually runs under, lifted by their own markers rather than retyped. This
-// is the whole of the repair to this file: without them the harness below is a shell in which the
-// regression being guarded against cannot happen.
-const trapStart = script.indexOf("# >>> clawdline run file >>>");
-const trapEnd = script.indexOf("# <<< clawdline run file <<<");
-const runFileBlock = trapStart >= 0 && trapEnd > trapStart ? script.slice(trapStart, trapEnd) : "";
-check("the guard found the run-file block test.sh installs its traps in",
+// The traps the block actually runs under. They live in `Resources/clawdline-progress.sh` now, so
+// the harness sources that file and opens the row with test.sh's own line, both taken from the
+// checkout rather than retyped. This is the whole of the repair to this file: without them the
+// harness below is a shell in which the regression being guarded against cannot happen.
+const helperPath = fileURLToPath(new URL("../Resources/clawdline-progress.sh", import.meta.url));
+const startLine = (/^progress_start .*$/m.exec(script) || [""])[0];
+const runFileBlock = existsSync(helperPath) && startLine !== ""
+    ? `. ${JSON.stringify(helperPath)}\n${startLine}` : "";
+check("the guard found the helper test.sh installs its traps through, and the line that arms it",
       runFileBlock !== "");
-// Asked of the text as well as driven, because "the harness has the trap in it" is the premise of
-// every behavioural check below and a silently empty lift would make them all pass again.
-check("and that block arms an ERR trap, so this harness is not a shell without one",
-      /^trap 'clawdline_run_file_signal "\$\?"' ERR$/m.test(runFileBlock));
+// Asked of the helper's text as well as driven, because "the harness has the trap in it" is the
+// premise of every behavioural check below and a silently empty lift would make them all pass
+// again. The traps are indented, because `progress_start` is a function.
+check("and that helper arms an ERR trap, so this harness is not a shell without one",
+      existsSync(helperPath)
+        && /^\s*trap 'clawdline_run_file_signal "\$\?"' ERR$/m.test(readFileSync(helperPath, "utf8")));
 
 // `set +e` and `trap - ERR` are one switch that bash does not couple. The pairing is asserted on
 // the lifted block, so a disarm that drifts above `set +e` — where this file would never execute
@@ -127,7 +135,7 @@ try {
         writeFileSync(path, ["#!/bin/bash", "set -euo pipefail", runFileBlock,
                              // The block writes nothing until something calls it, and test.sh has
                              // moved the phase four times before it reaches the pipeline.
-                             "clawdline_run_file_phase 'running the suite'",
+                             "progress_phase 'running the suite'",
                              ...lines, blockText,
                              'echo "reached the end without exiting"', ""].join("\n"));
         chmodSync(path, 0o755);

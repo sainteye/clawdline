@@ -79,7 +79,19 @@ enum SessionState: Equatable {
     /// that ambiguous shape is accepted only when `hookWaiting` supplies an independent fact.
     static func menu(_ screen: String, assistant: Assistant = .claude,
                      tailLines: Int = 30, hookWaiting: Bool = false) -> Menu? {
-        let lines = screen
+        // **The colour comes off here, not at the caller.** This used to be the caller's job and
+        // exactly one caller did it — ``read(_:assistant:hookWaiting:)`` — so every reader that
+        // reached this through a poll was clean and the one that reached it directly was not.
+        // `Targets.capture` asks tmux for `-e` because the panel draws that screen for a person,
+        // and `Targets.answer` handed the result straight here: `\u{1b}[38;5;153m\u{276F}` puts an
+        // escape in the column ``option(_:)`` looks for a caret in, so no row was an option, so
+        // there was no menu, so an answer sent from a phone reached the tty and stopped there.
+        // Measured 2026-09-05 — and invisible until then, because the poll and the answer read
+        // the same screen through different doors.
+        //
+        // Free when there is nothing to strip: ``Ansi/plain(_:)`` returns the string it was
+        // given unless it actually finds an escape.
+        let lines = Ansi.plain(screen)
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { String($0) }
         // Keep physical line numbers beside the non-empty tail. The menu detector deliberately

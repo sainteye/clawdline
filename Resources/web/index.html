@@ -318,21 +318,30 @@ document.documentElement.className = "booting";
     <section class="pane pane-detail" id="pane-detail">
         <div class="detail-head" id="detail-head">
             <button class="back" id="back" aria-label="Back to the session list">‹ Sessions</button>
-            <!-- The whole identity block leads to this Session's information. One real button
-                 around the mark, title and path makes the generous phone target match what the
-                 reader sees, while the separate overflow button remains the actions entrance. -->
-            <button class="detail-session" id="detail-info" type="button"
-                    aria-haspopup="dialog">
-                <span class="detail-identity">
-                    <span class="clawdfather-crown" id="detail-clawdfather-crown"
-                          role="img" aria-label="Clawdfather" hidden></span>
-                    <canvas id="detail-mark" width="0" height="0"></canvas>
-                </span>
-                <span class="who detail-who">
-                    <span class="name" id="detail-name">No session open</span>
-                    <span class="sub" id="detail-sub"></span>
-                </span>
-            </button>
+            <!-- The identity block is two buttons that read as one. The mark is the shortcut to
+                 this project's snippets — it already means *this project* and it is the easiest
+                 thing on the header to hit with a thumb — and the name and the path lead to this
+                 session's information, which is what a reader points at when they mean "tell me
+                 about this". Neither press has to reveal what it meant; `detail.css` keeps the
+                 two halves at the spacing they had when they were one button, and gives the
+                 mark its own 44px target. -->
+            <div class="detail-identity-block">
+                <button class="detail-mark-go" id="detail-snippets" type="button"
+                        aria-haspopup="dialog">
+                    <span class="detail-identity">
+                        <span class="clawdfather-crown" id="detail-clawdfather-crown"
+                              role="img" aria-label="Clawdfather" hidden></span>
+                        <canvas id="detail-mark" width="0" height="0"></canvas>
+                    </span>
+                </button>
+                <button class="detail-session" id="detail-info" type="button"
+                        aria-haspopup="dialog">
+                    <span class="who detail-who">
+                        <span class="name" id="detail-name">No session open</span>
+                        <span class="sub" id="detail-sub"></span>
+                    </span>
+                </button>
+            </div>
             <div class="tools">
                 <!-- A screen, because what this does happens on one that is somewhere else. -->
                 <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>

@@ -1510,3 +1510,85 @@ items:
       is impossible to lose in projection. Reconsider when a second placeholder shows up in a
       durable receipt.
     opened: 2026-09-05
+
+  - id: B-GATE-REFUSALS-LEAVE-NO-RECORD
+    title: The three write gates refuse without writing anything down
+    problem: >-
+      A device whose pairing was revoked, or one granted `read` and never `send`, can hammer every
+      gated write route on this Mac and leave no trace of having tried. `writing()` returns the
+      four gate refusals — `400 bad_request` for a missing `Idempotency-Key`, `401 unauthorized`,
+      `403 write_disabled`, `403 forbidden` — straight from `writeGate`, without `remember()` and
+      without even `note()`, so there is no line in `remote-audit.jsonl` and none in the log. Only
+      a request that reaches a store gets audited. `RemoteAuth.audit` says of itself that it is a
+      security control rather than bookkeeping, and that if somebody does get in, the question
+      afterwards is *what did they do* — which has no answer for anything the gates turned away.
+      The reader's own question is narrower and just as unanswerable: was anything even tried.
+    evidence: >-
+      2026-09-05, found by the independent review of the snippets routes and confirmed against
+      `Sources/RemoteServer.swift`: `writeGate` at the top of the write path, `writing()`'s
+      `case .refused(let response), .replay(let response): return response` with no `note` beside
+      it. The review was looking at `POST /v1/snippets` and the behaviour is the whole family's —
+      `POST /v1/orchestrator/schedules` and every other gated write answer the same four the same
+      silent way. `docs/api.md` claimed in the snippets section that every refusal was audited;
+      that sentence has been corrected to name the store's own codes rather than the behaviour
+      changed, because changing it changes every write route at once and no route asked for it.
+    severity: noise
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Any incident where somebody has to reconstruct what a revoked or read-only device attempted.
+      The cheap repair is one `note()` on the refused and replayed arms of `writing()`, which puts
+      the attempt in the log without inventing an audit event for a request that reached no store;
+      an audit line would need a name that is not a store's event, and choosing one is the part
+      worth thinking about rather than the code.
+    opened: 2026-09-05
+
+  - id: B-THE-SESSION-LIST-HAS-NO-GENERATED-MARK
+    title: One project is two distinguishable marks on the header and two blanks in the list
+    problem: >-
+      `view/project-mark.js:markForSession` draws a mark for a project the icon registry has never
+      seen, and only the transcript header asks it. The session list still calls `drawIcon` with
+      `session.icon` alone, so the same session that carries a coloured generated mark four inches
+      up the screen falls back to the grey `.row .mark.none` placeholder in its own row. Two
+      sessions in two unregistered projects are two projects on the header and two identical
+      blanks in the list, which is the exact failure the generated mark exists to remove — read at
+      the surface where somebody is actually choosing between sessions.
+    evidence: >-
+      2026-09-05, measured live in Chrome by the independent review of the browser half against
+      `clawdline/snippets` at `f67189ae`: for one session `#detail-mark` was a 77x44 canvas with
+      `data-mark="generated"` while that session's row in the list held a 0x0 canvas and the CSS
+      placeholder. `markForSession` is the seam — `view/list.js` needs one call — and it was left
+      alone deliberately: the list is a surface the snippets delivery did not claim, and widening
+      a correction round into it is how a correction round stops being reviewable.
+    severity: noise
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      The next piece of work that touches the session list's rendering, or a second report of two
+      sessions being hard to tell apart in the list. Whoever takes it should check what a mark
+      costs per row first: the list redraws far more often than the header does, and `generatedMark`
+      is a hash and a loop rather than a lookup.
+    opened: 2026-09-05
+
+  - id: B-A-SHEET-CLOSES-AND-THE-KEYBOARD-IS-NOWHERE
+    title: Closing a sheet leaves the focus on `<body>` rather than where the reader was
+    problem: >-
+      Somebody who pressed a snippet in order to add "…, 但先跑測試" to it lands, after the sheet
+      closes, on `document.body` — so reaching the composer they were aiming at costs a walk
+      through the whole page behind the overlay. The row menu inside the snippets sheet was the
+      sharp version of this and is fixed; this is the house style around it, and
+      `input/user-messages.js:close` does the same thing, so a sheet that restored focus on its own
+      would be one sheet behaving differently from its neighbour.
+    evidence: >-
+      2026-09-05, measured in Chrome by the independent review of the browser half:
+      `document.activeElement` is `BODY` after an insert. The review named it as a separate,
+      smaller thing than the row menu for exactly the reason above. The correction round fixed the
+      redraw case in `input/snippets.js` and deliberately did not touch this one.
+    severity: noise
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      Somebody deciding what this app's sheets do with focus on close, for all of them at once —
+      the two sheets, the editor over one of them, and whatever the next overlay is. One sheet's
+      answer is not worth having.
+    opened: 2026-09-05

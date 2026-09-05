@@ -9,6 +9,61 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: the sentence you type several times a day, one press away
+
+Two of them get typed into a phone all day, one thumb at a time: *commit（逐檔指名，不要 git
+add -A）、push、deploy。* and *回報你剛剛做了什麼、什麼還沒做、接下來要做什麼。* Now you write one
+once and press it.
+
+The project mark on a session's header — the pixel icon that already means *this project* — is a
+button of its own and opens that project's snippets, and `⋯` → **Snippets** opens the same sheet.
+**A project nobody ever drew an icon for now has a mark anyway**: one generated from its own path,
+four rows of seven cells in a colour of its own, so two projects the registry has never seen look
+like two projects rather than like two empty boxes. A registered icon still wins. Pressing a row
+puts its text in the composer and closes the sheet. **It does not send.** Sending is the second press, on the
+button that already says so — a mis-tap on a phone in a pocket cannot run `commit, push, deploy` in
+the wrong session, and the ordinary case of *snippet plus one more sentence*, "…, 但先跑測試",
+needs no separate feature.
+
+A snippet belongs to one project or to every project, and the Mac decides which project a session
+is in by the mark's own rule — so a session running in an isolated worktree sees the snippets of
+the checkout it was cut from rather than an empty list of its own. They live beside your schedules,
+one file each in `~/.config/clawdline/snippets/`, and the list rides the snapshot the page already
+receives — which is what lets a phone on the relay press one too, with nothing to wait for.
+Making and changing them stays on the direct path, and a device that may only read still sees the
+list and is told why it cannot insert.
+
+**Clawdline never reads what a snippet says.** It puts the words in the box; what they mean is
+between you and the assistant. There is no expansion, no placeholder and no per-snippet "send on
+tap" — both of those were declined rather than postponed, and the reasons are in
+[`docs/snippets.md`](docs/snippets.md).
+
+The sheet speaks all fourteen languages. The two starters an empty list offers are the exception to
+how the rest of this app is translated: they are text a person sends to an assistant rather than
+the interface talking, so each language says what somebody there would actually type.
+### Fixed: a key pressed from a phone could reach the terminal and do nothing at all
+
+The panel asks tmux for a screen **with its colour still on**, because it draws that screen for a
+person to read. The parser that decides what a screen is showing strips no escapes of its own — it
+was always handed text somebody else had already cleaned. Exactly one caller did that cleaning, the
+one that polls every session a second at a time, so every reader that mattered was clean and the
+dependency was invisible.
+
+The path that answers a question is the one that did not go through that door. It captured the
+screen, handed it over with the colour attached, and `\u{1b}[38;5;153m` sat in the column the
+parser looks for a selection caret in. So no row was an option, so there were no options, so there
+was no menu — and a key pressed from a phone was written into the terminal and then abandoned,
+because the app could no longer see the question it had just answered. Nothing failed: the request
+returned success, the keystroke really had been delivered, and the picker sat there.
+
+It only ever showed up where the digit alone was not enough. An ordinary row answers on the digit,
+so those taps worked and this stayed invisible; a row with a `preview` panel needs the Return that
+follows, and that Return is what was never sent.
+
+The colour now comes off inside the parser, where every caller gets it, and the answering path
+writes down what it decided — what it read, where the caret was, whether it confirmed — because
+this failure was silent in the one place with no record of itself.
+
 ### Fixed: an answer sent from a phone stopped landing when the question carried a preview
 
 Tapping an option on a phone sends that row's digit into the picker, and Claude Code's
@@ -20,9 +75,12 @@ set of questions can hold one of each.
 Clawdline sends the Return that commits an answer only when it can see the picker did *not* move on
 by itself — and it read "this question is one of a set" as proof that it had. On a preview question
 that is exactly backwards: the highlight had moved, nothing had been committed, and the one thing
-withheld was the Return the picker was waiting for. The phone reported the answer as sent, honestly,
-because the keystroke had been delivered; the Mac then sat on the same three options for six minutes
-with both questions still unanswered. Measured 2026-09-05 against Claude Code v2.1.261.
+withheld was the Return the picker was waiting for. Measured 2026-09-05 against Claude Code
+v2.1.261.
+
+**The six unanswered minutes that found this were not this.** They belonged to the entry below,
+which was hiding underneath it: the answering path could not read that screen at all, so it never
+reached the decision described here. This one is what would have stopped the next tap.
 
 What decides it now is the picker's own tab bar, which moves for exactly one of the two: a digit
 that answered ticks its question off, and a digit that only moved a highlight leaves every box as it

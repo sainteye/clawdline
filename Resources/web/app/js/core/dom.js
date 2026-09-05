@@ -1,6 +1,6 @@
 export var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
- "app", "pane-detail", "back", "detail-info", "detail-actions-trigger", "detail-mark", "detail-clawdfather-crown", "detail-name", "detail-sub", "tx", "tx-scroll",
+ "app", "pane-detail", "back", "detail-info", "detail-snippets", "detail-actions-trigger", "detail-mark", "detail-clawdfather-crown", "detail-name", "detail-sub", "tx", "tx-scroll",
  "session-actions", "session-actions-main", "session-actions-git", "session-actions-back",
  "session-focus", "session-info", "session-screen", "session-git-more", "session-git", "session-commit", "session-push", "session-end",
  "action-confirm", "action-confirm-sheet", "action-confirm-title", "action-confirm-say",

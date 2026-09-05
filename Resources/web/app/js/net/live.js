@@ -685,3 +685,55 @@ LocalClient.deleteSchedule = function (id) {
     return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id),
                      { method: "DELETE", headers: { "Idempotency-Key": uuid() } });
 };
+
+/* ---- snippets: pressing one is local, keeping one is a write -------------
+   Kept in the same block shape as the schedules above, and for the same reason: the two
+   permissions have to stay visible at a glance. Reading is behind the ordinary read gate — a
+   paired device that may not send still sees the list, because seeing it is not typing. The four
+   writes go through the same three doors `send` does: the remote write switch, this device's
+   `send` capability, a non-empty `Idempotency-Key`. That is deliberately the same bar as typing
+   into a session; a device that may only read must not be able to rewrite the owner's snippets.
+
+   **None of these is on `ClawdlineClient.methods`.** That frozen list is what every transport
+   must satisfy, and the cloud transport has the reading half only — see `snippets()` there.
+   Every call site asks `typeof api.createSnippet === "function"` rather than assuming.
+   -------------------------------------------------------------------------- */
+
+/// This session's snippets, already filtered to its project and already in order, with the
+/// resolved scope beside them: `{"project":{"key":…,"label":…},"snippets":[…]}`. **The Mac
+/// resolves that key** — the registry match, the subdirectory prefix, a worktree folding into
+/// the checkout it was cut from — because the rule is the project icon's own rule and the
+/// browser has neither the registry nor the git directory to apply it with.
+LocalClient.snippets = function (id) {
+    return jsonFetch("/v1/snippets?session=" + encodeURIComponent(localSessionID(id)));
+};
+
+/// One snippet, made. `title`, `body`, `scope`, and `project` if and only if the scope is
+/// `project`; an unknown key is `400 malformed_snippet` rather than a field quietly dropped.
+/// The key is minted once per press, so a retry of *this* request does not write two files.
+LocalClient.createSnippet = function (snippet) {
+    return jsonFetch("/v1/snippets", post(snippet, { "Idempotency-Key": uuid() }));
+};
+
+/// Changing one already made. Same fields, same gate; the id is in the path and never in the
+/// body, exactly as `updateSchedule` above.
+LocalClient.updateSnippet = function (id, snippet) {
+    var opts = post(snippet, { "Idempotency-Key": uuid() });
+    opts.method = "PATCH";
+    return jsonFetch("/v1/snippets/" + encodeURIComponent(id), opts);
+};
+
+/// Removing one. No body — the id in the path is the whole request — and no undo route.
+LocalClient.deleteSnippet = function (id) {
+    return jsonFetch("/v1/snippets/" + encodeURIComponent(id),
+                     { method: "DELETE", headers: { "Idempotency-Key": uuid() } });
+};
+
+/// The full order of one scope, the field name `POST /v1/orchestrator/landing-queue/order`
+/// already uses and under the same promise: it may reorder the members of that scope and may
+/// never add or remove one.
+LocalClient.orderSnippets = function (scope, project, order) {
+    var body = { scope: scope, order: order };
+    if (project) body.project = project;
+    return jsonFetch("/v1/snippets/order", post(body, { "Idempotency-Key": uuid() }));
+};

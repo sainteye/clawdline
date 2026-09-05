@@ -221,7 +221,27 @@ fi
 #                                          is not the reason it is written here — a receipt that
 #                                          was added to instead of taken is a receipt about a tree
 #                                          nobody looked at.)
-remote_server_ceiling=5676
+#   5,726  the snippet routes arrived       (+50, measured: six route cases, the one-line
+#                                          `answer(_ reply: Snippets.Reply)` envelope beside the
+#                                          orchestrator's, and `snippets` on the orchestrator
+#                                          snapshot. The store, the bounds, the typed refusals,
+#                                          the write brake and the rule that decides which project
+#                                          a session is in are all in `Sources/Snippets.swift`, a
+#                                          new file, because a router is not a place to keep a
+#                                          store. What landed here is six doors and the envelope
+#                                          they answer through.)
+#   5,759  the snippet corrections           (+33, measured: seven lines went out with the second
+#                                          percent-decode on `?session=` and its now-wrong local,
+#                                          and forty came in — the comment saying why that value
+#                                          is used exactly as the parser handed it over, the
+#                                          `republishing` envelope and its counter that put a
+#                                          snippet write back on the snapshot the Cloud path
+#                                          reads, and the four call sites that now go through it.
+#                                          The store's own corrections — bytes rather than
+#                                          grapheme clusters, a bound on `project` and on
+#                                          `position`, symlinks resolved — are all in
+#                                          `Sources/Snippets.swift`.)
+remote_server_ceiling=5759
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -242,8 +262,12 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # group in `Tests/MarkdownTests.swift`, which stood at 1,950 lines against the 2,000-line limit
 # below — the same wall the document route met, and the same answer: a file of its own rather
 # than a group trimmed to fit under it.
-[ "$runner_count" -eq 33 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 33"
+# 34 once snippets arrived beside it: a store with its own file, its own bounds and its own scope
+# rule gets its own runner too. **Both branches wrote 33 and neither was wrong on its own tree**,
+# which is precisely why this number is counted on the merged one rather than carried over from
+# whichever side merged second.
+[ "$runner_count" -eq 34 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 34"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -332,8 +356,13 @@ manifest_group_count=$(awk '
 # second in the manifest — the runtime check compares the two orders, not the two totals, and a
 # name in the wrong place fails it exactly as a missing name does. Counted from the manifest with
 # the awk above.
-[ "$manifest_group_count" -eq 534 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 534"
+# 538 with the snippets branch's four beside them: the store's strictness and its UUID-only
+# addressing, the scope rule that follows the mark and then the git common directory, the routes
+# sharing the write gate with their typed refusals, and the snapshot carrying a list a session
+# read is already filtered from. One branch wrote 536 and the other 534, from the same 532; the
+# number here is the awk's answer on the merged manifest, which is the only tree that has both.
+[ "$manifest_group_count" -eq 538 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 538"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -408,8 +437,10 @@ for suite in Tests/*Tests.swift; do
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
 # 46 with Tests/ProjectRunTests.swift; see the runner-count note above for why it is its own file.
-[ "$suite_count" -eq 46 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 46"
+# 47 with Tests/SnippetStoreTests.swift, which arrived on another branch with the store it proves.
+# Two branches, one number each, both 46: counted here on the tree that holds both files.
+[ "$suite_count" -eq 47 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 47"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

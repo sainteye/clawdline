@@ -177,6 +177,11 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `PATCH` | `/v1/orchestrator/schedules/:id` | token + key | `send` **and** the write switch |
 | `DELETE` | `/v1/orchestrator/schedules/:id` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/orchestrator/schedules/:id/run` | orchestrator token | — |
+| `GET` | `/v1/snippets` | token | `read` |
+| `POST` | `/v1/snippets` | token + key | `send` **and** the write switch |
+| `PATCH` | `/v1/snippets/:id` | token + key | `send` **and** the write switch |
+| `DELETE` | `/v1/snippets/:id` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/snippets/order` | token + key | `send` **and** the write switch |
 | `GET` | `/`, `/index.html`, `/manifest.webmanifest` | — | — |
 | `GET` | `/favicon.ico`, `/icon-<size>.png` | — | — |
 
@@ -3258,6 +3263,278 @@ off, and `409 schedule_active` while any task from the schedule is non-terminal 
 already queued. A successful manual run records the current occurrence as handled when it is at or
 after that occurrence; running before the next scheduled time does not consume that future fire.
 
+### The snippets a session can press
+
+A snippet is a piece of text somebody wrote once and presses instead of typing again. One JSON
+file each, under `~/.config/clawdline/snippets/`, in `RemoteAuth.directory` — the same directory
+as `schedules/` and `remote.json`, and behind the same `CLAWDLINE_REMOTE_DIR` escape hatch, so a
+test run never edits the developer's own. [`snippets.md`](snippets.md) is what they are for and
+why a press does not send; this is the wire.
+
+**Nothing on this Mac reads what a snippet says.** The store validates a title, a body, a scope
+and a project path, and beyond their lengths the text is opaque to it: no route expands a snippet,
+acts on one, or sends one anywhere. Six routes, and none of them is a way to type into a session.
+
+**Not orchestrator routes, and not under that prefix.** `/v1/snippets` is a paired-device door,
+so — unlike [`GET /v1/orchestrator/schedules`](#get-v1orchestratorschedules), which takes either
+credential — the orchestrator token opens nothing here and is not read. The two reads need a
+paired device; each of the four writes needs
+[all three write gates](#writing-three-gates-in-this-order), the same bar as typing into a
+session. Both change what is on this Mac, and a device that may only read must not be able to
+rewrite the owner's snippets.
+
+The whole list also rides `orchestratorSnapshot` as `snippets`, beside `schedules`, which is what
+lets a browser on the Cloud path — which speaks no HTTP to this Mac and may ask for only
+[seven reads](#the-reads-a-browser-on-the-cloud-path-may-ask-for) — show the list at all, and
+show it with no request of its own. **A browser on the direct path does make one**: it reads
+`GET /v1/snippets?session=<id>` below, because that is the answer carrying the resolved project
+and the per-session filtering the snapshot's whole unsorted inventory does not. Editing is
+direct-path only: the four writes below have no Cloud equivalent at all.
+
+Each of those four republishes the snapshot when it succeeds, so a phone on the relay sees a
+snippet made at the desk without waiting for an unrelated orchestrator event to repaint it. A
+refusal republishes nothing, and neither does an answer replayed out of the ten-minute
+idempotency table: nothing changed either time.
+
+**The replies in this section are composed, and the rest of this page's are pasted.** The build
+running on the Mac these six were written against answers `404 not_found` for `/v1/snippets` —
+the routes were in the tree and not yet in that app — so every field, code and sentence below
+was read out of `Sources/Snippets.swift` and the route cases rather than off a wire. What that
+does not tell you is the order of keys in a real answer: these routes serialise without
+`.sortedKeys`, so read them by name.
+
+#### `GET /v1/snippets`, `GET /v1/snippets?session=<id>`
+
+Without `session`, every valid snippet on this Mac, which is what the editor reads:
+
+```console
+$ curl -s http://127.0.0.1:7717/v1/snippets -H "Authorization: Bearer $TOKEN"
+{"snippets":[{"id":"3f2a91c4-7e0b-4d68-8b41-6d0a2c9e5f31",
+              "title":"Commit, push, deploy",
+              "body":"Commit each file by name — never git add -A — then push and deploy.",
+              "scope":"project","project":"/Users/me/code/clawdline",
+              "position":100,"created_at":1789700000,"updated_at":1789700000}]}
+```
+
+`project` is present if and only if `scope` is `"project"`. Ordering is `position`, then
+`created_at`, then `id` — the last two only so that rows written in the same second still have one
+order rather than the directory's.
+
+**A file that does not parse is skipped, not reported.** Unlike the schedules list, which carries
+an `invalid` row for each unreadable file, this answer contains only snippets: a name that is not
+a UUID has no id to address it by, and a UUID-named file whose contents fail the record check —
+an unknown key, an empty title, a body over 4000, a `project` beside `scope: "global"` — is left
+exactly where it is and left out of the list. Nothing repairs it and nothing rewrites it.
+
+With `session`, the list that session would show, resolved and grouped:
+
+```console
+$ curl -s 'http://127.0.0.1:7717/v1/snippets?session=105344fb-c769-4b37-b766-403b410897eb' \
+    -H "Authorization: Bearer $TOKEN"
+{"project":{"key":"/Users/me/code/clawdline","label":"clawdline"},"snippets":[…]}
+```
+
+Project rows precede global rows, each still in the order the person put them in. `404 not_found`
+— *No session named that* — for a session id this Mac does not have, and for one whose working
+directory cannot be read.
+
+**The Mac resolves the project key; the browser never computes it**, and the rule is the header
+mark's own rule because the mark is the button:
+
+1. the registry path `ProjectIcon.entry(forCwd:)` matched — exact, or a `path + "/"` prefix, which
+   is what makes a session in a subdirectory the same project. `label` is that entry's own label;
+2. otherwise the repository's **common** directory —
+   `git rev-parse --path-format=absolute --git-common-dir` with the trailing `/.git` dropped — so
+   a child running in an isolated worktree sees the snippets of the checkout it was cut from
+   rather than an empty list of its own;
+3. otherwise the session's `cwd`.
+
+Every path is standardised before it is compared or stored, and `label` falls back to the last
+component of the key.
+
+#### `POST /v1/snippets`
+
+Makes one. The body's keys must be a subset of `title`, `body`, `scope`, `project`, and must
+include the first three:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/snippets \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 3f9a1c04-77e2' \
+    -d '{"title":"Say what you did","body":"Say what you just did, what is still undone, and what you are doing next.","scope":"global"}'
+{"id":"9c1d77af-31b8-4a02-9f5e-0e5c2a44b7d1","title":"Say what you did",
+ "body":"Say what you just did, what is still undone, and what you are doing next.",
+ "scope":"global","position":100,"created_at":1789700461,"updated_at":1789700461}
+```
+
+**The answer is the stored record itself, at the top level, with no `ok` beside it** — not the
+`{"ok":true,"schedule":{…}}` shape the schedules routes use. It is the record as it was read back
+off disk's own format, so `id`, `position` and both timestamps are the Mac's answer rather than
+anything the client sent; none of those four may be written by a client, and sending one is an
+unknown field.
+
+**The three lengths are bytes, not characters**, and the same numbers now mean something the
+store can be held to: `title.utf8.count <= 60`, `body.utf8.count <= 4000`,
+`project.utf8.count <= 1024`, the way `label` on a root assignment is already
+`utf8.count <= 200`. Swift's `String.count` counts grapheme clusters, so four thousand ZWJ emoji
+were four thousand of them and about a hundred kilobytes on disk, in an append-only audit file
+and on every snapshot broadcast — none of which pays in characters — and `project`, the one
+field of the four that reaches `remote-audit.jsonl`, had no bound at all. What it costs is worth
+knowing before you write a client: a byte is a Latin letter and a Han character is three, which is
+why the title's bound is 200 rather than the 60 the design first wrote — the same figure would have
+been a full title in English and twenty characters in Chinese.
+
+`project` is measured **as you sent it**, before the path is standardised. Standardising truncates
+at `PATH_MAX` without saying so — measured on macOS, a 2,005-byte path comes back as exactly 1,024
+bytes — so a bound taken afterwards could never fire, and the snippet would be filed under a path
+that is not the one you sent.
+
+The read side counts the same way. A stored file whose title or body exceeds its bound in bytes,
+or whose `project` exceeds 1024, is isolated by the record check like any other malformed one —
+and so is a `position` outside `0…1_000_000_000`, which is the one field that used to be
+accepted unbounded and then have 100 added to it by the next create in that scope.
+
+`position` is a hundred past the highest in that same scope and project, so a new snippet lands at
+the end of its own group. `scope` is exactly `"global"` or `"project"`, and `project` is present
+if and only if the scope is `"project"` — a `project` path beside `"global"`, or `"project"` with
+no path, is `snippet_scope_mismatch` rather than a field quietly dropped.
+
+| | when |
+|---|---|
+| `400 bad_request` | no `Idempotency-Key` |
+| `400 malformed_snippet` | an unknown field, a missing `title`, `body` or `scope`, a `scope` that is neither word, or a title or body that is empty |
+| `400 snippet_too_long` | a title over 200 **bytes of UTF-8**, a body over 4000, or a `project` path over 1024. `title_count`, `body_count` and `project_count` sit beside the code with the lengths actually counted |
+| `400 snippet_scope_mismatch` | `"project"` with no `project`, or a `project` beside `"global"` |
+| `401 unauthorized` | no token, or one this Mac does not know |
+| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `409 snippet_limit_reached` | 100 snippets already on this Mac, or 50 already in that one scope. `count` and `limit` say which bound was hit |
+| `429 rate_limited` | ten snippet writes in the last ten minutes |
+| `500 write_failed` | the file could not be written, or could not be read back through the record check afterwards — in which case it has been removed |
+
+**The refusals the store makes are audited; the ones the gates make are not.** A success is
+`snippet.created` with the id, and `malformed_snippet`, `snippet_too_long`,
+`snippet_scope_mismatch`, `snippet_limit_reached`, `rate_limited` and `write_failed` are each
+`snippet.created` with `ok=0` and `why=<code>` — those are the answers this store decides.
+`400 bad_request`, `401 unauthorized`, `403 write_disabled` and `403 forbidden` are decided by
+[the three write gates](#writing-three-gates-in-this-order) before the store is reached, and
+`writing()` returns them without a line in `remote-audit.jsonl` or in the log. That is this whole
+API's existing behaviour rather than anything about snippets — every gated route on this page
+answers the same four the same silent way — and it means a revoked or read-only device hammering
+the four write routes leaves no record at all. It is written down as a gap in
+[`docs/backlog.yaml`](backlog.yaml) rather than fixed here, because changing it changes every
+write route on this Mac at once.
+
+**A refusal never spends the brake**: validation and both limits are decided before the window is
+touched, so a client that sends the same malformed body ten times has used none of its ten writes.
+
+**The brake is one bucket for all four writes**, not one per route: ten writes in ten minutes
+across create, edit, delete and reorder together, a sliding window of counted writes like the
+dispatch brake and unlike `busy`. Its refusal and the two `500`s are the answers **not** filed
+under the `Idempotency-Key` — they are facts about this machine at this moment rather than about
+the request, and a cached one would tell the retry that was supposed to work that the brake is
+still on long after it let go. Everything else, refusals included, is filed and replayed for ten
+minutes.
+
+**Every write is atomic and read back before the request is answered.** The record is serialised
+to `.<id>.json.new` beside its destination at `0600`, moved into place — `replaceItemAt` when
+something was there — and then read off disk through the same check that reads the list. A file
+this app cannot itself parse never survives the request that made it: a create removes it, an edit
+restores the bytes that were there before.
+
+#### `PATCH /v1/snippets/:id`
+
+Changes one that exists, from the same four fields, and needs at least one of them. What is not
+named is carried over from the stored record, which is the one place these routes are not
+wholesale: `PATCH /v1/orchestrator/schedules/:id` rewrites a schedule from the body, and this
+merges into a snippet.
+
+```console
+$ curl -s -X PATCH http://127.0.0.1:7717/v1/snippets/9c1d77af-31b8-4a02-9f5e-0e5c2a44b7d1 \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 7b2c5e10-9d44' \
+    -d '{"scope":"project","project":"/Users/me/code/clawdline"}'
+{"id":"9c1d77af-…","title":"Say what you did","body":"…","scope":"project",
+ "project":"/Users/me/code/clawdline","position":200,"created_at":1789700461,"updated_at":1789700802}
+```
+
+`created_at` is kept and `updated_at` is stamped. **A snippet that changes scope goes to the end
+of the scope it arrives in** — a hundred past the highest there — because its old position was a
+place in a list it has left; one that does not keeps the position it had, so an edit never moves a
+row somebody arranged.
+
+Two consequences of the merge worth naming, because neither is an error the sheet can explain
+afterwards:
+
+- Sending `{"scope":"global"}` on a project snippet drops the path with it. The carried-over
+  `project` is only carried when the *resulting* scope is `"project"`.
+- Sending `{"scope":"project"}` on a global snippet with no `project` beside it is
+  `400 snippet_scope_mismatch`, not a guess about which project was meant. There is nowhere in
+  this body to be wrong about that quietly.
+
+Its refusals are `POST`'s, plus `404 snippet_not_found` — *No snippet named that exists on this
+Mac* — for an id that is unknown, is not a UUID at all, or names a file that no longer reads back
+as a record. The audit event is `snippet.updated`. The limit check counts the other records only,
+so re-saving the fiftieth snippet in a scope is not refused for being the fifty-first.
+
+#### `DELETE /v1/snippets/:id`
+
+Removes one file.
+
+```console
+$ curl -s -X DELETE http://127.0.0.1:7717/v1/snippets/9c1d77af-31b8-4a02-9f5e-0e5c2a44b7d1 \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 5d0e2a91-6b17'
+{"ok":true,"deleted":"9c1d77af-31b8-4a02-9f5e-0e5c2a44b7d1"}
+```
+
+| | when |
+|---|---|
+| `400 bad_request` | no `Idempotency-Key` |
+| `401 unauthorized` · `403 write_disabled` · `403 forbidden` | as above |
+| `404 snippet_not_found` | no such file — including an id that is not a UUID |
+| `429 rate_limited` | the same ten-writes-in-ten-minutes bucket |
+| `500 delete_failed` | the file is there and would not go |
+
+The id is canonicalised to a UUID and joined to the store's own directory, so `<id>.json`
+resolves and nothing else does; a body, if one is sent, is not read. **Unlike
+[`DELETE /v1/orchestrator/schedules/:id`](#delete-v1orchestratorschedulesid), this one is
+braked** — a snippet is a keystroke's worth of text rather than work that runs unattended, so
+there is nothing here that wanting it to stop makes urgent. The audit event is `snippet.deleted`.
+
+#### `POST /v1/snippets/order`
+
+The complete order of one scope, in one call. `order` is the field name
+[`POST /v1/orchestrator/landing-queue/order`](#post-v1orchestratorlanding-queueorder) already
+uses, and like that route it may reorder members and never add or remove one.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/snippets/order \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 1e77d0b3-40aa' \
+    -d '{"scope":"project","project":"/Users/me/code/clawdline",
+         "order":["9c1d77af-…","3f2a91c4-…"]}'
+{"ok":true,"scope":"project","project":"/Users/me/code/clawdline","snippets":[…]}
+```
+
+The body's key set is exact: `scope` and `order` for a global scope, those two and `project` for a
+project one. `order` must hold every snippet in that scope, no others, each id once. Positions are
+rewritten to `100, 200, 300…` in the order given and every row's `updated_at` is stamped;
+`snippets` in the answer is those records, in that order, and `project` is present only for a
+project scope.
+
+| | when |
+|---|---|
+| `400 malformed_snippet` | a missing or unknown key, a `scope` that is neither word, an `order` that is not an array of strings, or ids that repeat or are not UUIDs |
+| `400 snippet_scope_mismatch` | `"project"` with no path or `"global"` with one; or an `order` that is not exactly this scope's membership |
+| `429 rate_limited` | the same bucket — one reorder is one write, however many rows it moves |
+| `500 write_failed` | a snippet changed or could not be written while the order was being saved |
+
+**A `500` here can leave the scope half-renumbered.** The rows are written one at a time and the
+call stops at the first failure, so what is on disk is a prefix of the order asked for followed by
+the old positions of the rest. That is a valid list — every row still has a position and the read
+still sorts — and it is not the order anybody asked for, so a client that gets this should re-read
+the list rather than assume either state. The audit event is `snippet.ordered`, carrying the scope
+and the project path.
+
 ### `POST`, `GET`, `DELETE /v1/orchestrator/maintenance/restart`
 
 This is the durable drain receipt a replacement command must obtain before swapping the app. POST
@@ -4880,7 +5157,7 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `depth_exceeded` | 409 | a session already at the bottom of the tree tried to dispatch a task of its own |
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
-| `rate_limited` | 429 | a sliding window of counted attempts is full — pairing attempts, dispatches per ten minutes, schedules written per ten minutes, agent notifications per hour. What was counted ages out of the window on its own; nothing is draining, which is what separates this from `busy` |
+| `rate_limited` | 429 | a sliding window of counted attempts is full — pairing attempts, dispatches per ten minutes, schedules written per ten minutes, snippet writes per ten minutes, agent notifications per hour. What was counted ages out of the window on its own; nothing is draining, which is what separates this from `busy` |
 | `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand. The terminal broker admits eight operations globally and two per terminal session, shared by remote terminal mutations, terminal-bearing orchestrator writes and automatic child close; a same-key in-flight retry joins without consuming another place. These refusals are not filed under an `Idempotency-Key` |
 | `transcript_busy` | 429 | the independent transcript worker's active+trailing bound or the one-slot background share is full. `retry_after` and `Retry-After` give bounded delay seconds; `retry_debt` records how many admitted transcript reads are ahead. A foreground first-open has the reserved share and cannot be refused merely because one background refresh is active |
 | `over_capacity` | 429 | the root's child slots are full — `orchestrator_max_children` — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |

@@ -15,8 +15,8 @@ the reference. But the reason this page exists is so you do not have to.
 
 Clawdline is a macOS bar that manages several Claude Code sessions. It shows, for the project a
 session is working in: its name and mark, which of its servers are up, whether its site is
-healthy, how far a deploy has got, how far the test run in the next tab has got, how much is in
-its backlog, and how much of a milestone is left.
+healthy, how far a deploy has got, how far the slow thing running in the next tab has got, how much
+is in its backlog, and how much of a milestone is left.
 
 **It reads files. It never calls you.** There is no SDK, no package, no webhook to register, and
 nothing to add to the project's dependencies. Every integration below is "write a small JSON file
@@ -29,7 +29,7 @@ where Clawdline looks". A project with none of them still works; it simply has l
 | [1](#1-the-servers--devstackjson) | the dev stack: servers, ports, start/stop/status | `.devstack.json`, in the repository |
 | [2](#2-the-health-check) | whether what this project deploys is answering | `~/.claude/statusline-cache/health-<path>.json` |
 | [3](#3-the-deploy-or-ci-run) | a deploy or CI run in flight | `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json` |
-| [4](#4-the-local-test-or-build) | a local test or build in flight | `~/.claude/statusline-cache/run-<path>.json` |
+| [4](#4-the-long-local-run) | anything long running locally: a test, a build, an import, an encode | `~/.claude/statusline-cache/run-<path>.json` |
 | [5](#5-the-backlog) | a backlog | `~/.claude/statusline-cache/backlog-<path>.json` |
 | [6](#6-the-finite-milestone) | a finite milestone | `~/.claude/statusline-cache/milestone-<path>.json` |
 | [7](#7-the-mark-and-the-colour) | the mark and the colour | `~/.claude/project-icons.json` |
@@ -90,8 +90,8 @@ cron entry, no hook, and one writer for the JSON rather than two. Put it anywher
 backlog is yours to keep current, which is section 5.
 
 **The other three are yours either way.** `.devstack.json` (1) states this project's own
-commands; the milestone (6) counts work only this project can define; and the local run
-(4) is written by the script that is running, because nothing polls for a test that started
+commands; the milestone (6) counts work only this project can define; and the long local run
+(4) is written by the thing that is taking the time, because nothing polls for a job that started
 thirty seconds ago in the next tab. Check what is actually in the cache directory before you decide
 who owns a file; a second writer for one file is a race whose loser is whichever ran first.
 
@@ -237,11 +237,22 @@ The natural place to write it is a step in the workflow itself, or a git hook af
 
 ---
 
-## 4. The local test or build
+## 4. The long local run
 
-Section 3 is a run on somebody else's machines. This one is the run in front of the user —
-`./test.sh`, a build, a long migration — so that a suite started in one tab is visible from the bar
-while they work in another. It is the file to write for a project whose tests take minutes.
+Section 3 is a run on somebody else's machines. This one is **the progress protocol for work
+happening here**: whatever is taking the time writes one small file, and the bar draws how far it
+has got, so a job started in one tab is visible while the user works in another.
+
+**A test or a build is the worked example, not the definition.** `label` and `phase` are free text,
+so a lint pass, a data import, a schema migration, a long encode, a model download and the project's
+own deploy script all fit this file exactly as `./test.sh` does. The question to ask about a project
+is not "does it have a test suite" but **"what does this project do that takes minutes?"** — that is
+what goes here, and there is usually more than one.
+
+**And it is a tool you can use yourself.** If you are about to run something that takes four minutes,
+this file is how the person watching finds out how far it has got without reading your terminal.
+Wire it for the project, then use it: a wrapped command is one line and it answers the question the
+user would otherwise have to ask you.
 
 `~/.claude/statusline-cache/run-<path>.json`, keyed by the working directory:
 
@@ -251,7 +262,7 @@ while they work in another. It is the file to write for a project whose tests ta
   "label": "test",          // free text, drawn exactly as written, never translated
   "phase": "compiling",     // optional, drawn where a percentage would be
   "started_at": 1757040000, // unix seconds
-  "typical_seconds": 288,   // how long this usually takes — time one honest run and use that
+  "typical_seconds": 288,   // optional — time one honest run; leave it out rather than guess
   "updated_at": 1757040100  // required while running; a `running` row without it is drawn by nobody
 }
 ```
@@ -263,14 +274,56 @@ overwrites.
 
 ### Where it is written from
 
-**The project's own test or build command**, not a wrapper the user has to remember to type. A
-wrapper is a file that reports on the runs somebody remembered to start it with, which is not the
-same thing as what the project is doing.
+**From the command the project already runs**, not from something the user has to remember to type
+first. A row that only appears when somebody remembered a wrapper reports on the runs they
+remembered, which is not the same thing as what the project is doing.
 
 This is the one kind on the page where connecting the project means **editing a file the project
-already has** rather than adding one beside it. Say so before you do it, keep the change to the few
-lines below, and make sure a failure to write the status file cannot fail the test run — nobody's
-suite should go red because a status file could not be written.
+already has** rather than adding one beside it. Say so before you do it, keep the change small, and
+make sure a failure to write the status file cannot fail the run — nobody's suite should go red
+because a status file could not be written.
+
+### The short way: `clawdline-progress`
+
+This repository ships a helper, `Resources/clawdline-progress.sh`, and it is what to reach for
+first:
+
+```sh
+# inside the project's own script, target or task — the command it wraps is not edited
+clawdline-progress run --label lint --typical 120 -- ./scripts/lint.sh
+
+# or sourced into a script that already knows what its own phases are called
+. "$CLAWDLINE_PROGRESS"
+progress_start --label test --typical 288
+progress_phase compiling
+```
+
+The wrapper form is one line in front of a command that stays exactly as it was, and the state the
+row lands on is that command's own exit status rather than a line the control flow has to reach.
+Put it where the project's command already lives — the `test` target, the `lint` script, the
+migration entry point — so that it runs whenever that command does. Typed at a shell for a one-off
+job it works just as well; what it must not turn into is something a person has to remember before
+every run. `$CLAWDLINE_PROGRESS` is wherever this machine's copy of the helper is; if nothing sets
+it, set it yourself — sourcing needs a path to that file and nothing else.
+
+**Why there is a helper at all, when the JSON above is six fields.** Because the JSON is the easy
+half and the shell around it is the hard one, and it fails in the direction that looks like success.
+Two separate agents, each holding this whole page, got the traps wrong on their first attempt on
+this machine's `bash 3.2.57`. Measured against `/bin/bash` 3.2.57(1)-release, one script each:
+
+- an **`EXIT` trap on its own reads a killed run as a clean one** — sent `TERM`, that handler runs
+  with `$?` set to `0`, so the last thing written is `ok` and the bar shows a tick for a run
+  somebody killed;
+- **`set -e` does not fire `ERR` inside a function** unless `set -E` is on too, so a producer that
+  hangs its `fail` on `ERR` writes nothing at all and leaves `running` behind;
+- **a signal handler that returns lets the run declare success** — the handler writes `fail`, the
+  script carries on from where the signal interrupted it, reaches its own `exit 0`, and the *last*
+  write is `ok`.
+
+### The long way, written by hand
+
+Nothing stops a project writing the file itself, and plenty should — the format is open and that
+openness is the point. What it has to get right is everything in the sketch below.
 
 ```bash
 run=~/.claude/statusline-cache/run-$(pwd | tr / -).json
@@ -344,6 +397,13 @@ Five things in that sketch are the whole point of it:
   a failed redirection prints from the shell rather than from the command, so silencing only the
   `printf` still leaves three lines of noise in the middle of somebody's test output. The chip is
   allowed to be absent; the run is not allowed to be wrong about itself, or noisy about it.
+
+**`typical_seconds` is optional, and an unmeasured project leaves it out.** The bar is drawn against
+that number and nothing else, so a guess draws a bar that is confidently wrong and no reader can tell
+a guess from a measurement. Time one honest run and write that; if you have not timed it, leave the
+field out and the row still says what is running and which phase it is in, with an empty bar rather
+than a false one. This repository does both on purpose — `./test.sh` writes a measured `288`, and
+`./build.sh`, which nobody has ever timed, writes no `typical_seconds` at all.
 
 `none`, and every state a reader does not recognise, draws nothing at all. Do not invent states:
 an unrecognised one is not an error the user gets told about, it is a row that silently disappears.
@@ -472,9 +532,11 @@ Do not report success without evidence. For each file you created:
    file's modification time moved. That covers the health check's poller, the deploy's workflow
    step or hook, and whatever counts the backlog and the milestone — a status file nothing updates
    reports that everything is fine, forever, including during the outage.
-7. **For the run file, prove it is written by something still alive**, which is a different
-   question from "does it parse". Start the project's own test or build command, and while it is
-   still going:
+7. **For the run file, watch a real run move.** This is the step that is not "did I write a
+   file" — a file that parses proves nothing, because the failure this wiring actually has is a row
+   that stops moving or lands on the wrong state. Start whatever this project has that takes
+   minutes — its tests, its build, an import, an encode, whichever you wired — and while it is still
+   going:
 
    ```bash
    run=~/.claude/statusline-cache/run-$(pwd | tr / -).json
@@ -489,8 +551,10 @@ Do not report success without evidence. For each file you created:
 
    Read it twice, a few seconds apart, and show that `updated_at` **moved**. A `running` row whose
    age is already past its ceiling is a row every reader ignores, and one that never moves is what
-   a dead producer leaves behind. Then show all three endings, because they are three different
-   paths through the wiring and a good day only exercises one of them:
+   a dead producer leaves behind. If the producer names phases, let it cross one and show `phase`
+   changing too — that is the difference between a row that is alive and a row that is merely
+   recent. Then show all three endings, because they are three different paths through the wiring
+   and a good day only exercises one of them:
 
    - let a run finish and show the state landing on `ok`;
    - **make one run fail on purpose** — break an assertion, or put `exit 1` where the tests are —

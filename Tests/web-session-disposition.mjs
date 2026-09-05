@@ -244,9 +244,17 @@ assert.match(infoSource, /closeabilityLines\(s\)/,
 
 const pageSource = await readFile(
     new URL("../Resources/web/index.html", import.meta.url), "utf8");
+// The identity block is two buttons now, and this used to insist it was one: the mark moved out
+// of `#detail-info` into `#detail-snippets` when it became this project's snippets shortcut, so
+// the assertion below went on describing a header that had been replaced. What is worth holding
+// is not that there is a single button — it is that each half says out loud what it opens, and
+// that what it says is true. **Both say `dialog`**: the snippets sheet is `role="dialog"
+// aria-modal="true"` exactly as Session info is. It said `menu` here for as long as the design
+// did, and a screen reader announced a menu button and was then handed a dialog. The button
+// that really does open a menu is `#detail-actions-trigger`, asserted below.
 assert.match(pageSource,
-    /<button class="detail-session" id="detail-info"[^>]*aria-haspopup="dialog"[\s\S]*?<canvas id="detail-mark"[\s\S]*?<span class="who detail-who">[\s\S]*?id="detail-name"[\s\S]*?id="detail-sub"[\s\S]*?<\/button>/,
-    "the whole Session identity block is an explicit, accessible entrance to Session info");
+    /<div class="detail-identity-block">[\s\S]*?<button class="detail-mark-go" id="detail-snippets"[^>]*aria-haspopup="dialog"[\s\S]*?<canvas id="detail-mark"[\s\S]*?<\/button>[\s\S]*?<button class="detail-session" id="detail-info"[^>]*aria-haspopup="dialog"[\s\S]*?<span class="who detail-who">[\s\S]*?id="detail-name"[\s\S]*?id="detail-sub"[\s\S]*?<\/button>/,
+    "the identity block is two labelled entrances, and both of them open a dialog: the mark opens this project's snippets, the name and path open Session info");
 assert.match(pageSource,
     /<button class="detail-more" id="detail-actions-trigger"[^>]*aria-haspopup="menu"[\s\S]*?<circle[^>]*>[\s\S]*?<circle[^>]*>[\s\S]*?<circle/,
     "the transcript header exposes the Session menu through a recognizable bare three-dot button");

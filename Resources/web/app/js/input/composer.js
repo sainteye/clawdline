@@ -1,4 +1,5 @@
 import { hasKeyboard } from "../core/env.js";
+import { appendGap, appendedText } from "../core/compose-text.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
@@ -99,12 +100,11 @@ export function appendMsg(text) {
     // Whitespace only is nothing: a box holding the `<br>` a browser left behind must not put a
     // leading space in front of the first thing dictated into it.
     var had = msgText() ? rawMsgText() : "";
-    var join = had && !/\s$/.test(had) ? " " : "";
     if (document.activeElement === els.msg) {
         caretToEnd();
-        insertText(join + said);
+        insertText(appendGap(had) + said);
     } else {
-        els.msg.textContent = had + join + said;
+        els.msg.textContent = appendedText(had, said);
     }
     blankness();
     renderComposer();
