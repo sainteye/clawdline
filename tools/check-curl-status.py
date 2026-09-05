@@ -630,8 +630,9 @@ def swift_literal_projection(text):
     single backslash by the time an agent reads it, and therefore a shell line continuation —
     which is how a four-line `curl` in a briefing is read as one command instead of four. The
     two characters are replaced by a space and the character, so the projection stays the same
-    length as the file and the line numbers stay true. `\(` is left alone: it is an
-    interpolation, and leaving the backslash on it keeps the interpolated URL a single word.
+    length as the file and the line numbers stay true. An interpolation is filled with `x` for
+    the reason written above `INTERPOLATION_FILLER`, and a raw string is read with its own
+    delimiter, because a bare triple quote inside one used to walk this parser out of step.
     """
     out = list(blanked(text))
     i = 0
