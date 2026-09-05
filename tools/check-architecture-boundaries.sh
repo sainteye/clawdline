@@ -238,8 +238,12 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # file came out at 2,005 lines against the 2,000-line stop-growth limit below — which is the
 # limit doing exactly what it is for, so the group moved into its own file rather than being
 # trimmed to fit under a wall it would have left the next person standing at.
-[ "$runner_count" -eq 32 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 32"
+# 33 once the local-run status file got a suite of its own. It belongs beside the project-status
+# group in `Tests/MarkdownTests.swift`, which stood at 1,950 lines against the 2,000-line limit
+# below — the same wall the document route met, and the same answer: a file of its own rather
+# than a group trimmed to fit under it.
+[ "$runner_count" -eq 33 ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 33"
 
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -320,8 +324,11 @@ manifest_group_count=$(awk '
 # two named artifact slots before it could not be asked for a path at all.
 # 532 is this merged tree counted with the awk above: 531 was counted on the tree the Projects
 # page landed on, and the documents group is the one this branch brought.
-[ "$manifest_group_count" -eq 532 ] \
-  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 532"
+# 533 with the local run's one: the seventh project status file, its staleness ceiling at both
+# sides of the boundary, and the link row that carries no address. Counted from the manifest with
+# the awk above rather than added to 532, which is the mistake three paragraphs up.
+[ "$manifest_group_count" -eq 533 ] \
+  || architecture_guard_fail "ordered group manifest has $manifest_group_count entries; expected 533"
 
 # One async function's suspension-point count is the sharpest cliff this repository has.
 # Measured 2026-09-03, three files, kernel-tracked lifetime-max peaks:
@@ -395,8 +402,9 @@ for suite in Tests/*Tests.swift; do
   [ "$suite_lines" -le 2000 ] \
     || architecture_guard_fail "$suite has $suite_lines lines; suite stop-growth limit is 2000"
 done
-[ "$suite_count" -eq 45 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 45"
+# 46 with Tests/ProjectRunTests.swift; see the runner-count note above for why it is its own file.
+[ "$suite_count" -eq 46 ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected 46"
 
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

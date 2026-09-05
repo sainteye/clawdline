@@ -75,6 +75,23 @@
 .status-line .deploy .pct { flex: 0 0 auto; min-width: 3ch; text-align: right; }
 @keyframes deploy-wait { from { transform: translateX(-120%); } to { transform: translateX(280%); } }
 
+/* A test or a build on this Mac, in the same chip. What separates it from a deploy is a dotted
+   underline on the label and a bar in the warm mark rather than the accent — enough to tell them
+   apart at a glance, and not enough to compete with anything else in an already dense row. The
+   `pct` slot holds a phase here more often than a percentage, so it stops being a fixed three
+   characters wide and stops being right-aligned against a number that is not there. */
+.status-line .deploy[data-kind="run"] .label {
+    text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.status-line .deploy[data-kind="run"] .track i { background: var(--warn); }
+.status-line .deploy[data-kind="run"][data-known="false"] .track i {
+    background: linear-gradient(90deg, transparent, var(--warn), transparent);
+}
+.status-line .deploy[data-kind="run"] .pct {
+    min-width: 0; text-align: left;
+    max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* The working tree, as its own control — see the markup. It carries the `·` that used to come
    from the sibling rule inside the button, because it is no longer a sibling of anything in
    there. */

@@ -153,6 +153,7 @@ clawdline_test_sources=(
   Tests/PeerMessageTests.swift
   Tests/PlannerTests.swift
   Tests/ProjectDocumentsTests.swift
+  Tests/ProjectRunTests.swift
   Tests/ReadingFreshnessTests.swift
   Tests/RootAssignmentCoordinationTests.swift
   Tests/ScheduleResumeTests.swift

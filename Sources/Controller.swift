@@ -2976,6 +2976,32 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                      d.state == "ok" ? .systemGreen : .systemRed, link: d.url)
             }
         }
+        // The same chip for a test or a build running on this Mac. It sits beside the deploy
+        // rather than replacing it: one is happening here and the other in somebody's cloud, and
+        // the footer has room to say both. `log` is a path, so it opens the way the backlog
+        // artifact does; there is no web page to send anybody to.
+        if let r = status.run {
+            let now = Date().timeIntervalSince1970
+            let link = r.log.map { "file://" + $0 }
+            chip("   " + r.label + " ",
+                 r.state == "fail" ? .systemRed : NSColor.secondaryLabelColor, link: link)
+            if r.state == "running" {
+                chip(ProjectStatus.bar(r.progress(now: now)), Style.accent, link: link, font: mono)
+                // A phase takes the place of the clock, the way it takes the place of the
+                // percentage on the page: the bar is already saying how far along this is, and
+                // "compiling" answers a question the elapsed seconds cannot.
+                if let phase = r.phase, !phase.isEmpty {
+                    chip(" " + phase, .tertiaryLabelColor, link: link)
+                } else {
+                    chip(" " + ProjectStatus.duration(r.elapsed(now: now))
+                         + "/" + ProjectStatus.duration(Int(r.typicalSeconds)),
+                         .tertiaryLabelColor, link: link)
+                }
+            } else {
+                chip(r.state == "ok" ? "✓" : "✗",
+                     r.state == "ok" ? .systemGreen : .systemRed, link: link)
+            }
+        }
         if let b = status.backlog {
             // The lane asking for attention leads; the total is context for it.
             chip("   ≡\(b.total)", .tertiaryLabelColor,

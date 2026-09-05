@@ -26,6 +26,57 @@ enum ProjectStatus {
         func elapsed(now: Double) -> Int { max(0, Int(now - startedAt)) }
     }
 
+    /// A test or a build running on this Mac, right now, from `run-<key>.json`.
+    ///
+    /// The same chip as `Deploy` and deliberately so — a label, a bar from elapsed time against
+    /// how long this usually takes, then a tick or a cross. What differs is the key and the
+    /// ceiling.
+    ///
+    /// **Keyed by working directory, not by git remote.** One run belongs to one tree, and this
+    /// machine routinely has several worktrees of one repository running at once; `ghrun-` is
+    /// keyed by the remote and cannot tell them apart.
+    ///
+    /// There is no `producer` field. `ghrun-` needs one because a poller and a hook compete to
+    /// write it; this file has one writer, and `staleAfter` does the job the arbitration was for.
+    struct Run {
+        var label: String        // "test"
+        var state: String        // running | ok | fail
+        var phase: String?       // "compiling" — producer text, drawn in place of the percentage
+        var startedAt: Double
+        var typicalSeconds: Double
+        var updatedAt: Double
+        var staleAfter: Double
+        var log: String?         // a path for a person, not an address for the phone
+        var holder: String?
+        var tree: String?
+
+        /// What a row that does not say means. Long enough for a slow full suite, short enough
+        /// that a killed run is gone before anybody trusts the bar again.
+        static let defaultStaleAfter: Double = 900
+
+        /// 0…1 while running, by elapsed time against how long this usually takes.
+        func progress(now: Double) -> Double {
+            guard typicalSeconds > 0 else { return 0 }
+            return min(1, max(0, (now - startedAt) / typicalSeconds))
+        }
+        func elapsed(now: Double) -> Int { max(0, Int(now - startedAt)) }
+
+        /// When the producer last said anything. `updated_at` is the field for it; a producer
+        /// that wrote only `started_at` still gets a bounded life rather than an endless one.
+        var touchedAt: Double { updatedAt > 0 ? updatedAt : startedAt }
+
+        /// The one rule this file has that `ghrun-` does not.
+        ///
+        /// Clawdline has no poller to tidy up after a producer, so a `kill -9`'d run would
+        /// otherwise spin in the bar forever. The ceiling lives in the reader on purpose: every
+        /// reader gets it, including the ones nobody has written yet. A finished row is never
+        /// stale — `ok` and `fail` are an answer, not a claim about something still moving.
+        func isFresh(now: Double) -> Bool {
+            guard state == "running" else { return true }
+            return now - touchedAt <= staleAfter
+        }
+    }
+
     struct Backlog {
         var total: Int
         var now: Int             // the lane that is asking for attention
@@ -101,6 +152,7 @@ enum ProjectStatus {
 
     struct Snapshot {
         var deploy: Deploy?
+        var run: Run?
         var backlog: Backlog?
         var milestone: Milestone?
         var health: Health?
@@ -108,7 +160,7 @@ enum ProjectStatus {
         /// so `health` remains the compatible overall chip used by the Mac footer.
         var healthComponents: [Health] = []
         var isEmpty: Bool {
-            deploy == nil && backlog == nil && milestone == nil
+            deploy == nil && run == nil && backlog == nil && milestone == nil
                 && health == nil && healthComponents.isEmpty
         }
     }
@@ -139,6 +191,7 @@ enum ProjectStatus {
             out.deploy = deploy(json(dir.appendingPathComponent("ghrun-\(repo).json")))
         }
         let stem = key(forPath: cwd)
+        out.run = run(json(dir.appendingPathComponent("run-\(stem).json")))
         out.backlog = backlog(json(dir.appendingPathComponent("backlog-\(stem).json")))
         out.milestone = milestone(json(dir.appendingPathComponent("milestone-\(stem).json")))
         let healthRegistry = registry?["health"] as? [String: Any] ?? registry
@@ -166,6 +219,35 @@ enum ProjectStatus {
                       startedAt: row["started_at"] as? Double ?? 0,
                       typicalSeconds: row["typical_seconds"] as? Double ?? 0,
                       url: row["url"] as? String)
+    }
+
+    /// The states this reader knows. `none` is in the file's vocabulary and not in this set on
+    /// purpose: a producer with nothing to say writes it, and what it asks for is silence.
+    static let runStates: Set<String> = ["running", "ok", "fail"]
+
+    /// A run, or nothing.
+    ///
+    /// Three different things all come back as `nil`, and they are one answer on the way out:
+    /// `none`, a state this reader has never heard of, and a `running` row nobody has touched
+    /// for `stale_after` seconds. **Never a cross for a state you do not recognise** — that is a
+    /// red mark that is always wrong, and the reason `ghrun-`'s `none` exists at all.
+    static func run(_ row: [String: Any]?,
+                    now: Double = Date().timeIntervalSince1970) -> Run? {
+        guard let row, let state = row["state"] as? String, runStates.contains(state) else {
+            return nil
+        }
+        let phase = row["phase"] as? String
+        let parsed = Run(label: row["label"] as? String ?? "run",
+                         state: state,
+                         phase: (phase?.isEmpty ?? true) ? nil : phase,
+                         startedAt: row["started_at"] as? Double ?? 0,
+                         typicalSeconds: row["typical_seconds"] as? Double ?? 0,
+                         updatedAt: row["updated_at"] as? Double ?? 0,
+                         staleAfter: row["stale_after"] as? Double ?? Run.defaultStaleAfter,
+                         log: row["log"] as? String,
+                         holder: row["holder"] as? String,
+                         tree: row["tree"] as? String)
+        return parsed.isFresh(now: now) ? parsed : nil
     }
 
     static func backlog(_ row: [String: Any]?) -> Backlog? {

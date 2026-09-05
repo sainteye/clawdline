@@ -4409,13 +4409,13 @@ final class RemoteServer: @unchecked Sendable {
         }
 
         // Session info is now the one home for every project address. Keep the smaller `deploy`
-        // field in the payload for older web clients, while current clients receive the exact
-        // same full list the compatibility `/links` route exposes.
+        // field — which a local test or build rides in too, being the same chip — for older web
+        // clients, while current clients receive the same full list `/links` exposes.
         let links = includeDeferred
             ? (cwd.map { linksPayload(cwd: $0, sessionID: session.id) } ?? []) : []
         let deploy = links.filter { row in
             let kind = row["kind"] as? String
-            return kind == "deploy" || kind == "ci"
+            return kind == "deploy" || kind == "ci" || kind == "run"
         }
 
         let permission = includeDeferred && session.assistant == .claude
