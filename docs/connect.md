@@ -318,21 +318,23 @@ Five things in that sketch are the whole point of it:
   be read.
 - **The traps, and `EXIT` as the one carrying most of it.** `INT` and `TERM` cover `Ctrl-C` and a
   `kill`; `KILL` cannot be trapped, which is what the `updated_at` bullet is for. `ERR` alone is not
-  enough, and that was measured on this Mac on 2026-09-05: under `set -e` a command failing *inside
-  a function* ends the script without firing `ERR` at all unless `set -E` is on too, and every
-  deliberate `exit 1` misses `ERR` by construction. `EXIT` sees all of them. **Look for an existing
-  `EXIT` trap before you add one** — a shell keeps exactly one, a second `trap … EXIT` silently
-  replaces the first, and the cleanup it was doing goes with it. If the script already has one, call
-  `finish` from inside that handler instead of installing your own.
+  enough, and that is measured rather than assumed — on macOS's own bash 3.2, under `set -e`, a
+  command failing *inside a function* ends the script without firing `ERR` at all unless `set -E` is
+  on too, and every deliberate `exit 1` misses `ERR` by construction. `EXIT` sees all of them, and
+  this repository's own `test.sh` uses the same construction if you want a worked example longer
+  than a sketch. **Look for an existing `EXIT` trap before you add one** — a shell keeps exactly
+  one, a second `trap … EXIT` silently replaces the first, and whatever cleanup it was doing goes
+  with it. If the script already has one, call `finish` from inside that handler rather than
+  installing a second.
 - **`updated_at` on every write.** A reader ignores a `running` row whose `updated_at` is older
   than `stale_after` — 900 seconds when that field is absent — because a run killed with `kill -9`
   writes nothing on the way out and nothing else ever retracts it. That ceiling is the only thing
   standing between the user and a progress bar that runs forever, which is why the field is
-  **required while the row says `running`**: a `running` row without a usable number there is
-  malformed, and is drawn by nobody rather than being drawn from `started_at` instead. A finished
-  `ok` or `fail` does not decay and does not need it. If a phase of this project's
-  build takes longer than fifteen minutes, either write from inside it or set `stale_after` to
-  something that fits, but do not leave the row unable to say it is still alive.
+  **required while the row says `running`**: a row without a usable number there is malformed, and
+  is drawn by nobody rather than being drawn from `started_at` instead. A finished `ok` or `fail`
+  does not decay and does not need it. If a phase of this project's build takes longer than fifteen
+  minutes, either write from inside it or set `stale_after` to something that fits, but do not leave
+  the row unable to say it is still alive.
 - **`.tmp` then `mv`.** As with every file on this page.
 - **The `mkdir -p` and the `return 0`.** `~/.claude/statusline-cache/` does not exist on a machine
   where nothing else has ever written there, so without the `mkdir` this whole section quietly does
@@ -375,9 +377,9 @@ afternoon somebody wired this up, and it will still be on the screen next spring
 keeps its backlog in a file — a YAML list, a `TODO.md`, GitHub issues — write the few lines that
 count it and say in your report what runs them. **Put those few lines at `tools/backlog.py` and give
 them a `--json` flag**: that is the path claude-bestiary probes for, so the answer to "what runs
-them" becomes "whatever is already installed, whenever the source file changes", and nothing has to
-be scheduled. Anywhere else works too and is then yours to keep current. If it does not keep one anywhere, this is a kind
-this project has nothing to say through: skip it and say so.
+them" becomes "whatever is already installed, whenever the source file changes" and nothing has to
+be scheduled. Anywhere else works and is then yours to keep current. If this project does not keep a
+backlog anywhere, this is a kind it has nothing to say through: skip it and say so.
 
 `artifact` is optional and is what the chip opens. It must be a regular `.html` file **inside the
 project's directory**: on the Mac the chip opens it directly, and for the browser page and a paired
