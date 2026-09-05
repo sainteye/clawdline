@@ -61,6 +61,16 @@ export var T = {
     webShowOnMacAsked: "Asked the Mac to bring it forward",
     webSessionActions: "Session actions",
     webSessionGit: "Git changes",
+    // Snippets: the `⋯` row, the two scope headings the sheet groups under, and the two things
+    // it says when there is no list to show. The sheet is reached from the overflow menu and
+    // (once the header split lands) from the project mark, which is the first thing a reader who
+    // does not read English will press — so these come from the string table like every other
+    // row in that menu, rather than from a copy table of the view's own.
+    webSnippets: "Snippets",
+    webSnippetsThisProject: "This project",
+    webSnippetsEveryProject: "Every project",
+    webSnippetsEmpty: "No snippets yet. Add one on the Mac and it appears here.",
+    webSnippetsReadOnly: "This device may read but not write — a snippet cannot be put in the box.",
     webScreenTitle: "Screen",
     webScreenLive: "live",
     webScreenOnDemand: "on demand",

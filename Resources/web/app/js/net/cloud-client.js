@@ -665,6 +665,40 @@ export class CloudClient {
         return Promise.resolve({ schedules: answer.rows, at: answer.at });
     }
 
+    /**
+     * The snippets every machine on this account published — the reading half of the feature,
+     * and the only half this transport has.
+     *
+     * Same two codes as `schedules()` above, and the same reason for there being two: waiting
+     * helps for one of them and cannot help for the other. Neither resolves to an empty list,
+     * because "this Mac has no snippets" and "nothing has told us" are opposite facts and the
+     * sheet draws a different thing for each.
+     *
+     * **Whole records, unfiltered, tagged with the machine that published them.** There is no
+     * `?session=` here: the list rides `orch/<machine>`, which is a machine's inventory rather
+     * than an answer to one session's question, so `view/snippets-data.js:snippetGroups` matches
+     * `row.project` against the open session's own `cwd` by equality and by nothing else. The
+     * resolution rule — registry prefix, worktree folding — stays on the Mac where the registry
+     * and the git directory are, so a relay reader sees a smaller list rather than a guessed one.
+     *
+     * **There is no writing half.** `createSnippet`, `updateSnippet`, `deleteSnippet` and
+     * `orderSnippets` are absent from this class on purpose: the relay carries commands, not
+     * config writes, and every call site asks `typeof api.createSnippet === "function"` before
+     * drawing the control. Absent is the answer; a method that rejected would be a button that
+     * fails when pressed.
+     */
+    snippets() {
+        var answer = this._orchestratorRows("snippets");
+        if (!answer.published) {
+            return Promise.reject(this.orchestratorSnapshots.size
+                ? cloudError("cloud_snippets_unpublished",
+                    "this Mac does not publish its snippets over the relay")
+                : cloudError("cloud_read_unavailable",
+                    "no orchestrator snapshot has arrived from this account yet"));
+        }
+        return Promise.resolve({ snippets: answer.rows, at: answer.at });
+    }
+
     send(value, text, images) {
         var identity = sessionIdentity(value);
         return this._publishCommand(identity.machine, "send", {

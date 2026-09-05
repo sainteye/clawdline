@@ -51,6 +51,7 @@ import "./input/swipe.js";
 import { SessionActions } from "./input/detail-actions.js";
 import { CoordinatorControls } from "./input/coordinator-actions.js";
 import "./input/user-messages.js";
+import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
