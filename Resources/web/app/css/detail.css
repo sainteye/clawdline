@@ -17,6 +17,16 @@
     padding: 6px 10px 6px 4px;
 }
 .detail-head canvas { display: block; image-rendering: pixelated; flex: 0 0 auto; }
+/* **The two halves, held at the distance they had when they were one button.**
+   The mark and the name were one flex container with a 10px gap between them; split into two
+   buttons that were direct children of the header, the space between them became the header's
+   own `gap` — which `responsive.css` narrows to 8px on a phone. Two pixels, and nobody would
+   have found them by looking. So the block owns that distance itself, at every width, and the
+   header's gap goes back to meaning "between the back button and this block". */
+.detail-head .detail-identity-block {
+    display: flex; align-items: center; gap: 10px;
+    min-width: 0; flex: 1 1 auto;
+}
 .detail-head .detail-session {
     display: flex; align-items: center; gap: 10px;
     min-width: 0; flex: 1 1 auto;

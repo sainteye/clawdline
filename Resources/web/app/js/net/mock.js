@@ -1840,8 +1840,14 @@ Mock.snippets = function (id) {
     var where = snippetScopeKey(Mock._sessionCwd(id));
     // `snippetRows()` and not `SNIPPET_BASE`: the writing half further down keeps what the sheet
     // made in a second table, and a read that could not see it would make every write look lost.
-    var list = params.get("snippets") === "empty" ? [] :
-        snippetRows().filter(function (row) {
+    // `?snippets=empty` starts with nothing rather than staying empty forever. A fixture that
+    // pinned the answer to `[]` made the empty state's own starters look broken: pressing one
+    // saved a snippet the next read could not see, which is the opposite of what that URL is
+    // for — it exists so the first snippet on a Mac can be watched being made.
+    var list = (params.get("snippets") === "empty" ? SNIPPET_MADE.slice() : snippetRows())
+        .filter(function (row) {
+            return !row.deleted;
+        }).filter(function (row) {
             return row.scope === "global" || row.project === where;
         }).slice().sort(function (a, b) {
             // Project rows first, then global, each in the order the person put them in — the
