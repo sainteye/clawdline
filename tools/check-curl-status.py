@@ -532,7 +532,31 @@ INSTRUCTION_SOURCES = (
 # Same audience, outside the paths this change claimed, and named here rather than left to be
 # discovered: `AGENTS.md` and `skills/clawdline/SKILL*.md` each carry an unchecked call. Whoever
 # brings them into INSTRUCTION_SOURCES fixes those calls in the same commit.
+#
+# The list is checked rather than recited. A deferral nobody re-reads becomes folklore, so this one
+# is refused the day it stops being true in either direction: a file here that has been brought
+# into the scan, or one that is no longer in the tree, is a finding that says take it out. Same
+# shape as a stale `# known-blind:` marker in `tools/check-guards-go-red.sh`, and for the same
+# reason. Only against this checkout: a fixture root has its own tree and owes nothing to this
+# repository's bookkeeping.
 INSTRUCTION_NOT_YET = ("AGENTS.md", "skills/clawdline/SKILL.md", "skills/clawdline/SKILL.zh-TW.md")
+
+
+def deferred_findings(scanned_names):
+    """Findings about the deferral list itself, empty unless it has gone stale."""
+    if os.environ.get("CLAWDLINE_CURL_SCAN_ROOT"):
+        return []
+    tracked = set(tracked_files())
+    out = []
+    for name in INSTRUCTION_NOT_YET:
+        if name in scanned_names:
+            out.append((name, 1, "is in INSTRUCTION_NOT_YET and is being scanned anyway. It was "
+                                 "brought in; take it out of the list, in this commit."))
+        elif name not in tracked:
+            out.append((name, 1, "is in INSTRUCTION_NOT_YET and is not in this checkout any more. "
+                                 "A deferral pointing at nothing reads as coverage and is none — "
+                                 "take it out."))
+    return out
 
 # A fence tagged as a shell is a command. `json`, `text` and an untagged fence are what this
 # repository shows answers in, and `console` would be a transcript — a person reading a reply.
@@ -929,13 +953,14 @@ def main():
                          "under %s — the scanner, not the tree, is what changed.\n" % ROOT)
         return 2
 
-    if findings or told:
+    stale = deferred_findings({name for name, _p, _s, _w in instruction_files()})
+    if findings or told or stale:
         sys.stderr.write("curl status guard: a failed request must not read as a successful one.\n")
-        for name, line, message in findings + told:
+        for name, line, message in findings + told + stale:
             sys.stderr.write("  %s:%d: %s\n" % (name, line, message))
-        sys.stderr.write("  %d call(s). docs/curl-status.md has the rule, the exemption form and "
-                         "the line between a command and a transcript.\n"
-                         % (len(findings) + len(told)))
+        sys.stderr.write("  %d finding(s). docs/curl-status.md has the rule, the exemption form "
+                         "and the line between a command and a transcript.\n"
+                         % (len(findings) + len(told) + len(stale)))
         return 1
 
     # The findings come first and these refusals after, because a structural complaint about the
