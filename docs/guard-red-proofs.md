@@ -94,7 +94,18 @@ the environment:
 
 Guards that take a root from the environment (`CLAWDLINE_WEB_ROOT`, `CLAWDLINE_VERSION_SCAN_ROOT`,
 `CLAWDLINE_CURL_SCAN_ROOT`, `CLAWDLINE_GUARD_ROOT`) need much less than a whole tree; look at the
-six existing proofs before copying one.
+existing proofs before copying one.
+
+**A guard with two subjects owes two proofs.** `tools/check-curl-status.py` is named by both
+`curl-status.sh` and `curl-status-briefing.sh`: one puts an unchecked call in a shell script, the
+other puts one in a child briefing. The register holds names, not counts, so a second proof for the
+same guard is ordinary — and a guard that grew a domain nobody proved would otherwise look exactly
+like a guard that had not.
+
+**And a fixture has to satisfy the guard's own refusals.** That same guard now refuses an empty
+scan in three places, so `curl-status.sh` carries a skill-guide file it does not otherwise need: a
+proof whose fixture trips a structural refusal is proving the refusal, and its clean arm goes red
+for a reason that has nothing to do with the defect.
 
 **Do not pin a literal the tree also owns.** `Tests/guard-red-proofs/version-strings.sh` reads the
 app's version out of the fixture's `build.sh` rather than typing it, because typing it would be a
@@ -159,6 +170,13 @@ has none.
 element id in `index.html` that the registry still looks up, a key in `i18n.js` that the modules
 and `/v1/strings` still spell the old way. That is how those actually break. Adding a lookup for an
 element nobody ever wrote is not.
+
+**Add, where adding is how it comes back.** `curl-status-briefing.sh` does not take
+`--fail-with-body` off a working recipe, because nobody does that. It adds a second recipe beneath
+the first, written the way the first one was written before it was fixed — somebody adds a route,
+copies the block above it, and the copy is older than the fix. The clean arm is the same tree with
+that one block already carrying the flag, so what the pair separates is the flag on a new command
+and nothing else.
 
 ## What is not covered
 

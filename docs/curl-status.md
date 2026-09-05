@@ -26,8 +26,12 @@ careless. There was nothing on the screen to be careful about.
   on the code.
 
 `tools/check-curl-status.py` enforces it. `test.sh` runs it in the guards phase, and
-`tools/check-curl-status.py --list` prints every call it can see with its verdict, which is the
-fastest way to check a change.
+`tools/check-curl-status.py --list` prints every call it can see with its verdict and which of the
+two scopes below it came from, which is the fastest way to check a change.
+
+The same rule reaches the text this repository hands to *agents* — child briefings and the shipped
+skill guides — for the same reason and with one difference: there the remedy is `--fail-with-body`,
+because the reader is told to branch on the error body. "Scope: who reads the result" below has it.
 
 ## What the guard can decide, and what it cannot
 
@@ -71,9 +75,21 @@ negatives named: `command -v curl`, `pgrep -x curl`, the word in a comment, in a
 an assignment's value, as a `grep` pattern, and inside all three kinds of heredoc — beside the
 positives, including a `-f` inside a quoted header value that must **not** count as the flag.
 
-## Scope: shell this repository executes, and not documentation
+## Scope: who reads the result
 
-Scanned: tracked `*.sh` files, and tracked files with a shell shebang (`tools/git-hooks/pre-commit`).
+Two things are scanned, and the line between them and everything else is not "code yes,
+documentation no". It is **who reads what the server said**.
+
+**Shell this repository executes.** Tracked `*.sh` files, and tracked files with a shell shebang
+(`tools/git-hooks/pre-commit`). Nobody is watching when these run; a branch reads the status or
+nothing does.
+
+**Instructions this repository hands to an agent, which the agent then runs.** The string literals
+of `Sources/**/*.swift` — every child briefing is written there — and `Resources/skill-guides/*.md`,
+which is copied into the app bundle and therefore installs with Clawdline on every machine, not
+only this one. A briefing has exactly one reader, it is not a person, and it types what it is
+shown. So a `curl` there is a call with an agent's hands on it, and the failure it cannot see is
+the same failure `build.sh` could not see.
 
 **Not scanned: documentation.** `docs/api.md` and `docs/remote.md` between them show seventy-three
 `curl` commands, every one of them written as a terminal transcript — `$ curl -s …` with the reply printed
@@ -81,19 +97,76 @@ underneath. Their reader is a person who is looking at the answer, and the answe
 the page. `--fail` there would be actively wrong: it suppresses the error body, which on an API
 reference is the half being explained.
 
-The line is not "documentation is exempt", it is **who reads the result**. The one documented `curl`
-that a *program* runs is in `docs/examples/process-compose.yaml`, four healthchecks a process
-supervisor executes and branches on — and all four are already `curl -fsS`. That is the evidence
-the boundary is in the right place rather than a convenience: where the answer is consumed by
-something that cannot see it, the repository had already reached for `-f` on its own.
+The one documented `curl` that a *program* runs is in `docs/examples/process-compose.yaml`, four
+healthchecks a process supervisor executes and branches on — and all four are already `curl -fsS`.
+That is the evidence the boundary is in the right place rather than a convenience: where the answer
+is consumed by something that cannot see it, the repository had already reached for `-f` on its own.
 
-## Two places outside this guard's reach
+## What the instructions were fixed to say
 
-Neither is fixed here, because both are outside the paths this change claimed. Both are the same
-defect and are worth a task of their own:
+`--fail-with-body`, not `--fail`. Both make the command fail; only one keeps the body, and the body
+is the point — every one of these pages tells its reader to branch on the typed `code` inside it.
+Suppressing it to make the command fail loudly would trade one silence for another.
 
-- `Sources/OrchestratorChildBrief.swift` writes `curl -s -X POST …/progress`, `…/notify` and
-  `…/complete` into **every child briefing**. An agent that posts a progress note against a stale
-  secret gets a `401`, `curl -s` exits 0, and the note it believes it sent does not exist.
-- `Resources/skill-guides/clawdline.md` and its `zh-TW` sibling carry the same commands for the
-  same audience.
+Measured against this machine's own broker on 2026-09-05, posting a progress note with a wrong
+secret:
+
+```
+curl -s …                   {"error":{"code":"forbidden", …}}                     exit 0
+curl --fail-with-body -sS … curl: (22) The requested URL returned error: 403
+                            {"error":{"code":"forbidden", …}}                     exit 22
+```
+
+**And the flag is only half of it.** The briefing already told a child what to do when `curl`
+*cannot connect* — the failure curl reports in its exit code, exit 7, on a sandbox with no loopback
+— and said nothing about the failure it does not report. So each of the four recipes now carries
+what a refusal means where it stands: the progress note was not recorded, the push did not happen,
+a completion announce that failed changes nothing because the file already reported the work, and
+an `inflight` that failed is not an empty board. The guides say it once, in §1, next to the first
+command.
+
+## Telling a command from an illustration of one
+
+In shell, "doing" and "mentioning" are told apart by tokenizing. In markdown and in a Swift literal
+the same question has a different answer, and it is structural rather than lexical: **a command an
+agent runs is written as code.** Each file is projected into the shell it actually contains, blank
+everywhere else, and the same tokenizer reads the projection:
+
+- fenced blocks tagged `bash`, `sh`, `shell` or `zsh` — a ```` ```json ```` block is what came back,
+  and an untagged fence is how this repository shows output;
+- inline code spans, because a command is sometimes written in the middle of a sentence — and the
+  completion announce in the briefing is three lines inside one pair of backticks;
+- Swift string literals, with `//`, `///` and `/* */` dropped: all six `curl` lines in
+  `Sources/Orchestrator.swift` are comments, and none of them is a command.
+
+Every newline survives the projection, so a finding names the line a person will open. Two details
+are worth writing down because getting either wrong changes an answer:
+
+- **An interpolation is a value.** `\(task.id)` is filled with a run of `x`, because leaving the
+  parentheses would end the command at the `)` — the tokenizer treats one as a boundary — and every
+  flag written after the URL would be invisible.
+- **A backtick becomes a `;`.** Blanking them instead joined the two mentions in "plain `curl`
+  exits 0 … a `401` and a `200` are the same exit status" into the single command `curl 401`, and
+  the guard reported the sentence explaining the defect as an instance of it.
+
+`curl` with nothing after it is a program's name — `edits` gets past `cat` / `mkdir` / `curl` —
+rather than a call. An illustration that does carry arguments is indistinguishable from a command
+by any rule this guard could hold, and it is resolved the way the rest of this page resolves
+ambiguity: in place, with a reason.
+
+```md
+<!-- curl-status-exempt: the point of this example is the error body a --fail would hide -->
+```
+
+Two shapes are deliberately not read as commands, and both are named here rather than left to be
+discovered: a fenced block whose lines start with a `$ ` prompt (that is a transcript, and the
+tokenizer sees a command called `$`), and a single-line Swift literal, which carries no code block.
+A shell command the app builds as a Swift string to *execute* would belong to the first rule on this
+page rather than this one; there is none in the tree today.
+
+## Still outside this guard's reach
+
+Same audience, outside the paths this change claimed, and each carrying one unchecked call:
+`AGENTS.md` and `skills/clawdline/SKILL.md` with its `zh-TW` sibling. They are listed in
+`INSTRUCTION_NOT_YET` in the guard, so whoever brings them into `INSTRUCTION_SOURCES` fixes their
+calls in the same commit.

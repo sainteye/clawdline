@@ -5,10 +5,23 @@
 # expect: reads curl's exit status
 #
 # The smallest possible tree: one script, one call, and the flag that is the whole difference
-# between the two arms.
+# between the two arms — plus one instruction file, which is not scenery. The guard scans a second
+# domain now (the briefings and guides this app hands to agents) and refuses a scan that finds none
+# of them, so without this file the clean arm would be red for a structural reason and the pair
+# would be separating that instead of the defect. `Tests/guard-red-proofs/curl-status-briefing.sh`
+# is where that second domain is actually proved.
 set -euo pipefail
 ARM="$1"
 DIR="$2"
+
+mkdir -p "$DIR/Resources/skill-guides"
+{
+  echo '# A guide an assistant reads and types'
+  echo
+  echo '```bash'
+  echo 'curl --fail-with-body -sS "http://127.0.0.1:$PORT/v1/health"'
+  echo '```'
+} > "$DIR/Resources/skill-guides/guide.md"
 
 {
   echo '#!/bin/bash'
