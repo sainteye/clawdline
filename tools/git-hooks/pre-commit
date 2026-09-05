@@ -125,6 +125,12 @@ if [ -n "$op" ] && [ -n "$linked_worktree" ]; then
     the shared checkout it was built for. Nothing about this commit has been checked against
     another session's claims.
 
+    So read `GET /v1/orchestrator/inflight` before you land this. An isolated task's
+    repository-relative claims are deliberately dropped and kept as its landing-time write set,
+    which means an overlap with another session appears there and in no other place — this hook
+    included. Naming the absence without naming the substitute is how a message like this one
+    gets read as "fine".
+
 EOF
     op=""
 fi
