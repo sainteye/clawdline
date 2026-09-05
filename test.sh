@@ -1993,7 +1993,26 @@ mkdir -p "$STORE"
 # `if` included, is a chance to have replaced it.
 # `$LOG` is set with the suite lock above, which records the path so a blocked run can watch this
 # one; there is one definition and it is that one.
+# **`set +e` turns off errexit; it does not turn off the ERR trap, and the two have to move
+# together.** The trap installed with the run file ends in `exit "$status"`, so with it left armed
+# the pipeline below fired it on every red suite and left through the handler: no line naming
+# `$LOG`, no `report_receipt_direction`, and the `exit 126` branch for a `tee` that could not write
+# unreachable — all of it only on a red run, which is when they exist. Measured, then guarded by
+# `Tests/test-sh-streaming.mjs`, which now runs this block under the same traps.
+#
+# **Disarmed here rather than repaired in the handler**, and the two rejected directions are worth
+# naming. The handler is shared with `INT` and `TERM`, where the `exit` is the whole point — a
+# `TERM` handler that returns carries on from where it was interrupted and finishes by declaring
+# success, which was measured. And a handler that recorded `fail` without exiting would latch it:
+# inside a `set +e` window a command is *expected* to fail and be read, so a green suite whose
+# `tee` happened to return non-zero would have ended as a `fail` row nothing could overwrite.
+# What the ERR trap is for is "errexit is about to end this run, write the row before it does".
+# `set +e` withdraws exactly that premise, so `trap - ERR` belongs to it the way `set -e` below
+# belongs to the rearm. What it costs is stated rather than hidden: between these two lines a
+# failure nobody reads reaches no trap at all, and it is the EXIT trap installed above — which
+# every deliberate `exit` in this file also goes through — that still writes the row.
 set +e
+trap - ERR
 CLAWDLINE_REMOTE_DIR="$STORE" CLAWDLINE_DROPS_DIR="$STORE/drops" "$BIN" Resources/mascots 2>&1 | tee "$LOG"
 # Copied whole, in one assignment. Reading the members one at a time does not work and does not
 # look broken: the first assignment is itself a command, so it replaces `PIPESTATUS` with its own
@@ -2003,6 +2022,7 @@ pipe=("${PIPESTATUS[@]}")
 status=${pipe[0]}
 tee_status=${pipe[1]}
 set -e
+trap 'clawdline_run_file_signal "$?"' ERR
 if [ "$status" -ne 0 ]; then
   echo "the suite exited $status — full output kept at $LOG" >&2
   # The receipt check below is never reached on a red run, so the one thing that would notice a
