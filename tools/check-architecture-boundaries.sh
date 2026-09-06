@@ -175,7 +175,29 @@ main_lines=$(line_count Tests/main.swift)
 # walk going. The 469-line feature itself is `Sources/OrchestratorLandingSweep.swift`, which is
 # where a reader looking for it should end up — the ceiling moved by the call, not by the work.
 #
-orchestrator_ceiling=10747
+# 10,826 is a settled landing answering honestly and an isolated child being answered about the
+# repository it was cut from. Measured on this tree with `line_count` above, and counted per hunk,
+# +97 -18:
+#   +43-10 the landed/landed door becoming three answers instead of one. `replay` is the old early
+#          return with its comment intact; `conflict` is the refusal a resend aimed at another
+#          target now gets, naming both values; `correction` falls through to the verification the
+#          first landing passed. Most of the 43 are the paragraph saying why durable is not the
+#          same as unamendable, which is the decision this raise carries.
+#   +6     `resolvedFields` — what the call is asking for in the spelling the record keeps, so the
+#          race below reads the resolved commit rather than whatever text named it.
+#   +2-1   the race branch's guard gaining "and it disagrees with what this call started from".
+#   +1     its captured snapshot, +14-4 the reading it makes and the refusal it returns when
+#   +5     another caller's record says something else, with the comment saying why that is the
+#          same question as the door above and not a second policy.
+#   +1-1   `landedAt` moving with the evidence, and standing still when only an annotation changed.
+#   +13    the `corrected_from` reply field and the `orchestrator.landing.corrected` audit line,
+#   +1-1   with the return carrying them.
+#   +8-0   `inflightRepository` saying which repository a linked worktree belongs to, and
+#   +3-1   resolving it: eight lines of that are the comment naming the three other callers that
+#          take a directory from somebody who may be standing in a worktree, which is why the
+#          reading moved here rather than into `inflightReply`. The resolution itself is
+#          `OrchestratorDraft.mainWorktree(containing:)`, a new function in that file.
+orchestrator_ceiling=10826
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

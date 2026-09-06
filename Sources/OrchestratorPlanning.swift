@@ -364,7 +364,20 @@ extension Orchestrator {
         guard task.state == .success else { return "failed" }
         switch node.kind {
         case .review:
-            return task.review?.verdict == .safeToLand ? "done" : "failed"
+            // **A review that returned a verdict did its job.** `changes_required` is the answer
+            // a working review gives when it finds something, and calling that `failed` made the
+            // dependency check below answer `graph_dependency_failed` to the correction node that
+            // exists precisely to consume it — so `docs/verification-workflow.md`'s review →
+            // correction seam was unreachable, and the workaround people reached for was to drop
+            // `graph` and put the map in `plan`, throwing the `graph_id` away with it.
+            //
+            // The failure this leaves is the one that is really a failure, and it now has the
+            // word to itself: a review task that ended without producing a verdict at all. That
+            // is the sentence `docs/verification-workflow.md` was already making — the doc was
+            // right and this line was not, so the doc is unchanged apart from saying what
+            // `changes_required` unblocks.
+            guard let verdict = task.review?.verdict else { return "failed" }
+            return verdict == .safeToLand ? "done" : "changes_required"
         case .verification:
             return task.verification?.last == .pass ? "done" : "failed"
         case .landing:
@@ -450,6 +463,11 @@ extension Orchestrator {
             }
             let outcome = graphNodeOutcome(dependency, graph: graph, index: taskIndex)
             guard outcome != "done" else { continue }
+            // A correction is the one node whose input is a review that found something, so a
+            // `changes_required` dependency satisfies it and nothing else. Everything further
+            // along the graph waits for that correction — blocked, which is what it is, rather
+            // than failed, which is what it is not.
+            if outcome == "changes_required", current.kind == .correction { continue }
             if outcome == "failed" { failed = true }
             let state = outcome == "planned" ? "blocked" : outcome
             var blocker: [String: Any] = ["node_id": dependency.id, "state": state]

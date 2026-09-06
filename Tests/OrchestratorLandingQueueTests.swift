@@ -821,4 +821,84 @@ group("a dispatch that did not read the inventory is refused and handed the inve
     }
 }
 
+
+group("an isolated child is answered about the repository it was cut from, not its own checkout") {
+    // **A reading with no subject.** `git rev-parse --show-toplevel` run inside a linked worktree
+    // answers with that disposable checkout, while every task in the registry is filed under the
+    // repository it was cut from — so the filter in `inflightRecords` kept nothing and the child
+    // was told `200`, its own path as `repository`, and an empty board. `CHILD.md` sends every
+    // child through this door before it starts work, and an empty board is exactly what "nobody
+    // else is working here" looks like. The briefing warns about the call failing; nothing warned
+    // about it succeeding emptily.
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let fixture = makeLandingRepository()
+    let base = OrchestratorDraft.canonicalFilesystemPath(fixture.url.path)
+    let checkout = fixture.url.deletingLastPathComponent()
+        .appendingPathComponent("clawdline-child-\(UUID().uuidString)", isDirectory: true)
+    defer {
+        _ = testGit(["worktree", "remove", "--force", checkout.path], cwd: fixture.url)
+        try? FileManager.default.removeItem(at: fixture.url)
+    }
+    expect("the fixture cuts a linked worktree the way an isolated dispatch does",
+           testGit(["worktree", "add", "-q", "-b", "clawdline/task/child", checkout.path, "main"],
+                   cwd: fixture.url).status, 0)
+    let childCheckout = OrchestratorDraft.canonicalFilesystemPath(checkout.path)
+    // The fact the defect rests on, measured here rather than assumed: git in a linked worktree
+    // really does answer with the checkout.
+    check("git inside the checkout says the checkout, which is why this cannot be asked of git alone",
+          OrchestratorDraft.canonicalFilesystemPath(
+            testGit(["rev-parse", "--show-toplevel"], cwd: checkout).output) == childCheckout
+              && childCheckout != base)
+
+    let peerID = "77777777-1111-2222-3333-444444444444"
+    let childID = "88888888-1111-2222-3333-444444444444"
+    let secret = String(repeating: "d4", count: 32)
+    let peer = Orchestrator.Task(
+        id: peerID, state: .briefed, kind: "custom", title: "the line already open here",
+        assistant: .claude, projectDir: base, timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 100), rootSessionId: "root-peer",
+        rootLabel: "root of the other line", claims: ["Sources/RemoteServer.swift"],
+        claimsDeclared: true, secretHash: Orchestrator.hash(ofSecret: secret))
+    Orchestrator.holdScheduleTaskForTesting(peer)
+    var child = Orchestrator.Task(
+        id: childID, state: .briefed, kind: "code", title: "the isolated child asking",
+        assistant: .claude, projectDir: base, timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 200), rootSessionId: "root-child",
+        rootLabel: "root of this line", claims: [], claimsDeclared: true,
+        secretHash: Orchestrator.hash(ofSecret: secret))
+    child.isolation = .worktree
+    child.worktree = Orchestrator.Worktree(
+        path: childCheckout, branch: "clawdline/task/child", base: fixture.commit,
+        repository: base, cwd: childCheckout)
+    Orchestrator.holdScheduleTaskForTesting(child)
+
+    func board(_ reply: Orchestrator.Reply) -> (repository: String, ids: [String]) {
+        guard case .ok(let body) = reply else { return ("", []) }
+        let rows = body["inflight"] as? [[String: Any]] ?? []
+        return (body["repository"] as? String ?? "", rows.compactMap { $0["id"] as? String })
+    }
+    let fromCheckout = board(Orchestrator.inflightReply(taskID: childID, secret: secret,
+                                                        now: Date(timeIntervalSince1970: 300)))
+    let fromRepository = board(Orchestrator.inflightReply(taskID: peerID, secret: secret,
+                                                          now: Date(timeIntervalSince1970: 300)))
+    // The pair differs in exactly one thing: where the reader is standing.
+    expect("one question asked from the linked checkout and from the repository has one answer",
+           Orchestrator.inflightRepository(childCheckout), Orchestrator.inflightRepository(base))
+    expect("and that answer is the repository, which is where the registry files its work",
+           Orchestrator.inflightRepository(childCheckout), base)
+    expect("so an isolated child's own door names the repository it was cut from",
+           fromCheckout.repository, base)
+    expect("and the board it is given is not empty: the line already open here is on it",
+           fromCheckout.ids, [peerID])
+    expect("a task standing in the repository itself was always answered, and still is",
+           fromRepository.ids, [childID])
+}
 }

@@ -702,4 +702,129 @@ group("a sweep that cannot prove it leaves the record exactly as it found it") {
             liveHead: nil) == .unanswerable("no delivery branch, and no usable declared write set"))
 }
 
+
+group("a settled landing is replayed, corrected against the same target, or refused — never ok in vain") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    let fixture = makeLandingRepository()
+    defer { try? FileManager.default.removeItem(at: fixture.url) }
+    try! Data("second\n".utf8).write(to: fixture.url.appendingPathComponent("second.txt"))
+    expect("the fixture stages a second commit on the same target",
+           testGit(["add", "second.txt"], cwd: fixture.url).status, 0)
+    expect("and commits it", testGit([
+        "-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+        "commit", "-qm", "the commit that actually landed",
+    ], cwd: fixture.url).status, 0)
+    let landedCommit = testGit(["rev-parse", "HEAD"], cwd: fixture.url).output
+    expect("the fixture opens a second named target, which is a different claim and not a spelling",
+           testGit(["branch", "release/main"], cwd: fixture.url).status, 0)
+
+    let id = "30303030-4040-5050-6060-707070707070"
+    var task = Orchestrator.Task(
+        id: id, state: .success, kind: "custom", title: "a record naming the wrong commit",
+        assistant: .claude, projectDir: fixture.url.path, timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 1), rootSessionId: "landing-correction-root",
+        claims: ["Sources/Landing.swift"], claimsDeclared: true,
+        secretHash: Orchestrator.hash(ofSecret: String(repeating: "e5", count: 32)))
+    task.claimKeys = OrchestratorDraft.freezeClaims(task.claims, projectDir: task.projectDir)
+    Orchestrator.holdScheduleTaskForTesting(task)
+    func settle(_ raw: [String: Any], at seconds: TimeInterval) -> Orchestrator.Reply {
+        Orchestrator.updateLanding(taskID: id, secret: "",
+                                   orchestratorToken: Orchestrator.dispatchToken(), raw: raw,
+                                   now: Date(timeIntervalSince1970: seconds))
+    }
+    func landing(_ reply: Orchestrator.Reply) -> [String: Any]? {
+        guard case .ok(let body) = reply, let task = body["task"] as? [String: Any] else {
+            return nil
+        }
+        return task["landing"] as? [String: Any]
+    }
+    func stored() -> Orchestrator.Landing? { Orchestrator.held(id)?.landing }
+    func refusal(_ reply: Orchestrator.Reply) -> (status: Int, code: String, extra: [String: Any])? {
+        if case .refused(let status, let code, _, let extra) = reply {
+            return (status, code, extra)
+        }
+        return nil
+    }
+
+    // The record that names the wrong commit: the first commit, when the work is on the second.
+    let first = settle(["state": "landed", "target": "main", "commit": fixture.commit], at: 10)
+    check("the mistaken record is written the ordinary way",
+          landing(first)?["commit"] as? String == fixture.commit
+              && landing(first)?["landed_at"] as? Int == 10)
+
+    // Three resends. They differ from each other in exactly one field, and each field decides a
+    // different answer: same commit replays, a different commit on the same target is a
+    // correction, a different target is a different claim.
+    let replayed = settle(["state": "landed", "commit": String(fixture.commit.prefix(8))], at: 20)
+    check("an abbreviation of the recorded commit is the same claim, replayed, changing nothing",
+          landing(replayed)?["commit"] as? String == fixture.commit
+              && landing(replayed)?["landed_at"] as? Int == 10)
+    let wrongTarget = refusal(settle(["state": "landed", "target": "release/main",
+                                      "commit": fixture.commit], at: 21))
+    check("a settled landing aimed at another target is refused, naming both values",
+          wrongTarget?.status == 409 && wrongTarget?.code == "landing_conflict"
+              && wrongTarget?.extra["field"] as? String == "target"
+              && wrongTarget?.extra["stored"] as? String == "main"
+              && wrongTarget?.extra["requested"] as? String == "release/main")
+    check("and it changed nothing", stored()?.commit == fixture.commit)
+    let unprovable = refusal(settle(["state": "landed", "commit": String(repeating: "9", count: 40)],
+                                    at: 22))
+    check("a correction the broker cannot prove is refused by the same gate as a first landing",
+          unprovable?.status == 409 && unprovable?.code == "unverified_landing")
+    check("and it changed nothing either", stored()?.commit == fixture.commit)
+
+    // The correction itself: same target, a commit the broker resolves and proves contained.
+    let corrected = settle(["state": "landed", "commit": landedCommit], at: 30)
+    check("a verified same-target correction is applied rather than swallowed",
+          landing(corrected)?["commit"] as? String == landedCommit
+              && landing(corrected)?["verified_commit"] as? String == landedCommit
+              && landing(corrected)?["target"] as? String == "main"
+              && landing(corrected)?["since"] as? Int == 10
+              && landing(corrected)?["landed_at"] as? Int == 30)
+    var correctedFrom: [String: Any]?
+    if case .ok(let body) = corrected { correctedFrom = body["corrected_from"] as? [String: Any] }
+    check("and the record it replaced is handed back rather than dropped in silence",
+          correctedFrom?["commit"] as? String == fixture.commit
+              && correctedFrom?["landed_at"] as? Int == 10)
+    check("a replay of the corrected record is a replay again",
+          landing(settle(["state": "landed", "commit": landedCommit], at: 31))?["landed_at"]
+              as? Int == 30)
+
+    // The reading itself, as a pure function: one field changes, one answer changes.
+    let record = Orchestrator.Landing(
+        state: .landed, target: "main", delivery: "clawdline/task/x", ownerRootKey: "abcdef01",
+        since: Date(timeIntervalSince1970: 1), commit: landedCommit, note: "landed by root",
+        landedAt: Date(timeIntervalSince1970: 2), verificationOrigin: "local_target_branch",
+        verifiedCommit: landedCommit, verifiedTargetCommit: landedCommit)
+    let asRecorded = ["target": "main", "commit": landedCommit, "delivery": "clawdline/task/x",
+                      "note": "landed by root"]
+    expect("a resend that contradicts nothing is a replay",
+           Orchestrator.landingResend(existing: record, requested: asRecorded), .replay)
+    var otherCommit = asRecorded
+    otherCommit["commit"] = String(repeating: "a", count: 40)
+    check("changing only the commit makes it a correction",
+          Orchestrator.landingResend(existing: record, requested: otherCommit)
+              == .correction(field: "commit", stored: landedCommit,
+                             requested: String(repeating: "a", count: 40)))
+    var otherTarget = asRecorded
+    otherTarget["target"] = "release/main"
+    check("changing only the target makes it a conflict",
+          Orchestrator.landingResend(existing: record, requested: otherTarget)
+              == .conflict(field: "target", stored: "main", requested: "release/main"))
+    var otherNote = asRecorded
+    otherNote["note"] = "landed by somebody else"
+    check("and changing only the note is still a write, so it is not a replay",
+          Orchestrator.landingResend(existing: record, requested: otherNote)
+              == .correction(field: "note", stored: "landed by root",
+                             requested: "landed by somebody else"))
+    expect("a resend that says nothing at all contradicts nothing",
+           Orchestrator.landingResend(existing: record, requested: [:]), .replay)
+}
 }

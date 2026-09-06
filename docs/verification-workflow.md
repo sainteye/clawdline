@@ -87,8 +87,10 @@ defect class beyond that correction seam moves to `architecture_hold` instead of
 
 `safe_to_land` is invalid unless all three axes pass with no findings. `changes_required` is
 invalid without at least one finding. The graph frontier treats a successful review task without a
-valid receipt as failed evidence; correction closes each finding as `fixed`, `disproved`, or
-`deferred` with an owner.
+valid receipt as failed evidence — a review that returned no verdict at all — while
+`changes_required` is a returned verdict and reaches the frontier as its own node state: it admits
+the `correction` node that consumes it and nothing else, so the rest of the graph waits rather than
+failing. Correction closes each finding as `fixed`, `disproved`, or `deferred` with an owner.
 
 ## Durable verification receipt
 

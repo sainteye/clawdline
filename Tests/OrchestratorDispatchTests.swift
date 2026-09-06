@@ -461,6 +461,90 @@ group("a task.json is read before a terminal is opened for it") {
     Orchestrator.forget()
 }
 
+group("a review that returned changes_required is a result, and its correction node is dispatchable") {
+    // `changes_required` is the verdict a *working* review produces when it finds something, and
+    // recording it as `failed` made the dependency check answer `graph_dependency_failed` to the
+    // one node that exists to consume it. The workaround people reach for is to drop `graph` and
+    // put the map in `plan`, which throws the `graph_id` away — so the cost of this line was
+    // measured in review and correction tasks with no graph at all: 34 of 43 over two days.
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let graphID = "66666666-6666-4666-8666-666666666666"
+    func node(_ id: String, _ kind: Orchestrator.GraphNodeKind,
+              _ dependsOn: [String]) -> Orchestrator.GraphNode {
+        Orchestrator.GraphNode(id: id, title: id, kind: kind, dependsOn: dependsOn,
+                               acceptance: ["\(id) is done"])
+    }
+    let nodes = [node("build", .delivery, []), node("review", .review, ["build"]),
+                 node("correct", .correction, ["review"]),
+                 node("verify", .verification, ["review"])]
+    func graph(_ current: String) -> Orchestrator.PlanningGraph {
+        Orchestrator.PlanningGraph(id: graphID, destination: "the three fixes land",
+                                   currentNode: current, nodes: nodes, unknowns: [],
+                                   outOfScope: [])
+    }
+    var serial = 0
+    func hold(_ nodeID: String, review: Orchestrator.ReviewReceipt? = nil) {
+        serial += 1
+        var task = Orchestrator.Task(
+            id: "00000000-0000-4000-9000-\(String(format: "%012x", serial))", state: .success,
+            kind: nodeID, title: nodeID, assistant: .claude, projectDir: "/repo",
+            timeoutMinutes: 30, created: Date(timeIntervalSince1970: TimeInterval(serial)),
+            graph: graph(nodeID), secretHash: String(repeating: "0", count: 64))
+        task.review = review
+        Orchestrator.holdScheduleTaskForTesting(task)
+    }
+    func state(of nodeID: String) -> String {
+        let record = Orchestrator.planningGraphRecord(graph("review"),
+                                                      taskIndex: Orchestrator.graphTaskIndex())
+        let rows = record["nodes"] as? [[String: Any]] ?? []
+        return rows.first(where: { $0["id"] as? String == nodeID })?["state"] as? String ?? ""
+    }
+    func admission(_ current: String) -> (code: String, blocker: String) {
+        let taskID = "99999999-9999-4999-8999-\(String(format: "%012x", serial + 100))"
+        guard case .refused(_, let code, _, let extra)? = Orchestrator.graphAdmissionRefusal(
+                graph(current), taskID: taskID) else { return ("", "") }
+        let blockers = extra["blocking_nodes"] as? [[String: Any]] ?? []
+        return (code, blockers.first?["state"] as? String ?? "")
+    }
+    let findings = Orchestrator.ReviewAxisName.allCases.map { axis in
+        Orchestrator.ReviewAxis(
+            axis: axis, status: axis == .specification ? .findings : .pass,
+            findings: axis == .specification
+                ? [Orchestrator.ReviewFinding(id: "F1", severity: .blocking,
+                                              summary: "the reading has no subject",
+                                              evidence: ["Sources/Orchestrator.swift:5719"])]
+                : [])
+    }
+
+    // The two arms differ in exactly one thing: whether the review task returned a verdict.
+    hold("build")
+    hold("review")
+    let withoutVerdict = admission("correct")
+    check("a review that returned no verdict at all is the failure, and blocks its correction",
+          state(of: "review") == "failed" && withoutVerdict.code == "graph_dependency_failed"
+              && withoutVerdict.blocker == "failed")
+    hold("review", review: Orchestrator.ReviewReceipt(verdict: .changesRequired, axes: findings))
+    check("the same task with the verdict it was dispatched to produce is not a failure",
+          state(of: "review") == "changes_required")
+    check("and the correction node that exists to consume it is dispatchable",
+          Orchestrator.graphAdmissionRefusal(
+            graph("correct"), taskID: "99999999-9999-4999-8999-000000000001") == nil)
+    let stillBlocked = admission("verify")
+    check("while a node that is not a correction waits, blocked rather than failed",
+          stillBlocked.code == "graph_frontier_blocked" && stillBlocked.blocker
+              == "changes_required")
+    hold("review", review: Orchestrator.ReviewReceipt(
+        verdict: .safeToLand,
+        axes: Orchestrator.ReviewAxisName.allCases.map {
+            Orchestrator.ReviewAxis(axis: $0, status: .pass, findings: [])
+        }))
+    check("a review that found nothing is done, and everything under it may proceed",
+          state(of: "review") == "done"
+              && Orchestrator.graphAdmissionRefusal(
+                    graph("verify"), taskID: "99999999-9999-4999-8999-000000000002") == nil)
+}
+
 group("the assistant-quota dispatch gate names the override and the age the same way "
     + "workspace_busy already does") {
     let now = Date(timeIntervalSince1970: 1_787_745_138)
