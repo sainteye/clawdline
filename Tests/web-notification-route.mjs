@@ -293,6 +293,11 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     // above about numbering still say what they said.
     wake: async () => { const read = await page.readWorkerTrace(); await page.readWorkerWant(); return read; },
     readWant: () => page.readWorkerWant(),
+    // A message handed to the page by itself, which `deliver: true` cannot express: the worker
+    // posts during the tap, and the order this exists for is the one where the page is given that
+    // same message *afterwards* — a client message queued while iOS had the page suspended, and
+    // dispatched behind the read that woke it.
+    deliverMessage: (message) => { messageListeners.forEach((fn) => fn({ data: message })); },
     wantRecord, putWant,
     // A record written that many milliseconds ago. Rewriting the stored `at` rather than moving
     // the clock: the clock is `Date.now()` in two contexts and a fake one would prove something
@@ -599,6 +604,38 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   equal(world.page.openWanted(), true, "the list arrives and the message's request is answered");
   await world.settle();
   equal(world.wantRecord(), null, "and the record goes with it, whichever road did the opening");
+}
+{
+  // **And the same meeting in the other order, which is the one nothing refused.** A page resumed
+  // from the background starts its read at `visibilitychange`, and the client message queued while
+  // iOS had the page suspended is dispatched during the three asynchronous hops that read takes. So
+  // the record acts first and the message lands behind it, announcing a tap that has already been
+  // carried out. Both roads acting is what the "answered once" rule says cannot happen, and the
+  // cost is not abstract: `openSession` fetches the transcript again, and on a phone it pushes a
+  // second history entry — one back gesture that does nothing, in this exact flow.
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  const message = world.posted[0];
+  equal(await world.readWant(), "routed", "the record road acts first, the message not yet given");
+  equal(world.opened.join(","), PANE, "and opens the session the tap named");
+  world.deliverMessage(message);
+  equal(world.opened.length, 1, "the message behind it must not open the same session again");
+  equal(world.notesFor("route.to").length, 1, "nor route a second time");
+  // Declined and not ignored: the note is written before the judgement, and it has to be able to
+  // say *which* refusal this was — a tap already carried out, or a message naming no session.
+  const seen = world.notesFor("page.sw.message");
+  equal(seen.length, 1, "the message is still recorded arriving");
+  check("and the trace says why it was declined — the tap had already been answered",
+        seen[0].data.answered === true);
+}
+{
+  // The control group for it, because a guard that refuses everything would pass the block above:
+  // the ordinary order, where the message is the road that works and must not be turned away.
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  equal(world.opened.join(","), PANE, "a message arriving first still opens the session");
+  check("and was not declined as one already answered",
+        world.noteFor("page.sw.message").data.answered === false);
 }
 
 /* ---- what routing to the same address twice actually does -------------------------------------

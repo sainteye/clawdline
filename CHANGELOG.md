@@ -27,9 +27,11 @@ goes first and still does the work when it arrives; the record is only for when 
 The rules around it are the interesting half. A record goes stale after two minutes — wide enough
 for an iPhone launching the app cold, narrow enough that a notification tapped in a lift cannot
 move you an hour later when you have opened the app to read something else. The tap's own id
-travels on the message as well as into the store, so a message that arrives marks the record
-answered and the two roads cannot both act on one tap: nothing takes you back to a session you have
-already read and moved on from. Waking up twice routes once. And a test push — which carries `/`,
+travels on the message as well as into the store, so whichever road gets there first marks that tap
+answered and the other declines it — in both orders, which matters because a page coming back from
+the background can be given the message behind the record it has already acted on. So the two roads
+cannot both act on one tap: nothing takes you back to a session you have already read and moved on
+from, and nothing opens the same one twice. Waking up twice routes once. And a test push — which carries `/`,
 not a session — leaves nothing behind at all, because a record meaning *the list* would have sent
 you to the list every time you opened the app for the next two minutes.
 

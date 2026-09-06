@@ -149,9 +149,27 @@ if ("serviceWorker" in navigator) {
         // are the two readings the trace has to be able to tell apart.
         Diagnostics.note("page.sw.message", {
             type: (data && data.type) || "", url: typeof (data && data.url) === "string",
-            want: !!(data && data.want), hidden: document.hidden
+            want: !!(data && data.want), hidden: document.hidden,
+            // Which of the two ways this handler can decline a message it did receive: the tap it
+            // announces has already been carried out by the road below. Without this the trace
+            // shows a message arriving and no routing behind it, which is the same picture a
+            // message naming no session leaves.
+            answered: !!(data && data.want && data.want === settledWant)
         });
         if (!data || data.type !== "navigate" || typeof data.url !== "string") return;
+        // **The same guard, in the other direction, and it was missing.** `readWorkerWant` refuses
+        // a record this page has already answered; nothing refused a *message* announcing a tap the
+        // record road had already acted on. That order is not hypothetical — a page resumed from
+        // the background starts the read at `visibilitychange`, and the client message queued while
+        // it was suspended is dispatched during the three asynchronous hops that read takes. Both
+        // roads then acted on one tap: the transcript was fetched twice, and on a phone
+        // `session/open.js` pushed a second history entry, which is one back gesture that does
+        // nothing — in the very flow this exists to repair.
+        //
+        // Compared before it is assigned, because `settledWant` is set by whichever road acts
+        // first: comparing after the assignment below would refuse the message road every time,
+        // including the ordinary order where the message is what does the work.
+        if (data.want && data.want === settledWant) return;
         // This message and the worker's record are two announcements of one tap, and the id is
         // what joins them. A message that arrives is the road working, so the record must not fire
         // again behind it — that is what would send somebody who has since moved on back to where

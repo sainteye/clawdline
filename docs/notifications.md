@@ -227,12 +227,16 @@ record older than the window is thrown away rather than obeyed.
 answered, so waking twice does not route twice, and the record is deleted once the session it names
 is actually open.
 
-**The message wins when it arrives.** The same id travels on the `postMessage`, so a message that
-lands marks the record answered on the way past. Without that the two roads would both act on one
-tap — and the second one would arrive after somebody had already read that session and moved to
-another, which is a worse thing to do to a person than not routing at all. Comparing addresses
-instead of ids does not work for the same reason: by the time the page wakes, the address is
-wherever the person has got to.
+**The message wins when it arrives, and the guard runs in both directions.** The same id travels on
+the `postMessage`, so whichever road acts on a tap first marks that id answered and the other one
+declines it — a message that lands marks the record on the way past, and a message that lands
+*behind* a record already carried out is refused by the same comparison. Both halves are needed
+because both orders happen: a page resumed from the background starts its read at
+`visibilitychange`, and the message queued while iOS had it suspended is dispatched during the
+three asynchronous hops that read takes. Without the second half the two roads both acted on one
+tap — the transcript fetched twice, and on a phone a second history entry, which is one back
+gesture that does nothing. Comparing addresses instead of ids does not work in either direction: by
+the time the page wakes, the address is wherever the person has got to.
 
 **`url: "/"` is not a request.** The test push and a fan-out notification both carry it, and a
 record saying *the person wanted the session list* would send whoever tapped one back to the list
