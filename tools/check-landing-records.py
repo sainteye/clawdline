@@ -384,6 +384,22 @@ def main():
             return 2
 
     findings, repositories, unreachable = scan(tasks, only_repository=only)
+    if not repositories:
+        # **A filter that matched nothing looks exactly like a clean machine.** On 2026-09-06 a
+        # cleanup on this Mac removed 25 worktrees, one of them a live task's, because the script's
+        # keep-list was never read — an empty list and a list of everything safe are the same
+        # number of lines of output. Both of these refusals are that shape: a `--repository` no
+        # task belongs to, and a registry whose states this file no longer recognises, which is
+        # what happens the day `Orchestrator.State` grows a spelling. Green because there was
+        # nothing to look at is the failure this whole file is about.
+        if only is not None:
+            print("landing records: %d task(s) in the registry and not one of them belongs to %s "
+                  "— the filter, not the tree." % (len(tasks), only), file=sys.stderr)
+        else:
+            print("landing records: %d task(s) in the registry and none of them is in a state "
+                  "this guard calls terminal (%s) — the finder, not the tree."
+                  % (len(tasks), ", ".join(sorted(TERMINAL))), file=sys.stderr)
+        return 2
     ripe = datetime.now(timezone.utc).timestamp() - args.grace_hours * 3600
     for finding in findings:
         entered = finding.get("entered")

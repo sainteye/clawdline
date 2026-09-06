@@ -202,6 +202,16 @@ repository with one delivery merged into `main` and a registry with one task, an
 difference between its two arms is the `landing` key. The mutation is the missing record, in the
 guard's own terms — not a deleted file, which is a thing that does not happen.
 
+**And it refuses to be green for having nothing to look at.** A registry it cannot parse, one with
+no `tasks` list, one with an empty one, a `--repository` no task in the registry belongs to, and a
+registry whose task states this guard no longer recognises — the day `Orchestrator.State` grows a
+spelling — all exit `2` and name themselves as the finder rather than the tree. The one case that
+is legitimately silent is a machine with no registry at all, which is every clone and every CI run,
+and it says so in a sentence. That distinction is not decoration: on 2026-09-06 a cleanup on this
+machine removed 25 worktrees, one of them belonging to a task that was still running, because the
+script's keep-list was never read — and a list that was never read prints exactly what a list of
+nothing-to-keep prints.
+
 **What it cannot see**, said out loud because that is the point of the file: a landing that reached
 the target by squash, rebase or cherry-pick, which shares no commit with its branch; a repository
 whose tasks have left the registry's retention window; and a person landing work with no Clawdline
