@@ -9,6 +9,63 @@ import { Door } from "../door/door.js";
    checked, which is the actual reason it exists.
    -------------------------------------------------------------------------- */
 
+/* The verification ledger's fixture pieces. Written as functions rather than as copies of one
+   literal so that a field added to the payload is added once here, and is then visibly missing
+   from any fixture that does not set it — which is what a fixture is for. */
+function mockTokens(state, rows, measured, total) {
+    return { state: state, rows: rows, unknownRows: state === "unknown" ? rows : 0,
+             incompleteRows: 0, reasons: state === "unknown" ? ["no_usage_recorded"] : [],
+             measured: measured, total: total };
+}
+
+function mockFeature(graphID, extra) {
+    return Object.assign({
+        graphId: graphID, rows: 6, tasks: 4,
+        findings: { state: "absent", reviewReceipts: 0, total: null, severities: [],
+                    truncated: false },
+        verification: { state: "absent", receipts: 0, runs: null, seconds: null, endedRed: null,
+                        scopes: [] },
+        verdicts: [{ verdict: "changes_required", count: 1 }, { verdict: "safe_to_land", count: 1 }],
+        tokens: { implementation: mockTokens("absent", 0, null, null),
+                  review: mockTokens("absent", 0, null, null),
+                  undeclared: mockTokens("absent", 0, null, null) },
+        firstSeenAt: "2026-09-05T09:08:09Z", lastSeenAt: "2026-09-06T14:13:12Z"
+    }, extra || {});
+}
+
+function mockLedgerDetail(graphID) {
+    var feature = mockFeature(graphID, {
+        findings: { state: "present", reviewReceipts: 2, total: 3,
+                    severities: [{ severity: "blocking", count: 1 },
+                                 { severity: "minor", count: 2 }],
+                    truncated: false },
+        verification: { state: "present", receipts: 3, runs: 6, seconds: 1840, endedRed: 1,
+                        scopes: ["swift suite"] },
+        tokens: { implementation: mockTokens("present", 4, 8412300, 8412300),
+                  review: mockTokens("present", 2, 3155900, 3155900),
+                  undeclared: mockTokens("absent", 0, null, null) }
+    });
+    feature.axes = [
+        { taskId: "3b674c4a", axis: "specification", status: "findings", findingCount: 1 },
+        { taskId: "3b674c4a", axis: "repository_invariants", status: "pass", findingCount: 0 },
+        { taskId: "3b674c4a", axis: "runtime_failure_behavior", status: "findings", findingCount: 2 }
+    ];
+    feature.items = [
+        { findingId: "F1", severity: "blocking",
+          summary: "An unknown token count reached the page as 0.",
+          axis: "runtime_failure_behavior", taskId: "3b674c4a",
+          evidence: ["Sources/VerificationLedgerRoute.swift:330", "usage.sqlite3: 48 graphs"] },
+        { findingId: "F4", severity: "minor", summary: "The read receipt is drawn below the fold.",
+          axis: "specification", taskId: "3b674c4a",
+          evidence: ["Resources/web/app/js/view/ledger.js:210"] },
+        { findingId: "F7", severity: "minor",
+          summary: "A failed receipt write leaves only a log line.",
+          axis: "runtime_failure_behavior", taskId: "3b674c4a",
+          evidence: ["Sources/UsageLedger.swift:3118"] }
+    ];
+    return { schemaVersion: 1, feature: feature };
+}
+
 export var Mock = (function () {
     var C = "#d97757", O = "#141416", BG = "#33201a";          // the clawdline mark
     var W = "#eef6f4", TEAL = "#2f6b5e";                        // atrium
@@ -1416,6 +1473,96 @@ export var Mock = (function () {
                         }
                     });
                 }, 320);
+            });
+        },
+
+        /* The verification ledger. **The fixture's job is the three states**, so it carries one
+           Feature of each kind rather than three that differ only in size: one fully measured,
+           one reviewed clean with a bucket that has a floor and no total, and one nobody has
+           reviewed whose rows measured nothing at all. Above them is the block of records that
+           name no Feature, which on a Mac that has not relaunched since the backfill landed is
+           the biggest thing on the page. `?ledger=empty` is the fourth screen — the route
+           answered and had nothing — which must not look like the route never answering. */
+        verificationLedger: function (graphID) {
+            var mode = params.get("ledger") || "";
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (mode === "missing") {
+                        fail(Object.assign(
+                            new Error("No stored receipt or interval names that graph"),
+                            { code: "graph_not_found" }));
+                        return;
+                    }
+                    if (graphID) {
+                        done({ verificationLedger: mockLedgerDetail(graphID) });
+                        return;
+                    }
+                    done({
+                        verificationLedger: {
+                            schemaVersion: 1,
+                            features: mode === "empty" ? [] : [
+                                mockFeature("9b496e3e-efae-492b-a96f-f6dd09217319", {
+                                    findings: { state: "present", reviewReceipts: 2, total: 3,
+                                                severities: [{ severity: "blocking", count: 1 },
+                                                             { severity: "minor", count: 2 }],
+                                                truncated: false },
+                                    verification: { state: "present", receipts: 3, runs: 6,
+                                                    seconds: 1840, endedRed: 1,
+                                                    scopes: ["swift suite"] },
+                                    tokens: {
+                                        implementation: mockTokens("present", 4, 8412300, 8412300),
+                                        review: mockTokens("present", 2, 3155900, 3155900),
+                                        undeclared: mockTokens("absent", 0, null, null)
+                                    }
+                                }),
+                                mockFeature("7c14ba90-2d61-4f0e-b8a3-51de6f2c9a47", {
+                                    findings: { state: "present", reviewReceipts: 1, total: 0,
+                                                severities: [], truncated: false },
+                                    verification: { state: "present", receipts: 1, runs: 1,
+                                                    seconds: 288, endedRed: 0,
+                                                    scopes: ["web suites"] },
+                                    tokens: {
+                                        implementation: Object.assign(
+                                            mockTokens("present", 3, 1204880, null),
+                                            { incompleteRows: 1 }),
+                                        review: mockTokens("present", 1, 402100, 402100),
+                                        undeclared: mockTokens("present", 1, 90200, 90200)
+                                    }
+                                }),
+                                mockFeature("2f8d0c55-9b71-4a26-8e30-c47f1b6d5920", {
+                                    findings: { state: "absent", reviewReceipts: 0, total: null,
+                                                severities: [], truncated: false },
+                                    verification: { state: "absent", receipts: 0, runs: null,
+                                                    seconds: null, endedRed: null, scopes: [] },
+                                    tokens: {
+                                        implementation: mockTokens("unknown", 2, null, null),
+                                        review: mockTokens("absent", 0, null, null),
+                                        undeclared: mockTokens("absent", 0, null, null)
+                                    }
+                                })
+                            ],
+                            unattributed: mockFeature(null, {
+                                rows: 812,
+                                findings: { state: "present", reviewReceipts: 4, total: 5,
+                                            severities: [{ severity: "important", count: 5 }],
+                                            truncated: false },
+                                verification: { state: "present", receipts: 9, runs: 14,
+                                                seconds: 5210, endedRed: 2,
+                                                scopes: ["swift suite"] },
+                                tokens: {
+                                    implementation: mockTokens("present", 640, 51204880, 51204880),
+                                    review: mockTokens("present", 150, 20118400, 20118400),
+                                    undeclared: mockTokens("unknown", 22, null, null)
+                                }
+                            }),
+                            read: { rowsScanned: 1240,
+                                    featuresFound: mode === "empty" ? 0 : 3,
+                                    featuresListed: mode === "empty" ? 0 : 3,
+                                    truncated: mode === "partial",
+                                    at: new Date().toISOString() }
+                        }
+                    });
+                }, 300);
             });
         },
 

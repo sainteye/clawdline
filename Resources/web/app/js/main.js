@@ -39,6 +39,7 @@ import { render, renderConn } from "./view/list.js";
 import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
 import { bindProjectsPage } from "./view/projects.js";
+import { bindLedgerPage } from "./view/ledger.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import { bindPlanPage } from "./view/plan.js";
 import "./view/markdown.js";
@@ -264,6 +265,26 @@ var projects = bindProjectsPage({
     navigate: function (name) { Pages.go(name); }
 });
 
+/* The verification ledger. One read, absent on the Cloud path for the same reason the worktree
+   join is — its subject is a Feature, and every read a paired viewer may name carries a session —
+   so it arrives as a thunk and a `carries` question asked when the page is used. */
+var ledger = bindLedgerPage({
+    "ledger": byId("ledger"),
+    "ledger-list-view": byId("ledger-list-view"),
+    "ledger-detail-view": byId("ledger-detail-view"),
+    "ledger-title": byId("ledger-title"), "ledger-count": byId("ledger-count"),
+    "ledger-status": byId("ledger-status"), "ledger-rows": byId("ledger-rows"),
+    "ledger-unattributed": byId("ledger-unattributed"),
+    "ledger-back": byId("ledger-back"),
+    "ledger-detail-title": byId("ledger-detail-title"),
+    "ledger-detail-status": byId("ledger-detail-status"),
+    "ledger-detail-rows": byId("ledger-detail-rows")
+}, {
+    carries: function () { return typeof api.verificationLedger === "function"; },
+    verificationLedger: function (graphID) { return api.verificationLedger(graphID); },
+    navigate: function (name) { Pages.go(name); }
+});
+
 var usage = bindUsagePortfolio({
     "usage-analytics": byId("usage-analytics"),
     "usage-close": byId("usage-close"), "usage-overview": byId("usage-overview"),
@@ -353,6 +374,8 @@ Pages.bind({
           enter: function () { projects.enter(); }, leave: function () { projects.leave(); } },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",
           enter: function () { usage.enter(); }, leave: function () { usage.leave(); } },
+        { name: "ledger", element: byId("ledger"), focus: "ledger-title",
+          enter: function () { ledger.enter(); }, leave: function () { ledger.leave(); } },
         { name: "plan", element: byId("plan"), focus: "plan-title",
           enter: function () { plan.enter({ returning: consumeCheckoutReturn() }); },
           leave: function () { plan.leave(); } },

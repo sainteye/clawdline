@@ -604,6 +604,19 @@ export var LocalClient = {
                          + encodeURIComponent(project));
     },
 
+    /// What each Feature's reviews found, what proving it cost, and how its tokens divided
+    /// between building the work and reading it. With no argument it is the whole list; with a
+    /// graph id it is that one Feature, its findings and the axes each review answered on.
+    ///
+    /// **There is no such method on the Cloud client, deliberately**, on the same terms as the
+    /// worktree join above: every read a paired viewer may name carries a session, and this
+    /// one's subject is a Feature. The page asks `typeof api.verificationLedger === "function"`
+    /// and says so rather than drawing a list the transport cannot fill.
+    verificationLedger: function (graphID) {
+        return jsonFetch("/v1/orchestrator/usage/verification-ledger"
+                         + (graphID ? "?graph=" + encodeURIComponent(graphID) : ""));
+    },
+
     /// The id, the assistant and now the model are the whole request, and **all three are in the
     /// path**. There is no body on this route — not "an optional body", none is read — so there
     /// is nothing this page could send that would widen what gets started, and the command at

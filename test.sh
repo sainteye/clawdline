@@ -995,6 +995,13 @@ node Tests/web-snippets.mjs
 # that it is outside the read/unread branch and so survives a parse that failed. Standalone rather
 # than a member of `browser_contract_suites` above, so that roster's sealed count stays root's.
 node Tests/web-waiting-card.mjs
+# The verification ledger page, and the reason it has a suite rather than a share of the roster
+# above: what it guards is that three states stay three different things on screen. `present` is a
+# figure, `absent` is the words *no record*, `unknown` is the words *not measurable*, and one
+# `|| 0` anywhere in that module turns all three into the same grey rectangle — which is the
+# defect the whole feature exists to end, arriving through the front door. Registered on a line of
+# its own so `browser_contract_suites`' sealed count stays the landing root's to move.
+node Tests/web-ledger.mjs
 node Resources/web/app/js/net/client.test.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05
