@@ -183,6 +183,7 @@ clawdline_test_sources=(
   Tests/UsageLedgerTests.swift
   Tests/UsagePortfolioAndLifecycleTests.swift
   Tests/UsageProjectWorktreeTests.swift
+  Tests/VerificationLedgerTests.swift
   Tests/main.swift
 )
 

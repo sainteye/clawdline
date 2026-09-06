@@ -32,15 +32,21 @@ final class VerificationLedgerService {
 
     /// Which side of the work a stored interval belongs to.
     ///
-    /// **`unknown` is a rung and not a default.** Folding it into `implementation` is the same
+    /// **`undeclared` is a rung and not a default.** Folding it into `implementation` is the same
     /// error as drawing an unknown token count as `0`, one level up: it turns "nothing on this row
     /// says which side it was on" into a claim about the side. The `LEFT JOIN … WHEN NULL THEN
     /// 'implementation'` this read replaces made exactly that claim, and it made it hardest
     /// exactly where a review's receipt had failed to write.
+    ///
+    /// It is a third word rather than a second use of `unknown` on purpose. This payload carries
+    /// three different gaps and they are not interchangeable: `undeclared` is a row that does not
+    /// say which side it was on, `unattributed` is a record that names no Feature, and
+    /// ``Presence/unknown`` is a quantity that cannot be counted. One word for all three is how a
+    /// reader ends up believing a Feature spent nothing.
     enum Role: String, CaseIterable {
         case implementation
         case review
-        case unknown
+        case undeclared
     }
 
     /// The three answers every quantity on this page is allowed to give.
@@ -63,11 +69,11 @@ final class VerificationLedgerService {
     /// a whole `Task` with its graph node — it is what put the receipt in the store in the first
     /// place, and it is why a receipt is allowed to answer this on its own.
     ///
-    /// A row carrying no `kind_raw` at all and no receipt is ``Role/unknown``.
+    /// A row carrying no `kind_raw` at all and no receipt is ``Role/undeclared``.
     static func role(kindRaw: String?, hasReviewReceipt: Bool) -> Role {
         if hasReviewReceipt { return .review }
         guard let kindRaw, !kindRaw.trimmingCharacters(in: .whitespaces).isEmpty else {
-            return .unknown
+            return .undeclared
         }
         return Orchestrator.kindDenotesReview(kindRaw) ? .review : .implementation
     }
@@ -77,7 +83,7 @@ final class VerificationLedgerService {
     /// The tokens of one role inside one Feature, with everything the store could not measure
     /// still visible beside them.
     struct TokenReading: Equatable {
-        /// Interval rows in this bucket. `0` is the whole of what ``Presence/none`` means.
+        /// Interval rows in this bucket. `0` is the whole of what ``Presence/absent`` means.
         var rows = 0
         /// What was actually measured, summed. A floor, never a total.
         var measured = 0

@@ -416,7 +416,12 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # the notification-address slice's — and each was right about its own tree, so `git` had two
 # identical-looking claims and no way to see that the merged tree has both. The number below is
 # what the merged tree counts, not what either side agreed on.
-[ "$runner_count" -eq 38 ] \
+# 39 with the verification ledger's runner. `Tests/UsageLedgerTests.swift` stood at 1,914 lines
+# against the 2,000-line stop-growth limit below and these four groups are 280, which is 2,194 —
+# the same wall six of the runners above met, and the same answer. It is called straight after
+# `runUsagePortfolioAndLifecycleTests()`, which is where its groups run, so the executed order and
+# `expectedOrderedTestGroupTitles` move together and nothing above it shifts.
+[ "$runner_count" -eq 39 ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected 38"
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -606,7 +611,10 @@ done
 # `expectedOrderedTestGroupTitles` does not move for it.
 # **51, for the same reason and by the same arithmetic as the runner count above**: both parents
 # added a suite file and both still said 50. Measured on the merged tree.
-[ "$suite_count" -eq 51 ] \
+# 52 with Tests/VerificationLedgerTests.swift; see the runner-count note above for why the four
+# groups that answer for one route are their own file rather than four more in a suite eighty-six
+# lines from the limit.
+[ "$suite_count" -eq 52 ] \
   || architecture_guard_fail "suite file count is $suite_count; expected 51"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
