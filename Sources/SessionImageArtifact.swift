@@ -143,12 +143,25 @@ struct SessionImageArtifactStore {
         case missing
     }
 
-    /// A narrow test seam that proves cache validation did not accidentally reopen image bytes.
-    /// Production leaves it nil, so the hot path pays no closure or locking cost beyond the store
-    /// work it already performs.
+    /// A narrow test seam that proves cache validation did not accidentally reopen image bytes,
+    /// and that reading a transcript did not accidentally sweep the whole store. Production
+    /// leaves it nil, so the hot path pays no closure or locking cost beyond the store work it
+    /// already performs.
     struct AccessObserver {
         let didCheckMetadata: () -> Void
         let didReadBytes: () -> Void
+        /// One whole-store sweep: list the directory, read and decode every record in it. This
+        /// is the expensive unit, and the question worth asking of any path is how many of these
+        /// it costs — not how many files, which nobody can count from a call site.
+        let didListMetadata: () -> Void
+
+        init(didCheckMetadata: @escaping () -> Void,
+             didReadBytes: @escaping () -> Void,
+             didListMetadata: @escaping () -> Void = {}) {
+            self.didCheckMetadata = didCheckMetadata
+            self.didReadBytes = didReadBytes
+            self.didListMetadata = didListMetadata
+        }
     }
 
     static let productionPolicy = Policy(
@@ -323,6 +336,16 @@ struct SessionImageArtifactStore {
     /// Check metadata, expiry and owned-file existence without opening the PNG payload.
     /// Its missing/expired/live result intentionally matches ``lookup`` so the cache cannot keep
     /// a broken attachment alive or turn an unknown opaque id into a public tombstone.
+    ///
+    /// **This is asked once per image marker while a transcript is being read**, which is why it
+    /// sweeps nothing. It used to end its expired branch in ``pruneTombstonesUnlocked``, two
+    /// whole-store sweeps under the global lock, on every call rather than only on the call that
+    /// created the tombstone — and images expire after a day while their tombstones live a week,
+    /// so a session that uses this feature carries a week of expired markers in its transcript
+    /// tail and paid for all of them on every reparse, against the same lock the page is taking
+    /// to fetch the thumbnails on screen. Opportunistic pruning belongs where bytes are written
+    /// or deleted, and the bound it enforces is still enforced there: records are only ever
+    /// created by ``importPaths(_:now:)``, which prunes twice around every write.
     func liveness(id: String, now: Date = Date()) -> Liveness {
         guard Self.isArtifactID(id) else { return .missing }
         Self.lock.lock()
@@ -342,7 +365,6 @@ struct SessionImageArtifactStore {
                 try? FileManager.default.removeItem(at: file)
                 try? write(metadata)
             }
-            pruneTombstonesUnlocked(now: now)
             return .expired
         }
         return .live(metadata.artifact)
@@ -472,6 +494,7 @@ struct SessionImageArtifactStore {
     }
 
     private func allMetadata() -> [Metadata] {
+        accessObserver?.didListMetadata()
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path)
         else { return [] }
         return names.compactMap { name in

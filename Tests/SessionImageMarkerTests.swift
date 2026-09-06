@@ -284,6 +284,36 @@ group("an assistant turn's image markers become that entry's own attachments") {
     check("the render taken while it was live stops being a current cache",
           !SessionImagePresentation.cacheIsCurrent(rendered, store: fixture.store,
                                                    now: afterTTL))
+
+    // What reading a transcript costs the store, counted rather than argued. Before this feature
+    // `Transcript.parse` touched no files at all; the danger is not that it now touches one
+    // record, it is that the expired branch used to end in a prune that reads and decodes every
+    // record in the store, twice, under the lock the page holds while it fetches the thumbnails
+    // on screen — on every call rather than only the one that made the tombstone. Images expire
+    // in a day and their tombstones live a week, so that bill arrived on every reparse of a
+    // transcript tail that had used this feature at all.
+    var sweeps = 0
+    let watched = SessionImageArtifactStore(
+        directory: fixture.store.directory, policy: fixture.store.policy,
+        accessObserver: .init(didCheckMetadata: {}, didReadBytes: {},
+                              didListMetadata: { sweeps += 1 }))
+    func watchedTurn(_ text: String, at when: Date) {
+        _ = Transcript.parse(
+            (try? JSONSerialization.data(withJSONObject: [
+                "type": "assistant",
+                "message": ["role": "assistant", "content": [["type": "text", "text": text]]],
+            ])).flatMap { String(data: $0, encoding: .utf8) } ?? "",
+            assistant: .claude, imageStore: watched, now: when)
+    }
+    watchedTurn("Gone by now.\n\n\(marker)", at: afterTTL)
+    watchedTurn("And again.\n\n\(marker)", at: afterTTL)
+    expect("reading an expired marker back never sweeps the whole store", sweeps, 0)
+    watchedTurn("Never had it.\n\n\(second)", at: afterTTL)
+    expect("and neither does an id the store has no record of", sweeps, 0)
+    let restocked = try? watched.importPaths(
+        [fixture.store.directory.appendingPathComponent("source.png").path], now: afterTTL)
+    check("while storing bytes still prunes, which is where that bound belongs",
+          restocked?.count == 1 && sweeps > 0)
 }
 
 group("storing an image answers with its marker and leaves the message route alone") {
