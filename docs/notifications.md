@@ -213,8 +213,37 @@ worker does not hold the tap up for its cache write, so `boot` can read the stor
 is in it — and a page that came up in the foreground gets no `visibilitychange` to read it at, so
 by the time one arrives the record is usually past the two-minute window and is thrown away unread.
 That is the second road failing silently on exactly the tap it exists for. So `view/list.js` reads
-it again with every session list, beside the `openWanted` retry the same request has always had,
-and stops as soon as a read comes back with anything but "nothing there yet".
+it again with every session list, beside the `openWanted` retry the same request has always had.
+
+**And at a fourth, because a tap made in front of the app is not a wake-up at all.** This is the
+case the three above between them do not cover, and it is the one somebody holding the phone is
+most likely to be in: the app is open on the session list, a banner slides down, they tap it.
+Nothing loads, so there is no `boot`. Nothing was hidden, so no `visibilitychange` comes. And the
+session list only arrives when something on the Mac changes — the change that *sent* the
+notification, which pushed a list before the banner was ever tapped; after that the stream is as
+quiet as the Mac is. So the fourth read point is the window taking the focus back, which a banner
+drawn over the app hands back when it goes: `input/route.js` listens for it beside the
+`hashchange` listener, and it costs one store read on a signal that arrives with the tap rather
+than with the Mac's next state change. It does not replace the list — a page that already has the
+focus when the record lands gets nothing from it — which is why there are four and not three.
+
+**None of them stops looking.** Until 2026-09-06 the retry stopped as soon as a read came back
+with anything other than "nothing there yet", on the reasoning that a record arriving later would
+arrive with a wake-up of its own. That sentence is false — the paragraph above is the shape it is
+false in — and the way it failed cost the whole road rather than one tap: a page reads the store
+at `boot`, finds a record from last night, answers `stale` *correctly*, and never looks again. A
+`/` record from a test push closes it the same way, and so does a tap that worked. After an
+evening of testing there is always something in that store to answer the first read with, so on
+the phone it was reproducible and looked like the second road had never shipped. The flag was a
+fact about the page's life; what it was reaching for is a fact about one record, and the record's
+own id already says it — see *It is answered once* below.
+
+What that costs is one store read per session list, and there is no cheaper honest version: the id
+that decides whether there is anything to do is inside the record, so it cannot be consulted
+without opening the store. Measured in Chrome on this Mac, the whole read — `caches.open`, `match`,
+`json` — is well under a millisecond against a store holding one small entry, against a render that
+is doing considerably more beside it. The guard that is left is the one that was always right: a
+read already in flight, because lists arrive faster than Cache Storage answers.
 
 **It is a separate cache from the trace on purpose.** The trace is a numbered history nobody obeys;
 this is an instruction carried out once and then destroyed. In one store the two would share a
@@ -233,7 +262,9 @@ record older than the window is thrown away rather than obeyed.
 
 **It is answered once.** The record carries the tap's own id; the page remembers the last id it has
 answered, so waking twice does not route twice, and the record is deleted once the session it names
-is actually open.
+is actually open. **The id is the whole of that rule** — every read point may look as often as it
+likes, and what refuses a second routing is the comparison with the id in front of it rather than
+anything the page remembers about how many times it has looked.
 
 **And it is spent by its own session, not by the next opening that happens to succeed.** The store
 holds one record and the newest tap replaces it whole, so two notifications tapped before the list
@@ -271,10 +302,12 @@ after an update, this is why.
 `Tests/web-notification-route.mjs` runs the worker and the page against each other, with the
 message delivered and with it dropped, on tmux pane ids. Every fixture in the two suites either
 side of it — `web-service-worker.mjs` taps `/#session-9`, `/#cold`, `/#fresh` — is a URL no
-notification has ever carried, which is why neither of them could see this segment. Its 170 checks
+notification has ever carried, which is why neither of them could see this segment. Its 198 checks
 cover the dropped message, the list that has not arrived yet, a record too old to obey, a page woken
 twice, the two roads meeting in both orders, two notifications tapped before the list arrives, a
-request let go of, and the record that lands between two reads. That number is compared with the
+request let go of, the record that lands between two reads, a first read that answers `stale` or
+`declined` and must not close the road behind it, two taps made one after the other with the app in
+front, and the focus coming back as a read point of its own. That number is compared with the
 suite's own summary line by `Tests/docs-suite-facts.mjs`, because the last one written here was
 right on the day and wrong two commits later, with the suite green at every step.
 

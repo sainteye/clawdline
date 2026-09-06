@@ -9,6 +9,26 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: tapping a notification while the app is already open
+
+The note a tap leaves behind — the one that was supposed to make a dropped message a delay rather
+than the end of the tap — did nothing at all in the case it is most needed for: the app already
+open in front of you when the banner arrives.
+
+Two things had to be wrong at once, and both were. The page stopped reading the store as soon as
+one read came back with anything other than *nothing there yet* — so a record left over from a
+notification tapped last night, correctly refused for being too old, closed the road for the rest
+of that page's life. A test push's record closed it the same way. And nothing woke the page anyway:
+a tap made in front of the app loads nothing, hides nothing, and the session list only arrives when
+something on the Mac changes — which it did when the notification was sent, a moment before the
+banner was tapped.
+
+The page now reads the store whenever a list arrives and whenever its window takes the focus back,
+which is what a banner drawn over the app hands back when it goes. What stops one tap being carried
+out twice is the tap's own id, which was always the thing doing that work; the flag beside it was
+only ever an economy, and the economy was the bug. The cost of dropping it is one small store read
+per list, which is a fraction of the render it sits beside.
+
 ### Changed: the machine closes the landings it can prove, instead of only counting them
 
 A Session card said 「還有 21 項未了結」 — twenty-one things this session had not finished — and the
