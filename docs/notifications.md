@@ -271,9 +271,12 @@ after an update, this is why.
 `Tests/web-notification-route.mjs` runs the worker and the page against each other, with the
 message delivered and with it dropped, on tmux pane ids. Every fixture in the two suites either
 side of it — `web-service-worker.mjs` taps `/#session-9`, `/#cold`, `/#fresh` — is a URL no
-notification has ever carried, which is why neither of them could see this segment. Its 109 checks
+notification has ever carried, which is why neither of them could see this segment. Its 170 checks
 cover the dropped message, the list that has not arrived yet, a record too old to obey, a page woken
-twice, and the two roads meeting.
+twice, the two roads meeting in both orders, two notifications tapped before the list arrives, a
+request let go of, and the record that lands between two reads. That number is compared with the
+suite's own summary line by `Tests/docs-suite-facts.mjs`, because the last one written here was
+right on the day and wrong two commits later, with the suite green at every step.
 
 **Reading it on the phone.** `?debug=layout` needs an address bar and a home-screen web app has
 none, so the panel opens from five presses on the version line at the bottom of Settings — wordmark,

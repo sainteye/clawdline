@@ -30,6 +30,7 @@
 // keep the copies honest with the source; it cannot keep the source honest with the world.
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
@@ -115,6 +116,43 @@ for (const path of ["CONTRIBUTING.md", "README.md", "README.zh-TW.md"]) {
 
 const runtimeDoc = fileURLToPath(new URL("docs/suite-runtime.md", root));
 check(existsSync(runtimeDoc), "docs/suite-runtime.md does not exist — three documents link to it");
+
+// ---- and the same failure one document further along ------------------------------------------
+// `docs/notifications.md` describes what `Tests/web-notification-route.mjs` covers and says how big
+// it is. Nothing compared the two, so the number was right the day it was written and wrong two
+// commits later: 109 against a suite that ran 110 and then 112, on one branch, with the suite green
+// at every step and `git grep -l notifications.md -- Tests tools` empty. This is the same guard as
+// the three above, and the only honest source for the number is the suite's own summary line — so
+// this runs it and reads that, rather than counting `check(` calls in a file with loops in it.
+const routeSuite = "Tests/web-notification-route.mjs";
+const routeSuitePath = fileURLToPath(new URL(routeSuite, root));
+check(existsSync(routeSuitePath), `${routeSuite} does not exist — docs/notifications.md quotes its size`);
+if (existsSync(routeSuitePath)) {
+  const ran = spawnSync(process.execPath, [routeSuitePath], { encoding: "utf8" });
+  // Passed or failed, that line carries the total, and both spellings are read: a red suite is its
+  // own report, and a comparison that went quiet whenever the suite was failing would be silent at
+  // exactly the moment somebody is editing it.
+  const summary = /notification route: (?:all (\d+) checks passed|\d+ of (\d+) checks failed)/
+    .exec(`${ran.stdout || ""}\n${ran.stderr || ""}`);
+  check(
+    summary !== null,
+    `${routeSuite} printed no "notification route: … checks" summary line, so the number quoted in docs/notifications.md has nothing to be compared with`,
+  );
+  // `\s+` and not a space: the sentence is wrapped, and a guard that a re-wrap can silence is
+  // one more copy of the failure it is here for.
+  const claimed = /Its (\d+) checks\s+cover/.exec(read("docs/notifications.md"));
+  check(
+    claimed !== null,
+    'docs/notifications.md: no "Its <n> checks cover" sentence — the claim moved or was reworded, and this comparison is now vacuous',
+  );
+  if (summary && claimed) {
+    const total = Number(summary[1] || summary[2]);
+    check(
+      Number(claimed[1]) === total,
+      `docs/notifications.md says "Its ${claimed[1]} checks"; ${routeSuite} runs ${total}`,
+    );
+  }
+}
 
 console.log(`${failed ? "not ok" : "ok"}: ${checks} suite-fact checks against seal ${sealedChecks} and a measured ${measuredSeconds} s`);
 if (failed) process.exit(1);
