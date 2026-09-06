@@ -172,7 +172,7 @@ printf '%s\n' "$orchestrator_record_projection" | grep -q 'publishedInventory()'
 record_publication_reads=$(printf '%s\n' "$orchestrator_record_projection" \
   | grep -Fc 'publishedInventory()' || true)
 [ "$record_publication_reads" -eq 2 ] \
-  || architecture_guard_fail "Orchestrator records/read-one projection has $record_publication_reads publication reads; expected 542"
+  || architecture_guard_fail "Orchestrator records/read-one projection has $record_publication_reads publication reads; expected 2"
 printf '%s\n' "$orchestrator_record_projection" \
   | grep -q 'let publication = SessionWatch.shared.publishedInventory();' \
   || architecture_guard_fail "Orchestrator records do not capture one publication before mapping tasks"
@@ -328,7 +328,7 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # same answer — so the three groups for a session showing the user an image on its own card are a
 # file of their own, called immediately after the transcript runner they read beside.
 [ "$runner_count" -eq 37 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 542"
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 37"
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
   in_manifest && /^\]/ { in_manifest = 0 }
@@ -511,7 +511,7 @@ done
 # 50 with Tests/SessionImageMarkerTests.swift; see the runner-count note above for why the marker's
 # three groups are their own file rather than three more in a suite already at the limit.
 [ "$suite_count" -eq 50 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 542"
+  || architecture_guard_fail "suite file count is $suite_count; expected 50"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
 # what this refactor exists to abolish. It is defensible only as a migration step, and only if it
