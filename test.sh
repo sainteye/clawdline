@@ -317,14 +317,25 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # comparison it did not reach is the one whose answer was already known — 9,495 against a tree that
 # ran 9,538. The run that set this line is therefore not the run that proves it; the confirming run
 # is the one taken after these two values were written, with no `CLAWDLINE_RESEAL` at all.
-expected_swift_receipt='9501 checks passed'
+#
+# **9,582, and the arithmetic does not reach it from either number above — which is the point.**
+# The merge `0edd66b3` resolved this line to its first parent's 9,501/7,586 while keeping the
+# second parent's prose about 9,538/7,621 two paragraphs up, so the tree arrived already red: it
+# carried 7,627 assertion call sites against a witness of 7,586, and the guard said so before this
+# branch touched anything. Both sides had written a number here and neither was wrong on its own
+# tree, which is exactly the shape `git` does not mark as a conflict. So this value is not
+# 9,501 + this branch's checks and not 9,538 + them either; it is what one
+# `CLAWDLINE_RESEAL=1 ./test.sh` on this branch reported — 9,582, zero failures, all twelve Cloud
+# suites present, `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`. The witness came from the same
+# run's guard line, which named 7,665.
+expected_swift_receipt='9582 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7586
+expected_swift_receipt_witness=7665
 
 count_exact_receipt_lines() {
   local receipt=$1
