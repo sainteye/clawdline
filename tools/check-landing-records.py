@@ -88,9 +88,10 @@ So the fatal set asks two more questions, and the output says both of them out l
 **A run that may not fail says so at length**, printing the rows, who can settle them, and that it
 is not the one. The alternative is the exact defect `tools/git-hooks/pre-commit` carries a
 paragraph about: a check that goes quiet inside a worktree and is read as a check that passed. So
-the green a narrowed run prints is not the green an empty machine prints, and the two sentences
-have no words in common. `--strict` ignores both narrowings, because a root doing a sweep wants
-every row and holds the credential.
+the green a narrowed run prints is not the green an empty machine prints: the two do not share a
+closing sentence, and the narrowed one says *not this run's to fail over* where the other says
+*nothing has landed unrecorded*. `--strict` ignores both narrowings, because a root doing a sweep
+wants every row and holds the credential.
 
 ## What the sweep changes, which is the wording and not the set
 
