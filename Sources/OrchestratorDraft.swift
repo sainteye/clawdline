@@ -584,14 +584,28 @@ enum OrchestratorDraft {
     struct GitAnswer {
         var output: String
         var status: Int32
+        /// What git wrote to stderr, and **only** where the caller asked for the two streams to
+        /// be kept apart. It is empty otherwise — including when git wrote a diagnostic — because
+        /// the merged stream puts that text in `output`. Never a substitute for `status`.
+        var errorOutput: String = ""
     }
 
     /// The only git execution seam for worktree lifecycle operations. Arguments never pass
     /// through a shell, optional locks are disabled, and a wedged repository cannot hold the
     /// broker queue indefinitely.
+    ///
+    /// **`separateStandardError` exists because one caller parses this output as data.** git
+    /// writes diagnostics to stderr that are not failures — `warning: could not open directory
+    /// 'a/nope/'` comes back beside a `0` status — and with both streams in one pipe a
+    /// `--porcelain` reader cannot tell that line from a record. It was the reviewer's finding on
+    /// 2026-09-06: the landing sweep's `dropFirst(3)` turned that warning into a claimed path
+    /// called `ning: could not open directory …`. It is opt-in rather than the default so that no
+    /// existing caller's `output` changes shape — several of them log or match on what git said,
+    /// and a seam that quietly stopped carrying stderr would make a wedged repository silent.
     static func git(_ arguments: [String], cwd: String,
                     gitDirectory: String? = nil,
-                    timeout: TimeInterval = 15) -> GitAnswer? {
+                    timeout: TimeInterval = 15,
+                    separateStandardError: Bool = false) -> GitAnswer? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = gitDirectory.map { ["--git-dir", $0] + arguments } ?? arguments
@@ -600,18 +614,34 @@ enum OrchestratorDraft {
         environment["GIT_OPTIONAL_LOCKS"] = "0"
         process.environment = environment
         let pipe = Pipe()
+        // Two pipes have to be drained concurrently or a chatty stderr fills its buffer while
+        // this thread is blocked reading stdout, and the subprocess never exits. The reader below
+        // is on a queue of its own for exactly that; `readDataToEndOfFile` on the merged stream
+        // has no such hazard, which is why it stays the shape of the single-pipe path.
+        let errorPipe = separateStandardError ? Pipe() : pipe
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = pipe
-        process.standardError = pipe
+        process.standardError = errorPipe
         do { try process.run() } catch { return nil }
         let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout,
                                                        execute: killer)
+        var errorData = Data()
+        let drained = DispatchGroup()
+        if separateStandardError {
+            drained.enter()
+            DispatchQueue.global(qos: .utility).async {
+                errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                drained.leave()
+            }
+        }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        drained.wait()
         process.waitQuietly()
         killer.cancel()
         return GitAnswer(output: String(data: data, encoding: .utf8) ?? "",
-                         status: process.terminationStatus)
+                         status: process.terminationStatus,
+                         errorOutput: String(data: errorData, encoding: .utf8) ?? "")
     }
 
     /// Stable repository identity for linked worktrees. The returned path is Git's common

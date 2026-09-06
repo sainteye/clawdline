@@ -813,6 +813,7 @@ struct English: Copy {
     let webProjectBranch = "Branch, by convention"
     let webProjectEvidence = "Landing evidence"
     let webProjectEvidenceRecord = "A root recorded and verified it"
+    let webProjectEvidenceRecordUnverified = "A record with nothing that verified it"
     let webProjectEvidenceBranchMerged = "git: the branch is in HEAD"
     let webProjectEvidenceBranchEmpty = "git: the branch never received a commit"
     let webProjectEvidenceBranchBaseUnknown = "git: in HEAD, but nothing says what it was cut from"

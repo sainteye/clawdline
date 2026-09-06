@@ -347,6 +347,7 @@ export var T = {
     webProjectBranch: "Branch, by convention",
     webProjectEvidence: "Landing evidence",
     webProjectEvidenceRecord: "A root recorded and verified it",
+    webProjectEvidenceRecordUnverified: "A record with nothing that verified it",
     webProjectEvidenceBranchMerged: "git: the branch is in HEAD",
     webProjectEvidenceBranchEmpty: "git: the branch never received a commit",
     webProjectEvidenceBranchBaseUnknown: "git: in HEAD, but nothing says what it was cut from",

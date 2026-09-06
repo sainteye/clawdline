@@ -150,6 +150,11 @@ function branchOf(worktree) {
  * --merged HEAD` and recognising a landing nobody wrote down. A reader deciding whether to go and
  * merge something needs to know which of the two they are looking at.
  *
+ * **And `record` itself is two things.** The broker's landing sweep can close a record on its
+ * write-set arm, which proves that nothing of the task's declared write set was outstanding at two
+ * named instants — not that a commit reached the target. That row arrives as `record_unverified`
+ * and says so, because a timer can now produce them by the dozen.
+ *
  * **And the two that look like `branch_merged` and are not.** `branch_empty` is a branch HEAD
  * contains because it still points at the commit it was cut from, which is every delivery branch
  * before its first commit; `branch_base_unknown` is that same containment with nothing left on
@@ -163,6 +168,7 @@ function branchOf(worktree) {
 function evidenceText(worktree) {
     var evidence = worktree.landingEvidence;
     if (evidence === "record") return T.webProjectEvidenceRecord;
+    if (evidence === "record_unverified") return T.webProjectEvidenceRecordUnverified;
     if (evidence === "branch_merged") return T.webProjectEvidenceBranchMerged;
     if (evidence === "branch_empty") return T.webProjectEvidenceBranchEmpty;
     if (evidence === "branch_base_unknown") return T.webProjectEvidenceBranchBaseUnknown;

@@ -814,6 +814,7 @@ struct Indonesian: Copy {
     let webProjectBranch = "Branch, menurut konvensi"
     let webProjectEvidence = "Bukti pendaratan"
     let webProjectEvidenceRecord = "Sebuah root memverifikasi dan mencatatnya"
+    let webProjectEvidenceRecordUnverified = "Tercatat, tetapi tidak ada yang memverifikasinya"
     let webProjectEvidenceBranchMerged = "git: branch sudah ada di HEAD"
     let webProjectEvidenceBranchEmpty = "git: branch tidak pernah menerima commit"
     let webProjectEvidenceBranchBaseUnknown = "git: ada di HEAD, tapi tidak ada catatan dari mana ia dicabangkan"

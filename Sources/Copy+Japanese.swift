@@ -812,6 +812,7 @@ struct Japanese: Copy {
     let webProjectBranch = "ブランチ（慣習による）"
     let webProjectEvidence = "着地の根拠"
     let webProjectEvidenceRecord = "root が検証して記録した"
+    let webProjectEvidenceRecordUnverified = "記録はあるが検証はない"
     let webProjectEvidenceBranchMerged = "git: ブランチは HEAD に入っている"
     let webProjectEvidenceBranchEmpty = "git: ブランチに commit が一つも無い"
     let webProjectEvidenceBranchBaseUnknown = "git: HEAD には入っているが、どこから切ったのかの記録が無い"

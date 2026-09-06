@@ -818,6 +818,7 @@ struct Hindi: Copy {
     let webProjectBranch = "ब्रांच, परंपरा के अनुसार"
     let webProjectEvidence = "लैंडिंग का प्रमाण"
     let webProjectEvidenceRecord = "एक रूट ने जाँचकर दर्ज किया"
+    let webProjectEvidenceRecordUnverified = "दर्ज है, पर किसी ने जाँचा नहीं"
     let webProjectEvidenceBranchMerged = "git: ब्रांच HEAD में है"
     let webProjectEvidenceBranchEmpty = "git: ब्रांच पर एक भी commit नहीं आया"
     let webProjectEvidenceBranchBaseUnknown = "git: HEAD में है, पर कहीं दर्ज नहीं कि यह कहाँ से काटी गई"

@@ -634,8 +634,8 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
            field("missing_reason"), "plan_billed" == field("missing_reason")
             ? field("missing_reason") : "no_cost_recorded")
     let reserved = ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state",
-                    "disposition"]
-    expect("the six lineage columns are exactly those", UsageLedger.lineageColumns, reserved)
+                    "landing_verified", "disposition"]
+    expect("the seven lineage columns are exactly those", UsageLedger.lineageColumns, reserved)
     check("every one of them is present in the export and empty",
           reserved.allSatisfy { columns.contains($0) && field($0) == "" })
 

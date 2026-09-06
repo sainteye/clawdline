@@ -814,6 +814,7 @@ struct Turkish: Copy {
     let webProjectBranch = "Dal, teamül gereği"
     let webProjectEvidence = "İniş kanıtı"
     let webProjectEvidenceRecord = "Bir kök doğrulayıp kaydetti"
+    let webProjectEvidenceRecordUnverified = "Kaydedildi ama hiçbir şey doğrulamadı"
     let webProjectEvidenceBranchMerged = "git: dal HEAD’in içinde"
     let webProjectEvidenceBranchEmpty = "git: dal hiç commit almamış"
     let webProjectEvidenceBranchBaseUnknown = "git: HEAD’in içinde, ama nereden ayrıldığını söyleyen bir kayıt yok"

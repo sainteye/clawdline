@@ -1534,6 +1534,11 @@ protocol Copy {
     /// had filled a column in, and called 53 worktrees unlanded while git said 26 of them were.
     var webProjectEvidence: String { get }
     var webProjectEvidenceRecord: String { get }
+    /// A `landed` record carrying no verification at all. The broker's landing sweep writes
+    /// one on its write-set arm — it proved that nothing of the task's declared write set was
+    /// outstanding, which is a narrower sentence than the line above, and a card that spelled
+    /// them the same way would be the weaker one wearing the stronger one's clothes.
+    var webProjectEvidenceRecordUnverified: String { get }
     var webProjectEvidenceBranchMerged: String { get }
     /// The branch is in HEAD and still points at the commit it was cut from, so containment says
     /// nothing about a delivery: `git worktree add -b` makes every branch an ancestor of HEAD on

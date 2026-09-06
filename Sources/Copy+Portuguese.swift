@@ -817,6 +817,7 @@ struct Portuguese: Copy {
     let webProjectBranch = "Ramo, por convenção"
     let webProjectEvidence = "Prova de aterragem"
     let webProjectEvidenceRecord = "Uma raiz verificou-o e registou-o"
+    let webProjectEvidenceRecordUnverified = "Registado, mas nada o verificou"
     let webProjectEvidenceBranchMerged = "git: o ramo está em HEAD"
     let webProjectEvidenceBranchEmpty = "git: o ramo nunca recebeu um commit"
     let webProjectEvidenceBranchBaseUnknown = "git: está em HEAD, mas nada diz de onde foi tirado"

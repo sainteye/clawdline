@@ -814,6 +814,7 @@ struct German: Copy {
     let webProjectBranch = "Branch, per Konvention"
     let webProjectEvidence = "Landungsnachweis"
     let webProjectEvidenceRecord = "Ein Root hat es geprüft und festgehalten"
+    let webProjectEvidenceRecordUnverified = "Festgehalten, aber nichts hat es geprüft"
     let webProjectEvidenceBranchMerged = "git: Der Branch steckt in HEAD"
     let webProjectEvidenceBranchEmpty = "git: Der Branch hat nie einen Commit bekommen"
     let webProjectEvidenceBranchBaseUnknown = "git: in HEAD, aber nichts sagt, wovon er abgezweigt wurde"

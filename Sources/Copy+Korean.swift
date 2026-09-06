@@ -812,6 +812,7 @@ struct Korean: Copy {
     let webProjectBranch = "브랜치(관례상)"
     let webProjectEvidence = "착지 근거"
     let webProjectEvidenceRecord = "루트가 검증해 기록함"
+    let webProjectEvidenceRecordUnverified = "기록은 있지만 검증은 없음"
     let webProjectEvidenceBranchMerged = "git: 브랜치가 HEAD에 들어 있음"
     let webProjectEvidenceBranchEmpty = "git: 브랜치에 커밋이 하나도 없음"
     let webProjectEvidenceBranchBaseUnknown = "git: HEAD 안에 있지만, 어디서 갈라져 나왔는지 기록이 없음"
