@@ -1063,6 +1063,79 @@ group("a notification's deep link carries a session id a browser can read back")
            fragment.removingPercentEncoding, "%141")
 }
 
+group("a notification that names a session carries its address, and one that names none does not") {
+    // Every fixture here is a tmux pane id, and that is the whole point of the choice: `%` is the
+    // character `sessionURL` exists for, and a suite written on iTerm ids — `w0t0p0:<UUID>`, no
+    // per-cent anywhere — is structurally blind to this family. The control group is at the foot.
+    expect("a push that knows its session carries the encoded id",
+           Orchestrator.pushURL(forSessionID: "%208"), "/#session=%25208")
+    expect("no session is the session list, and not an address with nothing in it",
+           Orchestrator.pushURL(forSessionID: nil), "/")
+    expect("and neither is an empty id, which is what an absent JSON field turns into",
+           Orchestrator.pushURL(forSessionID: ""), "/")
+
+    // The checked form, for an id that came from outside. An address that opens nothing is worse
+    // than the list: the list at least says what there is.
+    var asked: [String] = []
+    let watching: (String) -> Bool = { asked.append($0); return $0 == "%247" }
+    expect("a session this Mac is watching is promised",
+           Orchestrator.pushURL(forSessionID: "%247", watching: watching), "/#session=%25247")
+    expect("one it is not watching falls back to the list",
+           Orchestrator.pushURL(forSessionID: "%141", watching: watching), "/")
+    expect("and a missing id is not a question worth asking the watch at all",
+           Orchestrator.pushURL(forSessionID: nil, watching: watching), "/")
+    expect("so the watch was asked about exactly the two ids that were given", asked,
+           ["%247", "%141"])
+
+    // A finished fan-out whose root no longer resolves: any task of the batch that still points
+    // somewhere is worth more than the list, and `/` is left only when not one of them does.
+    expect("a fan-out falls back to the first of its own tasks the watch still holds",
+           Orchestrator.pushURL(forFirstWatched: ["%141", "%208", "%247"],
+                                watching: { $0 == "%208" || $0 == "%247" }),
+           "/#session=%25208")
+    expect("and to the list when not one of them exists any more",
+           Orchestrator.pushURL(forFirstWatched: ["%141", "%208"], watching: { _ in false }), "/")
+    expect("a batch that opened no tabs at all has nothing to fall back to",
+           Orchestrator.pushURL(forFirstWatched: [], watching: { _ in true }), "/")
+
+    // The control group. These ids were never broken and must not start moving now.
+    expect("an iTerm session id goes through the same door unharmed",
+           Orchestrator.pushURL(forSessionID: "w0t0p0:1234-ABCD"), "/#session=w0t0p0%3A1234-ABCD")
+
+    // A scheduled task that ended badly. Three of its four endings ran in a tab.
+    expect("a scheduled failure points at the tab it ran in",
+           Orchestrator.scheduleFailureSessionID(outcome: .failure, childTerminalId: "%208"),
+           "%208")
+    expect("and so does one that ran out of time",
+           Orchestrator.scheduleFailureSessionID(outcome: .timeout, childTerminalId: "%208"),
+           "%208")
+    check("but a tab that never opened names nothing, whatever it was handed",
+          Orchestrator.scheduleFailureSessionID(outcome: .spawnFailed,
+                                                childTerminalId: "%208") == nil)
+    check("and neither does a task with no terminal recorded against it",
+          Orchestrator.scheduleFailureSessionID(outcome: .failure, childTerminalId: nil) == nil)
+
+    // The two wirings a test process may not drive, read as source the way the fan-out's own
+    // preference gate already is: `announce` is private and two layers under the beat, and the
+    // schedule push sits inside `finalize`, whose neighbours type into somebody's session.
+    let orchestrator = codeOnly(try! String(contentsOfFile: "Sources/Orchestrator.swift",
+                                            encoding: .utf8))
+    let announcement = orchestrator
+        .components(separatedBy: "private static func announce(_ batch: Batch, rootKey key: String)")
+        .last?.components(separatedBy: "SmartNotification.send(delivery)").first ?? ""
+    check("the fan-out still prefers the root whose label is its title",
+          announcement.contains("WebPush.sessionURL(forSessionID: root.id)"))
+    check("and falls back to a session of its own batch rather than to the list",
+          announcement.contains("pushURL(forFirstWatched: batch.sessionIDs"))
+    let scheduled = orchestrator.components(separatedBy: "if scheduleFailure {")
+        .last?.components(separatedBy: "endWorkHandedOnBy(task)").first ?? ""
+    check("a scheduled failure asks the one decision above which session it may name",
+          scheduled.contains("scheduleFailureSessionID(outcome: outcome"))
+    check("and builds its address from the answer instead of writing a literal",
+          scheduled.contains("url: pushURL(forSessionID: session)")
+              && !scheduled.contains("url: \"/\""))
+}
+
 group("push-service receipts distinguish acceptance from refusal") {
     check("a 201 is an accepted push receipt", WebPush.serviceAccepted(status: 201))
     check("a service-side 4xx is a failed push receipt", !WebPush.serviceAccepted(status: 403))

@@ -824,6 +824,11 @@ fi
 for browser_contract_suite in "${browser_contract_suites[@]}"; do
   node "$browser_contract_suite"
 done
+# The test push and the button that fires it, joined: `net/live.js` driven for real and read off
+# the wire, and the real `Settings.test` driven against a stand-in transport and read off its
+# argument. Registered on a line of its own rather than in the roster above, because that array
+# carries a sealed count and a second session is adding to this file in the same window.
+node Tests/web-push-test-session.mjs
 # The web app's half of the run file this script now writes: the footer that draws a run in flight.
 # It arrives on another branch — the producer and the two readers were built at the same time — so
 # in a checkout that has only one of them this line is what says the other is missing, rather than
