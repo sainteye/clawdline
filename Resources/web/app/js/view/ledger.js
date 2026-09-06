@@ -263,8 +263,15 @@ function renderList(context, ledger) {
 
     // Above the list, always, whenever it holds anything: every figure below it is short by
     // exactly this much, and the backfill that would move these rows runs at app launch.
+    // **Three sources on the route's side, so three questions here.** The block is grown from
+    // interval rows, from review receipts and from verification receipts; asking about two of
+    // them threw the third away whole, and a Feature-less verification receipt — its runs, its
+    // seconds, the times it ended red — vanished behind a row count of nought. A screen must not
+    // re-derive what the payload is made of; when this list grows again, it grows here too.
     var unattributed = ledger.unattributed;
-    if (unattributed && (unattributed.rows > 0 || (unattributed.findings || {}).reviewReceipts > 0)) {
+    if (unattributed && (unattributed.rows > 0
+                         || (unattributed.findings || {}).reviewReceipts > 0
+                         || (unattributed.verification || {}).receipts > 0)) {
         elements["ledger-unattributed"].hidden = false;
         appendText(doc, elements["ledger-unattributed"], "h3", T.webLedgerUnattributed,
                    "ledger-block-name");

@@ -324,6 +324,36 @@ async function main() {
               "and an unattributed block with nothing in it is not drawn");
     }
     {
+        /* **The block is grown from three sources on the route's side, so it is shown from three
+           here.** The route adds to it from interval rows, from review receipts and from
+           verification receipts; a gate that asks about two of the three throws the third away
+           whole — its runs, its seconds and the times it ended red, hidden behind `rows > 0`
+           being false. Each of the three is asked on its own below, because a gate that answers
+           correctly for the wrong reason is what a fixture carrying all three would leave. */
+        const only = (extra) => payload({
+            features: [], unattributed: feature(null, Object.assign({ rows: 0 }, extra)),
+        });
+        const shows = async (extra) => {
+            const { elements, environment } = page({
+                verificationLedger: () => Promise.resolve(only(extra)),
+            });
+            const view = bindLedgerPage(elements, environment);
+            await view.enter();
+            await flush();
+            return !elements["ledger-unattributed"].hidden;
+        };
+        check(await shows({ verification: { state: "present", receipts: 3, runs: 6, seconds: 900,
+                                            endedRed: 1, scopes: ["swift suite"] } }),
+              "records naming no Feature are shown when all this Mac holds for them is "
+              + "verification receipts");
+        check(await shows({ findings: { state: "present", reviewReceipts: 2, total: 1,
+                                        severities: [{ severity: "minor", count: 1 }],
+                                        truncated: false } }),
+              "and when all it holds for them is review receipts");
+        check(await shows({ rows: 4 }), "and when all it holds for them is interval rows");
+        check(!(await shows({})), "and not when it holds none of the three");
+    }
+    {
         /* **The refusal has to arrive after an answer, or the assertion below proves nothing.**
            A page that never clears the last read's receipt looks identical to one that does,
            until a second read fails — and then the numbers from the answer that worked are still
