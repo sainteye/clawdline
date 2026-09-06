@@ -198,11 +198,18 @@ export var Terminal = (function () {
     // which is worse than the sideways scroll it replaced — so these keep `white-space: pre` and
     // are clipped at the edge instead.
     //
-    // **A share of the row, not an exact match.** `── 3 lines ──` is a rule with a label in it
-    // and has to count; `│ path │ 12 │` is a table row and must not. Across those five panes the
-    // two populations do not overlap at all — every real rule scored 1.00 and every row that
-    // merely opens with a tree glyph scored 0.1 or less — so 0.8 has a wide margin on both
-    // sides of it and is not a number tuned against one screen.
+    // **A share of the row, not an exact match.** A long rule with a label buried in it is still
+    // a rule: twenty box dashes, ` 3 lines `, twenty more scores 0.87 and counts, which an exact
+    // match would have refused. `│ path │ 12 │` is a table row and must not count, and scores
+    // 0.15. Across those five panes the two populations do not overlap at all — every real rule
+    // scored 1.00 and every row that merely opens with a tree glyph scored 0.1 or less — so 0.8
+    // has a wide margin on both sides of it and is not a number tuned against one screen.
+    //
+    // A **short** labelled rule goes the other way: `── 3 lines ──` is only 0.40 and wraps. That
+    // is not a misclassification worth spending margin on — thirteen columns fit a phone whole,
+    // so wrapping it and clipping it draw the same picture. Say it here rather than let the next
+    // reader meet it as a surprise and move 0.8 to catch it; moving 0.8 down to 0.4 puts
+    // `│ … │ … │` table rows on the wrong side, which is a picture somebody loses content to.
     //
     // Box drawing only, deliberately: a row of ASCII hyphens is a rule too, but so is `-- 3 --`
     // and so is a diff's `--- a/file`, and no share threshold separates those from each other.
@@ -213,6 +220,13 @@ export var Terminal = (function () {
     var RULE_SHARE = 0.8;
     // Below this a row is too short to be anything, whatever it is made of: a lone `│` is 1.00
     // box drawing and is a table's left edge, not a rule.
+    //
+    // **What the floor lets through, and why that is accepted.** Eight or more bare column
+    // separators — `│ │ │ │ │ │ │ │ │`, a table row with nothing written in any cell — also score
+    // 1.00 and are clipped as a rule rather than wrapped. That is the right picture: a row with no
+    // content has nothing to hang under an indent, and clipping keeps it the same width as the
+    // `├─┼─┤` above and below it, which wrapping would not. The floor is there to stop one or two
+    // glyphs being called a rule, not to promise that everything above it carries text.
     var RULE_FLOOR = 8;
 
     /**
@@ -224,6 +238,17 @@ export var Terminal = (function () {
      * the Wide and Fullwidth blocks of UAX #11 written out, because a browser has no width table
      * to ask. Ambiguous-width characters — box drawing among them — count as one, which is what
      * a terminal gives them.
+     *
+     * **This is not a general width function, and the difference is the whole of what makes it
+     * safe.** Its only caller is `indentOf()`, which hands it a row's leading whitespace — and in
+     * a grid tmux has already laid out that population is U+0020 and U+3000, both of which the
+     * ranges below get right. Measured against the current table, a row of *content* would not
+     * be: U+1F680–U+1F6FF (🚀), U+2705 (✅), U+274C (❌), U+2753, U+2757, U+1F7E0–U+1F7EB (🟢),
+     * U+2B1B–U+2B1C, U+2B50 (⭐), U+2B55, U+231A–U+231B, U+26A1 and U+2728 are all EAW=Wide and
+     * all come back as one cell; and U+200D, U+FE0F and combining marks come back as one where a
+     * terminal gives them none, so `columns("👨‍👩‍👧")` is 8. None of that can be reached from
+     * here. **The day somebody measures a whole row with this, those are the ranges to add** —
+     * named now so that day costs an hour rather than a morning of bisecting an indent.
      */
     function wideAt(code) {
         return (code >= 0x1100 && code <= 0x115f) ||
@@ -248,8 +273,12 @@ export var Terminal = (function () {
         var total = 0;
         for (var i = 0; i < text.length; i += 1) {
             var code = text.charCodeAt(i);
-            // A surrogate pair is one character on the grid and two units in this string; read
-            // past it, or a CJK Extension B glyph counts four cells instead of two.
+            // A surrogate pair is one character on the grid and two units in this string, so read
+            // past it. Not reading past it does not double a wide glyph — neither half is in any
+            // range below, so each would score one and a CJK Extension B ideograph would still
+            // come out two. What it breaks is every supplementary character that is *narrow*:
+            // U+1D400 (𝐀) is one cell joined and two apart, which is why that is the character
+            // the test uses and U+1F600 is not — U+1F600 is two either way and can see nothing.
             if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
                 var low = text.charCodeAt(i + 1);
                 if (low >= 0xdc00 && low <= 0xdfff) {
