@@ -283,12 +283,21 @@ export var Terminal = (function () {
                       underline: false, inverse: false };
         var all = [];
         var row = [];
+        // Whether the text seen so far ended on a row boundary. `capture-pane` **terminates** the
+        // last row rather than separating rows, so the final newline is punctuation and not a row
+        // of the grid — `Sources/LiveScreen.swift` says the same thing where it counts `lines`,
+        // and drops that newline before counting so a 25-line screen does not report 26.
+        // Read from the stripped text rather than from `source`: a control byte after the newline
+        // is dropped and must not make an already-terminated row look unfinished.
+        var ended = false;
         function take(chunk) {
-            var parts = chunk.replace(CONTROL, "").split("\n");
+            var visible = chunk.replace(CONTROL, "");
+            var parts = visible.split("\n");
             for (var i = 0; i < parts.length; i += 1) {
                 if (i > 0) { all.push(row); row = []; }
                 if (parts[i]) row.push({ text: parts[i], css: style(state) });
             }
+            if (visible) ended = visible.charAt(visible.length - 1) === "\n";
         }
         var last = 0;
         var found;
@@ -300,7 +309,10 @@ export var Terminal = (function () {
             if (found[0].length === 0) CSI.lastIndex += 1;
         }
         if (last < source.length) take(source.slice(last));
-        all.push(row);
+        // A blank row **inside** the grid is a real row and keeps its height — that is what the
+        // stylesheet's `min-height` is for. The only row refused here is the one the terminating
+        // newline would have invented after the last real one.
+        if (row.length || !ended) all.push(row);
         return all;
     }
 
