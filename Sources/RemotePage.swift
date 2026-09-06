@@ -1150,12 +1150,20 @@ enum RemotePage {
         // road — `sessionCandidates()` in `input/route.js` — and the two are held against each
         // other in `Tests/web-notification-route.mjs` by driving both, because this is a second
         // copy of a judgement and second copies drift.
+        //
+        // **And it had drifted.** A `[^&]+` test does not refuse an empty value, it looks further
+        // along the fragment for one that is not empty; `sessionCandidates()` reads the *first*
+        // `session=` and refuses it when it is empty. On `/#session=&session=%25141` that is a
+        // record to the worker and nothing at all to the page — the tap lost on both roads. So
+        // this is written as the same match plus the same emptiness check, and the two cannot come
+        // apart on which `session=` they read.
         function wantedFragment(url) {
             var text = String(url || "");
             var cut = text.indexOf("#");
             if (cut < 0) { return ""; }
             var hash = text.slice(cut);
-            return /(?:^|[#&])session=[^&]+/.test(hash) ? hash : "";
+            var found = /(?:^|[#&])session=([^&]*)/.exec(hash);
+            return found && found[1] ? hash : "";
         }
 
         function wantWrite(record) {

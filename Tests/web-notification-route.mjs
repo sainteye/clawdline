@@ -673,8 +673,22 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   // The two gates, driven against each other rather than compared as text. The page's is
   // `sessionCandidates`, reached here through the message road; the worker's is `wantedFragment`,
   // reached by whether a record appears. A URL either interests both of them or neither.
+  //
+  // **The seven URLs this started with all agreed, and the two gates did not.** Every one of them
+  // had at most one `session=` in it, which is the one shape a `[^&]+` test and a `[^&]*` test
+  // followed by an emptiness check cannot come apart on — so the row that would have shown the
+  // divergence was the row nobody had written. A green here says the table asked; it says nothing
+  // about the pairs it did not carry, and these are the ones that separate the two spellings:
+  // a second `session=` behind an empty first one, the pre-encoding spellings still sitting on
+  // somebody's phone (`%208`, `%141` — a fragment the page reads and cannot resolve is still a
+  // fragment both gates must agree is one), a fragment inside a fragment, and a query string,
+  // which is not a fragment at all however much it looks like this one.
   const gate = ["/", "/#", "/#page=usage", "/#session=", "/#session=%25208",
-                "/#session=w0t0p0%3A1234-ABCD", "/#page=usage&session=%25141"];
+                "/#session=w0t0p0%3A1234-ABCD", "/#page=usage&session=%25141",
+                "/#session=&session=%25141", "/#session=%208", "/#session=%141",
+                "/#x#session=%25208", "/?session=%25208#page=usage",
+                "/#session=&", "/#a=1&session=", "/#session", "/#Session=%25208",
+                "/#session==%25208", "/#session=%25208&session=%25141", "/?session=%25208"];
   for (const url of gate) {
     const world = await makeWorld({ deliver: true, listed: [] });
     await world.tap(url);
@@ -683,6 +697,25 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     check(`the two gates agree about ${url} (${workerWants ? "want" : "no want"})`,
           workerWants === pageRoutes);
   }
+}
+
+/* ---- a message the page routes nothing for has answered nothing ------------------------------
+   The gates agree today, and the table above is what says so. This is what the second road costs
+   if they ever stop agreeing: a message carrying an id for a URL this page declines used to mark
+   that tap answered anyway, because the assignment sat above the gate. The record was then
+   `settled` on a page that had done nothing about it and `pendingWant` kept it from being
+   collected, so the tap was lost on both roads until a reload — a drifted gate costing two roads
+   instead of one. Driven with a message rather than a tap, because the worker no longer sends one:
+   what is being held is the page's own behaviour when it is handed something it declines. */
+{
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  world.deliverMessage({ type: "navigate", url: "/#session=", want: "9.1" });
+  check("the message is recorded arriving", world.saw("page.sw.message"));
+  check("and nothing was routed, because it names no session", !world.saw("route.to"));
+  world.putWant({ at: Date.now(), url: sessionURL(PANE), id: "9.1" });
+  equal(await world.readWant(), "routed",
+        "so the record left by that tap is still acted on rather than called settled");
+  equal(world.opened.join(","), PANE, "and the session it names opens");
 }
 
 /* ---- and the page that has to call it ---------------------------------------------------------

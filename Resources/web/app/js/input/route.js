@@ -170,18 +170,25 @@ if ("serviceWorker" in navigator) {
         // first: comparing after the assignment below would refuse the message road every time,
         // including the ordinary order where the message is what does the work.
         if (data.want && data.want === settledWant) return;
+        var cut = data.url.indexOf("#");
+        var hash = cut < 0 ? "" : data.url.slice(cut);
+        if (!sessionCandidates(hash)) return;  // `/` — the test push, and nothing to route to
         // This message and the worker's record are two announcements of one tap, and the id is
         // what joins them. A message that arrives is the road working, so the record must not fire
         // again behind it — that is what would send somebody who has since moved on back to where
         // the notification pointed. `pendingWant` as well, so the record is spent by whichever
         // call opens the session, which on a cold start is not this one.
+        //
+        // **Below the gate, not above it.** A message this page routes nothing for has answered
+        // nothing, and marking the tap answered there left the record `settled` on a page that had
+        // done nothing about it — and pending, so it could not be collected either. The tap was
+        // then lost on both roads until a reload. The worker is not supposed to send one of those
+        // at all; that it could is exactly the drift the two gates are driven against each other
+        // for, and this is what keeps a drifted gate from costing the second road as well.
         if (typeof data.want === "string" && data.want) {
             settledWant = data.want;
             pendingWant = data.want;
         }
-        var cut = data.url.indexOf("#");
-        var hash = cut < 0 ? "" : data.url.slice(cut);
-        if (!sessionCandidates(hash)) return;  // `/` — the test push, and nothing to route to
         // Written into the address as well as acted on, so that a reload from here lands in the
         // same place. Setting it fires `hashchange`, which routes; when it is already what we
         // were sent, nothing fires and this does the routing itself.
