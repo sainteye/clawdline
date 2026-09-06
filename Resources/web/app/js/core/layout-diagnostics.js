@@ -3,6 +3,7 @@
    persists recent stable anomalies so the next load can explain the one that just vanished. */
 
 var TRACE_LIMIT = 80;
+var INCIDENT_LIMIT = 5;
 var STORAGE_KEY = "clawdline.layout-debug.last";
 var DETAIL_KEY = "clawdline.layout-debug.detail";
 var trace = [];
@@ -18,6 +19,14 @@ var incidents = [];
 var lastDetail = null;
 var lastDetailSignature = "";
 var debugPanel = null;
+// What the ring buffer has thrown away, and where it stopped. A trace that drops silently
+// makes "the story starts here" and "the first half of the story is gone" render identically,
+// and those are opposite readings of the same file.
+var dropped = 0;
+var droppedThrough = null;
+// Recorders that live somewhere this page cannot see and are folded in when it wakes.
+var sources = {};
+var sourceOrder = [];
 
 function clock() {
     return typeof performance !== "undefined" && performance.now
@@ -37,7 +46,53 @@ function plain(value) {
 
 function append(event, data) {
     trace.push({ t: clock(), event: event, data: plain(data || {}) });
-    if (trace.length > TRACE_LIMIT) trace.splice(0, trace.length - TRACE_LIMIT);
+    if (trace.length > TRACE_LIMIT) {
+        var over = trace.length - TRACE_LIMIT;
+        droppedThrough = trace[over - 1].t;
+        dropped += over;
+        trace.splice(0, over);
+    }
+}
+
+/**
+ * One external recorder, by name. Declaring it is what makes its silence readable.
+ *
+ * The worker's half of a notification is written into Cache Storage while this page is not
+ * running, and read back when it wakes. **Never read** and **read, and there was nothing** are
+ * different faults with different fixes, and before this they produced the same empty trace —
+ * which is the shape this machine has now paid for more than once. A source that has been
+ * declared and never read says `unread`; one whose store is not there at all says `unavailable`,
+ * which is a third thing again.
+ *
+ * Names are the caller's and this file knows none of them. A new observation point next month
+ * declares its own and appears in the report without anything here or on the Mac changing.
+ */
+function sourceRow(name) {
+    if (!sources[name]) {
+        sources[name] = { name: name, state: "unread", entries: 0, reads: 0, at: null };
+        sourceOrder.push(name);
+    }
+    return sources[name];
+}
+
+/** What this report knows it is missing, stated rather than left to be noticed. */
+function completeness() {
+    var rows = sourceOrder.map(function (name) { return sources[name]; });
+    var waiting = rows.filter(function (row) { return row.state !== "merged"; });
+    return {
+        trace: {
+            kept: trace.length, limit: TRACE_LIMIT, dropped: dropped,
+            droppedThrough: droppedThrough,
+            from: trace.length ? trace[0].t : null,
+            to: trace.length ? trace[trace.length - 1].t : null
+        },
+        incidents: { kept: incidents.length, limit: INCIDENT_LIMIT },
+        sources: rows,
+        // True only when nothing was dropped and every declared source has actually been folded
+        // in. It is not a promise that the fault is in here — no counter can say that — it is the
+        // narrower claim that nothing this recorder knows about is missing from the file.
+        whole: dropped === 0 && waiting.length === 0
+    };
 }
 
 function rectOf(el, viewport) {
@@ -167,6 +222,17 @@ function stateSnapshot(reason) {
     };
 }
 
+/**
+ * Where a report goes when somebody presses "Send to Mac".
+ *
+ * Written twice — here and as a `case` in `Sources/RemoteServer.swift` — because a route is a
+ * string on both sides of a wire. `Tests/web-diagnostics-send.mjs` holds the two copies against
+ * each other, for the same reason `Tests/web-notification-route.mjs` holds the worker's cache
+ * name against the page's: two spellings of one name in two languages is the shape that drifts,
+ * and the drift is silent.
+ */
+export var REPORT_ROUTE = "/v1/diagnostics/report";
+
 export function layoutAnomaly(sample) {
     if (!sample || !sample.ready || !sample.phone || sample.hidden) return null;
     if (sample.header && sample.header.height >= 30 && sample.header.visibleArea > 0 &&
@@ -201,7 +267,7 @@ function readSaved() {
         var value = localStorage.getItem(STORAGE_KEY);
         if (!value) return [];
         var parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed.slice(0, 5) : [parsed];
+        return Array.isArray(parsed) ? parsed.slice(0, INCIDENT_LIMIT) : [parsed];
     } catch (e) { return []; }
 }
 
@@ -232,7 +298,7 @@ function rememberDetail(sample) {
 function save(kind, sample, event) {
     last = { kind: kind, event: event || null, sample: sample, trace: trace.slice() };
     incidents.unshift(last);
-    incidents = incidents.slice(0, 5);
+    incidents = incidents.slice(0, INCIDENT_LIMIT);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(incidents)); } catch (e) { }
     drawDebug();
 }
@@ -305,6 +371,7 @@ function captureError(kind, value) {
 
 function report() {
     return {
+        completeness: completeness(),
         current: ready ? stateSnapshot("debug_report") : null,
         savedIncidents: incidents.slice(),
         lastDetail: lastDetail,
@@ -353,6 +420,16 @@ function debugUI(force, reveal) {
             "background:#202027;color:#ddd;font:inherit";
         b.addEventListener("click", fn); actions.appendChild(b); return b;
     }
+    // **The answer, in words, on the screen.** A button that only changes colour tells somebody
+    // holding a phone that *something* happened; what they need is the path, so they can read it
+    // to whoever asked for it — and, when it failed, which refusal it was. Selectable, wrapping,
+    // and never cleared by the next render.
+    var said = document.createElement("div");
+    said.className = "layout-debug-said";
+    said.hidden = true;
+    said.style.cssText = "margin-bottom:6px;white-space:pre-wrap;word-break:break-all;" +
+        "-webkit-user-select:text;user-select:text;color:#e8ded6";
+    function say(text) { said.hidden = false; said.textContent = text; }
     var pre = document.createElement("pre");
     pre.hidden = false;
     pre.style.cssText = "max-height:55vh;margin:0;overflow:auto;white-space:pre-wrap;word-break:break-word";
@@ -371,6 +448,38 @@ function debugUI(force, reveal) {
             copy.textContent = "Copied";
         }, function () { copy.textContent = "Copy failed"; });
     });
+    var send = button("Send to Mac", function () {
+        send.disabled = true;
+        say("Sending to this Mac\u2026");
+        if (typeof fetch !== "function") {
+            say("This browser has no fetch, so the report cannot be sent.");
+            send.disabled = false;
+            return;
+        }
+        fetch(REPORT_ROUTE, {
+            method: "POST", credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(report())
+        }).then(function (res) {
+            return res.text().then(function (text) {
+                var data = null;
+                try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+                if (res.ok && data && data.path) {
+                    // The path is the server's, never this file's guess at it: a page that prints
+                    // a path it composed itself is a page that can name a file nobody wrote.
+                    say("Written to " + data.path + "\n" + data.bytes + " bytes on disk" +
+                        (data.previous ? "\nthe press before it: " + data.previous : "") +
+                        (data.completeness_stated ? "" : "\nthis build sent no completeness block"));
+                    return;
+                }
+                var err = data && data.error;
+                say(err ? "Refused: " + err.code + " \u2014 " + err.message
+                        : "Refused: http_" + res.status + " \u2014 " + (text || "no answer"));
+            });
+        }).catch(function (e) {
+            say("Could not reach this Mac: " + ((e && e.message) || "no answer"));
+        }).then(function () { send.disabled = false; });
+    });
     button("Clear saved", function () {
         last = null; incidents = []; lastDetail = null; lastDetailSignature = "";
         try {
@@ -378,7 +487,8 @@ function debugUI(force, reveal) {
         } catch (e) { }
         drawDebug();
     });
-    panel.appendChild(actions); panel.appendChild(pre); box.appendChild(toggle); box.appendChild(panel);
+    panel.appendChild(actions); panel.appendChild(said); panel.appendChild(pre);
+    box.appendChild(toggle); box.appendChild(panel);
     document.documentElement.appendChild(box);
     debugPanel = box;
     if (reveal) { panel.hidden = false; pre.hidden = false; }
@@ -433,6 +543,27 @@ export var Diagnostics = {
     },
     ready: function () { ready = true; append("boot.ready"); schedule("boot.ready"); },
     note: function (event, data) { append(event, data); schedule(event); },
+    /**
+     * Declare a recorder that lives somewhere this page cannot see.
+     *
+     * Call it once, at module load, for anything that will later be folded into this trace. That
+     * is what buys the report the difference between "not folded in yet" and "there was nothing
+     * to fold in" — and the caller names it, so a new observation point next month needs no
+     * change here and none on the Mac.
+     */
+    source: function (name) { sourceRow(name); },
+    /**
+     * What became of one read of that recorder. `merged` with a count, `unavailable` when the
+     * store it lives in is not there, `failed` when reading it threw or gave back nonsense.
+     */
+    sourceRead: function (name, state, entries) {
+        var row = sourceRow(name);
+        row.state = state || "merged";
+        row.reads += 1;
+        row.entries += typeof entries === "number" ? entries : 0;
+        row.at = clock();
+    },
+    completeness: completeness,
     capture: function (reason) {
         var sample = stateSnapshot(reason || "manual"); save("manual_capture", sample); return sample;
     },

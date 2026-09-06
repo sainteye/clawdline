@@ -47,6 +47,7 @@ clawdline_production_sources=(
   Sources/Copy+Spanish.swift
   Sources/Copy+Turkish.swift
   Sources/DeployWatch.swift
+  Sources/DiagnosticReport.swift
   Sources/DevStack.swift
   Sources/Drop.swift
   Sources/GitChanges.swift

@@ -182,6 +182,15 @@ if ("serviceWorker" in navigator) {
 export var WORKER_TRACE_CACHE = "clawdline-notification-trace";
 export var WORKER_TRACE_URL = "/__clawdline/notification-trace";
 
+/** The name this recorder answers to in a report's completeness block. */
+export var WORKER_TRACE_SOURCE = "serviceWorker";
+
+// Declared at load, before anything has been read. That is the whole of what makes a silent
+// worker legible: a report taken before `readWorkerTrace` has run says `unread`, one taken after
+// a run that found nothing says `merged` with no entries, and a browser with no Cache Storage
+// says `unavailable`. Those were one empty trace until this line existed.
+Diagnostics.source(WORKER_TRACE_SOURCE);
+
 /** The newest entry already read into the trace, so that waking up twice does not report twice.
  *
  *  The worker's own counter rather than its clock: a click and the message it sends are written
@@ -197,13 +206,22 @@ var readThrough = 0;
  */
 export function readWorkerTrace() {
     try {
-        if (typeof caches === "undefined" || !caches || !caches.open) return Promise.resolve(0);
-    } catch (e) { return Promise.resolve(0); }
+        if (typeof caches === "undefined" || !caches || !caches.open) {
+            Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "unavailable", 0);
+            return Promise.resolve(0);
+        }
+    } catch (e) {
+        Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "unavailable", 0);
+        return Promise.resolve(0);
+    }
     return caches.open(WORKER_TRACE_CACHE)
         .then(function (cache) { return cache.match(WORKER_TRACE_URL); })
         .then(function (found) { return found ? found.json() : []; })
         .then(function (list) {
-            if (!Array.isArray(list)) return 0;
+            if (!Array.isArray(list)) {
+                Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "failed", 0);
+                return 0;
+            }
             // `activate` empties Cache Storage, so a worker update starts the numbering again. A
             // reader holding a higher number would then skip every entry for ever and report a
             // silent road as an empty one — the exact failure this file exists to make visible.
@@ -217,7 +235,11 @@ export function readWorkerTrace() {
                 fresh += 1;
                 Diagnostics.note(entry.event, entry.data);
             }
+            Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "merged", fresh);
             return fresh;
         })
-        .catch(function () { return 0; });
+        .catch(function () {
+            Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "failed", 0);
+            return 0;
+        });
 }

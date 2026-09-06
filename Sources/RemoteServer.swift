@@ -1301,6 +1301,33 @@ final class RemoteServer: @unchecked Sendable {
             WebPush.remove(id: id)
             return .json(["ok": true])
 
+        // **A reading that could not be read.** The layout recorder can see what a home-screen web
+        // app did on a phone, and its only way out was `Copy report` — which on 2026-09-06 was long
+        // enough that pasting it hung the program, with Universal Clipboard not syncing either. So
+        // the panel posts it here and it lands on a path `docs/diagnostics.md` names outright.
+        //
+        // **Paired device, at read level, and both halves of that are deliberate.** A machine token
+        // is the wrong shape: this is one browser handing over what it recorded about itself, and
+        // the token that identifies that browser is the one it already holds. It does not go through
+        // `writing` either — that gate is about typing into somebody's session and is off by default
+        // for a phone, and the person who needs this most is exactly the person on the phone with it
+        // off. What the route can do is bounded by construction rather than by the gate: two fixed
+        // file names, a size limit, and nothing in the request that could name a path.
+        case ("POST", "/v1/diagnostics/report"):
+            guard case .allowed(let device, _) = permission(for: request) else {
+                return .error(401, "unauthorized", "This needs a paired device.")
+            }
+            switch DiagnosticReport.save(request.body, device: device) {
+            case .success(let receipt):
+                RemoteAuth.audit("diagnostics.report",
+                                 ["device": device, "ok": "1", "bytes": String(receipt.bytes)])
+                return .json(receipt.payload)
+            case .failure(let refusal):
+                RemoteAuth.audit("diagnostics.report",
+                                 ["device": device, "ok": "0", "why": refusal.code])
+                return .error(refusal.status, refusal.code, refusal.message)
+            }
+
         case ("GET", "/v1/projects"):
             // The icon registry is the closest thing to a list of "projects I work on" that
             // already exists on this machine, and the stack panel reads it for the same reason.

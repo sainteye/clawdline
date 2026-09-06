@@ -206,9 +206,16 @@ notification has ever carried, which is why neither of them could see this segme
 **Reading it on the phone.** `?debug=layout` needs an address bar and a home-screen web app has
 none, so the panel opens from five presses on the version line at the bottom of Settings — wordmark,
 Settings, the small line with the version in it, five taps inside two seconds, then the
-`LAYOUT DEBUG` button at the bottom left. Its Copy report button puts the whole trace on the
-clipboard. **Open it after the tap, not before**: the worker's two entries are read in when the
-page wakes, so a report taken before the notification was tapped cannot contain them.
+`LAYOUT DEBUG` button at the bottom left. **Open it after the tap, not before**: the worker's two
+entries are read in when the page wakes, so a report taken before the notification was tapped
+cannot contain them — and the report now says which of the two it is, because `unread` and
+`merged, and there was nothing` used to be one empty trace.
+
+Its Copy report button puts the whole trace on the clipboard, and on 2026-09-06 that was too
+long to paste: the program hung and Universal Clipboard had not synced it either. **Send to
+Mac** beside it writes the same report to `~/Library/Logs/Clawdline/diagnostics/report.json`,
+which is the path to read instead of asking anybody for a paste —
+[`docs/diagnostics.md`](diagnostics.md) is the whole of it.
 
 **Three pushes carry a session's name as their title and only two of them route.**
 `StateHook.sendPush` (waiting for you) and `announceDelivery` (delivered) both write
