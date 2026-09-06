@@ -1175,9 +1175,76 @@ enum RemotePage {
             } catch (e) { return Promise.resolve(false); }
         }
 
+        // ---- the second road: what the tap wanted, left where the page will find it ----------
+        //
+        // The message below is the only road an already-open window has, and it gets one attempt:
+        // by the time anybody could notice it was dropped this handler has returned and the worker
+        // is asleep. So the tap also writes down *what it was for* — one record, in a store the
+        // page can read whenever it next wakes up. If the message arrives, the page marks this
+        // spent and nothing else happens; if it does not, the record is what opens the session.
+        //
+        // **Its own cache, deliberately.** The ring above is evidence — a numbered history nobody
+        // acts on — and this is an instruction that is carried out once and then destroyed. Kept
+        // in one store the two would have to share a read-modify-write, a sequence number and a
+        // pruning rule, and the first bug in either would be a tap that either vanished or fired
+        // twice. One record, replaced whole, is the whole of the write.
+        var WANT_CACHE = "clawdline-notification-wanted";
+        var WANT_URL = "/__clawdline/notification-wanted";
+
+        // Taps within one wake-up, so that two of them cannot share an identity. `Date.now()`
+        // alone is enough between wake-ups — a worker is shut down in between, and no two taps by
+        // a person are one millisecond apart — and the counter covers a test that taps twice in
+        // the same tick, which is the only thing that ever does.
+        var wantCount = 0;
+
+        // **Only a URL that names a session is worth wanting.** `/v1/push/test` and a fan-out
+        // notification both carry `url: "/"`, and a record saying "the person wanted the session
+        // list" would send somebody who tapped a test push back to the list they were already on
+        // the next three times they opened the app. The page declines the same URLs on the message
+        // road — `sessionCandidates()` in `input/route.js` — and the two are held against each
+        // other in `Tests/web-notification-route.mjs` by driving both, because this is a second
+        // copy of a judgement and second copies drift.
+        //
+        // **And it had drifted.** A `[^&]+` test does not refuse an empty value, it looks further
+        // along the fragment for one that is not empty; `sessionCandidates()` reads the *first*
+        // `session=` and refuses it when it is empty. On `/#session=&session=%25141` that is a
+        // record to the worker and nothing at all to the page — the tap lost on both roads. So
+        // this is written as the same match plus the same emptiness check, and the two cannot come
+        // apart on which `session=` they read.
+        function wantedFragment(url) {
+            var text = String(url || "");
+            var cut = text.indexOf("#");
+            if (cut < 0) { return ""; }
+            var hash = text.slice(cut);
+            var found = /(?:^|[#&])session=([^&]*)/.exec(hash);
+            return found && found[1] ? hash : "";
+        }
+
+        function wantWrite(record) {
+            try {
+                if (typeof caches === "undefined" || !caches || !caches.open) {
+                    return Promise.resolve(false);
+                }
+                if (typeof Response !== "function") { return Promise.resolve(false); }
+                return caches.open(WANT_CACHE).then(function (cache) {
+                    return cache.put(WANT_URL, new Response(JSON.stringify(record), {
+                        headers: { "Content-Type": "application/json" }
+                    })).then(function () { return true; });
+                }).catch(function () { return false; });
+            } catch (e) { return Promise.resolve(false); }
+        }
+
         self.addEventListener("notificationclick", function (event) {
             event.notification.close();
             var url = (event.notification.data && event.notification.data.url) || "/";
+            // What this tap was for, decided here and now, because the identity has to travel on
+            // the message as well as into the store: the page uses it to tell "the message for
+            // this tap arrived" from "a second tap happened", and those two want opposite things
+            // done about the record. Nothing about it is awaited in front of the roads below.
+            var want = null;
+            if (wantedFragment(url)) {
+                want = { at: Date.now(), url: url, id: String(Date.now()) + "." + (++wantCount) };
+            }
             // Focus a window that is already open before making another one — the point of
             // tapping this is to reach the session, not to collect tabs.
             //
@@ -1198,7 +1265,15 @@ enum RemotePage {
             // the message and nothing else, and if the message is dropped this handler has
             // already returned. That is what `sw.postMessage` with no `page.sw.message` after it
             // means in the trace, and it is the reading this was built to make possible.
+            //
+            // So the record above is the second road, and it is second in order as well as in
+            // name: the message still goes first and still does the work when it arrives. What
+            // the record removes is the part where a dropped message ended the tap in silence.
             var noted = [];
+            // Whichever road is taken below, and before any of them: on iOS the system opens the
+            // web app at `start_url` itself before this handler runs, so `openWindow` is usually
+            // not reached and the URL it would have carried is not the one the app came up on.
+            if (want) { noted.push(wantWrite(want)); }
             event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true })
                 .then(function (list) {
                     noted.push(traceNote("sw.notificationclick",
@@ -1207,7 +1282,11 @@ enum RemotePage {
                         var client = list[i];
                         if (!("focus" in client)) { continue; }
                         if (client.postMessage) {
-                            client.postMessage({ type: "navigate", url: url });
+                            // `want` rides along so the page can recognise the record this tap
+                            // left behind as one it has already answered. Empty when the URL
+                            // names no session, which is when no record was written either.
+                            client.postMessage({ type: "navigate", url: url,
+                                                 want: want ? want.id : "" });
                             noted.push(traceNote("sw.postMessage", {
                                 url: url, index: i, windows: list.length,
                                 visibility: client.visibilityState || "",

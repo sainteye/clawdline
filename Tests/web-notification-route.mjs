@@ -34,6 +34,12 @@ const pagePath = resolve(process.env.CLAWDLINE_REMOTE_PAGE_SOURCE
   || join(repoRoot, "Sources", "RemotePage.swift"));
 const routePath = resolve(process.env.CLAWDLINE_ROUTE_SOURCE
   || join(repoRoot, "Resources", "web", "app", "js", "input", "route.js"));
+const mainPath = resolve(process.env.CLAWDLINE_MAIN_SOURCE
+  || join(repoRoot, "Resources", "web", "app", "js", "main.js"));
+// The third read point lives here rather than in `main.js`: the session list is where `openWanted`
+// has always retried, and the record is the other half of the same request.
+const listPath = resolve(process.env.CLAWDLINE_LIST_SOURCE
+  || join(repoRoot, "Resources", "web", "app", "js", "view", "list.js"));
 
 let checks = 0;
 let failures = 0;
@@ -53,6 +59,8 @@ const occurrences = (haystack, needle) => haystack.split(needle).length - 1;
 
 const pageSource = readFileSync(pagePath, "utf8");
 const routeSource = readFileSync(routePath, "utf8");
+const mainSource = readFileSync(mainPath, "utf8");
+const listSource = readFileSync(listPath, "utf8");
 
 /* ---- lift the worker out of the Swift raw string ----------------------------------------------
    The same extraction `web-service-worker.mjs` does, and checked before it is trusted for the same
@@ -92,6 +100,22 @@ check("and the entry inside it", typeof traceURL === "string" && !!traceURL);
 equal(routeConstant("WORKER_TRACE_CACHE"), cacheName, "the page opens the cache the worker writes");
 equal(routeConstant("WORKER_TRACE_URL"), traceURL, "and reads the entry the worker wrote");
 
+/* ---- and the second store, which is the one that is acted on ---------------------------------
+   The trace is a numbered history nobody obeys; the record below is an instruction carried out
+   once and destroyed. Sharing a store would mean sharing a read-modify-write, a sequence number
+   and a pruning rule between the two, and the first bug in either would be a tap that vanished or
+   a tap that fired twice. So the names must differ, and the two copies of each name — one in
+   Swift, one in `route.js` — must not. */
+const wantCache = workerConstant("WANT_CACHE");
+const wantURL = workerConstant("WANT_URL");
+check("the worker names the store it leaves the tap's request in",
+      typeof wantCache === "string" && !!wantCache);
+check("and the record inside it", typeof wantURL === "string" && !!wantURL);
+equal(routeConstant("WORKER_WANT_CACHE"), wantCache, "the page opens that same store");
+equal(routeConstant("WORKER_WANT_URL"), wantURL, "and reads that same record");
+check("evidence and instruction are kept apart, which is the whole reason there are two",
+      wantCache !== cacheName && wantURL !== traceURL);
+
 /* ---- the URL a notification actually carries --------------------------------------------------
    Written here rather than imported, because the Swift that writes it is what this is holding the
    page against: RFC 3986's unreserved set and nothing else — see `WebPush.sessionURL`. */
@@ -100,6 +124,7 @@ const sessionURL = (id) =>
     "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"));
 
 const PANE = "%208";                      // Clawdfather's own pane on this Mac, and a real shape
+const OTHER = "%141";                     // a second one, for the taps that arrive in twos
 const ITERM = "w0t0p0:1234-ABCD";         // the control group: no per-cent, nothing to encode
 equal(sessionURL(PANE), "/#session=%25208", "a tmux pane's notification URL");
 equal(sessionURL(ITERM), "/#session=w0t0p0%3A1234-ABCD", "and an iTerm session's");
@@ -129,10 +154,26 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
       put: (url, res) => { entries.set(url, res); return Promise.resolve(); },
     };
   };
+  // What the worker left in the second store, read the way a person would read it off a device
+  // rather than through the page's own reader: these have to be able to say "the record is still
+  // there" and "the record is gone", which the reader's answer alone cannot.
+  const wantRecord = () => {
+    const entries = stores.get(wantCache);
+    const found = entries && entries.get(wantURL);
+    return found ? JSON.parse(found.text) : null;
+  };
+  const putWant = (record) => {
+    if (!stores.has(wantCache)) stores.set(wantCache, new Map());
+    stores.get(wantCache).set(wantURL, new Res(JSON.stringify(record)));
+  };
+  // Every `caches.open`, by name. The third read point is called with every session list, and a
+  // list arrives on every state change on this Mac — so "does it stop asking" is a fact about the
+  // store being opened, and a count is the only way to see it from out here.
+  const opens = [];
   // `noCaches` is a browser that has no Cache Storage, or one that refuses it. Both contexts
   // lose the store together, because on a device it is one origin's storage that is missing.
   const caches = noCaches ? undefined : {
-    open: (name) => Promise.resolve(cacheFor(name)),
+    open: (name) => { opens.push(name); return Promise.resolve(cacheFor(name)); },
     keys: () => Promise.resolve([...stores.keys()]),
     delete: (name) => { stores.delete(name); return Promise.resolve(true); },
   };
@@ -255,7 +296,36 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     events: () => notes.map((n) => n.event),
     saw: (event) => notes.some((n) => n.event === event),
     noteFor: (event) => notes.find((n) => n.event === event) || null,
-    wake: () => page.readWorkerTrace(),
+    notesFor: (event) => notes.filter((n) => n.event === event),
+    // **Both halves, because `boot` and `visibilitychange` both call both.** A wake-up that read
+    // only the trace would be a page that still cannot act on anything, which is the state this
+    // whole file is about leaving. The trace's count is what comes back, so that the readings
+    // above about numbering still say what they said.
+    wake: async () => { const read = await page.readWorkerTrace(); await page.readWorkerWant(); return read; },
+    readWant: () => page.readWorkerWant(),
+    // What a session list does: `list.js` calls this beside `openWanted`, which is the retry point
+    // the request has always had.
+    retry: () => page.retryWorkerWant(),
+    wantOpens: () => opens.filter((name) => name === wantCache).length,
+    // A message handed to the page by itself, which `deliver: true` cannot express: the worker
+    // posts during the tap, and the order this exists for is the one where the page is given that
+    // same message *afterwards* — a client message queued while iOS had the page suspended, and
+    // dispatched behind the read that woke it.
+    deliverMessage: (message) => { messageListeners.forEach((fn) => fn({ data: message })); },
+    wantRecord, putWant,
+    // A record written that many milliseconds ago. Rewriting the stored `at` rather than moving
+    // the clock: the clock is `Date.now()` in two contexts and a fake one would prove something
+    // about the fake.
+    ageWant: (ms) => {
+      const record = wantRecord();
+      if (!record) return null;
+      record.at = Date.now() - ms;
+      putWant(record);
+      return record;
+    },
+    // One turn of the event loop, for the deletions that are started but never awaited: nothing
+    // in the page holds the tap up for a cache write.
+    settle: () => new Promise((done) => setTimeout(done, 0)),
   };
 }
 
@@ -281,19 +351,27 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
 
 /* ---- the same road with the message dropped --------------------------------------------------
    The fault the user reports, in the only shape that fits every fact known about it: the worker
-   ran, the window was focused, and nothing else happened. What this asserts is not that the app
-   recovers — it does not, and choosing how it should is a design question — but that after it
-   fails there is now something on the device that says where it stopped. */
+   ran, the window was focused, and the message it sent was never delivered. Until the second road
+   existed the tap ended there — this block used to assert that nothing opened, which was true and
+   was the bug. What it asserts now is that the tap still arrives, by a road that never depended on
+   the message being delivered at all. */
 {
   const world = await makeWorld({ deliver: false, listed: [PANE] });
   await world.tap(sessionURL(PANE));
-  await world.wake();
-  equal(world.opened.length, 0, "a message that is never delivered opens nothing");
+  equal(world.opened.length, 0, "when the handler returns, the dropped message has opened nothing");
   equal(world.focused.length, 1, "though the window is focused, which is what the user sees");
+  await world.wake();
+  equal(world.opened.join(","), PANE,
+        "and the page wakes up, reads what the tap was for, and opens it anyway");
   check("the worker's half is on the device afterwards",
         world.saw("sw.notificationclick") && world.saw("sw.postMessage"));
-  check("and the page's half is not — which is the reading that names the broken segment",
-        !world.saw("page.sw.message") && !world.saw("route.to"));
+  check("and the page's half is still missing — which is the reading that names the lost segment",
+        !world.saw("page.sw.message"));
+  check("so the routing came from the record rather than from a message",
+        world.saw("page.want") && world.noteFor("page.want").data.routed === true
+        && world.saw("route.to"));
+  await world.settle();
+  equal(world.wantRecord(), null, "and the record is spent, not left to fire again");
   // Both entries, in order, and **both of them present** — the two `indexOf` calls are compared
   // only after each has been found, because `-1 < 0` is true and an absent entry would otherwise
   // read as an early one. That is not hypothetical: the first draft of the worker wrote these two
@@ -422,6 +500,368 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   equal(quiet.reads[0].state, "merged",
         "which is `merged` with no entries — the opposite reading from `unavailable`");
   equal(quiet.reads[0].entries, 0, "and the count says how much nothing there was");
+}
+
+/* ---- the record and the list, in the order a cold start puts them in --------------------------
+   The second road can arrive before the app knows what sessions exist — on iOS that is the usual
+   order, because the system launches the web app at `start_url` and the list is a round trip
+   through a tunnel behind it. So a record that has been read and could not be honoured must not be
+   thrown away: `openWanted` is called again with every list, and the record is what a *reload*
+   before that list arrives would otherwise lose. */
+{
+  const world = await makeWorld({ deliver: false, listed: [] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "routed", "the record is read and acted on");
+  equal(world.opened.length, 0, "but a session the list has not brought yet is not opened");
+  check("the request is held instead", !!world.page.wantedSession);
+  const miss = world.noteFor("route.openWanted");
+  check("and the miss is recorded", !!miss && miss.data.found === false);
+  await world.settle();
+  check("the record is still on the device, because nothing has been reached yet",
+        !!world.wantRecord());
+  world.inList.add(PANE);
+  equal(world.page.openWanted(), true, "the list arrives and the request is answered");
+  equal(world.opened.join(","), PANE, "with the pane the notification named");
+  await world.settle();
+  equal(world.wantRecord(), null, "and only now is the record spent");
+}
+
+/* ---- the record that lands after the read that would have seen it ----------------------------
+   The worker starts its cache write and does not hold the tap up for it, and until now the page
+   read at `boot` and at `visibilitychange` and nowhere in between. A cold start falls exactly
+   between them: `boot` reads before the record has landed, the page is then in the foreground, so
+   no `visibilitychange` comes, and by the time one does the record is older than the window and is
+   thrown away unread. The second road was silent on precisely the tap it exists for. The session
+   list is the retry point `openWanted` has always had, and this is the same request's other half.
+*/
+{
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  equal(await world.readWant(), "none", "boot reads before the worker has written anything");
+  await world.tap(sessionURL(PANE));
+  check("the record lands a moment later", !!world.wantRecord());
+  equal(world.opened.length, 0,
+        "and nothing has read it — a page in the foreground is woken by nothing");
+  equal(await world.retry(), "routed", "the next session list reads it and acts on it");
+  equal(world.opened.join(","), PANE, "so the tap is not lost between the two old read points");
+  // And it stops. A list arrives on every state change, and a read per list for the rest of the
+  // session is the cost this guard is here to refuse.
+  const opened = world.wantOpens();
+  equal(await world.retry(), "skipped", "a list after that does not ask again");
+  equal(await world.retry(), "skipped", "however many of them arrive");
+  equal(world.wantOpens(), opened, "and the store is not opened again");
+}
+{
+  // The control group for the guard: until an answer comes back it must keep asking, or the read
+  // point that was added is one that never runs on a page where nothing has been tapped yet.
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  equal(await world.retry(), "none", "the first list finds nothing written");
+  const opened = world.wantOpens();
+  equal(await world.retry(), "none", "and the next one looks again");
+  check("which means the store was opened again", world.wantOpens() > opened);
+  await world.tap(sessionURL(PANE));
+  equal(await world.retry(), "routed", "so the record is found whenever it lands");
+  equal(world.opened.join(","), PANE, "and the tap arrives");
+}
+
+/* ---- two notifications tapped before the list arrives ----------------------------------------
+   The store holds one record and the newest tap replaces it whole — that is deliberate, and it is
+   why the page cannot treat "there is a record" as "there is *this* record". The page is still
+   holding the first tap's id, so the opening that follows is the first tap's; a deletion that
+   simply emptied the store took the second tap's record with it, unread, and nothing on the screen
+   said a notification had been dropped. Somebody testing this by pressing a test push twice is
+   exactly this order. */
+{
+  const world = await makeWorld({ deliver: false, listed: [] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "routed", "the first tap is read and held against an empty list");
+  const first = world.wantRecord();
+  await world.tap(sessionURL(OTHER));
+  const second = world.wantRecord();
+  check("the second tap replaced the record, which is the store's one rule",
+        !!second && second.id !== first.id);
+  world.inList.add(PANE);
+  world.inList.add(OTHER);
+  equal(world.page.openWanted(), true, "the list arrives and the first tap's request is answered");
+  equal(world.opened.join(","), PANE, "with the pane the first notification named");
+  await world.settle();
+  const left = world.wantRecord();
+  check("and the second tap's record is still there, because nothing has carried it out",
+        !!left && left.id === second.id);
+  equal(await world.readWant(), "routed", "so the notification just tapped is acted on");
+  equal(world.opened.join(","), `${PANE},${OTHER}`, "and opens the session it named");
+  await world.settle();
+  equal(world.wantRecord(), null, "and only then is it spent");
+}
+
+/* ---- an opening that was not this record's ---------------------------------------------------
+   The same rule from the other side, and the cheaper way to state it: the record is spent by the
+   opening of the session *it* asked for. A page whose list has not brought that session yet can
+   still open another one — a hashchange, somebody pressing a row — and an opening is not evidence
+   that the tap has been answered. */
+{
+  const world = await makeWorld({ deliver: false, listed: [OTHER] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "routed", "the record asks for a session the list has not brought");
+  equal(world.opened.length, 0, "so nothing has opened yet");
+  world.location.hash = `#session=${encodeURIComponent(OTHER)}`;
+  equal(world.opened.join(","), OTHER, "the page goes somewhere else, and that session opens");
+  await world.settle();
+  check("the record is untouched, because that was not the session it asked for",
+        !!world.wantRecord());
+  world.inList.add(PANE);
+  world.page.routeTo(`#session=${encodeURIComponent(PANE)}`);
+  equal(world.opened.join(","), `${OTHER},${PANE}`, "and it is still there to be carried out");
+  await world.settle();
+  equal(world.wantRecord(), null, "spent by the opening of its own session, and only by that one");
+}
+
+/* ---- and the other end of the same rope: a request let go of ---------------------------------
+   `list.js` calls `setWantedSession(null)` on the first whole list, because a session that is not
+   in it is gone — a notification about a tab somebody has since closed. The record made that
+   request, so it has to go with it: while it was still `pendingWant` every later wake-up called it
+   settled *and* refused to collect it, and a reload inside the two-minute window carried out a
+   request this page had already established was for a session that is not coming. */
+{
+  const world = await makeWorld({ deliver: false, listed: [] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "routed", "the record is read and the request is held");
+  world.page.setWantedSession(null);
+  equal(world.page.openWanted(), false, "the first whole list lets go of the request");
+  equal(await world.readWant(), "settled", "a later wake-up still recognises the tap it answered");
+  await world.settle();
+  equal(world.wantRecord(), null,
+        "and collects the record, because nothing is waiting to carry it out any more");
+}
+
+/* ---- a notification tapped long enough ago that acting on it would be wrong -------------------
+   The cost of a durable request is that it outlives the moment somebody made it. Two minutes is
+   wide enough for an iOS cold start and narrow enough that a notification tapped in a lift does
+   not move somebody who has since opened the app to read something else — and the failure it
+   prevents is the worse of the two, because nothing on the screen would say why the app jumped.
+   The control group is the same record one second inside the window: if that did not route, this
+   test would be measuring the reader rather than the age. */
+{
+  const limit = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
+  check("the page states the window it obeys, rather than hiding it in a comparison",
+        typeof limit === "number" && limit > 0);
+
+  const fresh = await makeWorld({ deliver: false, listed: [PANE] });
+  await fresh.tap(sessionURL(PANE));
+  fresh.ageWant(limit - 1000);
+  equal(await fresh.readWant(), "routed", "a second inside the window, the record is obeyed");
+  equal(fresh.opened.join(","), PANE, "and the session opens");
+
+  const old = await makeWorld({ deliver: false, listed: [PANE] });
+  await old.tap(sessionURL(PANE));
+  old.ageWant(limit + 1000);
+  equal(await old.readWant(), "stale", "a second outside it, the record is refused");
+  equal(old.opened.length, 0, "so a notification tapped days ago moves nobody");
+  const refusal = old.noteFor("page.want");
+  check("and the refusal is recorded as age rather than as absence",
+        !!refusal && refusal.data.stale === true);
+  await old.settle();
+  equal(old.wantRecord(), null, "a record too old to obey is thrown away, not read again");
+}
+
+/* ---- waking up twice --------------------------------------------------------------------------
+   `boot` reads, and so does every `visibilitychange`. A phone does the second of those constantly.
+   Two things stop that becoming two jumps, and they are tested separately because they fail
+   separately: the record is deleted once the session it names is open, and the id it carries is
+   remembered by this page whether or not the deletion ever landed. The second is the one that
+   holds when a store refuses a write, which is exactly when a page is least able to tell. */
+{
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  const record = { ...world.wantRecord() };
+  equal(await world.readWant(), "routed", "the first wake acts on it");
+  equal(world.opened.length, 1, "one tap, one opening");
+  await world.settle();
+  equal(await world.readWant(), "none", "and the second finds nothing left to act on");
+  // The deletion did not land — a store that refused it, or a wake-up that read the record before
+  // it did. The id is the second lock, and it is the one that has to hold here.
+  world.putWant(record);
+  equal(await world.readWant(), "settled",
+        "a record that outlived its deletion is recognised, not obeyed again");
+  equal(world.opened.length, 1, "so waking twice still opens one session, once");
+  equal(world.notesFor("route.to").length, 1, "and routes once");
+  await world.settle();
+  equal(world.wantRecord(), null,
+        "and the deletion is tried again, because the session it names is already open");
+}
+
+/* ---- the two roads meeting, which is the ordinary case ----------------------------------------
+   The message is not going away: when it arrives it does the work, exactly as it did before, and
+   the record must then keep out of the way. It cannot do that by comparing addresses — somebody
+   who taps a notification, reads the session and moves to another one is at a different address a
+   moment later, and a record that fired then would take them back. So the tap's own id travels on
+   the message, and the page marks the record answered on the way past. */
+{
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  equal(world.opened.join(","), PANE, "the message road opens the session, as it always did");
+  check("and the message carried the id of the record that tap left behind",
+        world.posted.length === 1 && typeof world.posted[0].want === "string"
+        && world.posted[0].want.length > 0);
+  equal(world.wantRecord(), null,
+        "and the record is already spent, because the session it named is open");
+  equal(await world.readWant(), "none", "so a wake-up behind it finds nothing to do");
+  // The deletion is a write to a store that can refuse one, and the id is what holds when it
+  // does: a copy of that record put back by hand is recognised as the tap that has been answered.
+  world.putWant({ at: Date.now(), url: sessionURL(PANE), id: world.posted[0].want });
+  equal(await world.readWant(), "settled", "a copy that outlived it is recognised, not obeyed");
+  equal(world.opened.length, 1, "so nobody is moved twice");
+  equal(world.notesFor("route.to").length, 1, "by one routing, not two");
+}
+{
+  // The same meeting on a cold start: the message arrived, the list had not. The record is settled
+  // — this page will not act on it again — but it is kept, because the session it names is still
+  // not open and a reload before the list arrives would be left with nothing.
+  const world = await makeWorld({ deliver: true, listed: [] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "settled", "the message settled it before the wake-up read it");
+  await world.settle();
+  check("but it is kept while the session it names is still unreached", !!world.wantRecord());
+  world.inList.add(PANE);
+  equal(world.page.openWanted(), true, "the list arrives and the message's request is answered");
+  await world.settle();
+  equal(world.wantRecord(), null, "and the record goes with it, whichever road did the opening");
+}
+{
+  // **And the same meeting in the other order, which is the one nothing refused.** A page resumed
+  // from the background starts its read at `visibilitychange`, and the client message queued while
+  // iOS had the page suspended is dispatched during the three asynchronous hops that read takes. So
+  // the record acts first and the message lands behind it, announcing a tap that has already been
+  // carried out. Both roads acting is what the "answered once" rule says cannot happen, and the
+  // cost is not abstract: `openSession` fetches the transcript again, and on a phone it pushes a
+  // second history entry — one back gesture that does nothing, in this exact flow.
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  const message = world.posted[0];
+  equal(await world.readWant(), "routed", "the record road acts first, the message not yet given");
+  equal(world.opened.join(","), PANE, "and opens the session the tap named");
+  world.deliverMessage(message);
+  equal(world.opened.length, 1, "the message behind it must not open the same session again");
+  equal(world.notesFor("route.to").length, 1, "nor route a second time");
+  // Declined and not ignored: the note is written before the judgement, and it has to be able to
+  // say *which* refusal this was — a tap already carried out, or a message naming no session.
+  const seen = world.notesFor("page.sw.message");
+  equal(seen.length, 1, "the message is still recorded arriving");
+  check("and the trace says why it was declined — the tap had already been answered",
+        seen[0].data.answered === true);
+}
+{
+  // The control group for it, because a guard that refuses everything would pass the block above:
+  // the ordinary order, where the message is the road that works and must not be turned away.
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  equal(world.opened.join(","), PANE, "a message arriving first still opens the session");
+  check("and was not declined as one already answered",
+        world.noteFor("page.sw.message").data.answered === false);
+}
+
+/* ---- what routing to the same address twice actually does -------------------------------------
+   The second road has to keep out of the way of the message road, and *how* depends on a fact
+   about `routeTo` that had been assumed rather than measured: it does not refuse a repeat. Sent to
+   an address it is already at, it re-reads the fragment, finds the id and opens the session again.
+   So an address that already matches is not evidence that the page has already been moved there —
+   which is exactly why the two roads are told apart by the tap's id and not by comparing
+   `location.hash`. Measured here so that the reasoning above rests on a check rather than on a
+   reading of the code. */
+{
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  equal(world.opened.length, 1, "the tap opens the session once");
+  world.page.routeTo(world.location.hash);
+  equal(world.opened.length, 2,
+        "and routing to the address it is already at opens it again — a repeat is not refused");
+}
+
+/* ---- a notification with nowhere to go, on the second road ------------------------------------
+   `/v1/push/test` and `/v1/orchestrator/notify` both send `url: "/"`. A record saying "the person
+   wanted the session list" would send whoever tapped a test push back to the list they were
+   already on, every time they opened the app for the next two minutes. The worker writes none, and
+   the page declines one anyway: the worker's gate is a second copy of a judgement `route.js`
+   already owns, and second copies drift. */
+{
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  await world.tap("/");
+  equal(world.wantRecord(), null, "a test push leaves nothing behind to act on later");
+  equal(await world.readWant(), "none", "so a wake-up after one finds nothing");
+  equal(world.opened.length, 0, "and opens nothing");
+  equal(world.posted[0].want, "", "the message says so too, rather than carrying an id");
+}
+{
+  // The two gates, driven against each other rather than compared as text. The page's is
+  // `sessionCandidates`, reached here through the message road; the worker's is `wantedFragment`,
+  // reached by whether a record appears. A URL either interests both of them or neither.
+  //
+  // **The seven URLs this started with all agreed, and the two gates did not.** Every one of them
+  // had at most one `session=` in it, which is the one shape a `[^&]+` test and a `[^&]*` test
+  // followed by an emptiness check cannot come apart on — so the row that would have shown the
+  // divergence was the row nobody had written. A green here says the table asked; it says nothing
+  // about the pairs it did not carry, and these are the ones that separate the two spellings:
+  // a second `session=` behind an empty first one, the pre-encoding spellings still sitting on
+  // somebody's phone (`%208`, `%141` — a fragment the page reads and cannot resolve is still a
+  // fragment both gates must agree is one), a fragment inside a fragment, and a query string,
+  // which is not a fragment at all however much it looks like this one.
+  const gate = ["/", "/#", "/#page=usage", "/#session=", "/#session=%25208",
+                "/#session=w0t0p0%3A1234-ABCD", "/#page=usage&session=%25141",
+                "/#session=&session=%25141", "/#session=%208", "/#session=%141",
+                "/#x#session=%25208", "/?session=%25208#page=usage",
+                "/#session=&", "/#a=1&session=", "/#session", "/#Session=%25208",
+                "/#session==%25208", "/#session=%25208&session=%25141", "/?session=%25208"];
+  for (const url of gate) {
+    const world = await makeWorld({ deliver: true, listed: [] });
+    await world.tap(url);
+    const workerWants = !!world.wantRecord();
+    const pageRoutes = world.saw("route.to");
+    check(`the two gates agree about ${url} (${workerWants ? "want" : "no want"})`,
+          workerWants === pageRoutes);
+  }
+}
+
+/* ---- a message the page routes nothing for has answered nothing ------------------------------
+   The gates agree today, and the table above is what says so. This is what the second road costs
+   if they ever stop agreeing: a message carrying an id for a URL this page declines used to mark
+   that tap answered anyway, because the assignment sat above the gate. The record was then
+   `settled` on a page that had done nothing about it and `pendingWant` kept it from being
+   collected, so the tap was lost on both roads until a reload — a drifted gate costing two roads
+   instead of one. Driven with a message rather than a tap, because the worker no longer sends one:
+   what is being held is the page's own behaviour when it is handed something it declines. */
+{
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  world.deliverMessage({ type: "navigate", url: "/#session=", want: "9.1" });
+  check("the message is recorded arriving", world.saw("page.sw.message"));
+  check("and nothing was routed, because it names no session", !world.saw("route.to"));
+  world.putWant({ at: Date.now(), url: sessionURL(PANE), id: "9.1" });
+  equal(await world.readWant(), "routed",
+        "so the record left by that tap is still acted on rather than called settled");
+  equal(world.opened.join(","), PANE, "and the session it names opens");
+}
+
+/* ---- and the page that has to call it ---------------------------------------------------------
+   Everything above drives `readWorkerWant` directly, which says nothing at all about whether the
+   app ever calls it. The two wake-ups are `boot` and `visibilitychange` in `main.js`, they are the
+   same two the trace is read at, and a road nothing calls is a road that does not exist. Read as
+   source rather than driven, because driving `main.js` means booting the whole app. */
+{
+  check("main.js imports the reader from route.js",
+        /import \{[^}]*\breadWorkerWant\b[^}]*\} from "\.\/input\/route\.js";/.test(mainSource));
+  equal(occurrences(mainSource, "readWorkerWant()"), 2,
+        "and calls it at both of the moments a page wakes up");
+  equal(occurrences(mainSource, "readWorkerTrace()"), 2,
+        "which are the two the trace is already read at");
+}
+{
+  // And the third, which is the one this road did not have. It is in `list.js` rather than
+  // `main.js` because the moment it needs is a session list arriving, which is where the same
+  // request's other half — `openWanted` — has always been retried. Read as source for the same
+  // reason: driving `list.js` means rendering the whole app.
+  check("list.js imports the retry from route.js",
+        /import \{[^}]*\bretryWorkerWant\b[^}]*\} from "\.\.\/input\/route\.js";/.test(listSource));
+  equal(occurrences(listSource, "retryWorkerWant()"), 1, "and calls it, once, with every list");
+  check("beside the openWanted call it is the other half of",
+        /openWanted\(\);[^]{0,700}retryWorkerWant\(\);/.test(listSource));
 }
 
 console.log(failures === 0

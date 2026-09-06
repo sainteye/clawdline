@@ -40,7 +40,22 @@ var wantedSessionAsWritten = null;
 /// Cleared from the list as well, once the first list has settled whether the session it names is
 /// there at all, and a name arriving there by import is read-only. Same variable, one more hop —
 /// and the second candidate goes with it, or letting go would not be letting go.
-export function setWantedSession(id) { wantedSession = id; wantedSessionAsWritten = null; }
+///
+/// **And the worker's record goes with it too, when the request being let go of is the one that
+/// record made.** The first whole list is the answer to "is this session here at all", and
+/// `list.js` calls this when the answer is no. Until this line the record outlived that answer: it
+/// was still `pendingWant`, so every later wake-up called it settled *and* refused to collect it,
+/// and a reload inside the two-minute window carried out a request this page had already
+/// established was for a session that is gone.
+export function setWantedSession(id) {
+    if (!id && pendingWant &&
+        (pendingWantNames(wantedSession) || pendingWantNames(wantedSessionAsWritten))) {
+        pendingWant = "";
+        pendingWantFor = null;
+    }
+    wantedSession = id;
+    wantedSessionAsWritten = null;
+}
 
 /**
  * What the fragment could be naming: the decoding first, and the raw text after it when the two
@@ -124,6 +139,24 @@ export function openWanted() {
     if (!id) return false;
     wantedSession = null;
     wantedSessionAsWritten = null;
+    // The tap has landed, so the worker's record of what it was for has been carried out and can
+    // go. Written here rather than where the record is read, because the road that reads it can
+    // end in a miss — a cold start whose list has not arrived — and `list.js` calls this again
+    // with every list until it does not.
+    //
+    // **The one that is spent is the one that asked for this session**, which is not the same as
+    // "the next opening that happens to succeed". Two notifications tapped before the list arrives
+    // are one record — the newest replaces the older, deliberately — while the page is still
+    // holding the *first* tap's id, so the opening that follows is the first tap's and the record
+    // it would have thrown away is the second tap's, unread. `forgetWant` is given the id it means
+    // to collect for the same reason: the record in the store need not still be the one this call
+    // is spending.
+    if (pendingWant && pendingWantNames(id)) {
+        var spent = pendingWant;
+        pendingWant = "";
+        pendingWantFor = null;
+        forgetWant(spent);
+    }
     // A notification means there is something new to read. Force a transcript read even when
     // this session was already open and its fragment therefore routes to the same screen.
     openSession(id, false, true);
@@ -143,12 +176,48 @@ if ("serviceWorker" in navigator) {
         // are the two readings the trace has to be able to tell apart.
         Diagnostics.note("page.sw.message", {
             type: (data && data.type) || "", url: typeof (data && data.url) === "string",
-            hidden: document.hidden
+            want: !!(data && data.want), hidden: document.hidden,
+            // Which of the two ways this handler can decline a message it did receive: the tap it
+            // announces has already been carried out by the road below. Without this the trace
+            // shows a message arriving and no routing behind it, which is the same picture a
+            // message naming no session leaves.
+            answered: !!(data && data.want && data.want === settledWant)
         });
         if (!data || data.type !== "navigate" || typeof data.url !== "string") return;
+        // **The same guard, in the other direction, and it was missing.** `readWorkerWant` refuses
+        // a record this page has already answered; nothing refused a *message* announcing a tap the
+        // record road had already acted on. That order is not hypothetical — a page resumed from
+        // the background starts the read at `visibilitychange`, and the client message queued while
+        // it was suspended is dispatched during the three asynchronous hops that read takes. Both
+        // roads then acted on one tap: the transcript was fetched twice, and on a phone
+        // `session/open.js` pushed a second history entry, which is one back gesture that does
+        // nothing — in the very flow this exists to repair.
+        //
+        // Compared before it is assigned, because `settledWant` is set by whichever road acts
+        // first: comparing after the assignment below would refuse the message road every time,
+        // including the ordinary order where the message is what does the work.
+        if (data.want && data.want === settledWant) return;
         var cut = data.url.indexOf("#");
         var hash = cut < 0 ? "" : data.url.slice(cut);
-        if (!sessionCandidates(hash)) return;  // `/` — the test push, and nothing to route to
+        var wanted = sessionCandidates(hash);
+        if (!wanted) return;  // `/` — the test push, and nothing to route to
+        // This message and the worker's record are two announcements of one tap, and the id is
+        // what joins them. A message that arrives is the road working, so the record must not fire
+        // again behind it — that is what would send somebody who has since moved on back to where
+        // the notification pointed. `pendingWant` as well, so the record is spent by whichever
+        // call opens the session, which on a cold start is not this one.
+        //
+        // **Below the gate, not above it.** A message this page routes nothing for has answered
+        // nothing, and marking the tap answered there left the record `settled` on a page that had
+        // done nothing about it — and pending, so it could not be collected either. The tap was
+        // then lost on both roads until a reload. The worker is not supposed to send one of those
+        // at all; that it could is exactly the drift the two gates are driven against each other
+        // for, and this is what keeps a drifted gate from costing the second road as well.
+        if (typeof data.want === "string" && data.want) {
+            settledWant = data.want;
+            pendingWant = data.want;
+            pendingWantFor = wanted;
+        }
         // Written into the address as well as acted on, so that a reload from here lands in the
         // same place. Setting it fires `hashchange`, which routes; when it is already what we
         // were sent, nothing fires and this does the routing itself.
@@ -241,5 +310,226 @@ export function readWorkerTrace() {
         .catch(function () {
             Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "failed", 0);
             return 0;
+        });
+}
+
+/* ---- the second road: doing something about a message that never arrived ---
+ *
+ * Everything above this line reads the worker's half and acts on none of it. That was the right
+ * shape while the question was still *where does a tap stop*; it is the wrong one once the answer
+ * is known, and the answer is that an already-open window has exactly one road and gets one
+ * attempt at it. `postMessage` is defined on `Client`, so every window `clients.matchAll` returns
+ * has one and the `client.navigate` fallback beside it cannot run; `clients.openWindow` is reached
+ * only when there is no window at all, and on iOS the system opens the web app itself — at the
+ * manifest's `start_url`, which is `/` — before `notificationclick` runs. So by the time the
+ * handler looks, there is a window, it is showing the session list, and the single message aimed
+ * at it either lands or the tap is over.
+ *
+ * So the worker writes down *what the tap was for* as well as sending the message, and this reads
+ * it back at the two moments the page wakes up. **It is not a retry of the message**: it is the
+ * same request arriving by a road that does not depend on delivery, and it works precisely when
+ * the interesting failure has already happened.
+ *
+ * Four things keep a record from being worse than the fault it fixes:
+ *
+ * - **It goes stale.** A notification tapped on Tuesday must not move anybody on Thursday, and the
+ *   window has to be wide enough for an iOS cold start — see `WORKER_WANT_MAX_AGE_MS`.
+ * - **It is answered once.** `settledWant` holds the id this page instance has already responded
+ *   to, by either road, so waking twice does not route twice.
+ * - **Whichever road acts first marks the tap answered**, and the other declines it: a message that
+ *   arrives marks the record settled on the way past, and a message that arrives behind a record
+ *   already carried out is refused by the same comparison. So the two roads cannot both act on one
+ *   tap, in either order.
+ * - **`/` is not a request.** The test push and a fan-out notification both carry it, and the
+ *   worker writes no record for a URL naming no session. This declines it again anyway: the
+ *   worker's copy of that judgement is a second copy, and second copies drift.
+ *
+ * **And a worker update loses the record**, because `activate` empties every cache — the same
+ * cost the trace pays, for the same reason and with a different consequence: an update lands on
+ * one tap, and that tap keeps only the message road it had before this existed.
+ */
+export var WORKER_WANT_CACHE = "clawdline-notification-wanted";
+export var WORKER_WANT_URL = "/__clawdline/notification-wanted";
+
+/**
+ * How old a record may be and still be obeyed.
+ *
+ * Two minutes, which is not a guess about attention but about the slowest thing between the tap
+ * and this line: iOS launches the web app cold, the document comes down the tunnel, the modules
+ * load, and only then does `boot` reach the read. Seconds would drop exactly the taps this exists
+ * for. Days would let a notification from last week move somebody who has just opened the app to
+ * read something else, which is a worse failure than the one being fixed, because nothing on the
+ * screen would say why it happened.
+ */
+export var WORKER_WANT_MAX_AGE_MS = 120000;
+
+/** The record this page has already answered — by this road or by the message. */
+var settledWant = "";
+
+/** The record whose session has not been opened yet, spent by `openWanted` when that session is. */
+var pendingWant = "";
+
+/** The sessions that record asked for — `sessionCandidates` of its own URL, both spellings when it
+ *  has two. This is what makes the line above say *that* session rather than "the next one". */
+var pendingWantFor = null;
+
+/** Is the record still waiting the one that asked for this session? */
+function pendingWantNames(id) {
+    if (!id || !pendingWantFor) return false;
+    for (var i = 0; i < pendingWantFor.length; i++) {
+        if (pendingWantFor[i] === id) return true;
+    }
+    return false;
+}
+
+/**
+ * Throw the record away — the one named, and not simply whatever is in the store.
+ *
+ * The store holds one record and the newest tap replaces it whole, so by the time a deletion runs
+ * the record there may belong to a *later* tap that nothing has read yet. Deleting that is the
+ * second road losing exactly the notification it was built for: tap A before the list arrives, tap
+ * B behind it, the list arrives and opens A, and B is thrown away unread with nothing on screen to
+ * say a tap was dropped.
+ *
+ * Never rejects: a store that will not answer is a page with no second road. It also does not
+ * delete what it could not read, which is the safer half of that — an un-deleted record is bounded
+ * by staleness, by `settledWant`, and by the collection this same branch does on the next wake-up,
+ * while a wrongly deleted one is a tap nobody can get back. The read and the delete are two steps
+ * and a tap can land between them; the window is one turn of the microtask queue, and losing that
+ * race costs the same record this used to lose every time.
+ */
+function forgetWant(id) {
+    try {
+        if (typeof caches === "undefined" || !caches || !caches.open || !caches.delete) {
+            return Promise.resolve(false);
+        }
+    } catch (e) { return Promise.resolve(false); }
+    return caches.open(WORKER_WANT_CACHE)
+        .then(function (cache) { return cache.match(WORKER_WANT_URL); })
+        .then(function (found) { return found ? found.json() : null; })
+        .then(function (record) {
+            if (!record || record.id !== id) return false;
+            return caches.delete(WORKER_WANT_CACHE).then(function () { return true; });
+        })
+        .catch(function () { return false; });
+}
+
+/** A read has come back with something other than `none`, so there is nothing left to wait for. */
+var wantAnswered = false;
+
+/** A read is in flight. Lists arrive faster than Cache Storage answers, and two reads of one
+ *  record are two roads again — the second would find it `settled` at best and act on it twice at
+ *  worst. */
+var wantReading = false;
+
+/**
+ * Read what the last tap asked for, and route there if it is still worth doing.
+ *
+ * Answers what it decided, as a word rather than a count, because every outcome here is a
+ * different reading and a number would flatten them: `unavailable` (no Cache Storage at all),
+ * `none` (nothing written, or nothing readable), `settled` (this page has answered that tap
+ * already), `stale` (older than the window), `declined` (names no session — the test push) or
+ * `routed`. Never rejects, for the same reason `readWorkerTrace` does not: this runs inside
+ * `boot`.
+ */
+export function readWorkerWant() {
+    wantReading = true;
+    return readWantRecord().then(function (answer) {
+        wantReading = false;
+        if (answer !== "none") wantAnswered = true;
+        return answer;
+    });
+}
+
+/**
+ * The third read point, and the reason it exists: **the write is not awaited and the reads were
+ * both at the edges.**
+ *
+ * The worker starts its cache write and does not hold the tap up for it; the page read at `boot`
+ * and at `visibilitychange` and nowhere in between. A cold start is exactly the order that falls
+ * between them — `boot` reads before the record has landed, and the page is then in the foreground,
+ * so no `visibilitychange` comes. By the time one does, the record is usually older than
+ * `WORKER_WANT_MAX_AGE_MS` and is thrown away unread. The second road was silent on precisely the
+ * tap it exists for.
+ *
+ * So `list.js` calls this with every session list, which is where `openWanted` has always retried
+ * for the same reason: a cold start does its routing before it knows what sessions exist. Not a
+ * retry of the worker's message — a re-read of what it wrote down.
+ *
+ * Answers `skipped` when it did not look. Two guards, both cheap: a read already in flight, and a
+ * read that has already come back with something other than "nothing there yet" — after which
+ * there is nothing to wait for, because a record that arrives later arrives with a wake-up of its
+ * own. What that leaves is one store read per list on a page where a notification is never tapped,
+ * which is smaller than the render beside it and is the honest cost of not having a way to be told.
+ */
+export function retryWorkerWant() {
+    if (wantAnswered || wantReading) return Promise.resolve("skipped");
+    return readWorkerWant();
+}
+
+function readWantRecord() {
+    try {
+        if (typeof caches === "undefined" || !caches || !caches.open) {
+            return Promise.resolve("unavailable");
+        }
+    } catch (e) { return Promise.resolve("unavailable"); }
+    return caches.open(WORKER_WANT_CACHE)
+        .then(function (cache) { return cache.match(WORKER_WANT_URL); })
+        .then(function (found) { return found ? found.json() : null; })
+        .then(function (record) {
+            if (!record || typeof record.id !== "string" || !record.id ||
+                typeof record.url !== "string" || typeof record.at !== "number") {
+                Diagnostics.note("page.want", { found: false });
+                return "none";
+            }
+            var age = Date.now() - record.at;
+            // Answered already — and whether it may go turns on whether the session it names is
+            // open yet. Still pending means the message road is holding the request against a
+            // list that has not arrived, and a reload before it does would have nothing left to
+            // work from, so the record stays. Not pending means the tap has landed and this copy
+            // outlived the deletion that was started for it: a write to a store that can refuse
+            // one, or one the worker's own write overtook, because `notificationclick` posts the
+            // message before its cache write has finished. Left there, a reload inside the window
+            // would take somebody back to a session they have already read and moved on from.
+            if (record.id === settledWant) {
+                Diagnostics.note("page.want", { found: true, settled: true,
+                                                pending: pendingWant === record.id,
+                                                age: Math.round(age / 1000) });
+                if (pendingWant !== record.id) forgetWant(record.id);
+                return "settled";
+            }
+            if (!(age <= WORKER_WANT_MAX_AGE_MS)) {
+                Diagnostics.note("page.want", { found: true, stale: true,
+                                                age: Math.round(age / 1000) });
+                forgetWant(record.id);
+                return "stale";
+            }
+            var cut = record.url.indexOf("#");
+            var hash = cut < 0 ? "" : record.url.slice(cut);
+            var wanted = sessionCandidates(hash);
+            if (!wanted) {
+                Diagnostics.note("page.want", { found: true, declined: true });
+                forgetWant(record.id);
+                return "declined";
+            }
+            // Marked before anything asynchronous can happen, so that two wake-ups a moment apart
+            // cannot both read this record and both act on it. What it asked for is remembered
+            // beside it: this record is spent by the opening of *that* session and by no other.
+            settledWant = record.id;
+            pendingWant = record.id;
+            pendingWantFor = wanted;
+            Diagnostics.note("page.want", { found: true, routed: true,
+                                            age: Math.round(age / 1000) });
+            // The same two lines the message road ends in, and for the same reasons: the address
+            // has to say where the page is so that a reload lands in the same place, and setting
+            // it is what routes — except when it is already what we were sent, which is when
+            // nothing fires and this has to do the routing itself.
+            if (hash === location.hash) routeTo(hash);
+            else location.hash = hash;
+            return "routed";
+        })
+        .catch(function () {
+            Diagnostics.note("page.want", { found: false, failed: true });
+            return "none";
         });
 }
