@@ -1018,5 +1018,6 @@ struct Hindi: Copy {
     let webPlanPortalFailed = "Clawdline ग्राहक पोर्टल नहीं खोल सका। आपकी सदस्यता पर कोई असर नहीं पड़ा।"
     let webPlanElsewhere = "प्लान और भुगतान Clawdline Cloud के हैं, जो एक अलग दरवाज़ा है: होस्ट किए गए कंसोल में साइन इन करें, अपग्रेड वहीं इसी पेज पर है। प्लान चाहे जो कहे, इस Mac पर कुछ भी रुकता नहीं — Mac पर होने वाले काम की कभी गिनती नहीं होती।"
     let webPlanElsewhereNote = "यह विंडो आपके सामने रखे Mac से बात कर रही है, Clawdline Cloud से नहीं।"
+    let webPlanFromGate = "प्लान और भुगतान"
     // clawdline:plan-strings:end
 }

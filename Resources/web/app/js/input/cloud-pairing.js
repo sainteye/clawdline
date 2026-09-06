@@ -30,19 +30,43 @@ function say(text, calm) {
     line.classList.toggle("calm", calm === true);
 }
 
+/* The Plan page is allowed in front of this door.
+ *
+ * The door is a fact about the *transport* — this browser cannot decrypt anything yet — and the
+ * Plan page is the one page that does not need the transport: reading a plan and buying one take
+ * the session cookie and nothing else. So the door steps aside for it, and while it has, nothing
+ * in this module may raise it again. A pairing poll saying "waiting for the Mac" every two
+ * seconds would otherwise jump over the page somebody is trying to pay on.
+ */
+var deferred = false;
+
 function cloudDoor() {
     var door = byId("cloud-door");
     if (!door) return null;
     var mark = byId("cloud-door-mark");
     if (mark && typeof drawIcon === "function") { try { drawIcon(mark); } catch (e) { /* cosmetic */ } }
-    door.hidden = false;
+    door.hidden = deferred;
     return door;
+}
+
+/** Step aside: the Plan page is being opened from here. The door keeps its content. */
+export function deferCloudGate() {
+    deferred = true;
+    hideCloudGate();
+}
+
+/** Come back, because whatever the door was about has not been answered yet. */
+export function showCloudGate() {
+    deferred = false;
+    var door = byId("cloud-door");
+    if (door) door.hidden = false;
 }
 
 function hideCloudControls() {
     ["cloud-door-install-steps", "cloud-door-camera-frame", "cloud-door-scan",
         "cloud-door-offer-label", "cloud-door-offer", "cloud-door-fingerprint-line",
-        "cloud-door-confirm", "cloud-door-restart", "cloud-door-devices"].forEach(function (id) {
+        "cloud-door-confirm", "cloud-door-restart", "cloud-door-devices",
+        "cloud-door-plan"].forEach(function (id) {
         var element = byId(id); if (element) element.hidden = true;
     });
     var confirm = byId("cloud-door-confirm");
@@ -118,6 +142,20 @@ export function showCloudSignIn(url, options) {
     say("Clawdline will not leave this screen until you continue.", true);
 }
 
+/**
+ * Offer the Plan page from a door that is blocking somebody who is already signed in.
+ *
+ * Only from those two. A signed-out browser is not shown it, because the Plan page's own
+ * signed-out state offers the same GitHub button this door already has; and the transport-error
+ * screens are not shown it either, since whatever is wrong there may be wrong for billing too.
+ */
+function offerPlan() {
+    var plan = byId("cloud-door-plan");
+    if (!plan) return;
+    plan.textContent = T.webPlanFromGate;
+    plan.hidden = false;
+}
+
 function recoveryKind(kind) {
     return { ios: "iOS", android: "Android", browser: "Browser" }[kind] || "Browser";
 }
@@ -157,6 +195,7 @@ export function showCloudDeviceRecovery(session, problem, options) {
         : tier + " allows " + limit + " viewer devices.")
         + " Revoke one device you recognize, then this device can sign in. Revocation stops its Cloud access.";
     if (list) { list.hidden = false; list.replaceChildren(); }
+    offerPlan();
     say("Reading the devices using your slots…", true);
 
     function load() {
@@ -345,6 +384,7 @@ export function showCloudPairing(session, options) {
 
     if (installSteps) installSteps.hidden = true;
     if (devices) devices.hidden = true;
+    offerPlan();
     if (confirm) confirm.textContent = "Pair this device";
     if (invitation) {
         showInvitationCopy();

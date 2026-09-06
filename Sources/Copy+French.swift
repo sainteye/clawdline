@@ -1014,5 +1014,6 @@ struct French: Copy {
     let webPlanPortalFailed = "Clawdline n'a pas pu ouvrir l'espace client. Votre abonnement n'est pas affecté."
     let webPlanElsewhere = "Les formules et le paiement relèvent de Clawdline Cloud, qui est une autre porte : connectez-vous à la console hébergée et le changement de formule se trouve sur cette même page. Rien ne s'arrête sur ce Mac, quoi que dise la formule — le travail sur le Mac n'est jamais facturé."
     let webPlanElsewhereNote = "Cette fenêtre parle au Mac devant vous, pas à Clawdline Cloud."
+    let webPlanFromGate = "Formule et paiement"
     // clawdline:plan-strings:end
 }

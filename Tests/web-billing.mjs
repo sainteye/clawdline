@@ -431,8 +431,9 @@ for (const id of IDS) {
 check(/data-page-view="plan"/.test(page_), "the section declares itself a page");
 check(/data-page-to="plan"/.test(page_), "and one control in the drawer names it");
 check(/{ name: "plan", element: byId\("plan"\)/.test(mainSource), "the registry in main.js carries it");
-check(/leave: function \(\) \{ plan\.leave\(\); \}/.test(mainSource),
-      "with a `leave`, because this page starts a timer and a page that keeps one must put it back");
+check(/leave: function \(\) \{[\s\S]{0,160}?plan\.leave\(\);/.test(mainSource),
+      "with a `leave` that stops the page, because it starts a timer and a page that keeps one "
+      + "must put it back");
 check(mainSource.includes('location.pathname === "/billing/done"'),
       "main.js recognises the success URL `api/src/services/billing.ts` sends to Lemon Squeezy");
 check(/consumeCheckoutReturn/.test(mainSource),
@@ -464,6 +465,54 @@ for (const code of ["not_purchasable", "missing_variant", "free_tier", "unknown_
     check(planSource.includes(code) || billingSource.includes(code),
           `the typed refusal ${code} is one the page knows by name`);
 }
+
+/* ==========================================================================
+   8. The two doors this page had to be moved out from behind
+
+   Both were found by a person trying to pay and getting nowhere, which is the
+   only reason they are asserted here: neither was visible from inside the Plan
+   page's own tests, because in both cases the page is *correct* and simply
+   never reached.
+   ========================================================================== */
+
+const doorSource = read("Resources/web/app/js/input/cloud-pairing.js");
+
+check(/data-page-to="plan"/.test(page_.slice(page_.indexOf('id="cloud-door"'))),
+      "the cloud door carries a way to the Plan page — paying needs the session cookie and "
+      + "nothing the door is about");
+check(/id="cloud-door-plan"/.test(page_), "and the document defines that control");
+check(doorSource.includes('"cloud-door-plan"'),
+      "the door's control table hides it with the rest, so it cannot leak between screens");
+check((doorSource.match(/offerPlan\(\);/g) || []).length === 2,
+      "it is offered by exactly the two screens that block a browser which is already signed in: "
+      + "no account key yet, and the viewer-device limit");
+check(/function offerPlan[\s\S]*?T\.webPlanFromGate/.test(doorSource),
+      "labelled from the string table like everything else on this path");
+check(/door\.hidden = deferred/.test(doorSource),
+      "**the door respects the deferral when it redraws** — a pairing poll that keeps redrawing "
+      + "would otherwise jump over the page somebody is paying on");
+check(/export function deferCloudGate/.test(doorSource) && /export function showCloudGate/.test(doorSource),
+      "stepping aside and coming back are both named");
+check(/deferCloudGate\(\);\s+plan\.enter/.test(mainSource),
+      "arriving at the Plan page steps the door aside");
+check(/if \(cloudGateUp\) showCloudGate\(\);/.test(mainSource),
+      "and leaving brings it back, because what it was about has not been answered");
+check(/cloudGateUp = false;\s+hideCloudGate\(\);/.test(mainSource),
+      "a connected viewer clears it, so the door does not come back after pairing succeeds");
+check((mainSource.match(/cloudGateUp = true;/g) || []).length === 2,
+      "raised by exactly the two states that block a signed-in browser");
+
+// The QR decoder's worker. `default-src 'none'` with no `worker-src` forbids every worker,
+// including the blob worker `qr-scanner` falls back to when there is no `BarcodeDetector` — which
+// on Safari is always. The camera opened, the preview ran, and nothing ever decoded.
+const buildSource = read("tools/build-web-app.py");
+check(/"worker-src 'self' blob:"/.test(buildSource),
+      "**the console's CSP allows the QR decoder's worker**: qr-scanner falls back to "
+      + "`new Worker(URL.createObjectURL(new Blob([…])))`, and Safari has no BarcodeDetector to "
+      + "take the other branch, so without this pairing by QR cannot work on an iPhone at all");
+check(read("Resources/web/app/js/vendor/qr-scanner-worker.min.js").includes("URL.createObjectURL"),
+      "and that is really how the bundled decoder builds it — asserted against the vendored file "
+      + "rather than remembered, because the day it stops being a blob worker this line should say so");
 
 console.log(`${failed ? "not ok" : "ok"}: web billing and the Plan page, ${checks} checks`);
 if (failed) process.exit(1);

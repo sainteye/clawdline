@@ -1014,5 +1014,6 @@ struct Turkish: Copy {
     let webPlanPortalFailed = "Clawdline müşteri portalını açamadı. Aboneliğiniz bundan etkilenmedi."
     let webPlanElsewhere = "Planlar ve ödeme Clawdline Cloud'a aittir ve orası ayrı bir kapıdır: barındırılan konsolda oturum açın, yükseltme aynı bu sayfada duruyor. Plan ne derse desin bu Mac'te hiçbir şey durmaz; Mac üzerindeki çalışma hiçbir zaman ölçülmez."
     let webPlanElsewhereNote = "Bu pencere önünüzdeki Mac ile konuşuyor, Clawdline Cloud ile değil."
+    let webPlanFromGate = "Plan ve ödeme"
     // clawdline:plan-strings:end
 }

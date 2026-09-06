@@ -29,8 +29,8 @@ import { handlers } from "./net/handlers.js";
 import { createBillingClient } from "./net/billing.js";
 import {
     captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudInstallGate,
-    hideCloudGate, showCloudBootError, showCloudDeviceRecovery, showCloudPairing,
-    showCloudSignIn
+    hideCloudGate, deferCloudGate, showCloudGate, showCloudBootError, showCloudDeviceRecovery,
+    showCloudPairing, showCloudSignIn
 } from "./input/cloud-pairing.js";
 import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onboarding.js";
 import "./door/door.js";
@@ -105,6 +105,13 @@ var planSignIn = function () { return ""; };
    otherwise start a second wait for a webhook that arrived twenty minutes ago. */
 var returningFromCheckout = location.pathname === "/billing/done";
 
+/* Whether the cloud door is still the answer, even while the Plan page sits in front of it.
+   Two of the door's screens block a browser that is already signed in — no account key yet, and
+   the viewer-device limit — and neither has anything to do with being able to pay. So the Plan
+   page may be opened over the top of them, and this is what says the door has to come back when
+   it is closed again. */
+var cloudGateUp = false;
+
 var cloudConfig = null;
 try {
     cloudConfig = readCloudConfig(window);
@@ -153,6 +160,7 @@ if (transportKind === "cloud") {
             keepConnected(cloudSession, {
                 onState: function (update) {
                     if (update.state === "connected") {
+                        cloudGateUp = false;
                         hideCloudGate();
                         useApi(update.client);
                         bindTranscriptEvents(update.client);
@@ -161,10 +169,12 @@ if (transportKind === "cloud") {
                         showCloudSignIn(update.url);
                     } else if (update.state === "device_limit_reached") {
                         handlers.conn("locked");
+                        cloudGateUp = true;
                         showCloudDeviceRecovery(cloudSession, update, {
                             onRecovered: startCloudViewer
                         }).catch(function () { /* the recovery screen owns its visible error */ });
                     } else if (update.state === "pairing_required") {
+                        cloudGateUp = true;
                         // Signed in, but this app holds no account key yet. The installed PWA
                         // scans the Mac's QR itself so the key is born in the storage that keeps it.
                         handlers.conn("locked");
@@ -353,9 +363,17 @@ Pages.bind({
           enter: function () { projects.enter(); }, leave: function () { projects.leave(); } },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",
           enter: function () { usage.enter(); }, leave: function () { usage.leave(); } },
+        // The one page that may be opened from in front of the cloud door, because paying needs
+        // the session cookie and nothing the door is about.
         { name: "plan", element: byId("plan"), focus: "plan-title",
-          enter: function () { plan.enter({ returning: consumeCheckoutReturn() }); },
-          leave: function () { plan.leave(); } },
+          enter: function () {
+              deferCloudGate();
+              plan.enter({ returning: consumeCheckoutReturn() });
+          },
+          leave: function () {
+              plan.leave();
+              if (cloudGateUp) showCloudGate();
+          } },
         { name: "settings", element: byId("settings"), focus: "settings-close",
           enter: function () { Settings.enter(); } }
     ],

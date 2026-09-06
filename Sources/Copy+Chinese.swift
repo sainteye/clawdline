@@ -1016,6 +1016,7 @@ struct TraditionalChinese: Copy {
     let webPlanPortalFailed = "Clawdline 打不開客戶入口。你的訂閱不受影響。"
     let webPlanElsewhere = "方案和付款屬於 Clawdline Cloud，那是另一道門：到雲端主控台登入，同一個頁面上就有升級。不管方案寫什麼，這台 Mac 上的東西都不會停，本機的工作從來不計費。"
     let webPlanElsewhereNote = "這個視窗連的是你面前這台 Mac，不是 Clawdline Cloud。"
+    let webPlanFromGate = "方案與付款"
     // clawdline:plan-strings:end
 }
 
@@ -2031,5 +2032,6 @@ struct SimplifiedChinese: Copy {
     let webPlanPortalFailed = "Clawdline 打不开客户入口。你的订阅不受影响。"
     let webPlanElsewhere = "方案和付款属于 Clawdline Cloud，那是另一道门：到云端控制台登录，同一个页面上就有升级。不管方案写什么，这台 Mac 上的东西都不会停，本机的工作从来不计费。"
     let webPlanElsewhereNote = "这个窗口连的是你面前这台 Mac，不是 Clawdline Cloud。"
+    let webPlanFromGate = "方案与付款"
     // clawdline:plan-strings:end
 }

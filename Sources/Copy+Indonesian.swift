@@ -1014,5 +1014,6 @@ struct Indonesian: Copy {
     let webPlanPortalFailed = "Clawdline tidak bisa membuka portal pelanggan. Langganan Anda tidak terpengaruh."
     let webPlanElsewhere = "Paket dan pembayaran adalah urusan Clawdline Cloud, dan itu pintu yang lain: masuk ke konsol yang dihosting, peningkatannya ada di halaman yang sama ini. Apa pun kata paketnya, tidak ada yang berhenti di Mac ini — pekerjaan di Mac tidak pernah dihitung."
     let webPlanElsewhereNote = "Jendela ini berbicara dengan Mac di depan Anda, bukan dengan Clawdline Cloud."
+    let webPlanFromGate = "Paket dan pembayaran"
     // clawdline:plan-strings:end
 }

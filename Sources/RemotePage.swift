@@ -840,6 +840,7 @@ enum RemotePage {
             "webPlanPortalFailed": t.webPlanPortalFailed,
             "webPlanElsewhere": t.webPlanElsewhere,
             "webPlanElsewhereNote": t.webPlanElsewhereNote,
+            "webPlanFromGate": t.webPlanFromGate,
         ])
         // clawdline:plan-strings:end
         var response = RemoteServer.Response.json(out)
