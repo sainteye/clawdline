@@ -204,8 +204,19 @@ side of it — `web-service-worker.mjs` taps `/#session-9`, `/#cold`, `/#fresh` 
 notification has ever carried, which is why neither of them could see this segment.
 
 **Reading it on the phone.** `?debug=layout` needs an address bar and a home-screen web app has
-none, so the panel opens from five presses on the version line at the bottom of Settings. Its
-Copy report button puts the whole trace on the clipboard.
+none, so the panel opens from five presses on the version line at the bottom of Settings — wordmark,
+Settings, the small line with the version in it, five taps inside two seconds, then the
+`LAYOUT DEBUG` button at the bottom left. Its Copy report button puts the whole trace on the
+clipboard. **Open it after the tap, not before**: the worker's two entries are read in when the
+page wakes, so a report taken before the notification was tapped cannot contain them.
+
+**Three pushes carry a session's name as their title and only two of them route.**
+`StateHook.sendPush` (waiting for you) and `announceDelivery` (delivered) both write
+`sessionURL`. `Orchestrator.announce` — a fan-out finishing — titles itself `label ?? project`,
+which is the root's own label, and falls back to `url: "/"` when the batch's root key is
+`task:<id>` (a root with no session id) or when the root no longer resolves to a target. On a lock
+screen that is indistinguishable from the other two, and tapping it correctly goes nowhere. The
+body is the tell: `finished 3 tasks` rather than `waiting for you` or `delivered`.
 
 ## The numbers
 

@@ -30,6 +30,11 @@ function bindDiagnosticsDoor() {
     var line = els["settings-version"];
     if (!line) return;
     diagnosticsDoorBound = true;
+    // Mobile Safari does not reliably deliver `click` to an element it does not consider
+    // clickable, and `cursor: pointer` is the documented way to tell it one is. It costs nothing
+    // on a phone, where there is no cursor to change — and the one device this door exists for is
+    // the one browser that needs the line.
+    line.style.cursor = "pointer";
     var presses = 0;
     var idle = null;
     line.addEventListener("click", function () {
