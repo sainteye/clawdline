@@ -9,6 +9,31 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: what a review caught stopped disappearing after a day
+
+Reviews were producing findings and then losing them. A task's directory under `/tmp/.clawdline/`
+is swept twenty-four hours after it ends, taking the evidence with it, and the registry row that
+holds the verdict itself ages out at 1,350 rows or thirty days. So "what did the review of that
+feature actually find, and what did it cost to find it" had no surviving answer.
+
+Two things were wrong under that. The check deciding which tasks owe a typed verdict compared the
+dispatch kind with the word `review`, and the vocabulary the API accepts is `image`, `code-review`,
+`test` and `custom` — that word has never been in it. Measured on one machine's registry: of 51
+`code-review` tasks, the 35 dispatched without a graph carried no verdict between them, while 13 of
+the 16 with one did. It asks the task's *role* now: the graph node when the task has one, and the
+dispatch kind read as words when it does not, so `code-review` counts and a correction node
+dispatched as `code-review` is still a correction.
+
+And every token this app has ever recorded was filed under no feature at all. Both usage collectors
+read a flat `graph_id` key, while a stored task record has always carried its graph as a nested
+object — so the column was empty on all 1,052 rows, against a registry holding 105 tasks that carry
+a graph. It reads the nested id now, and the rows for tasks the registry still holds fill in on the
+next launch.
+
+The verdict, its three axes, every finding with its severity and evidence, and the verification
+record now live in the same store as the tokens. Nothing sweeps them, and because they sit beside
+the usage rows, a feature's findings and what that feature cost are one query apart.
+
 ### Added: a session can show you a picture on its own card
 
 A session could already send a screenshot to *another* session. It could not show you one itself —
