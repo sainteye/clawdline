@@ -289,6 +289,14 @@ equal(rows("a\rb"), '<div class="screen-row">ab</div>',
 // gone, so a stray byte behind it cannot make an already-finished row look unfinished.
 equal(rows("a\n\r").split('class="screen-row"').length - 1, 1,
     "a control byte after the terminator does not resurrect the row it terminated");
+// **And that one cannot see the guard it looks like it is testing.** `\r` arrives in the same
+// chunk as `a\n`, so the text `segments()` measures is `a\n` and non-empty either way; the
+// `if (visible)` in front of `ended` never runs on it. The guard only decides anything when a
+// whole chunk is nothing but control bytes, and a chunk boundary needs an SGR sequence to exist
+// — so the colour reset below is not decoration, it is the only thing that splits them. Measured
+// against the guard removed: this is 2 rows and the line above is still 1.
+equal(rows("a\n" + E + "[0m\r").split('class="screen-row"').length - 1, 1,
+    "a control byte in a chunk of its own does not resurrect it either");
 equal(rows(""), "", "and a capture with nothing in it is nothing at all");
 equal(rows(null), "", "including one that never arrived");
 
