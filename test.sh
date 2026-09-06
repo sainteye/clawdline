@@ -792,6 +792,13 @@ node Tests/remote-response-write-close.mjs
 # guarding is the only lever that reaches a browser already holding a stale copy of the page, and
 # every step of that lever is one line.
 node Tests/web-service-worker.mjs
+# The same worker, joined to the page it sends its message to. The suite above drives the branch a
+# tap takes and the one below drives the fragment the page reads; between them sat the segment
+# nobody had ever run — the message arriving — because the two halves live in two languages and
+# `web-pages.mjs` hands `route.js` a `navigator` with no `serviceWorker` on it, so the listener
+# that receives one was never installed by any test. Its fixtures are tmux pane ids, which is the
+# only id shape this family of faults has ever appeared on.
+node Tests/web-notification-route.mjs
 node Tests/release-signing-contract.mjs
 # The shared-tree commit guard: that `tools/git-hooks/pre-commit` refuses a commit carrying a path
 # another session is working on, that it lets everything else through, and that it fails open and

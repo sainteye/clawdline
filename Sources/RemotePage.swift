@@ -1070,6 +1070,14 @@ enum RemotePage {
         var TRACE_URL = "/__clawdline/notification-trace";
         var TRACE_LIMIT = 20;
 
+        // **One entry at a time, because this is a read-modify-write.** A click and the message it
+        // sends are recorded in the same tick: run concurrently they both read the same list, both
+        // take the same sequence number, and the second `put` overwrites the first — so the trace
+        // would have said the worker never posted a message on the taps where it did, which is the
+        // one sentence this whole diagnostic exists to be able to say correctly. The chain lives
+        // in the worker's global scope, which is exactly as long-lived as a wake-up.
+        var traceChain = Promise.resolve();
+
         function traceNote(name, data) {
             try {
                 if (typeof caches === "undefined" || !caches || !caches.open) {
@@ -1077,12 +1085,28 @@ enum RemotePage {
                 }
                 if (typeof Response !== "function") { return Promise.resolve(false); }
                 var entry = { at: Date.now(), event: name, data: data || {} };
+                traceChain = traceChain.then(function () { return traceWrite(entry); })
+                    .catch(function () { return false; });
+                return traceChain;
+            } catch (e) { return Promise.resolve(false); }
+        }
+
+        function traceWrite(entry) {
+            try {
                 return caches.open(TRACE_CACHE).then(function (cache) {
                     return cache.match(TRACE_URL)
                         .then(function (found) { return found ? found.json() : []; })
                         .catch(function () { return []; })
                         .then(function (list) {
                             if (!Array.isArray(list)) { list = []; }
+                            // **Numbered, not timestamped.** The click and the message it sends
+                            // land in the same millisecond every time, and a reader that skips
+                            // what it has already seen by clock would read the first of them and
+                            // silently drop the second — which is the one that says which road
+                            // was taken. The counter is carried in the ring rather than held in a
+                            // variable, because a worker is shut down between two events.
+                            var previous = list.length ? list[list.length - 1] : null;
+                            entry.seq = ((previous && previous.seq) || 0) + 1;
                             list.push(entry);
                             if (list.length > TRACE_LIMIT) {
                                 list = list.slice(list.length - TRACE_LIMIT);

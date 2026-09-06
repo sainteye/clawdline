@@ -182,7 +182,11 @@ if ("serviceWorker" in navigator) {
 export var WORKER_TRACE_CACHE = "clawdline-notification-trace";
 export var WORKER_TRACE_URL = "/__clawdline/notification-trace";
 
-/** The newest entry already read into the trace, so that waking up twice does not report twice. */
+/** The newest entry already read into the trace, so that waking up twice does not report twice.
+ *
+ *  The worker's own counter rather than its clock: a click and the message it sends are written
+ *  in the same millisecond, and a timestamp would have read one of the two and dropped the other
+ *  without saying so. */
 var readThrough = 0;
 
 /**
@@ -200,11 +204,16 @@ export function readWorkerTrace() {
         .then(function (found) { return found ? found.json() : []; })
         .then(function (list) {
             if (!Array.isArray(list)) return 0;
+            // `activate` empties Cache Storage, so a worker update starts the numbering again. A
+            // reader holding a higher number would then skip every entry for ever and report a
+            // silent road as an empty one — the exact failure this file exists to make visible.
+            var newest = list.length ? (list[list.length - 1].seq || 0) : 0;
+            if (newest < readThrough) readThrough = 0;
             var fresh = 0;
             for (var i = 0; i < list.length; i++) {
                 var entry = list[i];
-                if (!entry || typeof entry.at !== "number" || entry.at <= readThrough) continue;
-                readThrough = entry.at;
+                if (!entry || typeof entry.seq !== "number" || entry.seq <= readThrough) continue;
+                readThrough = entry.seq;
                 fresh += 1;
                 Diagnostics.note(entry.event, entry.data);
             }
