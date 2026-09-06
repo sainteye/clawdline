@@ -381,6 +381,7 @@ export var T = {
     webLedgerEmpty: "No Feature on this Mac carries a review or verification receipt yet.",
     webLedgerRead: "{rows} interval rows scanned, {features} Features found.",
     webLedgerTruncated: "The scan reached its ceiling, so older rows are not in these figures.",
+    webLedgerListTruncated: "Only the {listed} seen most recently are on this page.",
     webLedgerFeature: "Feature",
     webLedgerTasks: "{n} tasks",
     webLedgerSeen: "Last seen",

@@ -847,6 +847,7 @@ struct Indonesian: Copy {
     let webLedgerEmpty = "Belum ada Feature di Mac ini yang punya tanda terima review atau verifikasi."
     let webLedgerRead = "{rows} baris dipindai, {features} Feature ditemukan."
     let webLedgerTruncated = "Pemindaian mencapai batasnya, jadi baris yang lebih lama tidak masuk angka ini."
+    let webLedgerListTruncated = "Hanya {listed} yang paling baru terlihat ada di halaman ini."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} task"
     let webLedgerSeen = "Terakhir terlihat"

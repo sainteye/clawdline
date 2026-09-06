@@ -845,6 +845,7 @@ struct Japanese: Copy {
     let webLedgerEmpty = "この Mac には、レビューまたは検証のレシートを持つ Feature がまだありません。"
     let webLedgerRead = "{rows} 行を走査し、{features} 件の Feature が見つかりました。"
     let webLedgerTruncated = "走査が上限に達したため、古い行はこれらの数字に入っていません。"
+    let webLedgerListTruncated = "このページにあるのは、直近に見えた {listed} 件だけです。"
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} 件のタスク"
     let webLedgerSeen = "最後に見えたのは"

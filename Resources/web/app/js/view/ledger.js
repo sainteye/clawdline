@@ -260,10 +260,18 @@ function renderList(context, ledger) {
         elements["ledger-count"].textContent = "";
         return;
     }
+    // **Two ceilings, and they are not the same ceiling.** `truncated` is the interval scan
+    // reaching its limit; `featuresListed` short of `featuresFound` is the list itself being cut
+    // at `maxFeatures`. The second was on the wire from the first day and nothing read it, so a
+    // Mac past the cap read the number it found over the smaller number it was shown — this
+    // page's own subject, an incomplete answer drawn as a complete one, printed by the page.
     var read = ledger.read || {};
+    var listed = read.featuresListed;
+    var cut = typeof listed === "number" && listed < (read.featuresFound || 0);
     elements["ledger-count"].textContent = fill(T.webLedgerRead, {
         rows: number(read.rowsScanned || 0), features: number(read.featuresFound || 0),
-    }) + (read.truncated ? " " + T.webLedgerTruncated : "");
+    }) + (read.truncated ? " " + T.webLedgerTruncated : "")
+        + (cut ? " " + fill(T.webLedgerListTruncated, { listed: number(listed) }) : "");
 
     // Above the list, always, whenever it holds anything: every figure below it is short by
     // exactly this much, and the backfill that would move these rows runs at app launch.

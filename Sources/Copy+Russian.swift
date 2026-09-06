@@ -847,6 +847,7 @@ struct Russian: Copy {
     let webLedgerEmpty = "Ни одна Feature на этом Mac пока не имеет расписки о ревью или проверке."
     let webLedgerRead = "Просмотрено строк: {rows}; найдено Feature: {features}."
     let webLedgerTruncated = "Просмотр достиг своего потолка, поэтому более старые строки в эти числа не вошли."
+    let webLedgerListTruncated = "На этой странице только {listed} из них — те, что видели последними."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "задач: {n}"
     let webLedgerSeen = "Последний раз"

@@ -847,6 +847,7 @@ struct Spanish: Copy {
     let webLedgerEmpty = "Ninguna Feature de este Mac tiene todavía un recibo de revisión o verificación."
     let webLedgerRead = "{rows} filas recorridas, {features} Features encontradas."
     let webLedgerTruncated = "El barrido llegó a su tope, así que las filas más antiguas no están en estas cifras."
+    let webLedgerListTruncated = "Solo las {listed} vistas más recientemente están en esta página."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} tareas"
     let webLedgerSeen = "Visto por última vez"

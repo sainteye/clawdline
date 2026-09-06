@@ -345,6 +345,44 @@ async function main() {
               "while an ordinary Feature's card keeps the word that says what it is");
     }
 
+    /* ---- a list cut short says so, in the place it was cut ---------------- */
+    {
+        /* **`featuresListed` was on the wire and nothing read it.** The route caps the list at
+           `maxFeatures`, sends how many it listed beside how many it found, and the receipt line
+           printed the second one over a list holding the first — so a Mac past the cap read "640
+           Features found." above five hundred cards and had no way to know it had reached the
+           end of the page rather than the end of the store. That is this page's own subject
+           turned on itself: an incomplete answer drawn as a complete one. A field sent and never
+           read is a guard that cannot go off. */
+        const { elements, environment } = page({
+            verificationLedger: () => Promise.resolve(payload({
+                read: { rowsScanned: 900, featuresFound: 640, featuresListed: 3,
+                        truncated: false, at: "2026-09-06T15:00:00Z" },
+            })),
+        });
+        const view = bindLedgerPage(elements, environment);
+        await view.enter();
+        await flush();
+        const receipt = elements["ledger-count"].textContent;
+        equal(elements["ledger-rows"].all("ledger-card").length, 3, "the cards it was sent");
+        check(/\b3\b/.test(receipt),
+              `the receipt says how many are on the page, not only how many exist — got `
+              + JSON.stringify(receipt));
+        check(/640/.test(receipt), "and still says how many were found");
+    }
+    {
+        // And a whole list says nothing about being cut, or the sentence means nothing.
+        const { elements, environment } = page({
+            verificationLedger: () => Promise.resolve(payload()),
+        });
+        const view = bindLedgerPage(elements, environment);
+        await view.enter();
+        await flush();
+        const whole = elements["ledger-count"].textContent;
+        check(!/\b3\b.*\b3\b/.test(whole),
+              `a list nothing was cut from is not announced as cut — got ${JSON.stringify(whole)}`);
+    }
+
     /* ---- the state word decides, not the number beside it ----------------- */
     {
         /* **This is the assertion the page's own sentence claims and nothing was making true.**

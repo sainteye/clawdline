@@ -846,6 +846,7 @@ struct English: Copy {
     let webLedgerEmpty = "No Feature on this Mac carries a review or verification receipt yet."
     let webLedgerRead = "{rows} interval rows scanned, {features} Features found."
     let webLedgerTruncated = "The scan reached its ceiling, so older rows are not in these figures."
+    let webLedgerListTruncated = "Only the {listed} seen most recently are on this page."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} tasks"
     let webLedgerSeen = "Last seen"
