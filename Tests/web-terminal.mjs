@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+// **The page's own escaping, not a copy of it.** Everything below that pins markup byte for byte
+// is only worth the bytes if it is pinned against the function the browser actually runs — a stub
+// that escapes four characters where `core/esc.js` escapes five would let a change to the fifth
+// through without a word. This is the one import here that is production code rather than a double.
+import { esc } from "../Resources/web/app/js/core/esc.js";
 
 /*
  * The live screen panel, without a browser.
@@ -86,11 +91,6 @@ function setIntervalStub(fn, ms) { timers.push({ fn: fn, ms: ms, live: true }); 
 function clearIntervalStub(handle) { if (timers[handle]) timers[handle].live = false; }
 const liveTimers = function () { return timers.filter(function (t) { return t.live; }); };
 
-const esc = function (s) {
-    return String(s).replace(/[&<>"]/g, function (c) {
-        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
-    });
-};
 
 const standalone = source
     .replace(/^import .*$/gm, "")
@@ -146,6 +146,10 @@ equal(paint("<script>alert(1)</script>"), "&lt;script&gt;alert(1)&lt;/script&gt;
 equal(paint(E + '[31m"><img src=x>' + E + "[39m"),
     '<span style="color:var(--term-1)">&quot;&gt;&lt;img src=x&gt;</span>',
     "including inside a coloured run");
+// The apostrophe is the fifth character `core/esc.js` escapes, and the one a hand-written stub
+// forgets. It is also the one that actually turns up on a terminal — `don't`, `'quoted'` — so
+// this assertion is both the realistic case and the thing that makes the import above load-bearing.
+equal(paint("it's"), "it&#39;s", "an apostrophe is escaped, because the page's own esc escapes it");
 
 // Newlines are the rows of the grid and stay; a carriage return would draw a line on top of
 // itself and does not.
@@ -290,6 +294,8 @@ equal(rows(null), "", "including one that never arrived");
 equal(rows("<script>alert(1)</script>"),
     '<div class="screen-row">&lt;script&gt;alert(1)&lt;/script&gt;</div>',
     "nothing a program prints becomes markup in this mode either");
+equal(rows("it's"), '<div class="screen-row">it&#39;s</div>',
+    "and the apostrophe is escaped here too, by the same function and not by a copy of it");
 const hostile = rows('</div><img src=x onerror=alert(1)><span style="color:red">');
 ok(hostile.indexOf("<img") < 0, "not a tag");
 ok(hostile.indexOf("&lt;/div&gt;") > 0, "and not a closing tag for the row it is inside");
