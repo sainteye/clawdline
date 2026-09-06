@@ -280,17 +280,33 @@ async function main() {
               "and an unattributed block with nothing in it is not drawn");
     }
     {
+        /* **The refusal has to arrive after an answer, or the assertion below proves nothing.**
+           A page that never clears the last read's receipt looks identical to one that does,
+           until a second read fails — and then the numbers from the answer that worked are still
+           on screen above the sentence saying this one did not. That is the shape this page must
+           not produce, and it is only reachable from a read that succeeded first. */
+        let refuse = false;
         const { elements, environment } = page({
-            verificationLedger: () => Promise.reject(Object.assign(new Error("nope"),
-                                                                   { code: "graph_not_found" })),
+            verificationLedger: () => (refuse
+                ? Promise.reject(Object.assign(new Error("nope"), { code: "graph_not_found" }))
+                : Promise.resolve(payload())),
         });
         const view = bindLedgerPage(elements, environment);
         await view.enter();
         await flush();
-        // **The receipt must be gone.** A count left over from the last read sitting above a
-        // refusal is the one shape this page must not produce.
+        check(hasDigit(elements["ledger-count"].textContent),
+              "the first read leaves a receipt on screen");
+        equal(elements["ledger-rows"].all("ledger-card").length, 3, "and its Features");
+
+        refuse = true;
+        await view.load();
+        await flush();
         equal(elements["ledger-count"].textContent, "",
               "a refusal clears the receipt rather than leaving the last answer's numbers up");
+        equal(elements["ledger-rows"].all("ledger-card").length, 0,
+              "and takes the last answer's Features off the screen with it");
+        check(elements["ledger-unattributed"].hidden,
+              "including the block above them");
         check(elements["ledger-status"].textContent !== "", "and says what was refused");
     }
     {
