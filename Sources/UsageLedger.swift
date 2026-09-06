@@ -4276,13 +4276,6 @@ final class UsageProjectWorktreeService {
     /// 1. `landed` — some row's task carries `landing = landed`: a root recorded that this
     ///    delivery reached its target branch. It outranks everything, including a task that
     ///    reported failure, because the branch is in the tree whatever the child said.
-    /// 1a. `nothing_to_land` — some row's task was settled as having had nothing to land, and
-    ///    none landed. A read-only audit has no target and no commit, so `landed` cannot say
-    ///    this and `abandoned` would say the work was given up when its artifact shipped. It
-    ///    sits beside `landed` rather than above `delivered` for one reason: both are closed
-    ///    obligations, and this block exists to list the open ones. It is read *before* the two
-    ///    git rungs below for the same reason the veto in rung 2 is: a settlement somebody
-    ///    recorded is a decision, and the shape of a branch does not overrule one.
     /// 2. **A root that wrote `landing_state = abandoned` vetoes the two git rungs below.** Not
     ///    an outcome of its own: it is a person having looked at this delivery and given the
     ///    obligation up, and the shape of a repository does not overrule a decision. Without it,
@@ -4296,6 +4289,26 @@ final class UsageProjectWorktreeService {
     ///    the branch at the base commit, so a branch that never received one is an ancestor of
     ///    HEAD the moment it exists — 12 of this Mac's 75 merged delivery branches on
     ///    2026-09-06, 10 of them with a dirty checkout still on disk. See ``branchEvidence(worktree:branches:bases:)``.
+    /// 3a. `nothing_to_land` — some row's task was settled as having had nothing to land, none
+    ///    landed, and rung 3 did not just claim it. A read-only audit has no target and no
+    ///    commit, so `landed` cannot say this and `abandoned` would say the work was given up
+    ///    when its artifact shipped.
+    ///
+    ///    **It is read below rung 3 rather than above it, and the write side is why.**
+    ///    ``Orchestrator/nothingToLandAdmission(for:)`` refuses this settlement outright when the
+    ///    delivery branch carries commits — `409 wrote_to_repository` — and `branch_merged` is
+    ///    that same fact read later: commits of the branch's own, and HEAD containing them. The
+    ///    veto in rung 2 does not extend here, because the two states are not the same kind of
+    ///    sentence. `abandoned` records a **decision**, and evidence cannot make a decision
+    ///    false; `nothing_to_land` asserts **what happened** — that this delivery wrote to no
+    ///    repository — and a commit is its direct refutation. Refusing a settlement the
+    ///    repository has contradicted is not git overruling anybody.
+    ///
+    ///    **Against rung 4 it still wins, and that is the whole of what this rung buys.** A
+    ///    read-only delivery commits nothing, and `disposeWorktree` deletes a delivery branch
+    ///    exactly when it carries none — so `branch_absent` is the *normal* end state of a
+    ///    settled audit whose checkout was cleaned up, and reading it as `branchGone` would put
+    ///    every closed audit back on a screen that lists what is still open.
     /// 4. `branchGone` — some row's task reached `success` and git says the branch it delivered
     ///    on is not in the repository at all. **This is not `landed`**: the app deletes a
     ///    delivery branch only when it carries no commits, but the app is not the only thing that
@@ -4686,7 +4699,7 @@ final class UsageProjectWorktreeService {
             // without the store being short. It is never the word for an empty answer.
             "status": truncated ? "partial" : "available",
             "policy": "one_unambiguous_accepted_head",
-            "outcomeRule": "landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_"
+            "outcomeRule": "landed_by_record_then_landed_by_nonempty_merged_branch_then_settled_"
                 + "then_branch_gone_then_delivered_then_live_then_abandoned",
             "generatedAt": formatter.string(from: now),
             "range": range,
@@ -4799,6 +4812,21 @@ final class UsageProjectWorktreeService {
     /// **The branch fact travels in so that this asks the ladder the payload published.** Without
     /// it, a worktree git has already shown to be landed would compute `delivered` here and be
     /// advised to land itself, on the same screen that calls it landed.
+    ///
+    /// **A settlement the repository has contradicted gets no word of its own here, and that is a
+    /// decision rather than an oversight.** A row settled `nothing_to_land` whose branch git says
+    /// is merged now takes rung 3 and reads `landed`, so it is not in this block at all and this
+    /// returns nil the way it does for every other landed row. There is also nothing it could
+    /// honestly return: every word here names something
+    /// `POST /v1/orchestrator/tasks/:id/landing` would accept, and that route answers
+    /// `409 invalid_transition` to any move off a settled obligation
+    /// (``Orchestrator/updateLanding(taskID:secret:orchestratorToken:raw:now:)``). Inventing a
+    /// fourth word would advise an action the route refuses, which is the one thing this is
+    /// written not to do. What the reader gets instead is the disagreement itself, on the row:
+    /// `outcome = landed`, `landingEvidence = branch_merged`, and `nothing_to_land` still
+    /// standing in `landingStates` beside them — a record the evidence has overtaken, shown as
+    /// one. Where a second root also wrote `abandoned`, the ladder falls through to `delivered`
+    /// and this answers `land_or_abandon`, because then a person really does have to decide.
     static func needs(_ rows: [Reading], live: Set<String>,
                       branch: LandingEvidence = .unknown) -> String? {
         guard outcome(rows, live: live, branch: branch) == .delivered else { return nil }
@@ -4874,16 +4902,6 @@ final class UsageProjectWorktreeService {
         if rows.contains(where: { $0.landingState == Orchestrator.LandingState.landed.rawValue }) {
             return .landed
         }
-        // A delivery settled as having had nothing to land. Read here, above the two git rungs,
-        // for the same reason the veto below guards them: this is a settlement somebody recorded,
-        // and a branch's shape is not an appeal against one. A read-only delivery commits
-        // nothing, so its branch is `branch_empty` and no git rung would have claimed it anyway —
-        // but the order is the reason, not the coincidence.
-        if rows.contains(where: {
-            $0.landingState == Orchestrator.LandingState.nothingToLand.rawValue
-        }) {
-            return .nothingToLand
-        }
         // **A decision a person made is not overruled by the shape of a repository.** A root that
         // wrote `abandoned` looked at this delivery and gave the obligation up; the two rungs
         // this guards would otherwise call the same worktree `landed` because somebody's HEAD
@@ -4895,16 +4913,38 @@ final class UsageProjectWorktreeService {
         let givenUp = rows.contains {
             $0.landingState == Orchestrator.LandingState.abandoned.rawValue
         }
-        if !givenUp {
-            if branch == .branchMerged { return .landed }
-            // A delivery whose branch git can no longer find. Not `landed` — the app deletes a
-            // branch only when it is empty, but the app is not the only deleter, and eight
-            // branches it kept for their commits have gone missing on this Mac — and not
-            // `delivered` either, because there is no branch left for anybody to land.
-            if branch == .branchAbsent,
-               rows.contains(where: { $0.row.taskState == Orchestrator.State.success.rawValue }) {
-                return .branchGone
-            }
+        // git says this delivery branch carries commits of its own and HEAD already contains
+        // them. Read once, because the rung below asks the same question in the negative.
+        let merged = branch == .branchMerged
+        if !givenUp, merged { return .landed }
+        // **A delivery settled as having had nothing to land, and a repository that has not
+        // contradicted the settlement.** The condition is the point: the route that writes this
+        // state refuses it outright while the branch carries commits —
+        // `Orchestrator.nothingToLandAdmission(for:)` answers `409 wrote_to_repository` for
+        // `commits > 0` — and `branch_merged` is that same fact arriving later. A settlement
+        // admitted only because the branch was empty does not survive the branch not being empty.
+        //
+        // This is why the veto above is not extended to cover it. `abandoned` is a decision and
+        // evidence cannot make a decision false; `nothing_to_land` is a claim about what
+        // happened, and a commit refutes it. So a row carrying both words on a merged branch
+        // falls past this rung too, and lands on `delivered` where somebody is asked to decide —
+        // which is the honest reading of two settlements that contradict each other and git.
+        //
+        // Below the merged rung it still wins, and against `branch_absent` that is worth a rung
+        // of its own: a read-only delivery commits nothing, `disposeWorktree` deletes exactly
+        // such a branch, so an absent branch is a settled audit's ordinary end state.
+        if !merged, rows.contains(where: {
+            $0.landingState == Orchestrator.LandingState.nothingToLand.rawValue
+        }) {
+            return .nothingToLand
+        }
+        // A delivery whose branch git can no longer find. Not `landed` — the app deletes a
+        // branch only when it is empty, but the app is not the only deleter, and eight branches
+        // it kept for their commits have gone missing on this Mac — and not `delivered` either,
+        // because there is no branch left for anybody to land.
+        if !givenUp, branch == .branchAbsent,
+           rows.contains(where: { $0.row.taskState == Orchestrator.State.success.rawValue }) {
+            return .branchGone
         }
         if rows.contains(where: { $0.row.taskState == Orchestrator.State.success.rawValue }) {
             return .delivered

@@ -4379,7 +4379,7 @@ analytics query: a misspelled filter must not quietly widen an accounting read.
 ```json
 {"projectWorktrees":{
   "schemaVersion":1,"status":"available","policy":"one_unambiguous_accepted_head",
-  "outcomeRule":"landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_then_branch_gone_then_delivered_then_live_then_abandoned",
+  "outcomeRule":"landed_by_record_then_landed_by_nonempty_merged_branch_then_settled_then_branch_gone_then_delivered_then_live_then_abandoned",
   "generatedAt":"2026-09-04T11:40:00Z",
   "range":{"from":null,"to":null,"timezone":"Asia/Taipei"},
   "project":{"id":"project-9c1f2e7a4b0d8e35","label":"clawdline"},
@@ -4411,9 +4411,9 @@ is the same answer as the strongest of its Features':
 | value | what it rests on |
 |---|---|
 | `landed` | some row's task carries `landing = landed`: a root recorded that this delivery reached its target branch. It outranks the child's own word, including `failure` — two rows on this Mac say exactly that, and what is being asked about is the branch |
-| `nothing_to_land` | some row's task was settled as `nothing_to_land` and none landed: a read-only delivery that wrote to no repository. It sits beside `landed` rather than above `delivered` because both are closed obligations, and the block above exists to list the open ones. It is read **above** the two git rungs for the same reason the veto below it is: a settlement somebody recorded is a decision, and the shape of a branch is not an appeal against one |
 | *(veto)* | a row carrying `landing_state = abandoned` and no `landed` stops the two git rungs below from deciding anything. A root looked at this delivery and gave the obligation up; the shape of the repository does not overrule a decision. The rungs under those two are untouched, so a given-up obligation on work that succeeded is still `delivered` |
 | `landed` | or git says the delivery branch **carries commits** and is already contained by the repository's HEAD. The same reasoning one step weaker in provenance and no weaker in fact: the commits are in the tree whether or not anybody wrote it down. The commits half is not a detail — see `branch_empty` below |
+| `nothing_to_land` | some row's task was settled as `nothing_to_land`, none landed, and the rung above did not just claim it: a read-only delivery that wrote to no repository. It is read **below** the merged rung and **above** the absent one, and the write side is why. `POST /v1/orchestrator/tasks/:id/landing` refuses this settlement outright while the delivery branch carries commits — `409 wrote_to_repository`, the row further down this page — and `branch_merged` is that same fact read later. The veto above does not cover it, because the two are not the same kind of sentence: `abandoned` records a **decision**, which evidence cannot make false, while `nothing_to_land` asserts **what happened**, and a commit refutes it. Against `branch_gone` it still wins, and that is what this rung buys: a settled audit's branch is empty, `disposeWorktree` deletes exactly such a branch, so an absent branch is its ordinary end state |
 | `branch_gone` | some row's task reached `success` and git says that branch is not in the repository at all. **Not `landed`**: this app deletes a delivery branch only when it carries no commits, and this app is not the only thing that deletes branches — eight branches it kept *because* they carried commits, three of them holding 1, 63 and 122, are gone from this repository with no removal recorded anywhere. Not `delivered` either, because there is no branch left for anybody to land |
 | `delivered` | some row's task reached `success`, nothing above settled it, and the branch is still there unmerged — or git could not be asked, or answered in one of the two ways that cannot support an upgrade. Done, not landed. An open landing obligation (`pending`) and one that was given up (`abandoned`) both live here, and both spellings travel in `landingStates` beside the word |
 | `active` | neither of the above, and one of these tasks is still live in the registry now |
@@ -4473,6 +4473,17 @@ a row that is already settled — which now includes one git has shown to be lan
 the same ladder the payload published. It is the means and not the outcome: nothing in this read
 closes anything, because a landing record is durable and terminal and one closed on a guess is
 worse than a wrong count.
+
+**A settlement the repository has contradicted gets no word here, and that is a decision.** A row
+settled `nothing_to_land` whose branch git says is merged reads `landed` on the rung above, so it
+leaves this block entirely and `needs` is `null` the way it is for any other landed row. There is
+also nothing this could honestly say: every word below names something the landing route would
+accept, and that route answers `409 invalid_transition` to any move off a settled obligation, so a
+fourth word would advise an action it refuses. The disagreement is published on the row instead —
+`outcome: "landed"`, `landingEvidence: "branch_merged"`, and `nothing_to_land` still standing in
+`landingStates` beside them, a record the evidence has overtaken shown as one. Where a second root
+also wrote `abandoned`, the ladder falls to `delivered` and this answers `land_or_abandon`,
+because then somebody really does have to decide.
 
 | value | what it means |
 |---|---|

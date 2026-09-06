@@ -488,9 +488,12 @@ export var Mock = (function () {
                  storedLandingStates: [], landingBasis: "live", work: work || null,
                  firstSeenAt: first, lastSeenAt: last };
     }
-    /* `evidence` is what the verdict beside it rests on, and every one of the values it can take
-       appears somewhere below — including `unknown`, which is git not answering and is the one a
-       page must not draw as if it were a verdict. `label` is the work line a Feature was grouped
+    /* `evidence` is what the verdict beside it rests on, and all seven of the values it can take
+       appear below — `record`, `branch_merged`, `branch_empty`, `branch_base_unknown`,
+       `branch_absent`, `branch_unmerged` and `unknown`. The number is spelled out because the
+       claim before it said "every one of the values", which reads as complete and cannot be
+       counted: it was written while `branch_base_unknown` had no row here at all, and nothing on
+       the page could have said so. `label` is the work line a Feature was grouped
        by and `work` is what the task itself said it was doing: on the machine this fixture was
        written from, nine cards read `Clawdfather — handoff 18bde7c3` and none of them said what
        the work was. `needs` is the row's own next step while it sits in the delivered block.
@@ -529,9 +532,12 @@ export var Mock = (function () {
                      "Why the confirmation says what it says", "land_or_abandon"),
             // A read-only delivery that was settled: it wrote to no repository, so its branch
             // never received a commit and the strongest thing git can say about it is
-            // `branch_empty`. The settled rung is read above the two git rungs, which is why
-            // this row is `nothing_to_land` and not `delivered` — and why the evidence beside
-            // it is allowed to disagree without changing the verdict.
+            // `branch_empty`. The settled rung is read below the merged one and above the absent
+            // one, and `branch_empty` is neither — which is why this row is `nothing_to_land`
+            // and not `delivered`, and why the evidence beside it is allowed to say something
+            // else without changing the verdict. `branch_merged` is the one it could not: the
+            // route that writes this settlement refuses it outright for a branch carrying
+            // commits, and the ladder refuses it back.
             worktree("5a3b90ff-2c41-4d7e-8b06-19ae5c7d3f22", "nothing_to_land", 2,
                      "Clawdfather: machine coordinator", "2026-08-31T04:20:00Z",
                      "2026-08-31T09:05:00Z", ["success"], ["nothing_to_land"], "branch_empty",
@@ -561,7 +567,16 @@ export var Mock = (function () {
                      "2026-08-21T20:03:00Z", ["success"], [], "branch_absent"),
             worktree("8d3e64f1-90b2-4c55-a7e6-1fd042c7b3a9", "delivered", 1,
                      "Chat loading latency", "2026-09-05T22:41:00Z", "2026-09-05T23:58:00Z",
-                     ["success"], [], "branch_empty")
+                     ["success"], [], "branch_empty"),
+            // The seventh evidence value, and the one this fixture had no row for at all: HEAD
+            // contains the branch, and the task record that would say what it was cut from has
+            // been swept — so an empty branch and a real merge cannot be told apart and the
+            // upgrade is refused. Its `needs` is `no_record` for the same reason its base is
+            // missing: there is no registry record left to call the landing route with.
+            worktree("6c48b0f2-11e9-4a37-b58d-27ce93a0f4d6", "delivered", 2,
+                     "Usage Portfolio", "2026-08-16T06:30:00Z", "2026-08-16T17:12:00Z",
+                     ["success"], [], "branch_base_unknown",
+                     "Whose base the registry forgot", "no_record")
         ],
         "/Users/you/code/atrium": [
             worktree("c0aa5f92-7b31-4d68-8e02-45cb1d907e36", "landed", 2,
@@ -1373,9 +1388,9 @@ export var Mock = (function () {
                             schemaVersion: 1,
                             status: mode === "partial" ? "partial" : "available",
                             policy: "one_unambiguous_accepted_head",
-                            outcomeRule: "landed_by_record_then_settled_then_landed_by_nonempty_"
-                                + "merged_branch_then_branch_gone_then_delivered_then_live_then_"
-                                + "abandoned",
+                            outcomeRule: "landed_by_record_then_landed_by_nonempty_merged_"
+                                + "branch_then_settled_then_branch_gone_then_delivered_then_live_"
+                                + "then_abandoned",
                             generatedAt: new Date().toISOString(),
                             range: { from: null, to: null, timezone: "Asia/Taipei" },
                             project: { id: "project-9c1f2e7a4b0d8e35", label: project },

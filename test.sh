@@ -248,14 +248,45 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `9473 checks passed` printed for real. The witness below came from the same tree, so the pair is
 # a measurement rather than arithmetic.
 #
-# **The SQLite flakiness that made three checks come and go is understood now, and the earlier
-# note here named the wrong side of it.** It blamed the connection holding the write lock. The
-# answer is in the side that loses: the fixture's SQL opens with `BEGIN IMMEDIATE`, and with no
-# busy handler that returns `SQLITE_BUSY` immediately, so `sqlite3_exec` stops on the first
-# statement and the INSERT never runs — which is what `seconds=0.011` against the usual ~3.9 was
-# saying. Reproduced four ways on a scratch WAL database. The repair is
-# `sqlite3_busy_timeout(db, 5000)` on that fixture's connection, and the useful part is that it
-# does not require knowing who held the lock.
+# **Three other checks were red on this tree once and are not red here**, which is why the
+# number above is 9,342 and not a smaller total taken from that run: the 60k-row usage-query
+# fixture opens a second SQLite connection through `usageStoreExec`, and that connection set no
+# pragmas at all while the ledger's own sets `busy_timeout=5000`. Three runs of the same tree:
+# 2 red, then 5 red with `sqlite: database is locked` in the log and the fixture's INSERT never
+# happening (`seconds=0.011` against the usual ~3.9), then 2 red again. The total is unaffected —
+# those checks ran either way.
+#
+# **This paragraph corrects the attribution in `4dab30fe`'s commit message, which named the wrong
+# side.** That message said the fixture collided with "the `UsageLedger.shared` connection that
+# has a busy_timeout", meaning the read `_ = UsageLedger.shared.rows()` had just finished. It
+# cannot have been that one. In WAL a completed read holds no lock against a writer, and `rows()`
+# is a `queue.sync` on the ledger's serial queue, so every write queued before it had already run
+# by the time it returned. Measured here rather than reasoned: a WAL reader with its connection
+# still open lets an outside `BEGIN IMMEDIATE` through with no error at all.
+#
+# **What actually decides it is on the losing side, not the holding side.** The fixture's script
+# opens with `BEGIN IMMEDIATE` — the write lock demanded at statement one — and a connection with
+# no busy handler does not wait for it: `SQLITE_BUSY` comes back at once, `sqlite3_exec` stops at
+# that first statement, and the INSERT after it never runs. Four arms of the same experiment, on
+# a scratch WAL database with `/usr/bin/sqlite3`: with a writer holding the lock and no
+# `busy_timeout` it failed in 0.02-0.04s and inserted nothing; the same script with
+# `PRAGMA busy_timeout=5000` waited 1.62s for the same holder and inserted the row; with no
+# holder at all it passed without the pragma; and a completed read never blocked anybody — the
+# arms are `artifacts/sqlite-lock-arms.sh`. So any writer holding the lock
+# for a millisecond was enough, which is what made one tree green, red, then green again.
+#
+# **Which writer, this side did not establish**, and the candidate is offered as a candidate:
+# `UsageLedger.shared` is the only other connection in the process (one `sqlite3_open_v2` in
+# `Sources/`), it is serialized, and its three asynchronous doors — `observe`, `sealSession`,
+# `collect` — can all be fed after `rows()` has returned. `Orchestrator.scheduleSerializePump()`
+# re-arms itself every 0.25s for as long as any queued serialized task exists, and its pump can
+# finalize a task, which calls `collect` — a background loop an earlier group can leave running.
+# Naming it would need a run instrumented to catch it, which nothing here has done.
+#
+# **The repair is the one that does not depend on knowing that.** `usageStoreExec` now sets
+# `sqlite3_busy_timeout(db, 5_000)`, matching the ledger; the other suggestion in that message —
+# closing the ledger's connection before the fixture opens its own — would not have helped, since
+# what takes the lock is a write scheduled afterwards, and that write reopens the connection.
 expected_swift_receipt='9473 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare

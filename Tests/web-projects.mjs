@@ -154,7 +154,7 @@ function answer(overrides) {
             schemaVersion: 1,
             status: "available",
             policy: "one_unambiguous_accepted_head",
-            outcomeRule: "landed_by_record_then_settled_then_landed_by_nonempty_merged_branch_"
+            outcomeRule: "landed_by_record_then_landed_by_nonempty_merged_branch_then_settled_"
                 + "then_branch_gone_then_delivered_then_live_then_abandoned",
             project: { id: "project-9c1f2e7a4b0d8e35", label: "clawdline" },
             read: { rows: 726, projectRows: 237, worktreeRows: 240, featureRows: 190,
@@ -183,6 +183,14 @@ function answer(overrides) {
                          "The focused Swift runner", "branch_absent"),
                 worktree("8d3e64f1-90b2-4c55-a7e6-1fd042c7b3a9", "delivered", 8,
                          "Chat loading latency", "branch_empty"),
+                /* The seventh evidence value, and the one no front-end fixture drew until the
+                   correction of 2026-09-06: HEAD contains this branch, and nothing left on
+                   record says what it was cut from, so an empty branch and a real merge cannot
+                   be told apart and the upgrade is refused. `check-web-strings.py` proves this
+                   sentence is *read*; only a row that reaches it proves it can be *drawn*. */
+                worktree("6c48b0f2-11e9-4a37-b58d-27ce93a0f4d6", "delivered", 9,
+                         "Whose base the registry forgot", "branch_base_unknown",
+                         { needs: "no_record" }),
             ],
             excluded: { worktreesWithoutFeature: 31, reason: "no_unambiguous_accepted_head" },
             unattributed: { worktrees: 13,
@@ -198,6 +206,28 @@ function refusal(code, message) {
 /* ==========================================================================
    The element table, taken from main.js rather than invented here
    ========================================================================== */
+
+/* **The mock's own claim about its coverage, held against the list rather than trusted.**
+   `mock.js` says all seven evidence values appear in its worktree fixtures. It said "every one
+   of the five values" for a while after there were seven, and then "every one of the values it
+   can take" — a sentence that reads as complete and cannot be counted — while
+   `branch_base_unknown` had no row anywhere in the file. So the number is checked here: the
+   fixture list is read with its comments stripped, because a value named only in a comment
+   explaining its absence is exactly the shape that went unnoticed. `check-web-strings.py` proves
+   each sentence is read by the page; this proves a fixture reaches it. */
+const EVIDENCE_VALUES = ["record", "branch_merged", "branch_empty", "branch_base_unknown",
+                         "branch_absent", "branch_unmerged", "unknown"];
+const mockSource = read("Resources/web/app/js/net/mock.js");
+const fixtureBlock = /var worktreesByPath = \{([\s\S]*?)\n    \};/.exec(mockSource);
+check(fixtureBlock, "mock.js carries a worktree fixture list this suite can find");
+const fixtureCode = (fixtureBlock ? fixtureBlock[1] : "")
+    .split("\n").filter((line) => !/^\s*\/\//.test(line)).join("\n");
+for (const value of EVIDENCE_VALUES) {
+    check(new RegExp(`"${value}"`).test(fixtureCode),
+          `a mock worktree actually carries landingEvidence ${value}, not only a claim that one does`);
+}
+check(EVIDENCE_VALUES.length === 7 && /all seven of the values/.test(mockSource),
+      "and the mock states that number rather than a whole nobody can count");
 
 const mainSource = read("Resources/web/app/js/main.js");
 const bindBlock = /bindProjectsPage\(\{([\s\S]*?)\n\}, \{/.exec(mainSource);
@@ -327,11 +357,11 @@ const ok = {
     equal(elements["project-path"].textContent, "/Users/you/code/clawdline", "and its path");
 
     equal(elements["project-delivered"].hidden, false, "the delivered block is the one that opens");
-    equal(elements["project-delivered-count"].textContent, "3",
+    equal(elements["project-delivered-count"].textContent, "4",
           "carrying the count this page exists to put in front of somebody");
     equal(elements["project-delivered-title"].textContent, T.webProjectDelivered,
           "and its heading");
-    equal(elements["project-delivered-list"].children.length, 3,
+    equal(elements["project-delivered-list"].children.length, 4,
           "with one row per worktree that finished and never landed");
     equal(elements["project-delivered-none"].hidden, true,
           "the all-clear sentence is not drawn while there is something waiting");
@@ -398,8 +428,10 @@ const ok = {
           "a settled row needs nothing, and says so by not answering");
     // **The two axes, on one row.** `nothing_to_land` is a settlement somebody recorded; the
     // branch under it never received a commit, so git can only say `branch_empty`. The settled
-    // rung is read above the git rungs, so the verdict is the settlement and the evidence beside
-    // it is allowed to say something else.
+    // rung is read below the merged one and above the absent one, and `branch_empty` is neither
+    // — so the verdict is the settlement and the evidence beside it is allowed to say something
+    // else. On `branch_merged` it would not be: that is the one branch fact the settlement's own
+    // write gate refuses, and the ladder refuses it back.
     match(settled.children[2].textContent, new RegExp(T.webProjectEvidenceBranchEmpty),
           "a settled verdict keeps git's own word beside it rather than overwriting it");
 
@@ -454,6 +486,20 @@ const ok = {
           "and the row says which of the two containments this is");
     check(!new RegExp(T.webProjectEvidenceBranchMerged).test(third.textContent),
           "never in the words of the merge it is not");
+
+    // The other containment nobody could tell apart, and the only evidence value with no
+    // front-end row at all until now: HEAD contains the branch and the registry no longer holds
+    // what it was cut from. It is refused the upgrade for the same reason `branch_empty` is, and
+    // it is the longest sentence on this page — which is exactly the kind that is never seen
+    // until something draws it.
+    const fourth = elements["project-delivered-list"].children[3];
+    equal(evidenceOf(fourth), "branch_base_unknown",
+          "a merged branch nothing can name the base of is delivered, not landed");
+    match(fourth.textContent, new RegExp(T.webProjectEvidenceBranchBaseUnknown),
+          "and the row prints that sentence rather than the wire's own token");
+    check(!new RegExp(T.webProjectEvidenceBranchMerged).test(fourth.textContent)
+            && !new RegExp(T.webProjectEvidenceBranchEmpty).test(fourth.textContent),
+          "in neither of the two words it is not, which is the whole reason it has its own");
 
     match(elements["project-read"].textContent, /726/, "the receipt says how much was read");
     match(elements["project-read"].textContent, /237/, "how much of it was this Project's");
