@@ -495,7 +495,8 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   equal(await world.readWant(), "routed", "the record is read and acted on");
   equal(world.opened.length, 0, "but a session the list has not brought yet is not opened");
   check("the request is held instead", !!world.page.wantedSession);
-  check("and the miss is recorded", world.noteFor("route.openWanted").data.found === false);
+  const miss = world.noteFor("route.openWanted");
+  check("and the miss is recorded", !!miss && miss.data.found === false);
   await world.settle();
   check("the record is still on the device, because nothing has been reached yet",
         !!world.wantRecord());
@@ -529,8 +530,9 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   old.ageWant(limit + 1000);
   equal(await old.readWant(), "stale", "a second outside it, the record is refused");
   equal(old.opened.length, 0, "so a notification tapped days ago moves nobody");
+  const refusal = old.noteFor("page.want");
   check("and the refusal is recorded as age rather than as absence",
-        old.noteFor("page.want").data.stale === true);
+        !!refusal && refusal.data.stale === true);
   await old.settle();
   equal(old.wantRecord(), null, "a record too old to obey is thrown away, not read again");
 }

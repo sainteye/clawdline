@@ -178,6 +178,7 @@ ended on the session list said nothing about which step lost it.
 | `page.sw.message` | `input/route.js` | the message was sent and never arrived |
 | `route.to` | `input/route.js` | the fragment named no session — `/` is the test push |
 | `route.openWanted` | `input/route.js` | the id is not in the session list |
+| `page.want` | `input/route.js` | the record the tap left behind, and what was decided about it |
 
 The worker's two entries are durable because they have to be: the worker is shut down between
 events, and a message posted to a page that was not listening leaves nothing at either end. They go
@@ -187,8 +188,9 @@ them into the page's own trace at boot and on every `visibilitychange`. `activat
 Storage, so a trace does not survive a worker update; that is the right way round, because a trace
 is evidence about the build that wrote it.
 
-**Nothing acts on what it records.** What an app should do when a client message is dropped is a
-design question with more than one answer, and this exists so it can be asked of a reading.
+**Nothing acts on what the trace records.** What an app should do when a client message is dropped
+was a design question with more than one answer, and the trace exists so that it could be asked of
+a reading rather than of a guess. It has been asked, and the answer is the second road below.
 
 **There is one road for an open window, not two.** `postMessage` is defined on `Client`, so every
 window `clients.matchAll` can return has one — which makes the `client.navigate` fallback beside it
@@ -198,10 +200,60 @@ system opens the web app itself before the handler runs, so a phone may take the
 from what the person experienced as a cold start. "I tried it both ways" is not evidence of two
 roads having been tried.
 
+## The second road: a tap that survives its own message
+
+The message gets one attempt. So `notificationclick` also writes down *what the tap was for* — one
+record, in a cache of its own, `clawdline-notification-wanted` — and the page reads it back at the
+two moments it wakes up, `boot` and `visibilitychange`, which are the same two the trace is read
+at. The message still goes first and still does the work when it arrives. The record is what turns
+a dropped message from the end of the tap into a delay.
+
+**It is a separate cache from the trace on purpose.** The trace is a numbered history nobody obeys;
+this is an instruction carried out once and then destroyed. In one store the two would share a
+read-modify-write, a sequence number and a pruning rule, and the first bug in either would be a tap
+that vanished or a tap that fired twice.
+
+Four rules keep the record from being worse than the fault it fixes.
+
+**It goes stale after two minutes** — `WORKER_WANT_MAX_AGE_MS` in `input/route.js`. Not a guess
+about attention: it is sized for the slowest thing between the tap and the read, which is iOS
+launching the web app cold, pulling the document down the tunnel and running the modules before
+`boot` gets there. Seconds would drop exactly the taps this exists for. A day would let a
+notification tapped last week move somebody who has just opened the app to read something else,
+which is the worse failure of the two, because nothing on the screen would say why it happened. A
+record older than the window is thrown away rather than obeyed.
+
+**It is answered once.** The record carries the tap's own id; the page remembers the last id it has
+answered, so waking twice does not route twice, and the record is deleted once the session it names
+is actually open.
+
+**The message wins when it arrives.** The same id travels on the `postMessage`, so a message that
+lands marks the record answered on the way past. Without that the two roads would both act on one
+tap — and the second one would arrive after somebody had already read that session and moved to
+another, which is a worse thing to do to a person than not routing at all. Comparing addresses
+instead of ids does not work for the same reason: by the time the page wakes, the address is
+wherever the person has got to.
+
+**`url: "/"` is not a request.** The test push and a fan-out notification both carry it, and a
+record saying *the person wanted the session list* would send whoever tapped one back to the list
+they were already on, every time they opened the app for the next two minutes. The worker writes
+none, and the page declines one anyway — the worker's copy of that judgement is a second copy of
+`sessionCandidates`, and second copies drift, so `Tests/web-notification-route.mjs` drives both
+gates over a table of URLs rather than comparing them as text.
+
+**And the cost, which is real: a worker update loses the record.** `activate` empties every cache,
+so the one tap that happens across an update keeps only the message road it had before this
+existed. That is the same price the trace pays and it is accepted for the same reason — the
+alternative is IndexedDB, thirty lines of callbacks for one record — but for the trace losing an
+entry costs evidence, and here it costs a tap. If a notification ever stops working exactly once
+after an update, this is why.
+
 `Tests/web-notification-route.mjs` runs the worker and the page against each other, with the
 message delivered and with it dropped, on tmux pane ids. Every fixture in the two suites either
 side of it — `web-service-worker.mjs` taps `/#session-9`, `/#cold`, `/#fresh` — is a URL no
-notification has ever carried, which is why neither of them could see this segment.
+notification has ever carried, which is why neither of them could see this segment. Its 109 checks
+cover the dropped message, the list that has not arrived yet, a record too old to obey, a page woken
+twice, and the two roads meeting.
 
 **Reading it on the phone.** `?debug=layout` needs an address bar and a home-screen web app has
 none, so the panel opens from five presses on the version line at the bottom of Settings — wordmark,
