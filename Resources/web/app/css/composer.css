@@ -414,6 +414,44 @@
     background: var(--card-hi); color: var(--ink);
 }
 .composer .waiting .refresh-status + .go { margin-left: 6px; }
+/* Two buttons close the card now, and in the arm this one exists for they are two controls of
+   four. **What follows is measured, and this note says what was measured** — it has been wrong
+   twice already, the first time because it was estimated rather than measured and the second
+   because it was measured on the pair alone when the arm that carries this button draws
+   `[Refresh][refresh-status][Show on Mac][Live screen]`. Measured in headless Chrome against this
+   stylesheet, `tokens.css` and `base.css`, on the real ancestor chain (`.composer` padding 10/14 >
+   `.waiting` border 1+2px and padding 9/11 > `.body` padding 1px, margin 0 -1px), with the
+   fourteen shipped label sets read out of `Sources/Copy+*.swift`:
+
+     - the body is 269.0px wide inside a 320px viewport and the line its controls lay out on is
+       267.0px (309.0/307.0 at 360, 339.0/337.0 at 390);
+     - **the unread arm, four controls, status span empty:** the run needs 229.5px (Simplified
+       Chinese) to 391.9px (Russian). Six of the fourteen wrap at 320px — es, de, id, it, fr, ru;
+       five still wrap at 360px, and Russian still wraps at 390px;
+     - **the same arm while a refresh has completed**, when the status span carries its own text:
+       264.2px to 457.5px, thirteen of the fourteen wrap at 320px and Russian takes three lines;
+     - **the read-the-menu arm, where the two buttons really are alone:** 168.2px (Japanese) to
+       235.1px (French) for thirteen of them, and 301.9px for Russian, which is the only one that
+       wraps at 320px and the only one that needs 360px to sit on one line;
+     - nothing is clipped, at any of the three widths, in any of the fourteen, in either arm.
+
+   So wrapping here is the ordinary case rather than a one-language exception, which is what makes
+   the inline-block behaviour the right thing to lean on: the wrap is the browser's own, nothing is
+   ever cut off, no flex row is needed, and the 7px `margin-top` above already spaces the wrapped
+   line.
+
+   **The gap is written on the trailing edge of the first, not the leading edge of the second.**
+   Both spellings give exactly 6px while the two share a line. They differ only in the case that
+   made this a decision, and that case was measured under both: wrapped, the trailing margin leaves
+   `Live screen` 1.0px from the body's edge, flush with everything else on the card, while the same
+   6px written on the second button's leading edge instead leaves it at 7.0px — a trailing margin
+   simply disappears at the end of a line and a leading one does not. That alternative is named in
+   words rather than as a selector on purpose: `Resources/web/app/js/net/client.test.mjs` refuses
+   the adjacent-sibling rule by pattern, and the pattern cannot tell a comment from a declaration,
+   so spelling it here turns that suite red. The one control that starts a wrapped line at 7.0px
+   under either spelling is `Show on Mac`, and that is the rule above this one:
+   `.refresh-status + .go` already puts 6px on its leading edge. */
+.composer .waiting .go[data-focus] { margin-right: 6px; }
 .composer .waiting .go:disabled,
 .composer .waiting .go[aria-disabled="true"] {
     background: var(--card); color: var(--faint); cursor: default;

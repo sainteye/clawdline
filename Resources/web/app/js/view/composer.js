@@ -292,6 +292,19 @@ export function renderWaiting() {
                   'aria-live="polite">' + esc(refreshStatus) + "</span>"
                 : "")) +
         '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>" +
+        // **The floor under this card, and the reason it is drawn out here.** Everything above is
+        // downstream of a reading: the question, the options, the steps and the two sentences that
+        // stand in for them all describe a menu the Mac managed to parse off its own screen, and
+        // that parse can fail, arrive late, or be of the wrong menu. The live screen cannot be any
+        // of those things — it is what the terminal is showing. So this button belongs to neither
+        // arm of the branch above and must not be made conditional on `rows`, on `question`, or on
+        // `refreshState`: the state it exists for is precisely the one where the rest of the card
+        // is wrong.
+        //
+        // The same words as the session menu's own entry for this panel, because it is the same
+        // panel. A second name for it would have been a fourteen-language fan-out to say what
+        // `webSessionScreen` already says.
+        '<button type="button" class="go" data-screen="1">' + esc(T.webSessionScreen) + "</button>" +
         "</div>");
     // The live line, from the same reading, and **above the early return below** — that return
     // exists because the *notice* rarely changes, and while a session is working the notice is
@@ -443,6 +456,28 @@ els.waiting.addEventListener("click", function (ev) {
         if (refresh.ariaDisabled === "true" || !api ||
             typeof api.refreshSessionEvidence !== "function") return;
         api.refreshSessionEvidence().catch(function (e) { toast(e.message, true); });
+        return;
+    }
+
+    // A read, and the one press on this card that asks the Mac for nothing and sends nothing into
+    // the session: the screen panel opens over the transcript and the card stays where it is.
+    //
+    // **Announced rather than called.** `view/terminal.js` is not imported here and should not be:
+    // it already reaches back to this file through `input/detail-actions.js` and `view/list.js`,
+    // and this module already reaches it the other way through `input/composer.js` and
+    // `session/open.js` — the two sit inside one strongly connected component twenty-one modules
+    // wide, and a direct edge would tighten that knot for a saving that is not one line. What
+    // would go with it: the import and the call here, the listener and its note in
+    // `input/action-confirm.js`, and in `Tests/web-waiting-card.mjs` the guard that refuses the
+    // import, the assertion that this dispatch is what happens instead, and the block that runs
+    // that listener on its own. Measured before that suite was given a `Terminal` double: writing
+    // the import did not fail there, it crashed there, with an empty stdout and the guard never
+    // reached. `input/action-confirm.js` holds `Terminal` already and answers this event;
+    // `dispatchEvent` runs its listeners before it returns, so the panel opens inside the press and
+    // the focus move it ends with is still inside the user's gesture.
+    if (ev.target.closest("[data-screen]")) {
+        if (!S.openId) return;
+        document.dispatchEvent(new CustomEvent("clawdline:open-screen"));
         return;
     }
 

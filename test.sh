@@ -989,6 +989,12 @@ node Tests/web-user-messages.mjs
 # transport whose route is missing. Registered here rather than in `browser_contract_suites` above
 # so the sealed count of that roster stays the landing root's to move.
 node Tests/web-snippets.mjs
+# The waiting card, which had no test of any kind until 2026-09-06 — the loudest thing the phone
+# draws and the one whose contents are least certain, because every word on it comes from a menu
+# parsed off the Mac's own screen. What is pinned here is the live-screen button that does not:
+# that it is outside the read/unread branch and so survives a parse that failed. Standalone rather
+# than a member of `browser_contract_suites` above, so that roster's sealed count stays root's.
+node Tests/web-waiting-card.mjs
 node Resources/web/app/js/net/client.test.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05
