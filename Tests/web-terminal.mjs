@@ -91,7 +91,6 @@ function setIntervalStub(fn, ms) { timers.push({ fn: fn, ms: ms, live: true }); 
 function clearIntervalStub(handle) { if (timers[handle]) timers[handle].live = false; }
 const liveTimers = function () { return timers.filter(function (t) { return t.live; }); };
 
-
 const standalone = source
     .replace(/^import .*$/gm, "")
     .replace("export var Terminal", "globalThis.Terminal");
@@ -286,6 +285,10 @@ equal(rows("a\n\n").split('class="screen-row"').length - 1, 2,
 // carriage return would make a line look complete and then be drawn on top of itself.
 equal(rows("a\rb"), '<div class="screen-row">ab</div>',
     "a carriage return does not survive into a wrapped row");
+// And the two rules meet here: the terminator is read from the text *after* the control bytes are
+// gone, so a stray byte behind it cannot make an already-finished row look unfinished.
+equal(rows("a\n\r").split('class="screen-row"').length - 1, 1,
+    "a control byte after the terminator does not resurrect the row it terminated");
 equal(rows(""), "", "and a capture with nothing in it is nothing at all");
 equal(rows(null), "", "including one that never arrived");
 
