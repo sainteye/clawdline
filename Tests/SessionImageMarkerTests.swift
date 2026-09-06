@@ -197,6 +197,34 @@ group("an assistant turn's image markers become that entry's own attachments") {
             && unknownArtifacts.last?["height"] as? Int == 0
             && unknownArtifacts.last?["expires_at"] as? Int == 1)
 
+    // The cap is per turn, and a Claude turn arrives as several blocks while a Codex one arrives
+    // as a single joined string. Read block by block with a fresh cap each time, one Claude turn
+    // carried twice what one Codex turn did — and both documents said "in one turn".
+    let cap = SessionImageArtifactStore.productionPolicy.maxImagesPerMessage
+    let fourMarkers = Array(repeating: marker, count: 4).joined(separator: "\n")
+    let blocks: [String: Any] = [
+        "type": "assistant",
+        "message": ["role": "assistant", "content": [
+            ["type": "text", "text": "First half.\n\n" + fourMarkers],
+            ["type": "text", "text": "Second half.\n\n" + fourMarkers],
+        ]],
+    ]
+    let split = Transcript.parse(
+        (try? JSONSerialization.data(withJSONObject: blocks))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "",
+        assistant: .claude, imageStore: fixture.store, now: fixture.now)
+    expect("one turn honours one turn's worth of pictures, however many blocks it came in",
+           split.reduce(0) { $0 + $1.artifacts.count }, cap)
+    expect("and the two the budget did not reach are still readable where they were written",
+           split.reduce(0) { $0 + $1.text.components(separatedBy: marker).count - 1 }, 2)
+    let codexSplit = Codex.entries(
+        ofItem: ["type": "AgentMessage",
+                 "content": [["type": "text", "text": "First half.\n\n" + fourMarkers],
+                             ["type": "text", "text": "Second half.\n\n" + fourMarkers]]],
+        at: nil, imageStore: fixture.store, now: fixture.now)
+    expect("and the other reader answers with the same number, which is what one function is for",
+           codexSplit.reduce(0) { $0 + $1.artifacts.count }, cap)
+
     // The person may quote the tag. A user turn is not where a marker is honoured.
     let userRow: [String: Any] = [
         "type": "user",

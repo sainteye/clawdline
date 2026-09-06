@@ -1108,6 +1108,12 @@ enum Transcript {
         }
 
         var out: [Entry] = []
+        // The image cap is per turn, and a Claude turn is several blocks. Read block by block
+        // with a fresh cap each time it was six per *block*, so `[{text}, {tool_use}, {text}]`
+        // carried twelve while Codex — which joins its content before reading it — carried six,
+        // and both documents said "in one turn". The budget is what makes one function answer
+        // the same way for both readers rather than only looking as though it does.
+        var imagesHonoured = 0
         for block in blocks {
             switch block["type"] as? String {
             case "text":
@@ -1115,8 +1121,11 @@ enum Transcript {
                 // An assistant turn is the one place an image marker is honoured. A person may
                 // quote the tag, and a quoted tag is a quotation.
                 if type != "user" {
-                    if let entry = assistantEntry(text: raw, at: time,
-                                                  imageStore: imageStore, now: now) {
+                    let remaining = SessionImageArtifactStore.productionPolicy.maxImagesPerMessage
+                        - imagesHonoured
+                    if let entry = assistantEntry(text: raw, at: time, imageStore: imageStore,
+                                                  now: now, limit: max(0, remaining)) {
+                        imagesHonoured += entry.artifacts.count
                         out.append(entry)
                     }
                     continue
@@ -1215,10 +1224,18 @@ enum Transcript {
     ///
     /// Nil when the turn is empty, and an entry that is nothing but a picture is not empty: the
     /// marker was the whole message, and dropping it would drop the message.
+    ///
+    /// `limit` is how many pictures are left in this *turn*, which is not always the whole cap:
+    /// a Claude turn arrives as several blocks and this is called once per block, so the caller
+    /// spends one budget across them. Codex hands over a turn already joined and takes the
+    /// default.
     static func assistantEntry(text raw: String, at time: Date?,
                                imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
-                               now: Date = Date()) -> Entry? {
-        let reading = SessionImageMarker.read(raw)
+                               now: Date = Date(),
+                               limit: Int
+                                = SessionImageArtifactStore.productionPolicy.maxImagesPerMessage)
+        -> Entry? {
+        let reading = SessionImageMarker.read(raw, limit: limit)
         let text = reading.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let artifacts = SessionImageMarker.artifacts(for: reading.ids,
                                                      store: imageStore, now: now)
