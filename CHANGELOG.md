@@ -9,6 +9,25 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: a suite failing over a landing record it was not allowed to write
+
+`./test.sh` checks that no delivery reached a target branch while the record saying so was never
+written, and it reads the whole machine rather than one checkout, because that debt is the
+machine's. Failing did the same, and on the day it landed it stopped two runs before either reached
+a compiler. One of them was an isolated child of an unrelated line, which died over **another
+root's** landing in the base repository — a row it could not have cleared under any circumstances,
+because a record is closed with this machine's orchestrator token and a child is forbidden from
+calling `POST /v1/orchestrator/tasks/:id/landing` at all. It was refused, told to run a `curl` it
+is not permitted to run, and left with nothing to do.
+
+Reporting has not changed: every repository, every row, individually, with the command that settles
+each one. What changed is which of those rows can stop the run — the row has to be in the
+repository the suite is running in, and the checkout has to be one that may close a record, which a
+linked worktree is not. Both conditions are printed whichever way they fall, per row, with the
+repository whose suite does fail on it, so a green from a worktree cannot be mistaken for the green
+of a machine with nothing on it. `--strict` still fails on everything, which is what a sweep wants,
+and a run that cannot work out which repository it is standing in refuses rather than passing.
+
 ### Fixed: the test notification could not name a session from a phone
 
 The button that sends a test notification learned, in the same round as the rest of this, to point

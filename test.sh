@@ -801,6 +801,16 @@ tools/check-curl-status.py
 # after its own cutoff and outside a six-hour grace, because `docs/landing.md` writes the record
 # *after* this suite; everything older is printed in full on every run. docs/landing.md has the
 # rule. Measured standalone at 1.2 s over 298 terminal tasks in 8 repositories.
+#
+# **Reporting is machine-wide; failing is not, and that is a third limit rather than a restatement
+# of the two above.** On 2026-09-06 this line killed two runs that never reached a compiler, one of
+# them an isolated child that died over another root's landing in the base repository — debt it
+# could not have settled, because the route takes this machine's orchestrator token and `CHILD.md`
+# forbids a child from calling it at all. A row now stops the run only when it is in the repository
+# this suite is running in *and* this checkout is not a linked worktree, and the run says both
+# conditions out loud whichever way they fall. `Tests/landing-records-scope.mjs` holds the half a
+# red proof structurally cannot: that the narrowed green never reads as the green of a machine with
+# nothing on it.
 tools/check-landing-records.py
 # The guard above ends by printing the `curl` that closes a record, and that snippet named a header
 # the server does not read — `X-Clawdline-Orchestrator-Token` against the `x-clawdline-orchestrator`
@@ -830,7 +840,9 @@ unset remediation_header
 # that no proof names. It matches `tools/check-*` itself, so it is on its own list.
 # docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s with eight
 # proofs, and 5.3 s once the landing-records proof — which builds a repository and merges in it —
-# became the ninth.
+# became the ninth. The tenth, `landing-records-scope.sh`, builds another repository, another merge
+# and a linked worktree of it, and two readings taken with it in are 5.27 s and 5.23 s: inside this
+# machine's noise rather than free, and measured rather than reasoned about.
 bash tools/check-guards-go-red.sh
 verify_suite_roster
 # (c) in `docs/suite-runtime.md`: 129 s of the 288, before the compile the machine lock exists for
@@ -958,6 +970,17 @@ node Tests/release-signing-contract.mjs
 # loudly when Clawdline is not answering. Throwaway repositories under `mkdtemp` only — this suite
 # never runs git against the checkout it is testing, and proves that containment on the way out.
 node Tests/git-hooks.mjs
+# The other half of `tools/check-landing-records.py`, which the guards phase above runs: that it
+# reports the whole machine and fails only on debt this run can settle — the row is in the
+# repository the suite is running in, and the checkout is not a linked worktree, because a linked
+# worktree is a child's and `CHILD.md` forbids a child from calling the landing route at all. The
+# red proofs hold the red side; what they structurally cannot hold is what the *green* side says,
+# and an exit 0 that goes quiet inside a worktree is the exact defect the hook above carries a
+# paragraph about. So this drives both arms of one fixture and requires the narrowed green to name
+# the checkout, the repository, the derivation, the row and who can settle it. Throwaway
+# repositories under `mkdtemp` and a registry of its own: this machine's real
+# `~/.config/clawdline/orchestrator.json` is never opened.
+node Tests/landing-records-scope.mjs
 # The onboarding policy, compiled out of Sources/Onboarding.swift without its AppKit half: that a
 # config switch is not readiness, that an allocated credential is not a connection, and that the
 # installer reopens the exact bundle it just wrote. It runs here rather than in the Swift suite

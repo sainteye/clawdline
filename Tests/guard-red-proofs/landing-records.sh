@@ -17,6 +17,13 @@
 # the grace period is six hours, so "after the cutoff and older than the grace" is a window that
 # moves; a proof that only holds on some days is not a proof. The fixture's commits are dated 2021
 # and the cutoff is 2020, which puts the finding in the fatal set on every day this ever runs.
+#
+# **And the guard is run from inside the fixture repository, which is now part of the mutation.**
+# Since the failing scope narrowed, a row only stops the run when it is in the repository the run
+# is standing in — so a proof run from this checkout would be a proof that some *other* machine's
+# debt goes red, which is exactly the thing that was taken out. Standing in the fixture is what
+# makes this the first of the two conditions rather than an accident of where a harness happened
+# to `cd`. `landing-records-scope.sh` is the same fixture with the second condition flipped.
 set -euo pipefail
 ARM="$1"
 DIR="$2"
@@ -70,4 +77,6 @@ cat > "$STORE/orchestrator.json" <<JSON
 JSON
 
 export CLAWDLINE_REMOTE_DIR="$STORE"
-exec python3 "${GUARD_REPO:-.}/tools/check-landing-records.py" --since 2020-01-01
+GUARD=$(cd "${GUARD_REPO:-.}" && pwd)/tools/check-landing-records.py
+cd "$REPO"
+exec python3 "$GUARD" --since 2020-01-01
