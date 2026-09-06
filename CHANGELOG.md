@@ -65,11 +65,15 @@ when the route renames its own header.
 
 Every pane on a Mac is wider than a phone — 243 columns against about fifty here — so a panel that
 mirrored the terminal exactly was five screen-widths of sideways dragging to read one sentence.
-It now opens soft-wrapped instead: one element per row of the grid, each row hanging its
-continuations under its own indent, and a row that is really a horizontal rule clipped rather than
-folded into five rows of dashes. **Fidelity did not stop mattering; it stopped being the thing that
-opens.** The control in the panel's header turns the wrapping off, and what comes back is byte for
-byte the picture the Mac has. Your choice is remembered by your own browser.
+It wraps now: one element per row of the grid, each row hanging its continuations under its own
+indent, a row that is really a horizontal rule clipped rather than folded into five rows of dashes,
+and the trailing padding a capture is mostly made of dropped rather than carried across the wire.
+
+**There is no setting.** For a few hours there was one, and it went wrong in the way settings do:
+the default was moved to wrapping, and the person who had asked for wrapping never saw it move,
+because he had pressed the control once to look at it and his own browser answered from storage
+from then on. One layout is one thing to be right about. The exact picture the Mac has is still a
+thing you can get — it is on the Mac, in the pane itself, and in <kbd>⌘</kbd><kbd>J</kbd>.
 
 ### Fixed: the status line's links were arriving as their own source code
 
