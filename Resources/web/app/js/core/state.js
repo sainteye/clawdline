@@ -1,5 +1,5 @@
 /** A preference that belongs to this browser, kept beside the other browser-local settings. */
-function storedBool(key, fallback) {
+export function storedBool(key, fallback) {
     try {
         var value = localStorage.getItem(key);
         return value === null ? fallback : value === "1";
