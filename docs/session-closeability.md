@@ -212,13 +212,19 @@ questions and writes only what each one answers:
 - **the delivery reached the target** — its head is contained by `refs/heads/<target>` — which
   closes the record through the same verified path the HTTP route takes, and stays the two-check
   landing;
-- **nothing of a shared-checkout task's declared write set is outstanding** — every claimed path
-  unmodified in its project directory and identical to `refs/heads/<target>` — which closes the
-  record carrying no verification field at all, so it can never become `work_complete`.
+- **nothing of a shared-checkout task's declared write set was outstanding** — every claimed path
+  resolving to something git can see, unmodified in its project directory, and identical to
+  `refs/heads/<target>`, on two readings five minutes apart — which closes the record carrying no
+  verification field at all, so it can never become `work_complete`.
 
-`docs/landing.md` has the full predicate, the bounds it runs under, and the measurement: of those
-twenty-one obligations, thirteen fall away and eight remain, and all eight are questions that
-genuinely need a person.
+`docs/landing.md` has the full predicate and the bounds it runs under. **The measurement it also
+has is not a property of the registry**, which is the correction this paragraph needed: how many of
+those twenty-one obligations fall away depends on the registry snapshot *and* on what the shared
+checkout looked like at the moment the question was asked, and only the first of those holds still.
+Two recomputations of the same snapshot ninety minutes apart on 2026-09-06 answered thirteen and
+five, because four of the tasks' claimed files were being edited in between. So the sentence that
+survives is the one without a number in it: what the sweep takes off this list is every obligation
+whose closure it can prove, and what stays is every one that needs a person.
 
 **What does not change is where the projection reads from.** It still reads **records only** — no
 filesystem is stat'd and no screen is read at projection time. The sweep is a separate writer that

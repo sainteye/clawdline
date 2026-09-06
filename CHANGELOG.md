@@ -22,16 +22,24 @@ tell you the smaller of the two things it knows:
 - **The delivery is in the target branch.** Git already answers this — the branch contains the
   commit — so the record closes with the same verified receipt a hand-written one gets, and the
   Session still shows the double check that means *this landed*.
-- **Nothing this task was allowed to write is still outstanding.** For work done in a shared
+- **Nothing this task was allowed to write was still outstanding.** For work done in a shared
   checkout there is no branch to ask about, so the question becomes whether every path the task
   declared is unmodified and identical to the target branch. That is a smaller claim, and the
   record says so: it carries no verification receipt and never earns the double check.
 
+**It waits five minutes before believing the second one.** A path that is clean now can be a path
+somebody is halfway through saving, and a landing record can never be reopened — so that check has
+to come back clean twice, five minutes apart, against the same target, before anything is written.
+The record then says when it was measured, both times. And a declared path that names no file at
+all is not a clean path: it is a question nobody asked, and it now leaves the record open instead
+of closing it.
+
 What it will not do is guess. A record somebody has already settled is never touched; a task that
 is still running owes nothing yet; `abandoned` is a decision about giving up and stays yours; and a
-repository git cannot answer for is skipped rather than reported as *nothing landed*. On the machine
-this was measured on, twenty-one obligations become eight — and each of the eight is a real
-question: three name a branch the work never reached, and one has a file still uncommitted.
+repository git cannot answer for is skipped rather than reported as *nothing landed*. How many
+obligations this clears is a fact about your checkout at the moment it looks, not a number that can
+be printed here: on the machine it was written on, two runs of the same twenty-one ninety minutes
+apart cleared thirteen and five.
 
 One older bug went with it. A delivery closed as having had **nothing to land** used to keep its
 claim and dirty-checkout rows for ever, because the list that decides what counts as *closed* knew
