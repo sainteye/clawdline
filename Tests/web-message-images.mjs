@@ -86,15 +86,31 @@ assert.equal(artifactPresentation(liveArtifact, liveArtifact.expires_at).state, 
 assert.equal(artifactPresentation({ ...liveArtifact, id: "</button><script>" }, 1).state,
     "expired", "an unavailable or malformed reference fails visibly closed");
 
-// What a marker resolves to when the Mac's store can no longer describe its id: a reference that
-// is valid, carries the id, and expired in 1970. The page must draw the expired tile from that
-// and must never ask for its bytes — otherwise every old assistant turn on screen starts a 404.
-const standIn = artifactPresentation(
-    { id: liveArtifact.id, media_type: "image/png", byte_count: 1,
-        width: 1, height: 1, expires_at: 1 }, 1_800_000_000);
+// What a marker resolves to when the Mac's store cannot answer for its id: a row carrying the id,
+// an expiry in 1970, zeroes where an image's measurements would be, and one field saying which of
+// the two absences it is. The page must draw a tile from that and must never ask for its bytes —
+// otherwise every old assistant turn on screen starts a 404.
+function absentReference(state) {
+    return { id: liveArtifact.id, media_type: "image/png", byte_count: 0,
+        width: 0, height: 0, expires_at: 1, state: state };
+}
+const standIn = artifactPresentation(absentReference("expired"), 1_800_000_000);
 assert.equal(standIn.state, "expired",
-    "a reference the Mac could not resolve arrives already expired");
+    "a reference the Mac held and no longer holds arrives expired");
 assert.equal(standIn.url, undefined, "and nothing is requested for it");
+const neverHeld = artifactPresentation(absentReference("unknown"), 1_800_000_000);
+assert.equal(neverHeld.state, "unknown",
+    "an id the Mac has no record of is its own state, not an expiry");
+assert.equal(neverHeld.url, undefined, "and nothing is requested for that one either");
+// The compatibility hinge: `expires_at` alone still decides for a reader that has never heard of
+// `state`, which is the shape these rows had before the field existed.
+assert.equal(artifactPresentation(
+    { id: liveArtifact.id, media_type: "image/png", byte_count: 1,
+        width: 1, height: 1, expires_at: 1 }, 1_800_000_000).state, "expired",
+"a row with no state field reads exactly as it always did");
+assert.equal(artifactPresentation({ ...absentReference("unknown"), state: "made up" },
+    1_800_000_000).state, "expired",
+"and a state this page does not know falls back to the tile it always drew");
 
 function tileFixture() {
     const tile = new FakeElement();
@@ -192,6 +208,29 @@ assert.equal(expired.tiles[0].dataset.imageState, "expired");
 assert.equal(expired.tiles[0].children[".message-image"].srcWrites, 0,
     "an expiry transition is visible without another byte request");
 assert.equal(expired.tiles[0].children[".message-image-state"].textContent, "Image expired");
+
+// The two absences on real tiles, because the sentence is the whole of the difference.
+function absentTile(state) {
+    const tile = tileFixture();
+    connectArtifactTile(tile, absentReference(state), {
+        now: 1_800_000_000, loadingLabel: "Loading…",
+        expiredLabel: "Image expired", unknownLabel: "Unknown image"
+    });
+    return tile;
+}
+const unknownTile = absentTile("unknown");
+assert.equal(unknownTile.dataset.imageState, "unknown",
+    "an id the Mac has no record of is its own tile state");
+assert.equal(unknownTile.children[".message-image-state"].textContent, "Unknown image",
+    "and the reader is not told that a picture they never had has expired");
+assert.equal(unknownTile.children[".message-image"].srcWrites, 0,
+    "and nothing is requested for it");
+assert.equal(absentTile("expired").children[".message-image-state"].textContent, "Image expired",
+    "while a picture that really did expire still says so");
+const carriedAbsence = reconcileFixture([unknownTile], [absentReference("unknown")],
+    1_800_000_002);
+assert.equal(carriedAbsence.reused.length, 1,
+    "a tile with no bytes behind it still carries across a redraw rather than being rebuilt");
 
 const removed = reconcileFixture([tile], [], 1_800_000_001);
 assert.deepEqual(removed.tiles, [], "removing a message retains no stale artifact node");

@@ -11,9 +11,21 @@ function validArtifact(a) {
         Number.isSafeInteger(a.expires_at) && a.expires_at > 0;
 }
 
+/** A reference that says for itself why it has no bytes: `"expired"` or `"unknown"`. */
+function declaredAbsence(a) {
+    return a.state === "expired" || a.state === "unknown" ? a.state : null;
+}
+
 /** The initial client state for one closed artifact reference. */
 export function artifactPresentation(artifact, now = Math.floor(Date.now() / 1000)) {
     var a = artifact || {};
+    // A reference the Mac could not resolve carries no bytes to describe, so it fails
+    // `validArtifact` on purpose and never reaches the request below. What it does carry is why,
+    // and that is the whole difference between "your picture ran out" and "this Mac has no
+    // record of that id". A reader that has never heard of the field takes the branch under it,
+    // which is the expired tile these references have always drawn.
+    var absence = declaredAbsence(a);
+    if (absence) return { state: absence };
     if (!validArtifact(a) || a.expires_at <= now) return { state: "expired" };
     return {
         state: "loading",
@@ -32,6 +44,11 @@ export function artifactPresentation(artifact, now = Math.floor(Date.now() / 100
 /** The identity of DOM state which is safe to carry across a transcript redraw. */
 function artifactReconciliationKey(artifact, now) {
     var a = artifact || {};
+    // A reference with no bytes behind it still has an identity worth carrying across a redraw:
+    // its id and the sentence it is showing. Without this it would fail `validArtifact` and be
+    // rebuilt on every redraw, which the one-pixel dimensions it used to carry hid.
+    var absence = declaredAbsence(a);
+    if (absence) return [a.id, absence].join("\u001f");
     if (!validArtifact(a)) return null;
     return [
         a.id, a.media_type, a.byte_count, a.width, a.height, a.expires_at,
@@ -143,6 +160,11 @@ export function connectArtifactTile(tile, artifact, options = {}) {
         say("expired", options.expiredLabel || "Image expired");
     }
 
+    /** An id this Mac has no record of. The same tile, and not the same sentence. */
+    function unknown() {
+        say("unknown", options.unknownLabel || "Unknown image");
+    }
+
     /**
      * The other end of a picture that did not arrive, and the reason this option exists.
      *
@@ -159,6 +181,10 @@ export function connectArtifactTile(tile, artifact, options = {}) {
         say("unavailable", words);
     }
 
+    if (presentation.state === "unknown") {
+        unknown();
+        return { presentation: presentation, expire: expire, refuse: refuse };
+    }
     if (presentation.state === "expired") {
         expire();
         return { presentation: presentation, expire: expire, refuse: refuse };

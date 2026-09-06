@@ -50,6 +50,7 @@ struct Hindi: Copy {
     let cannotList = "iTerm2 के sessions पढ़े नहीं जा सके"
     let noOutput = "इस session में अभी पढ़ने को कुछ नहीं है।"
     let imageExpired = "छवि की समय-सीमा समाप्त हो गई"
+    let imageUnknown = "अज्ञात छवि"
     let imagePreview = "छवि पूर्वावलोकन"
     let imageClose = "पूर्वावलोकन बंद करें"
     let imageTooLarge = "भेजने के लिए बहुत बड़ी ({mb} MB)"

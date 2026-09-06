@@ -374,9 +374,12 @@ more `<clawdline-image id="…">` markers into its own prose — see
 [`POST /v1/artifacts/images`](#post-v1artifactsimages) and
 [`messages.md`](messages.md#the-marker-a-session-writes-in-its-own-reply). The marker text is
 removed from `text`; a marker the reader did not honour stays in `text` exactly as written. A
-reference the Mac can no longer describe arrives as an already-expired row — `expires_at` in the
-past, `width`, `height` and `byte_count` at 1 — which every client already draws as the expired
-tile. No other role ever carries `artifacts`.
+reference the Mac cannot resolve arrives as an already-expired row — `expires_at` in the past,
+`width`, `height` and `byte_count` at `0` — plus a seventh key, `state`, which is `"expired"` when
+the Mac held that image and no longer does and `"unknown"` when it has no record of that id at all.
+That key appears on no other row, so a client that ignores it reads `expires_at` alone and draws
+the expired tile it always drew; one that reads it can say *Unknown image* instead of telling
+somebody a picture they never had has run out. No other role ever carries `artifacts`.
 
 ### `GET /v1/artifacts/images/:artifactId`
 
@@ -2434,9 +2437,14 @@ Each answered artifact is the object the message route already returns, plus `ma
 string; do not build it.** The spelling is `<clawdline-image id="ARTIFACT_ID">` and recognition is
 all-or-nothing — a different quote, a different case, a missing `>` or an id that is not an opaque
 artifact id all stay visible as ordinary text rather than silently disappearing, and so does a
-marker inside a fenced code block or past the sixth in one turn. What is honoured is removed from
-the displayed text and attached to that entry, where both the web page and the native pane draw a
-bounded thumbnail; once the reference expires the same place shows **Image expired**.
+marker inside a line-anchored ``` or ~~~ fence, or past the sixth in one turn. What is honoured is
+removed from the displayed text and attached to that entry, where both the web page and the native
+pane draw a bounded thumbnail; once the reference expires the same place shows **Image expired**,
+and an id this Mac has no record of shows **Unknown image** rather than claiming an expiry.
+
+The store is shared with the pictures sessions send each other and holds 64 images at a time,
+oldest evicted first, so a busy machine can retire an image that is still on screen. Store the
+picture at the moment you are going to show it rather than well in advance.
 
 | `code` | status | meaning |
 |---|---:|---|

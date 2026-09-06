@@ -53,6 +53,10 @@ protocol Copy {
     var cannotList: String { get }
     var noOutput: String { get }
     var imageExpired: String { get }
+    /// Shown where a picture would be when the marker's id is one this Mac has no record of —
+    /// never stored here, or stored so long ago that even its tombstone has been reaped. It is
+    /// deliberately not ``imageExpired``: an image the reader never had cannot have run out.
+    var imageUnknown: String { get }
     var imagePreview: String { get }
     var imageClose: String { get }
     /// Shown on a tile whose picture is over the size one cloud envelope can carry. `{mb}` is

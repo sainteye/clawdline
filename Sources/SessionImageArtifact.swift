@@ -5,15 +5,41 @@ import ImageIO
 /// The only image metadata allowed to survive inside a session-message envelope or transcript.
 /// Bytes and filesystem locations remain in ``SessionImageArtifactStore``.
 struct SessionImageArtifact: Codable, Equatable {
+    /// Why a reference describes no bytes, in the one case where it describes none.
+    ///
+    /// `expired` means this store held the image and no longer does; `unknown` means it never
+    /// held that id at all. Collapsing the two is what made the app say *Image expired* about a
+    /// picture the reader never had, and the store can tell them apart for the whole window that
+    /// matters — a stored image reads `expired` from its TTL until its tombstone is reaped.
+    enum Absence: String, Codable {
+        case expired
+        case unknown
+    }
+
     let id: String
     let mediaType: String
     let byteCount: Int
     let width: Int
     let height: Int
     let expiresAt: Int
+    /// Nil for every reference with bytes behind it, which is why the wire key is absent from a
+    /// version-2 envelope's six-key artifact object and from stored metadata: a reader that has
+    /// never heard of this field sees exactly what it saw before.
+    let state: Absence?
+
+    init(id: String, mediaType: String, byteCount: Int, width: Int, height: Int,
+         expiresAt: Int, state: Absence? = nil) {
+        self.id = id
+        self.mediaType = mediaType
+        self.byteCount = byteCount
+        self.width = width
+        self.height = height
+        self.expiresAt = expiresAt
+        self.state = state
+    }
 
     var object: [String: Any] {
-        [
+        var out: [String: Any] = [
             "id": id,
             "media_type": mediaType,
             "byte_count": byteCount,
@@ -21,11 +47,18 @@ struct SessionImageArtifact: Codable, Equatable {
             "height": height,
             "expires_at": expiresAt,
         ]
+        if let state { out["state"] = state.rawValue }
+        return out
     }
 
     /// Strict validation shared by the v2 envelope decoder and the owned store.
+    ///
+    /// A reference carrying an ``Absence`` describes no bytes by construction, so it is never
+    /// one of these: it is made locally while a transcript is read and never crosses a wire that
+    /// asks this question.
     var isValidReference: Bool {
-        SessionImageArtifactStore.isArtifactID(id)
+        state == nil
+            && SessionImageArtifactStore.isArtifactID(id)
             && mediaType == "image/png"
             && byteCount > 0
             && byteCount <= SessionImageArtifactStore.productionPolicy.maxEncodedBytes

@@ -174,25 +174,35 @@ enum SessionImageMarker {
     ///
     /// A marker carries an id and nothing else, so what it resolves to comes from the owned store
     /// and only from there. ``SessionImageArtifactStore/liveness(id:now:)`` is the cheap door —
-    /// metadata and file existence, never the PNG — and anything it cannot call live resolves to
-    /// ``expiredReference(id:)``, which both renderers already draw as the explicit expired tile.
-    /// Standing in for a reference the store can no longer describe is deliberate: an entry that
-    /// shows a picture today and prints raw wire text in a week is worse than one that says the
-    /// picture is gone.
+    /// metadata and file existence, never the PNG — and it answers in three states, which is one
+    /// more than this used to keep. Standing in for a reference the store can no longer describe
+    /// is deliberate: an entry that shows a picture today and prints raw wire text in a week is
+    /// worse than one that says the picture is gone. Saying *which* absence it is, is the part
+    /// that was missing: an id this Mac never held is not an expiry, and telling somebody that an
+    /// image they never had has expired is the app inventing a memory for them.
     static func artifacts(for ids: [String],
                           store: SessionImageArtifactStore,
                           now: Date) -> [SessionImageArtifact] {
         ids.map { id in
-            if case .live(let artifact) = store.liveness(id: id, now: now) { return artifact }
-            return expiredReference(id: id)
+            switch store.liveness(id: id, now: now) {
+            case .live(let artifact): return artifact
+            case .expired: return absentReference(id: id, state: .expired)
+            case .missing: return absentReference(id: id, state: .unknown)
+            }
         }
     }
 
-    /// A valid reference that is already past its expiry, carrying the id and nothing that
-    /// pretends to describe an image: 1970 is not a plausible expiry and no renderer reads the
-    /// dimensions of a tile it is not drawing.
-    static func expiredReference(id: String) -> SessionImageArtifact {
-        SessionImageArtifact(id: id, mediaType: "image/png", byteCount: 1,
-                             width: 1, height: 1, expiresAt: 1)
+    /// A reference that carries the id, why it has no picture behind it, and nothing that
+    /// pretends to describe one.
+    ///
+    /// `expires_at` stays in 1970 because that is the field both renderers have always branched
+    /// on, so a reader that ignores `state` draws the same visible tile it drew before. The
+    /// dimensions and the byte count are zero rather than one: they existed only to satisfy
+    /// ``SessionImageArtifact/isValidReference``, nothing reads them for a tile that is not being
+    /// drawn, and a `1` here is a measurement of an image nobody has.
+    static func absentReference(id: String,
+                                state: SessionImageArtifact.Absence) -> SessionImageArtifact {
+        SessionImageArtifact(id: id, mediaType: "image/png", byteCount: 0,
+                             width: 0, height: 0, expiresAt: 1, state: state)
     }
 }

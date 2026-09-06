@@ -228,6 +228,7 @@ export var T = {
     webLoading: "Loading…",
     webTranscriptFailed: "Could not read the transcript",
     webImageExpired: "Image expired",
+    webImageUnknown: "Unknown image",
     webImagePreview: "Image preview",
     webImageClose: "Close preview",
     webImageTooLarge: "Too large to send ({mb} MB)",

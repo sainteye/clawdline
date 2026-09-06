@@ -171,6 +171,32 @@ group("an assistant turn's image markers become that entry's own attachments") {
           (several.first?.text ?? "").contains("Two of them:")
             && (several.first?.text ?? "").contains("That is all."))
 
+    // The store answers in three states and the entry keeps all three. An id nobody here ever
+    // stored is not an expiry, and saying so is the difference between a missing picture and a
+    // picture the reader is told they once had.
+    expect("an id this Mac never held says so, rather than claiming to have expired",
+           several.first?.artifacts.last?.state, SessionImageArtifact.Absence.unknown)
+    check("and describes no bytes at all rather than one invented pixel",
+          several.first?.artifacts.last?.byteCount == 0
+            && several.first?.artifacts.last?.width == 0
+            && several.first?.artifacts.last?.height == 0)
+    expect("while the live reference beside it carries no state at all",
+           several.first?.artifacts.first?.state, SessionImageArtifact.Absence?.none)
+    check("a live reference still crosses the envelope with exactly its six keys",
+          Set(fixture.artifact.object.keys)
+            == ["id", "media_type", "byte_count", "width", "height", "expires_at"])
+
+    let unknownRows = RemoteServer.transcriptRows(several)
+    let unknownArtifacts = unknownRows.first?["artifacts"] as? [[String: Any]] ?? []
+    check("the page is told which absence it is",
+          unknownArtifacts.first?["state"] == nil
+            && unknownArtifacts.last?["state"] as? String == "unknown")
+    check("and the row it reads has zeroes where the invented measurements were",
+          unknownArtifacts.last?["byte_count"] as? Int == 0
+            && unknownArtifacts.last?["width"] as? Int == 0
+            && unknownArtifacts.last?["height"] as? Int == 0
+            && unknownArtifacts.last?["expires_at"] as? Int == 1)
+
     // The person may quote the tag. A user turn is not where a marker is honoured.
     let userRow: [String: Any] = [
         "type": "user",
@@ -205,6 +231,14 @@ group("an assistant turn's image markers become that entry's own attachments") {
           !rendered.string.contains(fixture.artifact.id)
             && !rendered.string.contains(SessionImageMarker.opening))
 
+    // One live marker and one the store never held, drawn together while the live one is still
+    // live. The tile for the second must not say the picture expired.
+    let unknownRender = Transcript.render(several, size: 12, mono: mono,
+                                          imageStore: fixture.store, now: fixture.now)
+    check("an id this Mac never held draws its own sentence instead of an expiry",
+          unknownRender.string.contains(L.t.imageUnknown)
+            && !unknownRender.string.contains(L.t.imageExpired))
+
     // Cache validation was written against `.message` entries and is asked about the rendered
     // text rather than about a role, which is why an assistant thumbnail is already covered.
     // Pinned rather than assumed: the answer decides whether a pruned image can stay on screen.
@@ -236,11 +270,15 @@ group("an assistant turn's image markers become that entry's own attachments") {
         assistant: .claude, imageStore: fixture.store, now: afterTTL)
     expect("an expired artifact is still one attachment", stale.first?.artifacts.count, 1)
     expect("and no longer claims to be live", stale.first?.artifacts.first?.expiresAt, 1)
+    expect("this one really did expire, and the store can still say which it was",
+           stale.first?.artifacts.first?.state, SessionImageArtifact.Absence.expired)
     expect("the words it was written beside are untouched", stale.first?.text, "Gone by now.")
     let expiredRender = Transcript.render(stale, size: 12, mono: mono,
                                           imageStore: fixture.store, now: afterTTL)
     check("an expired assistant attachment degrades to the explicit expired tile",
           expiredRender.string.contains(L.t.imageExpired))
+    check("and no language spells the two absences the same way",
+          L.catalog.allSatisfy { $0.copy.imageExpired != $0.copy.imageUnknown })
     check("and draws no attachment at all",
           expiredRender.attribute(.attachment, at: 0, effectiveRange: nil) == nil)
     check("the render taken while it was live stops being a current cache",

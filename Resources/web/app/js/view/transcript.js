@@ -1025,6 +1025,7 @@ function hydrateArtifactImages(tiles) {
         connectArtifactTile(tile, artifact, {
             loadingLabel: T.webLoading,
             expiredLabel: T.webImageExpired,
+            unknownLabel: T.webImageUnknown,
             source: source,
             describeFailure: describeArtifactFailure,
             open: function (trigger, src, expire) {

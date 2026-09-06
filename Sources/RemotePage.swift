@@ -157,6 +157,7 @@ enum RemotePage {
             "webLoading": t.webLoading,
             "webTranscriptFailed": t.webTranscriptFailed,
             "webImageExpired": t.imageExpired,
+            "webImageUnknown": t.imageUnknown,
             "webImagePreview": t.imagePreview,
             "webImageClose": t.imageClose,
             "webImageTooLarge": t.imageTooLarge,

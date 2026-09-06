@@ -44,6 +44,7 @@ struct Korean: Copy {
     let cannotList = "iTerm2 세션을 읽지 못했습니다"
     let noOutput = "이 세션에서 아직 읽을 것이 없습니다."
     let imageExpired = "이미지가 만료되었습니다"
+    let imageUnknown = "알 수 없는 이미지입니다"
     let imagePreview = "이미지 미리보기"
     let imageClose = "미리보기 닫기"
     let imageTooLarge = "너무 커서 보낼 수 없습니다 ({mb} MB)"
