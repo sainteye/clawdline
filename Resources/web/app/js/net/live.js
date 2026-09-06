@@ -668,7 +668,16 @@ export var LocalClient = {
     pushUnsubscribe: function (id) { return jsonFetch("/v1/push/unsubscribe", post({ id: id })); },
     /// Reaches this device and nothing else — the server sends only to the subscriptions the
     /// asking device owns, so pressing this on a phone buzzes that phone and nobody else's.
-    pushTest: function () { return jsonFetch("/v1/push/test", post({})); }
+    ///
+    /// `sessionId` is optional, and it is what turns a light into a loop. Without it the button
+    /// answers half a question — *did a notification arrive* — and the half that actually goes
+    /// wrong is the other one: *does tapping one get me back to my session*. Given the session
+    /// the reader has open, the notification that arrives carries that session's address, so the
+    /// whole road can be walked on purpose instead of waited for. The Mac checks the id against
+    /// the sessions it is watching and falls back to the list, so a stale one is safe to send.
+    pushTest: function (sessionId) {
+        return jsonFetch("/v1/push/test", post(sessionId ? { session_id: sessionId } : {}));
+    }
 };
 
 // Interface names. The old names remain because local call sites already use them.

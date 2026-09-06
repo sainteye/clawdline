@@ -194,6 +194,10 @@ final class RemoteServer: @unchecked Sendable {
     static var sessionEndForTesting: ((TargetSession) -> String?)?
     /// Deterministic expiry seam for artifact route and relay lifecycle tests.
     static var imageArtifactNowForTesting: (() -> Date)?
+    /// Replaces only the send of the one push this file makes itself — title, body, url — so the
+    /// address a test notification carries can be asserted without a push service on the other
+    /// end. Every gate in front of it still runs. Production always enters `WebPush.send`.
+    static var pushTestForTesting: ((String, String, String) -> Void)?
     /// Already-serialized full snapshots for bridge lifecycle integration tests. Production keeps
     /// using the SessionWatch/Orchestrator serializers on the main thread.
     static var cloudSnapshotDataForTesting: (sessions: Data, orchestrator: Data)?
@@ -1288,9 +1292,28 @@ final class RemoteServer: @unchecked Sendable {
             // make a session ask you a question and wait, which is a long way to go to find out
             // whether a key was minted correctly — and a test that arrived must never be
             // mistaken for a session that needs you, so it carries no project and no mark.
-            WebPush.send(title: "Clawdline", body: L.t.pushTest, url: "/", tag: "test",
-                         device: device)
-            RemoteAuth.audit("push.test", ["device": device])
+            //
+            // **The words are what keeps that true, so only the address moves.** Title and body
+            // are untouched: a phone shows `Clawdline` over `L.t.pushTest`, which no session has
+            // ever been called. What an optional `session_id` buys is the other half of the
+            // question this route exists to answer — not only *did a notification arrive* but
+            // *does tapping one get me back to my session* — and that half was unaskable while
+            // every test push went to the list. Open a session, press the button, tap what
+            // arrives, and the answer is the screen you land on.
+            //
+            // Checked before it is promised, per `Orchestrator.pushURL(forSessionID:watching:)`:
+            // the id comes from a browser naming what it happens to have open, and an address
+            // that opens nothing would be a worse answer than the list.
+            let asked = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+            let url = Orchestrator.pushURL(forSessionID: asked?["session_id"] as? String,
+                                           watching: Orchestrator.isWatchedSession)
+            if let observer = Self.pushTestForTesting {
+                observer("Clawdline", L.t.pushTest, url)
+            } else {
+                WebPush.send(title: "Clawdline", body: L.t.pushTest, url: url, tag: "test",
+                             device: device)
+            }
+            RemoteAuth.audit("push.test", ["device": device, "url": url])
             return .json(["ok": true, "sent": mine.count])
 
         case ("POST", "/v1/push/unsubscribe"):
@@ -1545,8 +1568,12 @@ final class RemoteServer: @unchecked Sendable {
             }
             let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
                 ?? [:]
+            // `session_id` is optional and unauthenticated by design: the machine token proves
+            // this Mac's user is asking and can never say which root did. See
+            // `Orchestrator.agentNotify(title:body:sessionID:now:)`.
             return answer(Orchestrator.agentNotify(title: body["title"] as? String ?? "",
-                                                   body: body["body"] as? String ?? ""))
+                                                   body: body["body"] as? String ?? "",
+                                                   sessionID: body["session_id"] as? String))
 
         case ("POST", "/v1/orchestrator/coordinator/register"):
             guard orchestratorAuthed else {

@@ -4916,6 +4916,79 @@ enum Orchestrator {
         return .ok(["ok": true])
     }
 
+    // MARK: - Where a notification points
+
+    /// **A notification whose title is a session's own name must carry that session's address.**
+    ///
+    /// That is the whole rule, and the tell is the title: when it is a session's or a task's own
+    /// label, a phone shows something a person cannot tell apart from *waiting for you*, and a
+    /// tap that stops on the session list is the app saying it knew which session it meant and
+    /// did not say so. `docs/notifications.md` keeps the list of the pushes this rule does *not*
+    /// cover — a schedule file that would not parse, a dispatch that opened no tab, several
+    /// finishes coalesced into one line — with the reason each of them has no session to name.
+    ///
+    /// ``WebPush/sessionURL(forSessionID:)`` does the encoding, which was already right and is
+    /// deliberately not touched here. What was missing was every caller that had nothing to hand
+    /// it, and this is the one place they now go through.
+    ///
+    /// **Unchecked, and that is the right default for an id the caller already holds.** A tab
+    /// that closed between the event and this line does not make the notification about something
+    /// else — the same reasoning ``announceDelivery(_:)`` states for a delivery receipt.
+    static func pushURL(forSessionID id: String?) -> String {
+        guard let id, !id.isEmpty else { return "/" }
+        return WebPush.sessionURL(forSessionID: id)
+    }
+
+    /// The same address, promised only for a session this Mac is still watching.
+    ///
+    /// **An address that opens nothing is worse than `/`.** The list at least says what there is;
+    /// a fragment naming a session nobody has stops on the list with nothing on screen to say
+    /// why, which is the failure `docs/notifications.md` traces through six steps. So an id that
+    /// came from outside — a phone naming the session it happens to be looking at — is checked
+    /// before it is promised, and an unknown one falls back to the list on purpose.
+    ///
+    /// The predicate is an argument so the decision can be read without a terminal, a watch or a
+    /// phone; production passes ``isWatchedSession(_:)``.
+    static func pushURL(forSessionID id: String?, watching isWatched: (String) -> Bool) -> String {
+        guard let id, !id.isEmpty, isWatched(id) else { return "/" }
+        return pushURL(forSessionID: id)
+    }
+
+    /// The first of these the watch still holds, for a caller with several candidates and no
+    /// reason to prefer one — a finished fan-out whose root no longer resolves to a tab.
+    static func pushURL(forFirstWatched ids: [String],
+                        watching isWatched: (String) -> Bool) -> String {
+        pushURL(forSessionID: ids.first(where: isWatched), watching: isWatched)
+    }
+
+    /// Which session a scheduled task's failure notification may name.
+    ///
+    /// **`spawnFailed` is the one outcome that keeps `/`, and that is the decision rather than
+    /// the oversight this list invites.** A tab-opening refusal is a session that never existed:
+    /// `childTerminalId` is nil for it by construction, so an address built from it would promise
+    /// a session this Mac never had. `failure` and `timeout` both ran in a tab, and
+    /// `orchestrator_child_linger` keeps that tab for three minutes after this push — long enough
+    /// for whoever the buzz woke to reach it and read what went wrong.
+    ///
+    /// Pure, because the branch that sends this notification sits two layers under the beat and
+    /// its neighbours type into terminals; this is the part worth a test.
+    static func scheduleFailureSessionID(outcome: State, childTerminalId: String?) -> String? {
+        outcome == .spawnFailed ? nil : childTerminalId
+    }
+
+    /// Whether this Mac is still watching a session with that id. It crosses to the main queue
+    /// through ``target(withID:)``, which is that question's one named call site.
+    static func isWatchedSession(_ id: String) -> Bool {
+        if let watchedSessionIDsForTesting { return watchedSessionIDsForTesting.contains(id) }
+        return target(withID: id) != nil
+    }
+
+    /// Test seam for that answer. Starting a real ``SessionWatch`` reading is the alternative,
+    /// and it is not one a group about notification addresses should be paying: it starts the
+    /// app's cadence timer inside the test process and leaves it running for every group after.
+    /// Production always asks ``target(withID:)``; cleared by ``forget()``.
+    static var watchedSessionIDsForTesting: [String]?
+
     // MARK: - Agent-authored push notifications
 
     static let notifyTaskLimit = 5
@@ -4988,15 +5061,19 @@ enum Orchestrator {
     }
 
     private static func sendAgentPush(source: String, title: String, body: String,
-                                      projectDir: String?, tag: String) -> WebPush.Delivery {
+                                      projectDir: String?, sessionID: String?,
+                                      tag: String) -> WebPush.Delivery {
         let displayedTitle = "\(source): \(title)"
+        // The session the agent is speaking from — a task's own tab, or the root that named
+        // itself on the machine-token route. Unchecked, per ``pushURL(forSessionID:)``.
+        let url = pushURL(forSessionID: sessionID)
         let icon = projectDir.flatMap { RemoteIcon.projectPath(for: ProjectIcon.grid(forCwd: $0)) }
         if let observer = agentPushForTesting {
-            return observer(displayedTitle, body, "/", tag, icon)
+            return observer(displayedTitle, body, url, tag, icon)
         }
         // Under no push preference of its own: orchestratorAgentNotify already gates
         // agent-authored content, and this is not an automatic completion notice.
-        return WebPush.sendAndWait(title: displayedTitle, body: body, url: "/", tag: tag,
+        return WebPush.sendAndWait(title: displayedTitle, body: body, url: url, tag: tag,
                                    icon: icon)
     }
 
@@ -5106,6 +5183,7 @@ enum Orchestrator {
         let source = current.scheduleID == nil ? current.title : (current.rootLabel ?? current.title)
         let delivery = sendAgentPush(source: source, title: title, body: body,
                                      projectDir: current.projectDir,
+                                     sessionID: current.childTerminalId,
                                      tag: "agent-task-\(taskID)")
         return agentDeliveryReply(taskID: taskID, title: title, delivery: delivery,
                                   ticket: ticket)
@@ -5113,7 +5191,15 @@ enum Orchestrator {
 
     /// Local roots and scripts already proved they are this Mac's user at RemoteServer's token
     /// gate. They share the hourly brake but do not consume any task's five-message allowance.
-    static func agentNotify(title: String, body: String, now: Date = Date()) -> Reply {
+    ///
+    /// **`sessionID` is optional because the credential cannot supply it.** The machine token
+    /// says this Mac's user is asking and nothing about *which* root is asking, so a root that
+    /// wants its own tab opened has to say which one it is. `AGENTS.md` has a root send this
+    /// exactly when it is about to wait for an answer, which is the one message where a tap that
+    /// lands on the session list wastes the wait it was sent to end. A caller that names nobody
+    /// — a shell script, a cron line — still sends, and its push still carries `/`.
+    static func agentNotify(title: String, body: String, sessionID: String? = nil,
+                            now: Date = Date()) -> Reply {
         if let refusal = agentNotifyPreferenceRefusal(taskID: nil, title: title) {
             return refusal
         }
@@ -5140,7 +5226,7 @@ enum Orchestrator {
         notifyTimes.append(ticket)
         lock.unlock()
         let delivery = sendAgentPush(source: "Clawdline", title: title, body: body,
-                                     projectDir: nil, tag: "agent-root")
+                                     projectDir: nil, sessionID: sessionID, tag: "agent-root")
         return agentDeliveryReply(taskID: nil, title: title, delivery: delivery,
                                   ticket: ticket)
     }
@@ -7986,9 +8072,12 @@ enum Orchestrator {
         if !scheduleFailure { noteEnded(task) }
         if scheduleFailure {
             let title = task.rootLabel ?? task.title
+            let session = scheduleFailureSessionID(outcome: outcome,
+                                                   childTerminalId: task.childTerminalId)
             WebPush.send(title: title,
                          body: "Scheduled task finished \(outcome.rawValue).",
-                         url: "/", tag: "schedule-\(task.scheduleID ?? task.id)-failed",
+                         url: pushURL(forSessionID: session),
+                         tag: "schedule-\(task.scheduleID ?? task.id)-failed",
                          icon: RemoteIcon.projectPath(
                             for: ProjectIcon.grid(forCwd: task.projectDir)))
         }
@@ -8995,6 +9084,10 @@ enum Orchestrator {
         var rootLabel: String?
         var projectDir: String?
         var tasks: [SmartNotification.TaskLine] = []
+        /// The tabs this batch was made of, in the order they ended. `SmartNotification.TaskLine`
+        /// is the wording's own shape and carries no identity, so where a fan-out can point is
+        /// kept here beside it rather than by widening that.
+        var sessionIDs: [String] = []
     }
 
     /// Root key → tally. In memory only: a process that restarts in the middle of a fan-out has
@@ -9025,6 +9118,7 @@ enum Orchestrator {
         if batch.rootLabel == nil { batch.rootLabel = task.rootLabel }
         batch.tasks.append(.init(title: task.title, state: task.state.rawValue,
                                  summary: task.summary))
+        if let terminal = task.childTerminalId { batch.sessionIDs.append(terminal) }
         batches[key] = batch
         lock.unlock()
     }
@@ -9061,6 +9155,14 @@ enum Orchestrator {
         let project = batch.projectDir.map { StateHook.projectName(forDirectory: $0) } ?? "Clawdline"
         let message = batchMessage(project: project, label: batch.rootLabel,
                                    done: batch.done, failed: batch.failed)
+        // **This notification's title is the root's own label**, so on a lock screen it is the
+        // same shape as *waiting for you* and *delivered* — and until now a tap on it reached the
+        // list whenever the root key was `task:<id>` (a root that never gave a session id) or the
+        // root had since closed. That was one of the first symptoms of this whole line.
+        //
+        // The fallback is not a guess about what the reader wanted. Every task in the batch is a
+        // session this notification is about, so any one of them that still exists is worth more
+        // than a list; `/` is left only when not one of them does.
         var url = "/"
         if !key.hasPrefix("task:"),
            let root = target(forRootSession: key, assistant: nil,
@@ -9068,6 +9170,8 @@ enum Orchestrator {
                              among: rootTargets(),
                              sessionID: Transcript.sessionID(of:)) {
             url = WebPush.sessionURL(forSessionID: root.id)
+        } else {
+            url = pushURL(forFirstWatched: batch.sessionIDs, watching: isWatchedSession)
         }
         // Keyed on the root and not on a task, so a second fan-out from the same session replaces
         // the first rather than stacking under it. Smart output and the ordinary count share the
@@ -10591,6 +10695,7 @@ enum Orchestrator {
         taskStarterForTesting = nil
         agentPushForTesting = nil
         sessionDeliveryPushForTesting = nil
+        watchedSessionIDsForTesting = nil
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllTerminalTitles() }
         OrchestratorRegistry.withTransactionOnHeldLock {
             $0.removeAllSuppressedRootAssignmentLabels()

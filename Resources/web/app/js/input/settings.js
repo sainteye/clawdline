@@ -138,7 +138,12 @@ export var Settings = (function () {
             testing = true;
             say("");
             Push.redraw();
-            api.pushTest().then(function () {
+            // The transcript on screen, when there is one — `S.openId` and not `S.selectedId`,
+            // which is only the highlight in the list. With a session open this button is the
+            // whole road: press it, put the app in the background, tap what arrives, and you
+            // should be back where you were. With none open it sends nothing extra and the
+            // notification goes to the list, which is what it has always done.
+            api.pushTest(S.openId || null).then(function () {
                 say(T.webNotifyTestSent, true);
             }).catch(function (e) {
                 // A 409 is not a failure to apologise for: it means this browser believes
