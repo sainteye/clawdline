@@ -186,6 +186,10 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   const inList = new Set(listed);
   const hashListeners = [];
   const messageListeners = [];
+  // The window taking the focus back. On a phone that is what a notification banner tapped
+  // while the app is already in front leaves behind: nothing loads, nothing was hidden, so
+  // neither `boot` nor `visibilitychange` comes — see the block that drives these.
+  const focusListeners = [];
   const location = {
     value: startHash,
     get hash() { return this.value; },
@@ -210,7 +214,10 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
       source: (name) => { declared.push(name); },
       sourceRead: (name, state, entries) => { reads.push({ name, state, entries }); },
     },
-    window: { addEventListener: (type, fn) => { if (type === "hashchange") hashListeners.push(fn); } },
+    window: { addEventListener: (type, fn) => {
+      if (type === "hashchange") hashListeners.push(fn);
+      if (type === "focus") focusListeners.push(fn);
+    } },
     location,
     // `"serviceWorker" in navigator` is the gate on the listener this whole file is about, and
     // `web-pages.mjs` passes `{}` — which is why that suite has never installed it.
@@ -323,11 +330,20 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
       putWant(record);
       return record;
     },
+    // The window regaining the focus, and how many handlers the page put there — a road nothing
+    // calls is a road that does not exist, and here that can be driven rather than read.
+    focusWindow: () => { focusListeners.forEach((fn) => fn()); },
+    focusHandlers: () => focusListeners.length,
     // One turn of the event loop, for the deletions that are started but never awaited: nothing
     // in the page holds the tap up for a cache write.
     settle: () => new Promise((done) => setTimeout(done, 0)),
   };
 }
+
+/** How old a record may be and still be obeyed, read off the page rather than written down a
+ *  second time here — a fixture that carries its own copy of the number under test is a fixture
+ *  that keeps passing after somebody changes it. */
+const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
 
 /* ---- the road, whole ------------------------------------------------------------------------ */
 {
@@ -543,12 +559,18 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
         "and nothing has read it — a page in the foreground is woken by nothing");
   equal(await world.retry(), "routed", "the next session list reads it and acts on it");
   equal(world.opened.join(","), PANE, "so the tap is not lost between the two old read points");
-  // And it stops. A list arrives on every state change, and a read per list for the rest of the
-  // session is the cost this guard is here to refuse.
+  // **And it does not stop.** This block used to end here asserting that every list after the
+  // first answer was `skipped`, which is the defect the user walked into: the page cannot know
+  // that a *new* record has landed without opening the store, so a page that stops looking has
+  // closed the road for the rest of its life. What keeps one tap from being carried out twice is
+  // the record's own id, not a fact about this page — so the cost is one store read per list, and
+  // the thing that is refused is a second routing rather than a second look.
+  await world.settle();
   const opened = world.wantOpens();
-  equal(await world.retry(), "skipped", "a list after that does not ask again");
-  equal(await world.retry(), "skipped", "however many of them arrive");
-  equal(world.wantOpens(), opened, "and the store is not opened again");
+  equal(await world.retry(), "none", "the list after that looks again and finds the record spent");
+  check("which means the store was opened again", world.wantOpens() > opened);
+  equal(world.opened.join(","), PANE, "and nothing was opened a second time");
+  equal(world.notesFor("route.to").length, 1, "by one routing, not two");
 }
 {
   // The control group for the guard: until an answer comes back it must keep asking, or the read
@@ -561,6 +583,115 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   await world.tap(sessionURL(PANE));
   equal(await world.retry(), "routed", "so the record is found whenever it lands");
   equal(world.opened.join(","), PANE, "and the tap arrives");
+}
+
+/* ---- the tap that is made while the app is already in front ----------------------------------
+   **The shape the user actually walked into, and the one every block above misses.** All of them
+   wake the page: `boot` reads, or `visibilitychange` does, or a list arrives at a page that had
+   read nothing yet. He was holding the phone with the app open on the session list, and tapped the
+   banner. Nothing loaded, so there is no `boot`; nothing was ever hidden, so no `visibilitychange`
+   comes; and the message road is the one already known to get a single attempt. What is left is
+   what this section is: a page that is running, a record that has just landed, and the read points
+   that can still notice it.
+
+   The first two blocks are the fault as he met it — a page whose *first* read answered anything at
+   all had closed the road for the rest of its life, and after a night of testing there is always
+   something in that store to answer it. */
+{
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  // Last night's tap, left in the store: older than the window, so it is refused — correctly.
+  world.putWant({ at: Date.now() - (WANT_WINDOW + 60000), url: sessionURL(OTHER), id: "last-night" });
+  equal(await world.readWant(), "stale", "boot finds a record from last night and refuses it");
+  await world.settle();
+  equal(world.opened.length, 0, "so nothing is opened, which is the whole point of the window");
+  // And now a real tap, on a page that has been open all along.
+  await world.tap(sessionURL(PANE));
+  check("the record the tap left is a different one", (world.wantRecord() || {}).id !== "last-night");
+  equal(await world.retry(), "routed",
+        "the next session list reads it — a refusal is about that record, not about this page");
+  equal(world.opened.join(","), PANE, "and the tap arrives");
+}
+{
+  // The same thing with the other non-`none` answer a first read can come back with. A record
+  // naming no session is declined, and declining one says nothing at all about the next one.
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  world.putWant({ at: Date.now(), url: "/", id: "test-push" });
+  equal(await world.readWant(), "declined", "boot finds a record that names no session");
+  await world.settle();
+  equal(world.opened.length, 0, "and opens nothing for it");
+  await world.tap(sessionURL(PANE));
+  equal(await world.retry(), "routed", "the tap after it is still read");
+  equal(world.opened.join(","), PANE, "and still arrives");
+}
+{
+  // **Two taps, in the foreground, one after the other.** The second is the one that used to do
+  // nothing: the first read had answered `routed`, and every list after that was refused by a flag
+  // about this page rather than by anything about the record in front of it. Somebody testing this
+  // by tapping two notifications is exactly this order, and so is an ordinary morning.
+  const world = await makeWorld({ deliver: false, listed: [PANE, OTHER] });
+  await world.tap(sessionURL(PANE));
+  equal(world.opened.length, 0, "the dropped message opens nothing, as it never did");
+  equal(await world.retry(), "routed", "the session list behind it reads what the tap was for");
+  equal(world.opened.join(","), PANE, "and opens that session");
+  await world.settle();
+  await world.tap(sessionURL(OTHER));
+  equal(await world.retry(), "routed", "a second tap on the same page is read the same way");
+  equal(world.opened.join(","), `${PANE},${OTHER}`, "and opens the session *it* named");
+  equal(world.notesFor("route.to").length, 2, "two taps, two routings");
+}
+{
+  // The other half of that, and the reason the guard has to be the record's id: three lists in a
+  // row must not carry one record out three times. The copy put back by hand is the store refusing
+  // a deletion — the case where the page has nothing but its own memory to go on.
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  const record = { ...world.wantRecord() };
+  equal(await world.retry(), "routed", "the first list carries the record out");
+  await world.settle();
+  equal(await world.retry(), "none", "the second finds it spent");
+  equal(await world.retry(), "none", "and so does the third");
+  world.putWant(record);
+  equal(await world.retry(), "settled", "a copy that outlived its deletion is recognised");
+  equal(world.opened.join(","), PANE, "one record, one opening, however many lists arrive");
+  equal(world.notesFor("route.to").length, 1, "and one routing");
+}
+
+/* ---- the read point a foreground tap can actually reach ---------------------------------------
+   The list is the minimum and it is not enough on its own. A session list arrives when something
+   on the Mac changes — and the change that *sent* the notification is the one that pushed the list
+   before the banner was ever tapped. After that the stream can be quiet for as long as the Mac is,
+   so "the next list" is not a moment anybody can point at.
+
+   So the window taking the focus back is read as well. On a phone a banner is system UI over the
+   app: it takes the key window while it is up and hands it back when it goes, which is a signal
+   that costs one store read and arrives on the tap rather than on the Mac's next state change.
+   It is not a substitute for the list — a page that is already focused when the record lands gets
+   nothing from it — which is why both are here. */
+{
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  equal(world.focusHandlers(), 1, "the page listens for its window getting the focus back");
+  await world.tap(sessionURL(PANE));
+  equal(world.opened.length, 0, "the dropped message has opened nothing, and no list has arrived");
+  world.focusWindow();
+  await world.settle();
+  equal(world.opened.join(","), PANE,
+        "the focus coming back is a read point of its own — no boot, no visibilitychange, no list");
+  check("and it routed from the record rather than from a message",
+        (world.noteFor("page.want") || { data: {} }).data.routed === true
+        && !world.saw("page.sw.message"));
+}
+{
+  // And it is the same guard, not a second road: focus and a list in either order carry one record
+  // out once. A phone hands the focus back and pushes a list within the same second all the time.
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  world.focusWindow();
+  await world.retry();
+  await world.settle();
+  world.focusWindow();
+  await world.settle();
+  equal(world.opened.join(","), PANE, "one tap, one opening, whichever read point gets there first");
+  equal(world.notesFor("route.to").length, 1, "and one routing behind it");
 }
 
 /* ---- two notifications tapped before the list arrives ----------------------------------------

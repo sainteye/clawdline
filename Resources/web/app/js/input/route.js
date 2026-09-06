@@ -414,9 +414,6 @@ function forgetWant(id) {
         .catch(function () { return false; });
 }
 
-/** A read has come back with something other than `none`, so there is nothing left to wait for. */
-var wantAnswered = false;
-
 /** A read is in flight. Lists arrive faster than Cache Storage answers, and two reads of one
  *  record are two roads again — the second would find it `settled` at best and act on it twice at
  *  worst. */
@@ -436,7 +433,6 @@ export function readWorkerWant() {
     wantReading = true;
     return readWantRecord().then(function (answer) {
         wantReading = false;
-        if (answer !== "none") wantAnswered = true;
         return answer;
     });
 }
@@ -456,16 +452,49 @@ export function readWorkerWant() {
  * for the same reason: a cold start does its routing before it knows what sessions exist. Not a
  * retry of the worker's message — a re-read of what it wrote down.
  *
- * Answers `skipped` when it did not look. Two guards, both cheap: a read already in flight, and a
- * read that has already come back with something other than "nothing there yet" — after which
- * there is nothing to wait for, because a record that arrives later arrives with a wake-up of its
- * own. What that leaves is one store read per list on a page where a notification is never tapped,
- * which is smaller than the render beside it and is the honest cost of not having a way to be told.
+ * **And it keeps looking.** This used to stop as soon as a read came back with anything other than
+ * "nothing there yet", on the reasoning that a record arriving later would arrive with a wake-up
+ * of its own. That sentence is false, and the way it is false cost the whole road: a page that had
+ * been left open for a night of testing reads a record from last night at `boot`, answers `stale`
+ * — correctly — and never looks again, so every tap after it lands in a store nobody is reading.
+ * A `/` record from a test push closes it the same way, and so does a tap that worked. The flag
+ * was about this page's life; what it was trying to say is about one record, and `settledWant`
+ * already says that, by id, inside the read.
+ *
+ * One guard is left, and it is the one that was always right: a read already in flight. Lists
+ * arrive faster than Cache Storage answers.
+ *
+ * What that costs is one store read per list on a page where a notification is never tapped, and
+ * there is no cheaper honest version of it — the id that decides whether there is anything to do
+ * is *inside* the record, so it cannot be consulted without opening the store. Measured in Chrome
+ * on this Mac, 500 reads an arm: a median of 0.2ms against an empty store and 0.5ms against one
+ * holding a record, beside a median of 0.2ms for one three-row `innerHTML` and a forced layout on
+ * the same page. Nothing waits on it either — it is three promise hops off the render's path. What
+ * that measurement cannot say is what iOS Safari charges. See `docs/notifications.md`.
+ *
+ * Answers `skipped` when it did not look.
  */
 export function retryWorkerWant() {
-    if (wantAnswered || wantReading) return Promise.resolve("skipped");
+    if (wantReading) return Promise.resolve("skipped");
     return readWorkerWant();
 }
+
+/**
+ * The fourth read point, and the one a tap made *in front of the app* can actually reach.
+ *
+ * The three above are all wake-ups, and a foreground tap is not one: nothing loads, so there is no
+ * `boot`; nothing was hidden, so no `visibilitychange` comes; and the session list only arrives
+ * when something on the Mac changes — the change that *sent* the notification, which pushed a list
+ * before the banner was ever tapped. So on the road's second-most likely shape the page had one
+ * `postMessage` and nothing behind it, which is what this whole file exists to stop being true.
+ *
+ * A banner is system UI drawn over the app. It takes the key window while it is up and hands it
+ * back when it goes, so the focus returning is a signal that arrives on the tap rather than on the
+ * Mac's next state change. It does not replace the list — a page that already has the focus when
+ * the record lands gets nothing from this — which is why both are here, and why they share one
+ * guard rather than being two roads.
+ */
+window.addEventListener("focus", function () { retryWorkerWant(); });
 
 function readWantRecord() {
     try {
