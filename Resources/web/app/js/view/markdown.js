@@ -73,9 +73,22 @@ export function richText(text) {
 
         if (listItem(line)) {
             var block = [];
-            while (i < lines.length && (listItem(lines[i]) || (block.length && lines[i].trim() && !isBlockStart(lines[i])))) {
-                block.push(lines[i]);
-                i += 1;
+            while (i < lines.length) {
+                if (listItem(lines[i]) || (block.length && lines[i].trim() && !isBlockStart(lines[i]))) {
+                    block.push(lines[i]);
+                    i += 1;
+                    continue;
+                }
+                // A blank line makes a Markdown list *loose*; it does not start a new one.
+                // Ported from ``Markdown.swift``, and the reason it is here: a numbered list
+                // written with a blank line between its items — which is how most of them
+                // arrive — was closing and reopening once per item, and every `<ol>` that
+                // opens counts from one. Six steps all drew as step 1.
+                if (lines[i].trim()) break;
+                var next = i + 1;
+                while (next < lines.length && !lines[next].trim()) next += 1;
+                if (next >= lines.length || !listItem(lines[next])) break;
+                i = next;
             }
             out.push(listHTML(block));
             continue;
@@ -254,6 +267,16 @@ function tableHTML(rows) {
     return html + "</tbody></table></div>";
 }
 
+/** Where an ordered list starts counting. The number the author wrote on the *first* item is
+ *  the only one that is read — every item after it counts on from there, which is what a
+ *  browser does with an `<ol>` anyway and what ``Markdown.swift`` does on the Mac. So a list
+ *  the author began at 3, because a paragraph interrupted the one above it, still says 3. */
+function startAttribute(item) {
+    if (!item.ordered) return "";
+    var first = parseInt(item.marker, 10);
+    return first === 1 || isNaN(first) ? "" : " start=\"" + first + "\"";
+}
+
 /** A run of list lines, nested by how far each one is indented. */
 function listHTML(block) {
     var items = [];
@@ -271,10 +294,15 @@ function listHTML(block) {
         while (stack.length && item.indent < stack[stack.length - 1].indent) {
             html += "</li></" + stack.pop().tag + ">";
         }
+        var tag = item.ordered ? "ol" : "ul";
+        // Bullets and numbers at the same depth are two lists, not one: kept in the same
+        // element, a numbered item would draw with the bullet list's glyph and lose its number.
+        if (stack.length && item.indent === stack[stack.length - 1].indent
+            && stack[stack.length - 1].tag !== tag) {
+            html += "</li></" + stack.pop().tag + ">";
+        }
         if (!stack.length || item.indent > stack[stack.length - 1].indent) {
-            var tag = item.ordered ? "ol" : "ul";
-            if (stack.length) html += "<" + tag + ">";       // opens inside the item above
-            else html += "<" + tag + ">";
+            html += "<" + tag + startAttribute(item) + ">";  // opens inside the item above
             stack.push({ indent: item.indent, tag: tag });
         } else {
             html += "</li>";
