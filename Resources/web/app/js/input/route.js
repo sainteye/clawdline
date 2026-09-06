@@ -466,9 +466,11 @@ export function readWorkerWant() {
  *
  * What that costs is one store read per list on a page where a notification is never tapped, and
  * there is no cheaper honest version of it — the id that decides whether there is anything to do
- * is *inside* the record, so it cannot be consulted without opening the store. Measured on this
- * Mac's Chrome, that read is well under a millisecond against a store holding one small entry,
- * which is a fraction of the render it sits beside. See `docs/notifications.md`.
+ * is *inside* the record, so it cannot be consulted without opening the store. Measured in Chrome
+ * on this Mac, 500 reads an arm: a median of 0.2ms against an empty store and 0.5ms against one
+ * holding a record, beside a median of 0.2ms for one three-row `innerHTML` and a forced layout on
+ * the same page. Nothing waits on it either — it is three promise hops off the render's path. What
+ * that measurement cannot say is what iOS Safari charges. See `docs/notifications.md`.
  *
  * Answers `skipped` when it did not look.
  */

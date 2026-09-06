@@ -240,10 +240,15 @@ own id already says it — see *It is answered once* below.
 
 What that costs is one store read per session list, and there is no cheaper honest version: the id
 that decides whether there is anything to do is inside the record, so it cannot be consulted
-without opening the store. Measured in Chrome on this Mac, the whole read — `caches.open`, `match`,
-`json` — is well under a millisecond against a store holding one small entry, against a render that
-is doing considerably more beside it. The guard that is left is the one that was always right: a
-read already in flight, because lists arrive faster than Cache Storage answers.
+without opening the store. So it was measured rather than asserted. Chrome 152 on this Mac, 500
+reads per arm, the whole path `caches.open` → `match` → `json`: a median of **0.2 ms** against an
+empty store and **0.5 ms** against one holding a record, beside **0.2 ms** for one three-row
+`innerHTML` and a forced layout on the same page. Nothing waits on it — it is three promise hops
+off the render's path. Two things that measurement cannot say: what iOS Safari charges, and what
+the first read of a page costs, which is a different number entirely (the storage subsystem waking
+up put the first arm of the first run at a 6 ms mean and a 230 ms worst case, and that cost is paid
+once whether this reads or not). The guard that is left is the one that was always right: a read
+already in flight, because lists arrive faster than Cache Storage answers.
 
 **It is a separate cache from the trace on purpose.** The trace is a numbered history nobody obeys;
 this is an instruction carried out once and then destroyed. In one store the two would share a
