@@ -228,8 +228,10 @@ final class UsageLedger {
     /// **Available is a statement about the producer, not about every row.** A row written before
     /// store version 6, for a task the registry has since evicted, still carries NULL, and the
     /// honest reading of that NULL is "this task's graph was never recorded" rather than "this
-    /// task had no graph". Rows for tasks the registry still holds are filled by the launch
-    /// backfill, whose `graph_id = COALESCE(graph_id, ?)` was written for exactly this arrival.
+    /// task had no graph". Every row of a task the registry still holds is filled by the launch
+    /// backfill — every segment, not the first one — whose `graph_id = COALESCE(graph_id, ?)` was
+    /// written for exactly this arrival. See ``updateLineage(_:taskID:sample:)`` for why the
+    /// difference between "the task's rows" and "the task's first row" was 80% of the tokens.
     static let unavailableDimensions = ["disposition"]
 
     static let reservedColumnsReason =
@@ -1054,6 +1056,15 @@ final class UsageLedger {
                 """)
         }
         if version < 6 {
+            // **This 6 is the second copy of ``storeVersion``**, and the two are held together by
+            // assertions rather than by the compiler: "and that version is the one the migration
+            // branches on" pins the constant to this digit, and "an upgraded store grows the
+            // receipt tables too" runs the branch against a store that already exists. Without
+            // the pair, putting `storeVersion` back to 5 leaves every test green — a fresh store
+            // is version 0 and reaches this line whatever the constant says — while every
+            // installed copy is stopped one line above, at `guard version < storeVersion`, and
+            // never grows the four tables.
+            //
             // The review and verification receipts, given somewhere to live that outlasts both
             // clocks that were deleting them: the task directory swept twenty-four hours after
             // a task ends, and the registry row evicted at 1,350 rows or thirty days. Every row
@@ -1977,24 +1988,56 @@ final class UsageLedger {
     /// Lineage is descriptive metadata and may arrive after the immutable usage is sealed — a
     /// landing is normally recorded later by the root. Filling metadata never changes token or
     /// cost columns; identity conflicts are ignored, while landing state may advance.
-    private func updateLineage(_ db: OpaquePointer, key: String, sample: Sample) {
-        var statement: OpaquePointer?
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, """
-            UPDATE usage_intervals SET
-              project_key = COALESCE(project_key, ?),
-              graph_id = COALESCE(graph_id, ?),
-              parent_task_id = COALESCE(parent_task_id, ?),
-              retry_of = COALESCE(retry_of, ?),
-              attempt = COALESCE(attempt, ?),
-              landing_state = COALESCE(?, landing_state),
-              disposition = COALESCE(disposition, ?)
-            WHERE interval_key = ?;
-            """, -1, &statement, nil) == SQLITE_OK else { return }
+    ///
+    /// One statement, two ways of naming the rows it fills, so the column list cannot drift
+    /// between them: a reading fills the row it landed on, and a record from the registry fills
+    /// every row that task left behind. See ``updateLineage(_:taskID:sample:)``.
+    private static func lineageUpdate(where predicate: String) -> String {
+        """
+        UPDATE usage_intervals SET
+          project_key = COALESCE(project_key, ?),
+          graph_id = COALESCE(graph_id, ?),
+          parent_task_id = COALESCE(parent_task_id, ?),
+          retry_of = COALESCE(retry_of, ?),
+          attempt = COALESCE(attempt, ?),
+          landing_state = COALESCE(?, landing_state),
+          disposition = COALESCE(disposition, ?)
+        WHERE \(predicate);
+        """
+    }
+
+    private func bindLineage(_ statement: OpaquePointer?, _ sample: Sample, _ subject: String) {
         bind(statement, 1, sample.projectKey); bind(statement, 2, sample.graphID)
         bind(statement, 3, sample.parentTaskID); bind(statement, 4, sample.retryOf)
         bind(statement, 5, sample.attempt); bind(statement, 6, sample.landingState)
-        bind(statement, 7, sample.disposition); bind(statement, 8, key)
+        bind(statement, 7, sample.disposition); bind(statement, 8, subject)
+    }
+
+    private func updateLineage(_ db: OpaquePointer, key: String, sample: Sample) {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, Self.lineageUpdate(where: "interval_key = ?"),
+                                 -1, &statement, nil) == SQLITE_OK else { return }
+        bindLineage(statement, sample, key)
+        sqlite3_step(statement)
+    }
+
+    /// **Lineage belongs to the task, not to one of its segments.** A task whose session crossed
+    /// a model switch, a local midnight or a boundary it returned to has its tokens spread over
+    /// several rows, and every one of them is a row about that task — so a registry record
+    /// arriving later has to reach all of them or the feature it names is only true of the first.
+    ///
+    /// Measured on this Mac on 2026-09-06, before this existed: of 832 task rows, 314 sat on a
+    /// segment above 0, and of the tokens belonging to tasks the registry still held, 20.4% were
+    /// on a row the backfill could reach — 48 of 65 graphs would have reported zero. `task_id` is
+    /// indexed, and only a task-boundary sample ever carries one, so this touches exactly the
+    /// rows this record is about and no session row beside them.
+    private func updateLineage(_ db: OpaquePointer, taskID: String, sample: Sample) {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, Self.lineageUpdate(where: "task_id = ?"),
+                                 -1, &statement, nil) == SQLITE_OK else { return }
+        bindLineage(statement, sample, taskID)
         sqlite3_step(statement)
     }
 
@@ -2889,10 +2932,12 @@ final class UsageLedger {
         // evidence of what was actually sealed, so a comparison against that column alone can
         // never converge. A row sealed `source_missing` has no object at all to compare with,
         // and every launch would find it "changed" and file another note.
+        // Every row this task left behind, before the segment-0 question below: what follows
+        // decides whether there is a *number* to correct, and lineage is not a number.
+        if let db = database() { updateLineage(db, taskID: id, sample: sample) }
         let key = UsageLedger.intervalKey(assistant: assistant, sessionID: sample.sessionID,
                                           boundaryKind: .task, boundaryID: id, segmentNo: 0)
         if let db = database(), let existing = row(db, key: key), existing.sealed {
-            updateLineage(db, key: key, sample: sample)
             guard let usage,
                   let data = try? JSONSerialization.data(withJSONObject: usage,
                                                          options: [.sortedKeys]),
@@ -3026,6 +3071,12 @@ final class UsageLedger {
     /// the entire content of this row; a record missing one of them is not a verification that
     /// happened to have a gap in it, it is a record that carries no verification — and writing
     /// `0` where a number was never reported is the failure this store was built to refuse.
+    ///
+    /// **A write that fails says so.** "This task reported no verification" and "it reported one
+    /// and the store dropped it" used to be the same silence, and the receipt tables have no
+    /// `coverage_reasons` column of their own to hold the difference — giving them one is a
+    /// store version of its own and is not this wave's to make. The log line is what separates
+    /// the two today, and it names the task so the record can be re-imported by hand.
     private func persistVerification(_ db: OpaquePointer, _ raw: Any?, _ context: ReceiptContext) {
         guard let row = raw as? [String: Any],
               let runs = row["runs"] as? Int, runs >= 0,
@@ -3045,7 +3096,11 @@ final class UsageLedger {
               task_state = excluded.task_state, runs = excluded.runs,
               seconds = excluded.seconds, last = excluded.last, scope = excluded.scope,
               updated_at = excluded.updated_at;
-            """, -1, &statement, nil) == SQLITE_OK else { return }
+            """, -1, &statement, nil) == SQLITE_OK else {
+            Log.write("usage ledger could not prepare the verification receipt for "
+                      + context.taskID)
+            return
+        }
         bind(statement, 1, context.taskID)
         bind(statement, 2, context.graphID)
         bind(statement, 3, context.nodeID)
@@ -3058,7 +3113,9 @@ final class UsageLedger {
         bind(statement, 10, scope)
         bind(statement, 11, context.now.timeIntervalSince1970)
         bind(statement, 12, context.now.timeIntervalSince1970)
-        _ = sqlite3_step(statement)
+        if sqlite3_step(statement) != SQLITE_DONE {
+            Log.write("usage ledger could not store the verification receipt for \(context.taskID)")
+        }
     }
 
     /// The verdict, its three axes and every finding under them.
@@ -3070,6 +3127,13 @@ final class UsageLedger {
     /// safe here and would not be for an interval, because the receipt at the source is
     /// write-once: `Orchestrator` fills `task.review` only `if task.review == nil`, so two
     /// imports of the same task cannot disagree about it.
+    ///
+    /// **That promise covers the findings too, and the replace is what threatens it.** Deleting
+    /// and re-inserting a finding gives it a new `recorded_at` on every arrival, so the column
+    /// would have ended up recording the last launch of this app rather than when the review was
+    /// first seen — the one thing a store built to outlive both sweeps must not get wrong. Each
+    /// finding's first sighting is read back before the replace and re-bound after it; a finding
+    /// that was not there before is recorded now, which is exactly what it is.
     private func persistReview(_ db: OpaquePointer, _ raw: Any?, _ context: ReceiptContext) {
         guard let row = raw as? [String: Any],
               let verdict = UsageLedger.nonemptyText(row["verdict"]),
@@ -3098,7 +3162,16 @@ final class UsageLedger {
         }
         guard !axes.isEmpty else { return }
 
-        exec(db, "BEGIN IMMEDIATE;")
+        let firstSeen = findingFirstSeen(db, taskID: context.taskID)
+        // **The transaction has to have started.** A refused `BEGIN` used to leave `ok` true, and
+        // then the DELETE and every INSERT below autocommitted one at a time: a failure in the
+        // middle would leave the axes gone and the findings half-written, which reads back as a
+        // review that found nothing rather than as a review that was not stored.
+        guard exec(db, "BEGIN IMMEDIATE;") else {
+            Log.write("usage ledger could not open the transaction for the review receipt for "
+                      + context.taskID)
+            return
+        }
         var ok = true
         func run(_ sql: String, _ binder: (OpaquePointer?) -> Void) {
             guard ok else { return }
@@ -3170,11 +3243,42 @@ final class UsageLedger {
                 bind(statement, 6, evidence)
                 bind(statement, 7, ordinal)
                 bind(statement, 8, context.graphID)
-                bind(statement, 9, context.now.timeIntervalSince1970)
+                bind(statement, 9, firstSeen[UsageLedger.findingKey(axis: finding.axis,
+                                                                    findingID: finding.findingID)]
+                        ?? context.now.timeIntervalSince1970)
             }
         }
-        exec(db, ok ? "COMMIT;" : "ROLLBACK;")
+        let closed = exec(db, ok ? "COMMIT;" : "ROLLBACK;")
         if !ok { Log.write("usage ledger could not store the review receipt for \(context.taskID)") }
+        if !closed {
+            Log.write("usage ledger could not \(ok ? "commit" : "roll back") the review receipt "
+                      + "for \(context.taskID)")
+        }
+    }
+
+    /// When each finding already stored for this task was first seen, keyed by the pair that
+    /// identifies it inside the task. Read before the replace, because the replace is what would
+    /// otherwise overwrite it. The separator is a unit separator so that no axis or finding id
+    /// containing it could make two different findings share a key.
+    private static func findingKey(axis: String, findingID: String) -> String {
+        "\(axis)\u{1F}\(findingID)"
+    }
+
+    private func findingFirstSeen(_ db: OpaquePointer, taskID: String) -> [String: Double] {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            SELECT axis, finding_id, recorded_at FROM task_review_findings WHERE task_id = ?;
+            """, -1, &statement, nil) == SQLITE_OK else { return [:] }
+        bind(statement, 1, taskID)
+        var out: [String: Double] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let axis = Self.text(statement, 0),
+                  let findingID = Self.text(statement, 1) else { continue }
+            out[UsageLedger.findingKey(axis: axis, findingID: findingID)] =
+                sqlite3_column_double(statement, 2)
+        }
+        return out
     }
 
     /// Evidence strings as a JSON array, so a string containing any separator this file might

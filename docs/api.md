@@ -4223,7 +4223,8 @@ not be exposed as a public download.
 The legacy payload and analytics payload use the same unavailable-column answer: `disposition`.
 `graph_id` left that answer in store version 6, when the collectors were pointed at the nested
 `graph.id` the task record has always carried; the column now has a producer, though rows written
-before it, for tasks the registry has since evicted, keep an honest NULL. Feature is not called an
+before it, for tasks the registry has since evicted, keep an honest NULL. The launch backfill fills
+every row of a task the registry still holds, not only the first segment of it. Feature is not called an
 unavailable column either; it is an append-only accepted-attribution projection available in
 analytics Portfolio responses, not a new grouping mode retrofitted onto the legacy aggregate URL.
 A dimension having a producer is a separate question from this route offering a view grouped by it,

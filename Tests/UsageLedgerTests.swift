@@ -1713,6 +1713,34 @@ group("a task record's graph reaches the row that carries its tokens") {
            ["disposition"])
     expect("while the six lineage columns are unchanged", UsageLedger.lineageColumns,
            ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state", "disposition"])
+
+    // **Lineage belongs to the task, not to its first segment.** A session that switched model
+    // mid-task leaves that task's tokens on two rows, and a backfill that fills only the key it
+    // computes — segment 0 — names the feature on the smaller half. Measured on this Mac on
+    // 2026-09-06: 314 of 832 task rows sat above segment 0, and they carried 79.6% of the tokens
+    // belonging to tasks the registry still held.
+    var opening = ledgerSample(.claude, session: "sess-multi", boundary: .task, id: "task-multi",
+                               origin: .dispatch,
+                               usage: ["input": 10, "output": 5, "cache_read": 0,
+                                       "cache_write": 0, "total": 15],
+                               model: "claude-opus-5")
+    opening.taskID = "task-multi"
+    UsageLedger.shared.observeNow(opening)
+    var afterSwitch = opening
+    afterSwitch.model = "claude-sonnet-5"
+    afterSwitch.rawUsage = ["input": 20, "output": 10, "cache_read": 0,
+                            "cache_write": 0, "total": 30]
+    UsageLedger.shared.observeNow(afterSwitch)
+    expect("a task whose model changed mid-session has its tokens on two rows",
+           UsageLedger.shared.rows(taskID: "task-multi").map(\.segmentNo), [0, 1])
+    expect("neither of which names a feature before the record arrives",
+           UsageLedger.shared.rows(taskID: "task-multi").compactMap(\.graphID), [])
+    UsageLedger.shared.importTaskRecords([
+        receiptTaskRecord(id: "task-multi", graphID: graphID, session: "sess-multi"),
+    ])
+    expect("and the backfill fills every segment of it, not only the first",
+           UsageLedger.shared.rows(taskID: "task-multi").compactMap(\.graphID),
+           [graphID, graphID])
 }
 
 group("a review verdict and a verification receipt outlive the task directory that held them") {
@@ -1736,6 +1764,13 @@ group("a review verdict and a verification receipt outlive the task directory th
 
     expect("the store is at the version that keeps receipts",
            usageStoreScalar(url, "PRAGMA user_version;"), String(UsageLedger.storeVersion))
+    // Asking the store for `String(UsageLedger.storeVersion)` compares the constant with itself:
+    // move it and both sides move together. The literal below is the other copy of that number —
+    // `if version < 6` in `migrate(_:)` — and the pair only stays honest while something names
+    // the digit. Together with "an upgraded store grows the receipt tables too" in
+    // `UsagePortfolioAndLifecycleTests`, this is what makes a wrong `storeVersion` go red rather
+    // than quietly leaving every existing install without the four tables.
+    expect("and that version is the one the migration branches on", UsageLedger.storeVersion, 6)
 
     // The acceptance this whole change exists for: ask by feature, get that feature's receipts.
     let byFeature = UsageLedger.shared.reviewReceipts(.graph(graphID))
@@ -1812,6 +1847,27 @@ group("a review verdict and a verification receipt outlive the task directory th
            UsageLedger.shared.reviewReceipts(.task("task-findings")).count, 1)
     expect("with the same two findings under it",
            UsageLedger.shared.reviewReceipts(.task("task-findings")).first?.findings.count, 2)
+
+    // **`recorded_at` is when the finding was first seen, not when this Mac last launched.** The
+    // same record arrives at finalize, at landing and once per launch, and the replace that keeps
+    // the list honest was re-stamping every finding with the clock of the import that rewrote it.
+    let firstSeen = usageStoreScalar(url, """
+        SELECT recorded_at FROM task_review_findings
+         WHERE task_id = 'task-findings' AND finding_id = 'F1';
+        """)
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-findings", graphID: graphID, review: findingReviewReceipt(),
+        session: "sess-findings"), now: Date().addingTimeInterval(86_400))
+    expect("a later arrival of the same finding keeps the time it was first recorded",
+           usageStoreScalar(url, """
+               SELECT recorded_at FROM task_review_findings
+                WHERE task_id = 'task-findings' AND finding_id = 'F1';
+               """), firstSeen)
+    expect("and no finding is left carrying the clock of that later arrival",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM task_review_findings
+                WHERE task_id = 'task-findings' AND recorded_at > \(Date().timeIntervalSince1970);
+               """), "0")
 
     // **The replace has to be live, not merely harmless.** The primary key on
     // `(task_id, axis, finding_id)` already stops a second import doubling a finding, so the

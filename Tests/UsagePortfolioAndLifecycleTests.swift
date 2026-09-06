@@ -1482,6 +1482,18 @@ group("a store written under version 1 is upgraded in place, and never orphaned"
                 WHERE name = 'coverage_reasons';
                """), "1")
 
+    // **An existing store has to grow the new tables, and nothing used to ask.** Every assertion
+    // about the four receipt tables was written against a store created from nothing, which
+    // passes through `if version < 6` whatever `storeVersion` says; only a store that already
+    // exists is stopped by `guard version < UsageLedger.storeVersion`. So putting `storeVersion`
+    // back to 5 left every test green and every installed copy of this app without the tables.
+    expect("an upgraded store grows the receipt tables too, not only a brand new one",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+                AND name IN ('task_review_receipts', 'task_review_axes',
+                             'task_review_findings', 'task_verification_receipts');
+               """), "4")
+
     expect("six identical corrections written under v1 are de-duplicated to three",
            UsageLedger.shared.correctionCount(), 3)
     expect("and the index that stops them coming back exists",

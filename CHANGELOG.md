@@ -17,18 +17,21 @@ holds the verdict itself ages out at 1,350 rows or thirty days. So "what did the
 feature actually find, and what did it cost to find it" had no surviving answer.
 
 Two things were wrong under that. The check deciding which tasks owe a typed verdict compared the
-dispatch kind with the word `review`, and the vocabulary the API accepts is `image`, `code-review`,
-`test` and `custom` — that word has never been in it. Measured on one machine's registry: of 51
-`code-review` tasks, the 35 dispatched without a graph carried no verdict between them, while 13 of
-the 16 with one did. It asks the task's *role* now: the graph node when the task has one, and the
+dispatch kind with the single word `review`. That field is free text — the dispatch route keeps
+whatever it is handed, up to forty characters, and nothing validates it — so a comparison with one
+spelling is a guess about what people will send, and the spelling it left out was the one the
+documentation publishes: a `code-review` with no graph was never asked for a verdict. Measured on
+one machine's registry on 2026-09-06: of 56 `code-review` tasks, the 38 dispatched without a graph
+carried no verdict between them, while 15 of the 18 with one did. It asks the task's *role* now: the graph node when the task has one, and the
 dispatch kind read as words when it does not, so `code-review` counts and a correction node
 dispatched as `code-review` is still a correction.
 
 And every token this app has ever recorded was filed under no feature at all. Both usage collectors
 read a flat `graph_id` key, while a stored task record has always carried its graph as a nested
 object — so the column was empty on all 1,052 rows, against a registry holding 105 tasks that carry
-a graph. It reads the nested id now, and the rows for tasks the registry still holds fill in on the
-next launch.
+a graph. It reads the nested id now, and every row of a task the registry still holds fills in on
+the next launch — a task that crossed a model switch or a midnight has its tokens on several rows,
+and filling only the first one would have reached 20.4% of them.
 
 The verdict, its three axes, every finding with its severity and evidence, and the verification
 record now live in the same store as the tokens. Nothing sweeps them, and because they sit beside
