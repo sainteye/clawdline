@@ -37,6 +37,13 @@ supports. And *this Mac holds no review receipt for this Feature* is never writt
 reviewed it*: a receipt whose write fails leaves only a log line, and the page says the weaker
 thing because the weaker thing is what is known.
 
+Each Feature is drawn under the destination it was dispatched for, with its id beside it. That
+name comes out of the task registry, which is swept, so a Feature older than the window has an id
+and nothing else — and the page draws the id rather than a name rebuilt out of whatever is left.
+Where the answer is cut short it says so and says which cut: the interval scan reaching its
+ceiling, the receipt read reaching its own, and the list itself stopping at five hundred Features
+are three different sentences, because they are three different facts.
+
 `GET /v1/orchestrator/usage/verification-ledger` is the read behind it, in all fourteen languages.
 
 ### Changed: the machine closes the landings it can prove, instead of only counting them

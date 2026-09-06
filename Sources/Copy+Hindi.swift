@@ -852,6 +852,7 @@ struct Hindi: Copy {
     let webLedgerRead = "{rows} पंक्तियाँ देखी गईं, {features} Feature मिले।"
     let webLedgerTruncated = "स्कैन अपनी सीमा तक पहुँच गया, इसलिए पुरानी पंक्तियाँ इन आँकड़ों में नहीं हैं।"
     let webLedgerListTruncated = "इनमें से केवल {listed} ही इस पृष्ठ पर हैं — वे जो सबसे हाल में दिखे।"
+    let webLedgerReceiptsTruncated = "रसीदों का पठन अपनी सीमा तक पहुँच गया, इसलिए सबसे पुरानी समीक्षाएँ और जाँचें इन आँकड़ों में नहीं हैं।"
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} task"
     let webLedgerSeen = "आख़िरी बार दिखा"

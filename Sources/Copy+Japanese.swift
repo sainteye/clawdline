@@ -846,6 +846,7 @@ struct Japanese: Copy {
     let webLedgerRead = "{rows} 行を走査し、{features} 件の Feature が見つかりました。"
     let webLedgerTruncated = "走査が上限に達したため、古い行はこれらの数字に入っていません。"
     let webLedgerListTruncated = "このページにあるのは、直近に見えた {listed} 件だけです。"
+    let webLedgerReceiptsTruncated = "レシートの読み取りが上限に達したため、最も古いレビューと検証はこれらの数字に入っていません。"
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} 件のタスク"
     let webLedgerSeen = "最後に見えたのは"

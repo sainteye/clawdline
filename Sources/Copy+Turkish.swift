@@ -848,6 +848,7 @@ struct Turkish: Copy {
     let webLedgerRead = "{rows} satır tarandı, {features} Feature bulundu."
     let webLedgerTruncated = "Tarama tavanına ulaştı; daha eski satırlar bu sayılara dahil değil."
     let webLedgerListTruncated = "Bu sayfada yalnızca en son görülen {listed} tanesi var."
+    let webLedgerReceiptsTruncated = "Makbuz okuması tavanına ulaştı; en eski incelemeler ve doğrulamalar bu sayılara dahil değil."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} görev"
     let webLedgerSeen = "Son görülme"

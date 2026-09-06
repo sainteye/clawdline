@@ -848,6 +848,7 @@ struct Indonesian: Copy {
     let webLedgerRead = "{rows} baris dipindai, {features} Feature ditemukan."
     let webLedgerTruncated = "Pemindaian mencapai batasnya, jadi baris yang lebih lama tidak masuk angka ini."
     let webLedgerListTruncated = "Hanya {listed} yang paling baru terlihat ada di halaman ini."
+    let webLedgerReceiptsTruncated = "Pembacaan resi mencapai batasnya, jadi tinjauan dan verifikasi paling lama tidak masuk angka ini."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} task"
     let webLedgerSeen = "Terakhir terlihat"

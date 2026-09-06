@@ -3062,6 +3062,15 @@ final class UsageLedger {
         case task(String)
     }
 
+    /// **No read of the four receipt tables is unbounded, including one that asks for nothing.**
+    ///
+    /// These tables are deliberately durable: the task registry is swept and they are not, which
+    /// is the whole reason a Feature can still be asked what reviewing it found months later. The
+    /// consequence is that they only ever grow, so the question was never whether these reads
+    /// need a wall — it was where the wall is. A caller that wants a different one says so; a
+    /// caller that says nothing gets this, rather than the whole table.
+    static let receiptReadCeiling = 20_000
+
     /// **The receipts were already at the door; nothing was catching them.**
     ///
     /// `Orchestrator.ledgerRecord(of:)` is the whole stored task minus its two credentials, and
@@ -3337,7 +3346,9 @@ final class UsageLedger {
     }
 
     /// Every stored verification receipt in scope, newest first.
-    func verificationReceipts(_ scope: ReceiptScope = .all) -> [StoredVerificationReceipt] {
+    func verificationReceipts(_ scope: ReceiptScope = .all,
+                              limit: Int = UsageLedger.receiptReadCeiling)
+        -> [StoredVerificationReceipt] {
         queue.sync {
             guard let db = database() else { return [] }
             var statement: OpaquePointer?
@@ -3347,10 +3358,12 @@ final class UsageLedger {
                        runs, seconds, last, scope, recorded_at
                   FROM task_verification_receipts
                  \(UsageLedger.receiptFilter(scope))
-                 ORDER BY recorded_at DESC, task_id DESC;
+                 ORDER BY recorded_at DESC, task_id DESC
+                 LIMIT ?;
                 """
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
             bindReceiptScope(statement, scope)
+            bind(statement, Self.receiptLimitIndex(scope), max(0, limit))
             var out: [StoredVerificationReceipt] = []
             while sqlite3_step(statement) == SQLITE_ROW {
                 guard let taskID = Self.text(statement, 0),
@@ -3370,7 +3383,12 @@ final class UsageLedger {
     }
 
     /// Every stored review receipt in scope, newest first, each with its axes and findings.
-    func reviewReceipts(_ scope: ReceiptScope = .all) -> [StoredReviewReceipt] {
+    /// Newest first, and **bounded twice over**: the `LIMIT` below caps the receipts, and each
+    /// receipt costs two further statements for its axes and its findings. That second cost is
+    /// why a caller reading every Feature at once asks for fewer of these than of the
+    /// single-statement verification receipts beside them.
+    func reviewReceipts(_ scope: ReceiptScope = .all,
+                        limit: Int = UsageLedger.receiptReadCeiling) -> [StoredReviewReceipt] {
         queue.sync {
             guard let db = database() else { return [] }
             var statement: OpaquePointer?
@@ -3380,10 +3398,12 @@ final class UsageLedger {
                        verdict, recorded_at
                   FROM task_review_receipts
                  \(UsageLedger.receiptFilter(scope))
-                 ORDER BY recorded_at DESC, task_id DESC;
+                 ORDER BY recorded_at DESC, task_id DESC
+                 LIMIT ?;
                 """
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
             bindReceiptScope(statement, scope)
+            bind(statement, Self.receiptLimitIndex(scope), max(0, limit))
             var out: [StoredReviewReceipt] = []
             while sqlite3_step(statement) == SQLITE_ROW {
                 guard let taskID = Self.text(statement, 0),
@@ -3401,6 +3421,14 @@ final class UsageLedger {
                 filled.findings = findings(db, taskID: receipt.taskID, graphID: receipt.graphID)
                 return filled
             }
+        }
+    }
+
+    /// Where the `LIMIT ?` binding lands: after the scope's own parameter when it has one.
+    private static func receiptLimitIndex(_ scope: ReceiptScope) -> Int32 {
+        switch scope {
+        case .all: return 1
+        case .graph, .task: return 2
         }
     }
 

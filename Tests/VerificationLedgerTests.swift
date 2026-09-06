@@ -63,18 +63,26 @@ func ledgerVerificationReceipt(task: String, graph: String?, runs: Int, seconds:
         recordedAt: Date(timeIntervalSince1970: 1_788_000_100))
 }
 
-/// A service whose whole store is the three arrays handed in.
+/// A service whose whole store is the three arrays handed in, and whose registry is the fourth.
+///
+/// `names` is deliberately empty by default: a Mac whose sweep has taken every graph's
+/// destination is the state most of this store is in, and every group that does not say otherwise
+/// is testing it.
 func ledgerService(rows: [UsageLedger.Row] = [],
                    reviews: [UsageLedger.StoredReviewReceipt] = [],
-                   verifications: [UsageLedger.StoredVerificationReceipt] = [])
+                   verifications: [UsageLedger.StoredVerificationReceipt] = [],
+                   names: [String: String] = [:])
     -> VerificationLedgerService {
     VerificationLedgerService(
         readRows: { _ in
             UsageLedger.AnalyticsRead(rows: rows, corrections: 0, latestLedgerObservation: nil,
                                       acceptedFeatures: [:], acceptedProjects: [:])
         },
-        readReviews: { _ in reviews },
-        readVerifications: { _ in verifications })
+        // The stand-ins honour the wall they are handed, because the wall is what is under
+        // examination: a fixture that ignored `limit` would let an unbounded read look bounded.
+        readReviews: { _, limit in Array(reviews.prefix(max(0, limit))) },
+        readVerifications: { _, limit in Array(verifications.prefix(max(0, limit))) },
+        readGraphNames: { names })
 }
 
 /// One Feature out of a list payload, by its graph id.
@@ -224,7 +232,11 @@ group("one Feature's findings, its verification hours, and the tokens on either 
                                       last: "pass"),
             ledgerVerificationReceipt(task: "read", graph: "feature-a", runs: 1, seconds: 60,
                                       last: "fail"),
-        ]).read(VerificationLedgerService.Query())
+        ],
+        // One of the two Features still has a destination in the registry. The other does not,
+        // which is what the sweep leaves behind and is the state this page is usually in.
+        names: ["feature-a": "The verification ledger, per Feature"])
+        .read(VerificationLedgerService.Query())
     let payload = answer.payload
     check("the list answers", payload != nil, "refusal=\(String(describing: answer.refusal))")
     let featureA = ledgerFeature(payload, "feature-a")
@@ -283,6 +295,17 @@ group("one Feature's findings, its verification hours, and the tokens on either 
     check("no Feature in the list carries a null id",
           (payload?["features"] as? [[String: Any]])?.allSatisfy { $0["graphId"] is String } == true)
 
+    // **Which Feature this is, when the Mac still knows.** The page asked that question with a
+    // bare UUID and could not answer it. The destination a graph was dispatched for is on this
+    // side while the registry keeps the task; once the sweep has taken it, `null` — never a name
+    // rebuilt out of whatever rows are left, which would be this page's own defect one level up.
+    expect("a Feature the registry still names carries that name",
+           featureA?["label"] as? String, "The verification ledger, per Feature")
+    check("and a Feature whose name the sweep took carries null rather than an invented one",
+          featureB?["label"] is NSNull, "label=\(featureB?["label"] ?? "missing")")
+    check("records that name no Feature have no name to carry either",
+          unattributed?["label"] is NSNull, "label=\(unattributed?["label"] ?? "missing")")
+
     let read = payload?["read"] as? [String: Any]
     expect("the receipt says how much was scanned", read?["rowsScanned"] as? Int, 6)
     expect("and how many Features were found", read?["featuresFound"] as? Int, 2)
@@ -304,7 +327,8 @@ group("the ledger refuses what it cannot answer instead of drawing a blank Featu
             task: "read", graph: "feature-a", verdict: "safe_to_land",
             axes: [UsageLedger.StoredReviewAxis(axis: "specification", status: "pass",
                                                 findingCount: 0)],
-            findings: [("F9", "important", "one to fix")])])
+            findings: [("F9", "important", "one to fix")])],
+        names: ["feature-a": "The verification ledger, per Feature"])
     // **A Feature nothing names is a refusal, not an empty row**: the two are one grey rectangle
     // on a screen and only one of them is something a reader can act on.
     let missing = service.read(VerificationLedgerService.Query(graphID: "nobody"))
@@ -322,9 +346,55 @@ group("the ledger refuses what it cannot answer instead of drawing a blank Featu
            (feature?["axes"] as? [[String: Any]])?.first?["axis"] as? String, "specification")
     expect("the verdict is counted beside them",
            (feature?["verdicts"] as? [[String: Any]])?.first?["verdict"] as? String, "safe_to_land")
+    expect("and the detail is named the same way the list is",
+           feature?["label"] as? String, "The verification ledger, per Feature")
     // The detail's tokens obey the same rule as the list's: this Feature has no review interval.
     expect("a Feature whose review left no interval row shows absent review tokens",
            ledgerTokens(feature, "review")?["state"] as? String, "absent")
+
+    // **The receipts were the one way into this route with no wall and no signal.** These four
+    // tables are durable on purpose — the registry is swept and they are not — so they only ever
+    // grow, and this route is their first and only production reader. A read that comes back
+    // exactly full says so; the alternative is a page that quietly answers about a prefix of the
+    // store while looking exactly like one that answered about all of it.
+    let flood = ledgerService(
+        rows: [ledgerIntervalRow("i1", graph: "g", task: "b", kind: "custom")],
+        reviews: (0...VerificationLedgerService.maxReviewReceipts).map {
+            ledgerReviewReceipt(task: "r\($0)", graph: "g", verdict: "safe_to_land")
+        },
+        verifications: [ledgerVerificationReceipt(task: "b", graph: "g", runs: 1, seconds: 1,
+                                                  last: "pass")])
+        .read(VerificationLedgerService.Query()).payload
+    let floodRead = flood?["read"] as? [String: Any]
+    expect("a receipt read that reached its ceiling says so",
+           floodRead?["receiptsTruncated"] as? Bool, true)
+    expect("and the review receipts counted stop at the ceiling rather than at whatever was sent",
+           (ledgerFeature(flood, "g")?["findings"] as? [String: Any])?["reviewReceipts"] as? Int,
+           VerificationLedgerService.maxReviewReceipts)
+
+    let verificationFlood = ledgerService(
+        rows: [ledgerIntervalRow("i1", graph: "g", task: "b", kind: "custom")],
+        verifications: (0...VerificationLedgerService.maxVerificationReceipts).map {
+            ledgerVerificationReceipt(task: "v\($0)", graph: "g", runs: 1, seconds: 1,
+                                      last: "pass")
+        })
+        .read(VerificationLedgerService.Query()).payload
+    expect("the verification receipts have a ceiling of their own, and it is a higher one",
+           (verificationFlood?["read"] as? [String: Any])?["receiptsTruncated"] as? Bool, true)
+    expect("counted up to it and no further",
+           (ledgerFeature(verificationFlood, "g")?["verification"] as? [String: Any])?["receipts"]
+             as? Int,
+           VerificationLedgerService.maxVerificationReceipts)
+
+    // A store under both ceilings says nothing, or the signal above means nothing.
+    let quiet = ledgerService(
+        rows: [ledgerIntervalRow("i1", graph: "g", task: "b", kind: "custom")],
+        reviews: [ledgerReviewReceipt(task: "r", graph: "g", verdict: "safe_to_land")],
+        verifications: [ledgerVerificationReceipt(task: "b", graph: "g", runs: 1, seconds: 1,
+                                                  last: "pass")])
+        .read(VerificationLedgerService.Query()).payload
+    expect("a store that fits under both ceilings reports no truncation",
+           (quiet?["read"] as? [String: Any])?["receiptsTruncated"] as? Bool, false)
 
     // Worst first is a property of the payload, not of the order the store happened to return.
     let ordered = ledgerService(

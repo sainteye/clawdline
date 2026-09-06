@@ -382,6 +382,7 @@ export var T = {
     webLedgerRead: "{rows} interval rows scanned, {features} Features found.",
     webLedgerTruncated: "The scan reached its ceiling, so older rows are not in these figures.",
     webLedgerListTruncated: "Only the {listed} seen most recently are on this page.",
+    webLedgerReceiptsTruncated: "The receipt read reached its ceiling, so the oldest reviews and verifications are not in these figures.",
     webLedgerFeature: "Feature",
     webLedgerTasks: "{n} tasks",
     webLedgerSeen: "Last seen",

@@ -795,6 +795,7 @@ enum RemotePage {
             "webLedgerRead": t.webLedgerRead,
             "webLedgerTruncated": t.webLedgerTruncated,
             "webLedgerListTruncated": t.webLedgerListTruncated,
+            "webLedgerReceiptsTruncated": t.webLedgerReceiptsTruncated,
             "webLedgerFeature": t.webLedgerFeature,
             "webLedgerTasks": t.webLedgerTasks,
             "webLedgerSeen": t.webLedgerSeen,

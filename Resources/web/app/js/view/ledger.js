@@ -160,9 +160,15 @@ function drawSeverities(doc, parent, severities) {
 /**
  * One Feature's card.
  *
- * The heading is the graph id, because that is the only name this side holds: the destination a
- * graph was dispatched with lives in the task registry, which is swept. An id under a word saying
- * it is one beats a label that is right for a fortnight and blank afterwards.
+ * **`label` when the Mac still remembers it, the id when it does not.** The destination a graph
+ * was dispatched for lives in the task registry, which is swept — so this side gets a name for a
+ * while and an id forever, and the payload sends `null` rather than a reconstruction once the
+ * name is gone. Falling back to the bare id is the honest end of that: this page's whole subject
+ * is that not knowing has to look different from knowing, and a Feature whose name was swept is
+ * exactly a thing this Mac no longer knows.
+ *
+ * The id is drawn beside the name rather than replaced by it, because the id is what a reader
+ * pastes into a query and the name is what tells them which Feature they are looking at.
  */
 function drawFeature(context, parent, feature, options) {
     var doc = context.document;
@@ -182,6 +188,9 @@ function drawFeature(context, parent, feature, options) {
         var head = doc.createElement("div");
         head.className = "ledger-card-head";
         appendText(doc, head, "span", T.webLedgerFeature, "ledger-card-kind");
+        if (feature.label) {
+            appendText(doc, head, "span", feature.label, "ledger-card-name");
+        }
         appendText(doc, head, "code", feature.graphId, "ledger-card-id");
         card.appendChild(head);
     } else {
@@ -241,7 +250,8 @@ function drawFeature(context, parent, feature, options) {
         var open = doc.createElement("button");
         open.className = "ledger-open";
         open.type = "button";
-        open.textContent = fill(T.webLedgerOpenLabel, { name: feature.graphId });
+        open.textContent = fill(T.webLedgerOpenLabel,
+                                { name: feature.label || feature.graphId });
         open.addEventListener("click", function () { options.open(feature.graphId); });
         card.appendChild(open);
     }
@@ -271,6 +281,7 @@ function renderList(context, ledger) {
     elements["ledger-count"].textContent = fill(T.webLedgerRead, {
         rows: number(read.rowsScanned || 0), features: number(read.featuresFound || 0),
     }) + (read.truncated ? " " + T.webLedgerTruncated : "")
+        + (read.receiptsTruncated ? " " + T.webLedgerReceiptsTruncated : "")
         + (cut ? " " + fill(T.webLedgerListTruncated, { listed: number(listed) }) : "");
 
     // Above the list, always, whenever it holds anything: every figure below it is short by
@@ -310,7 +321,8 @@ function renderDetail(context, feature) {
     var elements = context.elements;
     clear(elements["ledger-detail-rows"]);
     if (!feature) return;
-    elements["ledger-detail-title"].textContent = feature.graphId || T.webLedgerUnattributed;
+    elements["ledger-detail-title"].textContent =
+        feature.label || feature.graphId || T.webLedgerUnattributed;
     drawFeature(context, elements["ledger-detail-rows"], feature, null);
 
     var verdicts = feature.verdicts || [];

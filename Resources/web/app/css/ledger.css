@@ -74,7 +74,10 @@
 .ledger-unattributed .ledger-card { border-color: transparent; background: transparent; padding: 0; }
 .ledger-card-head { display: flex; align-items: baseline; gap: 10px; }
 .ledger-card-kind { color: var(--faint); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.ledger-card-name { overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+/* Beside a name the id is the smaller fact, and on its own it is the only one. */
 .ledger-card-id { overflow-wrap: anywhere; font: 13px/1.4 var(--mono); }
+.ledger-card-name + .ledger-card-id { color: var(--faint); font-size: 12px; }
 .ledger-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; }
 
 .ledger-row, .ledger-token {

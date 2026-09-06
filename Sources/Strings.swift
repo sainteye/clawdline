@@ -1583,6 +1583,7 @@ protocol Copy {
     var webLedgerRead: String { get }
     var webLedgerTruncated: String { get }
     var webLedgerListTruncated: String { get }
+    var webLedgerReceiptsTruncated: String { get }
     var webLedgerFeature: String { get }
     var webLedgerTasks: String { get }
     var webLedgerSeen: String { get }

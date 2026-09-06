@@ -846,6 +846,7 @@ struct Korean: Copy {
     let webLedgerRead = "{rows}행을 훑어 {features}개의 Feature를 찾았습니다."
     let webLedgerTruncated = "스캔이 상한에 닿아, 더 오래된 행은 이 숫자에 들어 있지 않습니다."
     let webLedgerListTruncated = "이 페이지에는 가장 최근에 보인 {listed}개만 있습니다."
+    let webLedgerReceiptsTruncated = "영수증 읽기가 상한에 닿아, 가장 오래된 리뷰와 검증은 이 숫자에 들어 있지 않습니다."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "task {n}개"
     let webLedgerSeen = "마지막으로 보인 때"

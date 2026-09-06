@@ -848,6 +848,7 @@ struct German: Copy {
     let webLedgerRead = "{rows} Zeilen durchsucht, {features} Features gefunden."
     let webLedgerTruncated = "Die Suche hat ihre Obergrenze erreicht; ältere Zeilen stecken nicht in diesen Zahlen."
     let webLedgerListTruncated = "Nur die {listed} zuletzt gesehenen stehen auf dieser Seite."
+    let webLedgerReceiptsTruncated = "Das Lesen der Belege hat seine Obergrenze erreicht; die ältesten Reviews und Prüfungen stecken nicht in diesen Zahlen."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} Tasks"
     let webLedgerSeen = "Zuletzt gesehen"

@@ -20,7 +20,7 @@ function mockTokens(state, rows, measured, total) {
 
 function mockFeature(graphID, extra) {
     return Object.assign({
-        graphId: graphID, rows: 6, tasks: 4,
+        graphId: graphID, label: null, rows: 6, tasks: 4,
         findings: { state: "absent", reviewReceipts: 0, total: null, severities: [],
                     truncated: false },
         verification: { state: "absent", receipts: 0, runs: null, seconds: null, endedRed: null,
@@ -35,6 +35,7 @@ function mockFeature(graphID, extra) {
 
 function mockLedgerDetail(graphID) {
     var feature = mockFeature(graphID, {
+        label: "The verification ledger, per Feature",
         findings: { state: "present", reviewReceipts: 2, total: 3,
                     severities: [{ severity: "blocking", count: 1 },
                                  { severity: "minor", count: 2 }],
@@ -1502,6 +1503,7 @@ export var Mock = (function () {
                             schemaVersion: 1,
                             features: mode === "empty" ? [] : [
                                 mockFeature("9b496e3e-efae-492b-a96f-f6dd09217319", {
+                                    label: "The verification ledger, per Feature",
                                     findings: { state: "present", reviewReceipts: 2, total: 3,
                                                 severities: [{ severity: "blocking", count: 1 },
                                                              { severity: "minor", count: 2 }],
@@ -1516,6 +1518,7 @@ export var Mock = (function () {
                                     }
                                 }),
                                 mockFeature("7c14ba90-2d61-4f0e-b8a3-51de6f2c9a47", {
+                                    label: "The Projects page and its two reads",
                                     findings: { state: "present", reviewReceipts: 1, total: 0,
                                                 severities: [], truncated: false },
                                     verification: { state: "present", receipts: 1, runs: 1,
@@ -1529,6 +1532,9 @@ export var Mock = (function () {
                                         undeclared: mockTokens("present", 1, 90200, 90200)
                                     }
                                 }),
+                                // No label on purpose: the registry sweep took this graph's
+                                // destination, so the page has the id and nothing else — the
+                                // fallback is a state worth being able to look at.
                                 mockFeature("2f8d0c55-9b71-4a26-8e30-c47f1b6d5920", {
                                     findings: { state: "absent", reviewReceipts: 0, total: null,
                                                 severities: [], truncated: false },

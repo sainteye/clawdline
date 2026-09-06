@@ -4717,6 +4717,20 @@ Feature with `graphId: null`, and it is not merged into any Feature and not drop
 that fills `graph_id` runs at app launch, so on a Mac that has not relaunched this is most of the
 store, and every figure in `features` is short by exactly that much.
 
+**`label` is the destination the graph was dispatched for, and it is usually `null`.** It is read
+out of the live task registry, which is swept — so a Feature keeps its readable name for as long
+as its task is remembered and has an id for ever. Nothing rebuilds a label out of node titles,
+task titles or a project key once the destination is gone: a page whose subject is telling three
+answers apart may not answer *which Feature is this* with a reconstruction. The page draws the
+name when there is one and the bare id when there is not.
+
+**Three ceilings, three signals, and they are three different facts.** `truncated` is the interval
+scan reaching `UsageQueryService.maxScannedRows`. `receiptsTruncated` is the receipt read reaching
+its own — 5,000 review receipts, each of which costs two further statements for its axes and
+findings, or 20,000 verification receipts; the four receipt tables are durable by design, the
+registry is swept and they are not, so they only ever grow. `featuresListed` short of
+`featuresFound` is the list itself cut at `maxFeatures` (500). All three are drawn.
+
 | Query | Meaning |
 |---|---|
 | `graph` | optional. The graph id. Empty or absent is the list; a value this store never saw is `404 graph_not_found`, not an empty Feature |
@@ -4725,7 +4739,7 @@ store, and every figure in `features` is short by exactly that much.
 {"verificationLedger":{
   "schemaVersion":1,
   "features":[
-    {"graphId":"9b496e3e-…","rows":6,"tasks":4,
+    {"graphId":"9b496e3e-…","label":"The verification ledger, per Feature","rows":6,"tasks":4,
      "findings":{"state":"present","reviewReceipts":2,"total":3,
                  "severities":[{"severity":"blocking","count":1},{"severity":"minor","count":2}],
                  "truncated":false},
@@ -4740,9 +4754,10 @@ store, and every figure in `features` is short by exactly that much.
        "undeclared":{"state":"absent","rows":0,"unknownRows":0,"incompleteRows":0,
                      "reasons":[],"measured":null,"total":null}},
      "firstSeenAt":"2026-09-05T09:08:09Z","lastSeenAt":"2026-09-06T14:13:12Z"}],
-  "unattributed":{"graphId":null,"rows":812,"tasks":210,"findings":{"state":"absent","…":null}},
+  "unattributed":{"graphId":null,"label":null,"rows":812,"tasks":210,
+                  "findings":{"state":"absent","…":null}},
   "read":{"rowsScanned":1240,"featuresFound":3,"featuresListed":3,"truncated":false,
-          "at":"2026-09-06T15:00:00Z"}}}
+          "receiptsTruncated":false,"at":"2026-09-06T15:00:00Z"}}}
 ```
 
 One Feature — `?graph=9b496e3e-…` — answers `{"verificationLedger":{"schemaVersion":1,"feature":{…}}}`

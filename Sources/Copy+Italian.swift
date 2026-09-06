@@ -848,6 +848,7 @@ struct Italian: Copy {
     let webLedgerRead = "{rows} righe scandite, {features} Feature trovate."
     let webLedgerTruncated = "La scansione ha raggiunto il proprio tetto: le righe più vecchie non rientrano in questi numeri."
     let webLedgerListTruncated = "Solo le {listed} viste più di recente sono in questa pagina."
+    let webLedgerReceiptsTruncated = "La lettura delle ricevute ha raggiunto il proprio tetto: le revisioni e le verifiche più vecchie non rientrano in questi numeri."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "{n} task"
     let webLedgerSeen = "Visto l'ultima volta"

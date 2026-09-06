@@ -848,6 +848,7 @@ struct Russian: Copy {
     let webLedgerRead = "Просмотрено строк: {rows}; найдено Feature: {features}."
     let webLedgerTruncated = "Просмотр достиг своего потолка, поэтому более старые строки в эти числа не вошли."
     let webLedgerListTruncated = "На этой странице только {listed} из них — те, что видели последними."
+    let webLedgerReceiptsTruncated = "Чтение квитанций достигло своего потолка, поэтому самые старые проверки и верификации в эти числа не вошли."
     let webLedgerFeature = "Feature"
     let webLedgerTasks = "задач: {n}"
     let webLedgerSeen = "Последний раз"

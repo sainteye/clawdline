@@ -17,6 +17,7 @@
  * that a digit is absent from what was drawn. A check that only asked "is the text right" would
  * stay green through the defect this page exists to prevent.
  */
+import { T } from "../Resources/web/app/js/core/i18n.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
@@ -345,6 +346,49 @@ async function main() {
               "while an ordinary Feature's card keeps the word that says what it is");
     }
 
+    /* ---- which Feature this is, when the Mac still knows -------------------- */
+    {
+        /* **A page that answers "what did reviewing this find" has to say what *this* is.** It
+           said `Feature 9b496e3e-efae-492b-a96f-f6dd09217319`, and the reader who came to ask
+           about one Feature could not tell which row was theirs. The destination the graph was
+           dispatched for is on this side for as long as the registry keeps the task, so the name
+           is drawn when there is one — and the id stays beside it, because the id is what gets
+           pasted into a query.
+
+           The fallback is the point of the second half: a graph the sweep has forgotten sends
+           `label: null` and is drawn exactly as it always was. Nothing here reconstructs a name
+           out of whatever rows are left. */
+        const named = feature("graph-named", { label: "The verification ledger, per Feature" });
+        const nameless = feature("graph-nameless", { label: null });
+        const { elements, environment } = page({
+            verificationLedger: () => Promise.resolve(payload({
+                features: [named, nameless],
+                read: { rowsScanned: 12, featuresFound: 2, featuresListed: 2, truncated: false,
+                        at: "2026-09-06T15:00:00Z" },
+            })),
+        });
+        const view = bindLedgerPage(elements, environment);
+        await view.enter();
+        await flush();
+        const cards = elements["ledger-rows"].all("ledger-card");
+        const drawnName = cards[0].all("ledger-card-name");
+        equal(drawnName.length, 1,
+              "a Feature this Mac still remembers is drawn under its own name");
+        equal((drawnName[0] || {}).textContent,
+              "The verification ledger, per Feature", "and that name is the destination");
+        equal(cards[0].all("ledger-card-id")[0].textContent, "graph-named",
+              "with the id still beside it, because the id is what a query takes");
+        check(/The verification ledger/.test(cards[0].all("ledger-open")[0].textContent),
+              "and the button says which Feature it opens by name");
+
+        equal(cards[1].all("ledger-card-name").length, 0,
+              "a Feature whose name the sweep took draws no name at all");
+        equal(cards[1].all("ledger-card-id")[0].textContent, "graph-nameless",
+              "and falls back to the id it always had");
+        check(!/graph-named|verification ledger/i.test(cards[1].textContent),
+              "with nothing borrowed from the Feature beside it");
+    }
+
     /* ---- a list cut short says so, in the place it was cut ---------------- */
     {
         /* **`featuresListed` was on the wire and nothing read it.** The route caps the list at
@@ -371,6 +415,26 @@ async function main() {
         check(/640/.test(receipt), "and still says how many were found");
     }
     {
+        /* The receipt read has a ceiling of its own now, and it is not the interval scan's. Two
+           different facts, two different sentences: one says the scan stopped, the other says the
+           receipt tables — the ones nothing sweeps — were read as far as the wall. */
+        const { elements, environment } = page({
+            verificationLedger: () => Promise.resolve(payload({
+                read: { rowsScanned: 900, featuresFound: 3, featuresListed: 3,
+                        truncated: false, receiptsTruncated: true,
+                        at: "2026-09-06T15:00:00Z" },
+            })),
+        });
+        const view = bindLedgerPage(elements, environment);
+        await view.enter();
+        await flush();
+        const said = elements["ledger-count"].textContent;
+        check(said.includes(T.webLedgerReceiptsTruncated),
+              `a receipt read that hit its ceiling says so — got ${JSON.stringify(said)}`);
+        check(!said.includes(T.webLedgerTruncated),
+              "and does not claim the interval scan stopped as well");
+    }
+    {
         // And a whole list says nothing about being cut, or the sentence means nothing.
         const { elements, environment } = page({
             verificationLedger: () => Promise.resolve(payload()),
@@ -381,6 +445,8 @@ async function main() {
         const whole = elements["ledger-count"].textContent;
         check(!/\b3\b.*\b3\b/.test(whole),
               `a list nothing was cut from is not announced as cut — got ${JSON.stringify(whole)}`);
+        check(!whole.includes(T.webLedgerReceiptsTruncated),
+              "and a receipt read that fitted says nothing about a ceiling either");
     }
 
     /* ---- the state word decides, not the number beside it ----------------- */

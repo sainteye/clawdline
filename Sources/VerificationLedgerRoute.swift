@@ -217,26 +217,53 @@ final class VerificationLedgerService {
     static let maxFeatures = 500
     /// Findings returned with one Feature's detail.
     static let maxFindings = 200
+    /// **Review receipts read at once, and the wall this route had nowhere else.**
+    ///
+    /// Every other way in and out of this read has one: the interval scan stops at
+    /// ``UsageQueryService/maxScannedRows`` and reports `truncated`, the list stops at
+    /// ``maxFeatures``, the findings at ``maxFindings``. The receipts had neither a ceiling nor a
+    /// signal, and they are the tables that never get swept — the registry is, they are not, so
+    /// they only grow. This route is the first and only production reader of them, so nobody else
+    /// was going to put the wall here.
+    ///
+    /// Lower than the verification ceiling on purpose: each review receipt costs two further
+    /// statements, for its axes and its findings, and a wall has to be set against what is behind
+    /// it rather than against how many rows it sounds like.
+    static let maxReviewReceipts = 5_000
+    /// Verification receipts read at once. One statement each, so the wall sits higher.
+    static let maxVerificationReceipts = 20_000
 
     // MARK: - Where the numbers come from
 
     private let readRows: (UsageLedger.AnalyticsFilter) -> UsageLedger.AnalyticsRead
-    private let readReviews: (UsageLedger.ReceiptScope) -> [UsageLedger.StoredReviewReceipt]
-    private let readVerifications: (UsageLedger.ReceiptScope)
+    private let readReviews: (UsageLedger.ReceiptScope, Int) -> [UsageLedger.StoredReviewReceipt]
+    private let readVerifications: (UsageLedger.ReceiptScope, Int)
         -> [UsageLedger.StoredVerificationReceipt]
+    /// **The only readable name a Feature has, and it is allowed to be missing.**
+    ///
+    /// `Orchestrator.graphDestinations()` reads the live registry, which is swept: a graph older
+    /// than the window has no name here and the payload says `null` for it. That is the whole
+    /// contract. Nothing on this path reconstructs a label out of a node title, a task title or a
+    /// project key when the destination is gone — a page whose subject is telling three answers
+    /// apart cannot answer *which Feature is this* with a guess.
+    private let readGraphNames: () -> [String: String]
 
     /// Injected the way every other read of this store is, so a test can say what the store holds
     /// without a store existing. Production hands over `UsageLedger.shared`.
     init(readRows: @escaping (UsageLedger.AnalyticsFilter) -> UsageLedger.AnalyticsRead
             = { UsageLedger.shared.analyticsRead($0) },
-         readReviews: @escaping (UsageLedger.ReceiptScope) -> [UsageLedger.StoredReviewReceipt]
-            = { UsageLedger.shared.reviewReceipts($0) },
-         readVerifications: @escaping (UsageLedger.ReceiptScope)
+         readReviews: @escaping (UsageLedger.ReceiptScope, Int)
+            -> [UsageLedger.StoredReviewReceipt]
+            = { UsageLedger.shared.reviewReceipts($0, limit: $1) },
+         readVerifications: @escaping (UsageLedger.ReceiptScope, Int)
             -> [UsageLedger.StoredVerificationReceipt]
-            = { UsageLedger.shared.verificationReceipts($0) }) {
+            = { UsageLedger.shared.verificationReceipts($0, limit: $1) },
+         readGraphNames: @escaping () -> [String: String]
+            = { Orchestrator.graphDestinations() }) {
         self.readRows = readRows
         self.readReviews = readReviews
         self.readVerifications = readVerifications
+        self.readGraphNames = readGraphNames
     }
 
     /// A closed query, refused on an unknown or repeated key for the same reason the analytics
@@ -262,8 +289,18 @@ final class VerificationLedgerService {
             limit: UsageQueryService.maxScannedRows + 1, includeFeatureAttribution: false))
         let truncated = reading.rows.count > UsageQueryService.maxScannedRows
         let rows = Array(reading.rows.prefix(UsageQueryService.maxScannedRows))
-        let reviews = readReviews(.all)
-        let verifications = readVerifications(.all)
+        // **One more than the wall, so the answer can say it hit it.** The same shape the
+        // interval scan above uses, and for the same reason: a read that comes back exactly full
+        // cannot tell a store that ends there from one that does not.
+        let reviewsRead = readReviews(.all, Self.maxReviewReceipts + 1)
+        let verificationsRead = readVerifications(.all, Self.maxVerificationReceipts + 1)
+        let receiptsTruncated = reviewsRead.count > Self.maxReviewReceipts
+            || verificationsRead.count > Self.maxVerificationReceipts
+        let reviews = Array(reviewsRead.prefix(Self.maxReviewReceipts))
+        let verifications = Array(verificationsRead.prefix(Self.maxVerificationReceipts))
+        // Read once, beside the receipts, so every Feature in one answer is named from the same
+        // instant — the registry is swept while this runs like anything else on this Mac.
+        let names = readGraphNames()
 
         // Which tasks are known to have reviewed, whatever their dispatch kind was called. Built
         // once from every receipt in the store rather than per Feature, because a receipt filed
@@ -349,7 +386,9 @@ final class VerificationLedgerService {
             // findings under it.
             let detail = reviews.filter { $0.graphID == wanted }
             return .reading(Self.detailPayload(matched, reviews: detail, truncated: truncated,
-                                               rowsScanned: rows.count, at: now))
+                                               receiptsTruncated: receiptsTruncated,
+                                               rowsScanned: rows.count, label: names[wanted],
+                                               at: now))
         }
 
         let ordered = features.values.sorted { left, right in
@@ -361,7 +400,7 @@ final class VerificationLedgerService {
         let listed = Array(ordered.prefix(Self.maxFeatures))
         return .reading([
             "schemaVersion": Self.schemaVersion,
-            "features": listed.map { Self.payload(of: $0) },
+            "features": listed.map { Self.payload(of: $0, label: $0.graphID.flatMap { names[$0] }) },
             // Drawn as its own block and never merged into a Feature: these are the records that
             // carry no Feature key, which on a Mac that has not relaunched since the backfill
             // landed is most of them.
@@ -371,6 +410,9 @@ final class VerificationLedgerService {
                 "featuresFound": features.count,
                 "featuresListed": listed.count,
                 "truncated": truncated,
+                // A second ceiling and a second signal, because they are two different facts:
+                // `truncated` is the interval scan stopping, this is the receipt read stopping.
+                "receiptsTruncated": receiptsTruncated,
                 "at": ISO8601DateFormatter().string(from: now),
             ],
         ])
@@ -440,7 +482,14 @@ final class VerificationLedgerService {
         }
     }
 
-    static func payload(of feature: Feature) -> [String: Any] {
+    /// **`label` is `null` far more often than it is a name, and that is the answer.**
+    ///
+    /// The screen asked *which Feature is this* with a bare UUID, because this side held nothing
+    /// else. It does hold something else — the destination the graph was dispatched for — for as
+    /// long as the registry keeps the task. When the sweep has taken it, this is `null` and the
+    /// page falls back to the id it always drew. A Feature named `null` is a Feature whose name
+    /// this Mac has forgotten, which is a true sentence; an invented one would not be.
+    static func payload(of feature: Feature, label: String? = nil) -> [String: Any] {
         var tokens: [String: Any] = [:]
         for role in Role.allCases {
             tokens[role.rawValue] = payload(of: feature.tokens[role] ?? TokenReading())
@@ -448,6 +497,7 @@ final class VerificationLedgerService {
         let formatter = ISO8601DateFormatter()
         return [
             "graphId": feature.graphID as Any? ?? NSNull(),
+            "label": label as Any? ?? NSNull(),
             "rows": feature.rows,
             "tasks": feature.tasks,
             "findings": payload(of: feature.findings),
@@ -463,7 +513,9 @@ final class VerificationLedgerService {
 
     /// One Feature, with the findings themselves and the axes each review answered on.
     static func detailPayload(_ feature: Feature, reviews: [UsageLedger.StoredReviewReceipt],
-                              truncated: Bool, rowsScanned: Int, at now: Date) -> [String: Any] {
+                              truncated: Bool, receiptsTruncated: Bool = false,
+                              rowsScanned: Int, label: String?,
+                              at now: Date) -> [String: Any] {
         var findings: [UsageLedger.StoredReviewFinding] = []
         var axes: [AxisReading] = []
         for receipt in reviews {
@@ -480,7 +532,7 @@ final class VerificationLedgerService {
         }
         var summary = feature
         summary.findings.truncated = sorted.count > maxFindings
-        var out = payload(of: summary)
+        var out = payload(of: summary, label: label)
         out["items"] = sorted.prefix(maxFindings).map { finding in
             [
                 "findingId": finding.findingID,
@@ -500,6 +552,7 @@ final class VerificationLedgerService {
         out["read"] = [
             "rowsScanned": rowsScanned,
             "truncated": truncated,
+            "receiptsTruncated": receiptsTruncated,
             "at": ISO8601DateFormatter().string(from: now),
         ]
         return ["schemaVersion": schemaVersion, "feature": out]
