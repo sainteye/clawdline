@@ -361,14 +361,32 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `CLAWDLINE_RESEAL=1 ./test.sh` on this branch reported — 9,582, zero failures, all twelve Cloud
 # suites present, `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`. The witness came from the same
 # run's guard line, which named 7,665.
-expected_swift_receipt='9582 checks passed'
+#
+# **9,677, and it is not reachable by arithmetic from either parent — which is the whole reason
+# this line is set from a run.** This merge brought two lines together: the notification-address
+# slice, measured at 9,582 on a base that was itself already red, and the image card's 9,639 on
+# `main`. Both numbers were true about the tree each was taken on and neither is true about this
+# one; adding them is not a measurement. Four fields said the same kind of thing and were wrong
+# the same way — the runner count and the suite-file count were *both* 37 and 50 on both sides,
+# so `git` had nothing to mark, and the merged tree counts 38 and 51. This value is what
+# `CLAWDLINE_RESEAL=1 ./test.sh` reported on the merge commit `267e3cd0` itself: `9677 checks
+# passed`, zero failures, `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`, with `git rev-parse
+# HEAD` identical before and after the run. The witness beside it was named by the guard on the
+# same tree before any of it compiled.
+expected_swift_receipt='9677 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7665
+# **7,767 is what the merged tree counts, and neither parent's witness reaches it.** This merge
+# brought two branches that had each added Swift assertions — the notification-address slice and
+# the image card's line on `main` — so `main` said 7,729 and the branch said 7,665, each correct
+# about the tree it was measured on and neither correct about this one. The guard named 7,767
+# before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
+# the merge commit itself, not from adding one side's checks to the other's total.
+expected_swift_receipt_witness=7767
 
 count_exact_receipt_lines() {
   local receipt=$1
