@@ -119,6 +119,7 @@ const sessionURL = (id) =>
     "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"));
 
 const PANE = "%208";                      // Clawdfather's own pane on this Mac, and a real shape
+const OTHER = "%141";                     // a second one, for the taps that arrive in twos
 const ITERM = "w0t0p0:1234-ABCD";         // the control group: no per-cent, nothing to encode
 equal(sessionURL(PANE), "/#session=%25208", "a tmux pane's notification URL");
 equal(sessionURL(ITERM), "/#session=w0t0p0%3A1234-ABCD", "and an iTerm session's");
@@ -510,6 +511,76 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   equal(world.opened.join(","), PANE, "with the pane the notification named");
   await world.settle();
   equal(world.wantRecord(), null, "and only now is the record spent");
+}
+
+/* ---- two notifications tapped before the list arrives ----------------------------------------
+   The store holds one record and the newest tap replaces it whole — that is deliberate, and it is
+   why the page cannot treat "there is a record" as "there is *this* record". The page is still
+   holding the first tap's id, so the opening that follows is the first tap's; a deletion that
+   simply emptied the store took the second tap's record with it, unread, and nothing on the screen
+   said a notification had been dropped. Somebody testing this by pressing a test push twice is
+   exactly this order. */
+{
+  const world = await makeWorld({ deliver: false, listed: [] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "routed", "the first tap is read and held against an empty list");
+  const first = world.wantRecord();
+  await world.tap(sessionURL(OTHER));
+  const second = world.wantRecord();
+  check("the second tap replaced the record, which is the store's one rule",
+        !!second && second.id !== first.id);
+  world.inList.add(PANE);
+  world.inList.add(OTHER);
+  equal(world.page.openWanted(), true, "the list arrives and the first tap's request is answered");
+  equal(world.opened.join(","), PANE, "with the pane the first notification named");
+  await world.settle();
+  const left = world.wantRecord();
+  check("and the second tap's record is still there, because nothing has carried it out",
+        !!left && left.id === second.id);
+  equal(await world.readWant(), "routed", "so the notification just tapped is acted on");
+  equal(world.opened.join(","), `${PANE},${OTHER}`, "and opens the session it named");
+  await world.settle();
+  equal(world.wantRecord(), null, "and only then is it spent");
+}
+
+/* ---- an opening that was not this record's ---------------------------------------------------
+   The same rule from the other side, and the cheaper way to state it: the record is spent by the
+   opening of the session *it* asked for. A page whose list has not brought that session yet can
+   still open another one — a hashchange, somebody pressing a row — and an opening is not evidence
+   that the tap has been answered. */
+{
+  const world = await makeWorld({ deliver: false, listed: [OTHER] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "routed", "the record asks for a session the list has not brought");
+  equal(world.opened.length, 0, "so nothing has opened yet");
+  world.location.hash = `#session=${encodeURIComponent(OTHER)}`;
+  equal(world.opened.join(","), OTHER, "the page goes somewhere else, and that session opens");
+  await world.settle();
+  check("the record is untouched, because that was not the session it asked for",
+        !!world.wantRecord());
+  world.inList.add(PANE);
+  world.page.routeTo(`#session=${encodeURIComponent(PANE)}`);
+  equal(world.opened.join(","), `${OTHER},${PANE}`, "and it is still there to be carried out");
+  await world.settle();
+  equal(world.wantRecord(), null, "spent by the opening of its own session, and only by that one");
+}
+
+/* ---- and the other end of the same rope: a request let go of ---------------------------------
+   `list.js` calls `setWantedSession(null)` on the first whole list, because a session that is not
+   in it is gone — a notification about a tab somebody has since closed. The record made that
+   request, so it has to go with it: while it was still `pendingWant` every later wake-up called it
+   settled *and* refused to collect it, and a reload inside the two-minute window carried out a
+   request this page had already established was for a session that is not coming. */
+{
+  const world = await makeWorld({ deliver: false, listed: [] });
+  await world.tap(sessionURL(PANE));
+  equal(await world.readWant(), "routed", "the record is read and the request is held");
+  world.page.setWantedSession(null);
+  equal(world.page.openWanted(), false, "the first whole list lets go of the request");
+  equal(await world.readWant(), "settled", "a later wake-up still recognises the tap it answered");
+  await world.settle();
+  equal(world.wantRecord(), null,
+        "and collects the record, because nothing is waiting to carry it out any more");
 }
 
 /* ---- a notification tapped long enough ago that acting on it would be wrong -------------------

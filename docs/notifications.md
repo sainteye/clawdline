@@ -227,6 +227,14 @@ record older than the window is thrown away rather than obeyed.
 answered, so waking twice does not route twice, and the record is deleted once the session it names
 is actually open.
 
+**And it is spent by its own session, not by the next opening that happens to succeed.** The store
+holds one record and the newest tap replaces it whole, so two notifications tapped before the list
+arrives are one record while the page is still holding the *first* tap's id: a deletion that simply
+emptied the store threw the second tap away unread. The page therefore remembers which session the
+record asked for, deletes only a record whose id is the one it is spending, and lets the record go
+when the first whole list lets go of the request — a notification about a session that has since
+closed is not a request that should survive that answer.
+
 **The message wins when it arrives, and the guard runs in both directions.** The same id travels on
 the `postMessage`, so whichever road acts on a tap first marks that id answered and the other one
 declines it — a message that lands marks the record on the way past, and a message that lands
