@@ -215,8 +215,8 @@ function refusal(code, message) {
    fixture list is read with its comments stripped, because a value named only in a comment
    explaining its absence is exactly the shape that went unnoticed. `check-web-strings.py` proves
    each sentence is read by the page; this proves a fixture reaches it. */
-const EVIDENCE_VALUES = ["record", "branch_merged", "branch_empty", "branch_base_unknown",
-                         "branch_absent", "branch_unmerged", "unknown"];
+const EVIDENCE_VALUES = ["record", "record_unverified", "branch_merged", "branch_empty",
+                         "branch_base_unknown", "branch_absent", "branch_unmerged", "unknown"];
 const mockSource = read("Resources/web/app/js/net/mock.js");
 const fixtureBlock = /var worktreesByPath = \{([\s\S]*?)\n    \};/.exec(mockSource);
 check(fixtureBlock, "mock.js carries a worktree fixture list this suite can find");
@@ -226,7 +226,7 @@ for (const value of EVIDENCE_VALUES) {
     check(new RegExp(`"${value}"`).test(fixtureCode),
           `a mock worktree actually carries landingEvidence ${value}, not only a claim that one does`);
 }
-check(EVIDENCE_VALUES.length === 7 && /all seven of the values/.test(mockSource),
+check(EVIDENCE_VALUES.length === 8 && /all eight of the values/.test(mockSource),
       "and the mock states that number rather than a whole nobody can count");
 
 const mainSource = read("Resources/web/app/js/main.js");
@@ -572,6 +572,38 @@ const ok = {
     equal(elements["project-groups"].children.length, 1, "and the one rung it does occupy is drawn");
 }
 
+/* ---- the landing whose receipt has nothing behind it ---------------------- */
+
+/* **`landed` is one word for two different receipts, and this page has to say which.** A landing
+   recorded through the HTTP route carries the broker's verification — a commit of this delivery's
+   resolved in its own repository and the named target branch containing it. The broker's landing
+   sweep can also close a record on its write-set arm, which proves only that nothing of the task's
+   declared write set was outstanding at two named instants. A timer produces those by the dozen,
+   so a card that spelled the two the same way would be the weaker sentence wearing the stronger
+   one's clothes on the one screen somebody acts from. */
+
+{
+    const { elements, page } = harness({
+        ...ok,
+        worktrees: () => Promise.resolve(answer({
+            worktrees: [worktree("a7c31d05-6b48-4e92-8f13-05de7b6a2c48", "landed", 3,
+                                 "The broker's landing sweep", "record_unverified")],
+        })),
+    });
+    await page.enter();
+    await flush();
+    elements["projects-rows"].querySelectorAll(".project-row")[0].click();
+    await flush();
+    const rung = elements["project-groups"].children[0];
+    equal(rung.dataset.outcome, "landed", "the verdict is still that the obligation is closed");
+    match(rung.children[2].textContent, new RegExp(T.webProjectEvidenceRecordUnverified),
+          "and the evidence beside it says the record carries nothing that verified it");
+    check(!new RegExp(T.webProjectEvidenceRecord).test(rung.children[2].textContent),
+          "never the sentence a verified receipt gets — these are the two this page must keep apart");
+    equal(rung.querySelectorAll(".project-fact-evidence")[0].dataset.evidence, "record_unverified",
+          "carried on the row as the wire's own word, for anything reading the DOM");
+}
+
 /* ---- one Project that was refused ---------------------------------------- */
 
 for (const [code, expected, why] of [
@@ -791,8 +823,8 @@ const readsInStatic = new Set([...staticSource.matchAll(/\bT\.(webProject[A-Za-z
     .map((m) => m[1]));
 check(readsHere.size >= 25, `view/projects.js draws its words from T: ${readsHere.size} of them`);
 const declared = Object.keys(T).filter((key) => key.startsWith("webProject"));
-equal(declared.length, 48,
-      "this slice added forty-eight strings to the fallback table — thirty-one, the six that name "
+equal(declared.length, 49,
+      "this slice added forty-nine strings to the fallback table — thirty-one, the seven that name "
       + "where a landing verdict came from, the two for a rung whose branch is gone, the two for "
       + "the containments that are not merges, and the seven for a settled delivery and what a "
       + "row in the block still needs");
