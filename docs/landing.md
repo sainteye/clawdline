@@ -196,6 +196,46 @@ prints the exact `curl` for each row.
 - A **six-hour grace**. The order written above puts the record *after* the integrated-tree run,
   and this guard runs inside that run. With no grace it would fail the one suite the documented
   order places before the record — not a mechanism, a trap.
+- **The runner has to be able to pay.** Reporting stays machine-wide and loud; failing asks two
+  more questions and prints both answers. See below.
+
+### Whose build stops, which is not the same question as who is told
+
+On 2026-09-06 this guard cost two runs that never reached a compiler. The first was an isolated
+child of another line, which died over `b932fa3a` — **another root's** landing, in the base
+repository, in no way part of the child's checkout. It could not have cleared it even if it had
+understood the message: a record is closed with this machine's orchestrator token, and the child
+briefing written by `Sources/OrchestratorPlanning.swift` forbids a child from calling the landing
+route at all. The run was refused, told to run a `curl` it is not permitted to run, and had nothing
+left to do but stop. The second was the same row failing the merged tree an hour later.
+
+So a row is fatal only when both of these hold, and the run prints both either way:
+
+- **it is in the repository this suite is running in** — eight repositories are in this registry,
+  and a build in one of them does not stop over another's; and
+- **this run may close the record** — a run inside a **linked worktree** is a child's. That is
+  derived rather than guessed: `git rev-parse --git-common-dir` names `<repository>/.git` from
+  every checkout of a repository, so the main worktree is that directory's parent, which is the
+  shell half of `OrchestratorDraft.mainWorktree(containing:)`.
+
+`--strict` ignores both, because a root doing a sweep wants every row and holds the credential.
+
+**A run that may not fail says so at length, and its green shares no sentence with the other one.**
+It prints the rows, prints under each which of the two conditions it misses, prints who can settle
+it, and ends with *these are real and none of them stops this run* rather than *nothing has landed
+unrecorded*. The alternative is the defect [`shared-tree-guard.md`](shared-tree-guard.md) already
+describes from the other side: a check that goes quiet inside a worktree and is read as a check
+that passed. A run that cannot name the repository it is standing in at all exits 2 — the finder,
+not the tree — rather than exiting 0 carrying the question.
+
+**What the sweep changes here is the wording, not the set.** `landingSweepCandidates` takes
+terminal tasks whose landing record already exists and is `pending` with a target; a row with no
+record at all declares no target, so no timer is coming for it, and those rows are most of what
+this finds. The ones a timer can take are marked as such in the output and are still fatal: the
+sweep runs every 300 s and this guard excuses anything younger than six hours, so a row that
+reaches the fatal set has already been offered to about seventy passes and is there because the
+sweep declined it or could not see it. Making redness depend on a timer would also make it depend
+on whether the app is running, which is a property of neither the tree nor the registry.
 
 **And it has been watched going red.** `Tests/guard-red-proofs/landing-records.sh` builds a
 repository with one delivery merged into `main` and a registry with one task, and the only

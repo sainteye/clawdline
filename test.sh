@@ -840,7 +840,9 @@ unset remediation_header
 # that no proof names. It matches `tools/check-*` itself, so it is on its own list.
 # docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s with eight
 # proofs, and 5.3 s once the landing-records proof — which builds a repository and merges in it —
-# became the ninth.
+# became the ninth. The tenth, `landing-records-scope.sh`, builds another repository, another merge
+# and a linked worktree of it, and two readings taken with it in are 5.27 s and 5.23 s: inside this
+# machine's noise rather than free, and measured rather than reasoned about.
 bash tools/check-guards-go-red.sh
 verify_suite_roster
 # (c) in `docs/suite-runtime.md`: 129 s of the 288, before the compile the machine lock exists for

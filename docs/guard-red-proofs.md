@@ -102,6 +102,21 @@ other puts one in a child briefing. The register holds names, not counts, so a s
 same guard is ordinary — and a guard that grew a domain nobody proved would otherwise look exactly
 like a guard that had not.
 
+**A second subject can be where the run is standing rather than what is in the tree.**
+`tools/check-landing-records.py` is named by both `landing-records.sh` and
+`landing-records-scope.sh`, and the second pair's arms are byte-identical repositories and
+byte-identical registries: the same delivery merged into `main`, the same row with no landing record
+on it. The only difference is the directory the guard is run from — the repository, or a linked
+worktree of it — because the guard fails only on debt the run in front of it may settle. Written the
+usual way, with the mutation in the fixture, that condition has no proof at all.
+
+**What such a pair cannot hold, and where the other half goes.** The runner asserts that the broken
+arm goes red *for this sentence* and that the clean arm does not repeat it — and silence satisfies
+the second half completely. For a guard whose green is supposed to *say* something, that is the
+whole risk left over: `Tests/landing-records-scope.mjs` is where the worktree arm is required to
+name the checkout, the repository, the derivation, the row and who can settle it. A proof pair and a
+suite, not one or the other.
+
 **And a fixture has to satisfy the guard's own refusals.** That same guard now refuses an empty
 scan in three places, so `curl-status.sh` carries a skill-guide file it does not otherwise need: a
 proof whose fixture trips a structural refusal is proving the refusal, and its clean arm goes red
