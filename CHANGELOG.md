@@ -9,6 +9,31 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: tapping a notification about a session now opens that session
+
+A notification whose title is a session's name should open that session, and five of the ones this
+app sends did not: they carried `/`, so a tap on a lock screen ended on the session list with
+nothing on screen to say why. The one that showed it most was a fan-out finishing — its title *is*
+the root's own label, so it is the same shape as *waiting for you*, and it went to the list
+whenever the root had no session id or had since closed. It now points at the root, and failing
+that at one of its own tasks that is still open. An agent's notification opens the tab it was sent
+from, on both routes: `POST /v1/orchestrator/tasks/:id/notify` uses the task's own tab, and
+`POST /v1/orchestrator/notify` — which authenticates with a machine token that cannot say which
+root is calling — takes an optional `session_id` so a root about to wait for you can be reached. A
+scheduled task that failed or ran out of time opens the tab it ran in; one that never got a tab
+open still goes to the list, because there is nothing else it could truthfully do.
+
+**And the test notification is a test of the whole road now, not half of it.** `POST /v1/push/test`
+takes an optional `session_id`, and the button in Settings sends whichever session you have open,
+so: open one, press it, put the app in the background, tap what arrives, and you should be back
+where you were. It says exactly what it always said — `Clawdline`, and the same test sentence —
+because a test that arrives must never be mistaken for a session that needs you, and that has
+always been true on account of the words rather than the address.
+
+`docs/notifications.md` now carries both halves of the rule: the pushes that must name a session,
+and the five that have none to name, each with its reason, so the second list is not mistaken for
+an oversight.
+
 ### Fixed: under tmux, the terminal stopped following the bar
 
 *"The terminal shows whatever the bar is aimed at"* is on by default, and if your sessions live in

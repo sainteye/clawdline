@@ -149,7 +149,27 @@ main_lines=$(line_count Tests/main.swift)
 # landing verdict landed on, and the 26 lines are the two features that branch brought. Adding
 # would have given 10,644 too; the number here is the measurement rather than the sum, because a
 # sum cannot tell a feature that arrived twice from one that arrived once.
-orchestrator_ceiling=10644
+#
+# 10,742 is every notification that names a session carrying that session's address. A feature:
+# five producers wrote `url: "/"` while their titles were session names, so a tap on any of them
+# ended on the session list. Measured per hunk, +111 -6:
+#   +73  a `// MARK: - Where a notification points` section — three `pushURL` overloads (the
+#        unchecked one for an id this Mac already holds, the checked one for an id a phone handed
+#        in, and the first-of-these one a fan-out falls back through), `scheduleFailureSessionID`,
+#        `isWatchedSession` with its test seam, and the doc comments saying which of them each
+#        caller wants and why an address that opens nothing is worse than the list.
+#   +7-3 `sendAgentPush` carrying the session it is speaking from instead of a literal, and
+#   +1   the task lane handing it `current.childTerminalId`.
+#   +9-1 `agentNotify` gaining an optional `sessionID` and the paragraph saying why the machine
+#   +1-1 token cannot supply one, and the root lane passing it through.
+#   +4-1 the scheduled-failure push asking `scheduleFailureSessionID` which session it may name.
+#   +4   `Batch.sessionIDs`, +1 `noteEnded` recording each tab, and +10 in `announce` — the
+#   +1   fallback to a task of the batch and the comment saying why that is not a guess.
+#   +8+2
+#   +1   `forget()` clearing the new seam.
+# The encoding it all goes through, `WebPush.sessionURL`, is untouched: that half was already
+# right, and this raise is every caller that had nothing to hand it.
+orchestrator_ceiling=10742
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -296,7 +316,24 @@ fi
 #                                          reasons `handoffs` and `root-assignments` do not call it
 #                                          are all in `Sources/OrchestratorInventory.swift`, a new
 #                                          file, because a router is not a place to keep a ladder.
-remote_server_ceiling=5807
+#                                          5,834 once two routes could name a session. Twenty-seven
+#                                          lines, measured per hunk (+31 -4): +22 -3 in
+#                                          `POST /v1/push/test`, which now reads an optional
+#                                          `session_id` and asks `Orchestrator.pushURL` for the
+#                                          address — with the comment saying why only the address
+#                                          moves and the words do not; +4 for the seam that lets a
+#                                          test read what that route decided without a push service
+#                                          on the other end; and +5 -1 in
+#                                          `POST /v1/orchestrator/notify`, one argument and the
+#                                          three lines saying why an unauthenticated `session_id`
+#                                          is the only shape a machine token can offer. Line-neutral
+#                                          was tried first and is not available: the route sent no
+#                                          body through the parser at all, and `WebPush.send` takes
+#                                          `url` before `tag`, so the value has to exist before the
+#                                          call. The decision itself is in
+#                                          `Sources/Orchestrator.swift`, because a router is not a
+#                                          place to keep a rule about notifications.
+remote_server_ceiling=5834
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -330,7 +367,11 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # hundred lines of the limit, and its two groups belong beside each other rather than split across
 # two files with no room in either. That branch wrote 33 against a base of 32; this is the merged
 # tree's own count.
-[ "$runner_count" -eq 36 ] \
+# 37 with the notification-address slice's runner — the same wall for the fifth time.
+# `Tests/OrchestratorCoordinationTests.swift` was at 1,944 lines and its two new groups are 131,
+# which is 2,075 against the 2,000 below. They moved out whole, into the position they already ran
+# in, so nothing about the executed order changed with them.
+[ "$runner_count" -eq 37 ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected 542"
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -511,7 +552,12 @@ done
 # 49 with Tests/LandingCurrencyTests.swift, the 2026-09-05 branch's file. It wrote 46 against a
 # base of 45; this is the merged tree's own count, and the two files that branch never saw are the
 # difference.
-[ "$suite_count" -eq 49 ] \
+# 50 with Tests/NotificationAddressTests.swift, and it is not a new area either: it is the two
+# notification-address groups that would have taken
+# Tests/OrchestratorCoordinationTests.swift to 2,075 against the 2,000 above. Its runner is called
+# straight after that file's, and the groups run where they were written to run, so
+# `expectedOrderedTestGroupTitles` does not move for it.
+[ "$suite_count" -eq 50 ] \
   || architecture_guard_fail "suite file count is $suite_count; expected 542"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
