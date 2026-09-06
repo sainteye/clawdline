@@ -190,5 +190,13 @@ count=$(printf '%s\n' "$hashes" | awk 'NF { count++ } END { print count + 0 }')
 hash=$(printf '%s\n' "$hashes" | awk 'NF { print; exit }')
 
 echo "✓ created local signing identity: $IDENTITY_NAME ($hash)"
+# The limit of what this script can ever achieve, stated where somebody has just run it rather
+# than left to be discovered on the twentieth prompt. It is measured: a self-signed certificate
+# signs with `TeamIdentifier=not set`, and an OU shaped like a team id does not change that, so
+# macOS has nothing but this build's cdhash to key the Cloud Keychain items to.
+echo "  This certificate carries no Team ID — a self-signed one cannot — so macOS keys the two"
+echo "  Cloud Keychain items (app.clawdline.cloud.keys) to each build's cdhash and asks again"
+echo "  after every rebuild. Only an Apple-issued Developer ID Application certificate stops"
+echo "  that; build.sh prefers one automatically when the login Keychain holds exactly one."
 report_partition_list_contract
 echo "  After changing signing identity, first use may show up to three Keychain prompts (machine credential and two Cloud keys); approve each item you use."

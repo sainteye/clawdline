@@ -1012,6 +1012,19 @@ case "$1" in
           printf '     0 valid identities found\\n'
         fi
         ;;
+      developer)
+        printf '  1) D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1 "Developer ID Application: Example Co., Ltd. (TEAMID1234)"\\n'
+        if [ -s "$FAKE_SECURITY_STATE" ]; then
+          printf '  2) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Clawdline Local Development"\\n'
+        fi
+        ;;
+      developer-duplicate)
+        printf '  1) D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1 "Developer ID Application: Example Co., Ltd. (TEAMID1234)"\\n'
+        printf '  2) D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2 "Developer ID Application: Other Co., Ltd. (TEAMID5678)"\\n'
+        if [ -s "$FAKE_SECURITY_STATE" ]; then
+          printf '  3) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Clawdline Local Development"\\n'
+        fi
+        ;;
       *)
         if [ -s "$FAKE_SECURITY_STATE" ]; then
           printf '  1) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Clawdline Local Development"\\n'
@@ -1083,7 +1096,7 @@ LOCAL_SIGN_IDENTITY_NAME="Clawdline Local Development"
 LOCAL_SIGNING=0
 ${bounded}
 ${selection}
-printf 'RESULT=%s|%s\\n' "$SIGN_IDENTITY" "$LOCAL_SIGNING"
+printf 'RESULT=%s|%s|%s\\n' "$SIGN_IDENTITY" "$LOCAL_SIGNING" "\${SIGN_IDENTITY_NAME:-}"
 `);
   const selectEnv = { PATH: `${fakeBin}${delimiter}${process.env.PATH}`,
     FAKE_SECURITY_STATE: fakeState,
@@ -1102,6 +1115,63 @@ printf 'RESULT=%s|%s\\n' "$SIGN_IDENTITY" "$LOCAL_SIGNING"
         `find-identity -v -p codesigning ${fakeKeychain}` &&
         readFileSync(statusLog, "utf8").trim() === fakeKeychain,
     "identity discovery and unlock status hold the same explicit Keychain path still");
+  check(automatic.stdout.includes(
+          "RESULT=ABCDEF0123456789ABCDEF0123456789ABCDEF01|1|Clawdline Local Development"),
+    "the selection names the identity it actually chose, not a hard-coded one");
+  // The fallback is still the fallback, and now it says what it costs. A self-signed certificate
+  // carries no Team ID, so macOS keys the two Cloud Keychain items to this build's cdhash and asks
+  // again after the next rebuild — the whole reason this preference order exists.
+  check(automatic.stdout.includes("no Team ID") &&
+        automatic.stdout.includes("every rebuild") &&
+        automatic.stdout.includes("Developer ID Application") &&
+        automatic.stdout.includes("CLAWDLINE_SIGN_IDENTITY=<full name>"),
+    "falling back to the local identity states the Keychain cost and both repairs");
+
+  // A Developer ID Application identity is preferred over the local one *and stays on the local
+  // signing branch*: this is a development build, so it must not acquire hardened runtime, a
+  // timestamp or entitlements just because the certificate could carry them.
+  const developerIdEnv = { ...process.env, ...selectEnv, FAKE_SECURITY_MODE: "developer" };
+  delete developerIdEnv.CLAWDLINE_SIGN_IDENTITY;
+  const developerIdPreferred = spawnSync(selectionScript, { encoding: "utf8", env: developerIdEnv });
+  check(developerIdPreferred.status === 0 &&
+        developerIdPreferred.stdout.includes(
+          "RESULT=D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1D1|1|" +
+          "Developer ID Application: Example Co., Ltd. (TEAMID1234)"),
+    "one Developer ID Application identity is preferred and keeps the local signing branch");
+  check(developerIdPreferred.stdout.includes("Team ID") &&
+        developerIdPreferred.stdout.includes("rebuild"),
+    "the Developer ID preference says why it exists: a Team ID that survives a rebuild");
+
+  // Two of them is not a tie to break by Keychain order — it is a refusal to choose, and the
+  // build says so by name before falling through to the layer below.
+  const developerIdAmbiguousEnv = { ...process.env, ...selectEnv,
+    FAKE_SECURITY_MODE: "developer-duplicate" };
+  delete developerIdAmbiguousEnv.CLAWDLINE_SIGN_IDENTITY;
+  const developerIdAmbiguous = spawnSync(selectionScript,
+    { encoding: "utf8", env: developerIdAmbiguousEnv });
+  check(developerIdAmbiguous.status === 0 &&
+        developerIdAmbiguous.stdout.includes(
+          "RESULT=ABCDEF0123456789ABCDEF0123456789ABCDEF01|1|Clawdline Local Development"),
+    "two Developer ID identities fall through to the local identity instead of picking one");
+  check(developerIdAmbiguous.stdout.includes("(TEAMID1234)") &&
+        developerIdAmbiguous.stdout.includes("(TEAMID5678)") &&
+        developerIdAmbiguous.stdout.includes("will not choose by Keychain order") &&
+        developerIdAmbiguous.stdout.includes("CLAWDLINE_SIGN_IDENTITY=<full name>"),
+    "the refusal to choose names both candidates and the override that settles it");
+
+  // The identity that is locked out is the one that was chosen, so it is the one the refusal must
+  // name. This is the check that would catch a message still hard-coding the local certificate.
+  const developerIdLockedEnv = { ...process.env, ...selectEnv, FAKE_SECURITY_MODE: "developer",
+    FAKE_KEYCHAIN_MODE: "locked" };
+  delete developerIdLockedEnv.CLAWDLINE_SIGN_IDENTITY;
+  const developerIdLocked = spawnSync(selectionScript,
+    { encoding: "utf8", env: developerIdLockedEnv });
+  const developerIdLockedText = developerIdLocked.stdout + developerIdLocked.stderr;
+  check(developerIdLocked.status !== 0 &&
+        developerIdLockedText.includes("locked or unreadable") &&
+        developerIdLockedText.includes(
+          "Developer ID Application: Example Co., Ltd. (TEAMID1234) exists there"),
+    "a locked Keychain names the identity actually chosen, not the local one");
   const developer = run(selectionScript, [], {
     ...selectEnv, CLAWDLINE_SIGN_IDENTITY: "Developer ID Application: Example" });
   check(developer.status === 0 &&
@@ -1189,6 +1259,28 @@ printf 'RESULT=%s|%s\\n' "$SIGN_IDENTITY" "$LOCAL_SIGNING"
   const codesignLog = join(work, "codesign.log");
   executable(join(fakeBin, "codesign"), `#!/bin/bash
 printf '%s\\n' "$*" >> "$FAKE_CODESIGN_LOG"
+# The display call is a different command from the signing call and fails differently, so it has
+# its own mode. Real \`codesign -d\` writes the whole description to stderr — measured, not assumed —
+# and an ad-hoc signature prints the literal line \`TeamIdentifier=not set\`.
+if [ "$1" = "-d" ]; then
+  case "\${FAKE_CODESIGN_DISPLAY:-team}" in
+    notset)
+      echo "Identifier=com.tsunamiworks.clawdline" >&2
+      echo "Signature=adhoc" >&2
+      echo "TeamIdentifier=not set" >&2
+      ;;
+    missing)
+      echo "Identifier=com.tsunamiworks.clawdline" >&2
+      ;;
+    failure) echo "fake codesign display failure" >&2; exit 17 ;;
+    hang) sleep 30 ;;
+    *)
+      echo "Authority=Developer ID Application: Example Co., Ltd. (TEAMID1234)" >&2
+      echo "TeamIdentifier=TEAMID1234" >&2
+      ;;
+  esac
+  exit 0
+fi
 case "\${FAKE_CODESIGN_MODE:-ok}" in
   hang) sleep 30 ;;
   failure) echo "fake codesign stderr" >&2; exit 19 ;;
@@ -1200,6 +1292,7 @@ esac
 set -euo pipefail
 BUNDLE_ID="com.tsunamiworks.clawdline"
 LOCAL_SIGN_IDENTITY_NAME="Clawdline Local Development"
+SIGN_IDENTITY_NAME="\${SIGN_IDENTITY_NAME:-$SIGN_IDENTITY}"
 STAGED_APP="/tmp/Clawdline.app"
 LOCAL_SIGN_KEYCHAIN="${fakeKeychain}"
 ${bounded}
@@ -1228,6 +1321,65 @@ ${branches}
   const releaseArgs = signingArgs("Developer ID Application: Example", 0);
   check(releaseArgs.log.includes("--options runtime --timestamp --entitlements Resources/Clawdline.entitlements"),
     "Developer ID keeps hardened runtime, timestamp, and release entitlements");
+
+  // What the build knows after signing, rather than what the documentation claims: `TeamIdentifier`
+  // is what macOS keys the two Cloud Keychain items' partition list to, so this one line decides
+  // whether the next rebuild is the same signer or a stranger. It is read from the bundle that was
+  // just written, with the same watchdog as every other Keychain-adjacent command.
+  const teamReport = signingArgs("D1D1D1D1", 1,
+    { SIGN_IDENTITY_NAME: "Developer ID Application: Example Co., Ltd. (TEAMID1234)" });
+  check(teamReport.log.includes("-d -vv /tmp/Clawdline.app"),
+    "the signed bundle itself is what the Team ID report reads");
+  check(teamReport.result.stdout.includes(
+          "✓ signed with Developer ID Application: Example Co., Ltd. (TEAMID1234); " +
+          "TeamIdentifier=TEAMID1234") &&
+        teamReport.result.stdout.includes("rebuild"),
+    "a signature carrying a Team ID is reported with the identity and the id it measured");
+
+  const notSetReport = signingArgs("LOCALHASH", 1,
+    { SIGN_IDENTITY_NAME: "Clawdline Local Development", FAKE_CODESIGN_DISPLAY: "notset" });
+  check(notSetReport.result.stdout.includes("TeamIdentifier=not set") &&
+        notSetReport.result.stdout.includes("every rebuild") &&
+        notSetReport.result.stdout.includes("Developer ID Application"),
+    "a signature without a Team ID is reported as the reason the Keychain will ask again");
+  // Bound to the words of the claim, not to the punctuation in front of it. The first version of
+  // this guard forbade the em dash after `TeamIdentifier=not set`, and the review's third mutant
+  // walked straight past it: the same false promise with a comma instead of a dash left all 69
+  // checks green. A guard that a rewrite of the sentence can satisfy is not guarding the sentence.
+  check(!notSetReport.result.stdout.includes("to that team rather than") &&
+        !notSetReport.result.stdout.includes("reach the next rebuild"),
+    "the no-Team-ID report never claims the authorisation survives");
+
+  // Ad-hoc can never carry a Team ID, so the branch that chooses it says the same thing.
+  const adhocReport = signingArgs("-", 0,
+    { SIGN_IDENTITY_NAME: "ad-hoc", FAKE_CODESIGN_DISPLAY: "notset" });
+  check(adhocReport.result.stdout.includes("✓ signed with ad-hoc; TeamIdentifier=not set") &&
+        adhocReport.result.stdout.includes("every rebuild"),
+    "the ad-hoc branch reports the same missing Team ID");
+
+  const missingLineReport = signingArgs("LOCALHASH", 1, { FAKE_CODESIGN_DISPLAY: "missing" });
+  check(missingLineReport.result.stdout.includes("no TeamIdentifier line") &&
+        missingLineReport.result.stdout.includes("every rebuild"),
+    "a description with no TeamIdentifier line is not silently read as one");
+
+  // A report that cannot be made is not a build that failed. This is the check that stops a
+  // reporting step from becoming a new way for a signed, correct build to exit non-zero.
+  const unreadableReport = signingArgs("LOCALHASH", 1, { FAKE_CODESIGN_DISPLAY: "failure" });
+  check(unreadableReport.result.status === 0 &&
+        unreadableReport.result.stdout.includes("could not read TeamIdentifier") &&
+        unreadableReport.result.stdout.includes("exited 17"),
+    "an unreadable Team ID is reported as unknown and does not fail the build");
+
+  const hangingReportStarted = Date.now();
+  const hangingReport = signingArgs("LOCALHASH", 1,
+    { FAKE_CODESIGN_DISPLAY: "hang", CLAWDLINE_SIGN_QUERY_TIMEOUT: "1" });
+  const hangingReportSeconds = (Date.now() - hangingReportStarted) / 1000;
+  check(hangingReport.result.status === 0 &&
+        hangingReport.result.stdout.includes("could not read TeamIdentifier") &&
+        hangingReport.result.stdout.includes("did not answer within 1s"),
+    "a Team ID read that hangs is cut off and reported, and the build still succeeds");
+  check(hangingReportSeconds < 20,
+    `the bounded Team ID read returns near its own timeout: ${hangingReportSeconds}s`);
 
   // A codesign that stops on a Keychain access dialog is the failure nobody can see: the dialog
   // may be behind another window. Bounded, it becomes a sentence naming the repair.
