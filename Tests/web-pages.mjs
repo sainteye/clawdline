@@ -510,7 +510,7 @@ globalThis.__routeEnv = {
     openSession: (id) => { opened.push(id); },
     // The recorder, which this file only has to satisfy: what the notes say is
     // `Tests/web-notification-route.mjs`, which drives the whole road rather than this half of it.
-    Diagnostics: { note: () => {} },
+    Diagnostics: { note: () => {}, source: () => {}, sourceRead: () => {} },
     window: { addEventListener: () => {} },
     location: { hash: "" },
     navigator: {},

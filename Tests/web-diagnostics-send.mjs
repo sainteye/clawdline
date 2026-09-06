@@ -183,7 +183,7 @@ const page = await import("data:text/javascript;base64,"
 
 const named = page.WORKER_TRACE_SOURCE;
 const sourceRow = () => Diagnostics.completeness().sources
-  .filter((row) => row.name === named)[0];
+  .filter((row) => row.name === named)[0] || {};
 check("route.js names the recorder it folds in", typeof named === "string" && !!named);
 check("declaring it at load makes it visible before anything has looked",
       !!sourceRow() && sourceRow().state === "unread");

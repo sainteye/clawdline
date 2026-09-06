@@ -799,6 +799,13 @@ node Tests/web-service-worker.mjs
 # that receives one was never installed by any test. Its fixtures are tmux pane ids, which is the
 # only id shape this family of faults has ever appeared on.
 node Tests/web-notification-route.mjs
+# The press that carries that trace onto this Mac, and what the panel says afterwards. Driven
+# rather than read: the panel's own click handler runs against a stand-in fetch, so what is checked
+# is the text on the screen containing the server's path and the server's typed code — a button
+# that posts perfectly and says nothing is the failure this file exists for. It also drives the
+# four states a recorder living outside the page can be in, because `unread` and `merged with
+# nothing` were one empty trace until they were not.
+node Tests/web-diagnostics-send.mjs
 node Tests/release-signing-contract.mjs
 # The shared-tree commit guard: that `tools/git-hooks/pre-commit` refuses a commit carrying a path
 # another session is working on, that it lets everything else through, and that it fails open and
@@ -812,6 +819,12 @@ node Tests/git-hooks.mjs
 # recompile of everything.
 node Tests/app-onboarding-focused.mjs
 node Tests/keychain-rebuild-focused.mjs
+# The write at the other end of that press, on a real disk. `Sources/DiagnosticReport.swift` needs
+# Foundation and nothing else, so it compiles here in a couple of seconds beside a harness instead
+# of costing a whole-module rebuild under the machine lock — which matters because the three ways
+# this can lie are all about what is on the disk afterwards: accepted and nothing written, written
+# and the wrong path named, over the limit and success returned.
+node Tests/diagnostic-report-focused.mjs
 # What Clawdline tells `codex app-server` it is, on the same terms: the identity block is lifted out
 # of Sources/CodexNaming.swift by its marker comments and compiled against the real Sources/Compat.swift,
 # because the rest of that file names half the app and compiling it means compiling the module. The

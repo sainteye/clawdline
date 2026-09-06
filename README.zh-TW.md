@@ -745,6 +745,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [Clawdline Cloud](docs/cloud.md) | Mac 這端的橋接、雲端主控台、金鑰交接，以及哪些事還沒對真的帳號跑過 |
 | [Hook](docs/hooks.md) | 那八個事件，以及為什麼說了算的仍然是螢幕 |
 | [通知](docs/notifications.md) | 誰會聽到什麼，以及為什麼決定聽眾的是深度而不是音量 |
+| [讀瀏覽器那端的缺陷](docs/diagnostics.md) | app 把自己的診斷寫到一個固定檔案，沒有人需要貼報告 |
 | [等待](docs/waiting.md) | 工作跑在哪條執行緒上，以及等一個子行程曾經怎麼弄壞這個 app |
 | [被移到背景的對話](docs/background-conversations.md) | 那個不再寫自己檔案的分頁，以及改成讀什麼 |
 | [Whisper](docs/whisper.md) | 一句話裡不只一種語言的時候 |

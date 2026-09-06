@@ -276,7 +276,15 @@ fi
 #                                          grapheme clusters, a bound on `project` and on
 #                                          `position`, symlinks resolved — are all in
 #                                          `Sources/Snippets.swift`.)
-remote_server_ceiling=5759
+#                                          5,786 once a browser could hand its diagnostic over.
+#                                          Twenty-seven lines: one `case` for
+#                                          `POST /v1/diagnostics/report` — the paired-device check,
+#                                          the call into the store and the two audited answers —
+#                                          and the comment saying why that route is at read level
+#                                          rather than behind the write gate. The write itself, the
+#                                          size limit and the rotation are in
+#                                          `Sources/DiagnosticReport.swift`.
+remote_server_ceiling=5786
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"

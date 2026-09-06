@@ -139,6 +139,8 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
 
   // ---- the page ----
   const notes = [];
+  const declared = [];
+  const reads = [];
   const opened = [];
   const inList = new Set(listed);
   const hashListeners = [];
@@ -158,7 +160,15 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     pageInHash: () => null,
     byId: (id) => (inList.has(id) ? { id } : null),
     openSession: (id) => { opened.push(id); },
-    Diagnostics: { note: (event, data) => { notes.push({ event, data: data || {} }); } },
+    // `source` and `sourceRead` are the completeness half: `route.js` declares the worker's
+    // recorder at module load and reports what became of every read, so a report can tell "not
+    // folded in yet" from "folded in, and there was nothing". Recorded here rather than ignored,
+    // because this suite's whole subject is that those two are different roads.
+    Diagnostics: {
+      note: (event, data) => { notes.push({ event, data: data || {} }); },
+      source: (name) => { declared.push(name); },
+      sourceRead: (name, state, entries) => { reads.push({ name, state, entries }); },
+    },
     window: { addEventListener: (type, fn) => { if (type === "hashchange") hashListeners.push(fn); } },
     location,
     // `"serviceWorker" in navigator` is the gate on the listener this whole file is about, and
@@ -241,7 +251,7 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
 
   return {
     page, notes, opened, posted, navigated, focused, openedWindows, windows, client, inList,
-    location, tap,
+    location, tap, declared, reads,
     events: () => notes.map((n) => n.event),
     saw: (event) => notes.some((n) => n.event === event),
     noteFor: (event) => notes.find((n) => n.event === event) || null,
@@ -394,6 +404,24 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
         blind.saw("page.sw.message") && blind.saw("route.to") && blind.saw("route.openWanted"));
   check("and the worker's two are simply absent",
         !blind.saw("sw.notificationclick") && !blind.saw("sw.postMessage"));
+  // **Absent is not the same as never looked, and this is where that used to be lost.** With no
+  // store, a trace with no `sw.` entry in it looked exactly like a worker that never woke up. The
+  // recorder is declared at load and the read reports `unavailable`, so the report can say which
+  // of the three it is instead of leaving somebody to guess from an empty list.
+  check("the recorder is declared before anything looks at it",
+        blind.declared.length === 1 && blind.declared[0] === "serviceWorker");
+  equal(blind.reads.length, 1, "and one read is reported");
+  equal(blind.reads[0].state, "unavailable",
+        "a browser with no store says so, rather than reporting an empty trace");
+}
+
+/* ---- and the same page where the store is there and empty ----------------------------------- */
+{
+  const quiet = await makeWorld({ deliver: true, listed: [PANE] });
+  equal(await quiet.wake(), 0, "a store nobody has written to yields nothing");
+  equal(quiet.reads[0].state, "merged",
+        "which is `merged` with no entries — the opposite reading from `unavailable`");
+  equal(quiet.reads[0].entries, 0, "and the count says how much nothing there was");
 }
 
 console.log(failures === 0

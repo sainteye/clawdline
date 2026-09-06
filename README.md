@@ -857,6 +857,7 @@ link to them.
 | [Clawdline Cloud](docs/cloud.md) | the bridge on the Mac, the hosted console, the key handover, and what has never been run against a real account |
 | [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |
 | [Notifications](docs/notifications.md) | who hears what, and why depth decides the audience rather than the volume |
+| [Reading a browser-side defect](docs/diagnostics.md) | the fixed file the app writes its own diagnostic to, so nobody has to paste one |
 | [Waiting](docs/waiting.md) | where the work runs, and the two ways waiting for a subprocess has broken this |
 | [Backgrounded conversations](docs/background-conversations.md) | the tab that stops writing its own file, and what reads it instead |
 | [Whisper](docs/whisper.md) | dictating in more than one language |

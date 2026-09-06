@@ -437,6 +437,28 @@ Where a field genuinely has to carry several meanings, the repair is to stop ove
 the declaration on the record next to a state that says how it was treated — not to remember the
 ambiguity.
 
+### A defect on the phone is read from a file, never from a paste
+
+Some faults only exist in the browser on somebody's phone, where you have no console, no inspector
+and no address bar. **Do not ask for the report.** On 2026-09-06 the trace was long enough that
+pasting it into the conversation hung the program, Universal Clipboard had not synced it, and the
+fallback was a person reading a string off a screen out loud — which is an engineering problem
+turned into his afternoon.
+
+The standing arrangement is three lines: **add an observation point** with `Diagnostics.note()`,
+**ask for one press** — Settings, five taps on the version line, `LAYOUT DEBUG`, **Send to Mac** —
+and **read the file**, always at
+
+```
+~/Library/Logs/Clawdline/diagnostics/report.json
+```
+
+The path is a constant, the format is JSON, and the report states its own gaps rather than leaving
+you to infer them: how many trace entries were dropped, and whether each recorder that lives
+outside the page is `unread`, `merged`, `unavailable` or `failed`. **The most you may ask of the
+person holding the phone is one press.** All of it, including how to add a recorder of your own, is
+in [`docs/diagnostics.md`](docs/diagnostics.md).
+
 ### A guard must be able to go red
 
 Seven times in one day, on unrelated questions, a command reported success and nothing had
