@@ -63,6 +63,48 @@ in full on every run — loudly, individually, with the command that settles eac
 fail the run: this exists to stop the *next* silent landing, not to hold a tree hostage to a
 backlog somebody is already draining. `--strict` fails on all of it, which is what a root doing a
 sweep wants.
+
+## Who is told, and whose build stops
+
+**They are two questions, and until 2026-09-06 they were one.** Everything above reads the
+machine's registry and prints all of it, because the debt really is the machine's. Failing did the
+same, and it cost two runs that never reached a compiler. The first was an isolated child of
+another line, which died here over `b932fa3a` — **another root's** landing, in the base repository,
+nothing to do with the child's checkout — and it could not have cleared it even if it had
+understood the message: settling needs this machine's orchestrator token, and `CHILD.md` forbids a
+child from calling the landing route at all. The run was refused, told to run a `curl` it is not
+permitted to run, and had nothing left to do but stop.
+
+So the fatal set asks two more questions, and the output says both of them out loud:
+
+- **Is this debt in the repository this run is standing in?** Eight repositories are in this
+  registry and a build in one of them does not stop over another's.
+- **May this run close the record?** A run inside a **linked worktree** is a child's, and a child
+  may not call the landing route. Derived rather than guessed: `git rev-parse --git-common-dir`
+  names `<repository>/.git` from every checkout of a repository, so the main worktree is that
+  directory's parent — the shell half of `OrchestratorDraft.mainWorktree(containing:)` — and a
+  checkout which is not that directory is a linked one.
+
+**A run that may not fail says so at length**, printing the rows, who can settle them, and that it
+is not the one. The alternative is the exact defect `tools/git-hooks/pre-commit` carries a
+paragraph about: a check that goes quiet inside a worktree and is read as a check that passed. So
+the green a narrowed run prints is not the green an empty machine prints, and the two sentences
+have no words in common. `--strict` ignores both narrowings, because a root doing a sweep wants
+every row and holds the credential.
+
+## What the sweep changes, which is the wording and not the set
+
+`Orchestrator.landingSweepPass` settles some of this by itself, and which is worth saying: its
+candidates are terminal tasks whose landing record **already exists and is `pending` with a
+target** (`landingSweepCandidates`). A row with no record at all — most of what this finds —
+declares no target, so no timer is coming for it, and the rows a timer can take are marked in the
+output as such.
+
+They stay in the fatal set, and the reason is the grace period rather than a preference. The sweep
+runs every 300 s and this guard excuses anything younger than six hours, so a row that reaches the
+fatal set has already been offered to about seventy passes and is there because the sweep declined
+it or could not see it. The other reason is that redness would otherwise depend on whether an app
+happened to be running, which is a property of neither this tree nor this registry.
 """
 import argparse
 import json
@@ -122,6 +164,44 @@ def toplevel(path, cache):
             answer = os.path.realpath(out.strip())
     cache[path] = answer
     return answer
+
+
+def runner_context(cwd):
+    """Where this run is standing, and whether it is allowed to close a landing record from there.
+
+    `git rev-parse --show-toplevel` answers with whichever checkout the caller is in, and for a
+    linked worktree that is a directory this app made and will delete; every task in the registry
+    is filed under the repository it was cut from, so a scope taken from the toplevel would match
+    none of them inside a worktree. The repository therefore comes from `--git-common-dir`, which
+    names `<repository>/.git` from every checkout of it — the shell half of
+    `OrchestratorDraft.mainWorktree(containing:)` — and the checkout is compared against it.
+
+    `.git` is the ordinary shape and the only one with an answer here. A bare repository or a
+    `--separate-git-dir` layout has no working tree that name belongs to, and deriving one from the
+    path anyway would be the same guess in the other direction: `repository` is then `None`, which
+    the caller reports rather than rounds off.
+    """
+    checkout = None
+    out = git(["rev-parse", "--show-toplevel"], cwd)
+    if out and out.strip():
+        checkout = os.path.realpath(out.strip())
+    common_dir = None
+    repository = None
+    out = git(["rev-parse", "--git-common-dir"], cwd)
+    if out and out.strip():
+        raw = out.strip()
+        common_dir = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(cwd, raw))
+        if os.path.basename(common_dir) == ".git":
+            main = os.path.dirname(common_dir)
+            if os.path.isdir(main):
+                repository = os.path.realpath(main)
+    linked = bool(checkout and repository and checkout != repository)
+    return {"checkout": checkout, "repository": repository, "git_common_dir": common_dir,
+            "linked_worktree": linked,
+            # The credential is the machine's, so what decides this is not which repository the
+            # debt is in but who is standing here: a linked worktree is a child's checkout, and
+            # `CHILD.md` forbids a child from calling the landing route at all.
+            "may_settle": not linked}
 
 
 def target_branch(repository):
@@ -287,6 +367,7 @@ def scan(tasks, only_repository=None):
                                  "state": task.get("state", ""), "branch": None, "head": None,
                                  "commits": None, "entered": None, "after_cutoff": False,
                                  "landing_state": landing.get("state"),
+                                 "landing_target": landing.get("target"),
                                  "root_label": task.get("root_label"),
                                  "root_session": task.get("root_session")})
                 continue
@@ -311,6 +392,7 @@ def scan(tasks, only_repository=None):
                 "commits": commits_beyond_base(repository, base, head),
                 "entered": entered, "after_cutoff": False,
                 "landing_state": landing.get("state"),
+                "landing_target": landing.get("target"),
                 "root_label": task.get("root_label"), "root_session": task.get("root_session")})
         repositories.append({"repository": repository, "target": target, "tasks": len(rows),
                              "readable": True, "counts": counts})
@@ -330,6 +412,17 @@ def when(seconds):
     return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def sweep_candidate(finding):
+    """Whether `Orchestrator.landingSweepPass` could take this row off a person by itself.
+
+    `landingSweepCandidates` takes terminal tasks whose landing record already exists, is
+    `pending`, and names a target. A row with no record at all declares no target, so there is no
+    timer coming for it — which is most of what this file finds, and the reason the sweep changes
+    the wording here rather than the fatal set.
+    """
+    return finding.get("landing_state") == "pending" and bool(finding.get("landing_target"))
+
+
 def describe(finding):
     who = finding.get("root_label") or "root not named"
     session = finding.get("root_session")
@@ -338,9 +431,31 @@ def describe(finding):
     commits = finding.get("commits")
     size = "+%d" % commits if isinstance(commits, int) else "+?"
     state = finding.get("landing_state") or "no record at all"
-    return ("    %s %s %s  %s  [%s]  %s\n        %s"
+    line = ("    %s %s %s  %s  [%s]  %s\n        %s"
             % (finding["task"][:8], head, size, when(finding.get("entered")), state, who,
                (finding.get("title") or "")[:96]))
+    if sweep_candidate(finding):
+        line += ("\n        a timer can take this one: the record is pending against %s, so "
+                 "Orchestrator.landingSweepPass is allowed to settle it without anybody asking."
+                 % finding["landing_target"])
+    return line
+
+
+def withheld_reason(finding, runner, scope):
+    """Why this row, which is real debt after the cutoff, is not stopping this run.
+
+    Both conditions are named per row rather than once at the top, because a reader arrives at one
+    row — the one with their task id on it — and the sentence they need is the one under it.
+    """
+    reasons = []
+    if not finding["in_runner_repository"]:
+        reasons.append("it is filed under %s and this run is in %s"
+                       % (finding["repository"], scope or "no repository it could name"))
+    if not runner["may_settle"]:
+        reasons.append("this checkout is a linked worktree of %s, and a child may not call the "
+                       "landing route" % runner["repository"])
+    return ("not failing here because %s. The suite run in %s fails on it, and --strict fails on "
+            "it from anywhere." % (", and ".join(reasons), finding["repository"]))
 
 
 def main():
@@ -420,11 +535,16 @@ def main():
             entered is None or entered >= cutoff)
         finding["within_grace"] = bool(entered and entered > ripe)
 
-    if args.json:
-        print(json.dumps({"cutoff": args.since, "strict": bool(args.strict),
-                          "registry": str(path), "repositories": repositories,
-                          "unreachable_task_directories": unreachable,
-                          "findings": findings}, indent=2, sort_keys=True))
+    # Everything above stays machine-wide; this decides only which of those rows may stop this run.
+    # `--repository` is an operator naming the repository they are asking about, so it is the scope
+    # when it is given; otherwise the scope is the repository this checkout belongs to, which
+    # inside a linked worktree is not the checkout.
+    runner = runner_context(os.getcwd())
+    scope = only if only is not None else runner["repository"]
+    for finding in findings:
+        finding["in_runner_repository"] = bool(scope) and finding["repository"] == scope
+        finding["sweep_candidate"] = sweep_candidate(finding)
+        finding["fails_this_run"] = False
 
     unrecorded = [f for f in findings if f["kind"] == "unrecorded"]
     outstanding = [f for f in findings if f["kind"] == "outstanding"]
@@ -432,6 +552,21 @@ def main():
     new = [f for f in unrecorded if f["after_cutoff"] and not f["within_grace"]]
     fresh = [f for f in unrecorded if f["after_cutoff"] and f["within_grace"]]
     inherited = [f for f in unrecorded if not f["after_cutoff"]]
+
+    # The two questions, in the order they are printed: is this debt in the repository this run is
+    # standing in, and may this run close the record. `--strict` asks neither.
+    fatal, withheld = [], []
+    for finding in (unrecorded if args.strict else new):
+        stops = args.strict or (finding["in_runner_repository"] and runner["may_settle"])
+        (fatal if stops else withheld).append(finding)
+        finding["fails_this_run"] = stops
+
+    if args.json:
+        print(json.dumps({"cutoff": args.since, "strict": bool(args.strict),
+                          "registry": str(path), "repositories": repositories,
+                          "runner": runner, "fatal_scope": scope,
+                          "unreachable_task_directories": unreachable,
+                          "findings": findings}, indent=2, sort_keys=True))
 
     unreadable = [r for r in repositories if not r.get("readable")]
     for row in unreadable:
@@ -450,10 +585,42 @@ def main():
                   % (row["repository"], row["target"], counts["unrecorded"],
                      counts["outstanding"], counts["undecidable"], counts["closed"]))
 
-        if new:
-            print("\n  LANDED, AND NO RECORD WAS WRITTEN — after the %s cutoff:" % args.since)
-            for finding in new:
+        print("\n  %s Failing is narrower than reporting, and both of its conditions are said "
+              "out loud:"
+              % ("Everything above is the repository --repository named." if only is not None
+                 else "Everything above is every repository in this machine's registry."))
+        print("    in this repository — %s"
+              % (scope or "this run cannot name the repository it is standing in"))
+        if runner["may_settle"]:
+            print("    allowed to settle — yes: %s is that repository's main worktree, so the "
+                  "landing route is open to whoever is standing here."
+                  % (runner["checkout"] or "this directory"))
+        else:
+            print("    allowed to settle — NO: this checkout is %s, a linked worktree of %s "
+                  "(`git rev-parse --git-common-dir` says %s). A linked worktree is a child's, "
+                  "and CHILD.md forbids a child from calling "
+                  "POST /v1/orchestrator/tasks/<id>/landing at all, so nothing below can stop "
+                  "this run."
+                  % (runner["checkout"], runner["repository"], runner["git_common_dir"]))
+        if args.strict:
+            print("    --strict is set, so neither condition applies and every unrecorded "
+                  "landing on this machine fails this run.")
+
+        if fatal and not args.strict:
+            print("\n  LANDED, AND NO RECORD WAS WRITTEN — after the %s cutoff, in %s, and this "
+                  "run is standing where they can be settled:" % (args.since, scope))
+            for finding in fatal:
                 print(describe(finding))
+        elif fatal:
+            print("\n  LANDED, AND NO RECORD WAS WRITTEN — every one of them, because --strict:")
+            for finding in fatal:
+                print(describe(finding))
+        if withheld:
+            print("\n  LANDED, AND NO RECORD WAS WRITTEN — after the %s cutoff, and NOT failing "
+                  "this run. Each row says which of the two conditions it misses:" % args.since)
+            for finding in withheld:
+                print(describe(finding))
+                print("        %s" % withheld_reason(finding, runner, scope))
         if fresh:
             print("\n  Landed within the last %g hours with the record still open. The documented "
                   "order writes the record after this suite, so these are not late yet:"
@@ -490,18 +657,50 @@ def main():
                   "      -d '{\"state\":\"landed\",\"commit\":\"<head>\",\"target\":\"<branch>\","
                   "\"note\":\"<what was verified>\"}'")
 
-    fatal = unrecorded if args.strict else new
     if fatal:
-        print("\nlanding records: %d landing(s) happened and no record was written. %s"
-              % (len(fatal),
-                 "Every unrecorded landing counts under --strict."
-                 if args.strict else "These are after the %s cutoff." % args.since),
-              file=sys.stderr)
+        if args.strict:
+            print("\nlanding records: %d landing(s) happened and no record was written. Every "
+                  "unrecorded landing counts under --strict, in every repository and from every "
+                  "checkout." % len(fatal), file=sys.stderr)
+        else:
+            print("\nlanding records: %d landing(s) in %s happened and no record was written, "
+                  "and this run can settle them. These are after the %s cutoff."
+                  % (len(fatal), scope, args.since), file=sys.stderr)
         return 1
+
+    if scope is None and not args.strict:
+        # The report above did not depend on where it was run and was printed in full. What cannot
+        # be answered from here is the other half — which of those rows this run is entitled to
+        # stop over — and a check that cannot see its own subject says so rather than exiting 0
+        # carrying it. `--strict` needs no scope, so it never reaches this.
+        print("\nlanding records: this run cannot name the repository it is standing in (%s), so "
+              "it cannot decide what it is entitled to fail over. Run it inside a repository, or "
+              "pass --repository, or pass --strict — the finder, not the tree."
+              % (runner["git_common_dir"] or "git would not answer for --git-common-dir"),
+              file=sys.stderr)
+        return 2
 
     if args.json:
         # stdout is the document and nothing else; the exit code and the failing sentence on
         # stderr are still there for a caller that wants both.
+        return 0
+    if withheld:
+        # **The green a narrowed run prints is not the green an empty machine prints.** They share
+        # no words on purpose: `tools/git-hooks/pre-commit` carries a paragraph about the same
+        # defect, and this is the sentence that keeps a run which may not act from reading as a
+        # run that found nothing.
+        out_of_scope = [f for f in withheld if not f["in_runner_repository"]]
+        barred = [f for f in withheld if f["in_runner_repository"]]
+        parts = []
+        if out_of_scope:
+            parts.append("%d in another repository on this machine" % len(out_of_scope))
+        if barred:
+            parts.append("%d in %s, which this run may not settle from a linked worktree"
+                         % (len(barred), scope))
+        print("\nlanding records: %d unrecorded landing(s) after the %s cutoff are real and none "
+              "of them stops this run — %s. This exit 0 is *not this run's to fail over*, not "
+              "*nothing was found*; --strict fails on every one of them from anywhere."
+              % (len(withheld), args.since, ", and ".join(parts)))
         return 0
     print("\nlanding records: nothing has landed unrecorded since %s, beyond the %g-hour grace. "
           "%d unrecorded landing(s) inherited from before it, %d still inside the grace, "
