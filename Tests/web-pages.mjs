@@ -494,7 +494,9 @@ const routeStandalone =
         .replace('import { byId } from "../view/derive.js";',
             "const byId = globalThis.__routeEnv.byId;")
         .replace('import { openSession } from "../session/open.js";',
-            "const openSession = globalThis.__routeEnv.openSession;");
+            "const openSession = globalThis.__routeEnv.openSession;")
+        .replace('import { Diagnostics } from "../core/layout-diagnostics.js";',
+            "const Diagnostics = globalThis.__routeEnv.Diagnostics;");
 check(!/^import /m.test(routeStandalone),
       "every import in route.js was replaced — one left behind would pull the whole app in and hang");
 
@@ -506,6 +508,9 @@ globalThis.__routeEnv = {
     pageInHash: () => null,
     byId: (id) => (listed.has(id) ? { id: id } : null),
     openSession: (id) => { opened.push(id); },
+    // The recorder, which this file only has to satisfy: what the notes say is
+    // `Tests/web-notification-route.mjs`, which drives the whole road rather than this half of it.
+    Diagnostics: { note: () => {} },
     window: { addEventListener: () => {} },
     location: { hash: "" },
     navigator: {},

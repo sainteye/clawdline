@@ -1,6 +1,7 @@
 import { Pages, pageInHash } from "../core/pages.js";
 import { byId } from "../view/derive.js";
 import { openSession } from "../session/open.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 
 /* ---- arriving at a session from somewhere else ---------------------------
  *
@@ -86,12 +87,21 @@ function sessionCandidates(hash) {
  * underneath, and the hashchange that followed used to change nothing at all.
  */
 export function routeTo(hash) {
+    var candidates = sessionCandidates(hash);
+    // The fourth of the five places a tapped notification can stop. What is recorded is the
+    // *shape* of the request and never the id: `layout-diagnostics.js` keeps layout and
+    // state-machine facts and no names, and a session id is a name.
+    Diagnostics.note("route.to", {
+        fragment: !!hash, page: pageInHash(hash) || "",
+        names: candidates ? candidates.length : 0,
+        rescued: !!(candidates && candidates.length > 1)
+    });
     var page = pageInHash(hash);
     // A name this build has no page for is still ignored rather than obeyed — an old link leaves
     // you where you were — so the two cases are "named one" and "named none", not "knows it".
     if (page) { if (Pages.knows(page)) Pages.go(page, { hash: false }); }
     else Pages.goHome({ hash: false });
-    var ids = sessionCandidates(hash);
+    var ids = candidates;
     if (!ids) return;
     wantedSession = ids[0];
     wantedSessionAsWritten = ids.length > 1 ? ids[1] : null;
@@ -103,6 +113,14 @@ export function openWanted() {
     if (!wantedSession) return false;
     var id = byId(wantedSession) ? wantedSession
         : (wantedSessionAsWritten && byId(wantedSessionAsWritten) ? wantedSessionAsWritten : null);
+    // The fifth place, and the only one that was ever recorded — as `session.open.begin`, which
+    // is written after the decision and therefore says nothing at all about the times the answer
+    // was no. A miss is the interesting reading: it is what a cold start looks like before the
+    // list arrives, and what a session that has closed looks like for ever.
+    Diagnostics.note("route.openWanted", {
+        found: !!id, rescued: !!(id && id === wantedSessionAsWritten),
+        held: !!wantedSessionAsWritten
+    });
     if (!id) return false;
     wantedSession = null;
     wantedSessionAsWritten = null;
@@ -120,6 +138,13 @@ window.addEventListener("hashchange", function () { routeTo(location.hash); });
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", function (ev) {
         var data = ev && ev.data;
+        // The third place, and the first one on this side of the gap. Noted before the message is
+        // judged, because "a message arrived that this handler declined" and "no message arrived"
+        // are the two readings the trace has to be able to tell apart.
+        Diagnostics.note("page.sw.message", {
+            type: (data && data.type) || "", url: typeof (data && data.url) === "string",
+            hidden: document.hidden
+        });
         if (!data || data.type !== "navigate" || typeof data.url !== "string") return;
         var cut = data.url.indexOf("#");
         var hash = cut < 0 ? "" : data.url.slice(cut);
@@ -130,4 +155,60 @@ if ("serviceWorker" in navigator) {
         if (hash === location.hash) routeTo(hash);
         else location.hash = hash;
     });
+}
+
+/* ---- reading the worker's half of the road -------------------------------
+ *
+ * Five things have to happen between a thumb on a lock screen and a transcript on the screen, and
+ * until now the page could only ever report the last two of them. The worker is shut down between
+ * events; a message it sent to a page that was not listening leaves nothing behind at either end,
+ * and that silence is indistinguishable from a worker that never woke up.
+ *
+ * So the worker writes `sw.notificationclick` and then `sw.postMessage` or `sw.openWindow` into
+ * Cache Storage — the one store both a worker and a page can open — and this reads them back into
+ * the same trace the page's own notes go into. **The reading is the whole point**: a trace that
+ * ends at `sw.postMessage` says the message was sent and never arrived, and one that has no
+ * `sw.` entry at all says the worker never ran. Those are different faults with different fixes,
+ * and before this there was no way to be looking at either of them.
+ *
+ * Nothing here acts on what it reads. Deciding what to *do* about a dropped message is a design
+ * question with more than one answer, and this exists so that the question can be asked of
+ * evidence rather than of a guess.
+ *
+ * The names are the worker's, and the worker's copy of them lives in `RemotePage.serviceWorker()`
+ * because that script is a response body rather than a module. `Tests/web-notification-route.mjs`
+ * holds the two copies against each other.
+ */
+export var WORKER_TRACE_CACHE = "clawdline-notification-trace";
+export var WORKER_TRACE_URL = "/__clawdline/notification-trace";
+
+/** The newest entry already read into the trace, so that waking up twice does not report twice. */
+var readThrough = 0;
+
+/**
+ * Fold whatever the worker has written since the last call into the page's own diagnostics.
+ * Answers the number of entries that were new, and never rejects: a browser with no Cache
+ * Storage, or one that refuses it, is a page with no worker half to read and not a page with a
+ * problem.
+ */
+export function readWorkerTrace() {
+    try {
+        if (typeof caches === "undefined" || !caches || !caches.open) return Promise.resolve(0);
+    } catch (e) { return Promise.resolve(0); }
+    return caches.open(WORKER_TRACE_CACHE)
+        .then(function (cache) { return cache.match(WORKER_TRACE_URL); })
+        .then(function (found) { return found ? found.json() : []; })
+        .then(function (list) {
+            if (!Array.isArray(list)) return 0;
+            var fresh = 0;
+            for (var i = 0; i < list.length; i++) {
+                var entry = list[i];
+                if (!entry || typeof entry.at !== "number" || entry.at <= readThrough) continue;
+                readThrough = entry.at;
+                fresh += 1;
+                Diagnostics.note(entry.event, entry.data);
+            }
+            return fresh;
+        })
+        .catch(function () { return 0; });
 }

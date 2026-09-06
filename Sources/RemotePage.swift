@@ -1049,6 +1049,53 @@ enum RemotePage {
             }));
         });
 
+        // ---- the half of the road nobody has been able to look at ----------------------------
+        //
+        // A tap that ends on the session list has five places it could have stopped, and the page
+        // can only ever report the last two: by the time anybody asks, the worker has been shut
+        // down and a message that was never delivered left nothing behind to find. So the worker
+        // writes its own half down where the page can read it after the fact.
+        //
+        // **Cache Storage because it is the only store both contexts share.** A worker has no
+        // `localStorage`; the alternative is IndexedDB, which is thirty lines of callbacks for a
+        // twenty-entry ring. The cost is that `activate` above empties every cache, so a trace
+        // does not survive a worker update — which is the right way round: a trace is evidence
+        // about the build that wrote it.
+        //
+        // Nothing here is allowed to cost the tap. Every call is defensive and none of them is
+        // awaited before the client is focused or a window is opened: a browser that refuses
+        // Cache Storage, and the stand-in globals a test runs this under, both take the same road
+        // as before and simply record nothing.
+        var TRACE_CACHE = "clawdline-notification-trace";
+        var TRACE_URL = "/__clawdline/notification-trace";
+        var TRACE_LIMIT = 20;
+
+        function traceNote(name, data) {
+            try {
+                if (typeof caches === "undefined" || !caches || !caches.open) {
+                    return Promise.resolve(false);
+                }
+                if (typeof Response !== "function") { return Promise.resolve(false); }
+                var entry = { at: Date.now(), event: name, data: data || {} };
+                return caches.open(TRACE_CACHE).then(function (cache) {
+                    return cache.match(TRACE_URL)
+                        .then(function (found) { return found ? found.json() : []; })
+                        .catch(function () { return []; })
+                        .then(function (list) {
+                            if (!Array.isArray(list)) { list = []; }
+                            list.push(entry);
+                            if (list.length > TRACE_LIMIT) {
+                                list = list.slice(list.length - TRACE_LIMIT);
+                            }
+                            return cache.put(TRACE_URL, new Response(JSON.stringify(list), {
+                                headers: { "Content-Type": "application/json" }
+                            }));
+                        })
+                        .then(function () { return true; });
+                }).catch(function () { return false; });
+            } catch (e) { return Promise.resolve(false); }
+        }
+
         self.addEventListener("notificationclick", function (event) {
             event.notification.close();
             var url = (event.notification.data && event.notification.data.url) || "/";
@@ -1065,13 +1112,28 @@ enum RemotePage {
             //
             // So the message is the mechanism and the navigation is the fallback: an open page
             // routes itself, and a cold start gets the fragment the ordinary way.
+            //
+            // **And the fallback is unreachable, which is worth saying where it is written.**
+            // `postMessage` is on `Client` itself, so every window this loop can reach has one;
+            // `client.navigate` below has never run in a browser and cannot. An open window gets
+            // the message and nothing else, and if the message is dropped this handler has
+            // already returned. That is what `sw.postMessage` with no `page.sw.message` after it
+            // means in the trace, and it is the reading this was built to make possible.
+            var noted = [];
             event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true })
                 .then(function (list) {
+                    noted.push(traceNote("sw.notificationclick",
+                                         { url: url, windows: list.length }));
                     for (var i = 0; i < list.length; i++) {
                         var client = list[i];
                         if (!("focus" in client)) { continue; }
                         if (client.postMessage) {
                             client.postMessage({ type: "navigate", url: url });
+                            noted.push(traceNote("sw.postMessage", {
+                                url: url, index: i, windows: list.length,
+                                visibility: client.visibilityState || "",
+                                focused: !!client.focused
+                            }));
                         }
                         return client.focus().then(function () {
                             // Only for a client we control, and only when the message could not
@@ -1079,12 +1141,18 @@ enum RemotePage {
                             // rejects, and an unhandled rejection here would take the whole
                             // handler down with it.
                             if (!client.postMessage && client.navigate) {
+                                noted.push(traceNote("sw.navigate", { url: url }));
                                 return client.navigate(url).catch(function () {});
                             }
                         });
                     }
+                    noted.push(traceNote("sw.openWindow", { url: url }));
                     return clients.openWindow(url);
-                }));
+                })
+                // The trace is kept alive with the handler rather than in front of it: awaiting a
+                // cache write before `focus()` or `openWindow()` would put an asynchronous hop
+                // between the tap and the thing the tap is for.
+                .then(function () { return Promise.all(noted); }));
         });
         """#
         return RemoteServer.Response(status: 200,

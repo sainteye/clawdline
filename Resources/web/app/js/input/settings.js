@@ -2,6 +2,7 @@ import { T, fill } from "../core/i18n.js";
 import { S, storeBool } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 import { assistantLogo } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { renderTranscript } from "../view/transcript.js";
@@ -9,6 +10,37 @@ import { toggleOrder } from "./keys.js";
 import { Push } from "./push.js";
 
 /* ---- the settings page --------------------------------------------------- */
+
+/* ---- the door to the recorder -------------------------------------------
+ *
+ * `core/layout-diagnostics.js` has been recording since it was written, and on the device the
+ * recordings are about there has never been a way to read one. `?debug=layout` needs an address
+ * bar; a home-screen web app launches at `start_url` and has no address bar, and the fault that
+ * most needs this — a notification tapped on a lock screen — only happens there.
+ *
+ * So: five presses on the version line. No new word on the screen, nothing findable by accident,
+ * and the one line in the settings page that is already about this build rather than about the
+ * sessions. The count resets after two seconds of not being pressed, so a slow reader who taps
+ * twice while thinking does not arrive here a week later.
+ */
+var diagnosticsDoorBound = false;
+
+function bindDiagnosticsDoor() {
+    if (diagnosticsDoorBound) return;
+    var line = els["settings-version"];
+    if (!line) return;
+    diagnosticsDoorBound = true;
+    var presses = 0;
+    var idle = null;
+    line.addEventListener("click", function () {
+        presses += 1;
+        clearTimeout(idle);
+        idle = setTimeout(function () { presses = 0; }, 2000);
+        if (presses < 5) return;
+        presses = 0;
+        Diagnostics.reveal();
+    });
+}
 
 /**
  * What is true of this browser on this device, which is a different question from anything in
@@ -45,6 +77,7 @@ export var Settings = (function () {
             say("");
             els["settings-version"].textContent =
                 S.version ? fill(T.webSettingsVersion, { v: S.version }) : "";
+            bindDiagnosticsDoor();
             Push.redraw();
             this.drawAssistantIcons();
             this.drawOrder();
