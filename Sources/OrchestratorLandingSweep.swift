@@ -773,8 +773,12 @@ extension Orchestrator {
     /// a settled state may never move to another one.
     /// Saving, broadcasting and the receipts belong to the pass, once, after every row — this is
     /// only the compare-and-swap.
-    private static func applyLandingSweep(task: Task, expected: Landing, landing: Landing,
-                                          arm: LandingSweepArm)
+    ///
+    /// Internal rather than private so that the losing side of that swap can be driven directly:
+    /// a pass cannot race itself on one thread, and a refusal nobody has watched happen is a
+    /// refusal nobody knows works.
+    static func applyLandingSweep(task: Task, expected: Landing, landing: Landing,
+                                  arm: LandingSweepArm)
         -> (verdict: LandingSweepVerdict, settled: Task?) {
         lock.lock()
         guard var current = tasks[task.id], current.state == task.state,
