@@ -36,7 +36,7 @@ extension Orchestrator {
     /// ``Orchestrator/updateLanding(taskID:secret:orchestratorToken:raw:now:)`` — and it is
     /// admissible only where this Mac holds no durable evidence that the task wrote anything;
     /// ``Orchestrator/nothingToLandAdmission(for:)`` is the one place that rule is written down.
-    enum LandingState: String {
+    enum LandingState: String, CaseIterable {
         case pending, landed, abandoned
         case nothingToLand = "nothing_to_land"
 

@@ -269,6 +269,26 @@ group("every broker blocker has a record that produces it, and a closure that cl
     expect("a task that touched nothing it claimed leaves nothing behind",
            obligations(tasks: [touched]), [])
 
+    // **The fourth spelling of closed, which this list used to be missing.** `LandingState`
+    // settles in three states and this read `landed || abandoned`, so a delivery correctly closed
+    // as having written nothing kept `touched_claims_without_closure` and `dirty_isolated_worktree`
+    // for ever: no state could clear them, because the one it had was not on the list. The
+    // reachable route is a later reading finding the checkout dirty after the record settled — but
+    // the projection reads records, so what it owes is the same answer for every settled state.
+    touched.untouchedClaims = ["Sources/B.swift"]
+    touched.landing = landing(.nothingToLand)
+    expect("a delivery that settled as having written nothing is a closure too",
+           obligations(tasks: [touched]), [])
+    dirty.landing = landing(.nothingToLand)
+    expect("and it closes the isolated checkout's ownership the same way",
+           obligations(tasks: [dirty]), [])
+    unreported.landing = landing(.nothingToLand)
+    expect("and accounts for a child that ended without reporting",
+           obligations(tasks: [unreported]), [])
+    expect("which is the enum's own answer rather than a fourth hand-rolled spelling of it",
+           Orchestrator.LandingState.allCases.filter(\.isSettled).map(\.rawValue),
+           ["landed", "abandoned", "nothing_to_land"])
+
     let owned = Orchestrator.CoordinationWait(
         id: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa", repository: "/repo",
         paths: ["/repo/Sources"], ownerSessionID: "ROOT-TAB",

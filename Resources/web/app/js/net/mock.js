@@ -488,12 +488,12 @@ export var Mock = (function () {
                  storedLandingStates: [], landingBasis: "live", work: work || null,
                  firstSeenAt: first, lastSeenAt: last };
     }
-    /* `evidence` is what the verdict beside it rests on, and all seven of the values it can take
-       appear below — `record`, `branch_merged`, `branch_empty`, `branch_base_unknown`,
-       `branch_absent`, `branch_unmerged` and `unknown`. The number is spelled out because the
-       claim before it said "every one of the values", which reads as complete and cannot be
-       counted: it was written while `branch_base_unknown` had no row here at all, and nothing on
-       the page could have said so. `label` is the work line a Feature was grouped
+    /* `evidence` is what the verdict beside it rests on, and all eight of the values it can take
+       appear below — `record`, `record_unverified`, `branch_merged`, `branch_empty`,
+       `branch_base_unknown`, `branch_absent`, `branch_unmerged` and `unknown`. The number is
+       spelled out because the claim before it said "every one of the values", which reads as
+       complete and cannot be counted: it was written while `branch_base_unknown` had no row here
+       at all, and nothing on the page could have said so. `label` is the work line a Feature was grouped
        by and `work` is what the task itself said it was doing: on the machine this fixture was
        written from, nine cards read `Clawdfather — handoff 18bde7c3` and none of them said what
        the work was. `needs` is the row's own next step while it sits in the delivered block.
@@ -576,7 +576,15 @@ export var Mock = (function () {
             worktree("6c48b0f2-11e9-4a37-b58d-27ce93a0f4d6", "delivered", 2,
                      "Usage Portfolio", "2026-08-16T06:30:00Z", "2026-08-16T17:12:00Z",
                      ["success"], [], "branch_base_unknown",
-                     "Whose base the registry forgot", "no_record")
+                     "Whose base the registry forgot", "no_record"),
+            // The eighth: a `landed` record the broker's landing sweep wrote on its write-set
+            // arm. It carries no verification triple, because what it proved is that nothing of
+            // the task's declared write set was outstanding rather than that a commit reached the
+            // target — a narrower sentence, and one this page must not draw as the row above.
+            worktree("a7c31d05-6b48-4e92-8f13-05de7b6a2c48", "landed", 3,
+                     "The broker's landing sweep", "2026-09-06T11:43:00Z",
+                     "2026-09-06T22:31:00Z", ["success"], ["landed"], "record_unverified",
+                     "Nothing this task declared was left outstanding")
         ],
         "/Users/you/code/atrium": [
             worktree("c0aa5f92-7b31-4d68-8e02-45cb1d907e36", "landed", 2,

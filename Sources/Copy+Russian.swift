@@ -814,6 +814,7 @@ struct Russian: Copy {
     let webProjectBranch = "Ветка, по соглашению"
     let webProjectEvidence = "Основание для приземления"
     let webProjectEvidenceRecord = "Корень проверил и записал это"
+    let webProjectEvidenceRecordUnverified = "Записано, но ничто это не проверило"
     let webProjectEvidenceBranchMerged = "git: ветка входит в HEAD"
     let webProjectEvidenceBranchEmpty = "git: на ветке нет ни одного коммита"
     let webProjectEvidenceBranchBaseUnknown = "git: входит в HEAD, но нигде не записано, от чего она отведена"

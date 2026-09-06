@@ -169,7 +169,13 @@ main_lines=$(line_count Tests/main.swift)
 #   +1   `forget()` clearing the new seam.
 # The encoding it all goes through, `WebPush.sessionURL`, is untouched: that half was already
 # right, and this raise is every caller that had nothing to hand it.
-orchestrator_ceiling=10742
+# 10,747 is the landing sweep's hook, measured on this merged tree. Five lines, and all five are
+# the schedule: `scheduleLandingSweep()` beside `sweepBatches()` in `beat(fromTimer:)`, with the
+# comment saying why a pending landing outlives every live task that would otherwise keep that
+# walk going. The 469-line feature itself is `Sources/OrchestratorLandingSweep.swift`, which is
+# where a reader looking for it should end up — the ceiling moved by the call, not by the work.
+#
+orchestrator_ceiling=10747
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

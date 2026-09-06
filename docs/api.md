@@ -3880,11 +3880,12 @@ dispatched the graph, and a root does not dispatch a task to itself, so a landin
 no task of its own and its receipt is written against the delivery it landed. It reaches `done` when
 every `delivery` node it transitively depends on has a task carrying `landing.state == landed`, and
 `correction` nodes count the same way when they have a task — an undispatched correction is a repair
-no review demanded, not missing evidence. At least one such receipt is required, so a landing node
+no review demanded, not missing evidence. In both cases the receipt has to carry `verified_commit`:
+`landed` alone is not it, now that a timer can write the word without the proof. At least one such receipt is required, so a landing node
 that depends on nothing which produces bytes stays `blocked` rather than passing on an empty
 conjunction. The producing task's own outcome is not consulted: the receipt is the root's assertion
 that the commit is contained by the named local target, and work has been landed after the task that
-produced it timed out. A landing node that does carry a task of its own reads its own `landed`
+produced it timed out. A landing node that does carry a task of its own reads its own **verified** `landed`
 receipt first and falls back to the same derivation, so it is `awaiting_landing` only while neither
 exists. While a graph remains in the bounded task registry, its definition is immutable per
 graph id; after retention expires, reuse the old id only if the caller independently retained that
@@ -4018,6 +4019,37 @@ obligation whose target a root has already named. What it cannot see is a task t
 shared checkout: nothing here records what such a task wrote, and `git status` in that tree is the
 only witness. So the remaining assertion is the caller's, which is what the machine credential is
 for and why this route says so out loud rather than implying a check it did not make.
+
+**This route is no longer the only writer of a `landed` record.** A periodic broker sweep settles
+the ones the machine can prove without being asked, so a client polling a task record may see
+`landing.state` move from `pending` to `landed` with no HTTP call having been made. Nothing about
+the record's shape changes and no field is added:
+
+- a record the sweep closed **by ancestry** is byte-identical in kind to one this route writes —
+  `landed_at`, `verification_origin: "local_target_branch"`, `verified_commit` and
+  `verified_target_commit`, all produced by the same verification — and still earns
+  `work_complete`;
+- a record it closed **by write-set containment** carries `state: "landed"`, the target branch's
+  own `commit`, and a `note` saying so, with **no `landed_at` and no verification field at all**.
+  That is a legally-shaped legacy `landed` row, it is refused the double check by the same
+  fail-closed rule that refuses every other unverified one, and its note is where the narrower
+  proposition is written down — including the two instants the check was made at, because the
+  sweep must find that write set clear twice, five minutes apart, before it writes anything.
+
+**A `landed` record is therefore two different receipts, and a reader deciding anything should ask
+which.** The one field that answers is `verified_commit`: present means the broker resolved a
+commit of this delivery's and found the named target branch containing it, absent means either this
+sweep's narrower proposition or a record written before that proof existed. Two surfaces read it
+that way rather than reading the word `landed`: a `landing` graph node reaches `done` on its own
+task's receipt only when the triple is there, and the Usage ledger publishes
+`landingEvidence: "record_unverified"` for a landed row it knows carries none.
+
+A settled record is still immutable, so this route continues to answer `409 invalid_transition` to
+anything that tries to move one to a different state — a root that meant to `abandon` a record the
+sweep had meanwhile closed now gets that refusal rather than writing. A root sending `landed` onto
+an already-`landed` record still takes the existing idempotent path and gets `200`, which is the
+same answer a re-send has always had. `docs/landing.md` has the predicate, the refusals and the
+bounds.
 
 ### `GET /v1/orchestrator/landings`
 

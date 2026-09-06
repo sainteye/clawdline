@@ -634,8 +634,8 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
            field("missing_reason"), "plan_billed" == field("missing_reason")
             ? field("missing_reason") : "no_cost_recorded")
     let reserved = ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state",
-                    "disposition"]
-    expect("the six lineage columns are exactly those", UsageLedger.lineageColumns, reserved)
+                    "landing_verified", "disposition"]
+    expect("the seven lineage columns are exactly those", UsageLedger.lineageColumns, reserved)
     check("every one of them is present in the export and empty",
           reserved.allSatisfy { columns.contains($0) && field($0) == "" })
 
@@ -1711,8 +1711,13 @@ group("a task record's graph reaches the row that carries its tokens") {
     // rather than a second copy of it.
     expect("graph_id has left the unavailable list", UsageLedger.unavailableDimensions,
            ["disposition"])
-    expect("while the six lineage columns are unchanged", UsageLedger.lineageColumns,
-           ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state", "disposition"])
+    // Seven since the landing sweep: `landing_verified` sits beside `landing_state` because a
+    // record written by a timer and one written through the route say `landed` with different
+    // evidence behind them. This assertion is the reason that arrival was noticed at all — it is
+    // pinned to the list, not to a count, so a column added on another line lands here.
+    expect("while the seven lineage columns are unchanged", UsageLedger.lineageColumns,
+           ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state",
+            "landing_verified", "disposition"])
 
     // **Lineage belongs to the task, not to its first segment.** A session that switched model
     // mid-task leaves that task's tokens on two rows, and a backfill that fills only the key it
@@ -1770,7 +1775,7 @@ group("a review verdict and a verification receipt outlive the task directory th
     // the digit. Together with "an upgraded store grows the receipt tables too" in
     // `UsagePortfolioAndLifecycleTests`, this is what makes a wrong `storeVersion` go red rather
     // than quietly leaving every existing install without the four tables.
-    expect("and that version is the one the migration branches on", UsageLedger.storeVersion, 6)
+    expect("and that version is the one the migration branches on", UsageLedger.storeVersion, 7)
 
     // The acceptance this whole change exists for: ask by feature, get that feature's receipts.
     let byFeature = UsageLedger.shared.reviewReceipts(.graph(graphID))

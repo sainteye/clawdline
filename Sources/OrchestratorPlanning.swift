@@ -371,7 +371,17 @@ extension Orchestrator {
             // A landing task of its own does not move where the receipt lives: `CHILD.md` still
             // forbids a child from calling its own `/landing` route, so the root records the
             // landing against the delivery either way.
-            if task.landing?.state == .landed { return "done" }
+            //
+            // **`landed` alone is not the receipt here either**, and this line used to say it
+            // was. `verifiedCommit` is the same field `graphLandingEvidence` requires of a
+            // producer three lines below, and requiring it in both places is what stops the two
+            // readings disagreeing about one graph. The row it now refuses is the one the broker's
+            // landing sweep writes on its write-set arm: that record proves nothing of the task's
+            // declared write set is outstanding, which is not the sentence a landing node's `done`
+            // makes. Before the sweep existed the only rows without the triple were hand-written
+            // ones from a build older than the proof; now a timer can produce them.
+            if let landing = task.landing, landing.state == .landed,
+               landing.verifiedCommit != nil { return "done" }
             return graphLandingEvidence(node, graph: graph, index: index)
                 ? "done" : "awaiting_landing"
         default:

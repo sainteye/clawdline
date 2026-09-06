@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 """Say so when a delivery has landed and nobody wrote its landing record.
 
-**The whole system has one entrance to `landed`, and a person is standing in it.** The broker
-verifies a landing properly — `OrchestratorDraft.verifyTargetLanding` runs
+**`landed` had one entrance and a person was standing in it.** The broker verifies a landing
+properly — `OrchestratorDraft.verifyTargetLanding` runs
 `merge-base --is-ancestor <commit> refs/heads/<target>` inside the task's own repository, and that
-check is right — but it runs only when somebody calls
+check is right — but it ran only when somebody called
 `POST /v1/orchestrator/tasks/:id/landing`. Nobody calls it, nobody knows.
+
+**Since 2026-09-06 there is a second entrance, and no person in it.**
+`Orchestrator.landingSweepPass` closes, on a timer, what the broker can prove by itself, and the
+three answers below are what it acts on: it settles an `unrecorded landing` through the same
+verified path this file describes, it settles the narrow half of `undecidable` — a shared-checkout
+task every one of whose declared claims resolves to something git can see, is unmodified, and is
+identical to the target on two readings five minutes apart — and it never touches an
+`outstanding delivery`, which stays a person's. So a row this file prints may be gone by the next
+run because a timer settled it, and that is the mechanism working rather than somebody having
+been quick.
 
 On the night of 2026-09-05/06 that gap produced, in one repository and one evening: 22 landing
 records written by hand at the end, 14 of them for work that had been sitting in `main` for days;
@@ -40,10 +50,13 @@ commit. Ancestry is the same predicate the broker itself trusts.
 
 ## Who this is for, and why it fails at all
 
-A landing record can only be closed as `landed` with **this machine's orchestrator token**, never
-with a task secret (`docs/api.md`). So the obligation was never really the root's: a root that has
-gone home cannot have taken the debt with it, because the credential that settles it belongs to the
-machine. Whoever runs this suite in this repository is standing in front of the one door there is.
+The landing **route** can be called only with **this machine's orchestrator token**, never with a
+task secret (`docs/api.md`), and that is still true. So the obligation was never really the root's:
+a root that has gone home cannot have taken the debt with it, because the credential that settles
+it belongs to the machine. What has changed is that the route is no longer the only writer of a
+`landed` record — the sweep above writes one without any credential at all, because it is the
+machine — so whoever runs this suite is standing in front of the door a person uses, not in front
+of the only door.
 
 It fails only on landings that happened **after the cutoff below**. Debt older than that is printed
 in full on every run — loudly, individually, with the command that settles each one — and does not

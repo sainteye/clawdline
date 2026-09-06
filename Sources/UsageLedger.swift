@@ -62,7 +62,7 @@ final class UsageLedger {
     /// written from the key its own collector will compute next time. Adding a column, an index
     /// or a column *name* changes neither an identity nor the meaning of a stored value, and
     /// needs a number of its own.
-    static let storeVersion = 6
+    static let storeVersion = 7
 
     /// Which published price table produced a `list_price_estimate`. This is **not** protection
     /// against a historical month being re-priced — recorded costs are recorded and do not move.
@@ -208,6 +208,19 @@ final class UsageLedger {
         case includesCacheUnreconciled = "includes_cache_unreconciled"
     }
 
+    /// **Whether a landing on the wire carries the broker's verification triple.**
+    ///
+    /// `nil` where there is no landing at all, which is a third answer and not a `false`: a row
+    /// written before this column existed says *nobody asked*, and a row that says `false` says
+    /// *somebody asked and the proof was not there*. The rule itself is
+    /// ``Orchestrator/isBrokerVerifiedTargetLanding(_:)`` and is not restated here — a second
+    /// spelling of it is how two surfaces come to disagree about one record.
+    static func landingVerified(_ landing: Any?) -> Bool? {
+        guard let obj = landing as? [String: Any] else { return nil }
+        guard let decoded = OrchestratorStore.landing(from: obj) else { return false }
+        return Orchestrator.isBrokerVerifiedTargetLanding(decoded)
+    }
+
     /// The prefix of an identity the store had to invent because neither collector ever knew the
     /// session a task ran in. It is a mark on the row, and ``Row/measurement`` is where that mark
     /// is turned back into something a reader can see.
@@ -217,8 +230,12 @@ final class UsageLedger {
     /// store version 6 gave `graph_id` the producer it had been waiting for — see
     /// ``graphIdentity(of:)``. `disposition` still remains NULL until one exists, and neither is
     /// inferred from a root Session or a successful terminal state.
+    ///
+    /// `landing_verified` arrived with store version 7, beside `landing_state`, because the word
+    /// alone stopped being enough the day a timer could write it.
+
     static let lineageColumns = ["graph_id", "parent_task_id", "retry_of", "attempt",
-                                 "landing_state", "disposition"]
+                                 "landing_state", "landing_verified", "disposition"]
     /// Columns for which no durable producer exists. Feature is intentionally absent: accepted
     /// append-only attribution events now provide that dimension without pretending it is a task
     /// registry column. `graph_id` left this list in store version 6, when it stopped being a
@@ -672,6 +689,9 @@ final class UsageLedger {
         var retryOf: String?
         var attempt: Int?
         var landingState: String?
+        /// Whether that landing carries the broker's verification triple. `nil` where the source
+        /// held no landing at all, or where a reader wrote this row without asking.
+        var landingVerified: Bool?
         var disposition: String?
 
         /// The source's usage object, copied as it came. **Nil means the source could not be
@@ -738,6 +758,7 @@ final class UsageLedger {
         var retryOf: String?
         var attempt: Int?
         var landingState: String?
+        var landingVerified: Bool?
         var disposition: String?
         var billingMode = ""
         var rawUsage: String?
@@ -1123,6 +1144,17 @@ final class UsageLedger {
                 CREATE INDEX IF NOT EXISTS task_verification_receipts_graph
                   ON task_verification_receipts (graph_id, recorded_at);
                 """)
+        }
+        if version < 7 {
+            // **`landed` is one word for two different sentences, and a card read only the
+            // word.** A landing recorded through the HTTP route carries the broker's verification
+            // triple: the commit resolves in the task's repository and the named target branch
+            // contains it. The landing sweep's write-set arm carries none, deliberately — what it
+            // proves is that nothing of the task's declared write set is outstanding, which is a
+            // narrower sentence. The registry keeps both apart; this store kept only
+            // `landing_state`, so on the Projects page the two were the same row. `NULL` is the
+            // third answer and the one every row written before today has: nobody asked.
+            exec(db, "ALTER TABLE usage_intervals ADD COLUMN landing_verified INTEGER;")
         }
         // Each statement above is independent of the ones before it, which is what makes a
         // half-applied migration self-heal: a crash between the ALTER and this line leaves the
@@ -1824,8 +1856,8 @@ final class UsageLedger {
               kind_raw, isolation, depth, claim_count, timeout_seconds, task_state, model,
               reasoning_effort, billing_mode, cost_basis, coverage, sealed, started_at,
               local_day, observed_at, updated_at, graph_id, parent_task_id, retry_of, attempt,
-              landing_state, disposition)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)
+              landing_state, landing_verified, disposition)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(interval_key) DO NOTHING;
             """, -1, &statement, nil) == SQLITE_OK else { return }
         bind(statement, 1, key)
@@ -1861,7 +1893,8 @@ final class UsageLedger {
         bind(statement, 31, sample.retryOf)
         bind(statement, 32, sample.attempt)
         bind(statement, 33, sample.landingState)
-        bind(statement, 34, sample.disposition)
+        bind(statement, 34, sample.landingVerified.map { $0 ? 1 : 0 })
+        bind(statement, 35, sample.disposition)
         sqlite3_step(statement)
     }
 
@@ -2001,6 +2034,7 @@ final class UsageLedger {
           retry_of = COALESCE(retry_of, ?),
           attempt = COALESCE(attempt, ?),
           landing_state = COALESCE(?, landing_state),
+          landing_verified = COALESCE(?, landing_verified),
           disposition = COALESCE(disposition, ?)
         WHERE \(predicate);
         """
@@ -2010,7 +2044,8 @@ final class UsageLedger {
         bind(statement, 1, sample.projectKey); bind(statement, 2, sample.graphID)
         bind(statement, 3, sample.parentTaskID); bind(statement, 4, sample.retryOf)
         bind(statement, 5, sample.attempt); bind(statement, 6, sample.landingState)
-        bind(statement, 7, sample.disposition); bind(statement, 8, subject)
+        bind(statement, 7, sample.landingVerified.map { $0 ? 1 : 0 })
+        bind(statement, 8, sample.disposition); bind(statement, 9, subject)
     }
 
     private func updateLineage(_ db: OpaquePointer, key: String, sample: Sample) {
@@ -2234,7 +2269,8 @@ final class UsageLedger {
                cache_write, total, source_total, reconciliation, cost_value, cost_unit,
                cost_basis, price_snapshot_id, missing_reason, coverage, coverage_reasons, sealed,
                source_bytes, started_at, ended_at, local_day, updated_at, input_basis,
-               graph_id, parent_task_id, retry_of, attempt, landing_state, disposition
+               graph_id, parent_task_id, retry_of, attempt, landing_state, landing_verified,
+               disposition
           FROM usage_intervals
         """
 
@@ -2286,7 +2322,8 @@ final class UsageLedger {
         row.retryOf = text(statement, 45)
         row.attempt = integer(statement, 46)
         row.landingState = text(statement, 47)
-        row.disposition = text(statement, 48)
+        row.landingVerified = integer(statement, 48).map { $0 == 1 }
+        row.disposition = text(statement, 49)
         return row
     }
 
@@ -2728,7 +2765,7 @@ final class UsageLedger {
         "missing_reason", "coverage", "coverage_reasons", "sealed", "started_at", "ended_at",
     ] + lineageColumns
 
-    /// The whole range as CSV. **An unknown is an empty field, never `0`**. Store version 5 carries the
+    /// The whole range as CSV. **An unknown is an empty field, never `0`**. Store version 6 carries the
     /// lineage facts the broker actually knows and leaves only unavailable facts empty.
     ///
     /// **`total` and `measured` are two different quantities and the file carries both.** `total`
@@ -2803,6 +2840,7 @@ final class UsageLedger {
             fields.append(row.retryOf ?? "")
             fields.append(number(row.attempt))
             fields.append(row.landingState ?? "")
+            fields.append(row.landingVerified.map { $0 ? "1" : "0" } ?? "")
             fields.append(row.disposition ?? "")
             lines.append(fields.map(escape).joined(separator: ","))
         }
@@ -2907,6 +2945,7 @@ final class UsageLedger {
         sample.retryOf = record["respawn_of"] as? String
         sample.attempt = record["respawn_generation"] as? Int
         sample.landingState = (record["landing"] as? [String: Any])?["state"] as? String
+        sample.landingVerified = UsageLedger.landingVerified(record["landing"])
         sample.disposition = record["disposition"] as? String
         sample.rawUsage = usage
         sample.model = (usage?["model"] as? String) ?? (record["model"] as? String)
@@ -3609,6 +3648,7 @@ extension UsageLedger {
             sample.retryOf = task["respawn_of"] as? String
             sample.attempt = task["respawn_generation"] as? Int
             sample.landingState = (task["landing"] as? [String: Any])?["state"] as? String
+            sample.landingVerified = UsageLedger.landingVerified(task["landing"])
             sample.disposition = task["disposition"] as? String
         } else {
             sample = Sample(assistant: assistant, sessionID: sessionID, boundaryKind: .session,
@@ -4802,6 +4842,7 @@ final class UsageQueryService {
                 "retryOf": row.retryOf as Any? ?? NSNull(),
                 "attempt": row.attempt as Any? ?? NSNull(),
                 "landingState": row.landingState as Any? ?? NSNull(),
+                "landingVerified": row.landingVerified as Any? ?? NSNull(),
                 "disposition": row.disposition as Any? ?? NSNull(),
             ],
         ]
@@ -4998,8 +5039,14 @@ final class UsageProjectWorktreeService {
     /// target branch; `branch_merged` is this side reading `for-each-ref --merged HEAD` and
     /// recognising the shape of a landing nobody recorded.
     enum LandingEvidence: String {
-        /// A root recorded a verified landing: `landing_state = landed`.
+        /// A root recorded a verified landing: `landing_state = landed`, carrying the broker's
+        /// verification triple — or a row old enough that nothing recorded whether it did.
         case record
+        /// A `landed` record that is known to carry **no** broker verification. The landing sweep's
+        /// write-set arm writes exactly this: it proved that nothing of the task's declared write
+        /// set was outstanding at two named instants, which is a narrower sentence than *the
+        /// delivery reached the target*, and the card must not read them as the same receipt.
+        case recordUnverified = "record_unverified"
         /// git says the delivery branch is contained by the repository's current HEAD **and it
         /// carries at least one commit of its own**, so what HEAD contains is a delivery.
         case branchMerged = "branch_merged"
@@ -5374,6 +5421,14 @@ final class UsageProjectWorktreeService {
         }
 
         var storedLandingState: String? { row.landingState?.nonEmpty }
+
+        /// Whether that landing carries the broker's verification triple, read the same way round
+        /// as ``landingState``: the registry wins wherever it still holds the task, including
+        /// when its answer is *there is no landing*.
+        var landingVerified: Bool? {
+            guard let live else { return row.landingVerified }
+            return live.landingVerified
+        }
         /// `live` where the registry answered for this row, `stored` where only the copy is left.
         var basis: String { live == nil ? "stored" : "live" }
     }
@@ -5602,9 +5657,20 @@ final class UsageProjectWorktreeService {
     /// It reads ``Reading/landingState``, which is the registry's answer wherever the registry
     /// still holds the task — so a landing filed after these rows were written says `record`
     /// here, on the same read that files it.
+    ///
+    /// **And `record` is not one thing.** A landing written through the HTTP route carries the
+    /// broker's verification triple; the landing sweep's write-set arm carries none, because what
+    /// it proved is that nothing of the task's declared write set was outstanding rather than that
+    /// a commit reached the target. Reading only the word `landed` made those two the same card,
+    /// which is the one thing this enum exists to stop — so a landed row whose verification is
+    /// known to be absent says ``LandingEvidence/recordUnverified`` instead. A row that never
+    /// carried the answer (`nil`) keeps `record`: that is what every row written before store
+    /// version 6 says, and downgrading them all would be inventing a fact rather than reading one.
     static func evidence(_ rows: [Reading], branch: LandingEvidence) -> LandingEvidence {
-        rows.contains { $0.landingState == Orchestrator.LandingState.landed.rawValue }
-            ? .record : branch
+        let landed = rows.filter { $0.landingState == Orchestrator.LandingState.landed.rawValue }
+        guard !landed.isEmpty else { return branch }
+        if landed.contains(where: { $0.landingVerified != false }) { return .record }
+        return .recordUnverified
     }
 
     /// The same question asked of stored rows alone, for a caller that has no registry snapshot.

@@ -47,6 +47,10 @@ extension UsageLedger {
     struct LiveTaskRecord: Equatable {
         /// The obligation's state right now, or nil when the record carries no landing at all.
         var landingState: String?
+        /// Whether that landing carries the broker's verification triple, by
+        /// ``Orchestrator/isBrokerVerifiedTargetLanding(_:)``. `nil` where there is no landing —
+        /// the same three answers the ledger's own `landing_verified` column has.
+        var landingVerified: Bool?
         /// The task's own title — what the work *was*, as against which root owned it.
         var title: String?
         /// Whether the task is still running, so one reader answers both questions from one
@@ -57,9 +61,10 @@ extension UsageLedger {
         /// admits `nothing_to_land` by, so a row cannot advise a close the route would refuse.
         var nothingToLand: Bool
 
-        init(landingState: String? = nil, title: String? = nil, isLive: Bool = false,
-             nothingToLand: Bool = false) {
+        init(landingState: String? = nil, landingVerified: Bool? = nil, title: String? = nil,
+             isLive: Bool = false, nothingToLand: Bool = false) {
             self.landingState = landingState
+            self.landingVerified = landingVerified
             self.title = title
             self.isLive = isLive
             self.nothingToLand = nothingToLand
@@ -419,6 +424,7 @@ extension Orchestrator {
         for task in snapshots {
             records[task.id] = UsageLedger.LiveTaskRecord(
                 landingState: task.landing?.state.rawValue,
+                landingVerified: task.landing.map(isBrokerVerifiedTargetLanding),
                 title: UsageLedger.featureNonEmpty(task.title),
                 isLive: !task.state.isTerminal,
                 nothingToLand: nothingToLandAdmission(

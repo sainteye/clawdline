@@ -216,3 +216,120 @@ nothing-to-keep prints.
 the target by squash, rebase or cherry-pick, which shares no commit with its branch; a repository
 whose tasks have left the registry's retention window; and a person landing work with no Clawdline
 task at all, which is the same boundary the queue has.
+
+## And now the machine walks through the door it can prove
+
+The passage above — **`landed` has exactly one entrance and a person is standing in it** — is no
+longer wholly true, and what changed is which of the guard's three answers a machine acts on.
+
+| the guard's answer | who acts on it now |
+|---|---|
+| `unrecorded landing` | **the broker.** Its own sweep asks the same `merge-base --is-ancestor` question and closes the record itself, through the same verified path the HTTP route takes. |
+| `outstanding delivery` | a person. The delivery is not in the target branch; whether that is work still to land or a squash nobody can see is a judgement. |
+| `undecidable` | **the broker, but only narrowly.** A shared-checkout task has no branch to ask about, so the sweep asks the one question that *is* answerable — is anything this task was allowed to write still outstanding? — and closes on that, saying so. Everything else here is still a person's. |
+
+**The two arms prove two different propositions and the record says which.**
+
+- **Ancestry.** Terminal task, record open, a named target, and a delivery head the registry knows
+  (`worktree.head`, else the live `refs/heads/clawdline/task/<id>`). If that head is contained by
+  `refs/heads/<target>`, the record closes as `landed` through
+  `OrchestratorDraft.verifyTargetLanding` — so `verification_origin`, `verified_commit`,
+  `verified_target_commit` and `landed_at` are all real, and this stays the two-check
+  `work_complete`. **This proves the delivery reached the target.**
+- **Write-set containment.** Terminal task, record open, a named target, no delivery branch, a
+  non-empty `claims`, and every claimed path **resolving to something git can see**, unmodified in
+  the task's `project_dir`, and identical to `refs/heads/<target>` — **on two readings at least
+  five minutes apart**. The record closes as `landed` with the target's own commit, a note naming
+  the predicate and both instants it was measured at, and **no verification field at all** — so
+  `isBrokerVerifiedTargetLanding` is false and this can never become `work_complete`. **This proves
+  only that nothing of the task's write set was outstanding**, which is a smaller sentence, and the
+  smaller sentence must never be dressed as the larger one.
+
+**Arm 2 has two rules arm 1 does not, and both come from the review of this feature.**
+
+- **Every claim must resolve positively.** `git status` and `git diff` both answer *exit 0,
+  nothing* for a pathspec that matches no file at all, which is character for character the answer
+  they give for a path that is clean. Three of the twelve records below declared, as a single
+  claim, three real filenames joined by spaces into one path that exists nowhere — and both dry
+  runs closed all three, while the sixteen files those names really point at sat there modified.
+  So a claim now has to be listed by `git ls-files` in the checkout **or** by `git ls-tree -r` in
+  the target commit; two paths rather than one, so that a delivery whose point was deleting a file
+  is not read as undecidable. A claim neither answers for makes the whole write set
+  `unanswerable`, and the reason names that claim.
+- **The same answer must come back twice, five minutes apart.** What this arm proves is true at an
+  instant and the record it writes is permanent. On 2026-09-06 four of the rows below were clean
+  and identical to the target at 20:24 and dirty again by 20:39, because somebody was still
+  editing exactly those files; a live sweep would have closed all four for ever in between. Both
+  readings must see the same target tip and the same claims, or the window restarts rather than
+  continuing. The asymmetry is what settles it: every refusal this window can make is *look again
+  in five minutes*, and a settled tree stays settled.
+
+**What it refuses, always.** A settled record — a settled state may never move to another one. A
+task that has not finished. A record with no named target. `abandoned`, which is a sentence about
+somebody giving up and not a thing a machine can observe. `nothing_to_land`, which
+`nothingToLandAdmission` refuses for these tasks anyway. And a repository git will not answer for is
+**skipped**, never read as *nothing landed* — the same refusal `contained_commits` makes above.
+
+**What it costs.** A pass runs at most every five minutes, **on a serial queue of its own**, never
+while another pass is running, never from a read path, and never inside the registry lock. It looks
+at at most twenty pending records, and it saves and broadcasts once for the whole pass rather than
+once per closure.
+
+The subprocess bound is worth stating properly, because the first version of this paragraph stated
+it an order of magnitude low. Per *(repository, target)* pair: one `check-ref-format` and one
+`rev-list`. Per git directory: one `for-each-ref`. Per repository identity — which for a worktree
+task is *per task*, since its identity key is the task id — up to three `rev-parse` calls. Then per
+row: an ancestry row that is actually landing pays four more in `verifyTargetLanding`, and a
+write-set row pays three, or four when the checkout could not answer for every claim. Twenty
+ancestry rows in twenty worktrees is therefore something like 140 subprocesses at a 15-second
+timeout each, which is why the queue is the sweep's own: on `worktreeQueue` that worst case would
+have been a dispatch waiting behind it.
+
+The write happens under the lock behind a compare-and-swap on the exact record and task state the
+git answers were about, so a record that settled while git was running is left alone.
+
+**It compares against the ref the record names, and never against a better one.** Three of the
+twelve records measured below name `blog-reread-2026-09-06` as their target while their work
+actually reached `main`; that branch still existed and was eleven commits behind `main` when this
+was written on 2026-09-06 — a live measurement, so read it as *behind, and drifting further* rather
+than as the number eleven. Their claimed paths
+are clean and identical to `main`, so a sweep willing to substitute the repository's default branch
+would close all three — and it would then hold a record saying `target: blog-reread-2026-09-06,
+state: landed` about a branch that does not contain the work. **Which branch a record should have
+named is a person's decision**, it is settled by editing the record rather than by reading the tree,
+and a settled state may never move afterwards. So the sweep reports what it found — *N claimed paths
+differ from `refs/heads/blog-reread-2026-09-06`*, naming the ref it compared against — and leaves the
+row. That sentence is what tells a person the record names the wrong branch, which is the thing they
+can act on.
+
+**Measured, on this machine's own registry, before any of it shipped — and the number has two
+subjects, not one.** A dry run over the twelve pending records the user was looking at on
+2026-09-06 answers about *(that registry snapshot × the shared checkout at the moment of the run)*,
+and only the first half holds still. Arm 1 closes none of the twelve at any hour — not one of them
+has a delivery branch — and that part is a property of the snapshot. How many arm 2 closes is not:
+
+| when the checkout was read | arm 2 closed | left |
+|---|---|---|
+| 2026-09-06 20:24 CST, before the F1 rule | 8 | 4 |
+| 2026-09-06 20:5x CST, the reviewer's independent recomputation | 4 | 8 |
+| 2026-09-06 22:2x CST, with F1 in and the window counted | see `artifacts/dryrun-corrected.txt` | |
+
+The four that moved between the first two readings are the four somebody was still editing; three
+of the eight in the first reading were the bogus-pathspec rows F1 now refuses. **So do not quote a
+closure count as a fact about the snapshot.** What is a fact about the snapshot: twelve candidates,
+zero with a delivery branch, three whose claims resolve to nothing, and one — `dae845fb` — whose
+claims were tracked and clean in every reading taken.
+
+**And the twelve were closed by hand while this was being built, which is the cost rather than a
+counter-example.** Between 11:55:26 and 11:55:40 UTC on 2026-09-06 — fourteen seconds — a person
+settled all twelve with twelve separate `curl` calls, and every one of the resulting records is a
+genuine broker verification: `verification_origin: local_target_branch`, four distinct commits
+(`1527591f`, `9c3ca799`, `d9a0cf78`, `a52e42e5`), each confirmed contained by `main` at `64793579`.
+Nobody cut a corner. The door simply admits one record at a time and only when somebody remembers to
+walk through it, and three of the twelve needed their `target` changed on the way — which is exactly
+the half a machine must not do. What the sweep removes is the remembering, not the judgement.
+
+`tools/check-landing-records.py` and this sweep have to keep asking the same question. The guard
+still runs in `./test.sh` and still prints the `curl` for every row a person must settle; what it
+should now find, in the ordinary case, is that `unrecorded landing` is empty because the sweep got
+there first.

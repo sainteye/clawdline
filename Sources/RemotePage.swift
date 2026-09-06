@@ -763,6 +763,7 @@ enum RemotePage {
             "webProjectBranch": t.webProjectBranch,
             "webProjectEvidence": t.webProjectEvidence,
             "webProjectEvidenceRecord": t.webProjectEvidenceRecord,
+            "webProjectEvidenceRecordUnverified": t.webProjectEvidenceRecordUnverified,
             "webProjectEvidenceBranchMerged": t.webProjectEvidenceBranchMerged,
             "webProjectEvidenceBranchEmpty": t.webProjectEvidenceBranchEmpty,
             "webProjectEvidenceBranchBaseUnknown": t.webProjectEvidenceBranchBaseUnknown,

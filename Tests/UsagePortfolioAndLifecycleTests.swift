@@ -1494,6 +1494,19 @@ group("a store written under version 1 is upgraded in place, and never orphaned"
                              'task_review_findings', 'task_verification_receipts');
                """), "4")
 
+    // **And the same question for the column, because two lines merged into one number.** Store
+    // version 6 arrived twice on 2026-09-06 — the receipt tables on one line, `landing_verified`
+    // on another — and both wrote `storeVersion = 6`, which git merges without a conflict because
+    // both sides say the same thing. A store already at 6 would then never run the second
+    // migration, and every assertion above would still be green: a store created from nothing
+    // passes through every branch whatever the constant says. The landing that found it renumbered
+    // the column to 7; this is the assertion that would have said so.
+    expect("an upgraded store grows the column the second store-version-6 line added",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM pragma_table_info('usage_intervals')
+                WHERE name = 'landing_verified';
+               """), "1")
+
     expect("six identical corrections written under v1 are de-duplicated to three",
            UsageLedger.shared.correctionCount(), 3)
     expect("and the index that stops them coming back exists",

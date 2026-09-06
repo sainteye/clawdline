@@ -2583,9 +2583,10 @@ enum Orchestrator {
             // are obligations of the dispatching root. A child cannot land and must never be
             // told that `this session` can move the root's row.
             guard mine else { continue }
-            let landingClosed = task.landing.map {
-                $0.state == .landed || $0.state == .abandoned
-            } ?? false
+            // `isSettled`, not a fourth hand-rolled spelling of it. This read `landed ||
+            // abandoned`, so a task correctly closed as having written nothing kept its claim and
+            // dirty rows for ever — no state could clear them.
+            let landingClosed = task.landing?.state.isSettled ?? false
             if task.state.isTerminal, task.resultVerifiedAt == nil, task.summary == nil,
                !landingClosed {
                 out.append(CloseabilityReason(.taskWithoutResult, subjectKind: "task",
@@ -2925,7 +2926,7 @@ enum Orchestrator {
     /// the store already has changes nothing. All three landing states go over — `pending` and
     /// `abandoned` are as much a fact about the delivery as `landed` is, and a surface that saw
     /// only the last of the three would show an obligation that had been given up as an open one.
-    private static func recordLandingInLedger(_ task: Task) {
+    static func recordLandingInLedger(_ task: Task) {
         UsageLedger.shared.collect(taskRecord: ledgerRecord(of: task))
     }
 
@@ -6589,6 +6590,10 @@ enum Orchestrator {
         // tab, the last task of a fan-out leaves nothing in `liveIDs` at all — and a batch that
         // announces only while something is still on the list is one that never announces.
         sweepBatches()
+        // The landing records this Mac can settle by itself, on their own clock and on the
+        // worktree queue. Above the `liveIDs` return with `sweepBatches`, because a pending
+        // landing outlives every live task that could keep this walk going.
+        scheduleLandingSweep()
         scheduleCompletionPump()
 
         for id in liveHandoffs { scheduleHandoffStep(id) }
