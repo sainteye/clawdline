@@ -131,6 +131,10 @@ check(read?["written_by"] as? String == "phone-a", "and which device sent it")
 check(read?["written_at"] as? String == "2026-08-29T10:40:00Z", "and when, in UTC")
 check(one.bytes > 0 && one.bytes == (try! Data(contentsOf: URL(fileURLWithPath: one.path))).count,
       "the byte count in the receipt is the file's own size")
+check(read?["received_bytes"] as? Int == body(first).count,
+      "and the envelope's own number is the body that arrived, under a name that says so")
+check(read?["bytes"] == nil,
+      "the two are never both called bytes — that overloading is the fault this repairs")
 check(one.completenessStated, "a report carrying a completeness block is recorded as stating one")
 check(((read?["completeness"] as? [String: Any])?["whole"] as? Bool) == true,
       "and that block is hoisted to the top of the envelope")
@@ -227,8 +231,8 @@ process.stdout.write(run.stdout);
 process.stderr.write(run.stderr);
 check(run.status === 0, "the store's behaviour passes on a real disk");
 const passed = /(\d+) Swift checks passed/.exec(run.stdout);
-check(!!passed && Number(passed[1]) === 27,
-      `every Swift check ran, not a prefix of them (${passed ? passed[1] : "none"} of 27)`);
+check(!!passed && Number(passed[1]) === 29,
+      `every Swift check ran, not a prefix of them (${passed ? passed[1] : "none"} of 29)`);
 
 /* ---- and the directory really is bounded ------------------------------------------------------ */
 const written = readdirSync(join(work, "home", "Library", "Logs", "Clawdline", "diagnostics")).sort();

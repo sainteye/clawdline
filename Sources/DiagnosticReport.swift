@@ -100,6 +100,10 @@ enum DiagnosticReport {
     }
 
     /// What was written, and where — read back out of the URL that was actually written to.
+    ///
+    /// `bytes` here is the **file's** size. The envelope inside it carries `received_bytes`, which
+    /// is the body that arrived; the two differ by the envelope, and calling both of them `bytes`
+    /// is the kind of overloaded field this whole feature exists to stop producing.
     struct Receipt: Equatable {
         let path: String
         let previousPath: String
@@ -143,7 +147,7 @@ enum DiagnosticReport {
             "clawdline_diagnostic_report": 1,
             "written_at": stamp.string(from: now),
             "written_by": device,
-            "bytes": body.count,
+            "received_bytes": body.count,
             "completeness": completeness,
             "report": report,
         ]

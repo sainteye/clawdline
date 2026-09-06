@@ -55,7 +55,7 @@ JSON, always, with the page's own document untouched inside an envelope:
   "clawdline_diagnostic_report": 1,
   "written_at": "2026-09-06T09:12:33Z",
   "written_by": "<the paired device that sent it>",
-  "bytes": 18204,
+  "received_bytes": 18204,
   "completeness": { "…": "hoisted out of the report below, so you see it first" },
   "report": { "completeness": {}, "current": {}, "savedIncidents": [], "lastDetail": {}, "currentTrace": [] }
 }
@@ -129,6 +129,12 @@ and reports every one of `readWorkerTrace`'s four outcomes.
   off by default for a phone, and the person who needs this most is precisely the person on a phone
   with it off. What the route may do is bounded by construction instead: two fixed file names, a
   size limit, and nothing in the request that could name a path.
+
+A successful answer is `{"ok": true, "path": …, "previous": …, "bytes": …, "limit": …,
+"completeness_stated": …}`, and the panel prints the `path` it was given rather than one it composed
+— a page that prints its own idea of the path will name a file nobody wrote the day either end
+moves. **`bytes` in that answer is the file's size; `received_bytes` inside the file is the body
+that arrived.** They differ by the envelope, and they are two names on purpose.
 
 Every call is written to the audit log as `diagnostics.report`, refusals included.
 

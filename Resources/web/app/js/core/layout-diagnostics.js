@@ -464,7 +464,7 @@ function debugUI(force, reveal) {
                 if (res.ok && data && data.path) {
                     // The path is the server's, never this file's guess at it: a page that prints
                     // a path it composed itself is a page that can name a file nobody wrote.
-                    say("Written to " + data.path + "\n" + data.bytes + " bytes" +
+                    say("Written to " + data.path + "\n" + data.bytes + " bytes on disk" +
                         (data.previous ? "\nthe press before it: " + data.previous : "") +
                         (data.completeness_stated ? "" : "\nthis build sent no completeness block"));
                     return;

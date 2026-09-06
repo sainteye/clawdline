@@ -9,6 +9,29 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: a defect on the phone, read from a file instead of a paste
+
+Some faults only exist in the browser on your phone, where there is no console and no address bar.
+The recorder that watches for them could already see what happened; getting it out was `Copy report`
+and a paste, and this week that report was long enough that pasting it hung the program — with
+Universal Clipboard not syncing either, which left a person reading a string off a screen out loud.
+
+The panel has a **Send to Mac** button now. It posts to `POST /v1/diagnostics/report` and the report
+lands at `~/Library/Logs/Clawdline/diagnostics/report.json`, always that path — not a UUID, not
+"whichever is newest" — because whoever reads it was not in the room and cannot ask. The press
+before it is kept as `previous.json`, and those two names are also the whole of why the directory
+cannot grow. The button says on screen where the file went, so it can be read out; when it is
+refused it says which refusal, by name.
+
+**The report says what is missing from it.** How many trace entries the ring buffer threw away and
+where it stopped, and for every recorder living outside the page whether it is `unread`, `merged`,
+`unavailable` or `failed` — because *not folded in yet* and *folded in, and there was nothing* had
+been the same empty list, and they are opposite readings. Nothing on the road knows an event name,
+so the next thing worth watching needs no change to any of it.
+
+The gesture stays hidden and stops being unwritten: [`docs/diagnostics.md`](docs/diagnostics.md)
+has the five taps, the path, the format and the three lines that replace asking for a paste.
+
 ## 0.8.0 — 2026-09-06
 
 ### Added: the sentence you type several times a day, one press away
