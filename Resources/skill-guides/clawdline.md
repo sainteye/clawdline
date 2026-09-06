@@ -92,6 +92,39 @@ reply.
 
 ---
 
+## 1.5 Read what is already in this repository — the dispatch will not open without it
+
+**This is a step, not advice, and the door is shut until you have taken it.**
+
+```bash
+PROJECT=$(git -C . rev-parse --show-toplevel)
+INVENTORY=$(curl --fail-with-body -sS \
+  "http://127.0.0.1:$PORT/v1/orchestrator/inventory?project=$PROJECT" \
+  -H "X-Clawdline-Orchestrator: $TOKEN")
+GEN=$(printf '%s' "$INVENTORY" | jq -r .generation)
+printf '%s' "$INVENTORY" | jq '{live, unlanded, droppable}'
+```
+
+Three sections, and each row carries a `do` naming something the server would actually accept:
+
+| section | what it is | `do` |
+|---|---|---|
+| `live` | somebody is on it now, with the paths they hold | `coordinate_or_take_over` — register a wait on that session, or hand the line over; **do not dispatch a second task onto those paths** |
+| `unlanded` | finished, and its delivery is still on a branch nobody has merged | `land_or_abandon`, or `nothing_to_land` where the landing route would accept that. **Read this before you brief anything: a finished delivery on a branch shows up in no `git status`, and re-doing one costs a whole task** |
+| `droppable` | a checkout or a branch nothing needs any more, with `why` | `dispose` — the one word here that names no route, because nothing deletes for you. Tell the user; do not delete anything on your own initiative |
+
+`generation` is the receipt. It is derived from that answer rather than stored, so it moves when a
+line appears, finishes or changes what it claims — and does **not** move for a clock, a title, or a
+child committing again. Carry it into §5.
+
+**If the answer names a row that looks like your job, stop and say so** rather than dispatching
+beside it. That is the whole reason this is compulsory: on 2026-09-06 this Mac finished the day
+with 26 landings nobody had recorded and 10 deliveries re-done from scratch on a second line while
+the first sat finished on a branch. `GET /v1/orchestrator/inflight` had named every one of them,
+correctly, all day. Nothing made anybody look.
+
+---
+
 ## 2. Draw the whole graph before deciding who gets what
 
 <!-- clawdline-dispatch-role-contract:v1 -->
@@ -792,8 +825,12 @@ as `root_unresolved`; multiple same-assistant process owners are refused as
 curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\",\"inventory_generation\":\"$GEN\"}"
 ```
+
+`$GEN` is §1.5's receipt. Without it, or with one this repository has moved past, this answers
+`409 stale_inventory` — and the error body carries the whole current inventory, so you never need a
+second request to recover: read it, and resend with the `inventory_generation` it hands you.
 
 Success looks like this (`state` will be `queued` or `spawning`; the tab is not open yet):
 
@@ -809,6 +846,7 @@ not on the exit status:**
 
 | `code` | Means | Do |
 |---|---|---|
+| `stale_inventory` | **you dispatched without reading what is already here**, or the repository moved since you read it | the error body carries the current inventory and its `inventory_generation`. Read the three sections — a row that looks like your job means stop and say so — then resend with that value |
 | `depth_exceeded` | **you are already at the bottom of the tree** | stop now, tell the user as in §0, and do this one yourself. Do not route around it |
 | `over_capacity` | the allowance is full | `message` says whether it is your session's allowance or the whole Mac's. The error carries `retry_after` in seconds. Wait and resend, or send fewer / in batches. **Do not hammer it** |
 | `bad_task` | `task.json` does not validate | read `message`, fix the file, resend the same `task_id` (same id is idempotent). A bad `model` lands here too |
@@ -836,8 +874,11 @@ with `root.session_id:null` and `root.poll_only:true`, then send the same closed
 curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\",\"inventory_generation\":\"$GEN\"}"
 ```
+
+This door takes the same receipt and refuses the same way: unattended is not an exemption from
+looking, and it is exactly the caller with nobody watching its screen.
 
 The route refuses an owner or a missing `poll_only:true` as `detached_task_required`. The ordinary
 `/tasks` route refuses this task shape as `detached_route_required`. A detached caller must poll

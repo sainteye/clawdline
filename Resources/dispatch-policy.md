@@ -8,6 +8,15 @@ the task's own instructions and every line of it competes with them for a child'
 This file is only about **handing work out**. Landing, shared-tree discipline, file waits and how a
 child verifies its own work belong to the repository's rules and to the child's briefing, not here.
 
+## Before that: read what is already here
+
+`GET /v1/orchestrator/inventory?project=<repo>` answers `live`, `unlanded` and `droppable`, and
+every row carries a `do` the server would accept. **It is not optional**: both dispatch routes
+refuse a body without its current `inventory_generation` as `409 stale_inventory`, and that
+refusal carries the whole inventory back, so recovering is one round trip. A row that looks like
+your job means stop and say so — 26 unrecorded landings and 10 deliveries re-done from scratch in
+one day were all named correctly by a route nobody was made to read.
+
 ## Should this be dispatched at all?
 
 The measurement is sharp both ways: on work that splits into independent pieces, several agents beat

@@ -147,6 +147,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/landing-queue/advance` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/inventory` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage.csv` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage/analytics` | orchestrator token, **or** token | `read` |
@@ -1872,15 +1873,19 @@ existing assistant Session from `GET /v1/orchestrator/sessions`; the same comple
 there without opening a tab. The concept, the trust model and the file formats are
 [`docs/orchestrator.md`](orchestrator.md); what follows is the request.
 
-The body is two fields and neither of them is the work:
+The body is three fields and none of them is the work. The third is a receipt from
+[`GET /v1/orchestrator/inventory`](#get-v1orchestratorinventoryprojectdir), and this route refuses
+a body without a current one:
 
 ```console
 $ TASK=$(uuidgen | tr 'A-Z' 'a-z'); SECRET=$(openssl rand -hex 32)
 $ umask 077; mkdir -p /tmp/.clawdline/$TASK/artifacts   # …and write task.json into it
+$ GEN=$(curl --fail-with-body -sS "http://127.0.0.1:7717/v1/orchestrator/inventory?project=$PWD" \
+    -H "X-Clawdline-Orchestrator: $ORCH" | jq -r .generation)
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
     -H 'Content-Type: application/json' \
-    -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
+    -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\",\"inventory_generation\":\"$GEN\"}"
 {"ok":true,"task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","state":"spawning","kind":"image","title":"Project portrait","assistant":"codex","reasoning_effort":"high","projectDir":"/Users/you/code/clawdline","created":1787100000,"spawnedAt":1787100002,"dir":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","root":{"sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","assistant":"claude","label":"clawdline main"},"child":{"terminalId":"9A1F…","backend":"iterm"}}}
 ```
 
@@ -1930,6 +1935,7 @@ Dispatch refusals are closed and typed; a client should branch on every applicab
 | `graph_dependency_failed` | 409 | a dependency task failed, a review node lacks `safe_to_land`, a verification node lacks a passing verification receipt, or another dependency produced a terminal failed state. Correct or replace that node before dispatching its successor |
 | `graph_node_active` | 409 | the current node already has an active task or landing obligation, or another dispatch is atomically admitting it. Its completed evidence cannot be replaced by a concurrent attempt |
 | `graph_node_complete` | 409 | the current node already has durable completion evidence. Model a correction as its own node rather than making the control sheet silently regress |
+| `stale_inventory` | 409 | the body carried no `inventory_generation`, or one this repository has moved past. **The error object carries the whole current inventory** — `inventory_generation` and `inventory`, byte-for-byte what the read above would answer — so recovering is one round trip and never two. Nothing is registered, nothing is opened, and no dispatch-rate budget is spent, because this is decided in the router before `Orchestrator.dispatch` is called at all. Three bodies pass through untouched: a `task_id` the registry already holds (resending is documented as idempotent and a retry must not become a refusal), a `task.json` this Mac cannot read or parse (`422 bad_task` is the precise complaint and this would replace it with a vague one), and a `project_dir` in no Git repository (there is no inventory to read, so no receipt exists for anybody to send) |
 | `root_session_required` | 422 | `root.session_id` is null or empty. Nothing is registered or opened; prove the current interactive Root through `GET /v1/orchestrator/whoami`, then send its process-bound conversation id |
 | `root_assistant_required` | 422 | a non-null `root.session_id` was supplied without an explicit `root.assistant` of `claude` or `codex`. Nothing is registered or opened and the provisional rate ticket is refunded. New ordinary HTTP dispatch never applies the historical Claude default |
 | `claims_required` | 422 | `task.json` has no `claims` key. **Present, not non-empty**: the value may be the paths this task may write, the directories containing them when the files are not decided yet, or `[]` to declare that it writes nothing. Nothing is registered or opened and the provisional rate ticket is refunded. An isolated task declares like any other — its lease is still dropped, and the same list is kept as `landing_paths`. The two bodies no caller is holding are exempt and keep the `claims_missing` warning instead: a stored schedule template, whose editor has no `claims` control on either surface, and a respawn of a body that was admitted once already |
@@ -1994,6 +2000,10 @@ task directory and the same two-field request body as the owned-child route, but
 `"root":{"session_id":null,"poll_only":true,…}`. The caller owns polling `GET
 /v1/orchestrator/tasks/:id` and `result.json`; no completion notification, owner grouping, per-root
 capacity, or root-close cascade can exist when no Root was named.
+
+It carries `inventory_generation` for the same reason and with the same
+`409 stale_inventory` refusal as the owned-child route: unattended is not an exemption from
+looking, and detached automation is exactly the caller with nobody watching its screen.
 
 The separation is deliberate. `/v1/orchestrator/tasks` refuses poll-only with
 `422 detached_route_required`, so a Root whose identity lookup failed cannot silently downgrade a
@@ -4549,6 +4559,81 @@ and the Cloud path fills it in twice; over that transport the page says the conn
 Projects instead of drawing a list it cannot fill. It draws the branch as
 `clawdline/task/<worktree id>` under a label saying the value is this document's convention rather
 than a field of the payload.
+
+### `GET /v1/orchestrator/inventory?project=<dir>`
+
+**What is already in this repository, and the receipt a dispatch has to carry back.**
+
+`GET /v1/orchestrator/inflight` has answered the first half of that well since it landed. On
+2026-09-06 it named both live work lines and both delivered-but-unmerged branches in this
+repository, correctly, all day, and the landing queue derived its four entries correctly beside it
+— while the same Mac accumulated **26 landings nobody recorded** and **10 deliveries re-done from
+scratch on a second line while the first sat finished on a branch**. The information was there and
+reading it was optional. This route is the same information plus the half that was missing:
+[`POST /v1/orchestrator/tasks`](#post-v1orchestratortasks) and
+[`POST /v1/orchestrator/detached-tasks`](#post-v1orchestratordetached-tasks) refuse a body whose
+`inventory_generation` is not the one this answers.
+
+`project` is any absolute directory and the repository containing it is resolved on this side,
+exactly as `inflight` and `landing-queue` do; authentication is identical to theirs. `claims` is
+optional, comma-separated, and is the caller's own write set: where it is given, every `live` row
+also carries `overlaps`, the intersection.
+
+```json
+{"schema_version":1,"repository":"/Users/me/code/clawdline",
+ "generation":"6b1d0f4c2a93e5d7",
+ "live":[{"task":"3f9a21bc-…","title":"Add the schedules page","state":"briefed",
+   "assistant":"claude","root_key":"9f1c2e7a","root_label":"clawdline schedules",
+   "branch":"clawdline/task/3f9a21bc","claims":["Sources/RemoteServer.swift"],
+   "overlaps":["Sources/RemoteServer.swift"],"age_seconds":2640,
+   "do":"coordinate_or_take_over"}],
+ "unlanded":[{"task":"a70c5e11-…","title":"Edit the orchestrator","state":"success",
+   "branch":"clawdline/task/a70c5e11","head":"c059bd6","landing":null,"claims":[],
+   "why":"its branch carries 4 commit(s)","age_seconds":51200,"do":"land_or_abandon"}],
+ "droppable":[{"task":"b57fc96f-…","title":"the audit that shipped","branch":"clawdline/task/b57fc96f",
+   "path":"/Users/me/Library/Application Support/Clawdline/worktrees/…","branch_exists":true,
+   "why":"merged_and_clean","age_seconds":90400,"do":"dispose"}],
+ "digest":{"sealed":["section","task","branch","why","do","claims"],
+   "excluded":["age_seconds","created","state","head","dirty","title","root_label","overlaps","at"]},
+ "at":1787102750}
+```
+
+**Every row's `do` names an action a route on this Mac would accept.** That is the standard
+`UsageProjectWorktreeService.needs` is held to and the reason it refuses to invent a fourth word
+for a settled obligation: a row that advises what the server answers `409` to is worse than a row
+that says nothing.
+
+| `do` | where it appears | what it names |
+| --- | --- | --- |
+| `coordinate_or_take_over` | `live` | `POST /v1/orchestrator/waits` on the session holding those paths, or `POST /v1/orchestrator/handoffs` to take the line over whole |
+| `land_or_abandon` | `unlanded` | `POST /v1/orchestrator/tasks/:id/landing` with `landed` or `abandoned`. Something here wrote, and `why` is the stored fact that says so |
+| `nothing_to_land` | `unlanded` | the same route with `nothing_to_land`, and it appears **only** where `Orchestrator.nothingToLandAdmission` — the predicate that route admits by — says it would be taken |
+| `dispose` | `droppable` | the one word here that names no route, deliberately: **nothing in this app deletes a checkout for a reader**. It names what a person or a root may do with `git worktree remove` and `git branch -d`, having read `why` |
+
+`droppable`'s `why` is a git fact and a stored fact, never an inference — `merged_and_clean` (the
+branch carries commits of its own and `HEAD` contains them), `branch_empty` (contained by `HEAD`
+and still pointing at the commit it was cut from, which is what `git worktree add -b` makes and
+not a landing), or `checkout_orphaned` (the task is over, git cannot find its branch, and the
+directory is still on disk). **A missing fact is not permission**: an unknown dirty flag, a
+repository git could not answer for, or an unmerged branch keeps a row out of that section
+whatever anybody recorded about it. A root's `landing: landed` settles the *obligation*; it does
+not make `HEAD` contain the commits, and only one of those two can be checked against the tree.
+
+**`generation` is derived from the answer, not stored and not a counter** — sixteen hex characters
+of SHA-256 over a canonical rendering of the schema version, the repository, and every row's
+section, task, branch, `why`, `do` and (for `live`) claims. Out of it, on purpose: `age_seconds`,
+`created`, `at` and every other clock, because a digest that ate one would expire while its holder
+was composing the request it belongs to; a task's `state` inside a section, because
+`queued → spawning → briefed` changes nothing a dispatcher decides; `head`, `dirty` and commit
+counts, because a child committing again does not change whether somebody else should dispatch
+onto those paths; `title` and `root_label`, which are prose; and `overlaps`, which is the caller's
+question rather than the repository's state, so that one caller's receipt is another's.
+
+Membership is derived on every call and there is no route that adds a row, the same way the
+landing queue's is. What that costs, said out loud: only tasks the registry still holds produce
+rows, so a checkout whose task record the newest-200 sweep has evicted is invisible here, and so is
+a delivery branch nobody's record owns. `Orchestrator.cleanupOrphanWorktrees` owns that case, with
+the same fail-safe rules and a modification-time floor this read has no honest way to apply.
 
 ### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
 

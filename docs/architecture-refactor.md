@@ -559,7 +559,7 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 542 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered groups | 545 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 36 | `Tests/main.swift`, counted by the guard |
 | suite files | 49 | `Tests/*Tests.swift`, counted by the guard |
 | Swift checks | 9,495 | `expected_swift_receipt` in `test.sh`, set from a run |

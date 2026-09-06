@@ -84,6 +84,37 @@ stderr 上那行 `curl: (22) …`。
 
 ---
 
+## 1.5 先讀這個 repository 現在有什麼——沒讀過，那扇門不會開
+
+**這是一個步驟，不是建議；沒有這一步，派工路由會直接擋下來。**
+
+```bash
+PROJECT=$(git -C . rev-parse --show-toplevel)
+INVENTORY=$(curl --fail-with-body -sS \
+  "http://127.0.0.1:$PORT/v1/orchestrator/inventory?project=$PROJECT" \
+  -H "X-Clawdline-Orchestrator: $TOKEN")
+GEN=$(printf '%s' "$INVENTORY" | jq -r .generation)
+printf '%s' "$INVENTORY" | jq '{live, unlanded, droppable}'
+```
+
+三段，每一列都帶一個 `do`，而且只會寫出這台機器真的接受的動作：
+
+| 段 | 是什麼 | `do` |
+|---|---|---|
+| `live` | 現在有人在做，連他握著的路徑一起 | `coordinate_or_take_over`——對那個 session 登記 file wait，或整條線接手；**不要再派第二件任務去寫同一批路徑** |
+| `unlanded` | 已經做完，交付還在沒人合併的分支上 | `land_or_abandon`，或在 landing 路由真的會接受時給 `nothing_to_land`。**下任何指令前先讀這一段：做完的交付在 `git status` 裡完全看不到，重做一次就是整整一輪** |
+| `droppable` | 已經沒有人需要的 checkout 或分支，附 `why` | `dispose`——這是唯一一個不對應任何路由的字，因為這個 app 不會替讀的人刪東西。講給使用者聽，不要自己動手刪 |
+
+`generation` 就是憑據。它是從那份答案推導出來的，不是存下來的計數：有新的線出現、有線做完、
+有人改了宣告的路徑，它就會動；時鐘走了、標題改了、child 又提交了一次，它都不會動。把它帶到 §5。
+
+**如果那份答案裡有一列看起來就是你要做的事，停下來講出來**，不要在旁邊再派一件。這一步之所以
+是強制的，就是為了這個：2026-09-06 這台 Mac 一天結束時有 26 筆沒人記錄的落地，還有 10 件交付
+在第一條線已經做完躺在分支上的時候，被第二條線從頭重做一遍。`GET /v1/orchestrator/inflight`
+一整天都正確地把每一件都列出來了。只是沒有任何東西逼人去看。
+
+---
+
 ## 2. 先把整張圖畫出來，再決定派給誰
 
 <!-- clawdline-dispatch-role-contract:v1 -->
@@ -694,8 +725,12 @@ active physical id 或 durable Coordinator 的 physical binding，會回
 curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\",\"inventory_generation\":\"$GEN\"}"
 ```
+
+`$GEN` 是 §1.5 那張憑據。沒帶、或帶的是這個 repository 已經走過的值，這裡會回
+`409 stale_inventory`——而錯誤 body 裡就附著當下完整的盤點，所以永遠不需要第二次請求才救得回來：
+讀它，然後用它給你的 `inventory_generation` 重送。
 
 成功長這樣（`state` 會是 `queued` 或 `spawning`，分頁還沒開完）：
 
@@ -710,6 +745,7 @@ curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks"
 
 | `code` | 意思 | 做什麼 |
 |---|---|---|
+| `stale_inventory` | **你沒讀這個 repository 現在有什麼就派工**，或是讀完之後它動了 | 錯誤 body 裡有當下完整的盤點與它的 `inventory_generation`。把三段讀完——有一列看起來就是你要做的事，就停下來講出來——然後用那個值重送 |
 | `depth_exceeded` | **你已經在樹的最底層** | 立刻停，照 §0 回報使用者，然後這件事自己做。不要繞路重試 |
 | `over_capacity` | 額度滿了 | `message` 會說是你這個 session 的額度滿了、還是整台 Mac 的。錯誤物件裡有 `retry_after`（秒）。等它再送，或減件數／分批。**不要連續重打** |
 | `bad_task` | `task.json` 不合格 | 讀 `message`，改檔案，同一個 `task_id` 再送一次（同 id 是冪等的）。`model` 打錯也走這條 |
@@ -736,8 +772,11 @@ automation。它不是 Child 派工、Root Assignment、Major Feature launch，�
 curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/detached-tasks" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\",\"inventory_generation\":\"$GEN\"}"
 ```
+
+這扇門收同一張憑據，也用同一種方式擋：無人值守不是不用看的理由，而且它正好就是那個沒有人在看
+螢幕的呼叫者。
 
 這條 route 若收到 owner 或缺少 `poll_only:true`，會回 `detached_task_required`；普通 `/tasks`
 若收到這個 shape，會回 `detached_route_required`。detached caller 必須 poll 精確 task 並讀
