@@ -313,6 +313,7 @@ struct Indonesian: Copy {
     let webShowOnMacAsked = "Mac sudah diminta membawanya ke depan"
     let webSessionActions = "Tindakan sesi"
     let webSessionGit = "Perubahan Git"
+    let webSessionScreen = "Layar langsung"
     let webScreenTitle = "Layar"
     let webScreenLive = "langsung"
     let webScreenOnDemand = "sesuai permintaan"

@@ -360,7 +360,7 @@ document.documentElement.className = "booting";
                             <div class="session-action-level" id="session-actions-main" data-place="current">
                                 <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
                                 <button id="session-info" type="button" role="menuitem">Session info</button>
-                                <button id="session-screen" type="button" role="menuitem">Screen</button>
+                                <button id="session-screen" type="button" role="menuitem">Live screen</button>
                                 <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
                                 <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
                             </div>
@@ -415,11 +415,12 @@ document.documentElement.className = "booting";
             <div class="panel-view-head">
                 <h2 id="screen-title">Screen</h2>
                 <span class="screen-channel" id="screen-badge" aria-live="polite"></span>
-                <!-- 243 columns against a phone's fifty. Off, this is the picture the Mac has and
-                     it scrolls sideways; on, the same capture is soft-wrapped with each row
-                     hanging under its own indent. Off is the default and stays it — see the
+                <!-- 243 columns against a phone's fifty. On, the capture is soft-wrapped with
+                     each row hanging under its own indent; off, this is the picture the Mac has
+                     and it scrolls sideways. On is what the panel opens in, because the panel is
+                     read on the phone; off is still byte-exact and one tap away — see the
                      stylesheet's note beside `.screen-text`. -->
-                <button class="chip" id="screen-wrap" type="button" aria-pressed="false">Wrap</button>
+                <button class="chip" id="screen-wrap" type="button" aria-pressed="true">Wrap</button>
                 <button class="chip" id="screen-close" type="button">Close</button>
             </div>
             <div class="scroller panel-view-body" id="screen-body" aria-live="polite"></div>

@@ -313,6 +313,7 @@ struct Russian: Copy {
     let webShowOnMacAsked = "Mac попросили вывести её вперёд"
     let webSessionActions = "Действия с сессией"
     let webSessionGit = "Изменения Git"
+    let webSessionScreen = "Экран в реальном времени"
     let webScreenTitle = "Экран"
     let webScreenLive = "в реальном времени"
     let webScreenOnDemand = "по запросу"

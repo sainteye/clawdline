@@ -313,6 +313,7 @@ struct Spanish: Copy {
     let webShowOnMacAsked = "Le pedimos al Mac que lo traiga al frente"
     let webSessionActions = "Acciones de la sesión"
     let webSessionGit = "Cambios de Git"
+    let webSessionScreen = "Pantalla en vivo"
     let webScreenTitle = "Pantalla"
     let webScreenLive = "en vivo"
     let webScreenOnDemand = "a petición"

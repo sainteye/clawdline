@@ -312,6 +312,7 @@ struct English: Copy {
     let webShowOnMacAsked = "Asked the Mac to bring it forward"
     let webSessionActions = "Session actions"
     let webSessionGit = "Git changes"
+    let webSessionScreen = "Live screen"
     let webScreenTitle = "Screen"
     let webScreenLive = "live"
     let webScreenOnDemand = "on demand"

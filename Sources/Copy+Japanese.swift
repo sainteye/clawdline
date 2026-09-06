@@ -311,6 +311,7 @@ struct Japanese: Copy {
     let webShowOnMacAsked = "前面に出すよう Mac に頼みました"
     let webSessionActions = "セッション操作"
     let webSessionGit = "Git の変更"
+    let webSessionScreen = "ライブ画面"
     let webScreenTitle = "画面"
     let webScreenLive = "ライブ"
     let webScreenOnDemand = "オンデマンド"

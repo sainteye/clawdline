@@ -317,6 +317,7 @@ struct Hindi: Copy {
     let webShowOnMacAsked = "Mac से सामने लाने को कह दिया"
     let webSessionActions = "session के काम"
     let webSessionGit = "Git बदलाव"
+    let webSessionScreen = "लाइव स्क्रीन"
     let webScreenTitle = "स्क्रीन"
     let webScreenLive = "लाइव"
     let webScreenOnDemand = "मांग पर"

@@ -316,6 +316,7 @@ struct Portuguese: Copy {
     let webShowOnMacAsked = "Pedimos ao Mac para trazer ele para a frente"
     let webSessionActions = "Ações da sessão"
     let webSessionGit = "Alterações do Git"
+    let webSessionScreen = "Tela ao vivo"
     let webScreenTitle = "Tela"
     let webScreenLive = "ao vivo"
     let webScreenOnDemand = "sob demanda"

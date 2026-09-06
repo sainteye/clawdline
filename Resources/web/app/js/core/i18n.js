@@ -105,6 +105,9 @@ export var T = {
     webSnippetStarterCommitBody: "Commit each file by name — never git add -A — then push and deploy.",
     webSnippetStarterReportTitle: "Say what you did",
     webSnippetStarterReportBody: "Say what you just did, what is still undone, and what you are doing next.",
+    // The menu item and the panel heading, which are two strings because the badge beside
+    // the heading already says whether this one is live.
+    webSessionScreen: "Live screen",
     webScreenTitle: "Screen",
     webScreenLive: "live",
     webScreenOnDemand: "on demand",

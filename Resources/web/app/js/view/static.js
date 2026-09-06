@@ -44,7 +44,9 @@ export function paintStatic() {
     text(els["shell-title"], T.webShellTitle);
     text(els["shell-stop"], T.webShellStop);
     text(els["shell-close"], T.webShellClose);
-    text(els["session-screen"], T.webScreenTitle);
+    // Two strings and not one: the menu names the feature, the heading names the panel, and
+    // the badge beside that heading is what says whether this backend can signal a change.
+    text(els["session-screen"], T.webSessionScreen);
     text(els["screen-title"], T.webScreenTitle);
     text(els["screen-wrap"], T.webScreenWrap);
     text(els["screen-close"], T.webClose);
