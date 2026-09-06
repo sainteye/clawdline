@@ -251,9 +251,6 @@ els["session-actions"].addEventListener("click", function (ev) {
     if (ev.target.closest && ev.target.closest("#session-end")) ActionConfirm.open("end");
 });
 
-// The layout the phone reads this in. It re-draws the capture the panel already holds, so this
-// is a click that costs the Mac nothing at all.
-els["screen-wrap"].addEventListener("click", function () { Terminal.wrap(); });
 els["screen-close"].addEventListener("click", function () { Terminal.close(true); });
 els["screen-panel"].addEventListener("keydown", function (ev) {
     if (ev.key !== "Escape") return;

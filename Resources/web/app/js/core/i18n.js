@@ -112,7 +112,6 @@ export var T = {
     webScreenLive: "live",
     webScreenOnDemand: "on demand",
     webScreenGone: "That screen could not be read",
-    webScreenWrap: "Wrap",
     webGitTitle: "Git changes",
     webGitClean: "Working tree clean",
     webGitNotRepo: "Not a Git repository",

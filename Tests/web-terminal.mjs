@@ -21,6 +21,22 @@ import { esc } from "../Resources/web/app/js/core/esc.js";
  * tell it something changed. On tmux it can, and the panel is about four milliseconds behind the
  * pane; on iTerm2 nothing can, and the same panel is a sample. A page that drew those identically
  * would be making a promise the Mac has not made, so the two are asserted apart here.
+ *
+ * **One renderer, so one subject.** `paintRows()` soft-wraps the capture, one element per screen
+ * row, each row hanging its continuations under its own indent — and there is nothing else. The
+ * reasoning for that layout has not changed and neither has its price: the row's trailing padding
+ * is dropped, so a background that ran to the right margin stops at the last visible character,
+ * and a row that is essentially a horizontal rule is clipped rather than folded. Those are
+ * asserted below as what the panel does, not as what one of two modes does.
+ *
+ * **And what this file stopped being able to prove.** It used to hold `paint()`, the unwrapped
+ * renderer, byte for byte to the markup this panel emitted before wrapping existed — an equality
+ * over more than 20,043 inputs, with a stated exception for a capture carrying an OSC 8. That
+ * renderer has been deleted with the mode it drew, so the equality has no subject left: nothing
+ * here compares this panel to the panel it used to be. Every safety property it reached through
+ * `paint()` — the escaping order, the link allowlist, the OSC scanner, SGR across rows — is
+ * asserted below through `paintRows()` instead, which is the only renderer there is to assert
+ * anything against.
  */
 
 const source = await readFile(
@@ -53,7 +69,6 @@ const els = {
     "screen-badge": element(),
     "screen-body": element(),
     "screen-close": element(),
-    "screen-wrap": element(),
     "pane-detail": element(),
     "detail-actions-trigger": element()
 };
@@ -62,19 +77,8 @@ const T = {
     webScreenLive: "live",
     webScreenOnDemand: "on demand",
     webScreenGone: "That screen could not be read",
-    webScreenWrap: "Wrap",
     webLoading: "Loading"
 };
-
-// The two accessors `core/state.js` exports for a preference that belongs to this browser and
-// not to the Mac, with the same semantics and a plain object where `localStorage` would be —
-// so that what is asserted below is what the panel does with them, not what a browser does.
-const store = {};
-const storedBool = function (key, fallback) {
-    const value = store[key];
-    return value === undefined ? fallback : value === "1";
-};
-const storeBool = function (key, value) { store[key] = value ? "1" : "0"; };
 
 const S = { openId: null };
 const asked = [];
@@ -105,56 +109,58 @@ globalThis.GitPanel = { close: function () {} };
 globalThis.ShellPanel = { close: function () {} };
 globalThis.setInterval = setIntervalStub;
 globalThis.clearInterval = clearIntervalStub;
-globalThis.storedBool = storedBool;
-globalThis.storeBool = storeBool;
 
 (0, eval)(standalone);
 const Terminal = globalThis.Terminal;
-const paint = Terminal.paintForTesting;
+// The renderer, and the only one there is. Everything below is asserted through it, including
+// the properties that used to be reached through the unwrapped mode because that call was
+// shorter to write.
+const rows = Terminal.paintRowsForTesting;
+const columns = Terminal.columnsForTesting;
 
 const E = "\u001b";
 const settle = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
 
 /* ---- what is drawn -------------------------------------------------------- */
 
-equal(paint("plain text"), "plain text", "text with no colour in it is left alone");
-equal(paint(E + "[31mred" + E + "[39m after"),
-    '<span style="color:var(--term-1)">red</span> after',
+equal(rows("plain text"), '<div class="screen-row">plain text</div>',
+    "text with no colour in it is left alone");
+equal(rows(E + "[31mred" + E + "[39m after"),
+    '<div class="screen-row"><span style="color:var(--term-1)">red</span> after</div>',
     "a colour opens a span and the reset closes it");
-equal(paint("a" + E + "[1;32mb" + E + "[0mc"),
-    'a<span style="color:var(--term-2);font-weight:600">b</span>c',
+equal(rows("a" + E + "[1;32mb" + E + "[0mc"),
+    '<div class="screen-row">a<span style="color:var(--term-2);font-weight:600">b</span>c</div>',
     "two parameters in one sequence both apply");
-equal(paint(E + "[38;5;208mo" + E + "[m"),
-    '<span style="color:rgb(255,135,0)">o</span>',
+equal(rows(E + "[38;5;208mo" + E + "[m"),
+    '<div class="screen-row"><span style="color:rgb(255,135,0)">o</span></div>',
     "a 256-colour index is computed rather than looked up");
-equal(paint(E + "[38;2;12;34;56mo" + E + "[m"),
-    '<span style="color:rgb(12,34,56)">o</span>',
+equal(rows(E + "[38;2;12;34;56mo" + E + "[m"),
+    '<div class="screen-row"><span style="color:rgb(12,34,56)">o</span></div>',
     "and true colour is taken as written");
 
 // **The sequences that are not colour.** tmux does not emit them in a capture, but the panel is
 // looking at whatever a program drew, and a cursor move printed as text would be visible garbage
 // on somebody's screen.
-equal(paint(E + "[?25lhidden" + E + "[?25h"), "hidden", "a cursor-visibility sequence is dropped");
-equal(paint(E + "[2Jcleared"), "cleared", "and so is a clear");
-equal(paint(E + "[Habc"), "abc", "and a cursor move with no parameters");
+equal(rows(E + "[?25lhidden" + E + "[?25h"), '<div class="screen-row">hidden</div>',
+    "a cursor-visibility sequence is dropped");
+equal(rows(E + "[2Jcleared"), '<div class="screen-row">cleared</div>', "and so is a clear");
+equal(rows(E + "[Habc"), '<div class="screen-row">abc</div>',
+    "and a cursor move with no parameters");
 
-// **Escaped before it is wrapped, in that order.** The content of this panel is chosen by a
-// program running on somebody's Mac; markup in it is not markup.
-equal(paint("<script>alert(1)</script>"), "&lt;script&gt;alert(1)&lt;/script&gt;",
-    "nothing a program prints becomes markup");
-equal(paint(E + '[31m"><img src=x>' + E + "[39m"),
-    '<span style="color:var(--term-1)">&quot;&gt;&lt;img src=x&gt;</span>',
-    "including inside a coloured run");
-// The apostrophe is the fifth character `core/esc.js` escapes, and the one a hand-written stub
-// forgets. It is also the one that actually turns up on a terminal — `don't`, `'quoted'` — so
-// this assertion is both the realistic case and the thing that makes the import above load-bearing.
-equal(paint("it's"), "it&#39;s", "an apostrophe is escaped, because the page's own esc escapes it");
+// **Escaped first, markup built afterwards.** The content of this panel is chosen by a program
+// running on somebody's Mac; markup in it is not markup. The bare `<script>` and the apostrophe
+// are asserted further down, beside the row element they arrive wrapped in; this is the one of
+// the three that is only reachable with a colour open over it.
+equal(rows(E + '[31m"><img src=x>' + E + "[39m"),
+    '<div class="screen-row"><span style="color:var(--term-1)">' +
+        "&quot;&gt;&lt;img src=x&gt;</span></div>",
+    "nothing a program prints becomes markup, including inside a coloured run");
 
-// Newlines are the rows of the grid and stay; a carriage return would draw a line on top of
-// itself and does not.
-equal(paint("one\ntwo"), "one\ntwo", "rows survive");
-equal(paint("one\r\ntwo"), "one\ntwo", "a carriage return does not");
-equal(paint(null), "", "nothing to draw is nothing drawn");
+// A carriage return would make a line look complete and then be drawn on top of itself, so it
+// does not survive; the newline beside it is a row boundary and does.
+equal(rows("one\r\ntwo"),
+    '<div class="screen-row">one</div><div class="screen-row">two</div>',
+    "a carriage return does not survive the row it was drawn in, and the newline still ends it");
 
 /* ---- OSC 8, which is what a status line's links are ----------------------
  *
@@ -180,36 +186,44 @@ const A = function (url) {
 // A whole hyperlink as the status line sends one, id and all.
 const linked = function (url, text) { return OSC("8;id=1q7561e;" + url) + text + OSC("8;;"); };
 
-equal(paint(OSC("0;a window title") + "after"), "after",
+equal(rows(OSC("0;a window title") + "after"), '<div class="screen-row">after</div>',
     "an OSC string is consumed to its terminator, not from its second byte on");
-equal(paint(E + "]0;a window title" + BEL + "after"), "after",
+equal(rows(E + "]0;a window title" + BEL + "after"), '<div class="screen-row">after</div>',
     "BEL ends one too, which is the older of the two spellings and the one xterm documents first");
-equal(paint(E + "]0;this one never ends"), "",
+// A capture that is nothing but an unterminated OSC is one blank row of the grid and no text at
+// all, which is the point: what the string carried is consumed rather than printed.
+equal(rows(E + "]0;this one never ends"), '<div class="screen-row"></div>',
     "and an OSC nobody terminated runs to the end of the capture, exactly as Ansi.swift's does");
-equal(paint(E + "]0;a title with " + E + "[31m in it" + ST + "after"), "after",
+equal(rows(E + "]0;a title with " + E + "[31m in it" + ST + "after"),
+    '<div class="screen-row">after</div>',
     "an ESC inside the string is not a terminator unless a backslash follows it");
 
-equal(paint(linked("https://clawdline.com/", "clawdline.com")),
-    A("https://clawdline.com/") + "clawdline.com</a>",
-    "an https link in the status line becomes a link");
-equal(paint(linked("http://127.0.0.1:7717/", "localhost")),
-    A("http://127.0.0.1:7717/") + "localhost</a>",
+equal(rows(linked("https://clawdline.com/", "clawdline.com")),
+    '<div class="screen-row">' + A("https://clawdline.com/") + "clawdline.com</a></div>",
+    "an https link in the status line becomes a link, drawn inside its row");
+// The defect this section exists to remove, asserted as the absence it is: the payload that
+// scanner printed as words is nowhere in the output that replaced it.
+ok(rows(linked("https://clawdline.com/", "clawdline.com")).indexOf("8;id=1q7561e;") < 0,
+    "and the payload it printed as text is nowhere in what comes out");
+equal(rows(linked("http://127.0.0.1:7717/", "localhost")),
+    '<div class="screen-row">' + A("http://127.0.0.1:7717/") + "localhost</a></div>",
     "and so does http, which is what this Mac's own server speaks");
-equal(paint(linked("HTTPS://CLAWDLINE.COM/", "shouty")),
-    A("HTTPS://CLAWDLINE.COM/") + "shouty</a>",
+equal(rows(linked("HTTPS://CLAWDLINE.COM/", "shouty")),
+    '<div class="screen-row">' + A("HTTPS://CLAWDLINE.COM/") + "shouty</a></div>",
     "the scheme is matched without regard to case, because a terminal is not required to be tidy");
-equal(paint(linked("https://claude.ai/new?a=1&b=2#settings/usage", "5h 9%")),
-    A("https://claude.ai/new?a=1&amp;b=2#settings/usage") + "5h 9%</a>",
+equal(rows(linked("https://claude.ai/new?a=1&b=2#settings/usage", "5h 9%")),
+    '<div class="screen-row">' + A("https://claude.ai/new?a=1&amp;b=2#settings/usage") +
+        "5h 9%</a></div>",
     "and the ampersand of a real query string is escaped into the attribute rather than left to open an entity");
 
 /* **Every other scheme is words.** Both of these are in the capture this was written against. */
-equal(paint(linked("file:///Users/sainteye/code/clawdline/artifacts/backlog.html", "60 now20")),
-    "60 now20",
+equal(rows(linked("file:///Users/sainteye/code/clawdline/artifacts/backlog.html", "60 now20")),
+    '<div class="screen-row">60 now20</div>',
     "a file: URL keeps its label and becomes nothing else, because a phone browser cannot open it");
-equal(paint(linked("x-github-client://openRepo/https://github.com/sainteye/clawdline?branch=main",
-    "main")), "main",
+equal(rows(linked("x-github-client://openRepo/https://github.com/sainteye/clawdline?branch=main",
+    "main")), '<div class="screen-row">main</div>',
     "and neither can it open the scheme of an application installed on somebody else's Mac");
-equal(paint(linked("mailto:nobody@example.com", "nobody")), "nobody",
+equal(rows(linked("mailto:nobody@example.com", "nobody")), '<div class="screen-row">nobody</div>',
     "mailto is refused by the same rule rather than by a list of what is dangerous");
 
 /* **The allowlist is what makes this safe, and it is asserted as a wall rather than as a
@@ -232,68 +246,65 @@ equal(paint(linked("mailto:nobody@example.com", "nobody")), "nobody",
     ['https://example.com/a"b', "an allowed scheme carrying the one character that ends an attribute"],
     ["https://example.com/a<b", "and one carrying the character that starts a tag"]
 ].forEach(function (pair) {
-    const drawn = paint(linked(pair[0], "label"));
-    equal(drawn, "label", pair[1] + " draws its label and nothing else");
+    const drawn = rows(linked(pair[0], "label"));
+    equal(drawn, '<div class="screen-row">label</div>',
+        pair[1] + " draws its label and nothing else");
     ok(drawn.indexOf("<a") < 0 && drawn.indexOf("href") < 0,
         "and puts no anchor and no attribute on the page");
 });
 
-equal(paint(linked("https://clawdline.com/", "<img src=x onerror=alert(1)>")),
-    A("https://clawdline.com/") + "&lt;img src=x onerror=alert(1)&gt;</a>",
+equal(rows(linked("https://clawdline.com/", "<img src=x onerror=alert(1)>")),
+    '<div class="screen-row">' + A("https://clawdline.com/") +
+        "&lt;img src=x onerror=alert(1)&gt;</a></div>",
     "the words inside a link are escaped exactly as the words outside one are");
 // The order does not change because there is an anchor now: escape first, build markup
 // afterwards, which is what `paintSegment()` has always done.
-equal(paint(OSC("8;id=x;https://clawdline.com/") + "7d 63%" + E + "[31m(4d12h)" + E + "[39m" +
+equal(rows(OSC("8;id=x;https://clawdline.com/") + "7d 63%" + E + "[31m(4d12h)" + E + "[39m" +
     OSC("8;;")),
-    A("https://clawdline.com/") + '7d 63%<span style="color:var(--term-1)">(4d12h)</span></a>',
+    '<div class="screen-row">' + A("https://clawdline.com/") +
+        '7d 63%<span style="color:var(--term-1)">(4d12h)</span></a></div>',
     "a link whose text changes colour half way through is one link, which is what the status line sends");
 
 /* **Malformed, in each of the ways a capture can be.** None of them may become a broken tag. */
-equal(paint(OSC("8;https://clawdline.com/") + "label" + OSC("8;;")), "label",
+equal(rows(OSC("8;https://clawdline.com/") + "label" + OSC("8;;")),
+    '<div class="screen-row">label</div>',
     "an OSC 8 with one semicolon is not a hyperlink and does not become one");
-equal(paint(OSC("8;id=x;") + "label" + OSC("8;;")), "label",
+equal(rows(OSC("8;id=x;") + "label" + OSC("8;;")), '<div class="screen-row">label</div>',
     "an empty URL is a close, not a link to nowhere");
-equal(paint(OSC("8;;") + "after"), "after", "and a close with nothing open is nothing at all");
-equal(paint(E + "]8;id=x;https://clawdline.com/" + ST + "label"),
-    A("https://clawdline.com/") + "label</a>",
-    "a link the capture ends without closing is closed at the end of the capture, not left open");
-equal(paint(E + "]8;id=x;https://clawdline.com/"), "",
+equal(rows(OSC("8;;") + "after"), '<div class="screen-row">after</div>',
+    "and a close with nothing open is nothing at all");
+equal(rows(E + "]8;id=x;https://clawdline.com/" + ST + "label"),
+    '<div class="screen-row">' + A("https://clawdline.com/") + "label</a></div>",
+    "a link the capture ends without closing is closed at the end of its row, not left open");
+equal(rows(E + "]8;id=x;https://clawdline.com/"), '<div class="screen-row"></div>',
     "and an OSC 8 that never terminates takes the rest of the capture with it, anchor and all");
-// **A link whose text is only control bytes is not a link.** `emit()` refuses a run that escaping
-// left empty, and that refusal had nothing holding it — deleting it left the whole suite green,
-// because every other fixture here puts words inside the anchor.
+// **A link whose text is only control bytes is not a link.** The shape that reaches this is not
+// the obvious one: an OSC 8 opened and closed with *nothing* between them never produces a run at
+// all, so what is needed is a run that has bytes and loses them — a carriage return between the
+// two halves, which is what a status line redrawing a field in place writes.
 //
-// **And the shape that reaches it is not the obvious one.** An OSC 8 opened and closed with
-// *nothing* between them cannot tell the guard apart: `emit()` is only called when there are bytes
-// between two escapes, so with none there it never runs at all. What reaches it is a run that has
-// bytes and loses them — a carriage return between the two halves, which is what a status line
-// redrawing a field in place writes. Measured over ten shapes, seven tell the two apart and the
-// empty one is not among them.
-equal(paint(OSC("8;id=x;https://clawdline.com/") + "\r" + OSC("8;;") + "after"), "after",
+// **Two things hold it and they are in different functions**, which is worth saying because
+// neither can be removed by mutating the other: `segments()` never pushes a part that stripping
+// left empty, and `paintRows()` skips a piece that escaping left empty before it decides whether
+// to open an anchor. Either alone puts no empty anchor on the page.
+equal(rows(OSC("8;id=x;https://clawdline.com/") + "\r" + OSC("8;;") + "after"),
+    '<div class="screen-row">after</div>',
     "a link whose whole text was a control byte puts no empty anchor on the page");
 
-// **A row boundary is a newline here and an element in the other mode, so the two modes differ
-// on exactly one thing and it is stated in both places.** Inside a `<pre>` an anchor spanning a
-// newline is a two-line link and nothing else; the wrapped mode below cannot do that, because
-// closing a row would close the anchor with the wrong tag.
-equal(paint(OSC("8;id=x;https://clawdline.com/") + "first\nsecond" + OSC("8;;")),
-    A("https://clawdline.com/") + "first\nsecond</a>",
-    "a link across two rows of the unwrapped mode is one anchor, because there the rows are newlines");
-
-/* ---- the other mode, for the phone ---------------------------------------
+/* ---- the layout, which is the only one -----------------------------------
  *
  * Every tmux pane on this Mac is 243 columns wide and a phone shows about fifty of them, so the
- * Mac's own picture, unaltered, is five screen-widths of sideways dragging. This is the other
- * mode, and now the one the panel opens in: the same capture soft-wrapped, one element per
- * screen row so each row can hang its continuations under its own indent.
+ * Mac's own picture, unaltered, is five screen-widths of sideways dragging. What this panel draws
+ * instead is that capture soft-wrapped, one element per screen row so each row can hang its
+ * continuations under its own indent.
  *
- * **It is a different picture and that is the point.** What is asserted here is that it is
- * right; that turning it off gives the first picture back unimpaired is asserted further down,
- * against the panel itself, as a literal.
+ * **It is a different picture from the Mac's, and that is the point.** What is asserted here is
+ * that it is the right one: the indent measured in display columns, the trailing padding dropped,
+ * the rule clipped rather than folded, the terminating newline that is not a row. What is not
+ * asserted anywhere any more is that some other picture is available, because there is no other
+ * picture.
  * -------------------------------------------------------------------------- */
 
-const rows = Terminal.paintRowsForTesting;
-const columns = Terminal.columnsForTesting;
 const spaces = function (n) { return new Array(n + 1).join(" "); };
 const styleOf = function (html) {
     const found = /style="([^"]*)"/.exec(html);
@@ -390,8 +401,6 @@ equal(rows("text" + spaces(200)), '<div class="screen-row">text</div>',
 equal(rows("  two" + spaces(200)),
     '<div class="screen-row" style="padding-left:2ch;text-indent:-2ch">  two</div>',
     "stripping the padding does not touch the indent, which is the other end of the row");
-ok(paint("text" + spaces(3)).indexOf("text   ") === 0,
-    "while the unwrapped mode keeps every column the Mac drew");
 
 /* Blank rows are rows: a grid has 59 of them whether or not anything was written on them. */
 equal(rows("a\n\nb").split('class="screen-row"').length - 1, 3,
@@ -428,9 +437,9 @@ equal(rows(null), "", "including one that never arrived");
    does.** What this panel draws is chosen by whatever program somebody else is running. */
 equal(rows("<script>alert(1)</script>"),
     '<div class="screen-row">&lt;script&gt;alert(1)&lt;/script&gt;</div>',
-    "nothing a program prints becomes markup in this mode either");
+    "nothing a program prints becomes markup, and the row element is not a way around that");
 equal(rows("it's"), '<div class="screen-row">it&#39;s</div>',
-    "and the apostrophe is escaped here too, by the same function and not by a copy of it");
+    "and the apostrophe is escaped by the page's own esc, not by a copy of it");
 const hostile = rows('</div><img src=x onerror=alert(1)><span style="color:red">');
 ok(hostile.indexOf("<img") < 0, "not a tag");
 ok(hostile.indexOf("&lt;/div&gt;") > 0, "and not a closing tag for the row it is inside");
@@ -438,18 +447,17 @@ ok(hostile.indexOf('style="color:red"') < 0 && hostile.indexOf("&quot;color:red&
     "and the quotes that would have opened an attribute on it are escaped into the text");
 ok(/^<div class="screen-row">[^<]*<\/div>$/.test(hostile),
     "what comes out is one row element and text, and nothing else");
-// The one attribute this mode writes that the capture can reach at all is the indent, and it is
-// a number this file computed rather than anything the capture said.
+// The one attribute this writes that the capture can reach at all is the indent, and it is a
+// number this file computed rather than anything the capture said.
 ok(/^style="padding-left:\d+ch;text-indent:-\d+ch"$/.test(
     'style="' + styleOf(rows('  "><b>x')) + '"'),
     "the indent is arithmetic, so there is nothing in it to escape out of");
 
-/* **A link in this mode, and the row boundary it may not cross.** Rows are elements here rather
-   than newlines, so an anchor left open across one would be closed by the wrong `</div>` and
-   repaired by the browser in whatever way it liked. Each row opens its own and closes it. */
-equal(rows(linked("https://clawdline.com/", "clawdline.com")),
-    '<div class="screen-row">' + A("https://clawdline.com/") + "clawdline.com</a></div>",
-    "the wrapped mode draws the same link, inside the row rather than around it");
+/* **A link and the row boundary it may not cross.** Rows are elements rather than newlines, so
+   an anchor left open across one would be closed by the wrong `</div>` and repaired by the
+   browser in whatever way it liked. Each row opens its own and closes it. That the link is drawn
+   at all, and that the allowlist decides which ones are, is asserted in the OSC section above.
+   */
 const across = rows(OSC("8;id=x;https://clawdline.com/") + "first\nsecond" + OSC("8;;"));
 equal(across,
     '<div class="screen-row">' + A("https://clawdline.com/") + "first</a></div>" +
@@ -462,8 +470,6 @@ ok(across.indexOf("</a></div>") > 0 && across.indexOf("</div></a>") < 0,
 equal(rows(OSC("8;id=x;https://clawdline.com/") + "x" + spaces(50) + OSC("8;;")),
     '<div class="screen-row">' + A("https://clawdline.com/") + "x</a></div>",
     "padding stripped from inside a link leaves the link it was stripped from");
-equal(rows(linked("javascript:alert(1)", "label")), '<div class="screen-row">label</div>',
-    "and the allowlist is the same allowlist here, because it is the same one function");
 
 /* ---- what is claimed ------------------------------------------------------ */
 
@@ -485,33 +491,17 @@ ok(els["screen-badge"].innerHTML.indexOf("live") >= 0,
     "and says this one can be told when the screen changes");
 ok(els["screen-badge"].innerHTML.indexOf("25") >= 0,
     "with how many lines actually came back");
-ok(els["screen-body"].innerHTML.indexOf('<div class="screen-text wrap">') === 0,
-    "the panel opens in the layout the device it is read on can hold");
+ok(els["screen-body"].innerHTML.indexOf('<div class="screen-text">') === 0,
+    "the panel draws the capture in the one layout it has");
 ok(els["screen-body"].innerHTML.indexOf("var(--term-1)") > 0, "with its colour");
+// **Pinned as a literal rather than compared with the function that produced it**, so this says
+// what the panel puts on the page and not merely that two calls agree. There is no second
+// rendering to hold it against any more: the equality with the pre-wrapping markup went with
+// `paint()`, and nothing here replaces it.
 equal(els["screen-body"].innerHTML,
-    '<div class="screen-text wrap"><div class="screen-row">hello' +
+    '<div class="screen-text"><div class="screen-row">hello' +
         '<span style="color:var(--term-1)">!</span></div></div>',
     "and nothing else at all");
-// **And byte for byte the markup this panel has always emitted, one tap away.** What moved is
-// which of the two opens and nothing else, so the Mac's own picture is still pinned here as a
-// literal rather than compared with the function that produces it.
-Terminal.wrap(false);
-equal(els["screen-body"].innerHTML,
-    '<pre class="screen-text">hello<span style="color:var(--term-1)">!</span></pre>',
-    "and the fidelity mode is the markup it always was, to the byte");
-Terminal.wrap(true);
-
-/* **The one capture whose bytes are deliberately not what they were.** The pin above holds for
-   every capture with no OSC in it. A capture carrying an OSC 8 cannot be held to it and must not
-   be: what the old scanner drew was `8;id=1q7561e;https://clawdline.com/` printed as words, which
-   is the defect this exists to remove, so agreeing with it would be preserving the bug. Stated
-   here rather than absorbed into the pin above, because an invariant that quietly acquires an
-   exception is an invariant nobody can read. */
-const wasLeaked = paint(linked("https://clawdline.com/", "clawdline.com"));
-ok(wasLeaked.indexOf("8;id=1q7561e;") < 0,
-    "the payload the old scanner printed as text is not in the new output");
-equal(wasLeaked, A("https://clawdline.com/") + "clawdline.com</a>",
-    "and what stands in its place is the link that payload described");
 
 equal(liveTimers().length, 1, "a signalled screen runs one clock, and it is the lease");
 equal(liveTimers()[0].ms, 15000, "at half the Mac's thirty-second lease, so one lost ask is safe");
@@ -530,7 +520,7 @@ Terminal.observe("%1", "def");
 await settle();
 equal(asked.length, 2, "a revision it does not have is fetched once");
 equal(els["screen-body"].innerHTML,
-    '<div class="screen-text wrap"><div class="screen-row">moved</div></div>',
+    '<div class="screen-text"><div class="screen-row">moved</div></div>',
     "and replaces what was drawn");
 
 Terminal.close(true);
@@ -569,11 +559,12 @@ ok(els["screen-body"].innerHTML.indexOf("could not be read") > 0,
     "a session whose screen has gone says so rather than showing an empty terminal");
 Terminal.close(false);
 
-/* ---- the toggle ----------------------------------------------------------
+/* ---- a real row, end to end ----------------------------------------------
  *
- * One control, in the panel header beside the badge. It re-lays out the capture the panel is
- * already holding — it is a choice about drawing and not about fetching — and it is remembered,
- * because a phone that has to be told twice is a phone that is told once and then put away.
+ * The pins above go through `paintRows()` directly. This one goes through the panel: a capture
+ * with an indent, a colour and 180 columns of trailing padding, drawn the way the browser would
+ * receive it. There is no control here to press and nothing kept in `localStorage` — the panel
+ * has one layout, so what a second visit gets is what the first one got.
  * -------------------------------------------------------------------------- */
 
 answer = {
@@ -586,52 +577,15 @@ Terminal.open();
 await settle();
 const fetched = asked.length;
 
-ok(els["screen-body"].innerHTML.indexOf('<div class="screen-text wrap">') === 0,
-    "the panel comes up wrapped, because that is the picture a phone can hold");
-ok(els["screen-body"].innerHTML.indexOf("padding-left:2ch") > 0,
-    "with its row hanging under its own indent");
-ok(els["screen-body"].innerHTML.indexOf("var(--term-1)") > 0, "and with its colour");
-equal(els["screen-wrap"].attrs["aria-pressed"], "true",
-    "and the control says on rather than leaving a screen reader to guess");
-equal(els["screen-wrap"].classes.on, true, "and looks it");
-
-Terminal.wrap(false);
-equal(asked.length, fetched,
-    "turning it off re-draws the capture already in hand and asks the Mac for nothing");
+// The whole body, as a literal: the indent hung under itself, the colour kept, the 180 columns
+// of padding gone. Every part of that is asserted on its own further up; what this adds is that
+// the panel puts them together and wraps them in the one container element.
 equal(els["screen-body"].innerHTML,
-    '<pre class="screen-text">  <span style="color:var(--term-1)">了</span>' + spaces(180) + "</pre>",
-    "off is the picture the Mac drew, padding and all, and it is exactly that picture");
-equal(store["clawdline.screen-wrap"], "0",
-    "the choice belongs to this browser and is kept where the other browser-local ones are");
-equal(els["screen-wrap"].attrs["aria-pressed"], "false", "and the control now says off");
-equal(els["screen-wrap"].classes.on, false, "and looks it");
-
-Terminal.wrap(true);
-equal(asked.length, fetched, "and on again asks for nothing either");
-ok(els["screen-body"].innerHTML.indexOf('<div class="screen-text wrap">') === 0,
-    "on is the same capture laid out to be read, unchanged by having been away from it");
-equal(store["clawdline.screen-wrap"], "1", "and that choice is remembered too");
-equal(els["screen-wrap"].classes.on, true, "the control follows it back");
+    '<div class="screen-text"><div class="screen-row" ' +
+        'style="padding-left:2ch;text-indent:-2ch">  ' +
+        '<span style="color:var(--term-1)">了</span></div></div>',
+    "a real row reaches the page indented, coloured and unpadded, and in that one container");
+equal(asked.length, fetched, "and drawing it asked the Mac for nothing beyond the first fetch");
 Terminal.close(false);
-
-/* **The default is the layout that can be read, and a browser that chose keeps its choice.**
-   `storedBool` returns the fallback only when the key is absent, so what moved is the answer
-   given to a browser that has never been asked — never the answer given to one that already
-   turned wrapping off. That second line is the one worth having: a default that overrode a
-   stored preference would be this page deciding something it was told. All three are read at
-   load, so all three are a fresh evaluation of the module rather than a call into the one
-   above. */
-delete store["clawdline.screen-wrap"];
-(0, eval)(standalone);
-equal(globalThis.Terminal.stateForTesting().wrapping, true,
-    "a browser that has never chosen is given the picture it can read");
-store["clawdline.screen-wrap"] = "0";
-(0, eval)(standalone);
-equal(globalThis.Terminal.stateForTesting().wrapping, false,
-    "and one that chose fidelity once is not overruled by the default moving under it");
-store["clawdline.screen-wrap"] = "1";
-(0, eval)(standalone);
-equal(globalThis.Terminal.stateForTesting().wrapping, true,
-    "while one that chose wrapping keeps a choice that now happens to agree with the default");
 
 console.log("  " + String.fromCharCode(10003) + " web terminal (" + checks + " checks)");

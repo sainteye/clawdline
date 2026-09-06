@@ -243,45 +243,39 @@
 .screen-badge[data-channel="signalled"] { color: var(--accent); }
 .screen-badge[data-channel="on-demand"] { color: var(--dim); }
 
-/* The screen itself: a grid tmux has already laid out, so it is set in the terminal's typeface
-   at the terminal's own line height, and on its own it does not wrap. A wrapped line is a
-   different picture from the one on the Mac, and the promise of this panel is that the same
-   picture is available — so `.screen-text` alone scrolls sideways, which says "this is wider
-   than your phone" rather than silently redrawing it.
+/* The screen itself: a grid tmux has already laid out, so it is set in the terminal's typeface at
+   the terminal's own line height — and then soft-wrapped, one element per screen row, each row
+   hanging its continuations under its own indent.
 
-   **That reasoning has not changed. What changed is which of the two modes the panel opens in.**
-   Every pane on the Mac this was written for is 243 columns wide and a phone shows about fifty
-   of them, so opening faithful meant opening on five screen-widths of dragging to read one
-   sentence — honest, and on the device this panel is read on, close to unusable. `.wrap` is what
-   it opens in now: the same capture, one element per screen row, each row hanging its
-   continuations under its own indent. The control in the panel header is how the exact picture
-   is asked for, and the answer is remembered per browser — one that has already chosen keeps
-   its choice.
+   **There is one layout and no control to change it.** Every pane on the Mac this was written for
+   is 243 columns wide and a phone shows about fifty of them, so the faithful picture — the grid
+   unwrapped, scrolling sideways — is five screen-widths of dragging to read one sentence: honest,
+   and on the device this panel is actually read on, close to unusable. A switch between the two
+   would have been two renderers to keep alive for ever and one more thing for this file to
+   describe, so the second one is gone.
 
-   **What the wrapped mode costs, so nobody has to find out.** It is not the picture the Mac has,
-   and it drops each row's trailing padding — about seventy per cent of what arrives — so a
-   trailing run that carried a background colour loses its block, and a highlight that ran to the
-   right margin now stops at the last visible character. A row that is essentially a horizontal
-   rule is not wrapped at all but clipped, because five rows of dashes is worse than the scrollbar
-   it replaced. Which is the whole reason the other mode is still here and still byte-exact: it
-   keeps every column, background and rule exactly as tmux drew them, one tap away. */
+   **What the wrapping costs, so nobody has to find out.** It is not the picture the Mac has, and
+   it drops each row's trailing padding — about seventy per cent of what arrives — so a trailing
+   run that carried a background colour loses its block, and a highlight that ran to the right
+   margin now stops at the last visible character. A row that is essentially a horizontal rule is
+   not wrapped at all but clipped, because five rows of dashes is worse than the sideways scroll it
+   replaced. That is what the panel draws, always; nothing here gives back the missing columns. */
 .screen-text {
     margin: 0; color: var(--ink);
     font: 11.5px/1.35 var(--mono);
-    white-space: pre; tab-size: 8;
+    tab-size: 8;
 }
-/* The wrapped layout. The rows do the wrapping, not the block: `overflow-wrap: anywhere` because
-   a 243-column path with no spaces in it is exactly the thing that made this necessary, and the
-   `min-height` because a blank row of the grid is still a row of the grid and an empty element
-   has no height of its own. */
-.screen-text.wrap { white-space: normal; }
-.screen-text.wrap .screen-row {
+/* The rows do the wrapping, not the block: `overflow-wrap: anywhere` because a 243-column path
+   with no spaces in it is exactly the thing that made this necessary, and the `min-height`
+   because a blank row of the grid is still a row of the grid and an empty element has no height
+   of its own. */
+.screen-text .screen-row {
     min-height: 1.35em;
     white-space: pre-wrap; overflow-wrap: anywhere;
 }
 /* And the rule that is not a paragraph: clipped at the edge, with the hanging indent undone
    because there is nothing here to hang. */
-.screen-text.wrap .screen-row.rule {
+.screen-text .screen-row.rule {
     white-space: pre; overflow: hidden;
     padding-left: 0; text-indent: 0;
 }

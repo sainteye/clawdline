@@ -318,7 +318,6 @@ struct Russian: Copy {
     let webScreenLive = "в реальном времени"
     let webScreenOnDemand = "по запросу"
     let webScreenGone = "Не удалось прочитать этот экран"
-    let webScreenWrap = "Перенос"
     let webGitTitle = "Изменения Git"
     let webGitClean = "Рабочее дерево не изменено"
     let webGitNotRepo = "Это не репозиторий Git"

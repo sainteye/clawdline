@@ -131,7 +131,6 @@ enum RemotePage {
             "webScreenLive": t.webScreenLive,
             "webScreenOnDemand": t.webScreenOnDemand,
             "webScreenGone": t.webScreenGone,
-            "webScreenWrap": t.webScreenWrap,
             "webGitTitle": t.webGitTitle,
             "webGitClean": t.webGitClean,
             "webGitNotRepo": t.webGitNotRepo,

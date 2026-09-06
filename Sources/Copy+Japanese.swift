@@ -316,7 +316,6 @@ struct Japanese: Copy {
     let webScreenLive = "ライブ"
     let webScreenOnDemand = "オンデマンド"
     let webScreenGone = "その画面を読み取れませんでした"
-    let webScreenWrap = "折り返し"
     let webGitTitle = "Git の変更"
     let webGitClean = "作業ツリーに変更はありません"
     let webGitNotRepo = "Git リポジトリではありません"

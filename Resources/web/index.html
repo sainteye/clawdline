@@ -415,12 +415,10 @@ document.documentElement.className = "booting";
             <div class="panel-view-head">
                 <h2 id="screen-title">Screen</h2>
                 <span class="screen-channel" id="screen-badge" aria-live="polite"></span>
-                <!-- 243 columns against a phone's fifty. On, the capture is soft-wrapped with
-                     each row hanging under its own indent; off, this is the picture the Mac has
-                     and it scrolls sideways. On is what the panel opens in, because the panel is
-                     read on the phone; off is still byte-exact and one tap away — see the
-                     stylesheet's note beside `.screen-text`. -->
-                <button class="chip" id="screen-wrap" type="button" aria-pressed="true">Wrap</button>
+                <!-- 243 columns against a phone's fifty, and one layout: the capture is
+                     soft-wrapped with each row hanging under its own indent. There is no control
+                     to turn that off — see the stylesheet's note beside `.screen-text` for what
+                     the wrapping costs. -->
                 <button class="chip" id="screen-close" type="button">Close</button>
             </div>
             <div class="scroller panel-view-body" id="screen-body" aria-live="polite"></div>

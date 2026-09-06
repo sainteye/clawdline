@@ -1,6 +1,6 @@
 import { esc } from "../core/esc.js";
 import { T } from "../core/i18n.js";
-import { S, storeBool, storedBool } from "../core/state.js";
+import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
 import { SessionActions } from "../input/detail-actions.js";
@@ -26,22 +26,36 @@ import { ShellPanel } from "../input/shell-panel.js";
  * panel is a sample taken when somebody asks, no faster than the server's floor. Those are very
  * different things and drawing them identically is a defect this repository already had.
  *
- * **There are two ways of drawing it, and the panel opens in the one a phone can read.** Every
- * pane on that Mac is 243 columns wide and a phone shows about fifty, so the faithful picture is
- * five screen-widths of sideways dragging — honest, and on the only device this panel is ever
- * read on, close to unusable. So what it opens in is the soft-wrapped layout: one element per
- * screen row, each row hanging its continuations under its own indent.
+ * **There is one way of drawing it and no control to change it.** Every pane on that Mac is 243
+ * columns wide and a phone shows about fifty, so the faithful picture — one line of the grid as
+ * one line of text, scrolling sideways — is five screen-widths of dragging to read one sentence:
+ * honest, and on the only device this panel is ever read on, close to unusable. So the capture is
+ * soft-wrapped, one element per screen row, each row hanging its continuations under its own
+ * indent, and that is the whole of it. A preference here would have been a promise to keep two
+ * renderers alive for ever, and this one had already gone wrong in the way preferences do: the
+ * default was moved to wrapping and the person who asked for it never saw the change, because he
+ * had pressed the control once to look at it and his own phone answered out of `localStorage`
+ * from then on.
  *
- * **Fidelity did not stop mattering; it stopped being the thing that opens.** The control in the
- * header turns the wrapping off, and what comes back is byte for byte the markup this panel drew
- * before the second mode existed — every column, every background, every rule where tmux put
- * it — save for the OSC 8 payload that version printed as words, which was the bug below and not
- * a column of anybody's screen. `Tests/web-terminal.mjs` holds both halves of that: the equality
- * for a capture with no OSC in it, and the exception for one that has. That is the whole reason the other mode is still exact rather than merely tidier: the
- * question "what does the Mac actually have on that screen" has an answer here and it is one tap
- * away. A picture that has to be asked for is not a promise broken; a picture nobody can read is
- * not a promise kept. `Resources/web/app/css/detail.css` carries the same reasoning beside the
- * rules.
+ * **What the wrapping costs, said here rather than left to be found.** This is not the picture
+ * the Mac has. Each row's trailing padding is dropped — about seventy per cent of what arrives —
+ * so a background that ran to the right margin stops at the last visible character; and a row
+ * that is essentially a horizontal rule is clipped at the edge rather than folded, because five
+ * rows of dashes is worse than the sideways scroll it replaced. That is what this panel always
+ * does now, so it is a thing to know and no longer a thing to switch.
+ *
+ * **And one property stopped being provable when the second renderer went, which is a cost of
+ * the decision and not an oversight.** `paint()` drew the grid unwrapped, and
+ * `Tests/web-terminal.mjs` held it byte for byte to the markup this panel emitted before wrapping
+ * existed — over 20,043 inputs, with a stated exception for a capture carrying an OSC 8, whose
+ * payload the old scanner printed as words. That equality had one subject and the subject has
+ * been deleted: nothing here is measured against what this panel used to draw any more, and no
+ * fixture kept alive for the assertion's sake would have measured it either. What is still
+ * proven, through `paintRows()` and nothing else, is the safety — escaping before markup, the
+ * `http`/`https` allowlist, the OSC scanner's terminator rule, SGR carried across rows, the
+ * terminating newline that is not a row, the hanging indent in display columns, the rule-row
+ * clipping and the indent cap. `Resources/web/app/css/detail.css` carries the same reasoning
+ * beside the rules.
  */
 export var Terminal = (function () {
     var forId = null;
@@ -51,14 +65,6 @@ export var Terminal = (function () {
     var ticket = 0;
     var keepalive = null;
     var poll = null;
-    // Which of the two layouts this browser asked for. Browser-local, like the other reading
-    // preferences, and read once at load: the Mac has no opinion about it and never sees it.
-    //
-    // **The fallback is only reached when the key is absent.** So this moving does not move
-    // anybody who has already chosen: a browser that turned wrapping off keeps it off, and what
-    // changed is the answer given to a browser that has never been asked.
-    var WRAP_KEY = "clawdline.screen-wrap";
-    var wrapping = storedBool(WRAP_KEY, true);
 
     /* ---- SGR, and the one other thing a status line is made of -----------
        `capture-pane -e` re-serialises a grid, so what comes back is text and colour and no
@@ -219,54 +225,9 @@ export var Terminal = (function () {
     }
 
     /**
-     * A captured screen, as HTML. Escaped first and wrapped afterwards, so nothing a program can
-     * draw becomes markup — the same order `words()` keeps and for the same reason.
-     *
-     * **A link is opened around runs and not inside one.** tmux changes colour inside a
-     * hyperlink routinely — the status line this was written against draws `7d 63%` in one
-     * colour and `(4d12h)` in another inside a single link — so the anchor has to survive a
-     * span boundary, which means tracking it beside the runs rather than in them. It is closed
-     * at the end of the capture whether or not the program that wrote it remembered to.
-     */
-    function paint(text) {
-        var source = String(text == null ? "" : text);
-        var state = { fg: null, bg: null, bold: false, dim: false, italic: false,
-                      underline: false, inverse: false, href: null };
-        var out = "";
-        var open = null;
-        var last = 0;
-        var found;
-        function emit(chunk) {
-            var body = wrap(chunk, state);
-            // Nothing to draw opens nothing: an anchor around no text is markup this panel
-            // would have written for a run the capture does not have.
-            if (!body) return;
-            if (state.href !== open) {
-                if (open) out += "</a>";
-                open = state.href;
-                if (open) out += anchor(open);
-            }
-            out += body;
-        }
-        CSI.lastIndex = 0;
-        while ((found = CSI.exec(source)) !== null) {
-            if (found.index > last) emit(source.slice(last, found.index));
-            last = found.index + found[0].length;
-            // Only the first two alternatives capture, so a defined group says which of the two
-            // this is and everything else falls through having been consumed and dropped.
-            if (found[1] !== undefined) apply(state, found[1]);
-            else if (found[2] !== undefined) osc(state, found[2]);
-            if (found[0].length === 0) CSI.lastIndex += 1;
-        }
-        if (last < source.length) emit(source.slice(last));
-        if (open) out += "</a>";
-        return out;
-    }
-
-    /**
      * One run of text at one colour, as HTML — the only place in this file that turns a capture
-     * into markup, so that both modes below escape in the same order and there is one line to
-     * read when somebody asks whether they do.
+     * into markup, so there is one line to read when somebody asks whether the escaping happens
+     * before the markup is built.
      *
      * `esc(css)` cannot fire today and is kept anyway: every value `style()` can produce is a
      * `var(--term-N)`, an `rgb()` of integers forced through `| 0`, or a literal from this file,
@@ -280,11 +241,7 @@ export var Terminal = (function () {
         return css ? '<span style="' + esc(css) + '">' + body + "</span>" : body;
     }
 
-    function wrap(chunk, state) {
-        return paintSegment(chunk.replace(CONTROL, ""), style(state));
-    }
-
-    /* ---- the other mode: the same capture, laid out for a phone -----------
+    /* ---- the layout: the capture, laid out for a phone ---------------------
        Measured on this Mac on 2026-09-06 across five live panes: every pane is 243 columns wide,
        every row is at most 243 columns, and `-J` joins nothing because Claude Code emits its own
        newlines on an alternate screen. `-J` does preserve the trailing padding, and that padding
@@ -293,7 +250,7 @@ export var Terminal = (function () {
        rows into about 113 rather than into a four-fold wall of text.
 
        Nothing here changes what is captured. This is one client-side decision about how to lay
-       243 columns out on a viewport that has fifty, taken only when somebody asks for it.
+       243 columns out on a viewport that has fifty.
        -------------------------------------------------------------------- */
 
     // Twelve columns of hanging indent, and no more. In those same five panes every real leading
@@ -402,16 +359,16 @@ export var Terminal = (function () {
     /**
      * One walk of the capture, emitting one row per screen line.
      *
-     * **The state object outlives the row, and that is the whole reason this is not `paint()`
-     * called in a loop.** tmux opens a colour once and lets it run to wherever it is closed,
+     * **The state object outlives the row, and that is the whole reason this is one walk rather
+     * than one walk per row.** tmux opens a colour once and lets it run to wherever it is closed,
      * which is routinely several rows later; splitting the source on newlines first and painting
      * each row on its own would rebuild `state` at every boundary and lose the colour of every
      * row after the first. So the split happens inside the walk, and `state` is built once.
      *
      * Each row comes back as its runs — text and the CSS that was open over it — rather than as
      * markup, because the two things done to a row next, stripping its padding and measuring its
-     * indent, are done to text and not to HTML. The escaping happens at the end, in the one place
-     * both modes share.
+     * indent, are done to text and not to HTML. The escaping happens at the end, in
+     * `paintSegment()`.
      */
     function segments(text) {
         var source = String(text == null ? "" : text);
@@ -458,14 +415,14 @@ export var Terminal = (function () {
      * The trailing padding, dropped.
      *
      * `capture-pane -J` preserves it and on this Mac it is about seventy per cent of what crosses
-     * the wire. Wrapped, it would trail blank continuation rows behind every short line, which is
-     * the exact thing this mode exists to remove.
+     * the wire. Kept, it would trail blank continuation rows behind every short line, which is
+     * the exact thing the wrapping exists to remove.
      *
      * **What it costs, said here rather than left to be discovered:** a trailing run that carried
      * a background colour loses its block, so a highlight or a selection that ran to the right
      * margin now stops at the last visible character. That is a real difference from the picture
-     * on the Mac. It is the price of this mode and not of the panel: turning the wrapping off
-     * keeps every column, padding and background alike.
+     * on the Mac, it is what this panel does, and there is no longer a second layout that keeps
+     * every column.
      */
     function unpad(row) {
         var out = row.slice();
@@ -513,10 +470,10 @@ export var Terminal = (function () {
     /**
      * A captured screen as one element per row, each hanging under its own indent.
      *
-     * Escaped first and wrapped in spans afterwards, exactly as `paint()` does and for the same
-     * reason — the content is chosen by whatever program somebody else is running. The two
-     * attributes this writes that the capture can reach at all are the indent, which is a number
-     * this file computed, and a link's `href`, which passed `LINKABLE` and then `esc()`.
+     * Escaped first and wrapped in spans afterwards, because the content is chosen by whatever
+     * program somebody else is running. The two attributes this writes that the capture can reach
+     * at all are the indent, which is a number this file computed, and a link's `href`, which
+     * passed `LINKABLE` and then `esc()`.
      *
      * **A link never straddles a row.** Rows are elements here rather than newlines, so an
      * anchor left open across one would be a tag closed by the wrong `</div>` — markup the
@@ -572,18 +529,9 @@ export var Terminal = (function () {
             esc(backend) + " · " + esc(word) + esc(lines) + "</span>";
     }
 
-    /** The control's own two states, so that what it says and what it looks like are one thing. */
-    function paintToggle() {
-        var button = els["screen-wrap"];
-        if (!button) return;
-        button.setAttribute("aria-pressed", wrapping ? "true" : "false");
-        button.classList.toggle("on", wrapping);
-    }
-
     function render() {
         if (!els["screen-body"]) return;
         els["screen-badge"].innerHTML = badge();
-        paintToggle();
         if (error) {
             els["screen-body"].innerHTML = '<div class="screen-note err" role="alert">' +
                 esc(error) + "</div>";
@@ -595,9 +543,8 @@ export var Terminal = (function () {
                     ? T.webScreenGone : T.webLoading) + "</div>";
             return;
         }
-        els["screen-body"].innerHTML = wrapping
-            ? '<div class="screen-text wrap">' + paintRows(screen.text) + "</div>"
-            : '<pre class="screen-text">' + paint(screen.text) + "</pre>";
+        els["screen-body"].innerHTML =
+            '<div class="screen-text">' + paintRows(screen.text) + "</div>";
     }
 
     /**
@@ -692,22 +639,6 @@ export var Terminal = (function () {
         follow: function () { this.close(false); },
 
         /**
-         * Lay the same capture out the other way.
-         *
-         * **It re-draws and does not re-fetch.** The screen is already in hand; this is a choice
-         * about how 243 columns meet a viewport that has fifty, and asking the Mac for a capture
-         * it has already sent would be a request made to answer a question about CSS.
-         */
-        wrap: function (on) {
-            var next = on === undefined ? !wrapping : !!on;
-            if (next !== wrapping) {
-                wrapping = next;
-                storeBool(WRAP_KEY, wrapping);
-            }
-            render();
-        },
-
-        /**
          * The `screen` event said a pane moved to a new revision.
          *
          * Only the revision travels on the stream — the screen itself comes through the
@@ -724,10 +655,9 @@ export var Terminal = (function () {
 
         /** For the tests: what this panel currently believes it is showing. */
         stateForTesting: function () {
-            return { forId: forId, screen: screen, error: error, wrapping: wrapping,
+            return { forId: forId, screen: screen, error: error,
                      leasing: keepalive !== null, polling: poll !== null };
         },
-        paintForTesting: paint,
         paintRowsForTesting: paintRows,
         columnsForTesting: columns
     };
