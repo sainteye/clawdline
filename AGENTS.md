@@ -453,8 +453,10 @@ and **read the file**, always at
 ~/Library/Logs/Clawdline/diagnostics/report.json
 ```
 
-The path is a constant, the format is JSON, and the report states its own gaps rather than leaving
-you to infer them: how many trace entries were dropped, and whether each recorder that lives
+The path is a constant, so **check `written_at` before you read anything else** — the file is
+always there once anybody has ever pressed the button, and the one way this goes wrong is reasoning
+about last Tuesday's press. The format is JSON, and the report states its own gaps rather than
+leaving you to infer them: how many trace entries were dropped, and whether each recorder that lives
 outside the page is `unread`, `merged`, `unavailable` or `failed`. **The most you may ask of the
 person holding the phone is one press.** All of it, including how to add a recorder of your own, is
 in [`docs/diagnostics.md`](docs/diagnostics.md).

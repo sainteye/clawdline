@@ -69,6 +69,11 @@ check(guide.includes("~/Library/Logs/Clawdline/diagnostics/report.json"),
       "docs/diagnostics.md names the exact path an agent is meant to open");
 check(guide.includes("~/Library/Logs/Clawdline/diagnostics/previous.json"),
       "and the press before it");
+// A constant path is always there once anybody has pressed the button, so the one way a reader
+// goes wrong is reasoning about an older press. The envelope carries the stamp that settles it and
+// the document has to point at it, or the practice is only in somebody's head.
+check(guide.includes("written_at") && store.includes('"written_at"'),
+      "the document names the stamp that says whether this is the press you asked for");
 
 /* ---- the route, spelled twice ---------------------------------------------------------------- */
 const routeInPanel = /export var REPORT_ROUTE = "([^"]+)"/.exec(panel);

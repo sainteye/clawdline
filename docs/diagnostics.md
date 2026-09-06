@@ -36,6 +36,12 @@ last one is kept beside it, so a second press does not destroy the reading you w
 Two files with fixed names is also the whole of "it cannot grow without bound". Nothing else is
 ever written there.
 
+**A fixed path has one failure mode, so check for it.** The file is always there once anybody has
+ever pressed the button, which means the reading you open may be from last Tuesday. `written_at` in
+the envelope is UTC and is how you know it is the press you asked for; if it is older than your
+request, the press did not happen or it went to a different Mac — say so rather than reasoning about
+the wrong afternoon.
+
 **Open the panel after the fault, not before.** Some of what the report contains — the service
 worker's half of a notification tap, for one — is only folded in when the page next wakes.
 
