@@ -1728,8 +1728,8 @@ group("a review verdict and a verification receipt outlive the task directory th
                        "scope": "swift suite + web-schedules"]))
     UsageLedger.shared.importTaskRecord(receiptTaskRecord(
         id: "task-findings", graphID: graphID, review: findingReviewReceipt(),
-        session: "sess-findings",
-        verification: ["runs": 1, "seconds": 61, "last": "fail", "scope": "focused"]))
+        verification: ["runs": 1, "seconds": 61, "last": "fail", "scope": "focused"],
+        session: "sess-findings"))
     UsageLedger.shared.importTaskRecord(receiptTaskRecord(
         id: "task-elsewhere", graphID: other, review: passingReviewReceipt(),
         session: "sess-elsewhere"))
@@ -1778,13 +1778,15 @@ group("a review verdict and a verification receipt outlive the task directory th
     // verification with a gap in it, and a `0` written where nothing was reported is the shape
     // this store exists to refuse.
     UsageLedger.shared.importTaskRecord(receiptTaskRecord(
-        id: "task-partial", graphID: graphID, session: "sess-partial",
-        verification: ["runs": 1, "last": "pass", "scope": "focused"]))
+        id: "task-partial", graphID: graphID,
+        verification: ["runs": 1, "last": "pass", "scope": "focused"],
+        session: "sess-partial"))
     check("a verification missing its seconds is not stored as zero seconds",
           UsageLedger.shared.verificationReceipts(.task("task-partial")).isEmpty)
     UsageLedger.shared.importTaskRecord(receiptTaskRecord(
-        id: "task-verdictless", graphID: graphID, session: "sess-verdictless",
-        review: ["axes": [["axis": "specification", "status": "pass", "findings": []]]]))
+        id: "task-verdictless", graphID: graphID,
+        review: ["axes": [["axis": "specification", "status": "pass", "findings": []]]],
+        session: "sess-verdictless"))
     check("and a review with no verdict is not a review",
           UsageLedger.shared.reviewReceipts(.task("task-verdictless")).isEmpty)
 
@@ -1804,8 +1806,8 @@ group("a review verdict and a verification receipt outlive the task directory th
     // launch from the backfill. Importing it again must not double the findings.
     UsageLedger.shared.importTaskRecord(receiptTaskRecord(
         id: "task-findings", graphID: graphID, review: findingReviewReceipt(),
-        session: "sess-findings",
-        verification: ["runs": 1, "seconds": 61, "last": "fail", "scope": "focused"]))
+        verification: ["runs": 1, "seconds": 61, "last": "fail", "scope": "focused"],
+        session: "sess-findings"))
     expect("a second import of the same record is still one receipt",
            UsageLedger.shared.reviewReceipts(.task("task-findings")).count, 1)
     expect("with the same two findings under it",
