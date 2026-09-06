@@ -35,7 +35,9 @@ import { ShellPanel } from "../input/shell-panel.js";
  * **Fidelity did not stop mattering; it stopped being the thing that opens.** The control in the
  * header turns the wrapping off, and what comes back is byte for byte the markup this panel drew
  * before the second mode existed — every column, every background, every rule where tmux put
- * it. That is the whole reason the other mode is still exact rather than merely tidier: the
+ * it — save for the OSC 8 payload that version printed as words, which was the bug below and not
+ * a column of anybody's screen. `Tests/web-terminal.mjs` holds both halves of that: the equality
+ * for a capture with no OSC in it, and the exception for one that has. That is the whole reason the other mode is still exact rather than merely tidier: the
  * question "what does the Mac actually have on that screen" has an answer here and it is one tap
  * away. A picture that has to be asked for is not a promise broken; a picture nobody can read is
  * not a promise kept. `Resources/web/app/css/detail.css` carries the same reasoning beside the
@@ -462,8 +464,8 @@ export var Terminal = (function () {
      * **What it costs, said here rather than left to be discovered:** a trailing run that carried
      * a background colour loses its block, so a highlight or a selection that ran to the right
      * margin now stops at the last visible character. That is a real difference from the picture
-     * on the Mac. It is the price of this mode and not of the panel: the default keeps every
-     * column, padding and background alike.
+     * on the Mac. It is the price of this mode and not of the panel: turning the wrapping off
+     * keeps every column, padding and background alike.
      */
     function unpad(row) {
         var out = row.slice();

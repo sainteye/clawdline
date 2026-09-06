@@ -222,7 +222,15 @@ equal(paint(linked("mailto:nobody@example.com", "nobody")), "nobody",
     ["/x/y", "and a path-relative one"],
     ['https://x/"><img src=y onerror=alert(1)>', "a URL written to end the attribute it is in"],
     ["https://x/'onmouseover='alert(1)", "and one written for the other quote"],
-    ["  javascript:alert(1)", "one hiding its scheme behind leading space"]
+    ["  javascript:alert(1)", "one hiding its scheme behind leading space"],
+    // **One rejected character each, because every fixture above carries several.** The scheme
+    // test and the character class are two different walls, and a URL that trips both proves only
+    // that one of them stands. Measured: with these two absent, deleting `"` from the class, and
+    // deleting `<>` from it, each left the whole suite green — the class was being asserted by
+    // inputs the scheme test had already refused. Both mutants stayed safe, because `esc()` is a
+    // third wall behind this one, so what was missing was the proof and not the safety.
+    ['https://example.com/a"b', "an allowed scheme carrying the one character that ends an attribute"],
+    ["https://example.com/a<b", "and one carrying the character that starts a tag"]
 ].forEach(function (pair) {
     const drawn = paint(linked(pair[0], "label"));
     equal(drawn, "label", pair[1] + " draws its label and nothing else");
@@ -251,6 +259,18 @@ equal(paint(E + "]8;id=x;https://clawdline.com/" + ST + "label"),
     "a link the capture ends without closing is closed at the end of the capture, not left open");
 equal(paint(E + "]8;id=x;https://clawdline.com/"), "",
     "and an OSC 8 that never terminates takes the rest of the capture with it, anchor and all");
+// **A link whose text is only control bytes is not a link.** `emit()` refuses a run that escaping
+// left empty, and that refusal had nothing holding it — deleting it left the whole suite green,
+// because every other fixture here puts words inside the anchor.
+//
+// **And the shape that reaches it is not the obvious one.** An OSC 8 opened and closed with
+// *nothing* between them cannot tell the guard apart: `emit()` is only called when there are bytes
+// between two escapes, so with none there it never runs at all. What reaches it is a run that has
+// bytes and loses them — a carriage return between the two halves, which is what a status line
+// redrawing a field in place writes. Measured over ten shapes, seven tell the two apart and the
+// empty one is not among them.
+equal(paint(OSC("8;id=x;https://clawdline.com/") + "\r" + OSC("8;;") + "after"), "after",
+    "a link whose whole text was a control byte puts no empty anchor on the page");
 
 // **A row boundary is a newline here and an element in the other mode, so the two modes differ
 // on exactly one thing and it is stated in both places.** Inside a `<pre>` an anchor spanning a
@@ -258,7 +278,7 @@ equal(paint(E + "]8;id=x;https://clawdline.com/"), "",
 // closing a row would close the anchor with the wrong tag.
 equal(paint(OSC("8;id=x;https://clawdline.com/") + "first\nsecond" + OSC("8;;")),
     A("https://clawdline.com/") + "first\nsecond</a>",
-    "a link across two rows of the default mode is one anchor, because there the rows are newlines");
+    "a link across two rows of the unwrapped mode is one anchor, because there the rows are newlines");
 
 /* ---- the other mode, for the phone ---------------------------------------
  *
@@ -371,7 +391,7 @@ equal(rows("  two" + spaces(200)),
     '<div class="screen-row" style="padding-left:2ch;text-indent:-2ch">  two</div>',
     "stripping the padding does not touch the indent, which is the other end of the row");
 ok(paint("text" + spaces(3)).indexOf("text   ") === 0,
-    "while the default mode keeps every column the Mac drew");
+    "while the unwrapped mode keeps every column the Mac drew");
 
 /* Blank rows are rows: a grid has 59 of them whether or not anything was written on them. */
 equal(rows("a\n\nb").split('class="screen-row"').length - 1, 3,

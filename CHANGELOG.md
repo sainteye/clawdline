@@ -9,6 +9,32 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Changed: the live screen is readable on the phone you read it on
+
+Every pane on a Mac is wider than a phone — 243 columns against about fifty here — so a panel that
+mirrored the terminal exactly was five screen-widths of sideways dragging to read one sentence.
+It now opens soft-wrapped instead: one element per row of the grid, each row hanging its
+continuations under its own indent, and a row that is really a horizontal rule clipped rather than
+folded into five rows of dashes. **Fidelity did not stop mattering; it stopped being the thing that
+opens.** The control in the panel's header turns the wrapping off, and what comes back is byte for
+byte the picture the Mac has. Your choice is remembered by your own browser.
+
+### Fixed: the status line's links were arriving as their own source code
+
+Claude Code writes the links in its status line as OSC 8 hyperlinks, and the panel's escape scanner
+matched the introducer and stopped — so `8;id=1q7561e;https://clawdline.com/` was printed as words
+next to the label it was supposed to be attached to. Six of them on one real capture. An OSC string
+runs to BEL or ST, which `Sources/Ansi.swift` has read correctly for the Mac's own view since it was
+written, and the panel now reads it the same way. **`http` and `https` become links you can
+follow**; every other scheme keeps its label as plain text, because a link a phone browser cannot
+open is worse than the words. The link keeps the colour tmux drew it in and takes a dotted underline
+so you can tell it is one.
+
+### Changed: the session menu says which screen it means
+
+「即時畫面」 in the menu rather than 「畫面」. The panel's own header keeps the shorter word, because
+the badge beside it already says whether that terminal can tell us it changed.
+
 ## 0.8.0 — 2026-09-06
 
 ### Added: the sentence you type several times a day, one press away
