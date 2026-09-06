@@ -443,11 +443,14 @@
    **The gap is written on the trailing edge of the first, not the leading edge of the second.**
    Both spellings give exactly 6px while the two share a line. They differ only in the case that
    made this a decision, and that case was measured under both: wrapped, the trailing margin leaves
-   `Live screen` 1.0px from the body's edge, flush with everything else on the card, while
-   `.go + .go { margin-left }` leaves it at 7.0px — a trailing margin simply disappears at the end
-   of a line. The one control that starts a wrapped line at 7.0px under either spelling is
-   `Show on Mac`, and that is the rule above this one: `.refresh-status + .go` already puts 6px on
-   its leading edge. */
+   `Live screen` 1.0px from the body's edge, flush with everything else on the card, while the same
+   6px written on the second button's leading edge instead leaves it at 7.0px — a trailing margin
+   simply disappears at the end of a line and a leading one does not. That alternative is named in
+   words rather than as a selector on purpose: `Resources/web/app/js/net/client.test.mjs` refuses
+   the adjacent-sibling rule by pattern, and the pattern cannot tell a comment from a declaration,
+   so spelling it here turns that suite red. The one control that starts a wrapped line at 7.0px
+   under either spelling is `Show on Mac`, and that is the rule above this one:
+   `.refresh-status + .go` already puts 6px on its leading edge. */
 .composer .waiting .go[data-focus] { margin-right: 6px; }
 .composer .waiting .go:disabled,
 .composer .waiting .go[aria-disabled="true"] {
