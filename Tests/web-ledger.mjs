@@ -190,13 +190,46 @@ function page(environment) {
 /** The one thing no state but `present` may contain. */
 function hasDigit(text) { return /\d/.test(String(text)); }
 
+/**
+ * **Every string that reached the screen**, tooltips included, so the check below can be asked of
+ * all of them at once rather than of the one that was noticed.
+ */
+function drawnStrings(node, out = []) {
+    if (node.title) out.push(node.title);
+    if (!node.children.length && node.textContent) out.push(node.textContent);
+    for (const child of node.children) drawnStrings(child, out);
+    return out;
+}
+
+/**
+ * A hole that never got filled.
+ *
+ * `core/i18n.js`'s `fill` leaves a placeholder it has no value for exactly as it found it, which
+ * is the right thing for a missing value and the wrong thing to look at: the reader sees `{rows}`
+ * where a number belongs. A string used without `fill` at all does the same, and that is what
+ * happened here — one of the nine `webLedger*` uses on this page was the sentence a tooltip
+ * carried, in all fourteen languages, with the brace still in it.
+ *
+ * So this is asked of the whole screen and not of that one tooltip. The next string with a hole
+ * in it will be drawn by a branch nobody is looking at either.
+ */
+const PLACEHOLDER = /\{[A-Za-z][A-Za-z0-9_]*\}/;
+function noPlaceholders(where, node) {
+    const drawn = drawnStrings(node);
+    const unfilled = drawn.filter((text) => PLACEHOLDER.test(text));
+    check(drawn.length > 0, `${where}: something was drawn for this scan to read`);
+    check(unfilled.length === 0,
+          `${where}: ${unfilled.length} of ${drawn.length} strings reached the screen with a hole `
+          + `still in them — ${JSON.stringify(unfilled)}`);
+}
+
 async function main() {
     const { bindLedgerPage, Ledger } = await import(
         pathToFileURL(join(root, "Resources/web/app/js/view/ledger.js")).href);
 
     /* ---- the three states, drawn as three different things ---------------- */
     {
-        const { elements, environment } = page({
+        const { doc, elements, environment } = page({
             verificationLedger: () => Promise.resolve(payload()),
         });
         const view = bindLedgerPage(elements, environment);
@@ -260,6 +293,17 @@ async function main() {
               "and it is not one of the Features in the list");
         check(hasDigit(elements["ledger-count"].textContent),
               "the read receipt says how much was scanned");
+
+        // Every string on the list, tooltips included. Nine `webLedger*` strings carry holes and
+        // eight of them were filled; the ninth was a tooltip, and it printed `{rows}`.
+        noPlaceholders("the list", doc.body);
+        const tooltips = [];
+        (function walk(node) {
+            if (node.title) tooltips.push(node.title);
+            for (const child of node.children) walk(child);
+        })(elements["ledger-unattributed"]);
+        check(tooltips.some(hasDigit),
+              "the block's own tooltip says how many rows it stands for, as a number");
     }
 
     /* ---- an empty answer, a refusal, and the moment before either --------- */
@@ -367,6 +411,28 @@ async function main() {
         check(!/addEventListener\s*\(\s*["']keydown/
             .test(read("Resources/web/app/js/view/ledger.js")),
               "and this module owns no key listener of its own: the Escape chain is one place");
+    }
+    {
+        // The detail view draws strings the list never reaches, so it is scanned separately.
+        const detail = feature("graph-measured", {
+            findings: MEASURED.findings, verification: MEASURED.verification,
+            tokens: CLEAN.tokens,
+            verdicts: [{ verdict: "changes_required", count: 1 }],
+            axes: [{ taskId: "t", axis: "specification", status: "findings", findingCount: 1 }],
+            items: [{ findingId: "F1", severity: "minor", summary: "a hole nobody filled",
+                      axis: "specification", taskId: "t", evidence: ["Sources/X.swift:1"] }],
+        });
+        const { doc, elements, environment } = page({
+            verificationLedger: (graphID) => Promise.resolve(graphID
+                ? { verificationLedger: { schemaVersion: 1, feature: detail } }
+                : payload()),
+        });
+        const view = bindLedgerPage(elements, environment);
+        await view.enter();
+        await flush();
+        await view.openFeature("graph-measured");
+        await flush();
+        noPlaceholders("one Feature's detail", doc.body);
     }
 
     /* ---- the page, the drawer and the registry, held against each other --- */

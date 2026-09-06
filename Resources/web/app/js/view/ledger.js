@@ -175,7 +175,13 @@ function drawFeature(context, parent, feature, options) {
     var identity = feature.graphId
         ? appendText(doc, head, "code", feature.graphId, "ledger-card-id")
         : appendText(doc, head, "span", T.webLedgerUnattributed, "ledger-card-id ledger-absent");
-    if (!feature.graphId) identity.title = T.webLedgerUnattributedSay;
+    // **Through `fill`, like the eight other holed strings on this page.** This one was the ninth
+    // and the only one used raw, so the first word of the tooltip was the characters `{rows}` —
+    // in all fourteen languages, because every translation of it carries the same hole.
+    if (!feature.graphId) {
+        identity.title = fill(T.webLedgerUnattributedSay,
+                              { rows: number(feature.rows || 0) });
+    }
     card.appendChild(head);
 
     var facts = doc.createElement("div");
