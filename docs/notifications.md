@@ -208,6 +208,14 @@ two moments it wakes up, `boot` and `visibilitychange`, which are the same two t
 at. The message still goes first and still does the work when it arrives. The record is what turns
 a dropped message from the end of the tap into a delay.
 
+**And at a third moment, because those two are the edges and the write lands between them.** The
+worker does not hold the tap up for its cache write, so `boot` can read the store before the record
+is in it — and a page that came up in the foreground gets no `visibilitychange` to read it at, so
+by the time one arrives the record is usually past the two-minute window and is thrown away unread.
+That is the second road failing silently on exactly the tap it exists for. So `view/list.js` reads
+it again with every session list, beside the `openWanted` retry the same request has always had,
+and stops as soon as a read comes back with anything but "nothing there yet".
+
 **It is a separate cache from the trace on purpose.** The trace is a numbered history nobody obeys;
 this is an instruction carried out once and then destroyed. In one store the two would share a
 read-modify-write, a sequence number and a pruning rule, and the first bug in either would be a tap

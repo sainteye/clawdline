@@ -36,6 +36,10 @@ const routePath = resolve(process.env.CLAWDLINE_ROUTE_SOURCE
   || join(repoRoot, "Resources", "web", "app", "js", "input", "route.js"));
 const mainPath = resolve(process.env.CLAWDLINE_MAIN_SOURCE
   || join(repoRoot, "Resources", "web", "app", "js", "main.js"));
+// The third read point lives here rather than in `main.js`: the session list is where `openWanted`
+// has always retried, and the record is the other half of the same request.
+const listPath = resolve(process.env.CLAWDLINE_LIST_SOURCE
+  || join(repoRoot, "Resources", "web", "app", "js", "view", "list.js"));
 
 let checks = 0;
 let failures = 0;
@@ -56,6 +60,7 @@ const occurrences = (haystack, needle) => haystack.split(needle).length - 1;
 const pageSource = readFileSync(pagePath, "utf8");
 const routeSource = readFileSync(routePath, "utf8");
 const mainSource = readFileSync(mainPath, "utf8");
+const listSource = readFileSync(listPath, "utf8");
 
 /* ---- lift the worker out of the Swift raw string ----------------------------------------------
    The same extraction `web-service-worker.mjs` does, and checked before it is trusted for the same
@@ -161,10 +166,14 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     if (!stores.has(wantCache)) stores.set(wantCache, new Map());
     stores.get(wantCache).set(wantURL, new Res(JSON.stringify(record)));
   };
+  // Every `caches.open`, by name. The third read point is called with every session list, and a
+  // list arrives on every state change on this Mac — so "does it stop asking" is a fact about the
+  // store being opened, and a count is the only way to see it from out here.
+  const opens = [];
   // `noCaches` is a browser that has no Cache Storage, or one that refuses it. Both contexts
   // lose the store together, because on a device it is one origin's storage that is missing.
   const caches = noCaches ? undefined : {
-    open: (name) => Promise.resolve(cacheFor(name)),
+    open: (name) => { opens.push(name); return Promise.resolve(cacheFor(name)); },
     keys: () => Promise.resolve([...stores.keys()]),
     delete: (name) => { stores.delete(name); return Promise.resolve(true); },
   };
@@ -294,6 +303,10 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     // above about numbering still say what they said.
     wake: async () => { const read = await page.readWorkerTrace(); await page.readWorkerWant(); return read; },
     readWant: () => page.readWorkerWant(),
+    // What a session list does: `list.js` calls this beside `openWanted`, which is the retry point
+    // the request has always had.
+    retry: () => page.retryWorkerWant(),
+    wantOpens: () => opens.filter((name) => name === wantCache).length,
     // A message handed to the page by itself, which `deliver: true` cannot express: the worker
     // posts during the tap, and the order this exists for is the one where the page is given that
     // same message *afterwards* — a client message queued while iOS had the page suspended, and
@@ -511,6 +524,43 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   equal(world.opened.join(","), PANE, "with the pane the notification named");
   await world.settle();
   equal(world.wantRecord(), null, "and only now is the record spent");
+}
+
+/* ---- the record that lands after the read that would have seen it ----------------------------
+   The worker starts its cache write and does not hold the tap up for it, and until now the page
+   read at `boot` and at `visibilitychange` and nowhere in between. A cold start falls exactly
+   between them: `boot` reads before the record has landed, the page is then in the foreground, so
+   no `visibilitychange` comes, and by the time one does the record is older than the window and is
+   thrown away unread. The second road was silent on precisely the tap it exists for. The session
+   list is the retry point `openWanted` has always had, and this is the same request's other half.
+*/
+{
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  equal(await world.readWant(), "none", "boot reads before the worker has written anything");
+  await world.tap(sessionURL(PANE));
+  check("the record lands a moment later", !!world.wantRecord());
+  equal(world.opened.length, 0,
+        "and nothing has read it — a page in the foreground is woken by nothing");
+  equal(await world.retry(), "routed", "the next session list reads it and acts on it");
+  equal(world.opened.join(","), PANE, "so the tap is not lost between the two old read points");
+  // And it stops. A list arrives on every state change, and a read per list for the rest of the
+  // session is the cost this guard is here to refuse.
+  const opened = world.wantOpens();
+  equal(await world.retry(), "skipped", "a list after that does not ask again");
+  equal(await world.retry(), "skipped", "however many of them arrive");
+  equal(world.wantOpens(), opened, "and the store is not opened again");
+}
+{
+  // The control group for the guard: until an answer comes back it must keep asking, or the read
+  // point that was added is one that never runs on a page where nothing has been tapped yet.
+  const world = await makeWorld({ deliver: false, listed: [PANE] });
+  equal(await world.retry(), "none", "the first list finds nothing written");
+  const opened = world.wantOpens();
+  equal(await world.retry(), "none", "and the next one looks again");
+  check("which means the store was opened again", world.wantOpens() > opened);
+  await world.tap(sessionURL(PANE));
+  equal(await world.retry(), "routed", "so the record is found whenever it lands");
+  equal(world.opened.join(","), PANE, "and the tap arrives");
 }
 
 /* ---- two notifications tapped before the list arrives ----------------------------------------
@@ -801,6 +851,17 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
         "and calls it at both of the moments a page wakes up");
   equal(occurrences(mainSource, "readWorkerTrace()"), 2,
         "which are the two the trace is already read at");
+}
+{
+  // And the third, which is the one this road did not have. It is in `list.js` rather than
+  // `main.js` because the moment it needs is a session list arriving, which is where the same
+  // request's other half — `openWanted` — has always been retried. Read as source for the same
+  // reason: driving `list.js` means rendering the whole app.
+  check("list.js imports the retry from route.js",
+        /import \{[^}]*\bretryWorkerWant\b[^}]*\} from "\.\.\/input\/route\.js";/.test(listSource));
+  equal(occurrences(listSource, "retryWorkerWant()"), 1, "and calls it, once, with every list");
+  check("beside the openWanted call it is the other half of",
+        /openWanted\(\);[^]{0,700}retryWorkerWant\(\);/.test(listSource));
 }
 
 console.log(failures === 0

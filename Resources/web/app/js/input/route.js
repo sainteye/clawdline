@@ -414,6 +414,14 @@ function forgetWant(id) {
         .catch(function () { return false; });
 }
 
+/** A read has come back with something other than `none`, so there is nothing left to wait for. */
+var wantAnswered = false;
+
+/** A read is in flight. Lists arrive faster than Cache Storage answers, and two reads of one
+ *  record are two roads again — the second would find it `settled` at best and act on it twice at
+ *  worst. */
+var wantReading = false;
+
 /**
  * Read what the last tap asked for, and route there if it is still worth doing.
  *
@@ -425,6 +433,41 @@ function forgetWant(id) {
  * `boot`.
  */
 export function readWorkerWant() {
+    wantReading = true;
+    return readWantRecord().then(function (answer) {
+        wantReading = false;
+        if (answer !== "none") wantAnswered = true;
+        return answer;
+    });
+}
+
+/**
+ * The third read point, and the reason it exists: **the write is not awaited and the reads were
+ * both at the edges.**
+ *
+ * The worker starts its cache write and does not hold the tap up for it; the page read at `boot`
+ * and at `visibilitychange` and nowhere in between. A cold start is exactly the order that falls
+ * between them — `boot` reads before the record has landed, and the page is then in the foreground,
+ * so no `visibilitychange` comes. By the time one does, the record is usually older than
+ * `WORKER_WANT_MAX_AGE_MS` and is thrown away unread. The second road was silent on precisely the
+ * tap it exists for.
+ *
+ * So `list.js` calls this with every session list, which is where `openWanted` has always retried
+ * for the same reason: a cold start does its routing before it knows what sessions exist. Not a
+ * retry of the worker's message — a re-read of what it wrote down.
+ *
+ * Answers `skipped` when it did not look. Two guards, both cheap: a read already in flight, and a
+ * read that has already come back with something other than "nothing there yet" — after which
+ * there is nothing to wait for, because a record that arrives later arrives with a wake-up of its
+ * own. What that leaves is one store read per list on a page where a notification is never tapped,
+ * which is smaller than the render beside it and is the honest cost of not having a way to be told.
+ */
+export function retryWorkerWant() {
+    if (wantAnswered || wantReading) return Promise.resolve("skipped");
+    return readWorkerWant();
+}
+
+function readWantRecord() {
     try {
         if (typeof caches === "undefined" || !caches || !caches.open) {
             return Promise.resolve("unavailable");
