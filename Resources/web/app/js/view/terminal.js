@@ -159,6 +159,12 @@ export var Terminal = (function () {
      * One run of text at one colour, as HTML — the only place in this file that turns a capture
      * into markup, so that both modes below escape in the same order and there is one line to
      * read when somebody asks whether they do.
+     *
+     * `esc(css)` cannot fire today and is kept anyway: every value `style()` can produce is a
+     * `var(--term-N)`, an `rgb()` of integers forced through `| 0`, or a literal from this file,
+     * so no capture can reach it. It is the guard for the day somebody adds an SGR code whose
+     * parameter reaches the declaration — and it is the one line here no test can hold to
+     * account, because nothing this function can be given makes it matter.
      */
     function paintSegment(text, css) {
         var body = esc(text);
