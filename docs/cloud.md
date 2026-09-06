@@ -376,10 +376,18 @@ change, not evidence that it did not work; the rebuild *after* it is what shows 
 > `find-generic-password -g`, or Keychain Access — the first two open a system dialog, which is why
 > neither the delivery nor the review was allowed to run them.
 >
-> *Not measured anywhere yet:* that a Team ID makes macOS write `teamid:<id>` instead and stop
-> adding entries. That is Apple's documented behaviour for the partition list, and the only thing
-> that settles it on this machine is the acceptance above — sign with a Developer ID identity,
-> authorise the two items once, rebuild, and use Cloud again without being asked.
+> *Measured last, because only a person could produce it:* that a Team ID makes macOS write
+> `teamid:<id>` instead of another `cdhash:`, and that the build after it is not asked. On
+> 2026-09-06 this Mac ran the acceptance end to end. Before: 20 `cdhash:` entries on each item, no
+> team, and the app's own log repeating `cloud: Keychain identity read timed out` all evening — a
+> dialog it had opened and could not cancel, because `SecItemCopyMatching` is synchronous and
+> uncancellable, so the window stayed on screen after the app had stopped waiting for it. The
+> Developer ID build was installed, the two items were approved once each, and the partition lists
+> became `["apple-tool:", "apple-tool:", "teamid:83D62P566Q"]` and `["teamid:83D62P566Q"]`: one
+> entry naming the certificate, not a twenty-first naming a build. Then a second build was made —
+> `CDHash=c7271bd8…` where the approved one had been `c4d8a0ba…`, so a different binary by the only
+> measure the Keychain uses — and it attached the Cloud bridge with no dialog, no password, and no
+> new ACL entry. That is what the twenty approvals before it never bought.
 
 Discovery runs as `security find-identity … "$CLAWDLINE_LOCAL_SIGN_KEYCHAIN"`; ambiguity is counted
 only in that result, lock usability is read for that path by the injectable
