@@ -414,16 +414,19 @@
     background: var(--card-hi); color: var(--ink);
 }
 .composer .waiting .refresh-status + .go { margin-left: 6px; }
-/* Two buttons close the card now, and in some languages they will not both fit on a phone:
-   Russian is «Показать на Mac» beside «Экран в реальном времени», about 290px of button against
-   the ~276px a 320px screen leaves inside this card. They are inline-block, so the second wraps
-   under the first on its own and neither is ever cut off — no flex row is needed, and the 7px
-   `margin-top` above already spaces the wrapped line.
+/* Two buttons close the card now, and in one language they do not both fit on a phone. Measured
+   in Chrome against this stylesheet, at the widths a phone actually has: this card's body is 269px
+   inside a 320px viewport, and thirteen of the fourteen pairs need between 185px and 235px. The
+   fourteenth is Russian — «Показать на Mac» at 117px beside «Экран в реальном времени» at 179px,
+   302px with the gap — which wraps at 320px and sits on one line from 360px up. They are
+   inline-block, so that wrap is the browser's own and nothing is ever cut off: no flex row is
+   needed here, and the 7px `margin-top` above already spaces the second line.
 
    **The gap is written on the trailing edge of the first, not the leading edge of the second.**
-   `margin-left` on the second would be right on one line and wrong on two: a button that has
-   wrapped to a line of its own would start 6px in from a margin every other control here sits
-   flush against. A trailing margin simply disappears at the end of a line. */
+   Both spellings give exactly 6px while the two share a line. They differ only in the case that
+   made this a decision: with `margin-left` on the second, the wrapped Russian button starts 7px
+   from the body's edge; with the trailing margin it starts at 1px, flush with everything else on
+   the card, because a trailing margin simply disappears at the end of a line. */
 .composer .waiting .go[data-focus] { margin-right: 6px; }
 .composer .waiting .go:disabled,
 .composer .waiting .go[aria-disabled="true"] {

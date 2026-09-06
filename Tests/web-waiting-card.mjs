@@ -380,11 +380,14 @@ if (registration) {
 
 /* ---- two buttons where there was one --------------------------------------- */
 
-// They are inline-block, so at a width that will not hold both the second wraps under the first
-// rather than being cut off. The widest pair is Russian — «Показать на Mac» beside «Экран в
-// реальном времени» — which does not fit a 320px phone, so the wrap is a shape somebody sees.
-// The gap is written on the first button's right rather than the second's left, so a wrapped
-// second button starts flush at the margin instead of 6px in from it.
+// They are inline-block, so at a width that will not hold both, the second wraps under the first
+// rather than being cut off. Measured in Chrome: the card's body is 269px inside a 320px viewport
+// and only Russian exceeds it — «Показать на Mac» beside «Экран в реальном времени» needs 302px —
+// so the wrap is a shape somebody really sees. The gap is written on the first button's right
+// rather than the second's left because that is the only thing the two spellings disagree about:
+// wrapped, the trailing margin leaves the second button at 1px from the edge and the leading one
+// leaves it at 7px. That is a rendered fact rather than a parseable one, so what is pinned here is
+// only the rule it was decided from; the measurement lives in the comment beside it in the CSS.
 check(/\.composer \.waiting \.go\[data-focus\] \{[^}]*margin-right: 6px;[^}]*\}/.test(styles),
     "composer.css puts the gap on the trailing edge of the button that comes first");
 
