@@ -17,6 +17,76 @@ import Foundation
 // stop-growth limit, and a test trimmed to fit under a wall leaves the next person standing at
 // it.
 
+
+// **The lock that only ever tightened.** `landed` had one entrance and a person standing in it, so
+// the closeability projection could add `pending_landing_owned` and never take one away — twelve
+// of them from one root, on one card, on 2026-09-06. These two groups are the broker closing what
+// it can prove by itself, and the second is the larger half: every case where it must not.
+//
+// The fixture is a real repository, not a fake git. The whole question this feature answers is
+// what `git rev-list`, `git status` and `git diff` say about a checkout, and a stub that answers
+// for them would be a test of the stub.
+
+func makeSweepRepository() -> (url: URL, base: String, delivery: String, main: String) {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-sweep-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(
+        at: url.appendingPathComponent("Sources", isDirectory: true),
+        withIntermediateDirectories: true)
+    func commit(_ message: String) {
+        expect("the sweep fixture stages \(message)", testGit(["add", "-A"], cwd: url).status, 0)
+        expect("the sweep fixture commits \(message)", testGit([
+            "-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+            "commit", "-qm", message,
+        ], cwd: url).status, 0)
+    }
+    func write(_ relative: String, _ text: String) {
+        try! Data(text.utf8).write(to: url.appendingPathComponent(relative))
+    }
+    expect("the sweep fixture repository initializes",
+           testGit(["init", "-q", "-b", "main"], cwd: url).status, 0)
+    write("Sources/Kept.swift", "kept\n")
+    write("Sources/Dirty.swift", "dirty\n")
+    write("Sources/Differs.swift", "one\n")
+    commit("the target's own history")
+    let base = testGit(["rev-parse", "HEAD"], cwd: url).output
+
+    // A delivery branch with a commit of its own, merged into the target. This is arm 1's whole
+    // question: `refs/heads/main` contains that head.
+    let deliveryBranch = "clawdline/task/\(sweepAncestryTask)"
+    expect("the sweep fixture opens a delivery branch",
+           testGit(["switch", "-q", "-c", deliveryBranch], cwd: url).status, 0)
+    write("Sources/Delivered.swift", "delivered\n")
+    commit("the delivery")
+    let delivery = testGit(["rev-parse", "HEAD"], cwd: url).output
+    expect("the sweep fixture returns to the target",
+           testGit(["switch", "-q", "main"], cwd: url).status, 0)
+    expect("the sweep fixture merges the delivery", testGit([
+        "-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+        "merge", "-q", "--no-ff", "-m", "land the delivery", deliveryBranch,
+    ], cwd: url).status, 0)
+    let mainTip = testGit(["rev-parse", "HEAD"], cwd: url).output
+
+    // The checkout the shared-tree tasks are judged in sits on a branch of its own, so that one
+    // claimed path can be committed-and-clean while still differing from the target — which is a
+    // different finding from a path somebody is still editing, and the sweep keeps them apart.
+    expect("the sweep fixture opens the checkout's own branch",
+           testGit(["switch", "-q", "-c", "side"], cwd: url).status, 0)
+    write("Sources/Differs.swift", "two\n")
+    commit("a claimed path that never reached the target")
+    write("Sources/Dirty.swift", "somebody is still typing\n")
+    return (url, base, delivery, mainTip)
+}
+
+let sweepAncestryTask = "31313131-4141-5151-6161-717171717171"
+let sweepWriteSetTask = "31313131-4141-5151-6161-717171717172"
+let sweepDirtyTask = "31313131-4141-5151-6161-717171717173"
+let sweepDifferingTask = "31313131-4141-5151-6161-717171717174"
+let sweepUnreadableTask = "31313131-4141-5151-6161-717171717175"
+let sweepSettledTask = "31313131-4141-5151-6161-717171717176"
+let sweepLiveTask = "31313131-4141-5151-6161-717171717177"
+let sweepUntargetedTask = "31313131-4141-5151-6161-717171717178"
+
 func runLandingCurrencyTests() {
 
 group("a read-only delivery gets a terminal state, and one that wrote may not use it") {
@@ -232,6 +302,220 @@ group("a worktree's landing state is the one that is true now, and its row says 
             < UsageProjectWorktreeService.Outcome.nothingToLand.rank
             && UsageProjectWorktreeService.Outcome.nothingToLand.rank
                 < UsageProjectWorktreeService.Outcome.delivered.rank)
+}
+
+
+group("the broker closes by ancestry what git already proves, and keeps the receipt real") {
+    let repository = makeSweepRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let opened = Date(timeIntervalSince1970: 1_000)
+    func pending(_ target: String) -> Orchestrator.Landing {
+        Orchestrator.Landing(state: .pending, target: target, delivery: "the delivery",
+                             ownerRootKey: "0123abcd", since: opened, commit: nil,
+                             note: "awaiting a safe shared tree")
+    }
+    func hold(_ id: String, claims: [String] = [], target: String? = "main",
+              state: Orchestrator.State = .success, isolated: Bool = false) {
+        var task = Orchestrator.Task(
+            id: id, state: state, kind: "custom", title: "a delivery nobody closed",
+            assistant: .claude, projectDir: repository.url.path, timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1), rootSessionId: "sweep-root",
+            claims: claims, claimsDeclared: !claims.isEmpty,
+            secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = state.isTerminal ? Date(timeIntervalSince1970: 900) : nil
+        task.resultVerifiedAt = task.finishedAt
+        task.summary = state.isTerminal ? "delivered" : nil
+        task.claimKeys = OrchestratorDraft.freezeClaims(claims, projectDir: task.projectDir)
+        if isolated {
+            task.isolation = .worktree
+            task.worktree = Orchestrator.Worktree(
+                path: OrchestratorDraft.worktreePath(project: repository.url.path, taskID: id)!,
+                branch: OrchestratorDraft.worktreeBranch(for: id)!, base: repository.base,
+                repository: repository.url.path, cwd: repository.url.path,
+                head: repository.delivery, commits: 1, dirty: false)
+        }
+        task.landing = target.map(pending)
+        Orchestrator.holdScheduleTaskForTesting(task)
+    }
+    func settled(_ id: String) -> Orchestrator.Landing? { Orchestrator.held(id)?.landing }
+
+    hold(sweepAncestryTask, isolated: true)
+    hold(sweepWriteSetTask, claims: ["Sources/Kept.swift"])
+
+    let pass = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 5_000))
+    func verdict(_ id: String) -> Orchestrator.LandingSweepVerdict? {
+        pass.first { $0.taskID == id }?.verdict
+    }
+    expect("the merged delivery closes on ancestry", verdict(sweepAncestryTask),
+           .closed(.ancestry))
+    expect("and the shared checkout's write set closes on its own proposition",
+           verdict(sweepWriteSetTask), .closed(.writeSet))
+
+    // Arm 1: the same verified path the HTTP route takes, so the record is the two-check kind.
+    let ancestry = settled(sweepAncestryTask)
+    expect("the ancestry record is landed", ancestry?.state, .landed)
+    expect("on the commit git resolved, not the one a caller typed",
+           ancestry?.commit, repository.delivery)
+    expect("with the broker's own verification origin",
+           ancestry?.verificationOrigin, "local_target_branch")
+    expect("naming the target commit it was contained by",
+           ancestry?.verifiedTargetCommit, repository.main)
+    check("and it reads as the two-check landing",
+          ancestry.map(Orchestrator.isBrokerVerifiedTargetLanding) == true)
+    check("which is what the Session vocabulary calls work_complete",
+          Orchestrator.projectSessionWorkState(
+            terminalState: .idle, task: Orchestrator.held(sweepAncestryTask),
+            hasCoordinationWait: false, hasOpenHandoff: false,
+            assignmentKnownAbsent: false) == .workComplete)
+    check("and its note says which of the two propositions it rests on",
+          ancestry?.note?.contains("reached the target") == true)
+
+    // Arm 2: the narrower sentence, and it may never be dressed as the wider one.
+    let writeSet = settled(sweepWriteSetTask)
+    expect("the write-set record is landed too", writeSet?.state, .landed)
+    expect("on the target's own head, because it has no commit of its own",
+           writeSet?.commit, repository.main)
+    check("carrying no verification field at all",
+          writeSet?.verificationOrigin == nil && writeSet?.verifiedCommit == nil
+              && writeSet?.verifiedTargetCommit == nil && writeSet?.landedAt == nil)
+    check("so it can never become the two-check landing",
+          writeSet.map(Orchestrator.isBrokerVerifiedTargetLanding) == false)
+    check("and stays the one-check milestone in the Session vocabulary",
+          Orchestrator.projectSessionWorkState(
+            terminalState: .idle, task: Orchestrator.held(sweepWriteSetTask),
+            hasCoordinationWait: false, hasOpenHandoff: false,
+            assignmentKnownAbsent: false) == .milestoneComplete)
+    check("its note says out loud that this is not the other proposition",
+          writeSet?.note?.contains("not proof that a delivery reached the target") == true)
+    check("and it keeps the obligation's own clock rather than inventing one",
+          writeSet?.since == opened && writeSet?.ownerRootKey == "0123abcd")
+
+    // Both records have to survive the codec, which fails closed on any verification-shaped field
+    // whose origin and triple are not exactly right.
+    for (name, record) in [("the ancestry record", ancestry), ("the write-set record", writeSet)] {
+        guard let record else { check("\(name) exists", false); continue }
+        expect("\(name) round-trips through the store",
+               OrchestratorStore.landing(from: OrchestratorStore.stored(record)), record)
+    }
+
+    // A settled record is never rewritten, and the cheapest proof is that a second pass does not
+    // even consider one: the projection's obligations fall away with it.
+    let second = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 6_000))
+    check("a settled obligation is not a candidate for the next pass",
+          !second.contains { $0.taskID == sweepAncestryTask || $0.taskID == sweepWriteSetTask })
+    expect("and the record it wrote is still the one it wrote",
+           settled(sweepAncestryTask), ancestry)
+}
+
+group("a sweep that cannot prove it leaves the record exactly as it found it") {
+    let repository = makeSweepRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let opened = Date(timeIntervalSince1970: 1_000)
+    func landing(_ state: Orchestrator.LandingState, target: String?) -> Orchestrator.Landing {
+        Orchestrator.Landing(state: state, target: target, delivery: nil,
+                             ownerRootKey: "0123abcd", since: opened,
+                             commit: state == .landed ? String(repeating: "a", count: 40) : nil,
+                             note: "a root wrote this")
+    }
+    func hold(_ id: String, claims: [String], landingState: Orchestrator.LandingState = .pending,
+              target: String? = "main", state: Orchestrator.State = .success) {
+        var task = Orchestrator.Task(
+            id: id, state: state, kind: "custom", title: "a delivery nobody closed",
+            assistant: .claude, projectDir: repository.url.path, timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1), rootSessionId: "sweep-root",
+            claims: claims, claimsDeclared: true,
+            secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = state.isTerminal ? Date(timeIntervalSince1970: 900) : nil
+        task.claimKeys = OrchestratorDraft.freezeClaims(claims, projectDir: task.projectDir)
+        task.landing = landing(landingState, target: target)
+        Orchestrator.holdScheduleTaskForTesting(task)
+    }
+
+    hold(sweepDirtyTask, claims: ["Sources/Dirty.swift"])
+    hold(sweepDifferingTask, claims: ["Sources/Differs.swift"])
+    hold(sweepUnreadableTask, claims: ["Sources/Kept.swift"], target: "no-such-branch")
+    hold(sweepSettledTask, claims: ["Sources/Kept.swift"], landingState: .landed)
+    hold(sweepLiveTask, claims: ["Sources/Kept.swift"], state: .briefed)
+    hold(sweepUntargetedTask, claims: ["Sources/Kept.swift"], target: nil)
+
+    let held = [sweepDirtyTask, sweepDifferingTask, sweepUnreadableTask, sweepSettledTask,
+                sweepLiveTask, sweepUntargetedTask].compactMap { Orchestrator.held($0) }
+    expect("every row in this fixture was seeded", held.count, 6)
+    let candidates = Orchestrator.landingSweepCandidates(held).map(\.taskID).sorted()
+    expect("a settled record, a live task and a record with no target are not candidates at all",
+           candidates, [sweepDirtyTask, sweepDifferingTask, sweepUnreadableTask].sorted())
+
+    let pass = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 5_000))
+    func why(_ id: String) -> String? {
+        if case .left(let reason) = pass.first(where: { $0.taskID == id })?.verdict {
+            return reason
+        }
+        return nil
+    }
+    check("a claimed path somebody is still editing is not a settled write set",
+          why(sweepDirtyTask)?.contains("uncommitted") == true)
+    check("a claimed path that never reached the target is a different finding, and also not one",
+          why(sweepDifferingTask)?.contains("differ from refs/heads/main") == true)
+    check("and a target git will not answer for is skipped, never read as nothing having landed",
+          why(sweepUnreadableTask)?.contains("git would not answer") == true)
+    check("nothing this pass could not prove was written",
+          [sweepDirtyTask, sweepDifferingTask, sweepUnreadableTask, sweepLiveTask,
+           sweepUntargetedTask].allSatisfy { Orchestrator.held($0)?.landing?.state == .pending })
+    expect("and the one record that was already settled is byte for byte what a root wrote",
+           Orchestrator.held(sweepSettledTask)?.landing, landing(.landed, target: "main"))
+
+    // The two shapes the writer itself refuses, so that a caller cannot assemble the wrong record
+    // even if the phases above were ever wired up the wrong way round.
+    let open = landing(.pending, target: "main")
+    let real = Orchestrator.LandingVerification(
+        origin: "local_target_branch", commit: String(repeating: "c", count: 40),
+        targetCommit: String(repeating: "d", count: 40))
+    check("an ancestry arm with no verification writes nothing",
+          Orchestrator.landingSweepLanding(
+            existing: open, arm: .ancestry, verification: nil,
+            targetCommit: String(repeating: "d", count: 40), target: "main", claimCount: 0,
+            now: Date(timeIntervalSince1970: 5_000)) == nil)
+    check("and a write-set arm carrying one writes nothing either",
+          Orchestrator.landingSweepLanding(
+            existing: open, arm: .writeSet, verification: real,
+            targetCommit: String(repeating: "d", count: 40), target: "main", claimCount: 1,
+            now: Date(timeIntervalSince1970: 5_000)) == nil)
+    check("a pathspec that could mean something else to git disqualifies the whole write set",
+          !Orchestrator.landingSweepClaimsUsable(["Sources/A.swift", "../elsewhere"])
+              && !Orchestrator.landingSweepClaimsUsable([":(glob)Sources/*"])
+              && !Orchestrator.landingSweepClaimsUsable([])
+              && Orchestrator.landingSweepClaimsUsable(["Sources/A.swift", "docs"]))
+    check("a live delivery ref outranks the head the registry remembers",
+          Orchestrator.landingSweepQuestion(
+            for: Orchestrator.LandingSweepCandidate(
+                taskID: sweepDirtyTask, projectDir: repository.url.path, target: "main",
+                deliveryBranch: "clawdline/task/\(sweepDirtyTask)", storedHead: "stale",
+                claims: ["Sources/Dirty.swift"]),
+            liveHead: repository.delivery) == .ancestry(head: repository.delivery))
+    check("and a candidate with neither a branch nor a usable write set is asked nothing",
+          Orchestrator.landingSweepQuestion(
+            for: Orchestrator.LandingSweepCandidate(
+                taskID: sweepDirtyTask, projectDir: repository.url.path, target: "main",
+                deliveryBranch: "clawdline/task/\(sweepDirtyTask)", storedHead: nil, claims: []),
+            liveHead: nil) == .unanswerable("no delivery branch, and no usable declared write set"))
 }
 
 }

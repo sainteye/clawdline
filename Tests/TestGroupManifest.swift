@@ -556,6 +556,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "claims is required as a present field, which is the one shape every dispatcher can answer",
     "a read-only delivery gets a terminal state, and one that wrote may not use it",
     "a worktree's landing state is the one that is true now, and its row says what the work was",
+    "the broker closes by ancestry what git already proves, and keeps the receipt real",
+    "a sweep that cannot prove it leaves the record exactly as it found it",
 ]
 
 func validateExecutedTestGroupManifest() {
