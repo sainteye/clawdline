@@ -251,6 +251,19 @@ els["session-actions"].addEventListener("click", function (ev) {
     if (ev.target.closest && ev.target.closest("#session-end")) ActionConfirm.open("end");
 });
 
+/* The waiting card's way into the same panel.
+ *
+ * `view/composer.js` draws a live-screen button on the card and cannot call `Terminal.open()`
+ * itself: that module and `view/terminal.js` already sit inside one strongly connected component,
+ * each reaching the other in three hops, and a direct import would tighten a knot rather than add
+ * to it. So the card announces the press on the document and this file — which holds `Terminal`
+ * for the sheet above anyway — is what turns it into the same call the `#session-screen` row
+ * makes. Synchronous, because `dispatchEvent` runs its listeners before returning: the panel opens
+ * inside the press rather than a microtask later, which is what keeps the focus move at the end of
+ * `Terminal.open()` inside the user's gesture on a phone.
+ */
+document.addEventListener("clawdline:open-screen", function () { Terminal.open(); });
+
 els["screen-close"].addEventListener("click", function () { Terminal.close(true); });
 els["screen-panel"].addEventListener("keydown", function (ev) {
     if (ev.key !== "Escape") return;

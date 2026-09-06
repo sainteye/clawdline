@@ -414,6 +414,17 @@
     background: var(--card-hi); color: var(--ink);
 }
 .composer .waiting .refresh-status + .go { margin-left: 6px; }
+/* Two buttons close the card now, and in some languages they will not both fit on a phone:
+   Russian is «Показать на Mac» beside «Экран в реальном времени», about 290px of button against
+   the ~276px a 320px screen leaves inside this card. They are inline-block, so the second wraps
+   under the first on its own and neither is ever cut off — no flex row is needed, and the 7px
+   `margin-top` above already spaces the wrapped line.
+
+   **The gap is written on the trailing edge of the first, not the leading edge of the second.**
+   `margin-left` on the second would be right on one line and wrong on two: a button that has
+   wrapped to a line of its own would start 6px in from a margin every other control here sits
+   flush against. A trailing margin simply disappears at the end of a line. */
+.composer .waiting .go[data-focus] { margin-right: 6px; }
 .composer .waiting .go:disabled,
 .composer .waiting .go[aria-disabled="true"] {
     background: var(--card); color: var(--faint); cursor: default;
