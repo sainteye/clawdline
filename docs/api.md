@@ -3869,11 +3869,16 @@ the authenticated task outcome.
 
 `graph` is absent for legacy/free-form tasks. Its node `state` and top-level `frontier` are derived
 at read time from the newest task attempt for each node: `ready`, `blocked`, `active`, `done`,
-`failed`, or `awaiting_landing`. They are never persisted readiness claims. A review node reaches
-`done` only with a valid three-axis `review.verdict == safe_to_land`; verification nodes additionally
-require `verification.last == pass`. A successful review or verification task without its
-kind-specific receipt is `failed` for dependency purposes; other node kinds use ordinary task
-`success`.
+`changes_required`, `failed`, or `awaiting_landing`. They are never persisted readiness claims. A
+review node reaches `done` only with a valid three-axis `review.verdict == safe_to_land`, and
+`changes_required` with the other valid verdict: a review that found something did the job it was
+dispatched for, so that is a result rather than a failure. A `correction` node is the one kind of
+dependent a `changes_required` dependency satisfies — it is the node that exists to consume those
+findings — and every other kind waits behind it as `graph_frontier_blocked` rather than
+`graph_dependency_failed`. Verification nodes additionally require `verification.last == pass`. A
+successful review or verification task without its kind-specific receipt — a review that ended
+without producing a verdict at all — is `failed` for dependency purposes; other node kinds use
+ordinary task `success`.
 
 **A landing node is the one kind read from somebody else's task.** Landing belongs to the root that
 dispatched the graph, and a root does not dispatch a task to itself, so a landing node normally has
@@ -3968,8 +3973,17 @@ is `pending`, `landed`, `abandoned`, or `nothing_to_land`. `target` and `commit`
 characters and are both required for `landed` (a target already present on `pending` may be
 reused); `delivery` and `note` are optional non-empty strings up to 500 characters. A
 repeated request for `pending` or `abandoned` preserves the original `since` while
-updating any supplied `target`, `delivery`, or `note`. A repeated `landed` request is an immutable
-no-op. Moving to either `landed` or `abandoned` requires a terminal task; `landed` also requires a
+updating any supplied `target`, `delivery`, or `note`. A repeated `landed` request is read against
+the record it is aimed at, and a field it does not mention is not a write it is asking for: one
+that contradicts nothing is replayed onto the ledger row and answers `200` having changed nothing;
+one naming a different `target` is a different claim and is refused `409 landing_conflict` with
+both values; one naming a different `commit`, `delivery` or `note` is a correction and goes through
+the same verification the first landing passed, so it is applied or it is refused. Two spellings of
+one commit are one claim — the stored 40-character object and a hex abbreviation of at least seven
+characters agree — while anything that is not hex is resolved by git rather than compared as text.
+A correction's reply carries `corrected_from`, the whole record it replaced, and the broker writes
+an `orchestrator.landing.corrected` audit line beside it. `landed_at` moves with the evidence and
+stands still when the commit did not change. Moving to either `landed` or `abandoned` requires a terminal task; `landed` also requires a
 machine credential. Before writing it, the broker resolves `commit` inside the task's durable Git
 repository identity, resolves `refs/heads/<target>` as a local branch, and proves the former is an
 ancestor of or equal to the latter. Every new task in a Git project persists the canonical common
@@ -3997,6 +4011,7 @@ the write if its pending record changed meanwhile.
 | `not_terminal` | 409 | a settling state was requested while the child task is still live |
 | `invalid_transition` | 409 | a settled receipt was asked to move to another state |
 | `wrote_to_repository` | 409 | `nothing_to_land` was asked for a task this Mac has evidence wrote: a declared claim, commits on its branch, a dirty checkout, a count it never took, or an obligation whose target a root already named |
+| `landing_conflict` | 409 | a resend disagrees with the settled record in a way no verification can settle — another `target`, or another caller's record that won a race — and names `field`, `stored` and `requested` |
 | `unverified_landing` | 409 | commit or local target did not resolve in the task repository, or commit was not contained by target |
 | `stale_write` | 409 | the landing changed while git verification ran; retry against the new receipt |
 
@@ -4044,12 +4059,17 @@ that way rather than reading the word `landed`: a `landing` graph node reaches `
 task's receipt only when the triple is there, and the Usage ledger publishes
 `landingEvidence: "record_unverified"` for a landed row it knows carries none.
 
-A settled record is still immutable, so this route continues to answer `409 invalid_transition` to
-anything that tries to move one to a different state — a root that meant to `abandon` a record the
-sweep had meanwhile closed now gets that refusal rather than writing. A root sending `landed` onto
-an already-`landed` record still takes the existing idempotent path and gets `200`, which is the
-same answer a re-send has always had. `docs/landing.md` has the predicate, the refusals and the
-bounds.
+A settled record's **state** is still immutable, so this route continues to answer
+`409 invalid_transition` to anything that tries to move one to a different state — a root that
+meant to `abandon` a record the sweep had meanwhile closed now gets that refusal rather than
+writing. Its **evidence** is another matter, and the difference is deliberate: a resend carrying a
+different commit used to be swallowed by the idempotent path and answered `200`, so a record that
+named another task's commit could not be corrected and the root correcting it was told it had
+worked. A write that was not applied now never answers `ok`. What a correction is held to is
+exactly what the original assertion was held to — the same target, and a commit this broker
+resolves in the task's own repository and proves contained by that target — and what it replaces is
+returned and audited rather than overwritten in silence. `docs/landing.md` has the predicate, the
+refusals and the bounds.
 
 ### `GET /v1/orchestrator/landings`
 

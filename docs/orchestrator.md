@@ -546,8 +546,13 @@ with dependencies is dispatchable only when each
 dependency has durable completion evidence: ordinary nodes need task `success`, review nodes need
 a `safe_to_land` review receipt, verification nodes need `verification.last == pass`, and landing
 nodes need a broker-verified `landed` receipt — one whose commit the broker resolved inside the
-task's repository and proved contained by the named local target. The caller
-cannot send a `ready` flag. The broker derives `ready`, `blocked`, `active`, `done`, `failed`, and
+task's repository and proved contained by the named local target. The one exception is the seam
+review exists for: a review that returned `changes_required` returned a verdict, so it is a result
+and not a failure, and it is the evidence a `correction` node depends on. Nothing else advances
+behind it — the graph is blocked until that correction lands, which is what one sealed correction
+wave means. The caller
+cannot send a `ready` flag. The broker derives `ready`, `blocked`, `active`, `done`,
+`changes_required`, `failed`, and
 `awaiting_landing`, publishes the current `frontier`, and fails closed with
 `graph_frontier_blocked`, `graph_dependency_failed`, `graph_definition_conflict`,
 `graph_node_active`, or `graph_node_complete`. A completed node cannot be replayed into `active`;

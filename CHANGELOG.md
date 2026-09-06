@@ -9,6 +9,44 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: three answers that could not say they had failed
+
+Three separate things in the dispatch machinery gave an answer that looked like an answer and was
+not one. They are listed together because they are one shape: a reading with no subject, and a reply
+with no way to report that it had not worked.
+
+**A child asking "is anybody already working here?" always heard "nobody".** Every isolated child is
+told to call `GET /v1/orchestrator/tasks/:id/inflight` before it starts, and that call resolved the
+repository by asking git where it was standing. In a linked worktree git answers with the child's
+own disposable checkout, and every task in the registry is filed under the repository it was cut
+from — so the list matched nothing and came back empty, with `200` and the checkout's own path.
+Nothing about that is distinguishable from a quiet repository. The resolution now names the
+repository a checkout belongs to, which also fixes the same blindness in the repository-wide
+in-flight list, the inventory and the landing queue: all three take a directory from a caller who
+may well be standing in a worktree.
+
+**A review that correctly said "changes required" was recorded as a failure.** `changes_required` is
+the verdict a working review produces when it finds something, and the graph counted it as a failed
+node — so the correction node that exists to consume those findings was refused
+`graph_dependency_failed`, and the review → correction seam the workflow is built around could not
+be dispatched at all. The workaround people reached for was to drop the typed graph and put the map
+in free text, which throws away the id the whole feature-attribution line hangs on. A review that
+returned a verdict now has its own state: it admits the correction node, blocks everything else
+behind it rather than failing it, and the failure is left meaning what it should — a review task
+that ended without producing a verdict.
+
+**A landing record that named the wrong commit could not be corrected, and correcting it reported
+success.** A resend to `POST /v1/orchestrator/tasks/:id/landing` carrying a different commit was
+swallowed by the idempotent path and answered `ok: true` without writing anything, so a record
+naming another task's commit stayed that way permanently while the root that tried to fix it was
+told it had worked. A resend is now read against the record: one that contradicts nothing is
+replayed exactly as before, one aimed at a different target is refused as the different claim it is,
+and one carrying a different commit goes through the same proof the first landing passed — the same
+target, and a commit the broker resolves in the task's own repository and proves contained by it.
+What a correction replaces comes back in the reply and goes to the audit log. The record's state
+stays as immutable as it was; what changed is that a write which was not applied can no longer
+answer `ok`.
+
 ### Fixed: tapping a notification while the app is already open
 
 The note a tap leaves behind — the one that was supposed to make a dropped message a delay rather
