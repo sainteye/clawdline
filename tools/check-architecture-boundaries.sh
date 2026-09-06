@@ -421,8 +421,16 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # the same wall six of the runners above met, and the same answer. It is called straight after
 # `runUsagePortfolioAndLifecycleTests()`, which is where its groups run, so the executed order and
 # `expectedOrderedTestGroupTitles` move together and nothing above it shifts.
-[ "$runner_count" -eq 39 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 38"
+# **The number is written once.** Both of the checks below used to carry it twice — once in the
+# comparison and once, spelled out, in the sentence the guard says when the comparison fails — and
+# the verification ledger's runner moved the first without the second. The guard stayed correct
+# and its failure message started naming the count before this one, which is worse than no
+# message: the next person to add a runner would have been told to write 38 back over the 39 that
+# is right. A guard exists to tell somebody what to do, so the expected count and the sentence
+# that reports it read the same variable.
+runner_count_expected=39
+[ "$runner_count" -eq "$runner_count_expected" ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
   in_manifest && /^\]/ { in_manifest = 0 }
@@ -614,8 +622,10 @@ done
 # 52 with Tests/VerificationLedgerTests.swift; see the runner-count note above for why the four
 # groups that answer for one route are their own file rather than four more in a suite eighty-six
 # lines from the limit.
-[ "$suite_count" -eq 52 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 51"
+# One owner for the number, for the reason written above the runner count.
+suite_count_expected=52
+[ "$suite_count" -eq "$suite_count_expected" ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
 # what this refactor exists to abolish. It is defensible only as a migration step, and only if it
