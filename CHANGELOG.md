@@ -9,6 +9,22 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: when a session is waiting on you, you can see what it is really asking
+
+The card that appears when a session needs an answer now carries a **即時畫面 / Live screen**
+button, and it is there whether or not the question rendered.
+
+That "whether or not" is the whole point. Everything else on that card — the question, the options,
+the two sentences that stand in for them when there are none — is downstream of Clawdline having
+parsed a menu off the Mac's own screen, and that parse can fail, arrive late, or be of the wrong
+menu. The live screen cannot be any of those things: it is what the terminal is showing. So the
+button is drawn outside the branch that chooses between *here are the options* and *the options
+could not be read*, because **the state it exists for is exactly the one where the rest of the card
+is wrong**.
+
+It opens the same panel the session menu opens, and says so with the same words rather than a
+second name for one thing.
+
 ### Fixed: "Always Allow" now means it, from one rebuild to the next
 
 Every `./build.sh` was followed, the first time Cloud was used again, by macOS asking for the login
