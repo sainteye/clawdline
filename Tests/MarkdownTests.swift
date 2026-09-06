@@ -1239,6 +1239,19 @@ group("the languages the interface speaks") {
         // Spanish and Portuguese readers actually use for the machines on their desks.
         "es:webPlan", "tr:webPlan",
         "de:webPlanRowMacs", "es:webPlanRowMacs", "pt:webPlanRowMacs",
+        // The verification ledger. `Feature` is this product's own noun for a work line rather
+        // than a description of one, and every one of these thirteen files already prints it
+        // untranslated inside its own sentences — `webProjectDeliveredSay` carries it in French,
+        // German, Korean, Hindi, Russian, Turkish and Japanese alike, landed long before this
+        // page existed. A locale that "translated" it here would be naming something the rest of
+        // its own interface does not call by that name.
+        "*:webLedgerFeature",
+        // And `Token` is the word these four already print: `webCoordTokenExpected` is
+        // "Erwarteter Token-Aufwand", "Esfuerzo de Token esperado", "Effort Token estimé" and
+        // "Esforço de Token esperado". The plural heading is the same word again.
+        "de:webLedgerTokens", "es:webLedgerTokens", "fr:webLedgerTokens", "pt:webLedgerTokens",
+        // `Verdicts` is the French plural, spelled exactly as the English one is.
+        "fr:webLedgerVerdicts",
     ]
     let en = English()
 
