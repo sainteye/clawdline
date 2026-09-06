@@ -451,9 +451,12 @@ function debugUI(force, reveal) {
     var send = button("Send to Mac", function () {
         send.disabled = true;
         say("Sending to this Mac\u2026");
-        var fetcher = typeof fetch === "function" ? fetch : null;
-        if (!fetcher) { say("This browser has no fetch, so the report cannot be sent."); send.disabled = false; return; }
-        fetcher(REPORT_ROUTE, {
+        if (typeof fetch !== "function") {
+            say("This browser has no fetch, so the report cannot be sent.");
+            send.disabled = false;
+            return;
+        }
+        fetch(REPORT_ROUTE, {
             method: "POST", credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(report())
@@ -479,7 +482,6 @@ function debugUI(force, reveal) {
     });
     button("Clear saved", function () {
         last = null; incidents = []; lastDetail = null; lastDetailSignature = "";
-        trace = []; dropped = 0; droppedThrough = null;
         try {
             localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(DETAIL_KEY);
         } catch (e) { }

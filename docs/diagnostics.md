@@ -119,6 +119,10 @@ and reports every one of `readWorkerTrace`'s four outcomes.
 
 `POST /v1/diagnostics/report`, body = the report.
 
+It goes to **whatever server is serving the page** — this Mac, directly on the local network or
+through its own tunnel. A page served by anything else answers something else, and the panel prints
+that refusal rather than a tick: what you must never get here is a green mark and no file.
+
 **Authentication is the paired device, at read level.** Two decisions, both deliberate:
 
 * **Not the machine-level orchestrator token.** This is one browser handing over what it recorded
