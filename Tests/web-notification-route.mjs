@@ -601,6 +601,23 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   equal(world.wantRecord(), null, "and the record goes with it, whichever road did the opening");
 }
 
+/* ---- what routing to the same address twice actually does -------------------------------------
+   The second road has to keep out of the way of the message road, and *how* depends on a fact
+   about `routeTo` that had been assumed rather than measured: it does not refuse a repeat. Sent to
+   an address it is already at, it re-reads the fragment, finds the id and opens the session again.
+   So an address that already matches is not evidence that the page has already been moved there —
+   which is exactly why the two roads are told apart by the tap's id and not by comparing
+   `location.hash`. Measured here so that the reasoning above rests on a check rather than on a
+   reading of the code. */
+{
+  const world = await makeWorld({ deliver: true, listed: [PANE] });
+  await world.tap(sessionURL(PANE));
+  equal(world.opened.length, 1, "the tap opens the session once");
+  world.page.routeTo(world.location.hash);
+  equal(world.opened.length, 2,
+        "and routing to the address it is already at opens it again — a repeat is not refused");
+}
+
 /* ---- a notification with nowhere to go, on the second road ------------------------------------
    `/v1/push/test` and `/v1/orchestrator/notify` both send `url: "/"`. A record saying "the person
    wanted the session list" would send whoever tapped a test push back to the list they were
