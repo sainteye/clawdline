@@ -556,6 +556,18 @@ protocol Copy {
     var webShowOnMacAsked: String { get }
     var webSessionActions: String { get }
     var webSessionGit: String { get }
+    /// The session menu's name for the live screen, which is not the panel's own heading.
+    ///
+    /// **One string in two places, and the two places want different words.** In a menu this is
+    /// the name of a feature and has to say which screen it means. In the panel's heading the
+    /// badge beside it already says `webScreenLive` or `webScreenOnDemand` — so a heading that
+    /// also said "live" would contradict that badge on every iTerm2 session, which is exactly
+    /// the defect `Resources/web/app/js/view/terminal.js` records this repository as having had
+    /// once. The menu item is this; `webScreenTitle` stays the bare noun over the panel.
+    ///
+    /// A short noun phrase and not a sentence: it stands in a menu beside "Session info" and
+    /// "Close session", on a column about a phone wide.
+    var webSessionScreen: String { get }
     /// The live screen panel, and the two words that say what kind of live it is.
     ///
     /// **`webScreenLive` and `webScreenOnDemand` are the interface's whole answer to "which

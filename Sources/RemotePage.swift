@@ -126,6 +126,7 @@ enum RemotePage {
             "webShowOnMacAsked": t.webShowOnMacAsked,
             "webSessionActions": t.webSessionActions,
             "webSessionGit": t.webSessionGit,
+            "webSessionScreen": t.webSessionScreen,
             "webScreenTitle": t.webScreenTitle,
             "webScreenLive": t.webScreenLive,
             "webScreenOnDemand": t.webScreenOnDemand,

@@ -26,13 +26,20 @@ import { ShellPanel } from "../input/shell-panel.js";
  * panel is a sample taken when somebody asks, no faster than the server's floor. Those are very
  * different things and drawing them identically is a defect this repository already had.
  *
- * **There are two ways of drawing it, and the default is still the Mac's.** Every pane on that
- * Mac is 243 columns wide and a phone shows about fifty, so the faithful picture is five
- * screen-widths of sideways dragging — which is honest and, on a phone, close to unreadable. The
- * header carries a control that soft-wraps it instead, one element per screen row so each row
- * hangs its continuations under its own indent. That mode is a different picture and says so;
- * the default does not move, because a panel whose promise is fidelity cannot start by breaking
- * it. `Resources/web/app/css/detail.css` carries the same reasoning beside the rules.
+ * **There are two ways of drawing it, and the panel opens in the one a phone can read.** Every
+ * pane on that Mac is 243 columns wide and a phone shows about fifty, so the faithful picture is
+ * five screen-widths of sideways dragging — honest, and on the only device this panel is ever
+ * read on, close to unusable. So what it opens in is the soft-wrapped layout: one element per
+ * screen row, each row hanging its continuations under its own indent.
+ *
+ * **Fidelity did not stop mattering; it stopped being the thing that opens.** The control in the
+ * header turns the wrapping off, and what comes back is byte for byte the markup this panel drew
+ * before the second mode existed — every column, every background, every rule where tmux put
+ * it. That is the whole reason the other mode is still exact rather than merely tidier: the
+ * question "what does the Mac actually have on that screen" has an answer here and it is one tap
+ * away. A picture that has to be asked for is not a promise broken; a picture nobody can read is
+ * not a promise kept. `Resources/web/app/css/detail.css` carries the same reasoning beside the
+ * rules.
  */
 export var Terminal = (function () {
     var forId = null;
@@ -44,26 +51,96 @@ export var Terminal = (function () {
     var poll = null;
     // Which of the two layouts this browser asked for. Browser-local, like the other reading
     // preferences, and read once at load: the Mac has no opinion about it and never sees it.
+    //
+    // **The fallback is only reached when the key is absent.** So this moving does not move
+    // anybody who has already chosen: a browser that turned wrapping off keeps it off, and what
+    // changed is the answer given to a browser that has never been asked.
     var WRAP_KEY = "clawdline.screen-wrap";
-    var wrapping = storedBool(WRAP_KEY, false);
+    var wrapping = storedBool(WRAP_KEY, true);
 
-    /* ---- SGR, and nothing but SGR ---------------------------------------
+    /* ---- SGR, and the one other thing a status line is made of -----------
        `capture-pane -e` re-serialises a grid, so what comes back is text and colour and no
        cursor motion at all — the same boundary `Sources/Ansi.swift` draws for the Mac's own
        transcript view, and for the same reason: this is a text view of a grid tmux has already
        laid out, not a terminal emulator. Anything that is not an SGR sequence is dropped rather
        than rendered.
+
+       **OSC 8 is the exception, and it is one because a status line is largely made of it.**
+       Claude Code writes its links that way, and a scanner matching ESC plus one byte ate
+       `ESC ]` and then printed `8;id=1q7561e;https://clawdline.com/` as words — which is what
+       this panel showed on a phone. `Sources/Ansi.swift:133` says the rule in a line: an OSC
+       string runs until BEL or ST. That is the rule here too, and the hyperlink inside it is
+       drawn as a link rather than swallowed with the rest.
        -------------------------------------------------------------------- */
 
-    // Two alternatives and their order matters: an SGR sequence is captured so its parameters
-    // can be read, and every other escape sequence is matched only so that it can be thrown
-    // away rather than printed. `\u001b` is spelled out because an editor or a copy that ate a
-    // literal escape byte would leave a regex that silently matches nothing — which reads
-    // exactly like a screen that happened to have no colour in it.
-    var CSI = /\u001b\[([0-9;:]*)m|\u001b\[[0-9;:?]*[ -\/]*[@-~]|\u001b[@-Z\\-_]/g;
+    // Four alternatives and their order matters: an SGR sequence is captured so its parameters
+    // can be read, an OSC string is captured so the hyperlink in it can be, and every other
+    // escape sequence is matched only so that it can be thrown away rather than printed.
+    // `\u001b` and `\u0007` are spelled out because an editor or a copy that ate a literal
+    // control byte would leave a regex that silently matches nothing — which reads exactly
+    // like a screen that happened to have no colour, or no links, in it.
+    //
+    // **The OSC body ends at BEL or at ST and at nothing else.** An ESC inside it terminates
+    // only when a backslash follows, which is what `Ansi.swift` does; and the terminator is
+    // optional, so an OSC nobody closed runs to the end of the capture rather than being
+    // printed from its second byte on — also what `Ansi.swift` does.
+    var CSI = /\u001b\[([0-9;:]*)m|\u001b\]((?:[^\u0007\u001b]|\u001b(?!\\))*)(?:\u0007|\u001b\\)?|\u001b\[[0-9;:?]*[ -\/]*[@-~]|\u001b[@-Z\\-_]/g;
     // Control bytes that survived tmux's own serialisation are not content. A carriage return
     // in particular would make a line look complete and then be drawn on top of itself.
     var CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
+
+    /**
+     * The URLs this panel is willing to turn into a link, which is two schemes and no others.
+     *
+     * **A link that silently fails is worse than the words it replaced.** The status line this
+     * was written against carries `file:///Users/…/backlog.html` and
+     * `x-github-client://openRepo/…`; neither does anything in a phone browser, and a tappable
+     * label that does nothing is a worse reading of the screen than the label alone. So every
+     * other scheme keeps its text and gets no anchor — which is also, and not by coincidence,
+     * what refuses `javascript:` and `data:`: the rule is an allowlist of what works, not a
+     * blocklist of what is known to be dangerous, so a scheme nobody here has thought of is
+     * refused by default rather than allowed by omission.
+     *
+     * **The character class is the second wall and not the first.** `esc()` is what makes the
+     * attribute safe, exactly as it does for every other value this file writes. This refuses
+     * to draw a link at all out of a URL carrying a quote, an angle bracket or a space —
+     * characters a real URL percent-encodes and an attack does not — so the escaping is never
+     * the only thing standing between a capture and an attribute.
+     */
+    var LINKABLE = /^https?:\/\/[^\s"'<>`\\^{}|\u0000-\u001f\u007f]+$/i;
+
+    /**
+     * What one OSC string means to what is drawn, which for all but one of them is nothing.
+     *
+     * `8;params;URI` opens a hyperlink and `8;;` closes it. Anything else — a window title, an
+     * icon name, a clipboard write — has already been consumed by the scanner and says nothing
+     * about the text, so it is left alone here.
+     *
+     * **An OSC 8 this cannot read closes rather than opens.** `8;params` with no second
+     * semicolon is malformed; treating it as a close means a capture can lose a link it should
+     * have had, and treating it as an open means a capture can invent one. Losing a link is the
+     * cheaper mistake, and the only one of the two that cannot put an attribute on the page.
+     */
+    function osc(state, body) {
+        if (body !== "8" && body.slice(0, 2) !== "8;") return;
+        var rest = body.slice(2);
+        var cut = rest.indexOf(";");
+        if (cut < 0) { state.href = null; return; }
+        // The URI is everything after the second semicolon, because a URI may contain one.
+        var url = rest.slice(cut + 1);
+        state.href = LINKABLE.test(url) ? url : null;
+    }
+
+    /**
+     * The opening tag of a link, and the only place in this file that writes one.
+     *
+     * `target="_blank"` because this panel is somebody's session and navigating away from it
+     * loses the screen they were reading; `rel="noopener noreferrer"` because the page opened
+     * is named by a program running in somebody else's terminal.
+     */
+    function anchor(url) {
+        return '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">';
+    }
 
     function colour(n) {
         // The sixteen are named against the stylesheet so the panel follows the page's theme;
@@ -134,24 +211,45 @@ export var Terminal = (function () {
     /**
      * A captured screen, as HTML. Escaped first and wrapped afterwards, so nothing a program can
      * draw becomes markup — the same order `words()` keeps and for the same reason.
+     *
+     * **A link is opened around runs and not inside one.** tmux changes colour inside a
+     * hyperlink routinely — the status line this was written against draws `7d 63%` in one
+     * colour and `(4d12h)` in another inside a single link — so the anchor has to survive a
+     * span boundary, which means tracking it beside the runs rather than in them. It is closed
+     * at the end of the capture whether or not the program that wrote it remembered to.
      */
     function paint(text) {
         var source = String(text == null ? "" : text);
         var state = { fg: null, bg: null, bold: false, dim: false, italic: false,
-                      underline: false, inverse: false };
+                      underline: false, inverse: false, href: null };
         var out = "";
+        var open = null;
         var last = 0;
         var found;
+        function emit(chunk) {
+            var body = wrap(chunk, state);
+            // Nothing to draw opens nothing: an anchor around no text is markup this panel
+            // would have written for a run the capture does not have.
+            if (!body) return;
+            if (state.href !== open) {
+                if (open) out += "</a>";
+                open = state.href;
+                if (open) out += anchor(open);
+            }
+            out += body;
+        }
         CSI.lastIndex = 0;
         while ((found = CSI.exec(source)) !== null) {
-            if (found.index > last) out += wrap(source.slice(last, found.index), state);
+            if (found.index > last) emit(source.slice(last, found.index));
             last = found.index + found[0].length;
-            // Only the first alternative captures, so a defined group is the SGR case and
-            // everything else falls through having been consumed and dropped.
+            // Only the first two alternatives capture, so a defined group says which of the two
+            // this is and everything else falls through having been consumed and dropped.
             if (found[1] !== undefined) apply(state, found[1]);
+            else if (found[2] !== undefined) osc(state, found[2]);
             if (found[0].length === 0) CSI.lastIndex += 1;
         }
-        if (last < source.length) out += wrap(source.slice(last), state);
+        if (last < source.length) emit(source.slice(last));
+        if (open) out += "</a>";
         return out;
     }
 
@@ -309,7 +407,7 @@ export var Terminal = (function () {
         var source = String(text == null ? "" : text);
         if (!source) return [];
         var state = { fg: null, bg: null, bold: false, dim: false, italic: false,
-                      underline: false, inverse: false };
+                      underline: false, inverse: false, href: null };
         var all = [];
         var row = [];
         // Whether the text seen so far ended on a row boundary. `capture-pane` **terminates** the
@@ -324,7 +422,7 @@ export var Terminal = (function () {
             var parts = visible.split("\n");
             for (var i = 0; i < parts.length; i += 1) {
                 if (i > 0) { all.push(row); row = []; }
-                if (parts[i]) row.push({ text: parts[i], css: style(state) });
+                if (parts[i]) row.push({ text: parts[i], css: style(state), href: state.href });
             }
             if (visible) ended = visible.charAt(visible.length - 1) === "\n";
         }
@@ -335,6 +433,7 @@ export var Terminal = (function () {
             if (found.index > last) take(source.slice(last, found.index));
             last = found.index + found[0].length;
             if (found[1] !== undefined) apply(state, found[1]);
+            else if (found[2] !== undefined) osc(state, found[2]);
             if (found[0].length === 0) CSI.lastIndex += 1;
         }
         if (last < source.length) take(source.slice(last));
@@ -364,7 +463,7 @@ export var Terminal = (function () {
             var last = out[out.length - 1];
             var kept = last.text.replace(/\s+$/, "");
             if (kept === last.text) break;
-            if (kept) { out[out.length - 1] = { text: kept, css: last.css }; break; }
+            if (kept) { out[out.length - 1] = { text: kept, css: last.css, href: last.href }; break; }
             out.pop();
         }
         return out;
@@ -405,9 +504,14 @@ export var Terminal = (function () {
      * A captured screen as one element per row, each hanging under its own indent.
      *
      * Escaped first and wrapped in spans afterwards, exactly as `paint()` does and for the same
-     * reason — the content is chosen by whatever program somebody else is running. The only
-     * attribute this writes that the capture can reach at all is the indent, and that is a
-     * number this file computed.
+     * reason — the content is chosen by whatever program somebody else is running. The two
+     * attributes this writes that the capture can reach at all are the indent, which is a number
+     * this file computed, and a link's `href`, which passed `LINKABLE` and then `esc()`.
+     *
+     * **A link never straddles a row.** Rows are elements here rather than newlines, so an
+     * anchor left open across one would be a tag closed by the wrong `</div>` — markup the
+     * browser then repairs in whatever way it likes. Each row opens its own and closes it before
+     * it ends, which is why a hyperlink whose text wraps comes out as one anchor per row.
      */
     function paintRows(text) {
         var all = segments(text);
@@ -416,10 +520,19 @@ export var Terminal = (function () {
             var row = unpad(all[i]);
             var plain = "";
             var body = "";
+            var open = null;
             for (var j = 0; j < row.length; j += 1) {
                 plain += row[j].text;
-                body += paintSegment(row[j].text, row[j].css);
+                var piece = paintSegment(row[j].text, row[j].css);
+                if (!piece) continue;
+                if (row[j].href !== open) {
+                    if (open) body += "</a>";
+                    open = row[j].href;
+                    if (open) body += anchor(open);
+                }
+                body += piece;
             }
+            if (open) body += "</a>";
             if (isRule(plain)) {
                 out += '<div class="screen-row rule">' + body + "</div>";
                 continue;

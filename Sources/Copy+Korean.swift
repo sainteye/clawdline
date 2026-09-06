@@ -311,6 +311,7 @@ struct Korean: Copy {
     let webShowOnMacAsked = "Mac에 앞으로 가져오라고 했습니다"
     let webSessionActions = "세션 작업"
     let webSessionGit = "Git 변경 사항"
+    let webSessionScreen = "실시간 화면"
     let webScreenTitle = "화면"
     let webScreenLive = "실시간"
     let webScreenOnDemand = "요청할 때"

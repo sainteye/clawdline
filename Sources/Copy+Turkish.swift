@@ -313,6 +313,7 @@ struct Turkish: Copy {
     let webShowOnMacAsked = "Mac'ten öne getirmesi istendi"
     let webSessionActions = "Oturum işlemleri"
     let webSessionGit = "Git değişiklikleri"
+    let webSessionScreen = "Canlı ekran"
     let webScreenTitle = "Ekran"
     let webScreenLive = "canlı"
     let webScreenOnDemand = "istek üzerine"

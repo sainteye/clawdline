@@ -156,16 +156,112 @@ equal(paint("one\ntwo"), "one\ntwo", "rows survive");
 equal(paint("one\r\ntwo"), "one\ntwo", "a carriage return does not");
 equal(paint(null), "", "nothing to draw is nothing drawn");
 
+/* ---- OSC 8, which is what a status line's links are ----------------------
+ *
+ * Claude Code writes the links in its status line as OSC 8: `ESC ] 8 ; params ; URI ST`, then
+ * the words a person reads, then `ESC ] 8 ; ; ST` to close. The scanner in this module used to
+ * match ESC and **one** byte, so it ate `ESC ]` and printed `8;id=1q7561e;https://clawdline.com/`
+ * as text — which is what this panel showed on a phone. An OSC string runs to BEL or to ST, and
+ * `Sources/Ansi.swift` has read it that way for the Mac's own transcript view since it was
+ * written; these are that boundary, restated on this side of the repository.
+ *
+ * **And the URL is chosen by whatever program somebody else is running.** `http` and `https`
+ * become a real link. Every other scheme keeps its label and becomes nothing else: a phone
+ * browser can do nothing with `file:///Users/…` or `x-github-client://…`, and a link that
+ * silently fails is worse than the words it replaced.
+ * ------------------------------------------------------------------------ */
+
+const BEL = "\u0007";
+const ST = E + "\\";
+const OSC = function (body) { return E + "]" + body + ST; };
+const A = function (url) {
+    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">';
+};
+// A whole hyperlink as the status line sends one, id and all.
+const linked = function (url, text) { return OSC("8;id=1q7561e;" + url) + text + OSC("8;;"); };
+
+equal(paint(OSC("0;a window title") + "after"), "after",
+    "an OSC string is consumed to its terminator, not from its second byte on");
+equal(paint(E + "]0;a window title" + BEL + "after"), "after",
+    "BEL ends one too, which is the older of the two spellings and the one xterm documents first");
+equal(paint(E + "]0;this one never ends"), "",
+    "and an OSC nobody terminated runs to the end of the capture, exactly as Ansi.swift's does");
+equal(paint(E + "]0;a title with " + E + "[31m in it" + ST + "after"), "after",
+    "an ESC inside the string is not a terminator unless a backslash follows it");
+
+equal(paint(linked("https://clawdline.com/", "clawdline.com")),
+    A("https://clawdline.com/") + "clawdline.com</a>",
+    "an https link in the status line becomes a link");
+equal(paint(linked("http://127.0.0.1:7717/", "localhost")),
+    A("http://127.0.0.1:7717/") + "localhost</a>",
+    "and so does http, which is what this Mac's own server speaks");
+equal(paint(linked("HTTPS://CLAWDLINE.COM/", "shouty")),
+    A("HTTPS://CLAWDLINE.COM/") + "shouty</a>",
+    "the scheme is matched without regard to case, because a terminal is not required to be tidy");
+equal(paint(linked("https://claude.ai/new?a=1&b=2#settings/usage", "5h 9%")),
+    A("https://claude.ai/new?a=1&amp;b=2#settings/usage") + "5h 9%</a>",
+    "and the ampersand of a real query string is escaped into the attribute rather than left to open an entity");
+
+/* **Every other scheme is words.** Both of these are in the capture this was written against. */
+equal(paint(linked("file:///Users/sainteye/code/clawdline/artifacts/backlog.html", "60 now20")),
+    "60 now20",
+    "a file: URL keeps its label and becomes nothing else, because a phone browser cannot open it");
+equal(paint(linked("x-github-client://openRepo/https://github.com/sainteye/clawdline?branch=main",
+    "main")), "main",
+    "and neither can it open the scheme of an application installed on somebody else's Mac");
+equal(paint(linked("mailto:nobody@example.com", "nobody")), "nobody",
+    "mailto is refused by the same rule rather than by a list of what is dangerous");
+
+/* **The allowlist is what makes this safe, and it is asserted as a wall rather than as a
+   sample.** The URL in an OSC 8 is written by whatever program is running in that pane. */
+[
+    ["javascript:alert(1)", "the scheme that would run"],
+    ["JaVaScRiPt:alert(1)", "the same one spelled to slip past a lowercase comparison"],
+    ["data:text/html,<script>alert(1)</script>", "a document carried in its own URL"],
+    ["//evil.example/x", "a scheme-relative URL, which has no scheme to allow"],
+    ["/x/y", "and a path-relative one"],
+    ['https://x/"><img src=y onerror=alert(1)>', "a URL written to end the attribute it is in"],
+    ["https://x/'onmouseover='alert(1)", "and one written for the other quote"],
+    ["  javascript:alert(1)", "one hiding its scheme behind leading space"]
+].forEach(function (pair) {
+    const drawn = paint(linked(pair[0], "label"));
+    equal(drawn, "label", pair[1] + " draws its label and nothing else");
+    ok(drawn.indexOf("<a") < 0 && drawn.indexOf("href") < 0,
+        "and puts no anchor and no attribute on the page");
+});
+
+equal(paint(linked("https://clawdline.com/", "<img src=x onerror=alert(1)>")),
+    A("https://clawdline.com/") + "&lt;img src=x onerror=alert(1)&gt;</a>",
+    "the words inside a link are escaped exactly as the words outside one are");
+// The order does not change because there is an anchor now: escape first, build markup
+// afterwards, which is what `paintSegment()` has always done.
+equal(paint(OSC("8;id=x;https://clawdline.com/") + "7d 63%" + E + "[31m(4d12h)" + E + "[39m" +
+    OSC("8;;")),
+    A("https://clawdline.com/") + '7d 63%<span style="color:var(--term-1)">(4d12h)</span></a>',
+    "a link whose text changes colour half way through is one link, which is what the status line sends");
+
+/* **Malformed, in each of the ways a capture can be.** None of them may become a broken tag. */
+equal(paint(OSC("8;https://clawdline.com/") + "label" + OSC("8;;")), "label",
+    "an OSC 8 with one semicolon is not a hyperlink and does not become one");
+equal(paint(OSC("8;id=x;") + "label" + OSC("8;;")), "label",
+    "an empty URL is a close, not a link to nowhere");
+equal(paint(OSC("8;;") + "after"), "after", "and a close with nothing open is nothing at all");
+equal(paint(E + "]8;id=x;https://clawdline.com/" + ST + "label"),
+    A("https://clawdline.com/") + "label</a>",
+    "a link the capture ends without closing is closed at the end of the capture, not left open");
+equal(paint(E + "]8;id=x;https://clawdline.com/"), "",
+    "and an OSC 8 that never terminates takes the rest of the capture with it, anchor and all");
+
 /* ---- the other mode, for the phone ---------------------------------------
  *
  * Every tmux pane on this Mac is 243 columns wide and a phone shows about fifty of them, so the
- * default picture — the Mac's own, unaltered — is five screen-widths of sideways dragging. This
- * is the second mode: the same capture soft-wrapped, one element per screen row so each row can
- * hang its continuations under its own indent.
+ * Mac's own picture, unaltered, is five screen-widths of sideways dragging. This is the other
+ * mode, and now the one the panel opens in: the same capture soft-wrapped, one element per
+ * screen row so each row can hang its continuations under its own indent.
  *
- * **It is a different picture and that is the point.** The default does not move; what is
- * asserted here is that the second mode is right, and that choosing it changes nothing about
- * the first.
+ * **It is a different picture and that is the point.** What is asserted here is that it is
+ * right; that turning it off gives the first picture back unimpaired is asserted further down,
+ * against the panel itself, as a literal.
  * -------------------------------------------------------------------------- */
 
 const rows = Terminal.paintRowsForTesting;
@@ -320,6 +416,27 @@ ok(/^style="padding-left:\d+ch;text-indent:-\d+ch"$/.test(
     'style="' + styleOf(rows('  "><b>x')) + '"'),
     "the indent is arithmetic, so there is nothing in it to escape out of");
 
+/* **A link in this mode, and the row boundary it may not cross.** Rows are elements here rather
+   than newlines, so an anchor left open across one would be closed by the wrong `</div>` and
+   repaired by the browser in whatever way it liked. Each row opens its own and closes it. */
+equal(rows(linked("https://clawdline.com/", "clawdline.com")),
+    '<div class="screen-row">' + A("https://clawdline.com/") + "clawdline.com</a></div>",
+    "the wrapped mode draws the same link, inside the row rather than around it");
+const across = rows(OSC("8;id=x;https://clawdline.com/") + "first\nsecond" + OSC("8;;"));
+equal(across,
+    '<div class="screen-row">' + A("https://clawdline.com/") + "first</a></div>" +
+    '<div class="screen-row">' + A("https://clawdline.com/") + "second</a></div>",
+    "a hyperlink whose text contains a newline is one anchor per row, each closed inside its own");
+ok(across.indexOf("</a></div>") > 0 && across.indexOf("</div></a>") < 0,
+    "so a row is never closed from inside a link");
+// The trailing padding is stripped from the segment the link is *in*, so the segment that comes
+// back has to be the same segment: rebuilt without its `href` this row would draw no anchor.
+equal(rows(OSC("8;id=x;https://clawdline.com/") + "x" + spaces(50) + OSC("8;;")),
+    '<div class="screen-row">' + A("https://clawdline.com/") + "x</a></div>",
+    "padding stripped from inside a link leaves the link it was stripped from");
+equal(rows(linked("javascript:alert(1)", "label")), '<div class="screen-row">label</div>',
+    "and the allowlist is the same allowlist here, because it is the same one function");
+
 /* ---- what is claimed ------------------------------------------------------ */
 
 S.openId = "%1";
@@ -340,15 +457,33 @@ ok(els["screen-badge"].innerHTML.indexOf("live") >= 0,
     "and says this one can be told when the screen changes");
 ok(els["screen-badge"].innerHTML.indexOf("25") >= 0,
     "with how many lines actually came back");
-ok(els["screen-body"].innerHTML.indexOf('<pre class="screen-text">') === 0,
-    "the screen is drawn as a grid rather than as prose");
+ok(els["screen-body"].innerHTML.indexOf('<div class="screen-text wrap">') === 0,
+    "the panel opens in the layout the device it is read on can hold");
 ok(els["screen-body"].innerHTML.indexOf("var(--term-1)") > 0, "with its colour");
-// **And byte for byte the markup this panel has always emitted.** The second mode below is a
-// choice somebody makes; the default is the promise this panel was built on, so it is pinned
-// here as a literal rather than compared with the function that produces it.
+equal(els["screen-body"].innerHTML,
+    '<div class="screen-text wrap"><div class="screen-row">hello' +
+        '<span style="color:var(--term-1)">!</span></div></div>',
+    "and nothing else at all");
+// **And byte for byte the markup this panel has always emitted, one tap away.** What moved is
+// which of the two opens and nothing else, so the Mac's own picture is still pinned here as a
+// literal rather than compared with the function that produces it.
+Terminal.wrap(false);
 equal(els["screen-body"].innerHTML,
     '<pre class="screen-text">hello<span style="color:var(--term-1)">!</span></pre>',
-    "and nothing else at all");
+    "and the fidelity mode is the markup it always was, to the byte");
+Terminal.wrap(true);
+
+/* **The one capture whose bytes are deliberately not what they were.** The pin above holds for
+   every capture with no OSC in it. A capture carrying an OSC 8 cannot be held to it and must not
+   be: what the old scanner drew was `8;id=1q7561e;https://clawdline.com/` printed as words, which
+   is the defect this exists to remove, so agreeing with it would be preserving the bug. Stated
+   here rather than absorbed into the pin above, because an invariant that quietly acquires an
+   exception is an invariant nobody can read. */
+const wasLeaked = paint(linked("https://clawdline.com/", "clawdline.com"));
+ok(wasLeaked.indexOf("8;id=1q7561e;") < 0,
+    "the payload the old scanner printed as text is not in the new output");
+equal(wasLeaked, A("https://clawdline.com/") + "clawdline.com</a>",
+    "and what stands in its place is the link that payload described");
 
 equal(liveTimers().length, 1, "a signalled screen runs one clock, and it is the lease");
 equal(liveTimers()[0].ms, 15000, "at half the Mac's thirty-second lease, so one lost ask is safe");
@@ -366,7 +501,8 @@ answer = { screen: Object.assign({}, answer.screen, { revision: "def", text: "mo
 Terminal.observe("%1", "def");
 await settle();
 equal(asked.length, 2, "a revision it does not have is fetched once");
-equal(els["screen-body"].innerHTML, '<pre class="screen-text">moved</pre>',
+equal(els["screen-body"].innerHTML,
+    '<div class="screen-text wrap"><div class="screen-row">moved</div></div>',
     "and replaces what was drawn");
 
 Terminal.close(true);
@@ -422,43 +558,52 @@ Terminal.open();
 await settle();
 const fetched = asked.length;
 
-ok(els["screen-body"].innerHTML.indexOf('<pre class="screen-text">') === 0,
-    "the panel comes up showing the Mac's own picture, because that is what it promises");
-equal(els["screen-wrap"].attrs["aria-pressed"], "false",
-    "and the control says so rather than leaving a screen reader to guess");
-
-Terminal.wrap(true);
-equal(asked.length, fetched,
-    "turning it on re-draws the capture already in hand and asks the Mac for nothing");
 ok(els["screen-body"].innerHTML.indexOf('<div class="screen-text wrap">') === 0,
-    "the same capture, laid out to be read on a phone");
+    "the panel comes up wrapped, because that is the picture a phone can hold");
 ok(els["screen-body"].innerHTML.indexOf("padding-left:2ch") > 0,
     "with its row hanging under its own indent");
-ok(els["screen-body"].innerHTML.indexOf("var(--term-1)") > 0, "and still with its colour");
-equal(store["clawdline.screen-wrap"], "1",
-    "the choice belongs to this browser and is kept where the other browser-local ones are");
-equal(els["screen-wrap"].attrs["aria-pressed"], "true", "and the control now says on");
+ok(els["screen-body"].innerHTML.indexOf("var(--term-1)") > 0, "and with its colour");
+equal(els["screen-wrap"].attrs["aria-pressed"], "true",
+    "and the control says on rather than leaving a screen reader to guess");
 equal(els["screen-wrap"].classes.on, true, "and looks it");
 
 Terminal.wrap(false);
-equal(asked.length, fetched, "and off again asks for nothing either");
+equal(asked.length, fetched,
+    "turning it off re-draws the capture already in hand and asks the Mac for nothing");
 equal(els["screen-body"].innerHTML,
     '<pre class="screen-text">  <span style="color:var(--term-1)">了</span>' + spaces(180) + "</pre>",
-    "off is the picture the Mac drew, padding and all, unchanged by having been away from it");
-equal(store["clawdline.screen-wrap"], "0", "and that choice is remembered too");
-equal(els["screen-wrap"].classes.on, false, "the control follows it back");
+    "off is the picture the Mac drew, padding and all, and it is exactly that picture");
+equal(store["clawdline.screen-wrap"], "0",
+    "the choice belongs to this browser and is kept where the other browser-local ones are");
+equal(els["screen-wrap"].attrs["aria-pressed"], "false", "and the control now says off");
+equal(els["screen-wrap"].classes.on, false, "and looks it");
+
+Terminal.wrap(true);
+equal(asked.length, fetched, "and on again asks for nothing either");
+ok(els["screen-body"].innerHTML.indexOf('<div class="screen-text wrap">') === 0,
+    "on is the same capture laid out to be read, unchanged by having been away from it");
+equal(store["clawdline.screen-wrap"], "1", "and that choice is remembered too");
+equal(els["screen-wrap"].classes.on, true, "the control follows it back");
 Terminal.close(false);
 
-/* **The default is the Mac's picture and stays it.** A browser that has never been asked gets
-   fidelity; one that chose once is not asked again. Both are read at load, so both are a fresh
-   evaluation of the module rather than a call into the one above. */
+/* **The default is the layout that can be read, and a browser that chose keeps its choice.**
+   `storedBool` returns the fallback only when the key is absent, so what moved is the answer
+   given to a browser that has never been asked — never the answer given to one that already
+   turned wrapping off. That second line is the one worth having: a default that overrode a
+   stored preference would be this page deciding something it was told. All three are read at
+   load, so all three are a fresh evaluation of the module rather than a call into the one
+   above. */
 delete store["clawdline.screen-wrap"];
 (0, eval)(standalone);
+equal(globalThis.Terminal.stateForTesting().wrapping, true,
+    "a browser that has never chosen is given the picture it can read");
+store["clawdline.screen-wrap"] = "0";
+(0, eval)(standalone);
 equal(globalThis.Terminal.stateForTesting().wrapping, false,
-    "a browser that has never chosen is shown the same picture as the Mac");
+    "and one that chose fidelity once is not overruled by the default moving under it");
 store["clawdline.screen-wrap"] = "1";
 (0, eval)(standalone);
 equal(globalThis.Terminal.stateForTesting().wrapping, true,
-    "and one that chose once does not have to choose again");
+    "while one that chose wrapping keeps a choice that now happens to agree with the default");
 
 console.log("  " + String.fromCharCode(10003) + " web terminal (" + checks + " checks)");
