@@ -279,6 +279,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the first turn is found however far in it sits",
     "a rename is found wherever it was made",
     "a task.json is read before a terminal is opened for it",
+    "a review that returned changes_required is a result, and its correction node is dispatchable",
     "the assistant-quota dispatch gate names the override and the age the same way "
     + "workspace_busy already does",
     "a model name is a name, not a fragment of a command line",
@@ -333,6 +334,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the inventory answers three sections and every row names an action a route accepts",
     "the inventory generation moves on what changes a decision and on nothing else",
     "a dispatch that did not read the inventory is refused and handed the inventory",
+    "an isolated child is answered about the repository it was cut from, not its own checkout",
     "claims refusals do not spend the dispatch rate budget",
     "serialized operations are acquired atomically and globally",
     "a serialized waiter survives a store round trip without a plaintext secret",
@@ -564,6 +566,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a worktree's landing state is the one that is true now, and its row says what the work was",
     "the broker closes by ancestry what git already proves, and keeps the receipt real",
     "a sweep that cannot prove it leaves the record exactly as it found it",
+    "a settled landing is replayed, corrected against the same target, or refused — never ok in vain",
 ]
 
 func validateExecutedTestGroupManifest() {

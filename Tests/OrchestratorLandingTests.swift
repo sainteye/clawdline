@@ -162,12 +162,28 @@ group("landing records enforce the root-owned state machine and keep idempotent 
               && landed?["verified_commit"] as? String == repository.commit
               && landed?["verified_target_commit"] as? String == repository.commit)
 
-    let landedAgain = Orchestrator.updateLanding(
+    // **A resend that disagrees is a write, and a write that was not applied must not answer ok.**
+    // This line used to be the idempotent early return swallowing it: the caller was told
+    // `ok: true` and the record kept the old commit. One record on this machine names another
+    // task's commit permanently because the root that wrote it tried to correct it and was told
+    // it had worked.
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
         taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
         raw: ["state": "landed", "commit": "changed"],
-        now: Date(timeIntervalSince1970: 40))
-    check("repeating landed cannot rewrite its commit receipt",
-          landing(landedAgain)?["commit"] as? String == repository.commit)
+        now: Date(timeIntervalSince1970: 40)) {
+        check("a resend whose commit the broker cannot prove is refused, not swallowed",
+              status == 409 && code == "unverified_landing")
+    } else {
+        check("a resend whose commit the broker cannot prove is refused, not swallowed", false,
+              "it answered ok")
+    }
+    let landedAgain = Orchestrator.updateLanding(
+        taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "commit": repository.commit],
+        now: Date(timeIntervalSince1970: 41))
+    check("and the record still says what it said, replayed rather than rewritten",
+          landing(landedAgain)?["commit"] as? String == repository.commit
+              && landing(landedAgain)?["landed_at"] as? Int == 30)
     if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
         taskID: id, secret: secret, raw: ["state": "pending"]) {
         check("landed cannot move back to pending", status == 409 && code == "invalid_transition")
@@ -1419,8 +1435,8 @@ group("a landing node reads the receipt the root actually wrote, on the delivery
     hold("build", in: ordinary, landing: landedReceipt(String(repeating: "f", count: 40)))
     hold("review", in: ordinary,
          review: Orchestrator.ReviewReceipt(verdict: .changesRequired, axes: findings))
-    check("a changes_required review is still failed beneath a landed landing node",
-          state(of: "review", in: ordinary) == "failed"
+    check("a changes_required review is a returned verdict, not a failure, beneath a landed node",
+          state(of: "review", in: ordinary) == "changes_required"
               && state(of: "land", in: ordinary) == "done")
     Orchestrator.forget()
 }

@@ -133,6 +133,70 @@ extension Orchestrator {
         let targetCommit: String
     }
 
+    /// What a resent `landed` record says about the settled one it is aimed at.
+    ///
+    /// The distinction exists because one of these three was being answered as though it were
+    /// another. A resend carrying a *different* commit was swallowed by the idempotent early
+    /// return in ``updateLanding(taskID:secret:orchestratorToken:raw:now:)`` and the caller was
+    /// told `ok: true`; one record on this machine names another task's commit permanently
+    /// because the root that wrote it tried to correct it and was told it had worked.
+    enum LandingResend: Equatable {
+        /// Nothing supplied contradicts the record. Replaying it applies no write, so answering
+        /// `ok` is honest — and this is the door a landing recorded before the ledger wiring
+        /// existed uses to reach its row.
+        case replay
+        /// The same claim with different evidence or annotation. A write: it is applied, through
+        /// the same verification the first landing passed, or it is refused. It is never `ok`
+        /// without one of those.
+        case correction(field: String, stored: String, requested: String)
+        /// A *different* claim about a settled obligation — a landing aimed at another target is
+        /// not a correction of this one. Refused, naming both values.
+        case conflict(field: String, stored: String, requested: String)
+    }
+
+    /// Read a `landed` resend against the record it is aimed at, without asking git anything.
+    ///
+    /// **Absent is not a disagreement.** A caller replaying a receipt onto its ledger row sends
+    /// the state and little else, and a field it did not mention is not a write it is asking for.
+    ///
+    /// **Two spellings of one commit are one claim.** The stored value is the 40-character object
+    /// the broker resolved; a caller holding the abbreviation git printed for it is naming the
+    /// same commit, so a hex prefix of at least git's own seven characters counts as agreement.
+    /// Anything that is not hex is not compared here at all — `HEAD`, a branch name, or the free
+    /// text a legacy row may hold — because guessing whether two revision expressions name one
+    /// object is exactly the reading with no subject this whole change is about. Those fall to
+    /// `correction`, where git resolves them and the answer is proved rather than assumed.
+    static func landingResend(existing: Landing,
+                              requested fields: [String: String]) -> LandingResend {
+        if let target = fields["target"], let stored = existing.target, target != stored {
+            return .conflict(field: "target", stored: stored, requested: target)
+        }
+        if let commit = fields["commit"], !namesSameCommit(existing.commit, commit) {
+            return .correction(field: "commit", stored: existing.commit ?? "", requested: commit)
+        }
+        if let target = fields["target"], existing.target == nil {
+            return .correction(field: "target", stored: "", requested: target)
+        }
+        for (name, stored) in [("delivery", existing.delivery), ("note", existing.note)] {
+            guard let value = fields[name], value != stored else { continue }
+            return .correction(field: name, stored: stored ?? "", requested: value)
+        }
+        return .replay
+    }
+
+    /// Whether two pieces of commit text are certainly one commit. Certainly, not probably: a
+    /// `false` here costs a git resolution, and a `true` skips one.
+    static func namesSameCommit(_ stored: String?, _ requested: String) -> Bool {
+        guard let stored, !stored.isEmpty, !requested.isEmpty else { return false }
+        if stored == requested { return true }
+        let a = stored.lowercased(), b = requested.lowercased()
+        let hex = { (text: String) in
+            text.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+        }
+        guard hex(a), hex(b), min(a.count, b.count) >= 7 else { return false }
+        return a.hasPrefix(b) || b.hasPrefix(a)
+    }
+
     static func isBrokerVerifiedTargetLanding(_ landing: Landing) -> Bool {
         guard landing.state == .landed, landing.landedAt != nil,
               landing.verificationOrigin == "local_target_branch",
