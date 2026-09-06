@@ -436,5 +436,16 @@ export var Diagnostics = {
     capture: function (reason) {
         var sample = stateSnapshot(reason || "manual"); save("manual_capture", sample); return sample;
     },
+    /**
+     * Put the panel on screen without `?debug=layout`.
+     *
+     * **The query string is not reachable from the one device this exists for.** A home-screen
+     * web app launches at the manifest's `start_url` and has no address bar, so on the phone
+     * where the notification is actually tapped there has never been a way to ask for this
+     * panel — the recorder was running and the reading was unreachable. `input/settings.js`
+     * calls this after five presses on the version line, which is the oldest idiom there is for
+     * a door that must not be found by accident and must not need a word on the screen.
+     */
+    reveal: function () { debugUI(true, true); },
     report: report
 };

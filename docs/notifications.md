@@ -163,6 +163,61 @@ At the size a phone draws a notification the two were the same picture, so *the 
 change* was exactly what a working icon and an ignored one both looked like. A control that looks
 like the treatment is not a test.
 
+## Tapping one, and the trace that says where the tap stopped
+
+A notification about a session carries `/#session=<id>`, and reaching that session takes six steps
+in three places. Five of them had been proved and the sixth had never been looked at, so a tap that
+ended on the session list said nothing about which step lost it.
+
+| | where | what it means when it is missing |
+| --- | --- | --- |
+| the URL is written encoded | `WebPush.sessionURL` | a tmux pane id's per-cent was read as an escape |
+| the worker draws the notification | `RemotePage.serviceWorker()`, `push` | the payload key is not `url` |
+| `sw.notificationclick` | the worker | the worker never woke, or Cache Storage is refused |
+| `sw.postMessage` / `sw.openWindow` | the worker | which of the two roads this tap took |
+| `page.sw.message` | `input/route.js` | the message was sent and never arrived |
+| `route.to` | `input/route.js` | the fragment named no session — `/` is the test push |
+| `route.openWanted` | `input/route.js` | the id is not in the session list |
+
+The worker's two entries are durable because they have to be: the worker is shut down between
+events, and a message posted to a page that was not listening leaves nothing at either end. They go
+into Cache Storage — the one store a worker and a page can both open — under
+`clawdline-notification-trace`, numbered rather than timestamped, and `readWorkerTrace()` folds
+them into the page's own trace at boot and on every `visibilitychange`. `activate` empties Cache
+Storage, so a trace does not survive a worker update; that is the right way round, because a trace
+is evidence about the build that wrote it.
+
+**Nothing acts on what it records.** What an app should do when a client message is dropped is a
+design question with more than one answer, and this exists so it can be asked of a reading.
+
+**There is one road for an open window, not two.** `postMessage` is defined on `Client`, so every
+window `clients.matchAll` can return has one — which makes the `client.navigate` fallback beside it
+unreachable in a browser, and means a dropped message ends the tap with no second attempt behind
+it. `clients.openWindow` is reached only when `matchAll` returns nothing at all, and on iOS the
+system opens the web app itself before the handler runs, so a phone may take the message road even
+from what the person experienced as a cold start. "I tried it both ways" is not evidence of two
+roads having been tried.
+
+`Tests/web-notification-route.mjs` runs the worker and the page against each other, with the
+message delivered and with it dropped, on tmux pane ids. Every fixture in the two suites either
+side of it — `web-service-worker.mjs` taps `/#session-9`, `/#cold`, `/#fresh` — is a URL no
+notification has ever carried, which is why neither of them could see this segment.
+
+**Reading it on the phone.** `?debug=layout` needs an address bar and a home-screen web app has
+none, so the panel opens from five presses on the version line at the bottom of Settings — wordmark,
+Settings, the small line with the version in it, five taps inside two seconds, then the
+`LAYOUT DEBUG` button at the bottom left. Its Copy report button puts the whole trace on the
+clipboard. **Open it after the tap, not before**: the worker's two entries are read in when the
+page wakes, so a report taken before the notification was tapped cannot contain them.
+
+**Three pushes carry a session's name as their title and only two of them route.**
+`StateHook.sendPush` (waiting for you) and `announceDelivery` (delivered) both write
+`sessionURL`. `Orchestrator.announce` — a fan-out finishing — titles itself `label ?? project`,
+which is the root's own label, and falls back to `url: "/"` when the batch's root key is
+`task:<id>` (a root with no session id) or when the root no longer resolves to a target. On a lock
+screen that is indistinguishable from the other two, and tapping it correctly goes nowhere. The
+body is the tell: `finished 3 tasks` rather than `waiting for you` or `delivered`.
+
 ## The numbers
 
 | | |

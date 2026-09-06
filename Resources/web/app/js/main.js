@@ -55,7 +55,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { routeTo } from "./input/route.js";
+import { routeTo, readWorkerTrace } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import "./input/start.js";
@@ -383,6 +383,11 @@ function boot(data) {
     Push.start();
     watchForStaleness();
     Diagnostics.ready();
+    // Whatever the service worker wrote down while this page was not running. A tap on a
+    // notification is the one road into this app whose first three steps happen somewhere the
+    // page cannot see, and this is where they are read back — after `ready`, so that the entries
+    // sit in the trace beside the routing they were supposed to cause.
+    readWorkerTrace();
 }
 
 /**
@@ -402,6 +407,10 @@ function watchForStaleness() {
     document.addEventListener("visibilitychange", function () {
         if (document.hidden) return;
         if (api && typeof api.revalidate === "function") api.revalidate("visible");
+        // The other thing that may have happened while this page was away: somebody tapped a
+        // notification. The worker ran, this page did not, and coming back is the first moment
+        // its half of the road can be read.
+        readWorkerTrace();
     });
 }
 
