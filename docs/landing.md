@@ -147,3 +147,72 @@ delivery that went on to write twenty-six files read exactly like a review that 
 discarded list is now kept as that task's landing-time write set and answered back as
 `landing_paths`, beside a `claims_declared` that says whether anything was declared at all; both
 task projections emit them together, so the empty lease is never printed alone.
+
+## Nothing said so when a landing record was never written
+
+Everything above is a rule somebody follows. The queue derives its membership so nobody can forget
+to add a line; the record itself has no such property — **`landed` has exactly one entrance and a
+person is standing in it.** `POST /v1/orchestrator/tasks/:id/landing` verifies properly when it is
+called (the broker runs `merge-base --is-ancestor <commit> refs/heads/<target>` inside the task's
+own repository, and that check is right) and it is called by hand. Nobody calls it, nobody knows.
+
+On the night of 2026-09-05/06 that one gap produced, in one evening: 22 landing records written by
+hand at the end, 14 of them for deliveries that had been sitting in `main` for days; 21 delivery
+branches nobody had merged; two roots re-running the same suite to rediscover the same red; and two
+roots landing the same batch, neither aware of the other. Five of the hand-written records were for
+a different repository, which is the part that matters most — **the gap belongs to the machine, not
+to this checkout.**
+
+`tools/check-landing-records.py` is the answer, and `./test.sh` runs it in the guards phase. It
+reads the machine's task registry rather than this tree, groups every terminal task by the
+repository it belongs to, and asks git the same question the broker would have asked — without
+waiting to be asked.
+
+**Three answers, kept apart, because collapsing them is how a number stops meaning anything.**
+
+| what it says | what it is | what the count is |
+|---|---|---|
+| `unrecorded landing` | the delivery's head is an ancestor of the target branch and the record is open | a **lower bound**: a squashed or cherry-picked landing shares no commit with its branch and is invisible |
+| `outstanding delivery` | terminal, has commits, head is not an ancestor, record open | an **upper bound** on work that has genuinely not landed, for the same reason from the other side |
+| `undecidable` | a shared-checkout task that declared write paths and has no record | neither, and never folded into either — it has no branch, so git cannot be asked |
+
+`git cherry` is deliberately not used. Its patch-id equality reports re-done work as unlanded — 9
+of one evening's 45 were exactly that — and the commit-title scan people reach for next cannot
+survive a reworded message. Ancestry is what the broker itself trusts.
+
+**Who is called, when the root has gone home.** A record is closed as `landed` only with this
+machine's orchestrator token, never with a task secret ([`api.md`](api.md)). So the obligation was
+never really the root's to carry away: the credential that settles it belongs to the machine, and
+whoever runs this suite in this repository is standing in front of the one door there is. The guard
+prints the exact `curl` for each row.
+
+**Why it does not fail on everything it finds.** Two limits, both deliberate:
+
+- A **cutoff date**, `CUTOFF` in the guard. Debt older than it is printed in full on every run —
+  individually, with dates and root labels — and does not fail the run. This exists to stop the
+  *next* silent landing, not to hold a tree hostage to a backlog somebody is already draining.
+  `--strict` fails on all of it, which is what a sweep wants. Move the cutoff forward only in a
+  commit that says why: a cutoff that creeps silently is a mute button with a date on it.
+- A **six-hour grace**. The order written above puts the record *after* the integrated-tree run,
+  and this guard runs inside that run. With no grace it would fail the one suite the documented
+  order places before the record — not a mechanism, a trap.
+
+**And it has been watched going red.** `Tests/guard-red-proofs/landing-records.sh` builds a
+repository with one delivery merged into `main` and a registry with one task, and the only
+difference between its two arms is the `landing` key. The mutation is the missing record, in the
+guard's own terms — not a deleted file, which is a thing that does not happen.
+
+**And it refuses to be green for having nothing to look at.** A registry it cannot parse, one with
+no `tasks` list, one with an empty one, a `--repository` no task in the registry belongs to, and a
+registry whose task states this guard no longer recognises — the day `Orchestrator.State` grows a
+spelling — all exit `2` and name themselves as the finder rather than the tree. The one case that
+is legitimately silent is a machine with no registry at all, which is every clone and every CI run,
+and it says so in a sentence. That distinction is not decoration: on 2026-09-06 a cleanup on this
+machine removed 25 worktrees, one of them belonging to a task that was still running, because the
+script's keep-list was never read — and a list that was never read prints exactly what a list of
+nothing-to-keep prints.
+
+**What it cannot see**, said out loud because that is the point of the file: a landing that reached
+the target by squash, rebase or cherry-pick, which shares no commit with its branch; a repository
+whose tasks have left the registry's retention window; and a person landing work with no Clawdline
+task at all, which is the same boundary the queue has.

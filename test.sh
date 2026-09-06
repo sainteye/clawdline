@@ -691,12 +691,45 @@ tools/check-web-ids.py
 # would otherwise pass the tree in silence. docs/curl-status.md has the rule.
 tools/check-curl-status.py --self-test
 tools/check-curl-status.py
+# `landed` has exactly one entrance and a person is standing in it. The broker verifies a landing
+# properly — the same `merge-base --is-ancestor` this guard runs — but only when somebody calls the
+# route, so a delivery that reaches `main` while nobody writes its record is finished and silent.
+# On 2026-09-05/06 that produced 22 hand-written records in one evening, 14 of them for work that
+# had been in `main` for days, five of them for a different repository; this reads the machine's
+# task registry rather than this tree, which is how it sees those five. It fails only on landings
+# after its own cutoff and outside a six-hour grace, because `docs/landing.md` writes the record
+# *after* this suite; everything older is printed in full on every run. docs/landing.md has the
+# rule. Measured standalone at 1.2 s over 298 terminal tasks in 8 repositories.
+tools/check-landing-records.py
+# The guard above ends by printing the `curl` that closes a record, and that snippet named a header
+# the server does not read — `X-Clawdline-Orchestrator-Token` against the `x-clawdline-orchestrator`
+# in `Sources/RemoteServer.swift`. Following it to the letter answers `403 forbidden`, which reads
+# as "my token is wrong" rather than as "this instruction is wrong", so the one person standing in
+# front of the only entrance is turned away by the sentence telling them to go through it. Found on
+# 2026-09-06 while draining 26 unrecorded landings by hand. This is not two documents agreeing:
+# one side is the route's own credential read, so the pair cannot drift silently in either
+# direction. `remediation_header` is what the guard prints; the second grep is what the server
+# accepts.
+remediation_header=$(sed -n 's/.*-H \\"\([a-zA-Z-]*\): \$(cat .*/\1/p' tools/check-landing-records.py | head -1)
+if [ -z "$remediation_header" ]; then
+  echo "test.sh: cannot find the orchestrator header in check-landing-records.py's remediation curl" >&2
+  exit 1
+fi
+if ! grep -q "\"$remediation_header\"" Sources/RemoteServer.swift; then
+  echo "test.sh: check-landing-records.py tells the reader to send '$remediation_header', and" >&2
+  echo "         Sources/RemoteServer.swift does not read a header by that name. Following the" >&2
+  echo "         printed curl would answer 403." >&2
+  exit 1
+fi
+unset remediation_header
 # And every guard above has to have been seen to fail. Two checks that could not go red arrived on
 # 2026-09-05 — a claims comparison that is identically true inside a linked worktree, and a
 # `stale > worst` that was an identity — and both were green the way a working guard is green. This
 # puts one defect in front of each `tools/check-*` and requires it to say so, and refuses a guard
 # that no proof names. It matches `tools/check-*` itself, so it is on its own list.
-# docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s.
+# docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s with eight
+# proofs, and 5.3 s once the landing-records proof — which builds a repository and merges in it —
+# became the ninth.
 bash tools/check-guards-go-red.sh
 verify_suite_roster
 # (c) in `docs/suite-runtime.md`: 129 s of the 288, before the compile the machine lock exists for

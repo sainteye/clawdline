@@ -15,7 +15,7 @@ One full `./test.sh`, green, receipt `8353 checks passed`, run in a detached wor
 
 | part | wall | peak of one process | what that peak was |
 |---|---|---|---|
-| (d) manifest, architecture guard, trailing-comma scan, three Python guards, protocol vectors | 3 s | 0.115 GiB | `swift tools/generate-protocol-vectors.swift` |
+| (d) manifest, architecture guard, trailing-comma scan, four Python guards, protocol vectors | 3 s | 0.115 GiB | `swift tools/generate-protocol-vectors.swift` |
 | (c) 31 node suites | 129 s | 0.258 GiB | a `swift-frontend` **inside** a node suite |
 | (a) the `swiftc` the machine lock exists for, 152 files | 100 s | 0.846 GiB | `Tests/CloudAccountTests.swift` |
 | (b) the test binary | 56 s | 0.621 GiB | `clawdline-tests` |
@@ -23,6 +23,11 @@ One full `./test.sh`, green, receipt `8353 checks passed`, run in a detached wor
 
 A second full run in the shared tree, at a commit two changes older, read 289.55 s with the same
 four boundaries — so the number is the script's, not one tree's accident.
+
+The fourth Python guard in (d) is `tools/check-landing-records.py`, which arrived after this
+reading and was measured **standalone at 1.2 s** over 298 terminal tasks in 8 repositories. The (d)
+row above is therefore a floor until somebody takes a fresh whole-run measurement; adding 1.2 to 3
+would be arithmetic, and this file only carries numbers that came off a run.
 
 **The first surprise is line (c).** 129 of the 288 seconds are spent before the compile the whole
 machine lock is built around has started. And the fifteen browser-contract suites, the obvious

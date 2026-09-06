@@ -9,6 +9,35 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: "done, not landed" could not be got rid of by doing either
+
+The Project screen labels every row in that block with what it wants — `land_or_abandon` — and one
+of those two words was a trap. Recording a landing moved the row. Recording the obligation as
+abandoned left it exactly where it was, and then *deleting the branch* left it there too, because
+`abandoned` was vetoing the rung that reads a missing branch. So a delivery whose work had already
+reached `main` on somebody else's line had no way off the screen at all: the row sat under a
+heading that means "the branch is still there unmerged", about a worktree with no branch, asking
+for a landing with nothing left to land.
+
+The veto now covers the rung it was written for and stops there. `landed` says the delivery reached
+the target and a root's decision can contradict that, so a merged branch still does not overrule
+someone who gave the obligation up. `branch_gone` says only that git cannot find the branch, which
+contradicts nothing — and a row that reads `branch_gone` no longer claims to be waiting for a
+merge. Why it was given up is where it always was: the note beside `landing_state`.
+
+Found by clearing the backlog it describes — 26 landings that had happened with nobody writing them
+down, and 10 deliveries superseded by work that was re-done on another line.
+
+### Fixed: the instruction for closing a landing record named a header the server does not read
+
+`tools/check-landing-records.py` ends by printing the exact `curl` that settles a record, and it
+asked for `X-Clawdline-Orchestrator-Token`. The route reads `x-clawdline-orchestrator`, so the
+snippet answered `403 forbidden` — which reads as *your token is wrong*, not as *this instruction
+is wrong*, and there is exactly one entrance to defend. `./test.sh` now takes the header out of the
+snippet and requires `Sources/RemoteServer.swift` to read one by that name, so the pair cannot
+drift in either direction: it goes red when the snippet is edited, when the line is deleted, and
+when the route renames its own header.
+
 ### Changed: the live screen is readable on the phone you read it on
 
 Every pane on a Mac is wider than a phone — 243 columns against about fifty here — so a panel that
@@ -56,6 +85,28 @@ so the next thing worth watching needs no change to any of it.
 
 The gesture stays hidden and stops being unwritten: [`docs/diagnostics.md`](docs/diagnostics.md)
 has the five taps, the path, the format and the three lines that replace asking for a paste.
+
+### Added: something finally says so when a delivery lands and nobody writes it down
+
+Clawdline has always been able to tell whether a delivery reached its target branch — the broker
+runs `merge-base --is-ancestor` inside the task's own repository and refuses a landing record that
+does not check out. It only ever ran that check when somebody asked it to, by hand, one task at a
+time. In one evening on the machine this was found on, that produced 22 landing records typed in at
+the end, 14 of them for work that had been in `main` for days, and five of them for a different
+repository entirely.
+
+`./test.sh` now runs `tools/check-landing-records.py` in its guards phase. It reads the machine's
+task registry rather than the checkout it is standing in — which is how it sees the other
+repositories — and prints, per repository, every delivery that is already in the target branch with
+its landing record still open, every delivery that is not, and every shared-checkout task git
+cannot be asked about. The three are kept apart and labelled as what they are: the first count is a
+lower bound (a squashed landing shares no commit with its branch), the second an upper bound, and
+the third neither.
+
+It fails the run only for landings after its own cutoff date and outside a six-hour grace, because
+the documented order writes the record *after* the integrated-tree run and this guard runs inside
+it. Older debt is printed in full on every run instead, with the `curl` that settles each row.
+`--strict` fails on everything, which is what a sweep wants.
 
 ## 0.8.0 — 2026-09-06
 

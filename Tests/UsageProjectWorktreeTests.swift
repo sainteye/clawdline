@@ -146,6 +146,21 @@ group("a worktree's outcome tells landed from delivered from debris") {
            outcome(givenUpDebris, branch: .branchMerged), "abandoned")
     expect("and when git says the branch is gone",
            outcome(givenUpDebris, branch: .branchAbsent), "abandoned")
+    // **The cell the veto had no test for, and the one it got wrong.** Work that *succeeded*,
+    // the obligation given up, and the branch since deleted: the veto sent this to `delivered`,
+    // which is defined as the branch still being there unmerged, and the screen then asked for a
+    // landing on a worktree with nothing left to land. Ten reached that state on 2026-09-06 by
+    // following the row's own `land_or_abandon`. `branch_gone` claims nothing a decision can
+    // contradict, so the veto has no business here — while the merged rung above, which does
+    // make such a claim, keeps it. The two lines differ in exactly one variable.
+    let givenUpSuccess = [worktreeRow("given-up-success", at: at, worktree: "w8", task: "t8",
+                                      state: "success", landing: "abandoned")]
+    expect("an abandoned obligation on work that succeeded is branch_gone once git loses the branch",
+           outcome(givenUpSuccess, branch: .branchAbsent), "branch_gone")
+    expect("while the same rows with the branch still in HEAD stay delivered",
+           outcome(givenUpSuccess, branch: .branchMerged), "delivered")
+    expect("and the word the root wrote is still the evidence beside it",
+           evidence(givenUpSuccess, branch: .branchAbsent), "branch_absent")
     expect("while the same rows without that record are landed by the merged branch",
            outcome([worktreeRow("no-landing", at: at, worktree: "w8", task: "t8",
                                 state: "failure")], branch: .branchMerged), "landed")

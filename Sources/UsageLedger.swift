@@ -4276,12 +4276,23 @@ final class UsageProjectWorktreeService {
     /// 1. `landed` — some row's task carries `landing = landed`: a root recorded that this
     ///    delivery reached its target branch. It outranks everything, including a task that
     ///    reported failure, because the branch is in the tree whatever the child said.
-    /// 2. **A root that wrote `landing_state = abandoned` vetoes the two git rungs below.** Not
+    /// 2. **A root that wrote `landing_state = abandoned` vetoes rung 3 and nothing else.** Not
     ///    an outcome of its own: it is a person having looked at this delivery and given the
     ///    obligation up, and the shape of a repository does not overrule a decision. Without it,
     ///    a branch somebody merged for unrelated reasons would report the abandoned obligation as
-    ///    `landed`. Everything under the two git rungs is left exactly as it was, so an
-    ///    abandoned obligation on work that succeeded is still `delivered` — see rung 5.
+    ///    `landed`. Everything below rung 3 is left exactly as it was, so an abandoned obligation
+    ///    on work that succeeded, whose branch is still there, is still `delivered` — see rung 5.
+    ///
+    ///    **It stops at rung 3 because rung 3 is the only one it contradicts.** Until 2026-09-06
+    ///    it covered rung 4 as well, on the reading that both are "git noticing a shape". They
+    ///    are not the same kind of shape: `landed` claims the delivery reached the target, which
+    ///    a root's decision can call false, and `branch_gone` claims only that git cannot find
+    ///    the branch, which no decision contradicts. Vetoing it did not preserve the root's
+    ///    answer — it dropped the row onto `delivered`, whose definition is *the branch is still
+    ///    there unmerged*, for a worktree with no branch, and then asked on screen for a landing
+    ///    that had nothing to land. Ten worktrees reached that state in one afternoon by doing
+    ///    what the row said. Why an obligation was given up is carried by the note beside
+    ///    `landing_state`, and `landingStates` still travels the word beside every verdict here.
     /// 3. `landed` — git says the delivery branch carries commits and is already contained by
     ///    the repository's HEAD. The same reasoning as rung 1, one step weaker in provenance and
     ///    no weaker in fact: the commits are in the tree whether or not anybody wrote it down.
@@ -4942,7 +4953,20 @@ final class UsageProjectWorktreeService {
         // branch only when it is empty, but the app is not the only deleter, and eight branches
         // it kept for their commits have gone missing on this Mac — and not `delivered` either,
         // because there is no branch left for anybody to land.
-        if !givenUp, branch == .branchAbsent,
+        //
+        // **The veto above deliberately does not reach this rung, and on 2026-09-06 it did.** The
+        // rung it protects makes a claim a decision can contradict: `landed` says the delivery
+        // reached the target, and a root that gave the obligation up has said it did not. This
+        // rung claims nothing about landing at all — it says only that git cannot see the branch
+        // — so there is no decision for it to overrule, and blocking it does not preserve the
+        // root's answer. It substitutes a worse one. Every row that fell through here landed on
+        // `delivered`, whose own definition is *the branch is still there unmerged*, about a
+        // worktree whose branch is gone. The screen then asked for the one thing that cannot be
+        // done to it: `needs: land_or_abandon`, on a delivery with nothing left to land, in a row
+        // that had already been abandoned. Ten of them at once, from following that instruction —
+        // the note beside `landing_state` is where the reason a delivery was given up belongs,
+        // and this rung is not a second place to store it.
+        if branch == .branchAbsent,
            rows.contains(where: { $0.row.taskState == Orchestrator.State.success.rawValue }) {
             return .branchGone
         }
