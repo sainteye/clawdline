@@ -243,8 +243,12 @@ ok(rows("──").indexOf("rule") < 0,
    short line would trail blank continuation rows behind it. */
 equal(rows("text" + spaces(200)), '<div class="screen-row">text</div>',
     "the padding a row was drawn with is not wrapped");
-equal(rows("  two" + spaces(200)), '<div class="screen-row" style="padding-left:2ch;text-indent:-2ch">two</div>',
-    "and stripping it does not touch the indent, which is the other end of the row");
+// The leading run stays in the row and is not stripped with the trailing one: that is what the
+// negative `text-indent` is undoing. The first line starts at zero and draws its own two spaces;
+// every line after it starts at two, under the text rather than under the margin.
+equal(rows("  two" + spaces(200)),
+    '<div class="screen-row" style="padding-left:2ch;text-indent:-2ch">  two</div>',
+    "stripping the padding does not touch the indent, which is the other end of the row");
 ok(paint("text" + spaces(3)).indexOf("text   ") === 0,
     "while the default mode keeps every column the Mac drew");
 
@@ -262,7 +266,8 @@ equal(rows("<script>alert(1)</script>"),
 const hostile = rows('</div><img src=x onerror=alert(1)><span style="color:red">');
 ok(hostile.indexOf("<img") < 0, "not a tag");
 ok(hostile.indexOf("&lt;/div&gt;") > 0, "and not a closing tag for the row it is inside");
-ok(hostile.indexOf("color:red") < 0, "and not an attribute on it");
+ok(hostile.indexOf('style="color:red"') < 0 && hostile.indexOf("&quot;color:red&quot;") > 0,
+    "and the quotes that would have opened an attribute on it are escaped into the text");
 ok(/^<div class="screen-row">[^<]*<\/div>$/.test(hostile),
     "what comes out is one row element and text, and nothing else");
 // The one attribute this mode writes that the capture can reach at all is the indent, and it is

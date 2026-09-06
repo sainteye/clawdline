@@ -566,6 +566,13 @@ protocol Copy {
     var webScreenLive: String { get }
     var webScreenOnDemand: String { get }
     var webScreenGone: String { get }
+    /// The control that lays the same capture out for a phone rather than for the Mac.
+    ///
+    /// **A verb, and a short one.** It sits in a panel header beside a badge and a Close on a
+    /// screen about fifty columns wide, so a phrase here pushes one of the other two off. What
+    /// it turns on is soft wrapping with a hanging indent; what it turns off is the pane's own
+    /// 243 columns scrolling sideways.
+    var webScreenWrap: String { get }
     var webGitTitle: String { get }
     var webGitClean: String { get }
     var webGitNotRepo: String { get }

@@ -247,11 +247,40 @@
    at the terminal's own line height and it does not wrap. A wrapped line is a different picture
    from the one on the Mac, and the whole promise of this panel is that it is the same picture —
    so it scrolls sideways instead, which says "this is wider than your phone" rather than
-   silently redrawing it. */
+   silently redrawing it.
+
+   **That reasoning has not changed and it is still the default. There are two modes now.**
+   Every pane on the Mac this was written for is 243 columns wide and a phone shows about fifty
+   of them, so being faithful means five screen-widths of dragging to read one sentence — honest,
+   and on a phone close to unusable. `.wrap` is the other layout, reached by the control in the
+   panel header and remembered per browser: the same capture, one element per screen row, each
+   row hanging its continuations under its own indent.
+
+   **What that mode costs, so nobody has to find out.** It is not the picture the Mac has, and it
+   drops each row's trailing padding — about seventy per cent of what arrives — so a trailing run
+   that carried a background colour loses its block, and a highlight that ran to the right margin
+   now stops at the last visible character. A row that is essentially a horizontal rule is not
+   wrapped at all but clipped, because five rows of dashes is worse than the scrollbar it
+   replaced. The default keeps every column, background and rule exactly as tmux drew them. */
 .screen-text {
     margin: 0; color: var(--ink);
     font: 11.5px/1.35 var(--mono);
     white-space: pre; tab-size: 8;
+}
+/* The wrapped layout. The rows do the wrapping, not the block: `overflow-wrap: anywhere` because
+   a 243-column path with no spaces in it is exactly the thing that made this necessary, and the
+   `min-height` because a blank row of the grid is still a row of the grid and an empty element
+   has no height of its own. */
+.screen-text.wrap { white-space: normal; }
+.screen-text.wrap .screen-row {
+    min-height: 1.35em;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* And the rule that is not a paragraph: clipped at the edge, with the hanging indent undone
+   because there is nothing here to hang. */
+.screen-text.wrap .screen-row.rule {
+    white-space: pre; overflow: hidden;
+    padding-left: 0; text-indent: 0;
 }
 #screen-body { padding: 12px 14px 20px; overflow: auto; background: var(--term-bg); }
 .screen-note { color: var(--dim); font-size: 13px; }

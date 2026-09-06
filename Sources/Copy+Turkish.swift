@@ -317,6 +317,7 @@ struct Turkish: Copy {
     let webScreenLive = "canlı"
     let webScreenOnDemand = "istek üzerine"
     let webScreenGone = "Bu ekran okunamadı"
+    let webScreenWrap = "Kaydır"
     let webGitTitle = "Git değişiklikleri"
     let webGitClean = "Çalışma ağacı temiz"
     let webGitNotRepo = "Git deposu değil"

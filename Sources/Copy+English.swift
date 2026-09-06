@@ -316,6 +316,7 @@ struct English: Copy {
     let webScreenLive = "live"
     let webScreenOnDemand = "on demand"
     let webScreenGone = "That screen could not be read"
+    let webScreenWrap = "Wrap"
     let webGitTitle = "Git changes"
     let webGitClean = "Working tree clean"
     let webGitNotRepo = "Not a Git repository"
