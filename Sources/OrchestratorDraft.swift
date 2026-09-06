@@ -660,6 +660,28 @@ enum OrchestratorDraft {
         return canonical
     }
 
+    /// The main worktree of the repository a checkout belongs to — the directory a repository is
+    /// named by everywhere else in this app — or nothing when there is no ordinary one.
+    ///
+    /// `git rev-parse --show-toplevel` answers with whichever checkout the caller stands in, and
+    /// for a linked worktree that is a directory this app made and will delete. Every task in the
+    /// registry is filed under the repository it was cut from, so a reading taken in the checkout
+    /// matches none of them — which is not an error anything can see, because an empty list is
+    /// also what "nothing is going on here" looks like.
+    static func mainWorktree(containing cwd: String) -> String? {
+        guard let common = gitCommonDirectory(at: cwd) else { return nil }
+        let url = URL(fileURLWithPath: common)
+        // `<repository>/.git` is the ordinary shape and the only one with an answer here. A bare
+        // repository or a `--separate-git-dir` layout has no working tree this name belongs to,
+        // and deriving one from the path anyway would be the same guess in the other direction.
+        guard url.lastPathComponent == ".git" else { return nil }
+        let main = url.deletingLastPathComponent().standardizedFileURL.path
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: main, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        return main
+    }
+
     private static func usableGitDirectory(_ stored: String) -> String? {
         let canonical = canonicalFilesystemPath(stored)
         guard git(["rev-parse", "--git-dir"], cwd: "/",

@@ -5403,16 +5403,49 @@ enum Orchestrator {
             return .refused(404, "not_found", "No task named that")
         }
         let existing = current.landing
-        if existing?.state == .landed, requestedState == .landed {
-            let settled = current
-            lock.unlock()
-            // **The idempotent re-send is the only door left for a landing recorded before this
-            // wiring existed.** Such a record is in the registry and not on its ledger row, and
-            // the write-back below runs on the paths that *change* the landing — which this one,
-            // by definition, does not. Without this line the row waits for the next launch's
-            // backfill, which is exactly the wait this feature was built to remove.
-            recordLandingInLedger(settled)
-            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        if let settledLanding = existing, settledLanding.state == .landed,
+           requestedState == .landed {
+            switch landingResend(existing: settledLanding, requested: fields) {
+            case .replay:
+                let settled = current
+                lock.unlock()
+                // **The idempotent re-send is the only door left for a landing recorded before
+                // this wiring existed.** Such a record is in the registry and not on its ledger
+                // row, and the write-back below runs on the paths that *change* the landing —
+                // which this one, by definition, does not. Without this line the row waits for
+                // the next launch's backfill, which is exactly the wait this feature was built to
+                // remove. What has changed is only which resends reach it: one that contradicts
+                // nothing, rather than every resend whatever it said.
+                recordLandingInLedger(settled)
+                return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+            case .conflict(let field, let stored, let requested):
+                lock.unlock()
+                RemoteAuth.audit("orchestrator.landing", [
+                    "task": taskID, "ok": "0", "why": "landing_conflict", "field": field,
+                ])
+                return .refused(
+                    status: 409, code: "landing_conflict",
+                    message: "This obligation is already settled with a different \(field). A "
+                        + "landing aimed somewhere else is another claim rather than a correction "
+                        + "of this one; record it against its own task.",
+                    extra: ["field": field, "stored": stored, "requested": requested])
+            case .correction:
+                // **Durable is not the same as unamendable, and the lie was never the
+                // immutability.** What the early return protects is a replay, which applies no
+                // write; a resend that disagrees *is* a write, and the two honest answers to a
+                // write are "applied" and "refused". Being told `ok` for neither is how a record
+                // on this machine came to name another task's commit permanently — its root
+                // tried to correct it and was told it had worked.
+                //
+                // So a correction falls through to the gate the first landing passed and is held
+                // to exactly it: the same target, and a commit this broker resolves in the task's
+                // own repository and proves contained by that target. It carries the evidence the
+                // original assertion carried and more recency, while the state machine below
+                // stays closed — a settled obligation still cannot become another state. What it
+                // replaced comes back as `corrected_from` and goes to the audit log, so an
+                // amendment is a visible act rather than a silent overwrite.
+                break
+            }
         }
         if let existing, existing.state.isSettled, existing.state != requestedState {
             lock.unlock()
@@ -5500,19 +5533,37 @@ enum Orchestrator {
                             + "by the named local target branch.")
         }
 
+        // What this call is now asking for, in the spelling the record keeps: the commit git
+        // resolved rather than whatever text named it, and the target it was verified against.
+        var resolvedFields = fields
+        resolvedFields["commit"] = verification.commit
+        resolvedFields["target"] = requestedTarget
+
         lock.lock()
         guard var verifiedCurrent = tasks[taskID] else {
             lock.unlock()
             return .refused(404, "not_found", "No task named that")
         }
-        if verifiedCurrent.landing?.state == .landed {
+        if let raced = verifiedCurrent.landing, raced.state == .landed,
+           verifiedCurrent.landing != expectedLanding {
             let settled = verifiedCurrent
+            let reading = landingResend(existing: raced, requested: resolvedFields)
             lock.unlock()
             // The same door, reached by the race rather than by a re-send: another caller landed
-            // it while these subprocesses ran. Its write-back is that caller's, and a second one
-            // of the same record changes nothing — `collect(taskRecord:)` is keyed by interval.
-            recordLandingInLedger(settled)
-            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+            // it while these subprocesses ran. Its record is the one that stands and this write
+            // was not applied — which is `ok` only where what stands says the same thing. Then
+            // the write-back is that caller's, and a second one of the same record changes
+            // nothing: `collect(taskRecord:)` is keyed by interval.
+            if case .replay = reading {
+                recordLandingInLedger(settled)
+                return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+            }
+            return .refused(
+                status: 409, code: "landing_conflict",
+                message: "Another caller settled this landing while this one was being verified, "
+                    + "and it says something else. Read the record before resending.",
+                extra: ["field": "commit", "stored": raced.commit ?? "",
+                        "requested": verification.commit])
         }
         guard verifiedCurrent.state == expectedState,
               verifiedCurrent.landing == expectedLanding else {
@@ -5521,6 +5572,11 @@ enum Orchestrator {
                             "The landing changed while its target was being verified; retry.")
         }
 
+        // A correction re-proves the target now, so the landing time moves with the evidence —
+        // unless the evidence is the same commit and only an annotation changed, where the
+        // landing time is still the time this work landed.
+        let landedAt = existing?.verifiedCommit == verification.commit
+            ? (existing?.landedAt ?? now) : now
         verifiedCurrent.landing = Landing(
             state: .landed,
             target: requestedTarget,
@@ -5530,7 +5586,7 @@ enum Orchestrator {
             since: existing?.since ?? now,
             commit: verification.commit,
             note: fields["note"] ?? existing?.note,
-            landedAt: now,
+            landedAt: landedAt,
             verificationOrigin: verification.origin,
             verifiedCommit: verification.commit,
             verifiedTargetCommit: verification.targetCommit)
@@ -5545,8 +5601,21 @@ enum Orchestrator {
             "verified_commit": verification.commit,
             "verified_target_commit": verification.targetCommit,
         ])
+        var reply: [String: Any] = ["ok": true, "task": existingRecord(taskID) ?? [:]]
+        if let replaced = existing, replaced.state == .landed {
+            // An amendment is a second assertion about the same obligation, so both of them are
+            // kept where an assertion is kept: the audit log for the machine, and the reply for
+            // the caller that made it. Nothing else in the app reads a landing's commit off a
+            // second copy, so this is the whole of what "recorded rather than overwritten
+            // silently" costs.
+            RemoteAuth.audit("orchestrator.landing.corrected", [
+                "task": taskID, "target": requestedTarget,
+                "previous_commit": replaced.commit ?? "", "commit": verification.commit,
+            ])
+            reply["corrected_from"] = OrchestratorStore.landingRecord(replaced)
+        }
         recordLandingInLedger(verifiedCurrent)
-        return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        return .ok(reply)
     }
 
     /// Every unresolved root-owned landing obligation, oldest first. This is a dashboard, not a
@@ -5781,11 +5850,21 @@ enum Orchestrator {
 
     /// The repository a project directory belongs to, or nothing when it is not in one. The
     /// caller never writes this path: it is resolved here from what the task already said.
+    ///
+    /// **A linked worktree resolves to the repository it was cut from, not to itself**, and this
+    /// is the seam that reading belongs on rather than any one call site. All four callers ask one
+    /// question — which repository is this directory's work filed under — and three of them take
+    /// the directory from somebody who may well be standing in a worktree: `GET
+    /// /v1/orchestrator/inflight`, `GET /v1/orchestrator/inventory` and the landing queue. Fixing
+    /// only ``inflightReply(taskID:secret:now:)`` would have left those three answering about a
+    /// checkout, which is the same defect with a different door.
     static func inflightRepository(_ project: String) -> String? {
         guard let answer = OrchestratorDraft.git(["rev-parse", "--show-toplevel"], cwd: project),
               answer.status == 0 else { return nil }
         let path = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return path.hasPrefix("/") ? URL(fileURLWithPath: path).standardizedFileURL.path : nil
+        guard path.hasPrefix("/") else { return nil }
+        let checkout = URL(fileURLWithPath: path).standardizedFileURL.path
+        return OrchestratorDraft.mainWorktree(containing: checkout) ?? checkout
     }
 
     /// Every piece of work outstanding in a repository, newest first — live sessions and
