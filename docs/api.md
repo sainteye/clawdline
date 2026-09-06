@@ -156,6 +156,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/whoami` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
+| `POST` | `/v1/artifacts/images` | orchestrator token + key | — |
 | `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/sessions/:id/state` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/sessions/:id/closure` | orchestrator token | — |
@@ -367,6 +368,15 @@ For a strictly decoded version-2 session message, its `role: "message"` entry al
 `artifacts` array. Each row contains only `id`, `media_type` (`image/png`), `byte_count`, `width`,
 `height`, and absolute Unix-seconds `expires_at`. There is no source path, filename, URL or raw
 image data in the transcript response.
+
+A `role: "assistant"` entry carries the same array, in the same shape, when that turn wrote one or
+more `<clawdline-image id="…">` markers into its own prose — see
+[`POST /v1/artifacts/images`](#post-v1artifactsimages) and
+[`messages.md`](messages.md#the-marker-a-session-writes-in-its-own-reply). The marker text is
+removed from `text`; a marker the reader did not honour stays in `text` exactly as written. A
+reference the Mac can no longer describe arrives as an already-expired row — `expires_at` in the
+past, `width`, `height` and `byte_count` at 1 — which every client already draws as the expired
+tile. No other role ever carries `artifacts`.
 
 ### `GET /v1/artifacts/images/:artifactId`
 
@@ -2393,6 +2403,51 @@ second prompt.
 | `target_busy` | 409 | the target is showing a picker/menu |
 | `delivery_failed` | 502 | terminal automation could not type the envelope |
 | `encoding_failed` | 500 | the closed envelope could not be serialized |
+
+### `POST /v1/artifacts/images`
+
+Store one or more local images and get back the reference **plus the marker to paste**. This is how
+a session shows the person a picture on **its own** card, which the route above cannot do: that one
+delivers by typing into the target terminal, and a session typing into its own terminal is handing
+itself a new instruction — so it refuses `same_session` and always will. Nothing is typed here. The
+caller writes the returned `marker` into the reply it is already composing; its own CLI records that
+turn; Clawdline reads the transcript back and resolves the marker against this same store.
+
+It requires `X-Clawdline-Orchestrator` and an `Idempotency-Key`, exactly as the message route does;
+a paired device gets `403 forbidden` even with the `send` capability. The closed body is:
+
+```console
+$ curl --fail-with-body -sS -X POST http://127.0.0.1:7717/v1/artifacts/images \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
+    -H "Idempotency-Key: $(uuidgen)" \
+    -H 'Content-Type: application/json' \
+    -d '{"images":[{"path":"/Users/you/Desktop/current-state.png"}]}'
+{"ok":true,"artifacts":[{"id":"46cb6d40-c13f-4fea-9cf0-936f86b78da4","media_type":"image/png","byte_count":18422,"width":1280,"height":720,"expires_at":1787983200,"marker":"<clawdline-image id=\"46cb6d40-c13f-4fea-9cf0-936f86b78da4\">"}],"at":1787896806}
+```
+
+`images` is required and contains 1…6 objects with exactly one normalized, absolute local `path` —
+the same array, read by the same code, as the message route's optional one. Every bound, every
+refusal and every byte of normalization is the owned store's, unchanged: Clawdline never fetches a
+URL, never trusts an extension or a media claim, and copies each file into its cache as PNG.
+
+Each answered artifact is the object the message route already returns, plus `marker`. **Copy that
+string; do not build it.** The spelling is `<clawdline-image id="ARTIFACT_ID">` and recognition is
+all-or-nothing — a different quote, a different case, a missing `>` or an id that is not an opaque
+artifact id all stay visible as ordinary text rather than silently disappearing, and so does a
+marker inside a fenced code block or past the sixth in one turn. What is honoured is removed from
+the displayed text and attached to that entry, where both the web page and the native pane draw a
+bounded thumbnail; once the reference expires the same place shows **Image expired**.
+
+| `code` | status | meaning |
+|---|---:|---|
+| `unauthorized` | 401 | neither a valid machine credential nor paired-device credential was supplied |
+| `forbidden` | 403 | a paired device reached the route without the machine credential |
+| `bad_request` | 400 | missing idempotency key; a body key other than `images`; a missing, empty, oversized or malformed `images` array; an image element with anything but `path` |
+| `invalid_image_path` | 400 | an image is not one normalized absolute readable local file path |
+| `image_too_large` | 413 | source bytes, normalized bytes, dimensions, pixels or batch bytes exceed a bound |
+| `unsupported_image` | 415 | bytes do not decode and re-encode as a supported raster image |
+| `artifact_storage_failed` | 500 | the owned cache could not persist the normalized image transaction |
+| `encoding_failed` | 500 | a stored id could not be written as a marker the reader would accept |
 
 ### `POST /v1/orchestrator/sessions/:id/complete`
 
@@ -5216,7 +5271,7 @@ counts only when it was announced **and** has no ending under it.
   "source": "release-room",        // human-readable session name; peer only
   "sourceMode": "prompting",       // peer sender mode, or "clawdline" for message
   "sourceAssistant": "claude",     // "claude" | "codex"; message only
-  "artifacts": [{                   // version-2 message only; 1…6 closed references
+  "artifacts": [{                   // v2 message, or an assistant turn's own markers; 1…6
     "id":"46cb6d40-c13f-4fea-9cf0-936f86b78da4","media_type":"image/png",
     "byte_count":18422,"width":1280,"height":720,"expires_at":1787983200
   }]

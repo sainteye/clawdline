@@ -9,6 +9,23 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: a session can show you a picture on its own card
+
+A session could already send a screenshot to *another* session. It could not show you one itself —
+the only road ran through the terminal, and typing into your own terminal is handing yourself a new
+instruction rather than showing yourself anything. So the answer to "look at this chart I just
+made" was a `/var/folders/…` path, which on a phone is a line of characters you cannot open.
+
+Now `POST /v1/artifacts/images` stores the file and hands back a marker; the session writes that
+marker into the reply it was already writing, and the picture appears under those words — in the
+pane on the Mac and on the phone, thumbnail-sized, tap to enlarge. Up to six per turn.
+
+Clawdline still only *reads* transcripts. It types nothing for this and writes nothing into
+`~/.claude/`: the reply is one the assistant wrote itself, and all Clawdline does is recognise the
+marker when it reads that reply back. A marker that was mistyped, or quoted inside a code block,
+stays on screen as text rather than disappearing; once the stored picture expires, the same place
+says **Image expired**.
+
 ## 0.8.0 — 2026-09-06
 
 ### Added: the sentence you type several times a day, one press away

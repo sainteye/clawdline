@@ -10,7 +10,7 @@ therefore attribute it to the person.
 | Transcript role | Who spoke | Transport | Presentation |
 |---|---|---|---|
 | `user` | The person or a paired device acting for them | `POST /v1/sessions/:id/send`, composer, terminal | Ordinary user bubble |
-| `assistant` | The session whose transcript is open | Assistant transcript | Ordinary answer |
+| `assistant` | The session whose transcript is open | Assistant transcript, including any `<clawdline-image …>` markers it wrote | Ordinary answer, with a thumbnail under it for each marker |
 | `peer` | Another Claude session through Claude Code's native peer protocol | `<cross-session-message …>` | Indigo peer card |
 | `message` | Another live Claude or Codex session, relayed by Clawdline | `POST /v1/orchestrator/messages`, `<clawdline-message>…` | `Clawdline ↔` card naming the source session and assistant |
 | `notice` | Clawdline reporting an orchestrator fact | `<clawdline-notice>…` | Inert state card chosen from typed fields |
@@ -100,6 +100,46 @@ normalized-image cap, 12,000-pixel edge cap and 40-megapixel decoded cap. Tombst
 and retained long enough to distinguish deletion from an unknown id. Pruning removes only files
 whose opaque ids and metadata belong to this store; its directory is mode `0700` and its files are
 `0600`. `CLAWDLINE_SESSION_IMAGE_DIR` moves the whole deleting store, including for isolated tests.
+
+## The marker a session writes in its own reply
+
+The route above cannot show a picture to the session that is speaking. It delivers by typing into
+the target terminal, and injected text is a `user` turn — so a session sending itself an envelope
+would be handing itself a new instruction, and `POST /v1/orchestrator/messages` refuses
+`same_session`. That refusal is correct and is not going anywhere.
+
+What replaces it keeps Clawdline reading transcripts and writing none. `POST /v1/artifacts/images`
+stores the bytes through the same owned store and answers with the same reference plus a ready-made
+`marker`; the session pastes that marker into the reply it was already writing, its own CLI records
+that turn, and the transcript reader resolves the marker when it reads that turn back.
+
+The spelling is exactly one, and it carries an id and nothing else:
+
+```text
+<clawdline-image id="46cb6d40-c13f-4fea-9cf0-936f86b78da4">
+```
+
+No path, no bytes, no dimensions, no closing tag — the metadata is resolved from the store exactly
+as a version-2 envelope's is. **Recognition is all-or-nothing**, for the same reason the envelopes'
+is: a marker that half-worked and vanished is indistinguishable from one that worked. Everything
+below stays visible as ordinary text, byte for byte, and none of it is partly interpreted:
+
+- an id that is not a lower-case opaque artifact id, including the documented `ARTIFACT_ID`
+- a different quote character, a different tag case, a missing `>`
+- a marker inside a fenced code block, so that a reply *about* this format is not a reply *using* it
+- every marker after the sixth in one turn, which is the same per-message image bound
+
+An honoured marker is removed from the entry's `text` — with its whole line, when it was alone on
+one, so a picture on its own line leaves no gap — and the resolved reference is appended to that
+entry's `artifacts`. That is the same field, the same closed shape and the same renderers the
+`message` role already uses; `GET /v1/sessions/:id/transcript` needed no new field. Both transcript
+readers honour markers only in an **assistant** turn: a person quoting the tag is quoting it.
+
+A reference the store can no longer describe — expired, pruned, or an id it never owned — resolves
+to an already-expired row (`expires_at` in the past, `width`, `height` and `byte_count` at 1) so
+that the place stays visible as the explicit **Image expired** tile. Standing in is deliberate: an
+entry that shows a picture today and prints raw wire text next week is worse than one that says the
+picture is gone.
 
 ## Orchestrator notices
 

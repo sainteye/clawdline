@@ -213,6 +213,25 @@ token 與 idempotency key 呼叫 `POST /v1/orchestrator/messages`，並帶
 reference。收件者看到的是有界縮圖，點開可預覽；reference 過期或不可用後，同一位置仍會明確顯示
 **圖片已過期**，不會靜默消失。
 
+**要顯示在自己這張卡片上，先存起來、再把 marker 貼回自己的回覆裡。** 上面那條路是給「別人該看到
+的圖」用的，它會擋 `same_session`——往自己的終端機打字，是給自己下一道新指令，不是給自己看圖。
+所以改打 `POST /v1/artifacts/images`，body 跟上面同一個
+`images:[{"path":"/絕對/本機/路徑.png"}]`，一樣要機器 token 與 `Idempotency-Key`，然後把回應裡的
+`marker` 原字串複製到你正在寫的那則回覆裡：
+
+```bash
+curl --fail-with-body -sS -X POST http://127.0.0.1:$PORT/v1/artifacts/images \
+  -H "X-Clawdline-Orchestrator: $ORCH" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'Content-Type: application/json' \
+  -d '{"images":[{"path":"/Users/you/Desktop/shot.png"}]}'
+# → {"ok":true,"artifacts":[{"id":"…","marker":"<clawdline-image id=\"…\">", …}]}
+```
+
+**marker 用複製的，不要自己拼。** 這條路不會往任何終端機打字：那則回覆是你的 assistant 自己寫進
+自己的 transcript，Clawdline 讀回來時認得那個 marker，把它從字裡拿掉、在下面畫出圖。辨識是全有
+全無，所以打錯一個字的 marker 會原樣留在畫面上當文字，不會靜默消失；寫在 code fence 裡的也一樣
+維持是引用。一則回覆最多六張。
+
 **被中斷的 review 用交接，不要重跑。** 死掉、逾時或被取消的 reviewer，通常已經寫了一部分
 finding set；把那個檔案交給接手的人。review 是這裡最貴的節點，也是被丟掉比例最高的節點——101 次
 review 派工裡有 30 次沒交出 verdict，其中一次重審花了 6.7M tokens 去重讀 1.9M tokens、別人已經

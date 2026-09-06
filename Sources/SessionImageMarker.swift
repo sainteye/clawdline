@@ -52,13 +52,15 @@ enum SessionImageMarker {
         var ids: [String] = []
         var cursor = raw.startIndex
         while let open = raw.range(of: opening, range: cursor..<raw.endIndex) {
-            let id = ids.count < limit
-                    && !fenced.contains(where: { $0.contains(open.lowerBound) })
-                ? raw.range(of: closing, range: open.upperBound..<raw.endIndex)
-                    .map { (String(raw[open.upperBound..<$0.lowerBound]), $0.upperBound) }
-                : nil
-            guard let (candidate, afterClosing) = id,
-                  SessionImageArtifactStore.isArtifactID(candidate) else {
+            var honoured: (id: String, end: String.Index)?
+            if ids.count < limit, !fenced.contains(where: { $0.contains(open.lowerBound) }),
+               let close = raw.range(of: closing, range: open.upperBound..<raw.endIndex) {
+                let candidate = String(raw[open.upperBound..<close.lowerBound])
+                if SessionImageArtifactStore.isArtifactID(candidate) {
+                    honoured = (candidate, close.upperBound)
+                }
+            }
+            guard let honoured else {
                 // Not a marker this reader honours. It stays exactly as written, and scanning
                 // resumes just past the opening so a real marker later in the same turn is still
                 // found rather than being swallowed by the one that was wrong.
@@ -66,8 +68,8 @@ enum SessionImageMarker {
                 cursor = open.upperBound
                 continue
             }
-            ids.append(candidate)
-            let cut = removal(in: raw, from: open.lowerBound, to: afterClosing)
+            ids.append(honoured.id)
+            let cut = removal(in: raw, from: open.lowerBound, to: honoured.end)
             text += raw[cursor..<cut.lowerBound]
             cursor = cut.upperBound
         }
@@ -154,8 +156,16 @@ enum SessionImageMarker {
                 lineEnd = raw.index(after: lineEnd)
                 continue
             }
-            if character == "\n" { return lineStart..<raw.index(after: lineEnd) }
-            return start..<end
+            guard character == "\n" else { return start..<end }
+            // The line and its newline. One blank line goes with it when the marker had one on
+            // each side, so a picture between two paragraphs leaves one paragraph break rather
+            // than two — which is the difference between a gap and a seam.
+            var cut = raw.index(after: lineEnd)
+            if lineStart > raw.startIndex, raw[raw.index(before: lineStart)] == "\n",
+               cut < raw.endIndex, raw[cut] == "\n" {
+                cut = raw.index(after: cut)
+            }
+            return lineStart..<cut
         }
         return lineStart..<lineEnd
     }

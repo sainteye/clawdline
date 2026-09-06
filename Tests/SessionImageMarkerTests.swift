@@ -60,10 +60,10 @@ group("an image marker is one spelling and everything else stays literal text") 
 
     let wrapped = SessionImageMarker.read("Here it is.\n\n\(marker)\n\nAnd that is that.")
     expect("prose around a marker keeps its ids", wrapped.ids, [id])
-    check("a marker alone on its line takes the line with it rather than leaving a gap",
-          !wrapped.text.contains(marker) && wrapped.text.contains("Here it is.")
-            && wrapped.text.contains("And that is that.")
-            && !wrapped.text.contains("\n\n\n\n"))
+    expect("a marker between two paragraphs leaves one paragraph break, not a blank gap",
+           wrapped.text, "Here it is.\n\nAnd that is that.")
+    expect("and one on a line of its own inside a paragraph leaves no line at all",
+           SessionImageMarker.read("first\n\(marker)\nsecond").text, "first\nsecond")
     let inline = SessionImageMarker.read("before \(marker) after")
     expect("a marker with words beside it takes only itself", inline.text, "before  after")
 
@@ -115,7 +115,8 @@ group("an image marker is one spelling and everything else stays literal text") 
     let pair = SessionImageMarker.read("\(marker)\nbetween\n\(second)")
     expect("several markers keep the order they were written in",
            pair.ids, [id, secondMarkerRowID])
-    expect("and the words between them survive", pair.text, "between")
+    expect("and the words between them survive",
+           pair.text.trimmingCharacters(in: .whitespacesAndNewlines), "between")
 
     // A malformed marker must not swallow a real one that follows it.
     let afterBad = SessionImageMarker.read("<clawdline-image id=\"nope\">\n\(marker)")
@@ -190,20 +191,6 @@ group("an assistant turn's image markers become that entry's own attachments") {
     expect("with the same resolved artifact",
            codex.first?.artifacts.map(\.id) ?? [], [fixture.artifact.id])
 
-    // Expiry: the reference resolves, and both renderers draw the tile that says so.
-    let afterTTL = fixture.now.addingTimeInterval(fixture.store.policy.ttl + 1)
-    let expiredTurn = claudeTurn("Gone by now.\n\n\(marker)")
-    expect("an expired artifact is still one attachment", expiredTurn.first?.artifacts.count, 1)
-    let stale = Transcript.parse(
-        (try? JSONSerialization.data(withJSONObject: [
-            "type": "assistant",
-            "message": ["role": "assistant",
-                        "content": [["type": "text", "text": marker]]],
-        ])).flatMap { String(data: $0, encoding: .utf8) } ?? "",
-        assistant: .claude, imageStore: fixture.store, now: afterTTL)
-    expect("past its expiry the reference no longer claims to be live",
-           stale.first?.artifacts.first?.expiresAt, 1)
-
     let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     let rendered = Transcript.render(one, size: 12, mono: mono,
                                      imageStore: fixture.store, now: fixture.now)
@@ -217,12 +204,6 @@ group("an assistant turn's image markers become that entry's own attachments") {
     check("the native pane never prints the id or the wire",
           !rendered.string.contains(fixture.artifact.id)
             && !rendered.string.contains(SessionImageMarker.opening))
-    let expiredRender = Transcript.render(stale, size: 12, mono: mono,
-                                          imageStore: fixture.store, now: afterTTL)
-    check("an expired assistant attachment degrades to the explicit expired tile",
-          expiredRender.string.contains(L.t.imageExpired))
-    check("and draws no attachment at all",
-          expiredRender.attribute(.attachment, at: 0, effectiveRange: nil) == nil)
 
     // Cache validation was written against `.message` entries and is asked about the rendered
     // text rather than about a role, which is why an assistant thumbnail is already covered.
@@ -230,9 +211,6 @@ group("an assistant turn's image markers become that entry's own attachments") {
     check("a live assistant thumbnail keeps its cached render current",
           SessionImagePresentation.cacheIsCurrent(rendered, store: fixture.store,
                                                   now: fixture.now))
-    check("and the same render stops being current once the artifact expires",
-          !SessionImagePresentation.cacheIsCurrent(rendered, store: fixture.store,
-                                                   now: afterTTL))
 
     // The Web contract needs no new field: `transcriptRows` already serialises `artifacts` for
     // any entry. Verified rather than assumed, because the whole design rests on it.
@@ -245,6 +223,29 @@ group("an assistant turn's image markers become that entry's own attachments") {
           serialized.first?["id"] as? String == fixture.artifact.id
             && serialized.first?["path"] == nil && serialized.first?["url"] == nil
             && serialized.first?["marker"] == nil)
+
+    // Everything from here reads the store past its TTL, which tombstones the fixture — so it
+    // comes last. A liveness question is not a pure read of an expired record.
+    let afterTTL = fixture.now.addingTimeInterval(fixture.store.policy.ttl + 1)
+    let stale = Transcript.parse(
+        (try? JSONSerialization.data(withJSONObject: [
+            "type": "assistant",
+            "message": ["role": "assistant",
+                        "content": [["type": "text", "text": "Gone by now.\n\n\(marker)"]]],
+        ])).flatMap { String(data: $0, encoding: .utf8) } ?? "",
+        assistant: .claude, imageStore: fixture.store, now: afterTTL)
+    expect("an expired artifact is still one attachment", stale.first?.artifacts.count, 1)
+    expect("and no longer claims to be live", stale.first?.artifacts.first?.expiresAt, 1)
+    expect("the words it was written beside are untouched", stale.first?.text, "Gone by now.")
+    let expiredRender = Transcript.render(stale, size: 12, mono: mono,
+                                          imageStore: fixture.store, now: afterTTL)
+    check("an expired assistant attachment degrades to the explicit expired tile",
+          expiredRender.string.contains(L.t.imageExpired))
+    check("and draws no attachment at all",
+          expiredRender.attribute(.attachment, at: 0, effectiveRange: nil) == nil)
+    check("the render taken while it was live stops being a current cache",
+          !SessionImagePresentation.cacheIsCurrent(rendered, store: fixture.store,
+                                                   now: afterTTL))
 }
 
 group("storing an image answers with its marker and leaves the message route alone") {
@@ -303,12 +304,20 @@ group("storing an image answers with its marker and leaves the message route alo
            SessionImageMarker.read(artifact?["marker"] as? String ?? "").ids, [artifactID])
     check("storing an image types nothing into any terminal", sent.isEmpty)
 
-    expect("a request with no machine credential is refused",
-           store(object(["images": [["path": input.path]]]), token: "not-the-token").status, 403)
-    expect("and says so with the same typed code the other machine routes use",
-           remoteErrorCode(store(object(["images": [["path": input.path]]]),
-                                 token: "not-the-token")),
-           "forbidden")
+    let anonymous = store(object(["images": [["path": input.path]]]), token: "not-the-token")
+    expect("a request with no credential at all is refused", anonymous.status, 401)
+    expect("as unauthorized, the way every other machine route refuses one",
+           remoteErrorCode(anonymous), "unauthorized")
+    let phone = RemoteAuth.addDevice(name: "marker phone", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let device = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/artifacts/images",
+        headers: ["Authorization": "Bearer \(phone.token)",
+                  "Idempotency-Key": UUID().uuidString],
+        body: object(["images": [["path": input.path]]])))
+    expect("a paired device may not store an image for a session", device.status, 403)
+    expect("and is told so rather than being told it is unknown",
+           remoteErrorCode(device), "forbidden")
     expect("a write with no idempotency key is refused",
            store(object(["images": [["path": input.path]]]), key: nil).status, 400)
 

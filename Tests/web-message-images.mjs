@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 
 import {
     artifactPresentation, connectArtifactTile, createImageLightbox, reconcileArtifactTiles,
@@ -84,6 +85,16 @@ assert.equal(artifactPresentation(liveArtifact, liveArtifact.expires_at).state, 
     "expires_at is expired at the boundary, before any image request");
 assert.equal(artifactPresentation({ ...liveArtifact, id: "</button><script>" }, 1).state,
     "expired", "an unavailable or malformed reference fails visibly closed");
+
+// What a marker resolves to when the Mac's store can no longer describe its id: a reference that
+// is valid, carries the id, and expired in 1970. The page must draw the expired tile from that
+// and must never ask for its bytes — otherwise every old assistant turn on screen starts a 404.
+const standIn = artifactPresentation(
+    { id: liveArtifact.id, media_type: "image/png", byte_count: 1,
+        width: 1, height: 1, expires_at: 1 }, 1_800_000_000);
+assert.equal(standIn.state, "expired",
+    "a reference the Mac could not resolve arrives already expired");
+assert.equal(standIn.url, undefined, "and nothing is requested for it");
 
 function tileFixture() {
     const tile = new FakeElement();
@@ -343,4 +354,94 @@ assert.ok(hydrator.includes("source: source") && hydrator.includes("describeFail
 assert.ok(transcriptSource.includes("artifactRenderSession = S.openId"),
     "and the pictures are asked of the session whose transcript is on screen");
 
-console.log("web-message-images: ok, including pictures carried over a transport of their own");
+/*
+ * An assistant's own turn, which is the one entry that can carry a picture without anybody
+ * sending it one. The marker it wrote is resolved on the Mac and reaches this page as the same
+ * `artifacts` array a message card already receives, so what is worth checking here is that the
+ * assistant branch draws them, that the *user* branch does not, and that the tiles it draws are
+ * the same inert placeholders — an entry the model wrote is exactly the wrong place to start
+ * interpolating fields into markup.
+ *
+ * `entryHTML` is lifted out and run in a context of its own rather than imported: this module is
+ * the top of the page's import graph, and the half of it under test is a pure function of one row.
+ */
+const entrySource = transcriptSource
+    .slice(transcriptSource.indexOf("export function entryHTML(e) {"),
+        transcriptSource.indexOf("function hydrateArtifactImages"))
+    .replace("export function entryHTML(", "function entryHTML(");
+const renderContext = {
+    WHO: { user: "you", assistant: "claude", peer: "peer", message: "message",
+        notice: "notice", tool: "tool" },
+    T: new Proxy({}, { get: (_, key) => String(key) }),
+    api: null,
+    artifactRenderQueue: [],
+    artifactRenderSession: null,
+    URL: globalThis.URL,
+    esc: (value) => String(value == null ? "" : value)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;"),
+    richText: (value) => "BODY:" + String(value == null ? "" : value),
+    whoHTML: (role) => '<div class="who">' + role + "</div>",
+    fileChangesOf: () => null,
+    planOf: () => null,
+    activityOf: () => null,
+    noticeHTML: () => "NOTICE",
+    assistantLogo: () => "",
+    assistantName: (value) => String(value || "").toUpperCase(),
+    fill: (value) => String(value || ""),
+    imageLightbox: { open: () => {} }
+};
+vm.createContext(renderContext);
+vm.runInContext(entrySource, renderContext);
+
+const assistantRow = { role: "assistant", text: "Here it is.", artifacts: [liveArtifact] };
+const assistantHTML = renderContext.entryHTML(assistantRow);
+assert.ok(assistantHTML.includes('data-role="assistant"'));
+assert.equal((assistantHTML.match(/class="message-image-tile"/g) || []).length, 1,
+    "an assistant turn carrying one artifact draws one tile");
+assert.ok(assistantHTML.includes('data-artifact-slot="0"'));
+assert.equal(renderContext.artifactRenderQueue[0], assistantRow.artifacts[0],
+    "the artifact goes into the private queue rather than into the markup");
+assert.ok(!assistantHTML.includes(liveArtifact.id)
+    && !assistantHTML.includes(String(liveArtifact.expires_at))
+    && !assistantHTML.includes("/v1/artifacts/"),
+    "no field of the attachment reaches the HTML — not the id, not the expiry, not a URL");
+assert.ok(assistantHTML.includes("BODY:Here it is."),
+    "and the words are still the words");
+
+const pictureOnly = renderContext.entryHTML(
+    { role: "assistant", text: "", artifacts: [liveArtifact] });
+assert.ok(pictureOnly.includes('class="message-image-tile"'),
+    "a turn whose whole answer was the picture still draws it");
+
+assert.ok(!renderContext.entryHTML(
+    { role: "user", text: "look", artifacts: [liveArtifact] })
+    .includes("message-image-tile"),
+    "a person's own row does not grow tiles from a field the server does not put on it");
+assert.ok(renderContext.entryHTML(
+    { role: "message", text: "from next door", source: "next door", artifacts: [liveArtifact] })
+    .includes('class="message-image-tile"'),
+    "and the message card the tiles were written for is untouched");
+
+// The tile an assistant entry produced is the tile the lightbox already knows how to open.
+const assistantTile = tileFixture();
+assistantTile.dataset.artifactSlot = "0";
+let assistantOpened = 0;
+connectArtifactTile(assistantTile, renderContext.artifactRenderQueue[0], {
+    now: 1_800_000_000,
+    loadingLabel: "Loading…",
+    expiredLabel: "Image expired",
+    open: function () { assistantOpened += 1; }
+});
+assistantTile.children[".message-image"].emit("load");
+assistantTile.emit("click");
+assert.equal(assistantOpened, 1, "and a loaded assistant thumbnail still opens the preview");
+
+const assistantBranch = transcriptSource.split("var body = (e.tool ?")[1]
+    .split("return '<div class=\"entry'")[0];
+assert.ok(assistantBranch.includes('role === "assistant"')
+    && assistantBranch.includes("artifactTilesHTML(e.artifacts)"),
+    "the tiles are drawn by the shared builder under an explicit role gate");
+
+console.log("web-message-images: ok, including pictures carried over a transport of their own "
+    + "and an assistant's own turn");
