@@ -287,14 +287,19 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `sqlite3_busy_timeout(db, 5_000)`, matching the ledger; the other suggestion in that message —
 # closing the ledger's connection before the fixture opens its own — would not have helped, since
 # what takes the lock is a write scheduled afterwards, and that write reopens the connection.
-expected_swift_receipt='9492 checks passed'
+# 9,572 once a session could show the user an image on its own card: 80 checks in three groups —
+# the marker's one spelling and everything that is not it, an assistant turn's markers becoming
+# that entry's attachments in both readers and both renderers, and the store route beside the
+# message route it deliberately leaves alone. Measured, not added: this is what the clean run
+# reported after two mutation rounds had shown 34 of those checks going red.
+expected_swift_receipt='9572 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7577
+expected_swift_receipt_witness=7664
 
 count_exact_receipt_lines() {
   local receipt=$1
