@@ -360,7 +360,17 @@ fi
 #                                          wrote a number here and neither was wrong on its own
 #                                          tree; the sum is not a measurement. `wc -l` on the
 #                                          merged file says 5,878.
-remote_server_ceiling=5878
+#                                          **5,898 with the verification ledger's registration**,
+#                                          and twenty lines is the whole of what that route costs
+#                                          this file: six for the `case` — parse, refuse, read,
+#                                          answer — five for its comment saying why the body is
+#                                          not here, six blank/closing, and three inside
+#                                          `isUsageAnalyticsReading` putting it on the analytics
+#                                          worker beside the two reads of the same store. The
+#                                          handler itself is `Sources/VerificationLedgerRoute.swift`,
+#                                          which is where a route that grows may grow. Measured:
+#                                          `wc -l` on this tree says 5,898.
+remote_server_ceiling=5898
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"

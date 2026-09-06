@@ -118,6 +118,7 @@ clawdline_production_sources=(
   Sources/UsageFeatureAttribution.swift
   Sources/UsageFeatureClassifier.swift
   Sources/UsageLedger.swift
+  Sources/VerificationLedgerRoute.swift
   Sources/Voice.swift
   Sources/WebPush.swift
   Sources/Whisper.swift
