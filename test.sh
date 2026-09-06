@@ -338,19 +338,27 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # budget across one turn rather than one per block. Read off a mutation round in which 13 of
 # those 15 went red, which is also where this total came from: `16 of 9587 checks failed`.
 #
-# **Neither 9,544 nor 9,587 is this tree.** The image-card line was measured on a branch based on
-# `e1de8129`, while `main` moved to 9,544 underneath it; the merge put the two in conflict and the
-# sum of two measurements is not a measurement. The older value is kept here on purpose so the
-# merge commit is honestly red, and the line is set afterwards from `CLAWDLINE_RESEAL=1` on the
-# merged tree itself.
-expected_swift_receipt='9544 checks passed'
+# **9,639 is the image card arriving on a `main` that had meanwhile moved to 9,544, and neither
+# number nor their difference produced it.** The image-card line was measured on a branch based on
+# `e1de8129` and read 9,587; `main` moved to 9,544 underneath it; the merge put the two in conflict
+# and the sum of two measurements is not a measurement. The older value was committed with the
+# merge on purpose, so `b44f5e93` was honestly red, and this line comes from `CLAWDLINE_RESEAL=1`
+# run on `b44f5e93` itself — 0 failures, all twelve Cloud suites present, `9639 checks passed`.
+# The witness beside it came from the same run.
+#
+# **The row that had no conflict is the one that nearly got through.** Five rows of the governance
+# table conflicted and were re-measured; `ordered groups` did not, because both sides still said
+# 545, and the merged tree renders 548. A merge can only report disagreement, and a receipt's right
+# value is a function of the tree rather than of its two parents — so agreement between the parents
+# is not evidence. The guard caught it before the compiler started.
+expected_swift_receipt='9639 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7627
+expected_swift_receipt_witness=7729
 
 count_exact_receipt_lines() {
   local receipt=$1
