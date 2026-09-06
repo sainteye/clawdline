@@ -157,6 +157,27 @@ const CLEAN = feature("graph-clean", {
               undeclared: tokens("present", 1, 90200, 90200) },
 });
 
+/**
+ * **A payload that contradicts itself**, which is the only fixture that can tell whether the
+ * screen trusts the state word or the number beside it.
+ *
+ * Production never sends this: `payload(of reading:)` writes `null` into `measured` and `total`
+ * for every state but `present`, in one place, and that is exactly why the screen's own guard was
+ * untestable — with the route holding the line, `state === "present"` could be deleted from
+ * `drawState` and all 81 checks stayed green. What was keeping three answers apart was the route
+ * being the only producer, not anything on this side.
+ *
+ * So this Feature says `unknown` and sends a number anyway. Nothing here may draw it.
+ */
+const LYING = feature("graph-lying", {
+    findings: { state: "unknown", reviewReceipts: 4, total: 7, severities: [], truncated: false },
+    verification: { state: "unknown", receipts: 2, runs: 9, seconds: 613, endedRed: 3,
+                    scopes: [] },
+    tokens: { implementation: tokens("unknown", 5, 5432100, 5432100),
+              review: tokens("absent", 0, 998877, 998877),
+              undeclared: tokens("unknown", 1, null, 424242) },
+});
+
 const UNATTRIBUTED = feature(null, {
     rows: 812,
     tokens: { implementation: tokens("present", 640, 51204880, 51204880),
@@ -304,6 +325,34 @@ async function main() {
         })(elements["ledger-unattributed"]);
         check(tooltips.some(hasDigit),
               "the block's own tooltip says how many rows it stands for, as a number");
+    }
+
+    /* ---- the state word decides, not the number beside it ----------------- */
+    {
+        /* **This is the assertion the page's own sentence claims and nothing was making true.**
+           "The number is read out of the payload field only on the `present` branch, and that
+           field is `null` on the other two" — the second half of that was doing all the work.
+           Delete `state === "present"` from `drawState` and every check above stays green,
+           because no fixture ever handed it a number the state said not to draw. One does now. */
+        const { elements, environment } = page({
+            verificationLedger: () => Promise.resolve(payload({ features: [LYING] })),
+        });
+        const view = bindLedgerPage(elements, environment);
+        await view.enter();
+        await flush();
+        const card = elements["ledger-rows"].all("ledger-card")[0];
+        equal(card.all("ledger-figure").length, 0,
+              "a state that is not `present` draws no figure, whatever number came with it");
+        equal(card.all("ledger-floor").length, 0, "and no floor either");
+        const empties = card.all("ledger-unknown").concat(card.all("ledger-absent"));
+        check(empties.length >= 4,
+              "every quantity on that card is drawn as one of the two empty states");
+        for (const node of empties) {
+            check(!hasDigit(node.textContent),
+                  `and none of them carries a digit — got ${JSON.stringify(node.textContent)}`);
+        }
+        check(!/5,?432,?100|424,?242|998,?877/.test(card.textContent),
+              "none of the numbers the payload contradicted itself with reached the screen");
     }
 
     /* ---- an empty answer, a refusal, and the moment before either --------- */
