@@ -317,14 +317,24 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # comparison it did not reach is the one whose answer was already known — 9,495 against a tree that
 # ran 9,538. The run that set this line is therefore not the run that proves it; the confirming run
 # is the one taken after these two values were written, with no `CLAWDLINE_RESEAL` at all.
-expected_swift_receipt='9501 checks passed'
+#
+# **9,544 is those 43 arriving on a `main` that had meanwhile moved to 9,501, and it is measured
+# rather than added.** The merge put the two seals above in conflict — 9,501 against 9,538 — and
+# neither is the merged tree's total; 9,501 + 43 lands on the same number and that is arithmetic
+# agreeing with a measurement, not a second measurement. The conflict was resolved by keeping the
+# **older** value so the tree stayed honestly red, and this line was written afterwards from
+# `CLAWDLINE_RESEAL=1` on `0edd66b3`, 0 failures. That run was taken in a detached snapshot at
+# that commit and not in the shared checkout, for the reason the 9,501 note gives above and for one
+# more: a third session had 177 lines of uncommitted Plan-page strings sitting in the shared
+# working tree, and a seal measured over somebody else's unfinished work is not about this tree.
+expected_swift_receipt='9544 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7586
+expected_swift_receipt_witness=7627
 
 count_exact_receipt_lines() {
   local receipt=$1
