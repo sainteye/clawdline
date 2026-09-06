@@ -9,6 +9,39 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: "Always Allow" now means it, from one rebuild to the next
+
+Every `./build.sh` was followed, the first time Cloud was used again, by macOS asking for the login
+Keychain password to reach `app.clawdline.cloud.keys`. Pressing **Always Allow** worked, and worked
+again the next time, and the time after that — twenty times on the Mac where this was found.
+
+The permission was never the problem. A Keychain ACL remembers two different things about the
+application it trusts: a *requirement*, which a rebuild signed by the same certificate still
+satisfies, and a *partition*, which macOS keys to your signing team when the signature carries a
+Team ID and to the build's own code hash when it does not. A self-signed certificate cannot carry a
+Team ID — only Apple issues one — so every rebuild was a new code hash, a partition the key had
+never been authorised for, and one more prompt. That is what the twenty approvals bought: twenty
+entries, each for a build that no longer exists.
+
+So `./build.sh` no longer looks for one certificate name. It prefers an Apple-issued
+`Developer ID Application` identity when your login Keychain holds exactly one, falls back to the
+self-signed `Clawdline Local Development` certificate as before, and refuses to pick between two of
+either — naming them instead. `CLAWDLINE_SIGN_IDENTITY` and `CLAWDLINE_SIGN_ADHOC=1` still sit above
+all of that and are unchanged, and a local build is still a local build: the same `codesign` call as
+before, with no hardened runtime, no timestamp server and no entitlements.
+
+And it stops claiming and starts measuring. After signing, the build reads the signature back off
+the bundle it has just written and tells you what it found: the identity, and either the Team ID
+that will carry your authorisation into the next rebuild or the plain fact that there is none and
+the asking will continue. If that read fails or hangs it says so and the build still succeeds — a
+report that could not be made is not a build that failed.
+
+If you have no Developer ID certificate nothing about your build changes, but it will now tell you
+why the prompt keeps coming back, and `tools/setup-local-signing-identity.sh` says the same thing at
+the moment it creates the certificate that cannot fix it. Changing identity costs one last round of
+prompts: approve each of the two Cloud items once, and expect macOS to re-ask for Automation and
+Accessibility too, because to them a new signer is a new application.
+
 ### Added: Pro can be bought, and the Plan page is where
 
 The paid Cloud tier had a price on a pricing page and no way to become one. The pricing page said

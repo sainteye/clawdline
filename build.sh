@@ -580,6 +580,11 @@ APP_PARENT="$(dirname "$APP")"
 APP_NAME="$(basename "$APP")"
 BUNDLE_ID="com.tsunamiworks.clawdline"
 LOCAL_SIGN_IDENTITY_NAME="Clawdline Local Development"
+# The name of the identity this run actually signs with, whichever layer it came from. Messages
+# used to print `$LOCAL_SIGN_IDENTITY_NAME` because there was only ever one candidate; with a
+# preference order there is more than one, and a build that names a certificate it did not use is
+# worse than one that names none.
+SIGN_IDENTITY_NAME=""
 LOCAL_SIGNING=0
 # BEGIN keychain-rebuild-focused: bounded signing commands
 # Every Keychain-touching command below can reach a system dialog — "unlock the login keychain",
@@ -665,13 +670,24 @@ clawdline_signing_probe_exit() {
   if declare -F clawdline_run_file_exit >/dev/null 2>&1; then clawdline_run_file_exit "$status" || true; fi
 }
 trap 'clawdline_signing_probe_exit "$?"' EXIT
+#
+# **Why there is a preference order at all, and not a single name.** The two Cloud Keychain items
+# are protected by an ACL whose `ACLAuthorizationPartitionID` macOS keys to the *signer*: to
+# `teamid:<id>` when the signature carries a Team ID, and to this build's `cdhash:` when it does
+# not. A self-signed certificate cannot carry a Team ID — an OU shaped like one does not become
+# one — so every rebuild signed locally is a new partition entry and a fresh password prompt. An
+# Apple-issued `Developer ID Application` certificate has a fixed Team ID, so authorising it once
+# covers every later rebuild. That is the whole of the preference below.
+DEVELOPER_ID_IDENTITY_PREFIX="Developer ID Application:"
 if [ "${CLAWDLINE_SIGN_IDENTITY+x}" = x ]; then
   # An explicit value keeps its historical meaning, including an empty value becoming ad-hoc.
   SIGN_IDENTITY="${CLAWDLINE_SIGN_IDENTITY:--}"
+  if [ "$SIGN_IDENTITY" = - ]; then SIGN_IDENTITY_NAME="ad-hoc"; else SIGN_IDENTITY_NAME="$SIGN_IDENTITY"; fi
 elif [ "${CLAWDLINE_SIGN_ADHOC:-0}" = 1 ]; then
   # The documented ad-hoc contract: chosen, not fallen into. Nothing below is consulted, so it
   # is also the way past a locked Keychain without unlocking anything.
   SIGN_IDENTITY=-
+  SIGN_IDENTITY_NAME="ad-hoc"
   echo "→ CLAWDLINE_SIGN_ADHOC=1; signing ad-hoc by explicit request"
   echo "  Ad-hoc means a new code identity every rebuild: macOS re-asks to authorise iTerm2"
   echo "  automation, and the Cloud Keychain items are re-authorised on first use."
@@ -681,41 +697,88 @@ else
     security find-identity -v -p codesigning "$LOCAL_SIGN_KEYCHAIN" || identity_status=$?
   if [ "$identity_status" -eq 0 ]; then
     identity_output=$(cat "$signing_probe_out")
-    identity_hashes=$(printf '%s\n' "$identity_output" \
-      | awk -v name="$LOCAL_SIGN_IDENTITY_NAME" \
-          'index($0, "\"" name "\"") { print $2 }')
-    identity_count=$(printf '%s\n' "$identity_hashes" \
+    # Layer one: an Apple-issued Developer ID Application certificate, matched on the common name's
+    # prefix rather than on a full name, because the company's own name is not this repository's
+    # business — anybody's Developer ID does the job, and hard-coding one would leave every other
+    # Mac on the layer below.
+    developer_id_matches=$(printf '%s\n' "$identity_output" \
+      | awk -v prefix="$DEVELOPER_ID_IDENTITY_PREFIX" '
+          {
+            quoted = index($0, "\"")
+            if (quoted == 0) next
+            rest = substr($0, quoted + 1)
+            closing = index(rest, "\"")
+            if (closing == 0) next
+            name = substr(rest, 1, closing - 1)
+            if (index(name, prefix) != 1) next
+            print $2 "\t" name
+          }')
+    developer_id_count=$(printf '%s\n' "$developer_id_matches" \
       | awk 'NF { count++ } END { print count + 0 }')
-    if [ "$identity_count" -eq 1 ]; then
-      # An identity that exists in a locked Keychain is worse than one that does not: codesign
-      # finds it, then stops on an unlock dialog. Ask first, and say so instead of hanging.
-      keychain_status=0
-      clawdline_bounded "$CLAWDLINE_SIGN_QUERY_TIMEOUT" "$signing_probe_out" \
-        "${keychain_status_command[@]}" "$LOCAL_SIGN_KEYCHAIN" || keychain_status=$?
-      if [ "$keychain_status" -eq 0 ]; then
-        SIGN_IDENTITY=$(printf '%s\n' "$identity_hashes" | awk 'NF { print; exit }')
-        LOCAL_SIGNING=1
+    signing_candidate=""
+    signing_candidate_name=""
+    if [ "$developer_id_count" -eq 1 ]; then
+      signing_candidate=$(printf '%s\n' "$developer_id_matches" | awk -F'\t' 'NF { print $1; exit }')
+      signing_candidate_name=$(printf '%s\n' "$developer_id_matches" | awk -F'\t' 'NF { print $2; exit }')
+      echo "→ using $signing_candidate_name"
+      echo "  It carries a Team ID, so macOS keys the Cloud Keychain items to that team rather than"
+      echo "  to this build's cdhash: authorise them once and the next rebuild is the same signer."
+    elif [ "$developer_id_count" -gt 1 ]; then
+      # Not a tie to break, a refusal to choose — the same rule as two identities sharing the local
+      # name, except that here there is a layer below to fall through to instead of stopping.
+      echo "→ $developer_id_count identities begin with \"$DEVELOPER_ID_IDENTITY_PREFIX\"; Clawdline will not choose by Keychain order:"
+      printf '%s\n' "$developer_id_matches" | awk -F'\t' 'NF { print "     " $2 }'
+      echo "  Falling through to $LOCAL_SIGN_IDENTITY_NAME. To use one of them by name:"
+      echo "    CLAWDLINE_SIGN_IDENTITY=<full name> ./build.sh"
+    fi
+    if [ -z "$signing_candidate" ]; then
+      identity_hashes=$(printf '%s\n' "$identity_output" \
+        | awk -v name="$LOCAL_SIGN_IDENTITY_NAME" \
+            'index($0, "\"" name "\"") { print $2 }')
+      identity_count=$(printf '%s\n' "$identity_hashes" \
+        | awk 'NF { count++ } END { print count + 0 }')
+      if [ "$identity_count" -eq 1 ]; then
+        signing_candidate=$(printf '%s\n' "$identity_hashes" | awk 'NF { print; exit }')
+        signing_candidate_name="$LOCAL_SIGN_IDENTITY_NAME"
+        echo "→ using $LOCAL_SIGN_IDENTITY_NAME"
+        echo "  A self-signed certificate carries no Team ID, so macOS keys the two Cloud Keychain"
+        echo "  items to this build's cdhash — which changes with every rebuild, and that is why it"
+        echo "  asks for the login Keychain password again after each one."
+        echo "  To stop it: obtain a Developer ID Application certificate, which this build prefers"
+        echo "  automatically, or name one you already hold with:"
+        echo "    CLAWDLINE_SIGN_IDENTITY=<full name> ./build.sh"
+      elif [ "$identity_count" -gt 1 ]; then
+        echo "!! multiple valid code-signing identities are named $LOCAL_SIGN_IDENTITY_NAME" >&2
+        printf '   %s\n' $identity_hashes >&2
+        echo "   Remove or rename the extra identity; Clawdline will not choose by Keychain order." >&2
+        exit 1
       else
-        if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
-          echo "!! the login Keychain did not answer within ${CLAWDLINE_SIGN_QUERY_TIMEOUT}s" >&2
-        else
-          echo "!! the login Keychain is locked or unreadable: $LOCAL_SIGN_KEYCHAIN (status $keychain_status)" >&2
-        fi
-        echo "   $LOCAL_SIGN_IDENTITY_NAME exists there, so signing would stop on an unlock" >&2
-        echo "   dialog. Clawdline will not unlock a Keychain for you." >&2
-        echo "   Unlock it yourself:  security unlock-keychain $LOCAL_SIGN_KEYCHAIN" >&2
-        echo "   Or build ad-hoc:     CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
+        echo "!! no valid $LOCAL_SIGN_IDENTITY_NAME identity exists in $LOCAL_SIGN_KEYCHAIN" >&2
+        echo "   Run tools/setup-local-signing-identity.sh, or explicitly choose ad-hoc:" >&2
+        echo "     CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
         exit 1
       fi
-    elif [ "$identity_count" -gt 1 ]; then
-      echo "!! multiple valid code-signing identities are named $LOCAL_SIGN_IDENTITY_NAME" >&2
-      printf '   %s\n' $identity_hashes >&2
-      echo "   Remove or rename the extra identity; Clawdline will not choose by Keychain order." >&2
-      exit 1
+    fi
+    # An identity that exists in a locked Keychain is worse than one that does not: codesign
+    # finds it, then stops on an unlock dialog. Ask first, and say so instead of hanging. Whichever
+    # layer the candidate came from, it lives in the same login Keychain and carries the same risk.
+    keychain_status=0
+    clawdline_bounded "$CLAWDLINE_SIGN_QUERY_TIMEOUT" "$signing_probe_out" \
+      "${keychain_status_command[@]}" "$LOCAL_SIGN_KEYCHAIN" || keychain_status=$?
+    if [ "$keychain_status" -eq 0 ]; then
+      SIGN_IDENTITY="$signing_candidate"
+      SIGN_IDENTITY_NAME="$signing_candidate_name"
+      LOCAL_SIGNING=1
     else
-      echo "!! no valid $LOCAL_SIGN_IDENTITY_NAME identity exists in $LOCAL_SIGN_KEYCHAIN" >&2
-      echo "   Run tools/setup-local-signing-identity.sh, or explicitly choose ad-hoc:" >&2
-      echo "     CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
+      if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
+        echo "!! the login Keychain did not answer within ${CLAWDLINE_SIGN_QUERY_TIMEOUT}s" >&2
+      else
+        echo "!! the login Keychain is locked or unreadable: $LOCAL_SIGN_KEYCHAIN (status $keychain_status)" >&2
+      fi
+      echo "   $signing_candidate_name exists there, so signing would stop on an unlock" >&2
+      echo "   dialog. Clawdline will not unlock a Keychain for you." >&2
+      echo "   Unlock it yourself:  security unlock-keychain $LOCAL_SIGN_KEYCHAIN" >&2
+      echo "   Or build ad-hoc:     CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
       exit 1
     fi
   else
@@ -928,6 +991,49 @@ PLIST
 progress_phase signing
 # BEGIN keychain-rebuild-focused: signing branches
 codesign_out=$(mktemp "${TMPDIR:-/tmp}/clawdline-codesign.XXXXXX")
+
+# What the finished bundle actually says, rather than what the identity was expected to give it.
+# `TeamIdentifier` is the one field that decides whether the next rebuild inherits the Cloud
+# Keychain authorisation or asks for it again, so the build reads it off the bytes it just signed.
+#
+# **It is a report and never a gate.** A `codesign -d` that fails or hangs leaves a correctly
+# signed application; turning that into a non-zero exit would invent a new way for a good build to
+# fail, so the unreadable case says "could not read" and returns 0. Bounded by the same watchdog as
+# every other Keychain-adjacent command here, because `-d` reads the signature and can meet the
+# same dialog.
+clawdline_report_team_identifier() {
+  local display_out display_status=0 team
+  display_out=$(mktemp "${TMPDIR:-/tmp}/clawdline-codesign-display.XXXXXX")
+  clawdline_bounded "$CLAWDLINE_SIGN_QUERY_TIMEOUT" "$display_out" \
+    codesign -d -vv "$STAGED_APP" || display_status=$?
+  if [ "$display_status" -ne 0 ]; then
+    if [ "$CLAWDLINE_BOUNDED_OUTCOME" = timeout ]; then
+      echo "✓ signed with $SIGN_IDENTITY_NAME; could not read TeamIdentifier: codesign -d did not answer within ${CLAWDLINE_SIGN_QUERY_TIMEOUT}s"
+    else
+      echo "✓ signed with $SIGN_IDENTITY_NAME; could not read TeamIdentifier: codesign -d exited $display_status"
+    fi
+    echo "  That is a report this build could not make, not a signature that failed."
+    rm -f "$display_out" "$display_out.timed-out"
+    return 0
+  fi
+  # `codesign -d` writes its whole description to stderr — measured, not assumed — and
+  # `clawdline_bounded` keeps both streams in one file, so this reads what a person would see.
+  team=$(awk -F= '$1 == "TeamIdentifier" { print substr($0, index($0, "=") + 1); exit }' "$display_out")
+  rm -f "$display_out" "$display_out.timed-out"
+  if [ -n "$team" ] && [ "$team" != "not set" ]; then
+    echo "✓ signed with $SIGN_IDENTITY_NAME; TeamIdentifier=$team — macOS carries the Cloud Keychain authorisation across the next rebuild"
+    return 0
+  fi
+  if [ -z "$team" ]; then
+    echo "✓ signed with $SIGN_IDENTITY_NAME; codesign -d printed no TeamIdentifier line"
+  else
+    echo "✓ signed with $SIGN_IDENTITY_NAME; TeamIdentifier=not set"
+  fi
+  echo "  With no team to key them to, macOS keys the two Cloud Keychain items to this build's"
+  echo "  cdhash, so it asks for the login Keychain password again after every rebuild."
+  echo "  A Developer ID Application certificate is what stops that; this build prefers one"
+  echo "  automatically, or name it with: CLAWDLINE_SIGN_IDENTITY=<full name> ./build.sh"
+}
 if [ "$SIGN_IDENTITY" = - ]; then
   adhoc_sign_status=0
   clawdline_bounded "$CLAWDLINE_CODESIGN_TIMEOUT" "$codesign_out" \
@@ -960,14 +1066,12 @@ elif [ "$LOCAL_SIGNING" = 1 ]; then
       echo "   SecurityTool. Its set-key-partition-list command requires '-k password'," >&2
       echo "   which Clawdline does not accept or pass." >&2
     else
-      echo "!! signing with $LOCAL_SIGN_IDENTITY_NAME failed (exit $local_sign_status)" >&2
+      echo "!! signing with $SIGN_IDENTITY_NAME failed (exit $local_sign_status)" >&2
     fi
     echo "   Or build ad-hoc:    CLAWDLINE_SIGN_ADHOC=1 ./build.sh" >&2
     rm -f "$codesign_out" "$codesign_out.timed-out"
     exit "$local_sign_status"
   fi
-  echo "✓ signed with stable local identity $LOCAL_SIGN_IDENTITY_NAME"
-  echo "  After changing signing identity, first use may show up to three Keychain prompts (machine credential and two Cloud keys); approve each item you use."
 else
   signed=0
   release_sign_status=0
@@ -995,6 +1099,12 @@ else
     rm -f "$codesign_out" "$codesign_out.timed-out"
     exit "$release_sign_status"
   }
+fi
+# One line per build, naming the identity that actually signed and the Team ID it actually carries.
+# It is here rather than inside each branch so that no branch can quietly stop saying it.
+clawdline_report_team_identifier
+if [ "$LOCAL_SIGNING" = 1 ]; then
+  echo "  After changing signing identity, first use may show up to three Keychain prompts (machine credential and two Cloud keys); approve each item you use."
 fi
 rm -f "$codesign_out" "$codesign_out.timed-out"
 # END keychain-rebuild-focused: signing branches

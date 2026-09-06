@@ -314,15 +314,63 @@ with these clients, these are exactly the claims that rest on reading rather tha
 ## Signing a local build, and why it is a Keychain question
 
 The Cloud secrets are guarded by the login Keychain's code-signing ACL, so the identity a local
-build signs with decides whether macOS re-asks for those items after every rebuild. Three states
-are possible and all three are now said out loud:
+build signs with decides whether macOS re-asks for those items after every rebuild.
 
-| what `security find-identity` finds | what `./build.sh` does |
+**Two things in that ACL behave differently, and only one of them is stable.** The trusted-application
+entry binds to the *designated requirement* — for a certificate-signed build, "signed by this
+certificate with this bundle id" — which a rebuild satisfies unchanged. The
+`ACLAuthorizationPartitionID` entry does not: macOS keys it to `teamid:<id>` when the signature
+carries a Team ID, and falls back to `cdhash:<hash>` when it does not. A cdhash is the hash of the
+binary, so it is new on every build. That is the whole of why "Always Allow" never sticks: the
+requirement still matches, and the partition the key is asking about is one this build has never
+been in.
+
+A self-signed certificate cannot carry a Team ID; only Apple issues one. So `./build.sh` no longer
+looks for a single name — it works down a preference order, and says which layer answered:
+
+| what `security find-identity -v -p codesigning "$CLAWDLINE_LOCAL_SIGN_KEYCHAIN"` holds | what `./build.sh` does |
 |---|---|
-| exactly one `Clawdline Local Development` in the explicit Keychain, Keychain unlocked | signs with it, scoped to that same Keychain |
-| exactly one, **Keychain locked or not answering** | **fails, naming both repairs** |
+| exactly one `Developer ID Application: …` | signs with it, and says why: it carries a Team ID, so an authorisation granted once survives the next rebuild |
+| two or more of them | prints both names, refuses to choose by Keychain order, and falls through to the row below |
+| exactly one `Clawdline Local Development` | signs with it, and says what it costs: no Team ID, so macOS asks again after every rebuild |
 | two or more with that name | fails; it will not choose by Keychain order |
-| none, or the query fails | **fails**; ad-hoc requires `CLAWDLINE_SIGN_ADHOC=1` or `CLAWDLINE_SIGN_IDENTITY=-` |
+| whichever was chosen, **Keychain locked or not answering** | **fails, naming both repairs and the identity it would have used** |
+| neither layer, or the query fails | **fails**; ad-hoc requires `CLAWDLINE_SIGN_ADHOC=1` or `CLAWDLINE_SIGN_IDENTITY=-` |
+
+`CLAWDLINE_SIGN_IDENTITY` and `CLAWDLINE_SIGN_ADHOC=1` sit above the whole order and are unchanged:
+an explicit value is still consulted first and still wins exactly.
+
+**Whichever layer answers, a local build is still a local build.** The chosen identity signs on the
+same branch as before — `--keychain` scoped to the discovered path, `--identifier` the bundle id,
+and no `--options runtime`, `--timestamp` or `--entitlements`. A development build needs no hardened
+runtime, and a build that contacted Apple's timestamp server on every run would stop working on a
+train. The release path (`CLAWDLINE_SIGN_IDENTITY` set explicitly) keeps all three.
+
+**After signing, the build measures the answer instead of assuming it.** It reads `codesign -d -vv`
+back off the bundle it has just written and prints one line: the identity and `TeamIdentifier=<id>`
+when there is one, `TeamIdentifier=not set` and the reason the prompts will continue when there is
+not, or "could not read TeamIdentifier" when the description failed or timed out. That last case
+returns zero: the application is signed, and a report that could not be made is not a build that
+failed.
+
+**Changing signing identity costs one round of prompts.** The build that first uses a new identity
+is a different signer to every ACL on the machine: approve `app.clawdline.cloud.keys` once for each
+of the two items (`device-ed25519-v1` and `account-master-secret-v1`), and expect macOS to ask again
+for the authorisations it remembers by code requirement — Automation for iTerm2 or Terminal,
+Accessibility, and the machine credential in the login Keychain. That round is the price of the
+change, not evidence that it did not work; the rebuild *after* it is what shows whether it did.
+
+> **What is measured here, and what rests on Apple's documentation.** Measured on this Mac:
+> `codesign -d -vvv ~/Applications/Clawdline.app` reports `Authority=Clawdline Local Development`
+> and `TeamIdentifier=not set`, against `TeamIdentifier=H7V7XYVQ7D` and `EQHXZ8M8AV` for
+> Developer ID-signed applications beside it; a self-signed certificate whose OU is *shaped* like a
+> team id still signs `TeamIdentifier=not set`, so the shape is not the mechanism; an ad-hoc
+> signature prints the same `not set`; and the two Cloud items' `ACLAuthorizationPartitionID` had
+> accumulated 20 `cdhash:` entries, one per build, none of them the installed application's. Not
+> measured here: that a Team ID makes macOS write `teamid:<id>` instead and stop adding entries.
+> That is Apple's documented behaviour for the partition list, and the only thing that settles it on
+> this machine is the acceptance above — sign with a Developer ID identity, authorise the two items
+> once, rebuild, and use Cloud again without being asked.
 
 Discovery runs as `security find-identity … "$CLAWDLINE_LOCAL_SIGN_KEYCHAIN"`; ambiguity is counted
 only in that result, lock usability is read for that path by the injectable
