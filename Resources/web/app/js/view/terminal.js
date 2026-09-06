@@ -84,6 +84,14 @@ export var Terminal = (function () {
     // only when a backslash follows, which is what `Ansi.swift` does; and the terminator is
     // optional, so an OSC nobody closed runs to the end of the capture rather than being
     // printed from its second byte on — also what `Ansi.swift` does.
+    //
+    // **The terminator is consumed here and no test can tell that it is.** Left behind, an ST
+    // would be taken by the fourth alternative — `ESC \` is ESC plus one byte — and a BEL by
+    // `CONTROL`, so both spellings vanish either way: measured on 2026-09-06 against the whole
+    // suite, deleting `(?:\u0007|\u001b\\)?` changes not one byte of output. It is kept because
+    // it is what makes this alternative mean on its own what `Ansi.swift` means, rather than by
+    // arrangement with two rules written for something else — and the day either of those two
+    // is narrowed, this is what stops an OSC's terminator being printed as `\` on a screen.
     var CSI = /\u001b\[([0-9;:]*)m|\u001b\]((?:[^\u0007\u001b]|\u001b(?!\\))*)(?:\u0007|\u001b\\)?|\u001b\[[0-9;:?]*[ -\/]*[@-~]|\u001b[@-Z\\-_]/g;
     // Control bytes that survived tmux's own serialisation are not content. A carriage return
     // in particular would make a line look complete and then be drawn on top of itself.
