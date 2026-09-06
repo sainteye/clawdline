@@ -835,6 +835,12 @@ node Tests/web-cloud-boot.mjs
 node Tests/web-cloud-pairing.mjs
 node Tests/web-cloud-onboarding.mjs
 node Tests/web-app-build.mjs
+# The Plan page: the only screen in this product that can start a payment, and the four ways it
+# fails without throwing — a checkout that was never created, a webhook that has not arrived, an
+# account that already pays, and a tier the control plane does not sell. A standalone line rather
+# than a member of `browser_contract_suites` above, so this adds nothing to that roster's sealed
+# count and nothing to the Swift receipt.
+node Tests/web-billing.mjs
 node Tests/dispatch-role-contract.mjs
 # The three surfaces that tell a root how to reach a standing session, held against the closed set
 # of `attach_*` refusals scanned out of Sources/*.swift rather than against each other: they spent

@@ -26,6 +26,7 @@ import {
     CloudViewerSession, chooseTransport, idleClient, keepConnected, readCloudConfig
 } from "./net/cloud-boot.js";
 import { handlers } from "./net/handlers.js";
+import { createBillingClient } from "./net/billing.js";
 import {
     captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudInstallGate,
     hideCloudGate, showCloudBootError, showCloudDeviceRecovery, showCloudPairing,
@@ -39,6 +40,7 @@ import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
 import { bindProjectsPage } from "./view/projects.js";
 import { bindUsagePortfolio } from "./view/usage.js";
+import { bindPlanPage } from "./view/plan.js";
 import "./view/markdown.js";
 import "./view/composer.js";
 import { paintStatic } from "./view/static.js";
@@ -88,6 +90,21 @@ function bindTranscriptEvents(transport) {
     }
 }
 
+/* The Plan page's two seams, decided by the transport and nowhere else.
+   `null` is the local and mock answer and it is not a failure: this page served by the Mac has
+   no Cloud account to charge, and `view/plan.js` says exactly that rather than drawing a broken
+   upgrade button. See the `not_here` state there. */
+var planBilling = null;
+var planSignIn = function () { return ""; };
+
+/* Lemon Squeezy hands a finished checkout back to `${WEB_APP_URL}/billing/done` — the success
+   URL `api/src/services/billing.ts` sends with every session. Cloudflare Pages serves this same
+   document for that path, so by the time this line runs the console is already booting.
+
+   The path is read once and then written out of the address. A reload of `/billing/done` would
+   otherwise start a second wait for a webhook that arrived twenty minutes ago. */
+var returningFromCheckout = location.pathname === "/billing/done";
+
 var cloudConfig = null;
 try {
     cloudConfig = readCloudConfig(window);
@@ -124,6 +141,8 @@ if (transportKind === "cloud") {
             deviceKind: cloudDevice.kind,
             deviceName: cloudDevice.name
         });
+        planBilling = createBillingClient({ apiOrigin: cloudConfig.apiOrigin });
+        planSignIn = function () { return cloudSession.signInURL(); };
         var cloudInvitation = null;
         try {
             cloudInvitation = captureCloudPairingInvitation(window, Date.now());
@@ -282,6 +301,35 @@ var usage = bindUsagePortfolio({
     drawIcon: drawIcon, tint: tint
 });
 
+/* The Plan page. The same shape as the two above — an element table and a set of seams — and
+   for the same reason: `view/plan.js` reaches no global at module scope, so the states that only
+   happen around a payment can be driven in Node and read.
+
+   `returning` is the one thing the page cannot work out for itself. It is consumed rather than
+   read, because arriving at the Plan page a second time in the same visit is an ordinary arrival
+   and must not re-enter the wait for a webhook. */
+var plan = bindPlanPage({
+    "plan": byId("plan"), "plan-title": byId("plan-title"), "plan-lede": byId("plan-lede"),
+    "plan-close": byId("plan-close"), "plan-includes": byId("plan-includes"),
+    "plan-tier": byId("plan-tier"), "plan-tier-note": byId("plan-tier-note"),
+    "plan-say": byId("plan-say"), "plan-alert": byId("plan-alert"),
+    "plan-limits": byId("plan-limits"), "plan-fine": byId("plan-fine"),
+    "plan-upgrade": byId("plan-upgrade"), "plan-portal": byId("plan-portal"),
+    "plan-signin": byId("plan-signin"), "plan-retry": byId("plan-retry"),
+    "plan-recheck": byId("plan-recheck"),
+    "plan-elsewhere": byId("plan-elsewhere"), "plan-console": byId("plan-console")
+}, {
+    billing: planBilling,
+    signInURL: function () { return planSignIn(); },
+    consoleOrigin: cloudConfig ? cloudConfig.appOrigin : "https://app.clawdline.com"
+});
+
+function consumeCheckoutReturn() {
+    var returning = returningFromCheckout;
+    returningFromCheckout = false;
+    return returning;
+}
+
 /**
  * The pages, in the order the menu names them, home first.
  *
@@ -305,6 +353,9 @@ Pages.bind({
           enter: function () { projects.enter(); }, leave: function () { projects.leave(); } },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",
           enter: function () { usage.enter(); }, leave: function () { usage.leave(); } },
+        { name: "plan", element: byId("plan"), focus: "plan-title",
+          enter: function () { plan.enter({ returning: consumeCheckoutReturn() }); },
+          leave: function () { plan.leave(); } },
         { name: "settings", element: byId("settings"), focus: "settings-close",
           enter: function () { Settings.enter(); } }
     ],
@@ -375,6 +426,13 @@ function boot(data) {
     Waits.list.start();
     renderTranscript();
     render();
+    // Lemon Squeezy's return path, turned into an ordinary page address before `routeTo` reads
+    // it. `replaceState` rather than an assignment for the reason the page registry gives: this
+    // is where you *are*, and the browser's Back should still mean the screen before this app.
+    if (returningFromCheckout) {
+        try { history.replaceState(history.state, "", "/#page=plan"); }
+        catch (e) { location.hash = "#page=plan"; }
+    }
     // Read before the transport starts: `adoptToken` wipes the fragment when there is a token in
     // it, and a URL can carry both.
     routeTo(location.hash);

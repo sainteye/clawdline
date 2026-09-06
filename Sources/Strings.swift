@@ -1697,6 +1697,79 @@ protocol Copy {
     func hotkeyFailedTitle(_ combo: String) -> String
     func hotkeyFailedBody(_ configPath: String) -> String
     var loginFailed: String { get }
+    // clawdline:plan-strings:begin
+
+    // The Plan page — `Resources/web/app/js/view/plan.js`.
+    //
+    // This is the only screen in the product that can start a payment, which is the whole
+    // reason these are here rather than written into the module as English literals the way
+    // the pairing door's three are. An interface that speaks fourteen languages everywhere
+    // except where it asks for money stops speaking yours exactly as the stakes rise.
+    //
+    // `{tier}` and `{n}` are filled by `core/i18n.js`'s `fill`. A translation that drops a
+    // hole leaves the literal `{tier}` on screen, which is the failure this note exists to
+    // prevent — the page has no way to notice.
+    /// The drawer row and the heading of the page that can start a subscription.
+    var webPlan: String { get }
+    var webPlanLede: String { get }
+    var webPlanIncludes: String { get }
+    var webPlanRowMacs: String { get }
+    var webPlanRowSessions: String { get }
+    var webPlanRowViewers: String { get }
+    var webPlanRowDispatches: String { get }
+    var webPlanRowHistory: String { get }
+    var webPlanRowFleet: String { get }
+    var webPlanRowTeam: String { get }
+    var webPlanNoLimit: String { get }
+    var webPlanIncluded: String { get }
+    var webPlanNotIncluded: String { get }
+    var webPlanHistoryNone: String { get }
+    var webPlanHistoryDays: String { get }
+    /// `{n}` is the dispatch ceiling. D7: a dispatch count is client-declared, so it
+    /// is a fair-use meter and this string is where the page says so out loud.
+    var webPlanMeter: String { get }
+    var webPlanUpgrade: String { get }
+    var webPlanManage: String { get }
+    var webPlanSignIn: String { get }
+    var webPlanRetry: String { get }
+    var webPlanRecheck: String { get }
+    var webPlanFreeNote: String { get }
+    var webPlanPaidNote: String { get }
+    /// `quotas_provisional` comes back true on every entitlement answer today.
+    /// A page that drops it promises a quota nobody has committed to.
+    var webPlanProvisional: String { get }
+    var webPlanLoading: String { get }
+    var webPlanActive: String { get }
+    var webPlanOnFree: String { get }
+    var webPlanNotForSale: String { get }
+    var webPlanSignedOut: String { get }
+    var webPlanSignedOutNote: String { get }
+    var webPlanOpening: String { get }
+    var webPlanPortalOpening: String { get }
+    /// Between the Lemon Squeezy redirect and the webhook. The redirect proves a form
+    /// was completed; only the webhook changes the entitlement, and it is the slower of the two.
+    var webPlanWaiting: String { get }
+    var webPlanConfirmed: String { get }
+    /// The wait above ran out. `{tier}` is what the account is *still* on — this string
+    /// must not imply the payment was lost, because it was not.
+    var webPlanNotConfirmed: String { get }
+    /// The upgrade button was pressed by a page whose reading of the plan had gone
+    /// stale. No second checkout is created; Lemon Squeezy would have sold one.
+    var webPlanAlready: String { get }
+    var webPlanUnreadable: String { get }
+    var webPlanFailSignedOut: String { get }
+    var webPlanFailNotForSale: String { get }
+    var webPlanFailNoPrice: String { get }
+    var webPlanFailFree: String { get }
+    var webPlanFailNoAccount: String { get }
+    var webPlanFailCheckout: String { get }
+    var webPlanPortalNone: String { get }
+    var webPlanPortalProvider: String { get }
+    var webPlanPortalFailed: String { get }
+    /// This page served by the Mac itself, where there is no Cloud account to charge.
+    var webPlanElsewhere: String { get }
+    var webPlanElsewhereNote: String { get }
+    // clawdline:plan-strings:end
 }
 
 extension Copy {
