@@ -325,6 +325,24 @@ async function main() {
         })(elements["ledger-unattributed"]);
         check(tooltips.some(hasDigit),
               "the block's own tooltip says how many rows it stands for, as a number");
+
+        /* **The one card on this page whose subject is that there is no Feature.** It borrowed the
+           ordinary card's head, so it was titled `Feature` and then said its own name a second
+           time under it — directly below the heading that had just said it. The heading owns the
+           name; the card owns the figures. */
+        const block = elements["ledger-unattributed"];
+        const blockName = block.all("ledger-block-name")[0].textContent;
+        equal(block.all("ledger-card-kind").length, 0,
+              "the card for records that name no Feature is not headed with the word Feature");
+        const repeats = [];
+        (function walk(node) {
+            if (!node.children.length && node.textContent === blockName) repeats.push(node);
+            for (const child of node.children) walk(child);
+        })(block);
+        equal(repeats.length, 1,
+              "and the block's name is written once, not once above the card and once inside it");
+        equal(cards[0].all("ledger-card-kind").length, 1,
+              "while an ordinary Feature's card keeps the word that says what it is");
     }
 
     /* ---- the state word decides, not the number beside it ----------------- */

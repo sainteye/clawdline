@@ -169,20 +169,24 @@ function drawFeature(context, parent, feature, options) {
     var card = doc.createElement("section");
     card.className = "ledger-card";
 
-    var head = doc.createElement("div");
-    head.className = "ledger-card-head";
-    appendText(doc, head, "span", T.webLedgerFeature, "ledger-card-kind");
-    var identity = feature.graphId
-        ? appendText(doc, head, "code", feature.graphId, "ledger-card-id")
-        : appendText(doc, head, "span", T.webLedgerUnattributed, "ledger-card-id ledger-absent");
-    // **Through `fill`, like the eight other holed strings on this page.** This one was the ninth
-    // and the only one used raw, so the first word of the tooltip was the characters `{rows}` —
-    // in all fourteen languages, because every translation of it carries the same hole.
-    if (!feature.graphId) {
-        identity.title = fill(T.webLedgerUnattributedSay,
-                              { rows: number(feature.rows || 0) });
+    // **The card that names no Feature has no head.** Every other card is titled `Feature` and
+    // then its id, and this one borrowed that whole line: the only card on the page whose subject
+    // is that there is no Feature was headed with the word, and then repeated the block's own
+    // name directly under the heading that had just said it. The heading above owns the name.
+    //
+    // The sentence goes on the card itself, and **through `fill`**, like the eight other holed
+    // strings here. This one was the ninth and the only one used raw, so the first characters a
+    // reader hovered were `{rows}` — in all fourteen languages, because every translation of it
+    // carries the same hole.
+    if (feature.graphId) {
+        var head = doc.createElement("div");
+        head.className = "ledger-card-head";
+        appendText(doc, head, "span", T.webLedgerFeature, "ledger-card-kind");
+        appendText(doc, head, "code", feature.graphId, "ledger-card-id");
+        card.appendChild(head);
+    } else {
+        card.title = fill(T.webLedgerUnattributedSay, { rows: number(feature.rows || 0) });
     }
-    card.appendChild(head);
 
     var facts = doc.createElement("div");
     facts.className = "ledger-facts";
