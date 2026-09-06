@@ -1107,9 +1107,12 @@ After the terminal review verdict, root does all of this:
    paths. You are staging anyway, so the index is the right subject: test an archive of
    `git write-tree`, never the live working tree, which is the union of everybody's work. Then
    verify the target ref contains the intended delivery and record the target commit.
-5. Mark the task's landing record `landed` with the verified commit, using the task secret or the
-   machine token after an accepted handoff. Only now report `landed` or `complete` to the user. Say
-   which target and commit received it.
+5. Mark the task's landing record `landed` with the verified commit. **That one takes this
+   machine's orchestrator token.** A task secret maintains `pending` and `abandoned` and is refused
+   for `landed` and `nothing_to_land` — `403 forbidden`, *"Only the orchestrator token may settle a
+   landing on a repository's behalf"* — and accepting a handoff does not change that, because the
+   credential belongs to the machine rather than to the line of work. Only now report `landed` or
+   `complete` to the user. Say which target and commit received it.
 
 **HEAD has to compile standing alone, and committing is the only act that can break that.** It
 happened twice on 2026-08-26 in this repository, from two different sessions: a whole-file `git add`

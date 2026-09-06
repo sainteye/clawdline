@@ -983,8 +983,11 @@ slug 唯一匹配 retained receipt 時才推導，缺失、衝突、任意路徑
 4. 依 repository 規則、用私有暫存路徑測整合後的精確 tree。你本來就在 stage，所以 index 才是該測的
    對象：測 `git write-tree` 出來的封存快照，不要測活的工作樹——那棵樹是所有人工作的聯集。
    接著確認 target ref 包含預期 delivery，並記下 target commit。
-5. 用 task secret（或接受 handoff 後的機器 token），把 task 的 landing record 標成 `landed` 並
-   附上已驗證的 commit。到這裡才能向使用者說 `landed` 或完成，並講出落到哪個 target 與 commit。
+5. 把 task 的 landing record 標成 `landed` 並附上已驗證的 commit。**這一筆要用這台機器的
+   orchestrator token。** task secret 只維護得了 `pending` 與 `abandoned`，`landed` 與
+   `nothing_to_land` 都會被拒——`403 forbidden`，*「Only the orchestrator token may settle a
+   landing on a repository's behalf」*；接受 handoff 也不改變這件事，因為那個憑證屬於機器，
+   不屬於這條工作線。到這裡才能向使用者說 `landed` 或完成，並講出落到哪個 target 與 commit。
 
 **HEAD 必須自己站得住，而唯一能把它弄壞的動作就是 commit。** 2026-08-26 這個 repository 裡發生了
 兩次，來自兩個不同的 session：一次是整檔 `git add` 帶進三行，而定義它們型別的那個檔案還沒 commit；
