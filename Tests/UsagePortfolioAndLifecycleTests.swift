@@ -795,7 +795,7 @@ group("usage analytics routes keep authentication, validation and privacy aligne
         as? [String]
     let analyticsUnavailable = usage?["unavailableDimensions"] as? [String: Any]
     check("legacy and Portfolio capability surfaces share the Feature availability answer",
-          legacyUnavailable == ["graph_id", "disposition"]
+          legacyUnavailable == ["disposition"]
             && analyticsUnavailable?["dimensions"] as? [String] == legacyUnavailable
             && analyticsUnavailable?["featureView"] as? Bool == true)
     let legacyCSV = RemoteServer.shared.route(remoteRequest(
@@ -1027,7 +1027,7 @@ group("each kind of work is counted exactly once, and the routes answer for the 
            ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
     expect("and it names the columns it has no answer for",
            (body?["unavailable"] as? [String: Any])?["columns"] as? [String],
-           ["graph_id", "disposition"])
+           ["disposition"])
     expect("the export answers as CSV",
            RemoteServer.shared.route(
             remoteRequest("GET", "/v1/orchestrator/usage.csv", headers: auth))
@@ -1481,6 +1481,18 @@ group("a store written under version 1 is upgraded in place, and never orphaned"
                SELECT COUNT(*) FROM pragma_table_info('usage_intervals')
                 WHERE name = 'coverage_reasons';
                """), "1")
+
+    // **An existing store has to grow the new tables, and nothing used to ask.** Every assertion
+    // about the four receipt tables was written against a store created from nothing, which
+    // passes through `if version < 6` whatever `storeVersion` says; only a store that already
+    // exists is stopped by `guard version < UsageLedger.storeVersion`. So putting `storeVersion`
+    // back to 5 left every test green and every installed copy of this app without the tables.
+    expect("an upgraded store grows the receipt tables too, not only a brand new one",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+                AND name IN ('task_review_receipts', 'task_review_axes',
+                             'task_review_findings', 'task_verification_receipts');
+               """), "4")
 
     expect("six identical corrections written under v1 are de-duplicated to three",
            UsageLedger.shared.correctionCount(), 3)

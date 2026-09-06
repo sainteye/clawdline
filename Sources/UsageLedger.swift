@@ -62,7 +62,7 @@ final class UsageLedger {
     /// written from the key its own collector will compute next time. Adding a column, an index
     /// or a column *name* changes neither an identity nor the meaning of a stored value, and
     /// needs a number of its own.
-    static let storeVersion = 5
+    static let storeVersion = 6
 
     /// Which published price table produced a `list_price_estimate`. This is **not** protection
     /// against a historical month being re-priced — recorded costs are recorded and do not move.
@@ -213,21 +213,60 @@ final class UsageLedger {
     /// is turned back into something a reader can see.
     static let unresolvedSessionPrefix = "unresolved-session:"
 
-    /// Durable lineage columns. Store version 5 fills the facts the broker already records; `graph_id`
-    /// and `disposition` remain NULL until an explicit producer exists. Neither is inferred from
-    /// a root Session or a successful terminal state.
+    /// Durable lineage columns. Store version 5 filled the facts the broker already recorded;
+    /// store version 6 gave `graph_id` the producer it had been waiting for — see
+    /// ``graphIdentity(of:)``. `disposition` still remains NULL until one exists, and neither is
+    /// inferred from a root Session or a successful terminal state.
     static let lineageColumns = ["graph_id", "parent_task_id", "retry_of", "attempt",
                                  "landing_state", "disposition"]
     /// Columns for which no durable producer exists. Feature is intentionally absent: accepted
     /// append-only attribution events now provide that dimension without pretending it is a task
-    /// registry column. Both the legacy aggregate and Portfolio capability surfaces use this one
-    /// answer.
-    static let unavailableDimensions = ["graph_id", "disposition"]
+    /// registry column. `graph_id` left this list in store version 6, when it stopped being a
+    /// column nothing wrote. Both the legacy aggregate and Portfolio capability surfaces use this
+    /// one answer.
+    ///
+    /// **Available is a statement about the producer, not about every row.** A row written before
+    /// store version 6, for a task the registry has since evicted, still carries NULL, and the
+    /// honest reading of that NULL is "this task's graph was never recorded" rather than "this
+    /// task had no graph". Every row of a task the registry still holds is filled by the launch
+    /// backfill — every segment, not the first one — whose `graph_id = COALESCE(graph_id, ?)` was
+    /// written for exactly this arrival. See ``updateLineage(_:taskID:sample:)`` for why the
+    /// difference between "the task's rows" and "the task's first row" was 80% of the tokens.
+    static let unavailableDimensions = ["disposition"]
 
     static let reservedColumnsReason =
-        "A whole graph, accepted outcome, or Feature is unavailable unless explicit lineage or "
-        + "an accepted attribution event exists. Clawdline never infers them from a root Session "
-        + "or task success."
+        "An accepted outcome, or Feature, is unavailable unless explicit lineage or an accepted "
+        + "attribution event exists. Clawdline never infers them from a root Session or task "
+        + "success."
+
+    /// The graph a task record belongs to, and the node it was dispatched for.
+    ///
+    /// **This is the fix for a column that was NULL 1,052 times out of 1,052.** Both collectors
+    /// read `record["graph_id"]`, and `OrchestratorStore.stored(_:)` has always written the graph
+    /// as a nested object whose id is at `graph.id` — so the key they asked for did not exist in
+    /// any record ever handed to them, and token usage could not say which feature it belonged
+    /// to. Measured on this Mac on 2026-09-06: 1,052 stored intervals, 0 with a graph, against a
+    /// registry holding 105 tasks that carry one.
+    ///
+    /// The flat spelling is still accepted second, because a record shaped by an older writer is
+    /// evidence too and dropping it would be the same mistake in the other direction.
+    static func graphIdentity(of record: [String: Any])
+        -> (graphID: String?, nodeID: String?) {
+        guard let graph = record["graph"] as? [String: Any] else {
+            return (nonemptyText(record["graph_id"]), nil)
+        }
+        return (nonemptyText(graph["id"]) ?? nonemptyText(record["graph_id"]),
+                nonemptyText(graph["current_node"]))
+    }
+
+    /// A string field that is present and says something. An empty string is not a graph id, and
+    /// storing it would put a value in a column whose whole contract is that a blank means
+    /// "unknown".
+    static func nonemptyText(_ value: Any?) -> String? {
+        guard let text = value as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
 
     enum AttributionDimension: String, CaseIterable { case project, feature }
     /// Who made the assignment. `heuristic` is the local Feature classifier in
@@ -1014,6 +1053,75 @@ final class UsageLedger {
                 );
                 CREATE INDEX IF NOT EXISTS usage_attribution_interval
                   ON usage_attribution_events (interval_key, dimension, assigned_at, event_id);
+                """)
+        }
+        if version < 6 {
+            // **This 6 is the second copy of ``storeVersion``**, and the two are held together by
+            // assertions rather than by the compiler: "and that version is the one the migration
+            // branches on" pins the constant to this digit, and "an upgraded store grows the
+            // receipt tables too" runs the branch against a store that already exists. Without
+            // the pair, putting `storeVersion` back to 5 leaves every test green — a fresh store
+            // is version 0 and reaches this line whatever the constant says — while every
+            // installed copy is stopped one line above, at `guard version < storeVersion`, and
+            // never grows the four tables.
+            //
+            // The review and verification receipts, given somewhere to live that outlasts both
+            // clocks that were deleting them: the task directory swept twenty-four hours after
+            // a task ends, and the registry row evicted at 1,350 rows or thirty days. Every row
+            // carries `graph_id` so a feature's findings can be counted and set beside what that
+            // feature's tokens cost — which is the join the next surface over this data needs,
+            // and the reason these tables are here rather than in a store of their own.
+            //
+            // No foreign key to `usage_intervals` on purpose. A task whose session was never
+            // known and whose record carried no usage produces no interval row at all, and its
+            // review is still worth keeping; a receipt that could only exist beside a token
+            // count would be missing exactly where the accounting is already thinnest.
+            exec(db, """
+                CREATE TABLE IF NOT EXISTS task_review_receipts (
+                  task_id TEXT PRIMARY KEY,
+                  graph_id TEXT, node_id TEXT,
+                  project_key TEXT, kind_raw TEXT, task_state TEXT,
+                  verdict TEXT NOT NULL,
+                  axis_count INTEGER NOT NULL,
+                  finding_count INTEGER NOT NULL,
+                  recorded_at REAL NOT NULL, updated_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS task_review_receipts_graph
+                  ON task_review_receipts (graph_id, recorded_at);
+                CREATE TABLE IF NOT EXISTS task_review_axes (
+                  task_id TEXT NOT NULL,
+                  axis TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  finding_count INTEGER NOT NULL,
+                  ordinal INTEGER NOT NULL,
+                  PRIMARY KEY (task_id, axis)
+                );
+                CREATE TABLE IF NOT EXISTS task_review_findings (
+                  task_id TEXT NOT NULL,
+                  axis TEXT NOT NULL,
+                  finding_id TEXT NOT NULL,
+                  severity TEXT NOT NULL,
+                  summary TEXT NOT NULL,
+                  evidence TEXT NOT NULL,
+                  ordinal INTEGER NOT NULL,
+                  graph_id TEXT,
+                  recorded_at REAL NOT NULL,
+                  PRIMARY KEY (task_id, axis, finding_id)
+                );
+                CREATE INDEX IF NOT EXISTS task_review_findings_graph
+                  ON task_review_findings (graph_id, severity);
+                CREATE TABLE IF NOT EXISTS task_verification_receipts (
+                  task_id TEXT PRIMARY KEY,
+                  graph_id TEXT, node_id TEXT,
+                  project_key TEXT, kind_raw TEXT, task_state TEXT,
+                  runs INTEGER NOT NULL,
+                  seconds INTEGER NOT NULL,
+                  last TEXT NOT NULL,
+                  scope TEXT NOT NULL,
+                  recorded_at REAL NOT NULL, updated_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS task_verification_receipts_graph
+                  ON task_verification_receipts (graph_id, recorded_at);
                 """)
         }
         // Each statement above is independent of the ones before it, which is what makes a
@@ -1880,24 +1988,56 @@ final class UsageLedger {
     /// Lineage is descriptive metadata and may arrive after the immutable usage is sealed — a
     /// landing is normally recorded later by the root. Filling metadata never changes token or
     /// cost columns; identity conflicts are ignored, while landing state may advance.
-    private func updateLineage(_ db: OpaquePointer, key: String, sample: Sample) {
-        var statement: OpaquePointer?
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, """
-            UPDATE usage_intervals SET
-              project_key = COALESCE(project_key, ?),
-              graph_id = COALESCE(graph_id, ?),
-              parent_task_id = COALESCE(parent_task_id, ?),
-              retry_of = COALESCE(retry_of, ?),
-              attempt = COALESCE(attempt, ?),
-              landing_state = COALESCE(?, landing_state),
-              disposition = COALESCE(disposition, ?)
-            WHERE interval_key = ?;
-            """, -1, &statement, nil) == SQLITE_OK else { return }
+    ///
+    /// One statement, two ways of naming the rows it fills, so the column list cannot drift
+    /// between them: a reading fills the row it landed on, and a record from the registry fills
+    /// every row that task left behind. See ``updateLineage(_:taskID:sample:)``.
+    private static func lineageUpdate(where predicate: String) -> String {
+        """
+        UPDATE usage_intervals SET
+          project_key = COALESCE(project_key, ?),
+          graph_id = COALESCE(graph_id, ?),
+          parent_task_id = COALESCE(parent_task_id, ?),
+          retry_of = COALESCE(retry_of, ?),
+          attempt = COALESCE(attempt, ?),
+          landing_state = COALESCE(?, landing_state),
+          disposition = COALESCE(disposition, ?)
+        WHERE \(predicate);
+        """
+    }
+
+    private func bindLineage(_ statement: OpaquePointer?, _ sample: Sample, _ subject: String) {
         bind(statement, 1, sample.projectKey); bind(statement, 2, sample.graphID)
         bind(statement, 3, sample.parentTaskID); bind(statement, 4, sample.retryOf)
         bind(statement, 5, sample.attempt); bind(statement, 6, sample.landingState)
-        bind(statement, 7, sample.disposition); bind(statement, 8, key)
+        bind(statement, 7, sample.disposition); bind(statement, 8, subject)
+    }
+
+    private func updateLineage(_ db: OpaquePointer, key: String, sample: Sample) {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, Self.lineageUpdate(where: "interval_key = ?"),
+                                 -1, &statement, nil) == SQLITE_OK else { return }
+        bindLineage(statement, sample, key)
+        sqlite3_step(statement)
+    }
+
+    /// **Lineage belongs to the task, not to one of its segments.** A task whose session crossed
+    /// a model switch, a local midnight or a boundary it returned to has its tokens spread over
+    /// several rows, and every one of them is a row about that task — so a registry record
+    /// arriving later has to reach all of them or the feature it names is only true of the first.
+    ///
+    /// Measured on this Mac on 2026-09-06, before this existed: of 832 task rows, 314 sat on a
+    /// segment above 0, and of the tokens belonging to tasks the registry still held, 20.4% were
+    /// on a row the backfill could reach — 48 of 65 graphs would have reported zero. `task_id` is
+    /// indexed, and only a task-boundary sample ever carries one, so this touches exactly the
+    /// rows this record is about and no session row beside them.
+    private func updateLineage(_ db: OpaquePointer, taskID: String, sample: Sample) {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, Self.lineageUpdate(where: "task_id = ?"),
+                                 -1, &statement, nil) == SQLITE_OK else { return }
+        bindLineage(statement, sample, taskID)
         sqlite3_step(statement)
     }
 
@@ -2707,8 +2847,13 @@ final class UsageLedger {
 
     @discardableResult
     private func importOnQueue(_ record: [String: Any], now: Date = Date()) -> Bool {
-        guard let id = record["id"] as? String, !id.isEmpty,
-              let assistant = Assistant(rawValue: record["assistant"] as? String ?? "")
+        guard let id = record["id"] as? String, !id.isEmpty else { return false }
+        // Before the usage row and independent of whether one can be made. What follows returns
+        // early for a record with no readable assistant, and again for one that has never had a
+        // session and carries no usage — both of which are true of tasks that nevertheless
+        // produced a verdict somebody will want in a month.
+        persistReceipts(of: record, taskID: id, now: now)
+        guard let assistant = Assistant(rawValue: record["assistant"] as? String ?? "")
         else { return false }
         let state = record["state"] as? String
         let terminal = state.flatMap(Orchestrator.State.init(rawValue:))?.isTerminal ?? false
@@ -2757,7 +2902,7 @@ final class UsageLedger {
         sample.timeoutSeconds = (record["timeout_minutes"] as? Int).map { $0 * 60 }
         sample.taskState = state
         sample.reasoningEffort = record["reasoning_effort"] as? String
-        sample.graphID = record["graph_id"] as? String
+        sample.graphID = UsageLedger.graphIdentity(of: record).graphID
         sample.parentTaskID = record["parent_task"] as? String
         sample.retryOf = record["respawn_of"] as? String
         sample.attempt = record["respawn_generation"] as? Int
@@ -2787,10 +2932,12 @@ final class UsageLedger {
         // evidence of what was actually sealed, so a comparison against that column alone can
         // never converge. A row sealed `source_missing` has no object at all to compare with,
         // and every launch would find it "changed" and file another note.
+        // Every row this task left behind, before the segment-0 question below: what follows
+        // decides whether there is a *number* to correct, and lineage is not a number.
+        if let db = database() { updateLineage(db, taskID: id, sample: sample) }
         let key = UsageLedger.intervalKey(assistant: assistant, sessionID: sample.sessionID,
                                           boundaryKind: .task, boundaryID: id, segmentNo: 0)
         if let db = database(), let existing = row(db, key: key), existing.sealed {
-            updateLineage(db, key: key, sample: sample)
             guard let usage,
                   let data = try? JSONSerialization.data(withJSONObject: usage,
                                                          options: [.sortedKeys]),
@@ -2816,6 +2963,461 @@ final class UsageLedger {
         bind(statement, 2, UsageLedger.unresolvedSessionPrefix)
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         return Self.text(statement, 0)
+    }
+
+    // MARK: - Durable review and verification receipts
+
+    /// One axis of a stored review, and how many findings it carried.
+    struct StoredReviewAxis: Equatable {
+        var axis: String
+        var status: String
+        var findingCount: Int
+    }
+
+    /// One stored finding, with the evidence strings the reviewer named.
+    struct StoredReviewFinding: Equatable {
+        var taskID: String
+        var graphID: String?
+        var axis: String
+        var findingID: String
+        var severity: String
+        var summary: String
+        var evidence: [String]
+    }
+
+    /// A review verdict that outlived the task directory it was written in.
+    struct StoredReviewReceipt: Equatable {
+        var taskID: String
+        var graphID: String?
+        var nodeID: String?
+        var projectKey: String?
+        var kindRaw: String?
+        var taskState: String?
+        var verdict: String
+        var axes: [StoredReviewAxis]
+        var findings: [StoredReviewFinding]
+        var recordedAt: Date
+    }
+
+    /// What a task said it ran to prove its own work.
+    struct StoredVerificationReceipt: Equatable {
+        var taskID: String
+        var graphID: String?
+        var nodeID: String?
+        var projectKey: String?
+        var kindRaw: String?
+        var taskState: String?
+        var runs: Int
+        var seconds: Int
+        var last: String
+        var scope: String
+        var recordedAt: Date
+    }
+
+    /// Which receipts a reader wants. An enum rather than an optional graph id because
+    /// `graphID: nil` reads as both "every graph" and "the rows that have no graph", and those
+    /// are two different questions about a column whose blanks mean "unknown".
+    enum ReceiptScope: Equatable {
+        case all
+        case graph(String)
+        case task(String)
+    }
+
+    /// **The receipts were already at the door; nothing was catching them.**
+    ///
+    /// `Orchestrator.ledgerRecord(of:)` is the whole stored task minus its two credentials, and
+    /// `OrchestratorStore.stored(_:)` has carried `review` and `verification` for as long as
+    /// either existed. Both arrive here on every import — at finalize, when a landing is
+    /// recorded, and again for the whole registry on each launch — and until store version 6
+    /// this function read past them. Meanwhile `orchestrator_task_dir_retention_hours` swept the
+    /// evidence they point at twenty-four hours after the task ended, and the registry row
+    /// holding the verdict itself aged out at 1,350 rows or thirty days.
+    ///
+    /// So this is storage rather than a pipeline: three tables for the review and one for the
+    /// verification, each carrying the graph id so a feature's findings can be counted and put
+    /// beside what that feature's tokens cost.
+    ///
+    /// **Deliberately not a foreign key on `usage_intervals`.** A task whose session nobody ever
+    /// knew and whose record carried no usage produces no interval row at all — and its review
+    /// is still the most durable thing about it. A receipt that could only exist beside a token
+    /// count would go missing exactly where the accounting is already thinnest.
+    private func persistReceipts(of record: [String: Any], taskID: String, now: Date) {
+        guard let db = database() else { return }
+        let identity = UsageLedger.graphIdentity(of: record)
+        let context = ReceiptContext(
+            taskID: taskID, graphID: identity.graphID, nodeID: identity.nodeID,
+            projectKey: UsageLedger.canonicalProjectKey(
+                projectDir: record["project_dir"] as? String,
+                repositoryCommonDir: record["repository_common_dir"] as? String),
+            kindRaw: UsageLedger.nonemptyText(record["kind"]),
+            taskState: UsageLedger.nonemptyText(record["state"]),
+            now: now)
+        persistVerification(db, record["verification"], context)
+        persistReview(db, record["review"], context)
+    }
+
+    /// The columns every receipt carries about the task it belongs to, gathered once.
+    private struct ReceiptContext {
+        var taskID: String
+        var graphID: String?
+        var nodeID: String?
+        var projectKey: String?
+        var kindRaw: String?
+        var taskState: String?
+        var now: Date
+    }
+
+    /// **A receipt is written whole or not at all.** `runs`, `seconds`, `last` and `scope` are
+    /// the entire content of this row; a record missing one of them is not a verification that
+    /// happened to have a gap in it, it is a record that carries no verification — and writing
+    /// `0` where a number was never reported is the failure this store was built to refuse.
+    ///
+    /// **A write that fails says so.** "This task reported no verification" and "it reported one
+    /// and the store dropped it" used to be the same silence, and the receipt tables have no
+    /// `coverage_reasons` column of their own to hold the difference — giving them one is a
+    /// store version of its own and is not this wave's to make. The log line is what separates
+    /// the two today, and it names the task so the record can be re-imported by hand.
+    private func persistVerification(_ db: OpaquePointer, _ raw: Any?, _ context: ReceiptContext) {
+        guard let row = raw as? [String: Any],
+              let runs = row["runs"] as? Int, runs >= 0,
+              let seconds = row["seconds"] as? Int, seconds >= 0,
+              let last = UsageLedger.nonemptyText(row["last"]),
+              let scope = UsageLedger.nonemptyText(row["scope"]) else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            INSERT INTO task_verification_receipts
+              (task_id, graph_id, node_id, project_key, kind_raw, task_state,
+               runs, seconds, last, scope, recorded_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+              graph_id = excluded.graph_id, node_id = excluded.node_id,
+              project_key = excluded.project_key, kind_raw = excluded.kind_raw,
+              task_state = excluded.task_state, runs = excluded.runs,
+              seconds = excluded.seconds, last = excluded.last, scope = excluded.scope,
+              updated_at = excluded.updated_at;
+            """, -1, &statement, nil) == SQLITE_OK else {
+            Log.write("usage ledger could not prepare the verification receipt for "
+                      + context.taskID)
+            return
+        }
+        bind(statement, 1, context.taskID)
+        bind(statement, 2, context.graphID)
+        bind(statement, 3, context.nodeID)
+        bind(statement, 4, context.projectKey)
+        bind(statement, 5, context.kindRaw)
+        bind(statement, 6, context.taskState)
+        bind(statement, 7, runs)
+        bind(statement, 8, seconds)
+        bind(statement, 9, last)
+        bind(statement, 10, scope)
+        bind(statement, 11, context.now.timeIntervalSince1970)
+        bind(statement, 12, context.now.timeIntervalSince1970)
+        if sqlite3_step(statement) != SQLITE_DONE {
+            Log.write("usage ledger could not store the verification receipt for \(context.taskID)")
+        }
+    }
+
+    /// The verdict, its three axes and every finding under them.
+    ///
+    /// `recorded_at` keeps the first sighting while `updated_at` moves, because the same record
+    /// arrives many times: once when the task finalizes, again when a landing is recorded, and
+    /// once more for every launch that runs the backfill. The axes and findings are replaced
+    /// rather than merged so a shorter finding list cannot leave an orphan behind — which is
+    /// safe here and would not be for an interval, because the receipt at the source is
+    /// write-once: `Orchestrator` fills `task.review` only `if task.review == nil`, so two
+    /// imports of the same task cannot disagree about it.
+    ///
+    /// **That promise covers the findings too, and the replace is what threatens it.** Deleting
+    /// and re-inserting a finding gives it a new `recorded_at` on every arrival, so the column
+    /// would have ended up recording the last launch of this app rather than when the review was
+    /// first seen — the one thing a store built to outlive both sweeps must not get wrong. Each
+    /// finding's first sighting is read back before the replace and re-bound after it; a finding
+    /// that was not there before is recorded now, which is exactly what it is.
+    private func persistReview(_ db: OpaquePointer, _ raw: Any?, _ context: ReceiptContext) {
+        guard let row = raw as? [String: Any],
+              let verdict = UsageLedger.nonemptyText(row["verdict"]),
+              let rawAxes = row["axes"] as? [[String: Any]], !rawAxes.isEmpty else { return }
+        var axes: [StoredReviewAxis] = []
+        var findings: [StoredReviewFinding] = []
+        for rawAxis in rawAxes {
+            guard let axis = UsageLedger.nonemptyText(rawAxis["axis"]),
+                  let status = UsageLedger.nonemptyText(rawAxis["status"]) else { continue }
+            let rawFindings = rawAxis["findings"] as? [[String: Any]] ?? []
+            var kept: [StoredReviewFinding] = []
+            for rawFinding in rawFindings {
+                guard let findingID = UsageLedger.nonemptyText(rawFinding["id"]),
+                      let severity = UsageLedger.nonemptyText(rawFinding["severity"]),
+                      let summary = UsageLedger.nonemptyText(rawFinding["summary"])
+                else { continue }
+                let evidence = (rawFinding["evidence"] as? [String] ?? [])
+                    .compactMap(UsageLedger.nonemptyText)
+                kept.append(StoredReviewFinding(
+                    taskID: context.taskID, graphID: context.graphID, axis: axis,
+                    findingID: findingID, severity: severity, summary: summary,
+                    evidence: evidence))
+            }
+            axes.append(StoredReviewAxis(axis: axis, status: status, findingCount: kept.count))
+            findings.append(contentsOf: kept)
+        }
+        guard !axes.isEmpty else { return }
+
+        let firstSeen = findingFirstSeen(db, taskID: context.taskID)
+        // **The transaction has to have started.** A refused `BEGIN` used to leave `ok` true, and
+        // then the DELETE and every INSERT below autocommitted one at a time: a failure in the
+        // middle would leave the axes gone and the findings half-written, which reads back as a
+        // review that found nothing rather than as a review that was not stored.
+        guard exec(db, "BEGIN IMMEDIATE;") else {
+            Log.write("usage ledger could not open the transaction for the review receipt for "
+                      + context.taskID)
+            return
+        }
+        var ok = true
+        func run(_ sql: String, _ binder: (OpaquePointer?) -> Void) {
+            guard ok else { return }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+                ok = false
+                return
+            }
+            binder(statement)
+            if sqlite3_step(statement) != SQLITE_DONE { ok = false }
+        }
+        run("""
+            INSERT INTO task_review_receipts
+              (task_id, graph_id, node_id, project_key, kind_raw, task_state,
+               verdict, axis_count, finding_count, recorded_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+              graph_id = excluded.graph_id, node_id = excluded.node_id,
+              project_key = excluded.project_key, kind_raw = excluded.kind_raw,
+              task_state = excluded.task_state, verdict = excluded.verdict,
+              axis_count = excluded.axis_count, finding_count = excluded.finding_count,
+              updated_at = excluded.updated_at;
+            """) { statement in
+            bind(statement, 1, context.taskID)
+            bind(statement, 2, context.graphID)
+            bind(statement, 3, context.nodeID)
+            bind(statement, 4, context.projectKey)
+            bind(statement, 5, context.kindRaw)
+            bind(statement, 6, context.taskState)
+            bind(statement, 7, verdict)
+            bind(statement, 8, axes.count)
+            bind(statement, 9, findings.count)
+            bind(statement, 10, context.now.timeIntervalSince1970)
+            bind(statement, 11, context.now.timeIntervalSince1970)
+        }
+        run("DELETE FROM task_review_axes WHERE task_id = ?;") {
+            bind($0, 1, context.taskID)
+        }
+        run("DELETE FROM task_review_findings WHERE task_id = ?;") {
+            bind($0, 1, context.taskID)
+        }
+        for (ordinal, axis) in axes.enumerated() {
+            run("""
+                INSERT INTO task_review_axes
+                  (task_id, axis, status, finding_count, ordinal)
+                VALUES (?, ?, ?, ?, ?);
+                """) { statement in
+                bind(statement, 1, context.taskID)
+                bind(statement, 2, axis.axis)
+                bind(statement, 3, axis.status)
+                bind(statement, 4, axis.findingCount)
+                bind(statement, 5, ordinal)
+            }
+        }
+        for (ordinal, finding) in findings.enumerated() {
+            let evidence = UsageLedger.encodedEvidence(finding.evidence)
+            run("""
+                INSERT INTO task_review_findings
+                  (task_id, axis, finding_id, severity, summary, evidence, ordinal,
+                   graph_id, recorded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """) { statement in
+                bind(statement, 1, context.taskID)
+                bind(statement, 2, finding.axis)
+                bind(statement, 3, finding.findingID)
+                bind(statement, 4, finding.severity)
+                bind(statement, 5, finding.summary)
+                bind(statement, 6, evidence)
+                bind(statement, 7, ordinal)
+                bind(statement, 8, context.graphID)
+                bind(statement, 9, firstSeen[UsageLedger.findingKey(axis: finding.axis,
+                                                                    findingID: finding.findingID)]
+                        ?? context.now.timeIntervalSince1970)
+            }
+        }
+        let closed = exec(db, ok ? "COMMIT;" : "ROLLBACK;")
+        if !ok { Log.write("usage ledger could not store the review receipt for \(context.taskID)") }
+        if !closed {
+            Log.write("usage ledger could not \(ok ? "commit" : "roll back") the review receipt "
+                      + "for \(context.taskID)")
+        }
+    }
+
+    /// When each finding already stored for this task was first seen, keyed by the pair that
+    /// identifies it inside the task. Read before the replace, because the replace is what would
+    /// otherwise overwrite it. The separator is a unit separator so that no axis or finding id
+    /// containing it could make two different findings share a key.
+    private static func findingKey(axis: String, findingID: String) -> String {
+        "\(axis)\u{1F}\(findingID)"
+    }
+
+    private func findingFirstSeen(_ db: OpaquePointer, taskID: String) -> [String: Double] {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            SELECT axis, finding_id, recorded_at FROM task_review_findings WHERE task_id = ?;
+            """, -1, &statement, nil) == SQLITE_OK else { return [:] }
+        bind(statement, 1, taskID)
+        var out: [String: Double] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let axis = Self.text(statement, 0),
+                  let findingID = Self.text(statement, 1) else { continue }
+            out[UsageLedger.findingKey(axis: axis, findingID: findingID)] =
+                sqlite3_column_double(statement, 2)
+        }
+        return out
+    }
+
+    /// Evidence strings as a JSON array, so a string containing any separator this file might
+    /// otherwise have chosen survives the round trip.
+    private static func encodedEvidence(_ evidence: [String]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: evidence, options: []) else {
+            return "[]"
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func decodedEvidence(_ raw: String?) -> [String] {
+        guard let raw, let data = raw.data(using: .utf8),
+              let values = try? JSONSerialization.jsonObject(with: data) as? [String]
+        else { return [] }
+        return values
+    }
+
+    /// Every stored verification receipt in scope, newest first.
+    func verificationReceipts(_ scope: ReceiptScope = .all) -> [StoredVerificationReceipt] {
+        queue.sync {
+            guard let db = database() else { return [] }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            let sql = """
+                SELECT task_id, graph_id, node_id, project_key, kind_raw, task_state,
+                       runs, seconds, last, scope, recorded_at
+                  FROM task_verification_receipts
+                 \(UsageLedger.receiptFilter(scope))
+                 ORDER BY recorded_at DESC, task_id DESC;
+                """
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+            bindReceiptScope(statement, scope)
+            var out: [StoredVerificationReceipt] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let taskID = Self.text(statement, 0),
+                      let runs = Self.integer(statement, 6),
+                      let seconds = Self.integer(statement, 7),
+                      let last = Self.text(statement, 8),
+                      let scopeText = Self.text(statement, 9) else { continue }
+                out.append(StoredVerificationReceipt(
+                    taskID: taskID, graphID: Self.text(statement, 1),
+                    nodeID: Self.text(statement, 2), projectKey: Self.text(statement, 3),
+                    kindRaw: Self.text(statement, 4), taskState: Self.text(statement, 5),
+                    runs: runs, seconds: seconds, last: last, scope: scopeText,
+                    recordedAt: Date(timeIntervalSince1970: Self.double(statement, 10) ?? 0)))
+            }
+            return out
+        }
+    }
+
+    /// Every stored review receipt in scope, newest first, each with its axes and findings.
+    func reviewReceipts(_ scope: ReceiptScope = .all) -> [StoredReviewReceipt] {
+        queue.sync {
+            guard let db = database() else { return [] }
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            let sql = """
+                SELECT task_id, graph_id, node_id, project_key, kind_raw, task_state,
+                       verdict, recorded_at
+                  FROM task_review_receipts
+                 \(UsageLedger.receiptFilter(scope))
+                 ORDER BY recorded_at DESC, task_id DESC;
+                """
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+            bindReceiptScope(statement, scope)
+            var out: [StoredReviewReceipt] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let taskID = Self.text(statement, 0),
+                      let verdict = Self.text(statement, 6) else { continue }
+                out.append(StoredReviewReceipt(
+                    taskID: taskID, graphID: Self.text(statement, 1),
+                    nodeID: Self.text(statement, 2), projectKey: Self.text(statement, 3),
+                    kindRaw: Self.text(statement, 4), taskState: Self.text(statement, 5),
+                    verdict: verdict, axes: [], findings: [],
+                    recordedAt: Date(timeIntervalSince1970: Self.double(statement, 7) ?? 0)))
+            }
+            return out.map { receipt in
+                var filled = receipt
+                filled.axes = axes(db, taskID: receipt.taskID)
+                filled.findings = findings(db, taskID: receipt.taskID, graphID: receipt.graphID)
+                return filled
+            }
+        }
+    }
+
+    private static func receiptFilter(_ scope: ReceiptScope) -> String {
+        switch scope {
+        case .all: return ""
+        case .graph: return "WHERE graph_id = ?"
+        case .task: return "WHERE task_id = ?"
+        }
+    }
+
+    private func bindReceiptScope(_ statement: OpaquePointer?, _ scope: ReceiptScope) {
+        switch scope {
+        case .all: break
+        case .graph(let id): bind(statement, 1, id)
+        case .task(let id): bind(statement, 1, id)
+        }
+    }
+
+    private func axes(_ db: OpaquePointer, taskID: String) -> [StoredReviewAxis] {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            SELECT axis, status, finding_count FROM task_review_axes
+             WHERE task_id = ? ORDER BY ordinal;
+            """, -1, &statement, nil) == SQLITE_OK else { return [] }
+        bind(statement, 1, taskID)
+        var out: [StoredReviewAxis] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let axis = Self.text(statement, 0), let status = Self.text(statement, 1),
+                  let count = Self.integer(statement, 2) else { continue }
+            out.append(StoredReviewAxis(axis: axis, status: status, findingCount: count))
+        }
+        return out
+    }
+
+    private func findings(_ db: OpaquePointer, taskID: String,
+                          graphID: String?) -> [StoredReviewFinding] {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            SELECT axis, finding_id, severity, summary, evidence FROM task_review_findings
+             WHERE task_id = ? ORDER BY ordinal;
+            """, -1, &statement, nil) == SQLITE_OK else { return [] }
+        bind(statement, 1, taskID)
+        var out: [StoredReviewFinding] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let axis = Self.text(statement, 0), let findingID = Self.text(statement, 1),
+                  let severity = Self.text(statement, 2), let summary = Self.text(statement, 3)
+            else { continue }
+            out.append(StoredReviewFinding(
+                taskID: taskID, graphID: graphID, axis: axis, findingID: findingID,
+                severity: severity, summary: summary,
+                evidence: Self.decodedEvidence(Self.text(statement, 4))))
+        }
+        return out
     }
 
     // MARK: - Test seams
@@ -3002,7 +3604,7 @@ extension UsageLedger {
                 repositoryCommonDir: task["repository_common_dir"] as? String)
             sample.workingDir = ((task["worktree"] as? [String: Any])?["cwd"] as? String)
                 ?? (task["project_dir"] as? String) ?? cwd
-            sample.graphID = task["graph_id"] as? String
+            sample.graphID = UsageLedger.graphIdentity(of: task).graphID
             sample.parentTaskID = task["parent_task"] as? String
             sample.retryOf = task["respawn_of"] as? String
             sample.attempt = task["respawn_generation"] as? Int
@@ -3357,8 +3959,16 @@ final class UsageQueryService {
             "rowCount": filtered.count,
             "pagination": ["limit": query.limit, "nextCursor": next as Any? ?? NSNull(),
                            "hasMore": hasMore],
+            // The list, not a second copy of it. This route used to type the two column names
+            // out again beside the constant that names them, which is how a dimension can gain
+            // a producer in one place and still be published as unavailable in the other.
+            //
+            // The three `…View` flags below are a different question and keep their answers: a
+            // dimension having a producer is not the same as this route offering a view grouped
+            // by it, and `graph_id` gained the first in store version 6 without gaining the
+            // second. Saying yes here would promise a page that does not exist.
             "unavailableDimensions": [
-                "dimensions": ["graph_id", "disposition"],
+                "dimensions": UsageLedger.unavailableDimensions,
                 "reason": UsageLedger.reservedColumnsReason,
                 "graphView": false, "retryView": false, "landingView": false,
                 "featureView": true,

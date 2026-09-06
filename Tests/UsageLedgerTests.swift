@@ -671,7 +671,7 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
           totals?["tokens"] is NSNull && totals?["total"] is NSNull)
     expect("and names the columns it cannot answer for",
            (payload["unavailable"] as? [String: Any])?["columns"] as? [String],
-           ["graph_id", "disposition"])
+           ["disposition"])
 }
 
 group("a cost is copied where it exists and never invented where it does not") {
@@ -1619,6 +1619,291 @@ group("a Feature is scoped by the Project rule the Portfolio uses") {
           accepted[keys["scope-one"]!]?.featureID == accepted[keys["scope-two"]!]?.featureID
             && accepted[keys["scope-one"]!]?.featureID
                 != suppressed[keys["scope-one"]!]?.featureID)
+}
+
+
+// MARK: - Durable review and verification receipts
+
+/// A registry record in the exact spelling `OrchestratorStore.stored(_:)` produces, which is the
+/// only spelling either collector ever sees. The graph is a nested object with its id at
+/// `graph.id`; writing it flat here would rebuild the fixture around the defect rather than
+/// around the store.
+func receiptTaskRecord(id: String, graphID: String?, node: String = "receipt-persistence",
+                       review: [String: Any]? = nil,
+                       verification: [String: Any]? = nil,
+                       session: String? = "sess-receipts",
+                       usage: [String: Any]? = ["input": 1, "output": 2, "cache_read": 0,
+                                                "cache_write": 0, "total": 3,
+                                                "model": "claude-opus-5"])
+    -> [String: Any] {
+    var record: [String: Any] = [
+        "id": id, "assistant": "claude", "state": "success", "kind": "code-review",
+        "title": "a receipt", "project_dir": "/tmp/receipts", "timeout_minutes": 30,
+        "depth": 1, "created": Date().timeIntervalSince1970,
+    ]
+    if let graphID {
+        record["graph"] = [
+            "id": graphID, "destination": "receipts outlive the sweep", "current_node": node,
+            "nodes": [["id": node, "title": "the node", "kind": "review",
+                       "depends_on": [], "acceptance": ["it lands"]]],
+            "unknowns": [], "out_of_scope": [],
+        ] as [String: Any]
+    }
+    if let session { record["child_session"] = session }
+    if let usage { record["usage"] = usage }
+    if let review { record["review"] = review }
+    if let verification { record["verification"] = verification }
+    return record
+}
+
+func passingReviewReceipt() -> [String: Any] {
+    ["verdict": "safe_to_land",
+     "axes": [["axis": "specification", "status": "pass", "findings": []],
+              ["axis": "repository_invariants", "status": "pass", "findings": []],
+              ["axis": "runtime_failure_behavior", "status": "pass", "findings": []]]]
+}
+
+func findingReviewReceipt() -> [String: Any] {
+    ["verdict": "changes_required",
+     "axes": [["axis": "specification", "status": "pass", "findings": []],
+              ["axis": "repository_invariants", "status": "findings",
+               "findings": [["id": "F1", "severity": "blocking",
+                             "summary": "the seal was measured somewhere else",
+                             "evidence": ["tools/check-architecture-boundaries.sh:1",
+                                          "the run that produced 9,544"]],
+                            ["id": "F2", "severity": "minor",
+                             "summary": "a comment names a column that now has a producer",
+                             "evidence": ["Sources/UsageLedger.swift:216"]]]],
+              ["axis": "runtime_failure_behavior", "status": "pass", "findings": []]]]
+}
+
+group("a task record's graph reaches the row that carries its tokens") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let graphID = "00b1381b-fa4a-4d0a-bcdd-5813ded9b1ea"
+    // Both collectors read `record["graph_id"]` and `stored(_:)` has never written that key, so
+    // the column was NULL on every row this store had ever held: 1,052 of 1,052, measured on
+    // this Mac on 2026-09-06 against a registry holding 105 tasks that carry a graph.
+    expect("a record with a graph imports", UsageLedger.shared.importTaskRecords([
+        receiptTaskRecord(id: "task-with-graph", graphID: graphID),
+    ]), 1)
+    expect("and its row now names the feature the tokens belong to",
+           UsageLedger.shared.rows(taskID: "task-with-graph").first?.graphID, Optional(graphID))
+    expect("read out of the nested object rather than a flat key nobody writes",
+           UsageLedger.graphIdentity(of: receiptTaskRecord(id: "x", graphID: graphID)).graphID,
+           Optional(graphID))
+    expect("together with the node it was dispatched for",
+           UsageLedger.graphIdentity(of: receiptTaskRecord(id: "x", graphID: graphID)).nodeID,
+           "receipt-persistence")
+
+    // A task with no graph still has no graph. The producer must not invent one, or the column
+    // stops meaning "this task's feature" and starts meaning "something was written here".
+    expect("a record without one imports too", UsageLedger.shared.importTaskRecords([
+        receiptTaskRecord(id: "task-no-graph", graphID: nil, session: "sess-none"),
+    ]), 1)
+    expect("and leaves the column unknown rather than filled",
+           UsageLedger.shared.rows(taskID: "task-no-graph").first?.graphID, String?.none)
+    let blankGraph: [String: Any] = ["graph": ["id": "  "] as [String: Any]]
+    expect("an empty string is not an id either",
+           UsageLedger.graphIdentity(of: blankGraph).graphID, String?.none)
+
+    // The dimension is no longer published as one nothing writes, and the route reads the list
+    // rather than a second copy of it.
+    expect("graph_id has left the unavailable list", UsageLedger.unavailableDimensions,
+           ["disposition"])
+    expect("while the six lineage columns are unchanged", UsageLedger.lineageColumns,
+           ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state", "disposition"])
+
+    // **Lineage belongs to the task, not to its first segment.** A session that switched model
+    // mid-task leaves that task's tokens on two rows, and a backfill that fills only the key it
+    // computes — segment 0 — names the feature on the smaller half. Measured on this Mac on
+    // 2026-09-06: 314 of 832 task rows sat above segment 0, and they carried 79.6% of the tokens
+    // belonging to tasks the registry still held.
+    var opening = ledgerSample(.claude, session: "sess-multi", boundary: .task, id: "task-multi",
+                               origin: .dispatch,
+                               usage: ["input": 10, "output": 5, "cache_read": 0,
+                                       "cache_write": 0, "total": 15],
+                               model: "claude-opus-5")
+    opening.taskID = "task-multi"
+    UsageLedger.shared.observeNow(opening)
+    var afterSwitch = opening
+    afterSwitch.model = "claude-sonnet-5"
+    afterSwitch.rawUsage = ["input": 20, "output": 10, "cache_read": 0,
+                            "cache_write": 0, "total": 30]
+    UsageLedger.shared.observeNow(afterSwitch)
+    expect("a task whose model changed mid-session has its tokens on two rows",
+           UsageLedger.shared.rows(taskID: "task-multi").map(\.segmentNo), [0, 1])
+    expect("neither of which names a feature before the record arrives",
+           UsageLedger.shared.rows(taskID: "task-multi").compactMap(\.graphID), [])
+    UsageLedger.shared.importTaskRecords([
+        receiptTaskRecord(id: "task-multi", graphID: graphID, session: "sess-multi"),
+    ])
+    expect("and the backfill fills every segment of it, not only the first",
+           UsageLedger.shared.rows(taskID: "task-multi").compactMap(\.graphID),
+           [graphID, graphID])
+}
+
+group("a review verdict and a verification receipt outlive the task directory that held them") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let url = store.appendingPathComponent("usage.sqlite3")
+    let graphID = "00b1381b-fa4a-4d0a-bcdd-5813ded9b1ea"
+    let other = "11112222-3333-4444-5555-666677778888"
+
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-passed", graphID: graphID, review: passingReviewReceipt(),
+        verification: ["runs": 2, "seconds": 940, "last": "pass",
+                       "scope": "swift suite + web-schedules"]))
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-findings", graphID: graphID, review: findingReviewReceipt(),
+        verification: ["runs": 1, "seconds": 61, "last": "fail", "scope": "focused"],
+        session: "sess-findings"))
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-elsewhere", graphID: other, review: passingReviewReceipt(),
+        session: "sess-elsewhere"))
+
+    expect("the store is at the version that keeps receipts",
+           usageStoreScalar(url, "PRAGMA user_version;"), String(UsageLedger.storeVersion))
+    // Asking the store for `String(UsageLedger.storeVersion)` compares the constant with itself:
+    // move it and both sides move together. The literal below is the other copy of that number —
+    // `if version < 6` in `migrate(_:)` — and the pair only stays honest while something names
+    // the digit. Together with "an upgraded store grows the receipt tables too" in
+    // `UsagePortfolioAndLifecycleTests`, this is what makes a wrong `storeVersion` go red rather
+    // than quietly leaving every existing install without the four tables.
+    expect("and that version is the one the migration branches on", UsageLedger.storeVersion, 6)
+
+    // The acceptance this whole change exists for: ask by feature, get that feature's receipts.
+    let byFeature = UsageLedger.shared.reviewReceipts(.graph(graphID))
+    expect("both of this feature's reviews come back", byFeature.count, 2)
+    check("and only this feature's", byFeature.allSatisfy { $0.graphID == graphID })
+    expect("the other feature's review is not among them",
+           UsageLedger.shared.reviewReceipts(.graph(other)).map(\.taskID), ["task-elsewhere"])
+    expect("each one naming the node it was the verdict of",
+           Set(byFeature.compactMap(\.nodeID)), ["receipt-persistence"])
+
+    let findings = byFeature.flatMap(\.findings)
+    expect("every finding of this feature is one query away", findings.count, 2)
+    expect("with its severity", Set(findings.map(\.severity)), ["blocking", "minor"])
+    expect("its id", Set(findings.map(\.findingID)), ["F1", "F2"])
+    expect("the axis it was filed under",
+           Set(findings.map(\.axis)), ["repository_invariants"])
+    expect("and the evidence strings whole, in order",
+           findings.first(where: { $0.findingID == "F1" })?.evidence,
+           ["tools/check-architecture-boundaries.sh:1", "the run that produced 9,544"])
+
+    let passed = byFeature.first { $0.taskID == "task-passed" }
+    expect("a clean verdict keeps all three axes", passed?.axes.count, 3)
+    expect("in the order the reviewer answered them",
+           passed?.axes.map(\.axis),
+           ["specification", "repository_invariants", "runtime_failure_behavior"])
+    expect("and is stored as safe_to_land", passed?.verdict, "safe_to_land")
+    expect("while the one with findings is not", byFeature.first {
+        $0.taskID == "task-findings"
+    }?.verdict, "changes_required")
+
+    let verifications = UsageLedger.shared.verificationReceipts(.graph(graphID))
+    expect("both verification receipts are kept as well", verifications.count, 2)
+    let verified = verifications.first { $0.taskID == "task-passed" }
+    expect("with the runs the task reported", verified?.runs, 2)
+    expect("the seconds", verified?.seconds, 940)
+    expect("the outcome", verified?.last, "pass")
+    expect("and the scope", verified?.scope, "swift suite + web-schedules")
+
+    // A receipt is written whole or not at all: a record missing one of the four fields is not a
+    // verification with a gap in it, and a `0` written where nothing was reported is the shape
+    // this store exists to refuse.
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-partial", graphID: graphID,
+        verification: ["runs": 1, "last": "pass", "scope": "focused"],
+        session: "sess-partial"))
+    check("a verification missing its seconds is not stored as zero seconds",
+          UsageLedger.shared.verificationReceipts(.task("task-partial")).isEmpty)
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-verdictless", graphID: graphID,
+        review: ["axes": [["axis": "specification", "status": "pass", "findings": []]]],
+        session: "sess-verdictless"))
+    check("and a review with no verdict is not a review",
+          UsageLedger.shared.reviewReceipts(.task("task-verdictless")).isEmpty)
+
+    // **The receipt has to survive a task with no usage row of its own.** A record whose session
+    // was never known and which carries no usage produces no interval at all — and its verdict
+    // is the most durable thing about it. A foreign key here would lose it exactly where the
+    // accounting is already thinnest.
+    check("a record that produces no usage row is not imported as one",
+          !UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+              id: "task-unmeasured", graphID: graphID, review: passingReviewReceipt(),
+              session: nil, usage: nil)))
+    expect("and its verdict is kept anyway",
+           UsageLedger.shared.reviewReceipts(.task("task-unmeasured")).first?.verdict,
+           "safe_to_land")
+
+    // The same record arrives many times — at finalize, when a landing is recorded, and once per
+    // launch from the backfill. Importing it again must not double the findings.
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-findings", graphID: graphID, review: findingReviewReceipt(),
+        verification: ["runs": 1, "seconds": 61, "last": "fail", "scope": "focused"],
+        session: "sess-findings"))
+    expect("a second import of the same record is still one receipt",
+           UsageLedger.shared.reviewReceipts(.task("task-findings")).count, 1)
+    expect("with the same two findings under it",
+           UsageLedger.shared.reviewReceipts(.task("task-findings")).first?.findings.count, 2)
+
+    // **`recorded_at` is when the finding was first seen, not when this Mac last launched.** The
+    // same record arrives at finalize, at landing and once per launch, and the replace that keeps
+    // the list honest was re-stamping every finding with the clock of the import that rewrote it.
+    let firstSeen = usageStoreScalar(url, """
+        SELECT recorded_at FROM task_review_findings
+         WHERE task_id = 'task-findings' AND finding_id = 'F1';
+        """)
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-findings", graphID: graphID, review: findingReviewReceipt(),
+        session: "sess-findings"), now: Date().addingTimeInterval(86_400))
+    expect("a later arrival of the same finding keeps the time it was first recorded",
+           usageStoreScalar(url, """
+               SELECT recorded_at FROM task_review_findings
+                WHERE task_id = 'task-findings' AND finding_id = 'F1';
+               """), firstSeen)
+    expect("and no finding is left carrying the clock of that later arrival",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM task_review_findings
+                WHERE task_id = 'task-findings' AND recorded_at > \(Date().timeIntervalSince1970);
+               """), "0")
+
+    // **The replace has to be live, not merely harmless.** The primary key on
+    // `(task_id, axis, finding_id)` already stops a second import doubling a finding, so the
+    // check above passes with or without the DELETE that precedes the inserts — it says nothing
+    // about whether that DELETE is dead code. A *shorter* list is the case that separates them:
+    // without the replace, re-inserting F1 collides, the whole write rolls back, and F2 is still
+    // standing afterwards. Production cannot currently produce a shorter list — the receipt at
+    // the source is write-once — so this is a check on what `persistReview` promises rather than
+    // on a sequence the broker performs today.
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-findings", graphID: graphID,
+        review: ["verdict": "changes_required",
+                 "axes": [["axis": "repository_invariants", "status": "findings",
+                           "findings": [["id": "F1", "severity": "blocking",
+                                         "summary": "the one that was left",
+                                         "evidence": ["tools/check-architecture-boundaries.sh:1"]]]]]],
+        session: "sess-findings"))
+    let shortened = UsageLedger.shared.reviewReceipts(.task("task-findings")).first
+    expect("a shorter finding list replaces the longer one rather than merging into it",
+           shortened?.findings.map(\.findingID), ["F1"])
+    expect("and the axes go with it", shortened?.axes.map(\.axis), ["repository_invariants"])
+
+    // The two clocks this outlives, asked of the store rather than of a comment: the receipt is
+    // in a table of its own, so nothing that sweeps a task directory or evicts a registry row
+    // can reach it.
+    expect("the receipts live in their own tables, not in the interval",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+                AND name IN ('task_review_receipts', 'task_review_axes',
+                             'task_review_findings', 'task_verification_receipts');
+               """), "4")
+    expect("and a feature's blocking findings are one SQL question",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM task_review_findings
+                WHERE graph_id = '\(graphID)' AND severity = 'blocking';
+               """), "1")
 }
 
 }

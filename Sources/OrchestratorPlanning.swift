@@ -549,10 +549,59 @@ extension Orchestrator {
          }]
     }
 
+    /// **Whether this task's role is review**, which is a fact about the task rather than about
+    /// one spelling of one field.
+    ///
+    /// The second half of this used to read `task.kind == "review"`, and what was wrong with it
+    /// was not that the word never arrives — it does, 31 times in this Mac's registry.
+    /// `kind` is unvalidated free text: `OrchestratorDraft` keeps the first forty characters of
+    /// whatever the caller sent (`Sources/OrchestratorDraft.swift:487`) and nothing anywhere
+    /// compares it with a vocabulary, so **any closed enumeration of it drifts** away from what
+    /// is actually being sent. The spelling that literal left out is the one the documentation
+    /// publishes and dispatchers overwhelmingly use: a `code-review` with no graph was never
+    /// asked for a verdict at all.
+    /// Measured against this Mac's registry on 2026-09-06 — 353 records carrying nine distinct
+    /// kinds — 56 `code-review` tasks, of which the 38 dispatched without a graph carried no
+    /// typed verdict between them while 15 of the 18 with one did, and the findings those 38
+    /// reviews produced went into a task directory that is swept twenty-four hours later.
+    ///
+    /// So: the graph decides whenever there is one. A `correction` node dispatched as
+    /// `code-review` is a correction, and its receipt is each finding closed with an owner rather
+    /// than a fresh verdict. Only a task with no graph falls back to its dispatch kind, and that
+    /// kind is read as words rather than compared with a literal.
     static func requiresTypedReview(_ task: Task) -> Bool {
-        task.graph?.nodes.first(where: {
-            $0.id == task.graph?.currentNode
-        })?.kind == .review || task.kind == "review"
+        if let graph = task.graph,
+           let node = graph.nodes.first(where: { $0.id == graph.currentNode }) {
+            return node.kind == .review
+        }
+        return kindDenotesReview(task.kind)
+    }
+
+    /// A dispatch kind names a review when one of its words is the word the graph uses for the
+    /// role: `code-review`, `review`, `Code_Review` and `security review` all qualify, while
+    /// `custom`, `test` and `image` do not.
+    ///
+    /// Splitting into words beats matching a list because `kind` is a free-form 40-character
+    /// string on the dispatch route — a list is a guess about which spellings people will send,
+    /// and the last guess was wrong in the one way nothing could see. Deriving the word from
+    /// ``GraphNodeKind/review`` rather than typing it again keeps the two vocabularies from
+    /// drifting apart in the same silent direction.
+    ///
+    /// **`non-review`, `pre-review-cleanup` and `review-tooling` are read as review roles, and
+    /// that is the decision rather than an accident.** Reading words cannot tell a negation from
+    /// a subject, and the two errors do not cost the same: a false positive asks a task that
+    /// owed nothing for a typed verdict, which is one section of briefing and one receipt
+    /// somebody did not need; a false negative loses a whole finding set to a task directory
+    /// swept twenty-four hours later, which is the failure this predicate exists to end. So this
+    /// leans towards asking. The registry it was measured against on 2026-09-06 holds no such
+    /// kind — every one of the 38 graphless `code-review` titles was a real review — and if one
+    /// ever arrives the answer is a graph on the dispatch, which decides above this line.
+    /// `Tests/OrchestratorDraftTests.swift` pins `non-review` to `true` so that narrowing this
+    /// is a decision somebody makes on purpose rather than a tightening that looks like a fix.
+    static func kindDenotesReview(_ kind: String) -> Bool {
+        kind.lowercased().split(whereSeparator: { character in
+            !character.isLetter && !character.isNumber
+        }).contains { $0 == GraphNodeKind.review.rawValue }
     }
 
     static func typedReviewReporting(for task: Task) -> String {

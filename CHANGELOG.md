@@ -60,6 +60,33 @@ tier the control plane does not sell. Every one of those is a sentence you can a
 spinner that never stops, and it says which of the two ends is the one still waiting.
 
 The page speaks the same fourteen languages the rest of the app does.
+### Fixed: what a review caught stopped disappearing after a day
+
+Reviews were producing findings and then losing them. A task's directory under `/tmp/.clawdline/`
+is swept twenty-four hours after it ends, taking the evidence with it, and the registry row that
+holds the verdict itself ages out at 1,350 rows or thirty days. So "what did the review of that
+feature actually find, and what did it cost to find it" had no surviving answer.
+
+Two things were wrong under that. The check deciding which tasks owe a typed verdict compared the
+dispatch kind with the single word `review`. That field is free text — the dispatch route keeps
+whatever it is handed, up to forty characters, and nothing validates it — so a comparison with one
+spelling is a guess about what people will send, and the spelling it left out was the one the
+documentation publishes: a `code-review` with no graph was never asked for a verdict. Measured on
+one machine's registry on 2026-09-06: of 56 `code-review` tasks, the 38 dispatched without a graph
+carried no verdict between them, while 15 of the 18 with one did. It asks the task's *role* now: the graph node when the task has one, and the
+dispatch kind read as words when it does not, so `code-review` counts and a correction node
+dispatched as `code-review` is still a correction.
+
+And every token this app has ever recorded was filed under no feature at all. Both usage collectors
+read a flat `graph_id` key, while a stored task record has always carried its graph as a nested
+object — so the column was empty on all 1,052 rows, against a registry holding 105 tasks that carry
+a graph. It reads the nested id now, and every row of a task the registry still holds fills in on
+the next launch — a task that crossed a model switch or a midnight has its tokens on several rows,
+and filling only the first one would have reached 20.4% of them.
+
+The verdict, its three axes, every finding with its severity and evidence, and the verification
+record now live in the same store as the tokens. Nothing sweeps them, and because they sit beside
+the usage rows, a feature's findings and what that feature cost are one query apart.
 
 ### Added: a session can show you a picture on its own card
 

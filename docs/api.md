@@ -4220,10 +4220,15 @@ Existing accounting and incident tools therefore do not receive a replacement co
 an old URL. They remain authenticated reads; the CSV is forensic rather than privacy-safe and must
 not be exposed as a public download.
 
-The legacy payload and analytics payload use the same unavailable-column answer:
-`graph_id` and `disposition`. Feature is no longer called an unavailable column; it is an
-append-only accepted-attribution projection available in analytics Portfolio responses, not a new
-grouping mode retrofitted onto the legacy aggregate URL.
+The legacy payload and analytics payload use the same unavailable-column answer: `disposition`.
+`graph_id` left that answer in store version 6, when the collectors were pointed at the nested
+`graph.id` the task record has always carried; the column now has a producer, though rows written
+before it, for tasks the registry has since evicted, keep an honest NULL. The launch backfill fills
+every row of a task the registry still holds, not only the first segment of it. Feature is not called an
+unavailable column either; it is an append-only accepted-attribution projection available in
+analytics Portfolio responses, not a new grouping mode retrofitted onto the legacy aggregate URL.
+A dimension having a producer is a separate question from this route offering a view grouped by it,
+which is what the three `…View` flags below answer.
 
 ### `GET /v1/orchestrator/usage/analytics`, `/analytics.csv`, `/analytics.json`
 
@@ -4299,8 +4304,8 @@ All three take the same closed query and none starts anything. Unknown keys and 
   "rowCount":99,
   "corrections":0,
   "schemaVersion":1,
-  "unavailableDimensions":{"dimensions":["graph_id","disposition"],
-                           "reason":"A whole graph, accepted outcome, or Feature requires explicit lineage or accepted attribution. …",
+  "unavailableDimensions":{"dimensions":["disposition"],
+                           "reason":"An accepted outcome, or Feature, requires explicit lineage or accepted attribution. …",
                            "graphView":false,"retryView":false,"landingView":false,
                            "featureView":true,
                            "featureAvailability":"one_unambiguous_accepted_head_or_unknown"},
