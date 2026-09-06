@@ -1574,6 +1574,53 @@ protocol Copy {
     var webProjectBusy: String { get }
     var webProjectFailed: String { get }
 
+    // The verification ledger page.
+    var webLedger: String { get }
+    var webLedgerLede: String { get }
+    var webLedgerLoading: String { get }
+    var webLedgerUnavailable: String { get }
+    var webLedgerEmpty: String { get }
+    var webLedgerRead: String { get }
+    var webLedgerTruncated: String { get }
+    var webLedgerListTruncated: String { get }
+    var webLedgerReceiptsTruncated: String { get }
+    var webLedgerFeature: String { get }
+    var webLedgerTasks: String { get }
+    var webLedgerSeen: String { get }
+    var webLedgerFindings: String { get }
+    var webLedgerReviewedClean: String { get }
+    var webLedgerVerification: String { get }
+    var webLedgerVerificationSay: String { get }
+    var webLedgerTokens: String { get }
+    var webLedgerImplementation: String { get }
+    var webLedgerReview: String { get }
+    /// A token bucket of its own, because a row whose task never said what kind of work it was
+    /// is not evidence that it was implementation.
+    var webLedgerUndeclared: String { get }
+    var webLedgerUndeclaredSay: String { get }
+    /// **The weakest sentence on the ledger page, and it is worded like it.** A receipt whose
+    /// write failed leaves a log line and no column, so this may only be read as "this Mac holds
+    /// no such receipt" — never as "nobody reviewed it".
+    var webLedgerNoRecord: String { get }
+    var webLedgerNoRecordSay: String { get }
+    /// There are rows and not one of them measured anything. Drawn in its own words and never
+    /// as `0`: an unknown rendered as a number is the defect this whole page exists to end.
+    var webLedgerNotMeasurable: String { get }
+    var webLedgerNotMeasurableSay: String { get }
+    var webLedgerAtLeast: String { get }
+    var webLedgerFloorSay: String { get }
+    var webLedgerRows: String { get }
+    /// The block above every Feature: records carrying no Feature key at all, which the backfill
+    /// only fills at app launch, and which every figure below is therefore short by.
+    var webLedgerUnattributed: String { get }
+    var webLedgerUnattributedSay: String { get }
+    var webLedgerVerdicts: String { get }
+    var webLedgerAxes: String { get }
+    var webLedgerEvidence: String { get }
+    var webLedgerOpenLabel: String { get }
+    var webLedgerNotFound: String { get }
+    var webLedgerFailed: String { get }
+
     // Menu bar
     var menuOpen: String { get }
     var menuReveal: String { get }

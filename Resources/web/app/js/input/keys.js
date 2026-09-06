@@ -10,6 +10,7 @@ import { closeAgent, move, select } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
 import { Sidebar } from "./sidebar.js";
 import { Projects } from "../view/projects.js";
+import { Ledger } from "../view/ledger.js";
 import { Settings } from "./settings.js";
 import { Start } from "./start.js";
 import { Command } from "./command.js";
@@ -89,6 +90,10 @@ document.addEventListener("keydown", function (ev) {
              spent here either way — testing its result would send the second step on to the
              branch below, which is the two-things-for-one-press this order exists to prevent. */
           if (Pages.current() === "projects") { Projects.escape(); return; }
+          /* The verification ledger has the same step inside it and takes the same place in
+             this chain for the same reason: one Feature is open *inside* the page, so the first
+             press gives the list back and only the second leaves. */
+          if (Pages.current() === "ledger") { Ledger.escape(); return; }
         /* Leaving a page, once, for every page there is. This was `els.settings.hidden` and a
            `Settings.close()` that is itself one line — `Pages.goHome()` — while the Usage page
            answered Escape from a second `keydown` listener of its own inside `view/usage.js`.

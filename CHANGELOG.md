@@ -79,6 +79,42 @@ which is what a banner drawn over the app hands back when it goes. What stops on
 out twice is the tap's own id, which was always the thing doing that work; the flag beside it was
 only ever an economy, and the economy was the bug. The cost of dropping it is one small store read
 per list, which is a fraction of the render it sits beside.
+### Added: a page that says what reviewing each Feature found, and what it cost
+
+There was nowhere to look. Mutation testing and reviews were finding real things, corrections were
+fixing them, and all of it lived in a task directory that gets swept twenty-four hours later — so
+the only durable answer to *what did we catch, and what did catching it cost* was somebody's
+memory. The receipts are stored now, and this is the page that reads them.
+
+**Verification ledger** is a new row in the drawer, beside Usage. One card per Feature:
+
+- **what its reviews found** — every finding, worst first, with the evidence the reviewer named,
+  and the severity distribution beside it;
+- **what proving it cost** — runs, seconds, and how many of those runs ended red;
+- **and where the tokens went** — implementation on one line, review on the next.
+
+**The reason this page is careful is one number.** A review of the work behind it measured 20.4% of
+this Mac's token records carrying the Feature key they belong to, which means 48 Features would
+have reported that they cost nothing at all. So the page never draws a missing figure as `0`. A
+Feature with no receipt says *no record*; rows that measured nothing say *not measurable*; and
+records that carry no Feature key at all are a block of their own above the list, because every
+figure below is short by exactly that much. Those are three different sentences on purpose — a
+screen that showed one grey rectangle for all three would be the bug this page exists to show.
+
+Two more of the same kind. Rows whose task never said what sort of work it was get a line of their
+own rather than being counted as implementation, because that would be a claim nothing on the row
+supports. And *this Mac holds no review receipt for this Feature* is never written as *nobody
+reviewed it*: a receipt whose write fails leaves only a log line, and the page says the weaker
+thing because the weaker thing is what is known.
+
+Each Feature is drawn under the destination it was dispatched for, with its id beside it. That
+name comes out of the task registry, which is swept, so a Feature older than the window has an id
+and nothing else — and the page draws the id rather than a name rebuilt out of whatever is left.
+Where the answer is cut short it says so and says which cut: the interval scan reaching its
+ceiling, the receipt read reaching its own, and the list itself stopping at five hundred Features
+are three different sentences, because they are three different facts.
+
+`GET /v1/orchestrator/usage/verification-ledger` is the read behind it, in all fourteen languages.
 
 ### Changed: the machine closes the landings it can prove, instead of only counting them
 

@@ -98,6 +98,12 @@ export function paintStatic() {
     text(els["projects-title"], T.webProjects);
     text(els["projects-lede"], T.webProjectsLede);
     text(els["projects-back"], "\u2039 " + T.webProjects);
+    // The verification ledger's own furniture: its drawer row, the two lines that are there
+    // before any answer is, and the way back out of one Feature.
+    text(els["nav-ledger"], T.webLedger);
+    text(els["ledger-title"], T.webLedger);
+    text(els["ledger-lede"], T.webLedgerLede);
+    text(els["ledger-back"], "\u2039 " + T.webLedger);
     text(els["settings-title"], T.webSettings);
     text(els["settings-notify-title"], T.webSettingsNotify);
     text(els["settings-assistant-icons-title"], T.webSettingsAssistantIcons);

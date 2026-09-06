@@ -382,7 +382,17 @@ fi
 #                                          wrote a number here and neither was wrong on its own
 #                                          tree; the sum is not a measurement. `wc -l` on the
 #                                          merged file says 5,878.
-remote_server_ceiling=5878
+#                                          **5,898 with the verification ledger's registration**,
+#                                          and twenty lines is the whole of what that route costs
+#                                          this file: six for the `case` — parse, refuse, read,
+#                                          answer — five for its comment saying why the body is
+#                                          not here, six blank/closing, and three inside
+#                                          `isUsageAnalyticsReading` putting it on the analytics
+#                                          worker beside the two reads of the same store. The
+#                                          handler itself is `Sources/VerificationLedgerRoute.swift`,
+#                                          which is where a route that grows may grow. Measured:
+#                                          `wc -l` on this tree says 5,898.
+remote_server_ceiling=5898
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -428,8 +438,21 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # the notification-address slice's — and each was right about its own tree, so `git` had two
 # identical-looking claims and no way to see that the merged tree has both. The number below is
 # what the merged tree counts, not what either side agreed on.
-[ "$runner_count" -eq 38 ] \
-  || architecture_guard_fail "ordered domain runner count is $runner_count; expected 38"
+# 39 with the verification ledger's runner. `Tests/UsageLedgerTests.swift` stood at 1,914 lines
+# against the 2,000-line stop-growth limit below and these four groups are 280, which is 2,194 —
+# the same wall six of the runners above met, and the same answer. It is called straight after
+# `runUsagePortfolioAndLifecycleTests()`, which is where its groups run, so the executed order and
+# `expectedOrderedTestGroupTitles` move together and nothing above it shifts.
+# **The number is written once.** Both of the checks below used to carry it twice — once in the
+# comparison and once, spelled out, in the sentence the guard says when the comparison fails — and
+# the verification ledger's runner moved the first without the second. The guard stayed correct
+# and its failure message started naming the count before this one, which is worse than no
+# message: the next person to add a runner would have been told to write 38 back over the 39 that
+# is right. A guard exists to tell somebody what to do, so the expected count and the sentence
+# that reports it read the same variable.
+runner_count_expected=39
+[ "$runner_count" -eq "$runner_count_expected" ] \
+  || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
   in_manifest && /^\]/ { in_manifest = 0 }
@@ -618,8 +641,13 @@ done
 # `expectedOrderedTestGroupTitles` does not move for it.
 # **51, for the same reason and by the same arithmetic as the runner count above**: both parents
 # added a suite file and both still said 50. Measured on the merged tree.
-[ "$suite_count" -eq 51 ] \
-  || architecture_guard_fail "suite file count is $suite_count; expected 51"
+# 52 with Tests/VerificationLedgerTests.swift; see the runner-count note above for why the four
+# groups that answer for one route are their own file rather than four more in a suite eighty-six
+# lines from the limit.
+# One owner for the number, for the reason written above the runner count.
+suite_count_expected=52
+[ "$suite_count" -eq "$suite_count_expected" ] \
+  || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
 # what this refactor exists to abolish. It is defensible only as a migration step, and only if it

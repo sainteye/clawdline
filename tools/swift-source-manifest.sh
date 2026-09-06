@@ -118,6 +118,7 @@ clawdline_production_sources=(
   Sources/UsageFeatureAttribution.swift
   Sources/UsageFeatureClassifier.swift
   Sources/UsageLedger.swift
+  Sources/VerificationLedgerRoute.swift
   Sources/Voice.swift
   Sources/WebPush.swift
   Sources/Whisper.swift
@@ -182,6 +183,7 @@ clawdline_test_sources=(
   Tests/UsageLedgerTests.swift
   Tests/UsagePortfolioAndLifecycleTests.swift
   Tests/UsageProjectWorktreeTests.swift
+  Tests/VerificationLedgerTests.swift
   Tests/main.swift
 )
 

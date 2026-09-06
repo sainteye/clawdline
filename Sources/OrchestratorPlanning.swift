@@ -555,6 +555,35 @@ extension Orchestrator {
         }
     }
 
+    /// **Every graph this Mac still remembers, with the destination it was dispatched for.**
+    ///
+    /// The one readable name a Feature has on this side. It is not durable and this does not
+    /// pretend otherwise: the task registry is swept, so a graph older than the window is simply
+    /// not in this dictionary, and the read that calls it writes `null` rather than inventing
+    /// something. An id under the word `Feature` is the honest answer once the name is gone; a
+    /// label that is right for a fortnight and quietly wrong afterwards is not, and neither is a
+    /// name reconstructed from whatever rows happen to be left.
+    ///
+    /// Newest task per graph, the same rule ``graphRecords()`` uses, because a graph re-dispatched
+    /// under a second destination should read as the destination it was last sent for.
+    static func graphDestinations() -> [String: String] {
+        lock.lock(); let indexed = tasks; lock.unlock()
+        var newest: [String: Task] = [:]
+        for task in indexed.values {
+            guard let graph = task.graph else { continue }
+            if newest[graph.id].map({ $0.created < task.created }) ?? true {
+                newest[graph.id] = task
+            }
+        }
+        var out: [String: String] = [:]
+        for (id, task) in newest {
+            guard let destination = task.graph?.destination else { continue }
+            let name = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { out[id] = name }
+        }
+        return out
+    }
+
     static func storedPlanningGraph(_ graph: PlanningGraph) -> [String: Any] {
         ["id": graph.id, "destination": graph.destination,
          "current_node": graph.currentNode,

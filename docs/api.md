@@ -154,6 +154,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `GET` | `/v1/orchestrator/usage/analytics.csv` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage/analytics.json` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage/project-worktrees` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/usage/verification-ledger` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/whoami` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
@@ -4680,6 +4681,122 @@ and the Cloud path fills it in twice; over that transport the page says the conn
 Projects instead of drawing a list it cannot fill. It draws the branch as
 `clawdline/task/<worktree id>` under a label saying the value is this document's convention rather
 than a field of the payload.
+
+### `GET /v1/orchestrator/usage/verification-ledger?graph=<id>`
+
+**What each Feature's reviews found, what proving it cost, and how its tokens divided between
+building the work and reading it.**
+
+Store version 6 made four tables durable — `task_review_receipts`, `task_review_axes`,
+`task_review_findings` and `task_verification_receipts` — each carrying the `graph_id` that names
+the Feature, and gave `usage_intervals.graph_id` the producer it had been waiting for. That was
+storage. This is the read, and it exists because the findings a task directory used to hold were
+swept twenty-four hours later while the numbers beside them stayed.
+
+With no `graph` it is the list, newest Feature first. With one it is that Feature, its findings
+worst-first with the evidence each reviewer named, and the axes every review answered on. Unknown
+or repeated keys are `400 bad_request`, for the same reason they are on the analytics query.
+
+**Every quantity is in one of three states and the last two are `null`, never `0`.**
+
+| `state` | what it means |
+|---|---|
+| `present` | there are records here and they say something. `total` is a number, and a `total` of `0` means somebody measured zero |
+| `absent` | this Mac holds no such record for this Feature. `total`, `measured`, `runs` and `seconds` are all `null` |
+| `unknown` | there are records and not one of them measured anything. Also `null`, and it is **not** the same fact as `absent` |
+
+The rule is `UsageLedger`'s own, one level up: *available is a statement about the producer, not
+about every row*. A review of the work behind this page measured 20.4% of one Mac's token records
+carrying the Feature key they belong to, against 48 graphs that would have reported `0` — so a
+consumer that coalesces these three is reintroducing the defect the route was built to expose.
+
+**`absent` is the weakest sentence here and may not be strengthened.** A receipt whose write
+failed leaves a log line and no column — the receipt tables have no `coverage_reasons` of their
+own, and giving them one is a store version of its own — so "this Mac holds no review receipt for
+this Feature" is all `absent` supports. It is not "nobody reviewed it".
+
+**Tokens divide three ways, not two.**
+
+| bucket | which rows |
+|---|---|
+| `implementation` | the task's `kind` names no review role |
+| `review` | a stored review receipt names that task, **or** its `kind` names the role. The receipt outranks the kind: a verdict in the store is proof, whatever the dispatch called itself |
+| `undeclared` | the row carries no `kind` at all and no receipt names it. A rung, not a default: `LEFT JOIN … WHEN NULL THEN 'implementation'` is a claim about a side nothing on the row supports, and it lands hardest exactly where a review's receipt failed to write |
+
+The role is decided by `Orchestrator.kindDenotesReview`, the same predicate the graph and the
+broker share, rather than by a second list of spellings — `kind` is unvalidated forty-character
+free text and every closed enumeration of it has drifted.
+
+**`measured` and `total` are two quantities and both travel.** `total` is strict and goes `null`
+the moment one row in the bucket could not measure one of its four parts; `measured` is the sum of
+what was actually measured, which is a floor. A bucket with `state: "present"`, a `measured` and a
+`null` total is a floor and must be drawn as one — never added up with a total beside it.
+
+**Records that carry no Feature key are their own block.** `unattributed` has the shape of a
+Feature with `graphId: null`, and it is not merged into any Feature and not dropped. The backfill
+that fills `graph_id` runs at app launch, so on a Mac that has not relaunched this is most of the
+store, and every figure in `features` is short by exactly that much.
+
+**`label` is the destination the graph was dispatched for, and it is usually `null`.** It is read
+out of the live task registry, which is swept — so a Feature keeps its readable name for as long
+as its task is remembered and has an id for ever. Nothing rebuilds a label out of node titles,
+task titles or a project key once the destination is gone: a page whose subject is telling three
+answers apart may not answer *which Feature is this* with a reconstruction. The page draws the
+name when there is one and the bare id when there is not.
+
+**Three ceilings, three signals, and they are three different facts.** `truncated` is the interval
+scan reaching `UsageQueryService.maxScannedRows`. `receiptsTruncated` is the receipt read reaching
+its own — 5,000 review receipts, each of which costs two further statements for its axes and
+findings, or 20,000 verification receipts; the four receipt tables are durable by design, the
+registry is swept and they are not, so they only ever grow. `featuresListed` short of
+`featuresFound` is the list itself cut at `maxFeatures` (500). All three are drawn.
+
+| Query | Meaning |
+|---|---|
+| `graph` | optional. The graph id. Empty or absent is the list; a value this store never saw is `404 graph_not_found`, not an empty Feature |
+
+```json
+{"verificationLedger":{
+  "schemaVersion":1,
+  "features":[
+    {"graphId":"9b496e3e-…","label":"The verification ledger, per Feature","rows":6,"tasks":4,
+     "findings":{"state":"present","reviewReceipts":2,"total":3,
+                 "severities":[{"severity":"blocking","count":1},{"severity":"minor","count":2}],
+                 "truncated":false},
+     "verification":{"state":"present","receipts":3,"runs":6,"seconds":1840,"endedRed":1,
+                     "scopes":["swift suite"]},
+     "verdicts":[{"verdict":"changes_required","count":1},{"verdict":"safe_to_land","count":1}],
+     "tokens":{
+       "implementation":{"state":"present","rows":4,"unknownRows":0,"incompleteRows":0,
+                         "reasons":[],"measured":8412300,"total":8412300},
+       "review":{"state":"present","rows":2,"unknownRows":0,"incompleteRows":0,
+                 "reasons":[],"measured":3155900,"total":3155900},
+       "undeclared":{"state":"absent","rows":0,"unknownRows":0,"incompleteRows":0,
+                     "reasons":[],"measured":null,"total":null}},
+     "firstSeenAt":"2026-09-05T09:08:09Z","lastSeenAt":"2026-09-06T14:13:12Z"}],
+  "unattributed":{"graphId":null,"label":null,"rows":812,"tasks":210,
+                  "findings":{"state":"absent","…":null}},
+  "read":{"rowsScanned":1240,"featuresFound":3,"featuresListed":3,"truncated":false,
+          "receiptsTruncated":false,"at":"2026-09-06T15:00:00Z"}}}
+```
+
+One Feature — `?graph=9b496e3e-…` — answers `{"verificationLedger":{"schemaVersion":1,"feature":{…}}}`
+with the same object plus `items`, `axes` and a `read` receipt of its own:
+
+```json
+{"items":[{"findingId":"F1","severity":"blocking","summary":"…","axis":"runtime_failure_behavior",
+           "taskId":"3b674c4a-…","evidence":["Sources/UsageLedger.swift:3118"]}],
+ "axes":[{"taskId":"3b674c4a-…","axis":"specification","status":"pass","findingCount":0}]}
+```
+
+`items` is worst first — `blocking`, `important`, `minor`, then anything else, because `severity`
+is free text at the receipt boundary and a reviewer who invents a word still wrote a finding down.
+It is capped at 200 with `findings.truncated` saying so.
+
+**Not on the Cloud path**, on the same terms as the worktree join above: every read a paired
+viewer may name carries a session, and this one's subject is a Feature. The web page asks
+`typeof api.verificationLedger === "function"` and says so rather than drawing a list the
+transport cannot fill.
 
 ### `GET /v1/orchestrator/inventory?project=<dir>`
 

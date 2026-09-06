@@ -13,6 +13,7 @@ There is a place to *be* now. This page is how it works and what adding the next
 - [The address](#the-address)
 - [Adding a page](#adding-a-page)
 - [The Projects page](#the-projects-page)
+- [The verification ledger](#the-verification-ledger)
 - [Three things a browser found and no suite did](#three-things-a-browser-found-and-no-suite-did)
 - [Two more, from the page that followed](#two-more-from-the-page-that-followed)
 - [What deliberately did not change](#what-deliberately-did-not-change)
@@ -285,6 +286,51 @@ branch's position, because the mistake is invisible in a diff that touches one f
 independently — by the review of the slice that added the drawer, and again here — and was
 repaired there before this page landed, so the chain in `input/keys.js` is now the only place a
 page answers Escape.
+
+## The verification ledger
+
+`Resources/web/app/js/view/ledger.js`, styled in `app/css/ledger.css`, drawn from
+`Tests/web-ledger.mjs`. It is the second page added by the three things above and it cost exactly
+those three, plus one line in `input/keys.js` for the step it has inside itself.
+
+It answers one question per Feature —
+[`GET /v1/orchestrator/usage/verification-ledger`](api.md#get-v1orchestratorusageverification-ledgergraphid)
+— and the answer is three things: what its reviews found, what proving it cost in runs and
+seconds, and how its tokens divided between building the work and reading it.
+
+**Its subject is not a number, it is which of three answers a number is.** Every figure the route
+sends carries a `state`, and the page draws each one as a different kind of thing:
+
+| state | on screen |
+|---|---|
+| `present` | the figure, in the mono face, tabular |
+| `absent` | the words *no record*, dim and italic, with the sentence saying a failed receipt write leaves only a log line |
+| `unknown` | the words *not measurable*, in the warning colour with a rule under it |
+
+Weight, case, colour and shape all move between them, not only the hue: the difference has to
+survive a photograph and a colour-blind reader. **No branch of `drawState` can produce a `0` for
+the last two** — the number is read out of a payload field that is `null` in both states — and
+`Tests/web-ledger.mjs` asserts the absence of a digit rather than the presence of the right words,
+because a check that only compared text would stay green through the defect this page exists to
+prevent.
+
+**A floor is drawn as a floor.** A token bucket whose rows measured only part of what they spent
+has `measured` and no `total`, and it reads *at least n* — never `n`, which a reader would add up
+with the total beside it.
+
+**The block that names no Feature is above the list and outside every card.** The backfill that
+fills `graph_id` runs at app launch, so on a Mac that has not relaunched it is most of the store,
+and every figure below it is short by exactly that much. Hiding it would be answering a smaller
+question quietly.
+
+**The heading of a card is the graph id**, because that is the only name this side holds: a
+graph's destination lives in the task registry, which is swept. An id under a word saying it is
+one beats a label that is right for a fortnight and blank afterwards.
+
+One Feature opens as a **view inside the page**, the way a Project does and for the same reason —
+`#page=` is the whole fragment. So Escape has a step inside it, and that step lives in
+`input/keys.js` beside the Projects page's, never in a listener of this module's own: the suite
+refuses a `keydown` listener in `view/ledger.js` at all.
 
 ## Three things a browser found and no suite did
 

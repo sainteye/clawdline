@@ -146,6 +146,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/projects.css">
 <link rel="stylesheet" href="/app/css/usage.css">
 <link rel="stylesheet" href="/app/css/plan.css">
+<link rel="stylesheet" href="/app/css/ledger.css">
 
 <!-- Every module, named here so that all forty are asked for at once.
      `main.js` is the only script this document mentions, and a browser cannot know what it
@@ -191,6 +192,10 @@ document.documentElement.className = "booting";
              settings sheet. The name is what `usage.css` styles and what the Usage guard looks for;
              what it does is now the same as every other row here. -->
         <button class="sidebar-item" id="usage-open" type="button" data-page-to="usage">Usage</button>
+        <!-- Beside Usage, because it is the same subject read a different way: Usage answers
+             what was spent, this answers what the spending bought and what reviewing it found.
+             Three things and no new mechanism, exactly as `docs/web-pages.md` says. -->
+        <button class="sidebar-item" id="nav-ledger" type="button" data-page-to="ledger">Verification ledger</button>
         <!-- After the readings and before Settings. It is not a setting: nothing on it is a
              preference, and one of its buttons starts a payment. -->
         <button class="sidebar-item" id="nav-plan" type="button" data-page-to="plan">Plan</button>
@@ -775,6 +780,42 @@ document.documentElement.className = "booting";
      Every visible string here is replaced by `view/plan.js` on arrival, from `/v1/strings`. The
      English below is what a page whose strings never came back still shows — the same contract
      the rest of this document keeps. -->
+<!-- The verification ledger.
+
+     One question per Feature: what its reviews found, what proving it cost, and how its tokens
+     divided between building the work and reading it. Its whole subject is that a figure arrives
+     in one of three states — `present`, `absent`, `unknown` — and that the last two are drawn in
+     words rather than as `0`. See `app/js/view/ledger.js`. -->
+<section class="page ledger" id="ledger" data-page-view="ledger"
+         aria-labelledby="ledger-title" hidden>
+    <div class="ledger-shell">
+        <div id="ledger-list-view">
+            <div class="ledger-heading">
+                <div>
+                    <!-- `tabindex="-1"` so the keyboard can be handed the heading on arrival and
+                         on the way back from a Feature. -->
+                    <h1 id="ledger-title" tabindex="-1">Verification ledger</h1>
+                    <p class="ledger-lede" id="ledger-lede">What each Feature's reviews found, what proving it cost, and how its tokens divided between building the work and reading it.</p>
+                </div>
+                <span class="ledger-stat" id="ledger-count"></span>
+            </div>
+            <p class="ledger-status" id="ledger-status" role="status" aria-live="polite"></p>
+            <!-- Above the list and not inside any Feature: on a Mac that has not relaunched since
+                 the backfill landed, this is most of the store, and every figure below is short
+                 by exactly this much. -->
+            <section class="ledger-unattributed" id="ledger-unattributed" hidden></section>
+            <div class="ledger-rows" id="ledger-rows"></div>
+        </div>
+
+        <div id="ledger-detail-view" hidden>
+            <button class="ledger-back" id="ledger-back" type="button">&lsaquo; Verification ledger</button>
+            <h1 class="ledger-detail-title" id="ledger-detail-title">Feature</h1>
+            <p class="ledger-status" id="ledger-detail-status" role="status" aria-live="polite"></p>
+            <div class="ledger-rows" id="ledger-detail-rows"></div>
+        </div>
+    </div>
+</section>
+
 <section class="page page-plan" id="plan" data-page-view="plan" aria-labelledby="plan-title" hidden>
     <div class="plan-shell">
         <div class="plan-heading">

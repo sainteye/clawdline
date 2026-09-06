@@ -2464,6 +2464,23 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(refusal.status, refusal.code, refusal.message)
             }
 
+        // What each Feature's reviews found, and what the tokens on either side of that came to.
+        // **The whole handler is `Sources/VerificationLedgerRoute.swift` and only the registration
+        // is here**: this file is pinned to its own line count by
+        // `tools/check-architecture-boundaries.sh`, so a route that arrives as a body arrives as a
+        // receipt everybody has to move. It arrives as six lines instead.
+        case ("GET", "/v1/orchestrator/usage/verification-ledger"):
+            let parsed = VerificationLedgerService.parse(
+                request.query, repeatedKeys: request.repeatedQueryKeys)
+            guard let query = parsed.query else {
+                return .error(400, "bad_request", parsed.error ?? "Invalid ledger query.")
+            }
+            switch VerificationLedgerService().read(query) {
+            case .reading(let payload): return .json(["verificationLedger": payload])
+            case .refused(let refusal):
+                return .error(refusal.status, refusal.code, refusal.message)
+            }
+
         case ("GET", "/v1/orchestrator/root-assignments"):
             guard orchestratorAuthed else {
                 return .error(403, "forbidden",
@@ -4267,6 +4284,9 @@ final class RemoteServer: @unchecked Sendable {
             // The project-worktrees read is the same bounded scan of the same store, so it takes
             // the same worker and the same admission budget rather than a lane of its own.
             || path == "/v1/orchestrator/usage/project-worktrees"
+            // And the verification ledger is a third: the same interval scan, plus four receipt
+            // tables the same size order. Same worker, same budget.
+            || path == "/v1/orchestrator/usage/verification-ledger"
     }
 
     /// The slow optional reads that may be refused before they enter their worker queue.
