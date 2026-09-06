@@ -55,7 +55,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { routeTo, readWorkerTrace } from "./input/route.js";
+import { routeTo, readWorkerTrace, readWorkerWant } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import "./input/start.js";
@@ -388,6 +388,13 @@ function boot(data) {
     // page cannot see, and this is where they are read back — after `ready`, so that the entries
     // sit in the trace beside the routing they were supposed to cause.
     readWorkerTrace();
+    // And what that tap was *for*, which is the half that is acted on. `routeTo` above has already
+    // read the fragment this document was opened with, and on iOS that fragment is the manifest's
+    // `start_url` — the system opens the web app itself before the worker's handler runs, so a
+    // cold start arrives at `/` however specific the notification was. Read after the trace, so
+    // that a report taken from a phone shows the worker's entries and then the routing they
+    // caused, in the order they happened.
+    readWorkerWant();
 }
 
 /**
@@ -409,8 +416,10 @@ function watchForStaleness() {
         if (api && typeof api.revalidate === "function") api.revalidate("visible");
         // The other thing that may have happened while this page was away: somebody tapped a
         // notification. The worker ran, this page did not, and coming back is the first moment
-        // its half of the road can be read.
+        // its half of the road can be read — and, when the message it sent was dropped, the first
+        // moment anything can be done about it.
         readWorkerTrace();
+        readWorkerWant();
     });
 }
 

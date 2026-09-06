@@ -288,6 +288,31 @@ check("and adds no sixth listener nobody asked for",
         && messages[0].url === "/#session-9");
   check("and it is focused, because the point of the tap is to reach the session",
         focused.length === 1 && w.calls.opened.length === 0);
+  check("this URL names no session, so no record was left behind and the message carries no id",
+        messages[0].want === "");
+}
+{
+  // The same handler on a URL a notification is actually written with. The record it leaves in
+  // Cache Storage is `web-notification-route.mjs`'s subject — the stand-in here has no
+  // `caches.open`, on purpose, because a worker in a browser that refuses the store must still
+  // take every road it took before. What belongs to this suite is the message: the id that joins
+  // the two roads travels on it, and a page with no id cannot tell the record this tap left from
+  // one a second tap will leave.
+  const messages = [];
+  const client = {
+    focus: () => Promise.resolve(),
+    postMessage: (message) => { messages.push(message); },
+  };
+  const w = runWorker({ clients: () => [client] });
+  w.fire("notificationclick", eventFor(w.calls, {
+    notification: { close: () => {}, data: { url: "/#session=%25208" } },
+  }));
+  await Promise.all(w.calls.waited);
+  check("a notification naming a session sends the tap's own id beside the URL",
+        messages.length === 1 && messages[0].url === "/#session=%25208"
+        && typeof messages[0].want === "string" && messages[0].want.length > 0);
+  check("and a store that cannot be opened costs the tap nothing: the message road was still taken",
+        w.calls.opened.length === 0);
 }
 {
   // A client this worker does not control has no `postMessage` here; `navigate` is the fallback,
