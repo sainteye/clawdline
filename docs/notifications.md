@@ -292,13 +292,70 @@ Mac** beside it writes the same report to `~/Library/Logs/Clawdline/diagnostics/
 which is the path to read instead of asking anybody for a paste —
 [`docs/diagnostics.md`](diagnostics.md) is the whole of it.
 
-**Three pushes carry a session's name as their title and only two of them route.**
-`StateHook.sendPush` (waiting for you) and `announceDelivery` (delivered) both write
-`sessionURL`. `Orchestrator.announce` — a fan-out finishing — titles itself `label ?? project`,
-which is the root's own label, and falls back to `url: "/"` when the batch's root key is
-`task:<id>` (a root with no session id) or when the root no longer resolves to a target. On a lock
-screen that is indistinguishable from the other two, and tapping it correctly goes nowhere. The
-body is the tell: `finished 3 tasks` rather than `waiting for you` or `delivered`.
+**Every push whose title is a session's name now carries that session's address**, which was
+not true when this section was written: `Orchestrator.announce` — a fan-out finishing — titles
+itself `label ?? project`, the root's own label, and fell back to `url: "/"` whenever the batch's
+root key was `task:<id>` (a root with no session id) or the root no longer resolved. On a lock
+screen that was indistinguishable from *waiting for you*, and tapping it correctly went nowhere;
+the body was the only tell, `finished 3 tasks` rather than `waiting for you` or `delivered`. Four
+other producers were in the same state. The next section is the whole list, both halves of it.
+
+## Which pushes carry an address, and which cannot
+
+> **If the title is a session's or a task's own name, the push must carry that session's address.
+> If the title is nobody's name, `/` is the right answer.**
+
+Everything that reaches a phone goes through `Orchestrator.pushURL(forSessionID:)`, which is that
+rule with `WebPush.sessionURL` — the encoding — behind it. Where the id came from *outside* rather
+than off a record this Mac already holds, `pushURL(forSessionID:watching:)` checks it against the
+sessions being watched before promising it: **an address that opens nothing is worse than `/`**,
+because the list at least says what there is, while a fragment naming a session nobody has stops
+there with nothing on screen to say why.
+
+| push | what its title says | where it points |
+| --- | --- | --- |
+| `StateHook.sendPush` | the session that stopped to ask | that session |
+| `Orchestrator.announceDelivery` | the session that delivered | that session |
+| `Orchestrator.notify` (a task's own secret) | the task, by its title | the tab that task is running in |
+| `Orchestrator.agentNotify` (the machine token) | whatever the root called it | the session the caller named, when it named one |
+| `Orchestrator.announce` | the root's own label | the root; failing that, a task of the batch the watch still holds |
+| a scheduled task that failed or timed out | the schedule's title | the tab it ran in |
+| `DeployWatch` | the deploy | the session that deployed |
+| `POST /v1/push/test` | `Clawdline` | the session the phone named, while this Mac is still watching it |
+
+### And the five that stay `/`, with the reason each
+
+**This is the list somebody will otherwise "fix".** Not one of these has a session to name, and
+giving one an address would mean inventing a destination rather than finding one.
+
+| where | why there is no session to name |
+| --- | --- |
+| `Orchestrator.scheduleInventory` — a schedule file that will not parse | nothing has been started; the fault is in a file and there is no run to open |
+| `Orchestrator.sendSchedulePush` — a scheduled dispatch that was refused | the dispatch failed, so no tab was ever opened |
+| a scheduled task whose outcome is `spawnFailed` | the same reason one step later: `childTerminalId` is nil by construction for a tab-opening refusal. `Orchestrator.scheduleFailureSessionID(outcome:childTerminalId:)` is that one line, pure, so it can be held to it |
+| `SmartNotification.send`, the coalesced branch | its title is *N things finished at once* — the name of no session, and picking one of the eleven would be a claim about the other ten |
+| `Sources/main.swift`, `clawdline://push?test=1` | a Mac-side URL scheme with no session context |
+
+The last of those is the one that *could* take an id — `&session=` is a query parameter away — and
+it is deliberately left alone. The loop that needed closing is the one a person walks on a phone,
+and that is `POST /v1/push/test` with the button in Settings behind it. This scheme is fired from a
+hotkey utility or a shell script on the Mac, where what it would open is a browser tab on the
+machine you are already sitting at. A parameter nothing passes is a second spelling of the tested
+road, and it is the spelling that goes stale.
+
+### The test push is the loop, and its words are what keep it honest
+
+`POST /v1/push/test` takes an optional `session_id`, and the button in Settings sends whichever
+transcript is on screen — `S.openId`, not `S.selectedId`, which is only the highlight in the list.
+So the road can be walked on purpose instead of waited for: open a session, press the button, put
+the app in the background, tap what arrives, and the answer is the screen you land on.
+
+**The wording does not change either way.** The title stays `Clawdline` and the body stays
+`L.t.pushTest`, because *a test that arrived must never be mistaken for a session that needs you*
+is true on account of the words and not the address. Making it *look* like a session in order to
+make it feel real is the mistake this is written down to prevent, and
+`Tests/OrchestratorCoordinationTests.swift` pins both halves — the address it carries and the two
+things it says.
 
 ## The numbers
 

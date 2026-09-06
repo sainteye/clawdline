@@ -351,14 +351,24 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # 545, and the merged tree renders 548. A merge can only report disagreement, and a receipt's right
 # value is a function of the tree rather than of its two parents — so agreement between the parents
 # is not evidence. The guard caught it before the compiler started.
-expected_swift_receipt='9639 checks passed'
+# **9,582, and the arithmetic does not reach it from either number above — which is the point.**
+# The merge `0edd66b3` resolved this line to its first parent's 9,501/7,586 while keeping the
+# second parent's prose about 9,538/7,621 two paragraphs up, so the tree arrived already red: it
+# carried 7,627 assertion call sites against a witness of 7,586, and the guard said so before this
+# branch touched anything. Both sides had written a number here and neither was wrong on its own
+# tree, which is exactly the shape `git` does not mark as a conflict. So this value is not
+# 9,501 + this branch's checks and not 9,538 + them either; it is what one
+# `CLAWDLINE_RESEAL=1 ./test.sh` on this branch reported — 9,582, zero failures, all twelve Cloud
+# suites present, `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`. The witness came from the same
+# run's guard line, which named 7,665.
+expected_swift_receipt='9582 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7729
+expected_swift_receipt_witness=7665
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -858,6 +868,11 @@ fi
 for browser_contract_suite in "${browser_contract_suites[@]}"; do
   node "$browser_contract_suite"
 done
+# The test push and the button that fires it, joined: `net/live.js` driven for real and read off
+# the wire, and the real `Settings.test` driven against a stand-in transport and read off its
+# argument. Registered on a line of its own rather than in the roster above, because that array
+# carries a sealed count and a second session is adding to this file in the same window.
+node Tests/web-push-test-session.mjs
 # The web app's half of the run file this script now writes: the footer that draws a run in flight.
 # It arrives on another branch — the producer and the two readers were built at the same time — so
 # in a checkout that has only one of them this line is what says the other is missing, rather than
