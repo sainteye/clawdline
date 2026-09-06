@@ -258,13 +258,34 @@ that are actually landing. The write happens under the lock behind a compare-and
 record and task state the git answers were about, so a record that settled while git was running is
 left alone.
 
+**It compares against the ref the record names, and never against a better one.** Three of the
+twelve records measured below name `blog-reread-2026-09-06` as their target while their work
+actually reached `main`; that branch still exists and is eleven commits behind. Their claimed paths
+are clean and identical to `main`, so a sweep willing to substitute the repository's default branch
+would close all three — and it would then hold a record saying `target: blog-reread-2026-09-06,
+state: landed` about a branch that does not contain the work. **Which branch a record should have
+named is a person's decision**, it is settled by editing the record rather than by reading the tree,
+and a settled state may never move afterwards. So the sweep reports what it found — *N claimed paths
+differ from `refs/heads/blog-reread-2026-09-06`*, naming the ref it compared against — and leaves the
+row. That sentence is what tells a person the record names the wrong branch, which is the thing they
+can act on.
+
 **Measured, on this machine's own registry, before any of it shipped.** Of the twelve pending
 records the user was looking at on 2026-09-06, arm 1 would have closed none — not one of them had a
 delivery branch — and arm 2 would have closed eight. The four it leaves are the four that need a
-person: three name a target branch their work never reached, and one still has an uncommitted
-claimed path in the checkout. Closing eight takes five `touched_claims_without_closure` rows with
-them, so that card's twenty-one obligations become eight with no human judgement spent, and every
-one of the eight is a real question rather than a record nobody got round to writing.
+person: the three above, and one whose claimed paths are still uncommitted in the checkout. Closing
+eight takes five `touched_claims_without_closure` rows with them, so that card's twenty-one
+obligations become eight with no human judgement spent, and every one of the eight is a real
+question rather than a record nobody got round to writing.
+
+**And the twelve were closed by hand while this was being built, which is the cost rather than a
+counter-example.** Between 11:55:26 and 11:55:40 UTC on 2026-09-06 — fourteen seconds — a person
+settled all twelve with twelve separate `curl` calls, and every one of the resulting records is a
+genuine broker verification: `verification_origin: local_target_branch`, four distinct commits
+(`1527591f`, `9c3ca799`, `d9a0cf78`, `a52e42e5`), each confirmed contained by `main` at `64793579`.
+Nobody cut a corner. The door simply admits one record at a time and only when somebody remembers to
+walk through it, and three of the twelve needed their `target` changed on the way — which is exactly
+the half a machine must not do. What the sweep removes is the remembering, not the judgement.
 
 `tools/check-landing-records.py` and this sweep have to keep asking the same question. The guard
 still runs in `./test.sh` and still prints the `curl` for every row a person must settle; what it
