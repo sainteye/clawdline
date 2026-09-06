@@ -184,6 +184,14 @@ equal(columns("é"), 1, "an accented Latin letter is still one");
 equal(columns("─"), 1,
     "and box drawing is one, because that is what a terminal gives it");
 equal(columns("😀"), 2, "a surrogate pair is one character and two cells, not two of either");
+equal(columns("あ"), 2, "kana is wide, which is the half of CJK that is not Han");
+equal(columns("\u33ff"), 2, "and so is the top of the CJK compatibility block, where that range ends");
+// **The surrogate pair is read past, and this is the assertion that can tell.** `columns("\u{1F600}")`
+// is 2 whether the two units are joined into one wide character or counted as one cell each, so it
+// cannot see the branch at all. U+1D400 is supplementary and *narrow*: joined it is one cell,
+// unjoined it is two. Nothing else in this file distinguishes them.
+equal(columns("\u{1D400}"), 1,
+    "a supplementary character that is not wide is one cell, which is only true if the pair was joined");
 
 /* **The hanging indent, in those columns.** A row indented with two ideographic spaces hangs at
    four, and a test that passes at two is a test measuring the wrong thing. */
@@ -194,6 +202,12 @@ equal(styleOf(rows("  ok")), "padding-left:2ch;text-indent:-2ch",
     "and two ordinary spaces at two");
 equal(styleOf(rows("flush left")), "",
     "a row with no indent is given no indent to undo");
+// **Only the leading run counts, and the walk stops at the first segment that has content.** A
+// coloured row arrives as several segments, and the spaces *between* the colours are not indent:
+// `["  ", "ok"(red), " and"]` starts two cells in, not three.
+equal(styleOf(rows("  " + E + "[31mok" + E + "[39m and")),
+    "padding-left:2ch;text-indent:-2ch",
+    "the spaces between two coloured runs are not part of the indent");
 
 /* **The cap.** Measured across five live panes on 2026-09-06 every real leading indent was 0, 2,
    3, 4 or 9 columns — and two rows were right-aligned status lines whose leading run was 203 and
@@ -255,6 +269,19 @@ ok(paint("text" + spaces(3)).indexOf("text   ") === 0,
 /* Blank rows are rows: a grid has 59 of them whether or not anything was written on them. */
 equal(rows("a\n\nb").split('class="screen-row"').length - 1, 3,
     "an empty grid row is still a row");
+// **But the newline a capture ends with is a terminator and not a row.** `Sources/LiveScreen.swift`
+// says so where it counts `lines` — "Counting it would report 26 lines for a 25-line screen" — and
+// every capture measured on this Mac ends with one. Drawing it would put a permanent blank row
+// under every screen, and only in this mode: `<pre>a\n</pre>` is one line high, a trailing
+// `.screen-row` is two.
+equal(rows("a\n").split('class="screen-row"').length - 1, 1,
+    "the newline a capture ends with is a terminator, not a row");
+equal(rows("a\n\n").split('class="screen-row"').length - 1, 2,
+    "and the blank row before that terminator is still a row");
+// Control bytes are not content in this mode either — the reason `CONTROL` exists is that a
+// carriage return would make a line look complete and then be drawn on top of itself.
+equal(rows("a\rb"), '<div class="screen-row">ab</div>',
+    "a carriage return does not survive into a wrapped row");
 equal(rows(""), "", "and a capture with nothing in it is nothing at all");
 equal(rows(null), "", "including one that never arrived");
 
