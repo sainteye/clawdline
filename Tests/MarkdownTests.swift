@@ -1230,6 +1230,15 @@ group("the languages the interface speaks") {
         "it:webSnippetStarterCommitTitle", "ru:webSnippetStarterCommitTitle",
         "id:webSnippetStarterCommitTitle", "tr:webSnippetStarterCommitTitle",
         "ko:webSnippetStarterCommitTitle", "hi:webSnippetStarterCommitTitle",
+        // The Plan page. `Fleet` and `Team` are the names of two things this product sells, not
+        // descriptions of them — the pricing page prints them untranslated in both its languages
+        // and the control plane's `purchasable` list spells them the same way. A locale that
+        // "translated" them would be naming a tier nobody can buy.
+        "*:webPlanRowFleet", "*:webPlanRowTeam",
+        // `Plan` is the Spanish and Turkish word as well, and `Macs` is the plural German,
+        // Spanish and Portuguese readers actually use for the machines on their desks.
+        "es:webPlan", "tr:webPlan",
+        "de:webPlanRowMacs", "es:webPlanRowMacs", "pt:webPlanRowMacs",
     ]
     let en = English()
 

@@ -87,6 +87,10 @@ export function paintStatic() {
     text(els["nav-sessions"], T.webSessions);
     text(els["usage-open"], T.webUsage);
     text(els["nav-settings"], T.webSettings);
+    // The Plan page's row. The page's own furniture is painted by `view/plan.js` on arrival
+    // rather than here, because this function runs once at boot and that page is bound with an
+    // element table of its own — the same seam the Projects and Usage pages are given.
+    text(els["nav-plan"], T.webPlan);
     // The Projects page's own furniture: the two lines that are there before any answer is, and
     // the way back out of a Project. The chevron is drawn rather than typed, the way the
     // transcript's back button does it — it points the way back whichever language is beside it.

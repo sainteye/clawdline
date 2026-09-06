@@ -1,0 +1,126 @@
+/* ==========================================================================
+   The Plan page
+
+   `.page` in `pages.css` already gives this the area below the header, its own
+   scroll and the `display: none` that makes `hidden` mean it. Everything here
+   is what goes inside that area, and every selector stays under `.page-plan`.
+
+   **One thing on this page is loud and it is the plan the account is on.** Not
+   the upgrade button: a person arriving here is usually asking "what have I
+   got", and a screen whose biggest element is a way to spend money has answered
+   a question nobody asked. The button is ordinary-sized and unambiguous, which
+   is what a control that starts a payment should be.
+
+   `plan-say` and `plan-alert` are two elements rather than one with a class,
+   and they are styled differently on purpose: the calm line is dim body text,
+   the alert has the accent rule down its side. Somebody glancing at the page
+   after a failed payment should be able to tell which of the two they are
+   reading without reading it.
+   ========================================================================== */
+.page-plan {
+    padding: clamp(16px, 3vw, 34px);
+    color: var(--ink);
+    background:
+        radial-gradient(circle at 8% -10%, rgba(217, 119, 87, .13), transparent 31rem),
+        var(--bg);
+}
+.page-plan button:focus-visible,
+.page-plan a:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+}
+.page-plan h1:focus-visible { outline: 3px solid var(--accent); outline-offset: 6px; border-radius: 4px; }
+
+.plan-shell { width: min(720px, 100%); margin: 0 auto; padding-bottom: calc(48px + var(--indicator)); }
+.plan-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.plan-heading h1 { margin: 2px 0 0; font-size: clamp(26px, 4vw, 40px); line-height: 1.04; letter-spacing: -.04em; }
+.plan-lede { max-width: 520px; margin: 10px 0 0; color: var(--dim); font-size: 14px; }
+.plan-close {
+    flex: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 7px 14px;
+    background: var(--card);
+    color: var(--dim);
+    font-size: 13px;
+}
+.plan-close:hover { border-color: var(--accent-ed); background: var(--card-hi); color: var(--ink); }
+
+/* ---- the card that says which plan this is ------------------------------- */
+
+.plan-card {
+    margin-top: 22px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    background: var(--card);
+}
+.plan-tier { display: block; font-size: clamp(24px, 3.4vw, 32px); font-weight: 600; letter-spacing: -.03em; }
+.plan-tier-note { margin: 6px 0 0; color: var(--faint); font-size: 13px; line-height: 1.55; }
+
+/* The calm line and the loud one. Both keep their box when empty is not the
+   case — they are `hidden` instead, so neither leaves a gap it is not using. */
+.plan-say { margin: 14px 0 0; color: var(--dim); font-size: 13.5px; line-height: 1.6; }
+.plan-alert {
+    margin: 14px 0 0;
+    border-left: 3px solid var(--accent);
+    padding: 2px 0 2px 12px;
+    color: var(--ink);
+    font-size: 13.5px;
+    line-height: 1.6;
+}
+
+.plan-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.plan-actions button[hidden] { display: none; }
+.plan-go, .plan-alt {
+    /* A thumb's worth, because this is a phone screen more often than it is not — and because
+       the press it takes is one nobody should make by accident. */
+    min-height: 44px;
+    border-radius: 10px;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 500;
+}
+.plan-go { border: 1px solid var(--accent); background: var(--accent); color: #17110e; }
+.plan-go:hover { filter: brightness(1.06); }
+.plan-alt { border: 1px solid var(--line); background: var(--card-hi); color: var(--ink); }
+.plan-alt:hover { border-color: var(--accent-ed); }
+.plan-go[disabled], .plan-alt[disabled] { opacity: .55; }
+
+.plan-elsewhere { margin: 14px 0 0; color: var(--dim); font-size: 13.5px; line-height: 1.6; }
+.plan-elsewhere[hidden] { display: none; }
+.plan-elsewhere-link { margin: 8px 0 0; font: 12.5px/1.5 var(--mono); }
+.plan-elsewhere-link a { color: var(--accent); }
+/* The link belongs to the sentence above it and disappears with it. */
+.plan-elsewhere[hidden] + .plan-elsewhere-link { display: none; }
+
+/* ---- what the plan includes ---------------------------------------------- */
+
+.plan-includes { margin: 30px 0 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.plan-limits {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0;
+    margin: 12px 0 0;
+}
+.plan-limits[hidden] { display: none; }
+.plan-limits dt, .plan-limits dd {
+    margin: 0;
+    border-top: 1px solid var(--line);
+    padding: 11px 2px;
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+.plan-limits dt { color: var(--dim); }
+.plan-limits dd { color: var(--ink); overflow-wrap: anywhere; }
+.plan-fine { margin: 16px 0 0; color: var(--faint); font-size: 12px; line-height: 1.6; max-width: 62ch; }
+.plan-fine[hidden] { display: none; }
+
+/* A phone: the two columns of the table become label-over-value, because
+   "Concurrent cloud sessions" and a number do not share 180px. */
+@media (max-width: 520px) {
+    .plan-limits { grid-template-columns: minmax(0, 1fr); }
+    .plan-limits dt { border-top: 1px solid var(--line); padding-bottom: 0; }
+    .plan-limits dd { border-top: 0; padding-top: 3px; }
+    .plan-actions button { width: 100%; }
+}

@@ -145,6 +145,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/pages.css">
 <link rel="stylesheet" href="/app/css/projects.css">
 <link rel="stylesheet" href="/app/css/usage.css">
+<link rel="stylesheet" href="/app/css/plan.css">
 
 <!-- Every module, named here so that all forty are asked for at once.
      `main.js` is the only script this document mentions, and a browser cannot know what it
@@ -190,6 +191,9 @@ document.documentElement.className = "booting";
              settings sheet. The name is what `usage.css` styles and what the Usage guard looks for;
              what it does is now the same as every other row here. -->
         <button class="sidebar-item" id="usage-open" type="button" data-page-to="usage">Usage</button>
+        <!-- After the readings and before Settings. It is not a setting: nothing on it is a
+             preference, and one of its buttons starts a payment. -->
+        <button class="sidebar-item" id="nav-plan" type="button" data-page-to="plan">Plan</button>
         <button class="sidebar-item" id="nav-settings" type="button" data-page-to="settings">Settings</button>
     </div>
 </nav>
@@ -757,6 +761,51 @@ document.documentElement.className = "booting";
 
         <div class="foot"><span id="settings-version"></span></div>
         <button class="chip wide" id="settings-close" type="button" data-page-to="sessions">Close</button>
+    </div>
+</section>
+
+<!-- The Plan page.
+
+     The only screen in this app that can start a payment, and the markup is shaped by that: two
+     places to put a sentence, never one. `plan-say` is `role="status"` and carries everything
+     that is going to plan; `plan-alert` is `role="alert"` and carries everything that is not.
+     A screen reader is interrupted by a refused card and is not interrupted by "reading your
+     plan…", which is the whole reason they are two elements and not one with a class on it.
+
+     Every visible string here is replaced by `view/plan.js` on arrival, from `/v1/strings`. The
+     English below is what a page whose strings never came back still shows — the same contract
+     the rest of this document keeps. -->
+<section class="page page-plan" id="plan" data-page-view="plan" aria-labelledby="plan-title" hidden>
+    <div class="plan-shell">
+        <div class="plan-heading">
+            <div>
+                <h1 id="plan-title" tabindex="-1">Plan</h1>
+                <p class="plan-lede" id="plan-lede">What this Cloud account is entitled to, and how to change it.</p>
+            </div>
+            <button class="plan-close" id="plan-close" type="button" data-page-to="sessions">Sessions</button>
+        </div>
+
+        <div class="plan-card">
+            <strong class="plan-tier" id="plan-tier">Free</strong>
+            <p class="plan-tier-note" id="plan-tier-note"></p>
+            <p class="plan-say" id="plan-say" role="status" aria-live="polite" hidden></p>
+            <p class="plan-alert" id="plan-alert" role="alert" hidden></p>
+            <div class="plan-actions">
+                <button class="plan-go" id="plan-upgrade" type="button" hidden>Upgrade to Pro</button>
+                <button class="plan-alt" id="plan-portal" type="button" hidden>Manage subscription</button>
+                <button class="plan-go" id="plan-signin" type="button" hidden>Continue with GitHub</button>
+                <button class="plan-alt" id="plan-retry" type="button" hidden>Try again</button>
+                <button class="plan-alt" id="plan-recheck" type="button" hidden>Check again</button>
+            </div>
+            <!-- Only on the copy of this page the Mac itself serves, where there is no Cloud
+                 account to charge and saying so is the honest answer rather than a broken one. -->
+            <p class="plan-elsewhere" id="plan-elsewhere" hidden></p>
+            <p class="plan-elsewhere-link"><a id="plan-console" href="https://app.clawdline.com/#page=plan">app.clawdline.com</a></p>
+        </div>
+
+        <h2 class="plan-includes" id="plan-includes">What this plan includes</h2>
+        <dl class="plan-limits" id="plan-limits" hidden></dl>
+        <p class="plan-fine" id="plan-fine" hidden></p>
     </div>
 </section>
 

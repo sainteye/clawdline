@@ -13,7 +13,7 @@ export var els = {};
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
  "image-lightbox", "image-lightbox-title", "image-lightbox-image", "image-lightbox-close",
  "status-line", "status-line-open", "status-line-files", "status-line-deploy", "status-line-limits", "keys", "toast", "brand", "brand-mark",
-  "sidebar", "nav-sessions", "usage-open", "nav-projects", "nav-settings",
+  "sidebar", "nav-sessions", "usage-open", "nav-projects", "nav-plan", "nav-settings",
   "projects", "projects-title", "projects-lede", "projects-back",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
