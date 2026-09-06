@@ -1778,6 +1778,14 @@ protocol Copy {
     /// This page served by the Mac itself, where there is no Cloud account to charge.
     var webPlanElsewhere: String { get }
     var webPlanElsewhereNote: String { get }
+    /// The way out of the pairing door and the device-limit screen.
+    ///
+    /// Both of those block a browser that is *signed in*, and neither has anything to do with
+    /// billing: reading a plan and buying one need the session cookie and nothing else — no
+    /// account key, no relay, no Mac. Somebody who cannot pair is exactly who may need to buy,
+    /// and the device-limit screen is the sharper case: Free allows two viewer devices and Pro
+    /// five, so the fix it refuses to offer is the one being sold.
+    var webPlanFromGate: String { get }
     // clawdline:plan-strings:end
 }
 

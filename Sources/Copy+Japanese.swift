@@ -1012,5 +1012,6 @@ struct Japanese: Copy {
     let webPlanPortalFailed = "カスタマーポータルを開けませんでした。サブスクリプションに影響はありません。"
     let webPlanElsewhere = "プランと支払いは Clawdline Cloud のものです。別の入り口になります。ホストされたコンソールにサインインすれば、同じこのページからアップグレードできます。プランに何が書かれていても、この Mac 上の動作は止まりません。Mac 上の作業が課金対象になることはありません。"
     let webPlanElsewhereNote = "このウィンドウは目の前の Mac に接続しています。Clawdline Cloud ではありません。"
+    let webPlanFromGate = "プランと支払い"
     // clawdline:plan-strings:end
 }

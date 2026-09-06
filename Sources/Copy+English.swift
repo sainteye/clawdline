@@ -1018,5 +1018,6 @@ struct English: Copy {
     let webPlanPortalFailed = "Clawdline could not open the customer portal. Your subscription is unaffected."
     let webPlanElsewhere = "Plans and payment belong to Clawdline Cloud, which is a different door: sign in at the hosted console and the upgrade is on this same page there. Nothing on this Mac stops working, whatever the plan says — work on the Mac is never metered."
     let webPlanElsewhereNote = "This window is talking to the Mac in front of you, not to Clawdline Cloud."
+    let webPlanFromGate = "Plan and billing"
     // clawdline:plan-strings:end
 }

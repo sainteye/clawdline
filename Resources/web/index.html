@@ -1229,6 +1229,11 @@ document.documentElement.className = "booting";
             <div class="cloud-devices" id="cloud-door-devices" hidden></div>
             <button class="go" id="cloud-door-confirm" type="button">Pair this device</button>
             <button class="alt" id="cloud-door-restart" type="button" hidden>Start again</button>
+            <!-- The way out of this door for somebody who is signed in and cannot get past it.
+                 `data-page-to` is answered by the delegated listener in `core/pages.js`, so this
+                 is a line of markup rather than a listener: reaching a page is the drawer's
+                 business and this is the same mechanism, from a different place. -->
+            <button class="alt" id="cloud-door-plan" type="button" data-page-to="plan" hidden>Plan and billing</button>
         </section>
 
         <p class="say" id="cloud-door-say" role="status" aria-live="polite"></p>

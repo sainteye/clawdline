@@ -1014,5 +1014,6 @@ struct German: Copy {
     let webPlanPortalFailed = "Clawdline konnte das Kundenportal nicht öffnen. Ihr Abo ist davon unberührt."
     let webPlanElsewhere = "Tarife und Zahlung gehören zu Clawdline Cloud, und das ist eine andere Tür: Melden Sie sich in der gehosteten Konsole an, dort liegt der Wechsel auf genau dieser Seite. Auf diesem Mac hört nichts auf zu arbeiten, was der Tarif auch sagt — Arbeit auf dem Mac wird nie gemessen."
     let webPlanElsewhereNote = "Dieses Fenster spricht mit dem Mac vor Ihnen, nicht mit Clawdline Cloud."
+    let webPlanFromGate = "Tarif und Zahlung"
     // clawdline:plan-strings:end
 }

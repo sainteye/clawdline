@@ -1012,5 +1012,6 @@ struct Korean: Copy {
     let webPlanPortalFailed = "고객 포털을 열지 못했습니다. 구독에는 영향이 없습니다."
     let webPlanElsewhere = "플랜과 결제는 Clawdline Cloud의 몫이며 다른 문입니다. 호스팅된 콘솔에 로그인하면 같은 이 페이지에서 업그레이드할 수 있습니다. 플랜에 무엇이 적혀 있든 이 Mac에서 하던 일은 멈추지 않습니다. Mac에서의 작업에는 요금이 매겨지지 않습니다."
     let webPlanElsewhereNote = "이 창은 눈앞의 Mac에 연결되어 있습니다. Clawdline Cloud가 아닙니다."
+    let webPlanFromGate = "플랜과 결제"
     // clawdline:plan-strings:end
 }

@@ -194,6 +194,23 @@ def build(out, app_origin, api_origin, relay_url):
         "script-src 'self' " + " ".join(inline_hashes),
         "style-src 'self'",
         "img-src 'self' data:",
+        # The QR decoder. `net/cloud-qr-scanner.js` uses the bundled qr-scanner, which prefers the
+        # native `BarcodeDetector` and falls back to a worker when there is none —
+        # `createWorker = () => new Worker(URL.createObjectURL(new Blob([…])))`, a blob worker.
+        #
+        # **Safari has no BarcodeDetector, so on an iPhone that fallback is the only path**, and
+        # under `default-src 'none'` it was blocked: `worker-src` falls back to `child-src` and
+        # then to `default-src`, so naming neither forbids every worker. The camera opened, the
+        # preview ran, and nothing ever decoded — no error the person could see, because the
+        # refusal is a console message in a PWA nobody has a console for.
+        #
+        # `blob:` is required by that construction and is not a hole: it can only run a blob this
+        # page's own scripts created, and `script-src 'self'` still decides what may create one.
+        "worker-src 'self' blob:",
+        # The camera preview is a MediaStream on `srcObject` rather than a fetched URL, but Safari
+        # has historically consulted `media-src` for it, and an empty `default-src` is the state
+        # that bites. Naming it costs nothing and removes a second silent failure of the same kind.
+        "media-src 'self' blob: mediastream:",
         f"connect-src 'self' {api_host.scheme}://{api_host.netloc} "
         f"{relay_host.scheme}://{relay_host.netloc}",
         "manifest-src 'self'",
