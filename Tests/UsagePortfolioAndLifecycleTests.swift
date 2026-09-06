@@ -795,7 +795,7 @@ group("usage analytics routes keep authentication, validation and privacy aligne
         as? [String]
     let analyticsUnavailable = usage?["unavailableDimensions"] as? [String: Any]
     check("legacy and Portfolio capability surfaces share the Feature availability answer",
-          legacyUnavailable == ["graph_id", "disposition"]
+          legacyUnavailable == ["disposition"]
             && analyticsUnavailable?["dimensions"] as? [String] == legacyUnavailable
             && analyticsUnavailable?["featureView"] as? Bool == true)
     let legacyCSV = RemoteServer.shared.route(remoteRequest(
@@ -1027,7 +1027,7 @@ group("each kind of work is counted exactly once, and the routes answer for the 
            ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
     expect("and it names the columns it has no answer for",
            (body?["unavailable"] as? [String: Any])?["columns"] as? [String],
-           ["graph_id", "disposition"])
+           ["disposition"])
     expect("the export answers as CSV",
            RemoteServer.shared.route(
             remoteRequest("GET", "/v1/orchestrator/usage.csv", headers: auth))

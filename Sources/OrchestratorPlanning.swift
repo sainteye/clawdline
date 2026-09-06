@@ -549,10 +549,43 @@ extension Orchestrator {
          }]
     }
 
+    /// **Whether this task's role is review**, which is a fact about the task rather than about
+    /// one spelling of one field.
+    ///
+    /// The second half of this used to read `task.kind == "review"`, and it was dead the day it
+    /// was written: the dispatch vocabulary this app documents and accepts is
+    /// `image · code-review · test · custom`, so no route has ever produced the bare word.
+    /// Measured against this Mac's registry on 2026-09-06 — 51 `code-review` tasks, of which the
+    /// 35 dispatched without a graph carried no typed verdict between them while 13 of the 16
+    /// with one did. The correlation was perfect because only the graph half of the predicate
+    /// was alive, and the findings those 35 reviews produced went into a task directory that is
+    /// swept twenty-four hours later.
+    ///
+    /// So: the graph decides whenever there is one. A `correction` node dispatched as
+    /// `code-review` is a correction, and its receipt is each finding closed with an owner rather
+    /// than a fresh verdict. Only a task with no graph falls back to its dispatch kind, and that
+    /// kind is read as words rather than compared with a literal.
     static func requiresTypedReview(_ task: Task) -> Bool {
-        task.graph?.nodes.first(where: {
-            $0.id == task.graph?.currentNode
-        })?.kind == .review || task.kind == "review"
+        if let graph = task.graph,
+           let node = graph.nodes.first(where: { $0.id == graph.currentNode }) {
+            return node.kind == .review
+        }
+        return kindDenotesReview(task.kind)
+    }
+
+    /// A dispatch kind names a review when one of its words is the word the graph uses for the
+    /// role: `code-review`, `review`, `Code_Review` and `security review` all qualify, while
+    /// `custom`, `test` and `image` do not.
+    ///
+    /// Splitting into words beats matching a list because `kind` is a free-form 40-character
+    /// string on the dispatch route — a list is a guess about which spellings people will send,
+    /// and the last guess was wrong in the one way nothing could see. Deriving the word from
+    /// ``GraphNodeKind/review`` rather than typing it again keeps the two vocabularies from
+    /// drifting apart in the same silent direction.
+    static func kindDenotesReview(_ kind: String) -> Bool {
+        kind.lowercased().split(whereSeparator: { character in
+            !character.isLetter && !character.isNumber
+        }).contains { $0 == GraphNodeKind.review.rawValue }
     }
 
     static func typedReviewReporting(for task: Task) -> String {

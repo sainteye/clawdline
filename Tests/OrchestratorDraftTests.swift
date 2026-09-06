@@ -567,4 +567,79 @@ group("claims is required as a present field, which is the one shape every dispa
           message.contains("ratcheted line count"))
 }
 
+
+// The predicate that decides whether a task owes a typed verdict, asked over both vocabularies
+// it can be told the answer in. It is here rather than beside the finalizer because the two
+// things it reads — `kind` and `graph` — are dispatch fields, and the defect it replaces was a
+// dispatch field compared with a word no dispatch route has ever produced.
+group("a review role is read from the graph node, and from every kind the API accepts") {
+    func reviewGraph(_ kind: Orchestrator.GraphNodeKind) -> Orchestrator.PlanningGraph {
+        Orchestrator.PlanningGraph(
+            id: graphID, destination: "receipts outlive the sweep", currentNode: "node",
+            nodes: [Orchestrator.GraphNode(id: "node", title: "the node", kind: kind,
+                                           dependsOn: [], acceptance: ["it lands"])],
+            unknowns: [], outOfScope: [])
+    }
+    func task(kind: String, graph: Orchestrator.PlanningGraph? = nil) -> Orchestrator.Task {
+        var made = Orchestrator.Task(id: taskID, state: .briefed, kind: kind,
+                                     title: "a task", assistant: .claude,
+                                     projectDir: "/tmp", timeoutMinutes: 30,
+                                     created: Date(),
+                                     secretHash: String(repeating: "0", count: 64))
+        made.graph = graph
+        return made
+    }
+
+    // Enumerated from `allCases` rather than listed, so a seventh node kind cannot be added
+    // without this row deciding what it means: every kind is asked, and exactly one says yes.
+    for kind in Orchestrator.GraphNodeKind.allCases {
+        expect("a \(kind.rawValue) node owes a typed verdict only if it is the review node",
+               Orchestrator.requiresTypedReview(task(kind: "custom", graph: reviewGraph(kind))),
+               kind == .review)
+    }
+    expect("all six kinds were asked", Orchestrator.GraphNodeKind.allCases.count, 6)
+
+    // The dispatch vocabulary `docs/orchestrator.md` publishes, in full. `code-review` is the
+    // one this predicate used to be blind to: the branch it replaces compared `kind` with
+    // `"review"`, which no route accepting this list has ever sent.
+    expect("code-review, the kind a review is actually dispatched as, is a review role",
+           Orchestrator.requiresTypedReview(task(kind: "code-review")), true)
+    for kind in ["image", "test", "custom"] {
+        expect("and \(kind) is not", Orchestrator.requiresTypedReview(task(kind: kind)), false)
+    }
+
+    // Spellings nobody has sent yet. `kind` is a free-form forty-character field, so the set of
+    // spellings is open and a list of them would be the same guess that failed before.
+    for spelling in ["review", "Code_Review", "security review", "review-2"] {
+        check("\(spelling) is read as a review role too",
+              Orchestrator.kindDenotesReview(spelling))
+    }
+    for spelling in ["custom", "reviewer", "preview", "reviews", ""] {
+        check("\(spelling.isEmpty ? "«empty»" : spelling) is not, because it is not the word",
+              !Orchestrator.kindDenotesReview(spelling))
+    }
+
+    // The graph decides when there is one. A correction node dispatched as `code-review` closes
+    // findings with owners; asking it for a fresh verdict would be asking the wrong receipt.
+    check("a correction node dispatched as code-review is still a correction",
+          !Orchestrator.requiresTypedReview(
+              task(kind: "code-review", graph: reviewGraph(.correction))))
+    check("and a review node dispatched as custom is still a review",
+          Orchestrator.requiresTypedReview(
+              task(kind: "custom", graph: reviewGraph(.review))))
+
+    // The gate is only half of it: the briefing has to ask for the receipt the finalizer will
+    // then refuse to finish without. These two used to be able to disagree in the direction
+    // nobody notices — no demand, no receipt, no failure.
+    let asked = Orchestrator.typedReviewReporting(for: task(kind: "code-review"))
+    check("a code-review is told in its briefing what receipt to write",
+          asked.contains("\"review\"") && asked.contains("safe_to_land")
+              && asked.contains("specification") && asked.contains("repository_invariants")
+              && asked.contains("runtime_failure_behavior"))
+    expect("and a task with no review role is told nothing extra",
+           Orchestrator.typedReviewReporting(for: task(kind: "custom")), "")
+    check("what the briefing asks for is what the gate then requires",
+          asked.isEmpty == !Orchestrator.requiresTypedReview(task(kind: "code-review")))
+}
+
 }

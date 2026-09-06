@@ -476,6 +476,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "Feature backfill proposes without accepting",
     "the analytics payload states whether a Feature classifier is configured",
     "a Feature is scoped by the Project rule the Portfolio uses",
+    "a task record's graph reaches the row that carries its tokens",
+    "a review verdict and a verification receipt outlive the task directory that held them",
     "a worktree's outcome tells landed from delivered from debris",
     "a Project's worktrees are joined at read time and named by the Portfolio's own rule",
     "an empty worktree list says the query ran, and an unknown Project is refused",
@@ -554,6 +556,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the shapes an older root still writes are the shapes this still reads",
     "a task id is a lowercase UUID, and a task secret is 32 bytes of lower-case hex",
     "claims is required as a present field, which is the one shape every dispatcher can answer",
+    "a review role is read from the graph node, and from every kind the API accepts",
     "a read-only delivery gets a terminal state, and one that wrote may not use it",
     "a worktree's landing state is the one that is true now, and its row says what the work was",
 ]
