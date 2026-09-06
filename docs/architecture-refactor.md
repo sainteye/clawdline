@@ -564,7 +564,7 @@ is written, and this document is not that place for any of them.
 | suite files | 49 | `Tests/*Tests.swift`, counted by the guard |
 | Swift checks | 9,495 | `expected_swift_receipt` in `test.sh`, set from a run |
 | `Orchestrator.swift` ceiling | 10,644 | the ratchet in `tools/check-architecture-boundaries.sh` |
-| `RemoteServer.swift` ceiling | 5,786 | the receipt in `tools/check-architecture-boundaries.sh` |
+| `RemoteServer.swift` ceiling | 5,807 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->
 

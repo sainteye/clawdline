@@ -1511,6 +1511,12 @@ final class RemoteServer: @unchecked Sendable {
                   let secret = body["secret"] as? String else {
                 return .error(400, "bad_request", "task_id and secret are required.")
             }
+            // Reading what is already in this repository is a step, not advice. See
+            // `OrchestratorInventory.dispatchAdmission` for what passes through untouched.
+            if let stale = OrchestratorInventory.dispatchAdmission(
+                    taskID: taskID, supplied: body["inventory_generation"]) {
+                return answer(stale)
+            }
             return answer(Orchestrator.dispatch(taskID: taskID, secret: secret,
                                                 requireRootSession: true))
 
@@ -1524,6 +1530,10 @@ final class RemoteServer: @unchecked Sendable {
             guard let taskID = body["task_id"] as? String,
                   let secret = body["secret"] as? String else {
                 return .error(400, "bad_request", "task_id and secret are required.")
+            }
+            if let stale = OrchestratorInventory.dispatchAdmission(
+                    taskID: taskID, supplied: body["inventory_generation"]) {
+                return answer(stale)
             }
             return answer(Orchestrator.dispatch(
                 taskID: taskID, secret: secret, requireRootSession: true,
@@ -1658,6 +1668,17 @@ final class RemoteServer: @unchecked Sendable {
         case ("GET", "/v1/orchestrator/landing-queue"):
             let project = request.query["project"] ?? request.query["project_dir"] ?? ""
             return answer(OrchestratorLandingQueue.queueReply(project: project))
+
+        // **What is already here, and the receipt a dispatch has to carry back.**
+        //
+        // Read-level like the two lists above it, and derived on every call for the same reason
+        // they are. The two dispatch routes refuse a body whose `inventory_generation` is not the
+        // one this answers; `Sources/OrchestratorInventory.swift` holds the sections, the digest
+        // and which routes enforce it.
+        case ("GET", "/v1/orchestrator/inventory"):
+            return answer(OrchestratorInventory.reply(
+                project: request.query["project"] ?? request.query["project_dir"] ?? "",
+                claims: OrchestratorInventory.parseClaims(request.query["claims"])))
 
         case ("GET", "/v1/orchestrator/storage"):
             return .json(Orchestrator.storageInventory())

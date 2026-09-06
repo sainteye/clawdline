@@ -66,6 +66,7 @@ clawdline_production_sources=(
   Sources/OrchestratorChildIdentity.swift
   Sources/OrchestratorTaskShape.swift
   Sources/OrchestratorHandoffSender.swift
+  Sources/OrchestratorInventory.swift
   Sources/OrchestratorLandingQueue.swift
   Sources/OrchestratorPlanning.swift
   Sources/OrchestratorRegistry.swift

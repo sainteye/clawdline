@@ -284,7 +284,19 @@ fi
 #                                          rather than behind the write gate. The write itself, the
 #                                          size limit and the rotation are in
 #                                          `Sources/DiagnosticReport.swift`.
-remote_server_ceiling=5786
+#                                          5,807 once a dispatch had to carry a receipt from the
+#                                          worktree inventory. Twenty-one lines, measured: one
+#                                          `case` for `GET /v1/orchestrator/inventory` with the
+#                                          comment saying why it sits at read level beside
+#                                          `inflight` and `landing-queue`, and four lines each on
+#                                          `POST /v1/orchestrator/tasks` and
+#                                          `POST /v1/orchestrator/detached-tasks` calling the
+#                                          admission before dispatch. The three sections, the
+#                                          digest, the `409 stale_inventory` refusal and the
+#                                          reasons `handoffs` and `root-assignments` do not call it
+#                                          are all in `Sources/OrchestratorInventory.swift`, a new
+#                                          file, because a router is not a place to keep a ladder.
+remote_server_ceiling=5807
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
