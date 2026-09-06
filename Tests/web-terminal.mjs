@@ -252,6 +252,14 @@ equal(paint(E + "]8;id=x;https://clawdline.com/" + ST + "label"),
 equal(paint(E + "]8;id=x;https://clawdline.com/"), "",
     "and an OSC 8 that never terminates takes the rest of the capture with it, anchor and all");
 
+// **A row boundary is a newline here and an element in the other mode, so the two modes differ
+// on exactly one thing and it is stated in both places.** Inside a `<pre>` an anchor spanning a
+// newline is a two-line link and nothing else; the wrapped mode below cannot do that, because
+// closing a row would close the anchor with the wrong tag.
+equal(paint(OSC("8;id=x;https://clawdline.com/") + "first\nsecond" + OSC("8;;")),
+    A("https://clawdline.com/") + "first\nsecond</a>",
+    "a link across two rows of the default mode is one anchor, because there the rows are newlines");
+
 /* ---- the other mode, for the phone ---------------------------------------
  *
  * Every tmux pane on this Mac is 243 columns wide and a phone shows about fifty of them, so the
