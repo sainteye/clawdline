@@ -9,6 +9,25 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: Pro can be bought, and the Plan page is where
+
+The paid Cloud tier had a price on a pricing page and no way to become one. The pricing page said
+so in as many words, because a number with no door behind it is a claim rather than an offer.
+
+The console now has a **Plan** page. It shows what your account is entitled to today, and when a
+tier is on sale it offers one button. Pressing it opens Lemon Squeezy's checkout: they are the
+merchant of record, so their terms and their receipt are what you agree to, and the subscription is
+cancelled or changed from the same page you bought it on. Only Pro is on sale; Max and Team say
+that on the card rather than in small print.
+
+Paying is the easy path, and it is not the one that needed writing. The page names each of the four
+ways this fails without anything throwing — a checkout that was never created, a payment that has
+gone through while the webhook confirming it has not arrived, an account that already pays, and a
+tier the control plane does not sell. Every one of those is a sentence you can act on instead of a
+spinner that never stops, and it says which of the two ends is the one still waiting.
+
+The page speaks the same fourteen languages the rest of the app does.
+
 ### Added: a session can show you a picture on its own card
 
 A session could already send a screenshot to *another* session. It could not show you one itself —
