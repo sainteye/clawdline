@@ -706,7 +706,9 @@ tools/check-landing-records.py
 # `stale > worst` that was an identity — and both were green the way a working guard is green. This
 # puts one defect in front of each `tools/check-*` and requires it to say so, and refuses a guard
 # that no proof names. It matches `tools/check-*` itself, so it is on its own list.
-# docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s.
+# docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s with eight
+# proofs, and 5.3 s once the landing-records proof — which builds a repository and merges in it —
+# became the ninth.
 bash tools/check-guards-go-red.sh
 verify_suite_roster
 # (c) in `docs/suite-runtime.md`: 129 s of the 288, before the compile the machine lock exists for

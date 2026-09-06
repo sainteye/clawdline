@@ -470,6 +470,10 @@ def main():
               file=sys.stderr)
         return 1
 
+    if args.json:
+        # stdout is the document and nothing else; the exit code and the failing sentence on
+        # stderr are still there for a caller that wants both.
+        return 0
     print("\nlanding records: nothing has landed unrecorded since %s, beyond the %g-hour grace. "
           "%d unrecorded landing(s) inherited from before it, %d still inside the grace, "
           "%d outstanding, %d undecidable — and the unrecorded count is a lower bound, because a "
