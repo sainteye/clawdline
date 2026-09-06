@@ -138,12 +138,22 @@ export var Settings = (function () {
             testing = true;
             say("");
             Push.redraw();
-            // The transcript on screen, when there is one — `S.openId` and not `S.selectedId`,
-            // which is only the highlight in the list. With a session open this button is the
-            // whole road: press it, put the app in the background, tap what arrives, and you
-            // should be back where you were. With none open it sends nothing extra and the
-            // notification goes to the list, which is what it has always done.
-            api.pushTest(S.openId || null).then(function () {
+            // The session on screen, and **failing that the one the list is pointing at** —
+            // because on a phone the first of those is never true when this button can be
+            // pressed. `.pane-detail` is `position: fixed; inset: 0; z-index: 40` there, so an
+            // open transcript covers the header this page is reached through: `S.openId` and
+            // "the reader can see this control" are mutually exclusive on the one device the
+            // whole lever exists for. It was written as `S.openId` alone, and on 2026-09-06 that
+            // sent `/` every time it was pressed from a phone — a test that could not test the
+            // thing it was added to test.
+            //
+            // `S.selectedId` survives `closeDetail`, is set by opening a session and by the
+            // first list highlighting its top row, and `view/list.js` clears it the moment that
+            // session leaves the list. So it names something live or it names nothing, and the
+            // Mac checks it again before promising an address. `openId` still wins when both
+            // are set: on a desktop the pane and the header are on screen together, and there
+            // the transcript in front of the reader is the better answer.
+            api.pushTest(S.openId || S.selectedId || null).then(function () {
                 say(T.webNotifyTestSent, true);
             }).catch(function (e) {
                 // A 409 is not a failure to apologise for: it means this browser believes

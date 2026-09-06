@@ -9,6 +9,19 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: the test notification could not name a session from a phone
+
+The button that sends a test notification learned, in the same round as the rest of this, to point
+it at the session you have open — so that tapping what arrives is a test of the whole road rather
+than of the buzz. On a phone it never could: an open transcript is a fixed full-screen layer there
+and it covers the header the settings page is reached through, so by the time the button is on
+screen there is no session open, and every press from a phone sent one that went to the list.
+
+It now falls back to the session the list is pointing at, which survives closing the transcript and
+is cleared the moment that session leaves the list. Open a session, come back, press the button:
+what arrives carries that session's address. On a desktop, where the pane and the header are on
+screen together, the transcript in front of you still wins.
+
 ### Fixed: tapping a notification while the app is already open
 
 The note a tap leaves behind — the one that was supposed to make a dropped message a delay rather

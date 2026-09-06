@@ -123,15 +123,34 @@ await press();
 assert.deepEqual(asked, ["%247", null],
     "and sends nothing when nothing is open, rather than an id the Mac would refuse");
 
-// `openId` and not `selectedId`. They are different questions — one is whose transcript is on
-// screen, the other is only the highlight in the list — and a phone that has scrolled the list
-// without opening anything has the second and not the first.
+// **And the list's own pointer when there is no transcript on screen**, which on a phone is
+// every time this button can be pressed at all: `.pane-detail` is a fixed full-screen layer
+// there, so an open session covers the header this page is reached through. Written as `openId`
+// alone, the button sent `/` on every press from a phone — measured on 2026-09-06, in the audit
+// line for the press, on the device the lever was built for.
 S.openId = null;
 S.selectedId = "%141";
 await press();
-assert.deepEqual(asked, ["%247", null, null],
-    "a highlight in the list is not a session on screen, and is not what the button sends");
+assert.deepEqual(asked, ["%247", null, "%141"],
+    "with nothing on screen the button sends what the list is pointing at, so a phone can test at all");
 
+// The transcript in front of the reader still wins where both can be true at once.
+S.openId = "%208";
+S.selectedId = "%141";
+await press();
+assert.deepEqual(asked, ["%247", null, "%141", "%208"],
+    "and where both exist — a desktop, where the header and the pane share the screen — the "
+    + "transcript on screen is the better answer");
+
+// Neither, and it still refuses to invent one.
+S.openId = null;
+S.selectedId = null;
+await press();
+assert.deepEqual(asked, ["%247", null, "%141", "%208", null],
+    "with neither it sends nothing rather than an id the Mac would refuse");
+
+// Still four: `reached` counts the transport calls at the top of this file, and every press
+// below goes through the stand-in.
 assert.equal(reached.length, 4,
     "and the button never went to the network in this pass — the stand-in transport answered");
 
