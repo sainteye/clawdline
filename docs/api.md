@@ -1952,7 +1952,8 @@ Dispatch refusals are closed and typed; a client should branch on every applicab
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
-    -H "X-Clawdline-Orchestrator: $ORCH" -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
+    -H "X-Clawdline-Orchestrator: $ORCH" \
+    -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\",\"inventory_generation\":\"$GEN\"}"
 {"error":{"code":"over_capacity","retry_after":60,"message":"All 5 child slots for this session are busy; retry when one finishes.","request_id":"7b2c19d0-6e44-4a2f-9c31-0d5e8ab41f77"}}
 ```
 
@@ -2014,7 +2015,7 @@ schedule path and do not need to pretend that an interactive Session dispatched 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/detached-tasks \
     -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
-    -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
+    -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\",\"inventory_generation\":\"$GEN\"}"
 ```
 
 `"isolation":"worktree"` asks for a clean private checkout and a delivery branch named
