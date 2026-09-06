@@ -730,6 +730,13 @@ else
       printf '%s\n' "$developer_id_matches" | awk -F'\t' 'NF { print "     " $2 }'
       echo "  Falling through to $LOCAL_SIGN_IDENTITY_NAME. To use one of them by name:"
       echo "    CLAWDLINE_SIGN_IDENTITY=<full name> ./build.sh"
+      # Naming the cost, because the variable does two things and only one of them was asked for.
+      # An explicit value is read above this whole order and leaves `LOCAL_SIGNING` at 0, so the
+      # bundle is signed on the release branch — hardened runtime, a timestamp fetched from Apple,
+      # and the entitlements file. On a train that is a build that fails rather than a build that
+      # signs, so somebody following this line deserves to know before they follow it.
+      echo "    (that also switches to the release signing path: hardened runtime, an Apple"
+      echo "     timestamp over the network, and Resources/Clawdline.entitlements)"
     fi
     if [ -z "$signing_candidate" ]; then
       identity_hashes=$(printf '%s\n' "$identity_output" \
@@ -747,6 +754,8 @@ else
         echo "  To stop it: obtain a Developer ID Application certificate, which this build prefers"
         echo "  automatically, or name one you already hold with:"
         echo "    CLAWDLINE_SIGN_IDENTITY=<full name> ./build.sh"
+        echo "    (that also switches to the release signing path: hardened runtime, an Apple"
+        echo "     timestamp over the network, and Resources/Clawdline.entitlements)"
       elif [ "$identity_count" -gt 1 ]; then
         echo "!! multiple valid code-signing identities are named $LOCAL_SIGN_IDENTITY_NAME" >&2
         printf '   %s\n' $identity_hashes >&2
@@ -1021,7 +1030,13 @@ clawdline_report_team_identifier() {
   team=$(awk -F= '$1 == "TeamIdentifier" { print substr($0, index($0, "=") + 1); exit }' "$display_out")
   rm -f "$display_out" "$display_out.timed-out"
   if [ -n "$team" ] && [ "$team" != "not set" ]; then
-    echo "✓ signed with $SIGN_IDENTITY_NAME; TeamIdentifier=$team — macOS carries the Cloud Keychain authorisation across the next rebuild"
+    # The mechanism is Apple's documented one; the outcome for *these two items* is what the first
+    # rebuild after a change of identity actually shows. So this says what macOS keys the items to,
+    # and stops one step short of promising the prompt is gone — a build that promised it and then
+    # met the dialog would be worse than one that never said anything.
+    echo "✓ signed with $SIGN_IDENTITY_NAME; TeamIdentifier=$team — macOS keys the Cloud Keychain"
+    echo "  items to that team rather than to this build's cdhash, so one authorisation should"
+    echo "  reach the next rebuild."
     return 0
   fi
   if [ -z "$team" ]; then
@@ -1033,6 +1048,8 @@ clawdline_report_team_identifier() {
   echo "  cdhash, so it asks for the login Keychain password again after every rebuild."
   echo "  A Developer ID Application certificate is what stops that; this build prefers one"
   echo "  automatically, or name it with: CLAWDLINE_SIGN_IDENTITY=<full name> ./build.sh"
+  echo "  (which also switches to the release signing path: hardened runtime, an Apple timestamp"
+  echo "   over the network, and Resources/Clawdline.entitlements)"
 }
 if [ "$SIGN_IDENTITY" = - ]; then
   adhoc_sign_status=0

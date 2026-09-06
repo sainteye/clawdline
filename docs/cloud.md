@@ -328,9 +328,9 @@ been in.
 A self-signed certificate cannot carry a Team ID; only Apple issues one. So `./build.sh` no longer
 looks for a single name — it works down a preference order, and says which layer answered:
 
-| what `security find-identity -v -p codesigning "$CLAWDLINE_LOCAL_SIGN_KEYCHAIN"` holds | what `./build.sh` does |
+| what `security find-identity -v -p codesigning ~/Library/Keychains/login.keychain-db` holds (or whatever `CLAWDLINE_LOCAL_SIGN_KEYCHAIN` names, if it is set) | what `./build.sh` does |
 |---|---|
-| exactly one `Developer ID Application: …` | signs with it, and says why: it carries a Team ID, so an authorisation granted once survives the next rebuild |
+| exactly one `Developer ID Application: …` | signs with it, and says why: it carries a Team ID, so macOS keys the items to that team rather than to this build — one authorisation should then reach the next rebuild, which is the one claim here still waiting on the acceptance below |
 | two or more of them | prints both names, refuses to choose by Keychain order, and falls through to the row below |
 | exactly one `Clawdline Local Development` | signs with it, and says what it costs: no Team ID, so macOS asks again after every rebuild |
 | two or more with that name | fails; it will not choose by Keychain order |
@@ -360,17 +360,26 @@ for the authorisations it remembers by code requirement — Automation for iTerm
 Accessibility, and the machine credential in the login Keychain. That round is the price of the
 change, not evidence that it did not work; the rebuild *after* it is what shows whether it did.
 
-> **What is measured here, and what rests on Apple's documentation.** Measured on this Mac:
-> `codesign -d -vvv ~/Applications/Clawdline.app` reports `Authority=Clawdline Local Development`
-> and `TeamIdentifier=not set`, against `TeamIdentifier=H7V7XYVQ7D` and `EQHXZ8M8AV` for
-> Developer ID-signed applications beside it; a self-signed certificate whose OU is *shaped* like a
-> team id still signs `TeamIdentifier=not set`, so the shape is not the mechanism; an ad-hoc
-> signature prints the same `not set`; and the two Cloud items' `ACLAuthorizationPartitionID` had
-> accumulated 20 `cdhash:` entries, one per build, none of them the installed application's. Not
-> measured here: that a Team ID makes macOS write `teamid:<id>` instead and stop adding entries.
-> That is Apple's documented behaviour for the partition list, and the only thing that settles it on
-> this machine is the acceptance above — sign with a Developer ID identity, authorise the two items
-> once, rebuild, and use Cloud again without being asked.
+> **What is measured, by whom, and what rests on Apple's documentation.** Three categories, because
+> a reader deciding whether to believe this needs to know which of them a line belongs to.
+>
+> *Re-runnable in ten seconds, by anyone, with no dialog:* `codesign -d -vvv
+> ~/Applications/Clawdline.app` reports `Authority=Clawdline Local Development` and
+> `TeamIdentifier=not set`, against `TeamIdentifier=H7V7XYVQ7D` and `EQHXZ8M8AV` for the Developer
+> ID-signed applications beside it; a self-signed certificate whose OU is *shaped* like a team id
+> still signs `TeamIdentifier=not set`, so the shape is not the mechanism; an ad-hoc signature
+> prints the same `not set`. Both the delivery and its review measured these independently.
+>
+> *Observed during the diagnosis that opened this line, and deliberately not re-measured since:* the
+> two Cloud items' `ACLAuthorizationPartitionID` held 20 `cdhash:` entries, one per build, none of
+> them the installed application's. Reading a partition list needs `security dump-keychain`,
+> `find-generic-password -g`, or Keychain Access — the first two open a system dialog, which is why
+> neither the delivery nor the review was allowed to run them.
+>
+> *Not measured anywhere yet:* that a Team ID makes macOS write `teamid:<id>` instead and stop
+> adding entries. That is Apple's documented behaviour for the partition list, and the only thing
+> that settles it on this machine is the acceptance above — sign with a Developer ID identity,
+> authorise the two items once, rebuild, and use Cloud again without being asked.
 
 Discovery runs as `security find-identity … "$CLAWDLINE_LOCAL_SIGN_KEYCHAIN"`; ambiguity is counted
 only in that result, lock usability is read for that path by the injectable

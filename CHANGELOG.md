@@ -32,8 +32,8 @@ before, with no hardened runtime, no timestamp server and no entitlements.
 
 And it stops claiming and starts measuring. After signing, the build reads the signature back off
 the bundle it has just written and tells you what it found: the identity, and either the Team ID
-that will carry your authorisation into the next rebuild or the plain fact that there is none and
-the asking will continue. If that read fails or hangs it says so and the build still succeeds — a
+your authorisation is now keyed to instead of to this one build, or the plain fact that there is
+none and the asking will continue. If that read fails or hangs it says so and the build still succeeds — a
 report that could not be made is not a build that failed.
 
 If you have no Developer ID certificate nothing about your build changes, but it will now tell you

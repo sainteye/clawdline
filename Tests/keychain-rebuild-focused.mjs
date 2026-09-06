@@ -1342,7 +1342,12 @@ ${branches}
         notSetReport.result.stdout.includes("every rebuild") &&
         notSetReport.result.stdout.includes("Developer ID Application"),
     "a signature without a Team ID is reported as the reason the Keychain will ask again");
-  check(!notSetReport.result.stdout.includes("TeamIdentifier=not set —"),
+  // Bound to the words of the claim, not to the punctuation in front of it. The first version of
+  // this guard forbade the em dash after `TeamIdentifier=not set`, and the review's third mutant
+  // walked straight past it: the same false promise with a comma instead of a dash left all 69
+  // checks green. A guard that a rewrite of the sentence can satisfy is not guarding the sentence.
+  check(!notSetReport.result.stdout.includes("to that team rather than") &&
+        !notSetReport.result.stdout.includes("reach the next rebuild"),
     "the no-Team-ID report never claims the authorisation survives");
 
   // Ad-hoc can never carry a Team ID, so the branch that chooses it says the same thing.
