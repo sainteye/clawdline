@@ -1813,6 +1813,27 @@ group("a review verdict and a verification receipt outlive the task directory th
     expect("with the same two findings under it",
            UsageLedger.shared.reviewReceipts(.task("task-findings")).first?.findings.count, 2)
 
+    // **The replace has to be live, not merely harmless.** The primary key on
+    // `(task_id, axis, finding_id)` already stops a second import doubling a finding, so the
+    // check above passes with or without the DELETE that precedes the inserts — it says nothing
+    // about whether that DELETE is dead code. A *shorter* list is the case that separates them:
+    // without the replace, re-inserting F1 collides, the whole write rolls back, and F2 is still
+    // standing afterwards. Production cannot currently produce a shorter list — the receipt at
+    // the source is write-once — so this is a check on what `persistReview` promises rather than
+    // on a sequence the broker performs today.
+    UsageLedger.shared.importTaskRecord(receiptTaskRecord(
+        id: "task-findings", graphID: graphID,
+        review: ["verdict": "changes_required",
+                 "axes": [["axis": "repository_invariants", "status": "findings",
+                           "findings": [["id": "F1", "severity": "blocking",
+                                         "summary": "the one that was left",
+                                         "evidence": ["tools/check-architecture-boundaries.sh:1"]]]]]],
+        session: "sess-findings"))
+    let shortened = UsageLedger.shared.reviewReceipts(.task("task-findings")).first
+    expect("a shorter finding list replaces the longer one rather than merging into it",
+           shortened?.findings.map(\.findingID), ["F1"])
+    expect("and the axes go with it", shortened?.axes.map(\.axis), ["repository_invariants"])
+
     // The two clocks this outlives, asked of the store rather than of a comment: the receipt is
     // in a table of its own, so nothing that sweeps a task directory or evicts a registry row
     // can reach it.
