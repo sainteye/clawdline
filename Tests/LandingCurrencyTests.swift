@@ -475,7 +475,9 @@ group("a sweep that cannot prove it leaves the record exactly as it found it") {
     check("a claimed path that never reached the target is a different finding, and also not one",
           why(sweepDifferingTask)?.contains("differ from refs/heads/main") == true)
     check("and a target git will not answer for is skipped, never read as nothing having landed",
-          why(sweepUnreadableTask)?.contains("git would not answer") == true)
+          why(sweepUnreadableTask)?.contains("refs/heads/no-such-branch") == true
+              && why(sweepUnreadableTask)?.contains("not the same as nothing having landed")
+                  == true)
     check("nothing this pass could not prove was written",
           [sweepDirtyTask, sweepDifferingTask, sweepUnreadableTask, sweepLiveTask,
            sweepUntargetedTask].allSatisfy { Orchestrator.held($0)?.landing?.state == .pending })

@@ -111,8 +111,11 @@ immutable registry snapshot.
 - open handoff;
 - an outbound completion delivery not yet acknowledged, dead-lettered included;
 - a non-empty `owed` debt;
-- a dirty isolated worktree, or claims the audit found touched, with no `landed`/`abandoned`
-  landing decision recorded;
+- a dirty isolated worktree, or claims the audit found touched, with no **settled** landing
+  decision recorded — `landed`, `abandoned` or `nothing_to_land`, which is `LandingState.isSettled`
+  and not a fourth spelling of it. This read `landed || abandoned` until 2026-09-06, so a delivery
+  correctly closed as having written nothing kept both of these rows for ever: no state could clear
+  them, because the state it had was not on the list;
 - stale (incomplete or older than 45 seconds) or missing Session inventory, an unbound process
   identity, or anything but exactly one inventory row resolving to this exact (assistant,
   conversation) pair.
@@ -193,6 +196,40 @@ and no permanent record of one; what remains is the bounded `session.end` audit 
    inventory was incomplete, the identity unbound, or two rows are claiming one conversation.
 5. Repeat the close with the version from the projection you just read. A refusal is not a retry
    loop: `close_not_proven` carries the current state, and that state is the next thing to work.
+
+## What the machine now takes off this list by itself
+
+**A lock that only ever tightens is not a lock, it is a ratchet.** Every obligation above is added
+by a record and removed by a record, and for the landing rows the only thing that ever wrote the
+removing record was a person calling `POST /v1/orchestrator/tasks/:id/landing` with this machine's
+credential. So `pending_landing_owned` went up and never came down: on 2026-09-06 one root's card
+read 「還有 21 項未了結」 — twelve pending landings and nine touched-claim rows, from twelve children
+that had all reached `success` and whose records nobody had ever closed.
+
+The broker now closes what it can prove by itself, and nothing else. A periodic sweep asks git two
+questions and writes only what each one answers:
+
+- **the delivery reached the target** — its head is contained by `refs/heads/<target>` — which
+  closes the record through the same verified path the HTTP route takes, and stays the two-check
+  landing;
+- **nothing of a shared-checkout task's declared write set is outstanding** — every claimed path
+  unmodified in its project directory and identical to `refs/heads/<target>` — which closes the
+  record carrying no verification field at all, so it can never become `work_complete`.
+
+`docs/landing.md` has the full predicate, the bounds it runs under, and the measurement: of those
+twenty-one obligations, thirteen fall away and eight remain, and all eight are questions that
+genuinely need a person.
+
+**What does not change is where the projection reads from.** It still reads **records only** — no
+filesystem is stat'd and no screen is read at projection time. The sweep is a separate writer that
+happens to write the records the projection reads, on its own clock, off the main queue and outside
+the registry lock; a projection has never been able to close anything and still cannot.
+
+**And what the machine still refuses.** A settled record never moves. `abandoned` is a sentence
+about somebody giving up, and no machine can observe it. A repository git will not answer for is
+skipped rather than read as *nothing landed*. Every other obligation code on the list above —
+`coordination_wait_owned`, `open_handoff`, `owed_decision`, `completion_undelivered` — is untouched
+by this and is still cleared the way it always was.
 
 ## Deep status audit
 

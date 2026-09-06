@@ -216,3 +216,57 @@ nothing-to-keep prints.
 the target by squash, rebase or cherry-pick, which shares no commit with its branch; a repository
 whose tasks have left the registry's retention window; and a person landing work with no Clawdline
 task at all, which is the same boundary the queue has.
+
+## And now the machine walks through the door it can prove
+
+The passage above — **`landed` has exactly one entrance and a person is standing in it** — is no
+longer wholly true, and what changed is which of the guard's three answers a machine acts on.
+
+| the guard's answer | who acts on it now |
+|---|---|
+| `unrecorded landing` | **the broker.** Its own sweep asks the same `merge-base --is-ancestor` question and closes the record itself, through the same verified path the HTTP route takes. |
+| `outstanding delivery` | a person. The delivery is not in the target branch; whether that is work still to land or a squash nobody can see is a judgement. |
+| `undecidable` | **the broker, but only narrowly.** A shared-checkout task has no branch to ask about, so the sweep asks the one question that *is* answerable — is anything this task was allowed to write still outstanding? — and closes on that, saying so. Everything else here is still a person's. |
+
+**The two arms prove two different propositions and the record says which.**
+
+- **Ancestry.** Terminal task, record open, a named target, and a delivery head the registry knows
+  (`worktree.head`, else the live `refs/heads/clawdline/task/<id>`). If that head is contained by
+  `refs/heads/<target>`, the record closes as `landed` through
+  `OrchestratorDraft.verifyTargetLanding` — so `verification_origin`, `verified_commit`,
+  `verified_target_commit` and `landed_at` are all real, and this stays the two-check
+  `work_complete`. **This proves the delivery reached the target.**
+- **Write-set containment.** Terminal task, record open, a named target, no delivery branch, a
+  non-empty `claims`, and every claimed path both unmodified in the task's `project_dir` and
+  identical to `refs/heads/<target>`. The record closes as `landed` with the target's own commit, a
+  note naming the predicate, and **no verification field at all** — so
+  `isBrokerVerifiedTargetLanding` is false and this can never become `work_complete`. **This proves
+  only that nothing of the task's write set is outstanding**, which is a smaller sentence, and the
+  smaller sentence must never be dressed as the larger one.
+
+**What it refuses, always.** A settled record — a settled state may never move to another one. A
+task that has not finished. A record with no named target. `abandoned`, which is a sentence about
+somebody giving up and not a thing a machine can observe. `nothing_to_land`, which
+`nothingToLandAdmission` refuses for these tasks anyway. And a repository git will not answer for is
+**skipped**, never read as *nothing landed* — the same refusal `contained_commits` makes above.
+
+**What it costs.** A pass runs at most every five minutes, on the worktree queue rather than the
+main one, never while another pass is running, never from a read path, and never inside the registry
+lock; it looks at at most twenty pending records; it asks one `rev-list` and one `for-each-ref` per
+repository rather than one subprocess per task, and pays the per-task verification only for rows
+that are actually landing. The write happens under the lock behind a compare-and-swap on the exact
+record and task state the git answers were about, so a record that settled while git was running is
+left alone.
+
+**Measured, on this machine's own registry, before any of it shipped.** Of the twelve pending
+records the user was looking at on 2026-09-06, arm 1 would have closed none — not one of them had a
+delivery branch — and arm 2 would have closed eight. The four it leaves are the four that need a
+person: three name a target branch their work never reached, and one still has an uncommitted
+claimed path in the checkout. Closing eight takes five `touched_claims_without_closure` rows with
+them, so that card's twenty-one obligations become eight with no human judgement spent, and every
+one of the eight is a real question rather than a record nobody got round to writing.
+
+`tools/check-landing-records.py` and this sweep have to keep asking the same question. The guard
+still runs in `./test.sh` and still prints the `curl` for every row a person must settle; what it
+should now find, in the ordinary case, is that `unrecorded landing` is empty because the sweep got
+there first.

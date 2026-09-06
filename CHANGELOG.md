@@ -9,6 +9,34 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Changed: the machine closes the landings it can prove, instead of only counting them
+
+A Session card said 「還有 21 項未了結」 — twenty-one things this session had not finished — and the
+number had only ever gone up. Twelve of them were landing records: work that came back, was
+reviewed, and went into `main` weeks ago, with a record that says `pending` because closing one is
+a `curl` somebody has to remember to type. Nine more were the claim rows that hang off them.
+
+Clawdline now closes the ones it can prove, on its own, every few minutes, and it will only ever
+tell you the smaller of the two things it knows:
+
+- **The delivery is in the target branch.** Git already answers this — the branch contains the
+  commit — so the record closes with the same verified receipt a hand-written one gets, and the
+  Session still shows the double check that means *this landed*.
+- **Nothing this task was allowed to write is still outstanding.** For work done in a shared
+  checkout there is no branch to ask about, so the question becomes whether every path the task
+  declared is unmodified and identical to the target branch. That is a smaller claim, and the
+  record says so: it carries no verification receipt and never earns the double check.
+
+What it will not do is guess. A record somebody has already settled is never touched; a task that
+is still running owes nothing yet; `abandoned` is a decision about giving up and stays yours; and a
+repository git cannot answer for is skipped rather than reported as *nothing landed*. On the machine
+this was measured on, twenty-one obligations become eight — and each of the eight is a real
+question: three name a branch the work never reached, and one has a file still uncommitted.
+
+One older bug went with it. A delivery closed as having had **nothing to land** used to keep its
+claim and dirty-checkout rows for ever, because the list that decides what counts as *closed* knew
+about two of the three settled states. It now asks the state itself.
+
 ### Added: Pro can be bought, and the Plan page is where
 
 The paid Cloud tier had a price on a pricing page and no way to become one. The pricing page said
