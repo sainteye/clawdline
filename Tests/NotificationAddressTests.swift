@@ -103,7 +103,7 @@ group("a test push is a test loop, and its words are what keep it one") {
     let subscription = WebPush.Subscription(
         id: "test-loop-\(UUID().uuidString.lowercased())",
         endpoint: URL(string: "https://web.push.apple.com/clawdline-test-loop")!,
-        p256dh: Data([0x04] + Array(repeating: UInt8(0x01), count: 64)),
+        p256dh: Data([UInt8(0x04)] + Array(repeating: UInt8(0x01), count: 64)),
         auth: Data(repeating: 0x02, count: 16), device: phone.id, created: Date())
     WebPush.add(subscription)
     defer { WebPush.remove(id: subscription.id) }

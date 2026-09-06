@@ -1103,12 +1103,12 @@ group("a notification that names a session carries its address, and one that nam
            Orchestrator.pushURL(forSessionID: "w0t0p0:1234-ABCD"), "/#session=w0t0p0%3A1234-ABCD")
 
     // A scheduled task that ended badly. Three of its four endings ran in a tab.
-    expect("a scheduled failure points at the tab it ran in",
-           Orchestrator.scheduleFailureSessionID(outcome: .failure, childTerminalId: "%208"),
-           "%208")
-    expect("and so does one that ran out of time",
-           Orchestrator.scheduleFailureSessionID(outcome: .timeout, childTerminalId: "%208"),
-           "%208")
+    check("a scheduled failure points at the tab it ran in",
+          Orchestrator.scheduleFailureSessionID(outcome: .failure,
+                                                childTerminalId: "%208") == "%208")
+    check("and so does one that ran out of time",
+          Orchestrator.scheduleFailureSessionID(outcome: .timeout,
+                                                childTerminalId: "%208") == "%208")
     check("but a tab that never opened names nothing, whatever it was handed",
           Orchestrator.scheduleFailureSessionID(outcome: .spawnFailed,
                                                 childTerminalId: "%208") == nil)
