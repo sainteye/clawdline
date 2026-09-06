@@ -297,6 +297,26 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `58b3f74e` rather than in the shared checkout — another session was editing the roster below
 # while this ran, and a suite that takes six minutes on a tree three sessions can write to is not
 # measuring the tree it started on. 0 failures, `9501 checks passed`.
+
+# **9,538 is the worktree inventory landing, and the 43 are its three groups.** 9,495 + 43 comes to
+# the same number and that agreement is not what this line is set from: the value below is what this
+# tree's own run under `CLAWDLINE_RESEAL=1` reported, 0 failures, all twelve Cloud suites present
+# and the Cloud receipt matching its seal exactly. The witness came from the same run's guard line.
+# The 43 are `the inventory answers three sections and every row names an action a route accepts`
+# (three sections, the `do` vocabulary held to the landing route's own admission predicate, the
+# droppable ladder's three verdicts and its four refusals), `the inventory generation moves on what
+# changes a decision and on nothing else` (a clock, a title and a state inside a section do not move
+# it; claims and a row changing section do), and `a dispatch that did not read the inventory is
+# refused and handed the inventory` (the `409` red/green pair, whose two arms differ in exactly one
+# body field).
+#
+# **The run that produced it was stopped one step early, and the step it lost was the comparison
+# below rather than any part of the suite.** A `SIGTERM` aimed at that run's own top-level `bash`
+# was deferred while it waited on the foreground suite and landed between the lock release and
+# `verify_test_completion_receipts`. The roster was reached, the receipt line was printed, and the
+# comparison it did not reach is the one whose answer was already known — 9,495 against a tree that
+# ran 9,538. The run that set this line is therefore not the run that proves it; the confirming run
+# is the one taken after these two values were written, with no `CLAWDLINE_RESEAL` at all.
 expected_swift_receipt='9501 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare

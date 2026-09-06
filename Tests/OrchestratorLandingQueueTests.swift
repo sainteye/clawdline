@@ -484,4 +484,341 @@ group("the landing-time write set survives the isolation that empties the edit-t
                                        now: now)["claims"] as? [String] == [])
     }
 }
+
+// MARK: - The inventory a dispatch has to have read
+
+/// A described repository: no git, no registry, no subprocess. The three sections and the digest
+/// are pure functions of these four inputs, which is what makes the volatility questions below
+/// answerable at all — a test that had to run git could not hold "nothing meaningful changed"
+/// still while it changed the clock.
+func inventoryRows(_ tasks: [Orchestrator.Task],
+                   repository: String,
+                   heads: [String: String] = [:], merged: Set<String> = [],
+                   known: Bool = true,
+                   retained: [String: [String]] = [:],
+                   now: TimeInterval = 10_000) -> [OrchestratorInventory.Row] {
+    OrchestratorInventory.rows(
+        repository: repository, tasks: tasks,
+        branches: Orchestrator.RepositoryBranches(heads: heads, merged: merged, known: known),
+        retainedPaths: retained, now: Date(timeIntervalSince1970: now))
+}
+
+func inventorySection(_ rows: [OrchestratorInventory.Row],
+                      _ section: OrchestratorInventory.Section) -> [[String: Any]] {
+    rows.filter { $0.section == section }.map { $0.payload }
+}
+
+/// One settled worktree task, described down to the three facts the droppable ladder reads.
+func inventorySettled(id: String, repository: String, branch: String, base: String,
+                      head: String?, dirty: Bool?, path: String,
+                      landing: Orchestrator.Landing? = nil) -> Orchestrator.Task {
+    var task = landingQueueTask(id: id, title: "settled \(id.prefix(8))", state: .success,
+                                root: "settled-root", label: "settled",
+                                projectDir: repository, created: 1_000, landing: landing)
+    var worktree = Orchestrator.Worktree(path: path, branch: branch, base: base,
+                                         repository: repository, cwd: path)
+    worktree.head = head
+    worktree.dirty = dirty
+    task.isolation = .worktree
+    task.worktree = worktree
+    return task
+}
+
+group("the inventory answers three sections and every row names an action a route accepts") {
+    let repository = "/described/repository"
+    let onDisk = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-inventory-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: onDisk, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: onDisk) }
+
+    var working = landingQueueTask(
+        id: "aaaaaaaa-0000-4000-8000-000000000001", title: "still writing the guard",
+        state: .briefed, root: "live-root", label: "the live line", projectDir: repository,
+        created: 1_000, claims: ["tools/check-architecture-boundaries.sh", "Sources/Drop.swift"])
+    working.worktree = nil
+
+    var delivered = landingQueueTask(
+        id: "bbbbbbbb-0000-4000-8000-000000000002", title: "delivered, never landed",
+        state: .success, root: "delivered-root", label: "the finished line",
+        projectDir: repository, created: 2_000,
+        worktree: landingQueueWorktree(taskID: "bbbbbbbb-0000-4000-8000-000000000002",
+                                       base: "base0", repository: repository))
+    delivered.worktree?.head = "commit1"
+    delivered.worktree?.dirty = false
+
+    // A read-only audit whose root opened the obligation and never closed it: no claims, no
+    // worktree, no target. This is the row `nothing_to_land` exists for.
+    let audited = landingQueueTask(
+        id: "cccccccc-0000-4000-8000-000000000003", title: "read and judged, wrote nothing",
+        state: .success, root: "audit-root", label: "the audit", projectDir: repository,
+        created: 3_000,
+        landing: Orchestrator.Landing(state: .pending, target: nil, delivery: nil,
+                                      ownerRootKey: "abcd1234",
+                                      since: Date(timeIntervalSince1970: 3_100),
+                                      commit: nil, note: nil))
+
+    let rows = inventoryRows(
+        [working, delivered, audited], repository: repository,
+        heads: ["clawdline/task/bbbbbbbb-0000-4000-8000-000000000002": "commit1"])
+    let live = inventorySection(rows, .live)
+    let unlanded = inventorySection(rows, .unlanded)
+
+    expect("the live line is the only live row", live.count, 1)
+    expect("and it is named", live.first?["task"] as? String,
+           "aaaaaaaa-0000-4000-8000-000000000001")
+    expect("a live row asks the caller to coordinate rather than to dispatch over it",
+           live.first?["do"] as? String, "coordinate_or_take_over")
+    check("and carries the paths it holds",
+          (live.first?["claims"] as? [String] ?? []).sorted()
+              == ["Sources/Drop.swift", "tools/check-architecture-boundaries.sh"],
+          "got \(String(describing: live.first?["claims"]))")
+
+    expect("both finished lines are unlanded", unlanded.count, 2)
+    let deliveredRow = unlanded.first { $0["task"] as? String
+        == "bbbbbbbb-0000-4000-8000-000000000002" }
+    expect("a delivery whose branch carries commits asks a person to decide",
+           deliveredRow?["do"] as? String, "land_or_abandon")
+    check("and says which stored fact took the cheaper close off the table",
+          (deliveredRow?["why"] as? String ?? "").contains("commit"),
+          "got \(String(describing: deliveredRow?["why"]))")
+    let auditRow = unlanded.first { $0["task"] as? String
+        == "cccccccc-0000-4000-8000-000000000003" }
+    expect("an audit that wrote nothing is offered the close its route would admit",
+           auditRow?["do"] as? String, "nothing_to_land")
+
+    // The standard the `do` vocabulary is held to: it is `nothing_to_land` here exactly when
+    // `POST /v1/orchestrator/tasks/:id/landing` would take it, asked with the route's own
+    // predicate rather than with a second copy of it.
+    for row in unlanded {
+        let id = row["task"] as? String ?? ""
+        let task = [working, delivered, audited].first { $0.id == id }
+        let admitted = task.map {
+            Orchestrator.nothingToLandAdmission(for: $0, declaredWritePaths: $0.claims).isAdmitted
+        } ?? false
+        check("row \(id.prefix(8)) advises only what the landing route would accept",
+              (row["do"] as? String == "nothing_to_land") == admitted)
+    }
+
+    // Droppable: the three shapes, and the three refusals in front of them.
+    let mergedTask = inventorySettled(
+        id: "dddddddd-0000-4000-8000-000000000004", repository: repository,
+        branch: "clawdline/task/dddddddd-0000-4000-8000-000000000004", base: "base0",
+        head: "commit9", dirty: false, path: onDisk.path)
+    let emptyTask = inventorySettled(
+        id: "eeeeeeee-0000-4000-8000-000000000005", repository: repository,
+        branch: "clawdline/task/eeeeeeee-0000-4000-8000-000000000005", base: "base0",
+        head: "base0", dirty: false, path: onDisk.path)
+    let orphanTask = inventorySettled(
+        id: "ffffffff-0000-4000-8000-000000000006", repository: repository,
+        branch: "clawdline/task/ffffffff-0000-4000-8000-000000000006", base: "base0",
+        head: "commit7", dirty: false, path: onDisk.path)
+    let dirtyTask = inventorySettled(
+        id: "11111111-0000-4000-8000-000000000007", repository: repository,
+        branch: "clawdline/task/11111111-0000-4000-8000-000000000007", base: "base0",
+        head: "commit8", dirty: true, path: onDisk.path)
+    let unreadTask = inventorySettled(
+        id: "22222222-0000-4000-8000-000000000008", repository: repository,
+        branch: "clawdline/task/22222222-0000-4000-8000-000000000008", base: "base0",
+        head: "commit8", dirty: nil, path: onDisk.path)
+    let recordedTask = inventorySettled(
+        id: "33333333-0000-4000-8000-000000000009", repository: repository,
+        branch: "clawdline/task/33333333-0000-4000-8000-000000000009", base: "base0",
+        head: "commit8", dirty: false, path: onDisk.path,
+        landing: Orchestrator.Landing(state: .landed, target: "main", delivery: nil,
+                                      ownerRootKey: "abcd1234",
+                                      since: Date(timeIntervalSince1970: 4_000),
+                                      commit: "commit8", note: nil,
+                                      landedAt: Date(timeIntervalSince1970: 4_100)))
+    let settled = [mergedTask, emptyTask, orphanTask, dirtyTask, unreadTask, recordedTask]
+    // Every branch but the orphan's exists; every branch but the recorded landing's is contained
+    // by HEAD. That pair is what separates "git says the commits are in the tree" from "a root
+    // wrote down that they are", which is the whole of the last check in this group.
+    var heads: [String: String] = [:]
+    var merged: Set<String> = []
+    for task in settled {
+        guard let worktree = task.worktree,
+              task.id != "ffffffff-0000-4000-8000-000000000006" else { continue }
+        heads[worktree.branch] = worktree.head ?? worktree.base
+        if task.id != "33333333-0000-4000-8000-000000000009" { merged.insert(worktree.branch) }
+    }
+    let droppable = inventorySection(
+        inventoryRows(settled, repository: repository, heads: heads, merged: merged), .droppable)
+    func why(_ id: String) -> String? {
+        (droppable.first { ($0["task"] as? String)?.hasPrefix(id) == true })?["why"] as? String
+    }
+    expect("a merged branch with commits of its own is disposable", why("dddddddd"),
+           "merged_and_clean")
+    expect("a branch that never received a commit is told apart from a landing", why("eeeeeeee"),
+           "branch_empty")
+    expect("a finished task whose branch git cannot find leaves a checkout to reclaim",
+           why("ffffffff"), "checkout_orphaned")
+    check("a dirty checkout is never named disposable", why("11111111") == nil)
+    check("and neither is one this Mac has no dirty reading for", why("22222222") == nil)
+    // The asymmetry that matters: a record says the obligation is closed, `branch_unmerged` says
+    // this repository's HEAD does not contain the commits, and only one of those two can be
+    // checked against the tree. Deleting on the strength of the other costs the work.
+    check("a recorded landing does not make an unmerged branch safe to remove",
+          why("33333333") == nil)
+    check("every droppable row names disposal and nothing else",
+          droppable.allSatisfy { $0["do"] as? String == "dispose" })
+
+    check("git having said nothing empties this section rather than filling it",
+          inventorySection(inventoryRows(settled, repository: repository, known: false),
+                           .droppable).isEmpty)
+}
+
+group("the inventory generation moves on what changes a decision and on nothing else") {
+    let repository = "/described/repository"
+    let live = landingQueueTask(
+        id: "aaaaaaaa-1111-4000-8000-000000000001", title: "the title it was dispatched with",
+        state: .briefed, root: "live-root", label: "a label", projectDir: repository,
+        created: 1_000, claims: ["docs/api.md"])
+    func generation(_ tasks: [Orchestrator.Task], repository: String = "/described/repository",
+                    heads: [String: String] = [:], merged: Set<String> = [],
+                    now: TimeInterval = 10_000) -> String {
+        OrchestratorInventory.generation(
+            repository: repository,
+            rows: inventoryRows(tasks, repository: repository, heads: heads, merged: merged,
+                                now: now))
+    }
+
+    let sealed = generation([live])
+    check("a generation is sixteen hex characters", sealed.count == 16
+              && sealed.allSatisfy { "0123456789abcdef".contains($0) }, "got \(sealed)")
+    expect("reading twice gives the same receipt", generation([live]), sealed)
+    // The exclusion the whole mechanism rests on: a digest that ate the clock would expire while
+    // its holder was composing the request it belongs to.
+    expect("an hour of wall clock does not move it",
+           generation([live], now: 13_600), sealed)
+
+    var renamed = live
+    renamed.title = "somebody rewrote the title"
+    renamed.rootLabel = "and the label"
+    expect("nor does prose somebody rewrote", generation([renamed]), sealed)
+
+    var promoted = live
+    promoted.state = .spawning
+    expect("nor does a task moving through queued, spawning and briefed",
+           generation([promoted]), sealed)
+
+    var moreClaims = live
+    moreClaims.claims = ["docs/api.md", "Sources/RemoteServer.swift"]
+    check("but the write set a caller is deciding against does move it",
+          generation([moreClaims]) != sealed)
+
+    var finished = live
+    finished.state = .success
+    finished.isolation = .worktree
+    finished.worktree = landingQueueWorktree(taskID: live.id, base: "base0",
+                                             repository: repository)
+    let branch = "clawdline/task/\(live.id)"
+    check("and so does a row changing section, which is how a task finishing is noticed",
+          generation([finished], heads: [branch: "commit1"]) != sealed)
+
+    var head = finished
+    head.worktree?.head = "commit1"
+    check("a child committing again does not move it — the verdict is what a dispatcher reads",
+          generation([head], heads: [branch: "commit2"])
+              == generation([finished], heads: [branch: "commit1"]))
+
+    check("two repositories with identical work do not share a receipt",
+          generation([live], repository: "/described/other") != sealed)
+    check("an empty repository still has a generation, and it is its own",
+          generation([]).count == 16 && generation([]) != sealed)
+}
+
+group("a dispatch that did not read the inventory is refused and handed the inventory") {
+    withLandingQueueFixture { repository, base in
+        let now = Date(timeIntervalSince1970: 12_000)
+        Orchestrator.holdScheduleTaskForTesting(landingQueueTask(
+            id: "44444444-4444-4444-8444-444444444441", title: "somebody is already on this",
+            state: .briefed, root: "occupying-root", label: "the line already here",
+            projectDir: repository.path, created: 1_000, claims: ["Sources/RemoteServer.swift"]))
+
+        guard let read = OrchestratorInventory.inventory(project: repository.path, now: now),
+              let generation = read.payload["generation"] as? String else {
+            check("the inventory answers for the fixture repository", false)
+            return
+        }
+        expect("which is the row a dispatcher would have collided with",
+               (read.payload["live"] as? [[String: Any]])?.count, 1)
+
+        // A task.json that names no Root: `POST /v1/orchestrator/tasks` refuses that at a door
+        // of its own, well before a terminal starter can run — so the green arm below proves the
+        // inventory let the body through without this test opening a tab on somebody's Mac.
+        let taskID = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(taskID, isDirectory: true)
+        try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try! JSONSerialization.data(withJSONObject: [
+            "clawdline_protocol": 1, "task_id": taskID, "kind": "code", "assistant": "claude",
+            "project_dir": repository.path, "title": "the work nobody looked before starting",
+            "instructions": "do the work", "timeout_minutes": 30,
+        ]).write(to: directory.appendingPathComponent("task.json"), options: .atomic)
+
+        let secret = String(repeating: "a1", count: 32)
+        let token = Orchestrator.dispatchToken()
+        func post(_ generation: String?) -> RemoteServer.Response {
+            var body = "{\"task_id\":\"\(taskID)\",\"secret\":\"\(secret)\""
+            if let generation { body += ",\"inventory_generation\":\"\(generation)\"" }
+            return RemoteServer.shared.route(remoteRequest(
+                "POST", "/v1/orchestrator/tasks",
+                headers: ["Content-Type": "application/json",
+                          "X-Clawdline-Orchestrator": token],
+                body: body + "}"))
+        }
+
+        let unread = post(nil)
+        expect("a dispatch carrying no receipt is refused", unread.status, 409)
+        expect("and typed as the read it skipped", remoteErrorCode(unread), "stale_inventory")
+        let refusal = ((try? JSONSerialization.jsonObject(with: unread.body)) as? [String: Any])?[
+            "error"] as? [String: Any] ?? [:]
+        expect("the refusal carries the generation it wanted",
+               refusal["inventory_generation"] as? String, generation)
+        let handed = refusal["inventory"] as? [String: Any] ?? [:]
+        check("and the whole inventory with it, so one round trip is enough to recover",
+              handed["live"] is [[String: Any]] && handed["unlanded"] is [[String: Any]]
+                  && handed["droppable"] is [[String: Any]]
+                  && handed["generation"] as? String == generation)
+        check("a refused dispatch registers no task", Orchestrator.record(id: taskID) == nil)
+
+        expect("a receipt from another tree is refused the same way",
+               remoteErrorCode(post("0000000000000000")), "stale_inventory")
+
+        // The differential. The only thing that changes between this arm and the first is the
+        // value of `inventory_generation`; what comes back is this task's own next refusal,
+        // which is not this one.
+        let looked = post(generation)
+        check("with the current receipt the dispatch is no longer refused for not looking",
+              remoteErrorCode(looked) != "stale_inventory",
+              "got \(remoteErrorCode(looked))")
+        expect("and reaches the door it was always going to be judged at",
+               remoteErrorCode(looked), "root_session_required")
+        check("which still opened nothing", Orchestrator.record(id: taskID) == nil)
+
+        // A receipt goes stale when the answer moves, which is the whole of what it is for.
+        Orchestrator.holdScheduleTaskForTesting(landingQueueTask(
+            id: "44444444-4444-4444-8444-444444444442", title: "and now a second line",
+            state: .briefed, root: "second-root", label: "arrived since you looked",
+            projectDir: repository.path, created: 2_000, claims: ["docs/api.md"]))
+        expect("a receipt taken before another line appeared no longer opens the door",
+               remoteErrorCode(post(generation)), "stale_inventory")
+
+        // Resending a task the registry already holds stays idempotent: a retry after a timeout
+        // must not become a refusal because the repository moved between the two sends.
+        var held = landingQueueTask(
+            id: "44444444-4444-4444-8444-444444444443", title: "already dispatched",
+            state: .briefed, root: "occupying-root", label: nil, projectDir: repository.path,
+            created: 3_000, claims: ["docs/api.md"])
+        held.secretHash = Orchestrator.hash(ofSecret: secret)
+        Orchestrator.holdScheduleTaskForTesting(held)
+        check("a task the registry already holds has no inventory opinion at all",
+              OrchestratorInventory.dispatchAdmission(taskID: held.id, supplied: nil,
+                                                      now: now) == nil)
+        check("and neither has one whose task.json this Mac cannot read",
+              OrchestratorInventory.dispatchAdmission(
+                  taskID: UUID().uuidString.lowercased(), supplied: nil, now: now) == nil)
+    }
+}
+
 }

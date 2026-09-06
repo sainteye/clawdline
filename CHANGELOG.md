@@ -32,6 +32,30 @@ Raising the application is still the one thing this path will not do. Where a ju
 cannot find by bringing iTerm2 forward anyway — somebody pressed a button and wants their terminal
 — the walk answers by leaving every tab alone.
 
+### Added: a dispatch cannot open until somebody has read what is already in the repository
+
+`GET /v1/orchestrator/inventory?project=<dir>` answers three sections — `live`, `unlanded`,
+`droppable` — and every row carries a `do` naming an action a route on this Mac would actually
+accept: coordinate with the session already on those paths, land or abandon a delivery still
+sitting on a branch, or dispose of a checkout nothing needs. `nothing_to_land` appears only where
+the landing route's own admission predicate says it would be taken, so no row can advise something
+the server answers `409` to. Nothing here deletes anything; `droppable` names, and the reader
+decides.
+
+`POST /v1/orchestrator/tasks` and `POST /v1/orchestrator/detached-tasks` now require
+`inventory_generation` in the body and answer `409 stale_inventory` without it — with the whole
+current inventory in the error, so recovering is one round trip and never two. `generation` is
+derived from the answer rather than stored: a digest over each row's section, task, branch, `why`,
+`do` and claims, and deliberately not over `age_seconds`, a task's state inside a section, a head,
+a dirty flag or a title, so it does not race a clock. Handoffs and Root Assignments are exempt and
+the code says why: a handoff continues a line whose subject is already named, and a Root
+Assignment opens a Root that runs this read itself before *it* dispatches.
+
+The answer was never the missing part. On 2026-09-06 `GET /v1/orchestrator/inflight` named both
+live work lines and both unmerged deliveries in this repository correctly, all day, while the same
+Mac finished with 26 landings nobody had recorded and 10 deliveries re-done from scratch on a
+second line. Reading it was optional; now it is the door.
+
 ### Fixed: "done, not landed" could not be got rid of by doing either
 
 The Project screen labels every row in that block with what it wants — `land_or_abandon` — and one
