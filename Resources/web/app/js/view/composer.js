@@ -466,10 +466,15 @@ els.waiting.addEventListener("click", function (ev) {
     // it already reaches back to this file through `input/detail-actions.js` and `view/list.js`,
     // and this module already reaches it the other way through `input/composer.js` and
     // `session/open.js` — the two sit inside one strongly connected component twenty-one modules
-    // wide, and a direct edge would tighten that knot to save one line. `input/action-confirm.js`
-    // holds `Terminal` already and answers this event; `dispatchEvent` runs its listeners before it
-    // returns, so the panel opens inside the press and the focus move it ends with is still inside
-    // the user's gesture.
+    // wide, and a direct edge would tighten that knot for a saving that is not one line. What
+    // would go with it: the import and the call here, the listener and its note in
+    // `input/action-confirm.js`, and in `Tests/web-waiting-card.mjs` the guard that refuses the
+    // import, the assertion that this dispatch is what happens instead, and the block that runs
+    // that listener on its own. Measured before that suite was given a `Terminal` double: writing
+    // the import did not fail there, it crashed there, with an empty stdout and the guard never
+    // reached. `input/action-confirm.js` holds `Terminal` already and answers this event;
+    // `dispatchEvent` runs its listeners before it returns, so the panel opens inside the press and
+    // the focus move it ends with is still inside the user's gesture.
     if (ev.target.closest("[data-screen]")) {
         if (!S.openId) return;
         document.dispatchEvent(new CustomEvent("clawdline:open-screen"));

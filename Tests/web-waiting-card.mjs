@@ -26,10 +26,11 @@
  * import here, and importing it would pull in the graph the event exists to stay out of. So the
  * far half of that wire is read as text and its one registration is evaluated on its own against
  * a `Terminal` double. That proves the statement in the shipped file opens the panel when the
- * event fires; it does not prove the browser ever evaluates that file, and nothing here does.
- * What stands behind that is the same thing that stands behind every other listener in it: it is
- * imported from `main.js`'s graph, and if it were not, the whole session-actions sheet would be
- * dead too.
+ * event fires; it does not prove the browser ever evaluates that file, and nothing short of a
+ * running browser can. What stands behind that is the same thing that stands behind every other
+ * listener in it: it is imported from `main.js`'s graph, and if it were not, the whole
+ * session-actions sheet would be dead too. That import is asserted at the foot of this file — the
+ * premise is still a premise, but it is no longer an unwatched one.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -122,6 +123,18 @@ globalThis.Shots = { count: function () { return 0; } };
 globalThis.msgText = function () { return ""; };
 globalThis.sending = function () { return false; };
 globalThis.Voice = { available: false };
+// **A `Terminal` double, for a module that does not use one.** The guard at the foot of this file
+// says `view/composer.js` does not import `view/terminal.js`. The only change that violates it —
+// writing the import and calling `Terminal.open()` — used to kill this suite at the first press
+// with `ReferenceError: Terminal is not defined`, because the loader below strips the imports and
+// evaluates the text, so whatever an import would have bound is simply absent. Measured: that
+// mutation printed nothing at all on stdout and the guard, two hundred lines further down, never
+// ran. A guard whose violation crashes the harness is not a guard. With the double here the
+// violating tree fails on the sentence that names what it did.
+globalThis.Terminal = {
+    open: function () {}, close: function () {}, refresh: function () {},
+    follow: function () {}, observe: function () {}
+};
 globalThis.drawSpinner = function () {};
 globalThis.setLiveSpin = function () {};
 globalThis.spinPhase = 0;
@@ -238,8 +251,21 @@ for (const [name, html] of [["menu", withMenu], ["unread", noMenu], ["no-refresh
 const label = /data-screen="1">([^<]*)<\/button>/.exec(noMenu);
 equal(label && label[1], esc(T.webSessionScreen),
     "the label is T.webSessionScreen — the same words as the session menu's own entry");
-check(composerSource.indexOf("webSessionScreen") !== -1,
-    "and it is read from the string table rather than written into the view");
+// **Read from the table, shown by changing the table.** This used to look for the string
+// `webSessionScreen` anywhere in the module's source — which the comment above the button says on
+// its own, so the assertion was satisfied by prose: with the label hardcoded to a literal and that
+// comment left in place, it stayed green. What it means to claim is that the view takes these
+// words from `T` at the moment it draws, and the only thing that shows that is handing `T`
+// different words and finding them on the card.
+const shippedScreenLabel = T.webSessionScreen;
+T.webSessionScreen = "Screen from the table";
+waiting(null);
+evidence = null;
+const relabelled = draw();
+T.webSessionScreen = shippedScreenLabel;
+const relabelledLabel = /data-screen="1">([^<]*)<\/button>/.exec(relabelled);
+equal(relabelledLabel && relabelledLabel[1], esc("Screen from the table"),
+    "and it is read from the string table at draw time rather than written into the view");
 const i18nSource = await readFile(new URL("core/i18n.js", js), "utf8");
 check(/^\s*webSessionScreen:\s*"Live screen",$/m.test(i18nSource),
     "the English fallback for that key is the one that landed with the panel, unchanged");
@@ -285,7 +311,13 @@ globalThis.document.addEventListener("clawdline:open-screen", function () { open
 // routes exactly as well as a press against a card that drew — which is how the whole block came
 // to be passing against an empty card once.
 function pressMarker(marker, extra) {
-    check(els.waiting.innerHTML.indexOf("data-") !== -1,
+    // **It asks for the marker it is about to press, not for any marker at all.** `indexOf("data-")`
+    // was satisfied by the title bar, which carries `data-fold` and `data-dismiss` whether or not
+    // the body was ever drawn: measured, a card pinned folded failed twenty-four assertions and
+    // this probe passed all five times, together with every press assertion behind it. A guard
+    // that survives the thing it guards against is worse than none, because it holds the place
+    // where a real one would go.
+    check(els.waiting.innerHTML.indexOf(marker) !== -1,
         "the card is on screen to be pressed (" + marker + ")");
     const node = Object.assign({
         dataset: {}, disabled: false,
@@ -363,6 +395,20 @@ check(registration !== null,
     "input/action-confirm.js registers a clawdline:open-screen listener");
 check(/^import \{ Terminal \} from "\.\.\/view\/terminal\.js";$/m.test(confirmSource),
     "and that file is one that already holds Terminal, so the wire adds no import anywhere");
+
+// **And the hop that makes any of it run.** Everything above holds the shipped statement against
+// what it does when the event fires; none of it says the browser ever evaluates the file that
+// registers it. That rests on one side-effect import in `main.js`, and nothing in `Tests/` was
+// watching it: the four suites that read `input/action-confirm.js` read it as text, and the ones
+// that read `main.js` pin the page registry and the element table. Delete that line and this
+// button, the close-confirm sheet and the whole session-actions sheet go dead together while
+// every suite in the roster stays green. It belongs beside the claim it closes, which is the one
+// this file's own header makes, and there is no suite here about the page's module graph to put
+// it in. It is not an evaluation proof — only a running browser is that — but the premise now has
+// something that goes red when it breaks.
+const mainSource = await readFile(new URL("main.js", js), "utf8");
+check(/^import "\.\/input\/action-confirm\.js";$/m.test(mainSource),
+    "main.js imports input/action-confirm.js, so the browser reaches the listener above");
 
 if (registration) {
     // The registration on its own, against a Terminal double: not a description of what that
