@@ -24,7 +24,12 @@ Clawdline still only *reads* transcripts. It types nothing for this and writes n
 `~/.claude/`: the reply is one the assistant wrote itself, and all Clawdline does is recognise the
 marker when it reads that reply back. A marker that was mistyped, or quoted inside a code block,
 stays on screen as text rather than disappearing; once the stored picture expires, the same place
-says **Image expired**.
+says **Image expired**. And when the marker names a picture this Mac has no record of at all, it
+says **Unknown image** instead — the app does not tell you that something you never had has run
+out.
+
+The store holds 64 pictures at a time and shares that with the ones sessions send each other, so
+store the picture at the moment you are going to show it rather than well in advance.
 
 ## 0.8.0 — 2026-09-06
 

@@ -292,14 +292,19 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # that entry's attachments in both readers and both renderers, and the store route beside the
 # message route it deliberately leaves alone. Measured, not added: this is what the clean run
 # reported after two mutation rounds had shown 34 of those checks going red.
-expected_swift_receipt='9572 checks passed'
+# 9,587 with that delivery's correction round: 15 more in the same three groups — which of two
+# absences a marker resolved to and that it invents no measurements for either, that reading a
+# transcript back never sweeps the whole artifact store, and that both readers spend one image
+# budget across one turn rather than one per block. Read off a mutation round in which 13 of
+# those 15 went red, which is also where this total came from: `16 of 9587 checks failed`.
+expected_swift_receipt='9587 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7664
+expected_swift_receipt_witness=7679
 
 count_exact_receipt_lines() {
   local receipt=$1
