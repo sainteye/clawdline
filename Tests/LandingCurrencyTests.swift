@@ -111,6 +111,7 @@ let sweepUntargetedTask = "31313131-4141-5151-6161-717171717178"
 let sweepDirectoryTask = "31313131-4141-5151-6161-717171717179"
 let sweepMissingClaimTask = "31313131-4141-5151-6161-71717171717a"
 let sweepDeletedClaimTask = "31313131-4141-5151-6161-71717171717b"
+let sweepWarningClaimTask = "31313131-4141-5151-6161-71717171717c"
 
 func runLandingCurrencyTests() {
 
@@ -535,16 +536,23 @@ group("a sweep that cannot prove it leaves the record exactly as it found it") {
     // Its control: a claim absent from the checkout and present in the target, which is what a
     // landed deletion looks like from here. It must not be read as the row above.
     hold(sweepDeletedClaimTask, claims: ["Sources/Removed.swift"])
+    // The same class, and the one shape of it git talks about. A pathspec naming a directory that
+    // does not exist makes git print `warning: could not open directory …` **and exit 0**, and
+    // while the two streams shared a pipe that line became a claimed path called
+    // `ning: could not open directory …` — the accident that was the only thing separating this
+    // row from the one above it.
+    hold(sweepWarningClaimTask, claims: ["Sources/nope/one.md"])
     Orchestrator.forgetLandingSweepObservations()
 
     let held = [sweepDirtyTask, sweepDifferingTask, sweepUnreadableTask, sweepSettledTask,
-                sweepLiveTask, sweepUntargetedTask, sweepMissingClaimTask,
-                sweepDeletedClaimTask].compactMap { Orchestrator.held($0) }
-    expect("every row in this fixture was seeded", held.count, 8)
+                sweepLiveTask, sweepUntargetedTask, sweepMissingClaimTask, sweepDeletedClaimTask,
+                sweepWarningClaimTask].compactMap { Orchestrator.held($0) }
+    expect("every row in this fixture was seeded", held.count, 9)
     let candidates = Orchestrator.landingSweepCandidates(held).map(\.taskID).sorted()
     expect("a settled record, a live task and a record with no target are not candidates at all",
            candidates, [sweepDirtyTask, sweepDifferingTask, sweepUnreadableTask,
-                        sweepMissingClaimTask, sweepDeletedClaimTask].sorted())
+                        sweepMissingClaimTask, sweepDeletedClaimTask,
+                        sweepWarningClaimTask].sorted())
 
     let pass = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 5_000))
     func why(_ id: String) -> String? {
@@ -567,10 +575,36 @@ group("a sweep that cannot prove it leaves the record exactly as it found it") {
     check("while a claim the target still carries resolves, and gets a finding about content",
           why(sweepDeletedClaimTask)?.contains("unanswerable") == false
               && why(sweepDeletedClaimTask)?.contains("differ from refs/heads/main") == true)
+    check("a warning git prints about a missing directory is not a claimed path",
+          why(sweepWarningClaimTask)?.contains("unanswerable") == true
+              && why(sweepWarningClaimTask)?.contains("could not open directory") == false)
     check("nothing this pass could not prove was written",
           [sweepDirtyTask, sweepDifferingTask, sweepUnreadableTask, sweepLiveTask,
-           sweepUntargetedTask, sweepMissingClaimTask,
-           sweepDeletedClaimTask].allSatisfy { Orchestrator.held($0)?.landing?.state == .pending })
+           sweepUntargetedTask, sweepMissingClaimTask, sweepDeletedClaimTask,
+           sweepWarningClaimTask].allSatisfy { Orchestrator.held($0)?.landing?.state == .pending })
+
+    // **The seam itself, on the one command that produces the line.** git writes this to stderr
+    // and exits 0, so a `0` status is not what tells the two apart; keeping the streams apart is.
+    let noisy = OrchestratorDraft.git(
+        ["status", "--porcelain=v1", "--untracked-files=all", "--", "Sources/nope/one.md"],
+        cwd: repository.url.path, separateStandardError: true)
+    expect("git answers a missing directory with a zero status", noisy?.status, 0)
+    check("its warning is on the stream git wrote it to",
+          noisy?.errorOutput.contains("could not open directory") == true)
+    check("and not in the output a porcelain reader parses",
+          noisy?.output.contains("warning") == false && noisy?.output.isEmpty == true)
+    // And the reader is fail-closed whatever the seam does, because a caller can still be handed
+    // a merged stream: a line that is not `XY <path>` means git did not answer.
+    check("a diagnostic line is not a porcelain record",
+          Orchestrator.landingSweepPorcelainPath(
+            "warning: could not open directory 'a/nope/': No such file or directory") == nil
+              && Orchestrator.landingSweepPorcelainPath("fatal: bad revision 'x'") == nil
+              && Orchestrator.landingSweepPorcelainPath("MM") == nil)
+    expect("while a record keeps its path exactly",
+           Orchestrator.landingSweepPorcelainPath(" M Sources/Dirty.swift"),
+           "Sources/Dirty.swift")
+    expect("including the untracked one, whose two characters are not letters",
+           Orchestrator.landingSweepPorcelainPath("?? docs/new.md"), "docs/new.md")
 
     // **The two conditions in `isSettled` are two conditions.** Until this fixture was corrected,
     // the one dirty path was also different from the target, so no test could tell them apart and
