@@ -359,16 +359,51 @@ group("revealing a tmux pane brings iTerm2 forward only when tmux says it drew i
     defer {
         Tmux.binaryForTesting = nil
         Tmux.revealActivationDispatchForTesting = nil
+        Tmux.revealFollowForTesting = nil
     }
     Tmux.binaryForTesting = "/bin/echo"
     var handedOn: [() -> Void] = []
+    var followed: [String] = []
     Tmux.revealActivationDispatchForTesting = { handedOn.append($0) }
+    Tmux.revealFollowForTesting = { followed.append($0) }
     let failure = Tmux.reveal("%1")
     check("selecting the pane is still answered for on the spot", failure == nil)
     expect("and the activation tail is handed to another thread", handedOn.count, 1)
+    expect("which is where the tab gets named, so nothing is named twice", followed, [])
     handedOn.removeAll()
+
+    // **The prompt bar's walk names the tab, and for a while it named nothing.** `select-window`
+    // above moves tmux's active window and iTerm2 does not act on it — measured, and written down
+    // in `docs/interface.md` — so a walk that stopped there left "the terminal shows whatever the
+    // bar is aimed at" switched on and doing nothing whatever under `tmux -CC`. What must not come
+    // back with it is the activation: raising iTerm2 on every arrow key is the one thing
+    // `activate: false` promises not to do.
     _ = Tmux.reveal("%1", activate: false)
-    expect("the prompt bar walking its list hands on nothing at all", handedOn.count, 0)
+    expect("the prompt bar walking its list names the tab underneath", followed, ["%1"])
+    expect("and hands on no activation tail to raise the application", handedOn.count, 0)
+
+    // **What the walk keeps of the two locks, and which way the one it keeps fails.** Asking
+    // iTerm2 to name a tab it is not drawing costs a subprocess and answers "no such tab", so the
+    // cheap tmux half stays in front of it — a tmux under Ghostty reports no control-mode client
+    // and the walk spends nothing. The expensive half, reading iTerm2's own list to prove the
+    // client *is* iTerm2, is the permission to raise an application and is dropped with the
+    // raising. So this gate fails **open** where `shouldActivateITerm` fails closed: a tmux
+    // nobody could ask has not said no, and refusing on it would switch the follow off for
+    // somebody whose tmux this app cannot find, silently and for good.
+    let byITerm2 = Tmux.ControlModeObservation(clients: [drawing], error: nil)
+    check("a pane whose session something is drawing in control mode is worth the Apple Event",
+          Tmux.shouldFollowMirrorTab(paneSession: "work", observation: byITerm2))
+    check("a pane in a session no control-mode client holds is not",
+          !Tmux.shouldFollowMirrorTab(paneSession: "ghostty", observation: byITerm2))
+    check("nor is any pane when tmux says there is no control-mode client at all",
+          !Tmux.shouldFollowMirrorTab(
+            paneSession: "work",
+            observation: Tmux.ControlModeObservation(clients: [], error: nil)))
+    check("but a reading that failed is not tmux saying no, so the follow goes ahead",
+          Tmux.shouldFollowMirrorTab(
+            paneSession: "work",
+            observation: Tmux.ControlModeObservation(
+                clients: [], error: TerminalFailure(kind: .io, message: "timed out"))))
 }
 
 group("a tmux -CC reveal names the tab, because iTerm2 does not follow tmux's selection") {

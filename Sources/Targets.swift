@@ -1087,10 +1087,13 @@ enum Targets {
     /// passed on rather than dropped — otherwise the prompt bar walking its list would haul
     /// iTerm2 in front of the box being typed into. See ``Tmux/reveal(_:activate:)``.
     ///
-    /// **`activate: false` under tmux still moves nothing on iTerm2's side**, which is not the
-    /// same courtesy the iTerm2 backend gives: there, the tab follows the prompt bar's list with
-    /// the keyboard left alone. Doing that here would put the whole four-round-trip identity
-    /// check on every arrow key, and it is a separate decision from the one this change made.
+    /// **`activate: false` now moves the tab on both backends**, which it did not until somebody
+    /// reported the difference: under tmux the prompt bar's walk selected a tmux window and
+    /// stopped, and iTerm2 does not act on that, so the terminal underneath simply never followed
+    /// what the bar was aimed at. It is the same courtesy in both cases — the tab is named, the
+    /// keyboard is left in the box being typed into — and it costs one Apple Event in both cases,
+    /// because the identity check that is four round trips is the permission to *raise* an
+    /// application and nothing here raises one. See ``Tmux/followMirrorTab(_:)``.
     @discardableResult
     static func reveal(_ session: TargetSession, activate: Bool = true) -> TerminalFailure? {
         switch session.backend {

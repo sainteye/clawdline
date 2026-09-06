@@ -918,16 +918,25 @@ enum Tmux {
     /// So the tail selects the tab as well, through ``ITerm/revealTmuxPane(_:activate:)``, and
     /// falls back to raising the application when the mirroring row cannot be found.
     ///
-    /// `activate: false` stops before that, the same as ``ITerm/reveal(_:activate:)``: the prompt
-    /// bar walks its list with the terminal following underneath, and a terminal that jumped in
-    /// front on every press would take the keyboard away from the box being typed into.
+    /// **`activate: false` names the tab and raises nothing**, which is the same courtesy
+    /// ``ITerm/reveal(_:activate:)`` gives: the prompt bar walks its list with the terminal
+    /// following underneath, and a terminal that jumped in front on every press would take the
+    /// keyboard away from the box being typed into. It used to stop before the tab as well, on
+    /// the grounds that following would put the whole identity check on every arrow key — and
+    /// that left the setting *"the terminal shows whatever the bar is aimed at"* doing nothing at
+    /// all for anybody running under `tmux -CC`, because the `select-window` above is not
+    /// something iTerm2 acts on. See ``followMirrorTab(_:)`` for why the check is not needed
+    /// where nothing is raised, and what it costs instead.
     @discardableResult
     static func reveal(_ paneID: String, activate: Bool = true) -> TerminalFailure? {
         let pane = run(["select-pane", "-t", paneID])
         guard pane.ok else { return pane.failure }
         let window = run(["select-window", "-t", paneID])
         guard window.ok else { return window.failure }
-        guard activate else { return nil }
+        guard activate else {
+            followMirrorTab(paneID)
+            return nil
+        }
         // **The selection is what was asked for; coming forward is a courtesy, and it leaves
         // this thread.** Three of the four callers are on the main thread —
         // ``NotchIsland`` `jump(_:)` and `reveal()`, and `main.swift`'s `revealTarget()` through
@@ -950,6 +959,63 @@ enum Tmux {
     /// a test holds the block instead of running it, because what has to be proved is that
     /// `reveal` hands it on rather than waiting for it.
     static var revealActivationDispatchForTesting: ((@escaping () -> Void) -> Void)?
+
+    /// Select the iTerm2 tab that is drawing this pane, and bring nothing forward — the half of
+    /// a reveal the prompt bar's walk wants.
+    ///
+    /// **``activateITerm2(forPane:)``'s second lock is not repeated here, and the reason is what
+    /// that lock is on.** It reads iTerm2's own session list to establish that the thing speaking
+    /// control mode really is iTerm2, because raising the *application* over whatever somebody was
+    /// typing into cannot be justified by a `control-mode` flag that anything can carry — and
+    /// `ITerm.activate()` names no tab, so its evidence has to come from outside. Nothing is
+    /// raised here, and a tab is named: `revealtmux` matches `session.tmuxWindowPane` against this
+    /// pane and refuses any row whose `session.tmuxRole` is not `client`, so the only tab it can
+    /// select is one iTerm2 itself says it is drawing for this pane. That is the same standard the
+    /// iTerm2 backend meets by session id, where ``ITerm/reveal(_:activate:)`` has no gate in
+    /// front of it at all.
+    ///
+    /// Which is what makes it affordable on every arrow key, the objection that left this undone.
+    /// Dropping the Apple Event leaves ``shouldFollowMirrorTab(paneSession:observation:)``, two
+    /// tmux calls that cost `real 0.01` together on this Mac, and one `revealtmux` at `real 0.11`
+    /// — the same as the `reveal` the iTerm2 backend already spends on every press, measured three
+    /// runs each.
+    ///
+    /// **No fallback.** ``bringITerm2ToPane(_:revealMirrorTab:bringForward:)`` answers a missing
+    /// mirroring row by raising the application, because somebody pressed a button and wants their
+    /// terminal. Nobody pressed anything here, so a row that cannot be found means the walk moves
+    /// no tab — raising iTerm2 is the one thing `activate: false` is a promise not to do.
+    static func followMirrorTab(_ paneID: String) {
+        if let follow = revealFollowForTesting {
+            follow(paneID)
+            return
+        }
+        let observation = controlModeObservation()
+        guard shouldFollowMirrorTab(paneSession: sessionName(ofPane: paneID),
+                                    observation: observation) else { return }
+        _ = ITerm.revealTmuxPane(paneID, activate: false)
+    }
+
+    /// Whether a non-activating follow is worth an Apple Event.
+    ///
+    /// **A cost gate, not a permission, and that decides which way it fails.**
+    /// ``activateITerm2(forPane:)`` asks almost this question to decide whether an application may
+    /// be raised, so an answer it cannot believe is a no there. Here the worst an unreadable
+    /// answer can buy is one `osascript` that comes back *iTerm2 is drawing no tab for that pane*,
+    /// and refusing on it would silently switch the follow off for anybody whose tmux this app
+    /// cannot ask. So only tmux saying plainly that nothing is drawing this pane's session in
+    /// control mode stops the follow — which is what a tmux running under Ghostty or Terminal.app
+    /// says, and what would otherwise spend a doomed subprocess on every arrow key.
+    static func shouldFollowMirrorTab(paneSession: String?,
+                                      observation: ControlModeObservation) -> Bool {
+        guard observation.isComplete else { return true }
+        return shouldActivateITerm(paneSession: paneSession,
+                                   controlModeClients: observation.clients)
+    }
+
+    /// Where ``followMirrorTab(_:)`` sends its one Apple Event. Production asks iTerm2; a test
+    /// records the pane, because what has to be proved is that a non-activating reveal names a tab
+    /// at all — the thing it used to do nothing about.
+    static var revealFollowForTesting: ((String) -> Void)?
 
     /// Bring iTerm2 forward for a pane, if iTerm2 is really the thing drawing it.
     ///

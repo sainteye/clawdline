@@ -287,14 +287,24 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `sqlite3_busy_timeout(db, 5_000)`, matching the ledger; the other suggestion in that message —
 # closing the ledger's connection before the fixture opens its own — would not have helped, since
 # what takes the lock is a write scheduled afterwards, and that write reopens the connection.
-expected_swift_receipt='9495 checks passed'
+#
+# **9,501, and the six checks are the tmux follow.** `Tmux.reveal(_:activate:false)` — the prompt
+# bar's walk — used to stop after `select-window`, which iTerm2 does not act on, so "the terminal
+# shows whatever the bar is aimed at" moved no tab at all under `tmux -CC`. It names the tab now,
+# and the four assertions above the two that prove it are about the gate in front: which half of
+# `activateITerm2`'s identity check the walk keeps, and that the half it keeps fails *open* where
+# the activation's fails closed. 2026-09-06, `CLAWDLINE_RESEAL=1`, in a snapshot of tree
+# `58b3f74e` rather than in the shared checkout — another session was editing the roster below
+# while this ran, and a suite that takes six minutes on a tree three sessions can write to is not
+# measuring the tree it started on. 0 failures, `9501 checks passed`.
+expected_swift_receipt='9501 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
 # with every guard passing. This is the measurement that record is checked against: add a `check`
 # or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
 # Set both lines together, from the same run, and never from arithmetic.
-expected_swift_receipt_witness=7580
+expected_swift_receipt_witness=7586
 
 count_exact_receipt_lines() {
   local receipt=$1

@@ -128,10 +128,36 @@ iTerm2's own listing; and then `iterm.js` refuses a second time on any row whose
 just as surely as raising the wrong application does, so the step that was added is behind the
 guard rather than beside it.
 
-One thing this does not extend to: the prompt bar walking its list with `activate: false`. On the
-iTerm2 backend the tab underneath follows your selection while the keyboard stays in the box you
-are typing into; under tmux it still does not, because doing it would put the whole identity check
-on every arrow key.
+### The bar's walk moves the tab too
+
+*"The terminal shows whatever the bar is aimed at"* is a setting, it is on by default, and under
+`tmux -CC` it did nothing at all — the walk selected a tmux window with `activate: false` and
+stopped there, which is the one thing the measurement above says iTerm2 will not act on. So the
+tab underneath followed the bar on the iTerm2 backend and sat still on the tmux one, for the same
+press, with the same switch on.
+
+It follows on both now, and **the second lock is not in front of this one**, which is a deliberate
+asymmetry rather than an oversight. What that lock is on is raising the *application*: `activate`
+names no tab, so before it takes somebody's keyboard it has to prove from iTerm2's own listing
+that the thing speaking control mode really is iTerm2. This path raises nothing and names a tab,
+and the naming is iTerm2's own answer — `revealtmux` will only select a row that reports this pane
+in `session.tmuxWindowPane` with `tmuxRole` of `client`, which is a stronger statement about what
+iTerm2 is drawing than the client list can make. It is also the same standard the iTerm2 backend's
+own follow meets, where a session id goes in with no gate in front of it at all.
+
+**The first lock stays, and stops being a permission.** Asking iTerm2 for a tab it is not drawing
+is not dangerous, it is merely a subprocess spent to be told "no such tab" — so tmux's client list
+is still read, now to decide whether the Apple Event is worth spending. That keeps a tmux running
+under Ghostty or Terminal.app from paying for one on every arrow key. Which way it fails changes
+with what it is for: `shouldActivateITerm` reads a tmux it could not ask as a no, and this one
+reads it as a yes, because the cost of being wrong is one wasted subprocess rather than somebody's
+keyboard, and refusing would switch the follow off for good on a Mac where `tmuxPath` is unset.
+
+What is left is affordable on every arrow key, which was the objection when this was left undone:
+two tmux calls at `real 0.01` together and one `revealtmux` at `real 0.11` — the same as the
+`reveal` the iTerm2 backend has always spent on every press, three runs each on this Mac. There is
+no fallback either: a jump answers a missing mirroring row by raising iTerm2 anyway, because
+somebody pressed a button and wants their terminal, and nobody pressed anything here.
 
 The tmux gateway — the session you typed `tmux -CC` into, usually named something like
 `Default (tmux)` — is an ordinary iTerm2 row with a real tty and behaves exactly as it always did.

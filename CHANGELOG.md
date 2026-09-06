@@ -9,6 +9,29 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: under tmux, the terminal stopped following the bar
+
+*"The terminal shows whatever the bar is aimed at"* is on by default, and if your sessions live in
+a `tmux -CC` window it had quietly done nothing for a while: you walked the bar's list and the tab
+underneath sat exactly where it was. It was not the setting and it was not tmux. Walking the list
+selects the tmux window and deliberately raises nothing — and selecting a tmux window is a thing
+iTerm2 does not act on, which had already been measured for the *other* half of this, the jump that
+brings a session to the front. The jump was taught to name the tab; the walk was left asking tmux
+and stopping there, on the grounds that following would put a four-round-trip identity check on
+every arrow key.
+
+The walk names the tab now, and the expensive half of that identity check is not in front of it,
+because what that half buys is the permission to raise an *application* over whatever you were
+typing into — and nothing here raises one. Naming a tab needs no outside evidence: iTerm2 is asked
+which of its tabs is drawing this pane and answers, which is the same standard the plain-iTerm2
+path has always met by session id. The cheap half stays, no longer as a permission but so that a
+tmux running under another terminal does not pay for an Apple Event it has no use for. Total:
+`real 0.12` a press, against the `real 0.11` the plain-iTerm2 follow has always cost.
+
+Raising the application is still the one thing this path will not do. Where a jump answers a tab it
+cannot find by bringing iTerm2 forward anyway — somebody pressed a button and wants their terminal
+— the walk answers by leaving every tab alone.
+
 ### Fixed: "done, not landed" could not be got rid of by doing either
 
 The Project screen labels every row in that block with what it wants — `land_or_abandon` — and one
