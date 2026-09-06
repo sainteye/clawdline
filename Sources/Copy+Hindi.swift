@@ -322,7 +322,6 @@ struct Hindi: Copy {
     let webScreenLive = "लाइव"
     let webScreenOnDemand = "मांग पर"
     let webScreenGone = "वह स्क्रीन पढ़ी नहीं जा सकी"
-    let webScreenWrap = "रैप"
     let webGitTitle = "Git बदलाव"
     let webGitClean = "वर्किंग ट्री में कोई बदलाव नहीं"
     let webGitNotRepo = "यह Git रिपॉज़िटरी नहीं है"

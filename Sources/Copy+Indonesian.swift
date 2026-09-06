@@ -318,7 +318,6 @@ struct Indonesian: Copy {
     let webScreenLive = "langsung"
     let webScreenOnDemand = "sesuai permintaan"
     let webScreenGone = "Layar itu tidak dapat dibaca"
-    let webScreenWrap = "Bungkus"
     let webGitTitle = "Perubahan Git"
     let webGitClean = "Tidak ada perubahan di direktori kerja"
     let webGitNotRepo = "Bukan repositori Git"

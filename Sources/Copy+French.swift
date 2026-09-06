@@ -318,7 +318,6 @@ struct French: Copy {
     let webScreenLive = "en direct"
     let webScreenOnDemand = "à la demande"
     let webScreenGone = "Impossible de lire cet écran"
-    let webScreenWrap = "Renvoi"
     let webGitTitle = "Modifications Git"
     let webGitClean = "Arbre de travail propre"
     let webGitNotRepo = "Ce n’est pas un dépôt Git"
