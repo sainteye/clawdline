@@ -127,10 +127,12 @@ the accounting is already thinnest.
 asks the graph when the task has one — so a `correction` node dispatched as `code-review` closes
 findings with owners rather than producing a fresh verdict — and reads the dispatch `kind` as words
 when it does not, so `code-review`, `review` and `security-review` all qualify while `custom`,
-`test` and `image` do not. The predicate it replaced compared `kind` with the literal `"review"`,
-which the accepted vocabulary (`image · code-review · test · custom`) has never contained: measured
-on one machine, of 51 `code-review` tasks the 35 dispatched without a graph carried no typed verdict
-between them.
+`test` and `image` do not. The predicate it replaced compared `kind` with the literal `"review"`.
+Nothing validates that field — the dispatch route stores the first forty characters of whatever it
+is sent — so any closed list of spellings drifts away from what arrives, and the one this list left
+out is the spelling published on this page: measured on one machine on 2026-09-06, of 56
+`code-review` tasks the 38 dispatched without a graph carried no typed verdict between them, while
+15 of the 18 with one did.
 
 ### Questions this store can now answer
 

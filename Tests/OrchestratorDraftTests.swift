@@ -618,6 +618,15 @@ group("a review role is read from the graph node, and from every kind the API ac
         check("\(spelling.isEmpty ? "«empty»" : spelling) is not, because it is not the word",
               !Orchestrator.kindDenotesReview(spelling))
     }
+    // The counter-example that is the word and is not a review. Reading words cannot tell a
+    // negation from a subject, so these answer yes — and that is the decision, not an accident:
+    // a false positive costs one briefing section and one receipt nobody needed, a false
+    // negative loses a whole finding set to a directory swept a day later. Pinned here so that
+    // narrowing it is a decision somebody makes rather than a tightening that looks like a fix.
+    for spelling in ["non-review", "pre-review-cleanup", "review-tooling"] {
+        check("\(spelling) is asked for a verdict too, which is the cheap error on purpose",
+              Orchestrator.kindDenotesReview(spelling))
+    }
 
     // The graph decides when there is one. A correction node dispatched as `code-review` closes
     // findings with owners; asking it for a fresh verdict would be asking the wrong receipt.
