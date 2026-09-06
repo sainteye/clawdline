@@ -44,6 +44,7 @@ struct Japanese: Copy {
     let cannotList = "iTerm2 のセッションを読み取れませんでした"
     let noOutput = "このセッションにはまだ読むものがありません。"
     let imageExpired = "画像の有効期限が切れました"
+    let imageUnknown = "不明な画像です"
     let imagePreview = "画像プレビュー"
     let imageClose = "プレビューを閉じる"
     let imageTooLarge = "大きすぎて送信できません（{mb} MB）"

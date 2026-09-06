@@ -926,7 +926,13 @@ final class RemoteServer: @unchecked Sendable {
         // notify accepts only the per-task secret. Landing accepts that secret for pending or
         // abandoned, while its landed transition requires the machine token inside the handler.
         let orchestrated = request.path.hasPrefix("/v1/orchestrator/")
-        let orchestratorAuthed = orchestrated
+        // Storing an image artifact is a machine-credential write that deliberately does not live
+        // under `/v1/orchestrator/`: it is the write half of the artifact path a browser already
+        // reads from. The credential it takes is the same one, so the predicate that recognises
+        // it has to be the same one too — a route gated only inside its handler would answer 401
+        // here before it ever reached the 403 it means.
+        let orchestratorAuthed = (orchestrated
+            || (request.method == "POST" && request.path == "/v1/artifacts/images"))
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
         let taskSecretRoute = orchestrated
             && request.path.hasPrefix("/v1/orchestrator/tasks/")
@@ -1846,22 +1852,10 @@ final class RemoteServer: @unchecked Sendable {
                                   "The closed body needs only from_session, to_session, "
                                   + "0…100000 characters of text and optional images.")
                 }
-                var imagePaths: [String] = []
-                if let raw = body["images"] {
-                    guard let images = raw as? [[String: Any]], !images.isEmpty,
-                          images.count <= SessionImageArtifactStore.productionPolicy
-                            .maxImagesPerMessage else {
-                        return .error(400, "bad_request",
-                                      "images must be a non-empty bounded array of local paths.")
-                    }
-                    for image in images {
-                        guard Set(image.keys) == Set(["path"]),
-                              let path = image["path"] as? String, !path.isEmpty else {
-                            return .error(400, "bad_request",
-                                          "Each image accepts only one string path field.")
-                        }
-                        imagePaths.append(path)
-                    }
+                let imagePaths: [String]
+                switch SessionImageArtifactStore.paths(inImages: body["images"]) {
+                case .success(let paths): imagePaths = paths
+                case .failure(let refusal): return self.answer(refusal)
                 }
                 guard !text.isEmpty || !imagePaths.isEmpty else {
                     return .error(400, "bad_request",
@@ -1890,17 +1884,9 @@ final class RemoteServer: @unchecked Sendable {
                 let now = Self.imageArtifactNowForTesting?() ?? Date()
                 let store = SessionImageArtifactStore()
                 let stored: [SessionImageArtifactStore.Stored]
-                if imagePaths.isEmpty {
-                    stored = []
-                } else {
-                    do {
-                        stored = try store.importPaths(imagePaths, now: now)
-                    } catch let refusal as SessionImageArtifactStore.Refusal {
-                        return .error(refusal.status, refusal.code, refusal.message)
-                    } catch {
-                        return .error(500, "artifact_storage_failed",
-                                      "Clawdline could not persist the image artifacts.")
-                    }
+                switch store.imported(imagePaths, now: now) {
+                case .success(let imported): stored = imported
+                case .failure(let refusal): return self.answer(refusal)
                 }
 
                 let labelPublication = SessionWatch.shared.publishedInventory()
@@ -1939,6 +1925,57 @@ final class RemoteServer: @unchecked Sendable {
                     answer["artifacts"] = stored.map { $0.artifact.object }
                 }
                 return .json(answer)
+            }
+
+        // The same pictures, for the session that is speaking rather than for another one.
+        //
+        // The route above cannot serve this: it delivers by typing into the target terminal, and
+        // a session typing into its own terminal is handing itself a new instruction — which is
+        // why `same_session` is refused there and stays refused. So this route only stores the
+        // bytes and hands back the reference plus the marker literal to paste. The caller's own
+        // CLI then writes that reply into its own transcript, Clawdline reads it back the way it
+        // reads every other turn, and the app still owns no second source of truth.
+        case ("POST", "/v1/artifacts/images"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Storing a session image needs the orchestrator token.")
+            }
+            return orchestratorWriting(request) { body in
+                guard Set(body.keys) == Set(["images"]) else {
+                    return .error(400, "bad_request",
+                                  "The closed body needs only images.")
+                }
+                let paths: [String]
+                switch SessionImageArtifactStore.paths(inImages: body["images"]) {
+                case .success(let validated) where !validated.isEmpty: paths = validated
+                case .success:
+                    return .error(400, "bad_request",
+                                  "images must be a non-empty bounded array of local paths.")
+                case .failure(let refusal): return self.answer(refusal)
+                }
+                let now = Self.imageArtifactNowForTesting?() ?? Date()
+                let store = SessionImageArtifactStore()
+                let stored: [SessionImageArtifactStore.Stored]
+                switch store.imported(paths, now: now) {
+                case .success(let imported): stored = imported
+                case .failure(let refusal): return self.answer(refusal)
+                }
+                // A marker the caller could not read back is not a reference, so the store's own
+                // id validation decides whether one exists at all rather than string building.
+                var answered: [[String: Any]] = []
+                for item in stored {
+                    guard let marker = SessionImageMarker.marker(for: item.artifact.id) else {
+                        store.delete(ids: stored.map { $0.artifact.id }, now: now)
+                        return .error(500, "encoding_failed",
+                                      "The stored image reference could not be marked.")
+                    }
+                    var object = item.artifact.object
+                    object["marker"] = marker
+                    answered.append(object)
+                }
+                RemoteAuth.audit("artifact.images", ["images": "\(stored.count)"])
+                return .json(["ok": true, "artifacts": answered,
+                              "at": Int(Date().timeIntervalSince1970)])
             }
 
         // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
@@ -4083,6 +4120,13 @@ final class RemoteServer: @unchecked Sendable {
         case .refused(let status, let code, let message, let extra):
             return .error(status, code, message, extra: extra)
         }
+    }
+
+    /// An image-store refusal, unchanged. The store decides every bound and every code here, so
+    /// both routes that read images surface exactly what it said rather than a sentence of their
+    /// own — which is what lets them keep answering identically as those bounds move.
+    func answer(_ refusal: SessionImageArtifactStore.Refusal) -> Response {
+        .error(refusal.status, refusal.code, refusal.message)
     }
 
     /// A snippet reply uses the same public success and error envelopes as orchestrator writes.

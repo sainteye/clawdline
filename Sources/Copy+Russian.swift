@@ -46,6 +46,7 @@ struct Russian: Copy {
     let cannotList = "Не удалось прочитать сессии iTerm2"
     let noOutput = "В этой сессии пока нечего читать."
     let imageExpired = "Срок действия изображения истёк"
+    let imageUnknown = "Неизвестное изображение"
     let imagePreview = "Предпросмотр изображения"
     let imageClose = "Закрыть предпросмотр"
     let imageTooLarge = "Слишком большое для отправки ({mb} МБ)"

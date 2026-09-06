@@ -46,6 +46,7 @@ struct Turkish: Copy {
     let cannotList = "iTerm2 oturumları okunamadı"
     let noOutput = "Bu oturumda okunacak bir şey henüz yok."
     let imageExpired = "Görselin süresi doldu"
+    let imageUnknown = "Bilinmeyen görsel"
     let imagePreview = "Görsel önizlemesi"
     let imageClose = "Önizlemeyi kapat"
     let imageTooLarge = "Gönderilemeyecek kadar büyük ({mb} MB)"

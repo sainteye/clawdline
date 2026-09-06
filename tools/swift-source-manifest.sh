@@ -92,6 +92,7 @@ clawdline_production_sources=(
   Sources/Scratch.swift
   Sources/SessionClosePolicy.swift
   Sources/SessionImageArtifact.swift
+  Sources/SessionImageMarker.swift
   Sources/SessionImagePreview.swift
   Sources/SessionInfo.swift
   Sources/SessionRegistry.swift
@@ -165,6 +166,7 @@ clawdline_test_sources=(
   Tests/ScheduledDispatchTests.swift
   Tests/SessionCloseAndQuotaTests.swift
   Tests/SessionCloseabilityTests.swift
+  Tests/SessionImageMarkerTests.swift
   Tests/SessionLaunchTests.swift
   Tests/SessionRegistryTests.swift
   Tests/SessionWatchTests.swift

@@ -5,15 +5,41 @@ import ImageIO
 /// The only image metadata allowed to survive inside a session-message envelope or transcript.
 /// Bytes and filesystem locations remain in ``SessionImageArtifactStore``.
 struct SessionImageArtifact: Codable, Equatable {
+    /// Why a reference describes no bytes, in the one case where it describes none.
+    ///
+    /// `expired` means this store held the image and no longer does; `unknown` means it never
+    /// held that id at all. Collapsing the two is what made the app say *Image expired* about a
+    /// picture the reader never had, and the store can tell them apart for the whole window that
+    /// matters — a stored image reads `expired` from its TTL until its tombstone is reaped.
+    enum Absence: String, Codable {
+        case expired
+        case unknown
+    }
+
     let id: String
     let mediaType: String
     let byteCount: Int
     let width: Int
     let height: Int
     let expiresAt: Int
+    /// Nil for every reference with bytes behind it, which is why the wire key is absent from a
+    /// version-2 envelope's six-key artifact object and from stored metadata: a reader that has
+    /// never heard of this field sees exactly what it saw before.
+    let state: Absence?
+
+    init(id: String, mediaType: String, byteCount: Int, width: Int, height: Int,
+         expiresAt: Int, state: Absence? = nil) {
+        self.id = id
+        self.mediaType = mediaType
+        self.byteCount = byteCount
+        self.width = width
+        self.height = height
+        self.expiresAt = expiresAt
+        self.state = state
+    }
 
     var object: [String: Any] {
-        [
+        var out: [String: Any] = [
             "id": id,
             "media_type": mediaType,
             "byte_count": byteCount,
@@ -21,11 +47,18 @@ struct SessionImageArtifact: Codable, Equatable {
             "height": height,
             "expires_at": expiresAt,
         ]
+        if let state { out["state"] = state.rawValue }
+        return out
     }
 
     /// Strict validation shared by the v2 envelope decoder and the owned store.
+    ///
+    /// A reference carrying an ``Absence`` describes no bytes by construction, so it is never
+    /// one of these: it is made locally while a transcript is read and never crosses a wire that
+    /// asks this question.
     var isValidReference: Bool {
-        SessionImageArtifactStore.isArtifactID(id)
+        state == nil
+            && SessionImageArtifactStore.isArtifactID(id)
             && mediaType == "image/png"
             && byteCount > 0
             && byteCount <= SessionImageArtifactStore.productionPolicy.maxEncodedBytes
@@ -110,12 +143,25 @@ struct SessionImageArtifactStore {
         case missing
     }
 
-    /// A narrow test seam that proves cache validation did not accidentally reopen image bytes.
-    /// Production leaves it nil, so the hot path pays no closure or locking cost beyond the store
-    /// work it already performs.
+    /// A narrow test seam that proves cache validation did not accidentally reopen image bytes,
+    /// and that reading a transcript did not accidentally sweep the whole store. Production
+    /// leaves it nil, so the hot path pays no closure or locking cost beyond the store work it
+    /// already performs.
     struct AccessObserver {
         let didCheckMetadata: () -> Void
         let didReadBytes: () -> Void
+        /// One whole-store sweep: list the directory, read and decode every record in it. This
+        /// is the expensive unit, and the question worth asking of any path is how many of these
+        /// it costs — not how many files, which nobody can count from a call site.
+        let didListMetadata: () -> Void
+
+        init(didCheckMetadata: @escaping () -> Void,
+             didReadBytes: @escaping () -> Void,
+             didListMetadata: @escaping () -> Void = {}) {
+            self.didCheckMetadata = didCheckMetadata
+            self.didReadBytes = didReadBytes
+            self.didListMetadata = didListMetadata
+        }
     }
 
     static let productionPolicy = Policy(
@@ -217,6 +263,54 @@ struct SessionImageArtifactStore {
         }
     }
 
+    /// The `images` array both image-storing routes accept, read in one place.
+    ///
+    /// `POST /v1/orchestrator/messages` sends a picture to another session and
+    /// `POST /v1/artifacts/images` stores one for the caller's own card; what an element of that
+    /// array may contain is the same question in both, and every bound in the answer is this
+    /// store's. An absent key is an empty list, which only the message route allows.
+    ///
+    /// A `Result` rather than a `throw` so that a caller reads it the way it reads its own body
+    /// checks, and so the refusal it surfaces is this store's typed one rather than a sentence
+    /// each route wrote for itself.
+    static func paths(inImages value: Any?) -> Result<[String], Refusal> {
+        guard let value else { return .success([]) }
+        guard let images = value as? [[String: Any]], !images.isEmpty,
+              images.count <= productionPolicy.maxImagesPerMessage else {
+            return .failure(Refusal(
+                status: 400, code: "bad_request",
+                message: "images must be a non-empty bounded array of local paths."))
+        }
+        var paths: [String] = []
+        for image in images {
+            guard Set(image.keys) == Set(["path"]),
+                  let path = image["path"] as? String, !path.isEmpty else {
+                return .failure(Refusal(
+                    status: 400, code: "bad_request",
+                    message: "Each image accepts only one string path field."))
+            }
+            paths.append(path)
+        }
+        return .success(paths)
+    }
+
+    /// ``importPaths(_:now:)`` with its one non-``Refusal`` failure already typed.
+    ///
+    /// An empty list is a success carrying nothing, because a message may legitimately have no
+    /// images and a route should not have to remember that before it asks.
+    func imported(_ paths: [String], now: Date = Date()) -> Result<[Stored], Refusal> {
+        guard !paths.isEmpty else { return .success([]) }
+        do {
+            return .success(try importPaths(paths, now: now))
+        } catch let refusal as Refusal {
+            return .failure(refusal)
+        } catch {
+            return .failure(Refusal(
+                status: 500, code: "artifact_storage_failed",
+                message: "Clawdline could not persist the image artifacts."))
+        }
+    }
+
     func lookup(id: String, now: Date = Date()) -> Lookup {
         guard Self.isArtifactID(id) else { return .missing }
         Self.lock.lock()
@@ -242,6 +336,16 @@ struct SessionImageArtifactStore {
     /// Check metadata, expiry and owned-file existence without opening the PNG payload.
     /// Its missing/expired/live result intentionally matches ``lookup`` so the cache cannot keep
     /// a broken attachment alive or turn an unknown opaque id into a public tombstone.
+    ///
+    /// **This is asked once per image marker while a transcript is being read**, which is why it
+    /// sweeps nothing. It used to end its expired branch in ``pruneTombstonesUnlocked``, two
+    /// whole-store sweeps under the global lock, on every call rather than only on the call that
+    /// created the tombstone — and images expire after a day while their tombstones live a week,
+    /// so a session that uses this feature carries a week of expired markers in its transcript
+    /// tail and paid for all of them on every reparse, against the same lock the page is taking
+    /// to fetch the thumbnails on screen. Opportunistic pruning belongs where bytes are written
+    /// or deleted, and the bound it enforces is still enforced there: records are only ever
+    /// created by ``importPaths(_:now:)``, which prunes twice around every write.
     func liveness(id: String, now: Date = Date()) -> Liveness {
         guard Self.isArtifactID(id) else { return .missing }
         Self.lock.lock()
@@ -261,7 +365,6 @@ struct SessionImageArtifactStore {
                 try? FileManager.default.removeItem(at: file)
                 try? write(metadata)
             }
-            pruneTombstonesUnlocked(now: now)
             return .expired
         }
         return .live(metadata.artifact)
@@ -391,6 +494,7 @@ struct SessionImageArtifactStore {
     }
 
     private func allMetadata() -> [Metadata] {
+        accessObserver?.didListMetadata()
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path)
         else { return [] }
         return names.compactMap { name in

@@ -276,6 +276,26 @@ its owned store and sends only an opaque expiring reference. The recipient sees 
 thumbnail that opens in a preview; once the reference expires or is unavailable, that same place
 stays visible as an explicit **Image expired** tile.
 
+**To show one on your own card, store it and paste the marker back.** The route above is for the
+picture somebody *else* should see, and it refuses `same_session` — typing into your own terminal
+would hand you a new instruction rather than show you anything. So `POST /v1/artifacts/images` with
+the same `images:[{"path":"/absolute/local/path.png"}]` body, the machine token and an
+`Idempotency-Key`, and copy the `marker` it answers with into the reply you are already writing:
+
+```bash
+curl --fail-with-body -sS -X POST http://127.0.0.1:$PORT/v1/artifacts/images \
+  -H "X-Clawdline-Orchestrator: $ORCH" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'Content-Type: application/json' \
+  -d '{"images":[{"path":"/Users/you/Desktop/shot.png"}]}'
+# → {"ok":true,"artifacts":[{"id":"…","marker":"<clawdline-image id=\"…\">", …}]}
+```
+
+**Copy the marker, never build it.** Nothing is typed into any terminal: your own assistant writes
+that reply into its own transcript, and Clawdline recognises the marker when it reads it back,
+takes it out of the words and draws the picture under them. Recognition is all-or-nothing, so a
+marker you retyped slightly wrong stays on screen as text instead of disappearing — and a marker
+inside a code fence stays a quotation. Up to six per turn.
+
 **An interrupted review is handed over, not restarted.** A reviewer that died, timed out or was
 cancelled has usually written part of its finding set already; give that file to whoever picks it
 up. Review is both the most expensive node here and the one most often thrown away — 30 of 101

@@ -327,6 +327,22 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # that commit and not in the shared checkout, for the reason the 9,501 note gives above and for one
 # more: a third session had 177 lines of uncommitted Plan-page strings sitting in the shared
 # working tree, and a seal measured over somebody else's unfinished work is not about this tree.
+# 9,572 once a session could show the user an image on its own card: 80 checks in three groups —
+# the marker's one spelling and everything that is not it, an assistant turn's markers becoming
+# that entry's attachments in both readers and both renderers, and the store route beside the
+# message route it deliberately leaves alone. Measured, not added: this is what the clean run
+# reported after two mutation rounds had shown 34 of those checks going red.
+# 9,587 with that delivery's correction round: 15 more in the same three groups — which of two
+# absences a marker resolved to and that it invents no measurements for either, that reading a
+# transcript back never sweeps the whole artifact store, and that both readers spend one image
+# budget across one turn rather than one per block. Read off a mutation round in which 13 of
+# those 15 went red, which is also where this total came from: `16 of 9587 checks failed`.
+#
+# **Neither 9,544 nor 9,587 is this tree.** The image-card line was measured on a branch based on
+# `e1de8129`, while `main` moved to 9,544 underneath it; the merge put the two in conflict and the
+# sum of two measurements is not a measurement. The older value is kept here on purpose so the
+# merge commit is honestly red, and the line is set afterwards from `CLAWDLINE_RESEAL=1` on the
+# merged tree itself.
 expected_swift_receipt='9544 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare

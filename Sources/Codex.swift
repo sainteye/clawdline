@@ -332,10 +332,14 @@ enum Codex {
     /// `response_item` is also admitted: current Codex wraps `update_plan` in an exec tool call and
     /// does not repeat the checklist as a finished item. Its input is parsed as inert literals by
     /// ``literalPlan(in:)``; no JavaScript is evaluated and every other response item stays out.
-    static func parse(_ jsonl: String, limit: Int = 400) -> [Transcript.Entry] {
+    static func parse(_ jsonl: String, limit: Int = 400,
+                      imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
+                      now: Date = Date()) -> [Transcript.Entry] {
         var newestFirst: [Transcript.Entry] = []
         Transcript.forEachLineFromEnd(jsonl) { line in
-            for entry in entries(inRow: line).reversed() { newestFirst.append(entry) }
+            for entry in entries(inRow: line, imageStore: imageStore, now: now).reversed() {
+                newestFirst.append(entry)
+            }
             return newestFirst.count < limit
         }
         return Array(newestFirst.reversed().suffix(limit))
@@ -363,7 +367,10 @@ enum Codex {
         return nil
     }
 
-    private static func entries(inRow line: Substring) -> [Transcript.Entry] {
+    private static func entries(inRow line: Substring,
+                                imageStore: SessionImageArtifactStore
+                                    = SessionImageArtifactStore(),
+                                now: Date = Date()) -> [Transcript.Entry] {
         guard let data = line.data(using: .utf8),
               let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let payload = row["payload"] as? [String: Any] else { return [] }
@@ -372,7 +379,7 @@ enum Codex {
         if row["type"] as? String == "event_msg",
            payload["type"] as? String == "item_completed",
            let item = payload["item"] as? [String: Any] {
-            return entries(ofItem: item, at: time)
+            return entries(ofItem: item, at: time, imageStore: imageStore, now: now)
         }
         guard row["type"] as? String == "response_item",
               payload["type"] as? String == "custom_tool_call",
@@ -385,7 +392,9 @@ enum Codex {
 
     /// One finished item as entries. Split out from the line so a test can describe an item
     /// rather than a whole envelope.
-    static func entries(ofItem item: [String: Any], at time: Date?) -> [Transcript.Entry] {
+    static func entries(ofItem item: [String: Any], at time: Date?,
+                        imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
+                        now: Date = Date()) -> [Transcript.Entry] {
         func entry(_ kind: Transcript.Entry.Kind, _ text: String,
                    tool: String? = nil) -> Transcript.Entry? {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -412,7 +421,12 @@ enum Codex {
             return [entry(.user, canonical.text)].compactMap { $0 }
 
         case "AgentMessage":
-            return [entry(.assistant, text(inContent: item["content"]))].compactMap { $0 }
+            // Through `Transcript.assistantEntry` rather than the local `entry` helper: a rollout
+            // whose whole answer is one image marker still has something to draw once the marker
+            // has been taken out of it, and the local helper's emptiness rule would drop it.
+            return [Transcript.assistantEntry(text: text(inContent: item["content"]), at: time,
+                                              imageStore: imageStore, now: now)]
+                .compactMap { $0 }
 
         case "CommandExecution":
             if let actions = parsedActions(item["parsed_cmd"]), !actions.isEmpty {

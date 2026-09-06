@@ -18,17 +18,21 @@ enum SessionImagePresentation {
 
     private enum Materialization {
         case live(SessionImageArtifact, Data)
-        case expired(CGFloat)
+        case absent(SessionImageArtifact.Absence, CGFloat)
     }
 
     static func render(_ artifact: SessionImageArtifact, size: CGFloat,
                        store: SessionImageArtifactStore = SessionImageArtifactStore(),
                        now: Date = Date()) -> NSAttributedString {
+        // A reference that already says why it has no bytes is the only thing that can ask for
+        // any tile but the expired one. Everything else — a reference past its expiry, a peer's
+        // reference whose bytes this Mac does not hold — keeps the sentence it has always had.
+        if let state = artifact.state { return materialize(.absent(state, size)) }
         guard Int(now.timeIntervalSince1970) < artifact.expiresAt else {
-            return materialize(.expired(size))
+            return materialize(.absent(.expired, size))
         }
         guard case .live(let stored, let data) = store.lookup(id: artifact.id, now: now) else {
-            return materialize(.expired(size))
+            return materialize(.absent(.expired, size))
         }
         return materialize(.live(stored, data))
     }
@@ -46,7 +50,7 @@ enum SessionImagePresentation {
             let text: NSAttributedString
             switch value {
             case .live(let stored, let data): text = liveTile(stored, data: data)
-            case .expired(let size): text = expiredTile(size: size)
+            case .absent(let state, let size): text = absentTile(state, size: size)
             }
             return (text, MainQueue.isCurrent)
         }
@@ -58,7 +62,7 @@ enum SessionImagePresentation {
 
     private static func liveTile(_ stored: SessionImageArtifact,
                                  data: Data) -> NSAttributedString {
-        guard let image = NSImage(data: data) else { return expiredTile(size: 12) }
+        guard let image = NSImage(data: data) else { return absentTile(.expired, size: 12) }
 
         // Dimensions come back from the owned store beside the bytes. Transcript metadata is
         // only a reference and never gets to size native views by itself.
@@ -125,17 +129,24 @@ enum SessionImagePresentation {
         return states.isEmpty ? "no-images" : states.joined(separator: ",")
     }
 
-    private static func expiredTile(size: CGFloat) -> NSAttributedString {
+    /// The tile that stands where a picture would be, saying which of the two things happened.
+    ///
+    /// The same shape for both, because both are the same fact to the eye — there is no image
+    /// here — and a different sentence, because they are not the same fact to the reader. An id
+    /// this Mac never held is not a picture that ran out of time.
+    private static func absentTile(_ state: SessionImageArtifact.Absence,
+                                   size: CGFloat) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.paragraphSpacingBefore = 7
         paragraph.paragraphSpacing = 7
-        let value = NSMutableAttributedString(string: "▧  " + L.t.imageExpired + "\n", attributes: [
+        let words = state == .expired ? L.t.imageExpired : L.t.imageUnknown
+        let value = NSMutableAttributedString(string: "▧  " + words + "\n", attributes: [
             .font: NSFont.systemFont(ofSize: max(11, size), weight: .semibold),
             .foregroundColor: NSColor.secondaryLabelColor,
             .backgroundColor: NSColor.controlBackgroundColor,
             .paragraphStyle: paragraph,
-            .sessionImageState: "expired",
+            .sessionImageState: state.rawValue,
         ])
         return value
     }

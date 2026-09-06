@@ -46,6 +46,7 @@ struct Spanish: Copy {
     let cannotList = "No se pudieron leer las sesiones de iTerm2"
     let noOutput = "Todavía no hay nada que leer en esta sesión."
     let imageExpired = "Imagen caducada"
+    let imageUnknown = "Imagen desconocida"
     let imagePreview = "Vista previa de la imagen"
     let imageClose = "Cerrar vista previa"
     let imageTooLarge = "Demasiado grande para enviar ({mb} MB)"

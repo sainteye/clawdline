@@ -232,10 +232,14 @@ enum Transcript {
     /// view that is exactly what it is. Reading one with the session's rule leaves a pane
     /// reporting that a busy agent has written nothing at all.
     static func parse(_ jsonl: String, assistant: Assistant, limit: Int = 400,
-                      sidechains: Bool = false) -> [Entry] {
+                      sidechains: Bool = false,
+                      imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
+                      now: Date = Date()) -> [Entry] {
         switch assistant {
-        case .claude: return parse(jsonl, limit: limit, sidechains: sidechains)
-        case .codex:  return Codex.parse(jsonl, limit: limit)
+        case .claude: return parse(jsonl, limit: limit, sidechains: sidechains,
+                                   imageStore: imageStore, now: now)
+        case .codex:  return Codex.parse(jsonl, limit: limit,
+                                         imageStore: imageStore, now: now)
         }
     }
 
@@ -880,7 +884,9 @@ enum Transcript {
     /// anyway. Lines that are skipped — sidechains, bookkeeping — still cost their own parse, so
     /// the worst case is what this used to cost every time and the ordinary case is a few
     /// hundred lines.
-    static func parse(_ jsonl: String, limit: Int = 400, sidechains: Bool = false) -> [Entry] {
+    static func parse(_ jsonl: String, limit: Int = 400, sidechains: Bool = false,
+                      imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
+                      now: Date = Date()) -> [Entry] {
         var newestFirst: [Entry] = []
         // While a turn is running, Claude first records an enqueued cross-session message and
         // later records its delivered peer turn. Delivery can lag by an entire busy turn, so a
@@ -895,7 +901,8 @@ enum Transcript {
         forEachLineFromEnd(jsonl) { line in
             // Each row is appended newest-block-first so the whole buffer stays in one order,
             // and is turned back the right way round once.
-            for entry in entries(inRow: line, sidechains: sidechains).reversed() {
+            for entry in entries(inRow: line, sidechains: sidechains,
+                                 imageStore: imageStore, now: now).reversed() {
                 if entry.kind == .peer {
                     let key = (entry.source ?? "") + "\u{0}" + entry.text
                     if entry.isPeerDelivery {
@@ -964,7 +971,10 @@ enum Transcript {
 
     /// The entries one JSONL row yields, in the order they were written. Empty for anything
     /// that is not a message worth reading.
-    private static func entries(inRow line: Substring, sidechains: Bool = false) -> [Entry] {
+    private static func entries(inRow line: Substring, sidechains: Bool = false,
+                                imageStore: SessionImageArtifactStore
+                                    = SessionImageArtifactStore(),
+                                now: Date = Date()) -> [Entry] {
         guard let data = line.data(using: .utf8),
               let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [] }
@@ -1098,25 +1108,41 @@ enum Transcript {
         }
 
         var out: [Entry] = []
+        // The image cap is per turn, and a Claude turn is several blocks. Read block by block
+        // with a fresh cap each time it was six per *block*, so `[{text}, {tool_use}, {text}]`
+        // carried twelve while Codex — which joins its content before reading it — carried six,
+        // and both documents said "in one turn". The budget is what makes one function answer
+        // the same way for both readers rather than only looking as though it does.
+        var imagesHonoured = 0
         for block in blocks {
             switch block["type"] as? String {
             case "text":
                 let raw = (block["text"] as? String ?? "")
-                var text = raw
+                // An assistant turn is the one place an image marker is honoured. A person may
+                // quote the tag, and a quoted tag is a quotation.
+                if type != "user" {
+                    let remaining = SessionImageArtifactStore.productionPolicy.maxImagesPerMessage
+                        - imagesHonoured
+                    if let entry = assistantEntry(text: raw, at: time, imageStore: imageStore,
+                                                  now: now, limit: max(0, remaining)) {
+                        imagesHonoured += entry.artifacts.count
+                        out.append(entry)
+                    }
+                    continue
+                }
                 // A slash command is the one piece of tagged machinery somebody did type, so it
                 // goes back in as the line they typed — see `slashCommand(in:)`.
-                let typed = type == "user" ? slashCommand(in: raw) : nil
-                if type == "user" { text = withoutMachineBlocks(text) }
-                text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let typed = slashCommand(in: raw)
+                var text = withoutMachineBlocks(raw)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 if let typed { text = text.isEmpty ? typed : typed + "\n" + text }
                 if !text.isEmpty {
-                    out.append(Entry(kind: type == "user" ? .user : .assistant,
-                                     text: text, tool: nil, time: time))
+                    out.append(Entry(kind: .user, text: text, tool: nil, time: time))
                 }
                 // And what it printed, filed as a result: a command and its answer are two
                 // halves of one exchange, and a call followed by what it returned is a shape the
                 // pane already draws.
-                if type == "user", let printed = commandOutput(in: raw) {
+                if let printed = commandOutput(in: raw) {
                     out.append(Entry(kind: .toolResult, text: printed, tool: nil, time: time))
                 }
             case "tool_use":
@@ -1186,6 +1212,35 @@ enum Transcript {
         return Entry(kind: .peer, text: body, tool: nil, time: time,
                      source: attribute("from-name", in: header),
                      sourceMode: attribute("from-mode", in: header))
+    }
+
+    /// One assistant turn, with any image markers it carries lifted out of its prose.
+    ///
+    /// Both readers come through here. An assistant's own reply is the one place a
+    /// ``SessionImageMarker`` is honoured — it is the only text a session writes into its own
+    /// transcript without Clawdline typing anything — and one function is what keeps Claude's
+    /// transcript and Codex's rollout answering the same way. The artifacts are resolved from the
+    /// owned store exactly as a v2 envelope's are; the entry itself never learns a path or a byte.
+    ///
+    /// Nil when the turn is empty, and an entry that is nothing but a picture is not empty: the
+    /// marker was the whole message, and dropping it would drop the message.
+    ///
+    /// `limit` is how many pictures are left in this *turn*, which is not always the whole cap:
+    /// a Claude turn arrives as several blocks and this is called once per block, so the caller
+    /// spends one budget across them. Codex hands over a turn already joined and takes the
+    /// default.
+    static func assistantEntry(text raw: String, at time: Date?,
+                               imageStore: SessionImageArtifactStore = SessionImageArtifactStore(),
+                               now: Date = Date(),
+                               limit: Int
+                                = SessionImageArtifactStore.productionPolicy.maxImagesPerMessage)
+        -> Entry? {
+        let reading = SessionImageMarker.read(raw, limit: limit)
+        let text = reading.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let artifacts = SessionImageMarker.artifacts(for: reading.ids,
+                                                     store: imageStore, now: now)
+        guard !text.isEmpty || !artifacts.isEmpty else { return nil }
+        return Entry(kind: .assistant, text: text, tool: nil, time: time, artifacts: artifacts)
     }
 
     /// Normalize Clawdline's verified session-to-session envelope to a role of its own. The
@@ -1611,6 +1666,14 @@ extension Transcript {
                 // No trailing newline here: every Markdown block ends with one already, and
                 // the next entry's paragraphSpacingBefore is what sets the distance.
                 block.append(prose(entry.text, body: body, mono: mono))
+                // An assistant turn carrying image markers is the one entry in this branch that
+                // can have artifacts, and it gets the same treatment `.message` gets below —
+                // including the explicit expired tile, which is what the store answers with once
+                // a reference is gone.
+                for artifact in entry.artifacts {
+                    block.append(SessionImagePresentation.render(
+                        artifact, size: size, store: imageStore, now: now))
+                }
                 i += 1
 
             case .peer:

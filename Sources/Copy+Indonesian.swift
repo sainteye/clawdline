@@ -46,6 +46,7 @@ struct Indonesian: Copy {
     let cannotList = "Tidak bisa membaca sesi iTerm2"
     let noOutput = "Belum ada yang bisa dibaca dari sesi ini."
     let imageExpired = "Gambar kedaluwarsa"
+    let imageUnknown = "Gambar tidak dikenal"
     let imagePreview = "Pratinjau gambar"
     let imageClose = "Tutup pratinjau"
     let imageTooLarge = "Terlalu besar untuk dikirim ({mb} MB)"
