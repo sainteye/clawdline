@@ -147,9 +147,17 @@ function draw() {
     return els.waiting.innerHTML;
 }
 
+// **A new session id every time, and that is not tidiness.** `dismissedMenu` and `foldedMenu` are
+// keyed on the session id and the menu's own contents, and they are cleared only when one of those
+// changes. Reusing one id meant that the moment this file exercised the dismiss button, every
+// later `waiting(MENU)` came back hushed — and the press assertions below went on passing against
+// a card with nothing in it, because the click listener is bound to the box and not to its
+// contents. That is the shape of a test that cannot fail; the counter is what stops it.
+let served = 0;
 function waiting(menu) {
-    session = { id: "S1", state: "waiting", menu: menu || null };
-    S.openId = "S1";
+    served += 1;
+    session = { id: "S" + served, state: "waiting", menu: menu || null };
+    S.openId = session.id;
     S.sessions = [session];
 }
 
@@ -272,7 +280,13 @@ check(els.waiting.innerHTML === "", "a waved-away card is gone entirely, buttons
 let opened = 0;
 globalThis.document.addEventListener("clawdline:open-screen", function () { opened += 1; });
 
+// Every press below is preceded by the assertion that there is something to press. The listener is
+// bound to the box rather than to the buttons in it, so a press against a card that drew nothing
+// routes exactly as well as a press against a card that drew — which is how the whole block came
+// to be passing against an empty card once.
 function pressMarker(marker, extra) {
+    check(els.waiting.innerHTML.indexOf("data-") !== -1,
+        "the card is on screen to be pressed (" + marker + ")");
     const node = Object.assign({
         dataset: {}, disabled: false,
         getAttribute: function () { return null; },
@@ -317,10 +331,14 @@ pressMarker("data-screen");
 equal(opened, 2, "and it opens the screen from the card that could not read a menu");
 
 // With no session open there is no card to press, and the handler must not act on a stray event.
+// The one press in this file that is deliberately against an empty box, so it goes around the
+// guard above rather than tripping it.
 session = null;
 S.openId = null;
-draw();
-pressMarker("data-screen");
+check(draw() === "", "the card really is gone before this last press");
+els.waiting.press({
+    closest: function (selector) { return selector === "[data-screen]" ? this : null; }
+});
 equal(opened, 2, "a press with no session open opens nothing");
 
 /* ---- the far half of the wire ---------------------------------------------- */
