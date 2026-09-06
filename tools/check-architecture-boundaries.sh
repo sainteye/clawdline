@@ -276,7 +276,20 @@ fi
 #                                          grapheme clusters, a bound on `project` and on
 #                                          `position`, symlinks resolved — are all in
 #                                          `Sources/Snippets.swift`.)
-remote_server_ceiling=5759
+#   5,803  a session's own image card        (+44, measured: one route case for
+#                                          `POST /v1/artifacts/images`, the five-line clause that
+#                                          lets the machine credential be recognised on a path
+#                                          that is deliberately not under `/v1/orchestrator/`, and
+#                                          the four-line `answer(_:)` for an image-store refusal.
+#                                          It is a smaller number than the route is, because the
+#                                          twenty-six lines of `images` validation that used to
+#                                          sit inline in the message route went out to
+#                                          `SessionImageArtifactStore.paths(inImages:)` — one
+#                                          reader for both routes — and the marker wire type and
+#                                          its parsing are in `Sources/SessionImageMarker.swift`,
+#                                          a new file, because a router is not a place to keep a
+#                                          wire format.)
+remote_server_ceiling=5803
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -310,7 +323,11 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # hundred lines of the limit, and its two groups belong beside each other rather than split across
 # two files with no room in either. That branch wrote 33 against a base of 32; this is the merged
 # tree's own count.
-[ "$runner_count" -eq 36 ] \
+# 37 with the session-image marker's runner. `Tests/TranscriptTests.swift` was at exactly 2,000
+# lines against the stop-growth limit below — the same wall four of the runners above met, and the
+# same answer — so the three groups for a session showing the user an image on its own card are a
+# file of their own, called immediately after the transcript runner they read beside.
+[ "$runner_count" -eq 37 ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected 542"
 manifest_group_count=$(awk '
   /^let expectedOrderedTestGroupTitles: \[String\] = \[/ { in_manifest = 1; next }
@@ -491,7 +508,9 @@ done
 # 49 with Tests/LandingCurrencyTests.swift, the 2026-09-05 branch's file. It wrote 46 against a
 # base of 45; this is the merged tree's own count, and the two files that branch never saw are the
 # difference.
-[ "$suite_count" -eq 49 ] \
+# 50 with Tests/SessionImageMarkerTests.swift; see the runner-count note above for why the marker's
+# three groups are their own file rather than three more in a suite already at the limit.
+[ "$suite_count" -eq 50 ] \
   || architecture_guard_fail "suite file count is $suite_count; expected 542"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
 # its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly

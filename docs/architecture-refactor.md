@@ -559,12 +559,12 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 542 | `Tests/TestGroupManifest.swift`, counted by the guard |
-| ordered runners | 36 | `Tests/main.swift`, counted by the guard |
-| suite files | 49 | `Tests/*Tests.swift`, counted by the guard |
+| ordered groups | 545 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered runners | 37 | `Tests/main.swift`, counted by the guard |
+| suite files | 50 | `Tests/*Tests.swift`, counted by the guard |
 | Swift checks | 9,492 | `expected_swift_receipt` in `test.sh`, set from a run |
 | `Orchestrator.swift` ceiling | 10,644 | the ratchet in `tools/check-architecture-boundaries.sh` |
-| `RemoteServer.swift` ceiling | 5,759 | the receipt in `tools/check-architecture-boundaries.sh` |
+| `RemoteServer.swift` ceiling | 5,803 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->
 

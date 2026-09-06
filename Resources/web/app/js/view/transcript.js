@@ -944,6 +944,10 @@ export function entryHTML(e) {
             '</div></div></div>';
     }
     var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
+    // An assistant turn carries artifacts when it wrote an image marker into its own reply. The
+    // tiles are the same static, field-free markup the message card uses — the artifact never
+    // reaches this string, only a queue slot — so nothing about the attachment can add HTML.
+    if (role === "assistant") body += artifactTilesHTML(e.artifacts);
     if (e.pending) {
         var attached = e.imageCount
             ? '<div class="pending-images">' + esc(fill(e.imageCount === 1

@@ -217,6 +217,54 @@ struct SessionImageArtifactStore {
         }
     }
 
+    /// The `images` array both image-storing routes accept, read in one place.
+    ///
+    /// `POST /v1/orchestrator/messages` sends a picture to another session and
+    /// `POST /v1/artifacts/images` stores one for the caller's own card; what an element of that
+    /// array may contain is the same question in both, and every bound in the answer is this
+    /// store's. An absent key is an empty list, which only the message route allows.
+    ///
+    /// A `Result` rather than a `throw` so that a caller reads it the way it reads its own body
+    /// checks, and so the refusal it surfaces is this store's typed one rather than a sentence
+    /// each route wrote for itself.
+    static func paths(inImages value: Any?) -> Result<[String], Refusal> {
+        guard let value else { return .success([]) }
+        guard let images = value as? [[String: Any]], !images.isEmpty,
+              images.count <= productionPolicy.maxImagesPerMessage else {
+            return .failure(Refusal(
+                status: 400, code: "bad_request",
+                message: "images must be a non-empty bounded array of local paths."))
+        }
+        var paths: [String] = []
+        for image in images {
+            guard Set(image.keys) == Set(["path"]),
+                  let path = image["path"] as? String, !path.isEmpty else {
+                return .failure(Refusal(
+                    status: 400, code: "bad_request",
+                    message: "Each image accepts only one string path field."))
+            }
+            paths.append(path)
+        }
+        return .success(paths)
+    }
+
+    /// ``importPaths(_:now:)`` with its one non-``Refusal`` failure already typed.
+    ///
+    /// An empty list is a success carrying nothing, because a message may legitimately have no
+    /// images and a route should not have to remember that before it asks.
+    func imported(_ paths: [String], now: Date = Date()) -> Result<[Stored], Refusal> {
+        guard !paths.isEmpty else { return .success([]) }
+        do {
+            return .success(try importPaths(paths, now: now))
+        } catch let refusal as Refusal {
+            return .failure(refusal)
+        } catch {
+            return .failure(Refusal(
+                status: 500, code: "artifact_storage_failed",
+                message: "Clawdline could not persist the image artifacts."))
+        }
+    }
+
     func lookup(id: String, now: Date = Date()) -> Lookup {
         guard Self.isArtifactID(id) else { return .missing }
         Self.lock.lock()
