@@ -352,12 +352,19 @@ export function readWorkerWant() {
                 return "none";
             }
             var age = Date.now() - record.at;
-            // Answered already. The record is left where it is rather than deleted: the message
-            // road may still be holding the request against a list that has not arrived, and
-            // `openWanted` is what spends it when it lands. Staleness collects it otherwise.
+            // Answered already — and whether it may go turns on whether the session it names is
+            // open yet. Still pending means the message road is holding the request against a
+            // list that has not arrived, and a reload before it does would have nothing left to
+            // work from, so the record stays. Not pending means the tap has landed and this copy
+            // outlived the deletion that was started for it: a write to a store that can refuse
+            // one, or one the worker's own write overtook, because `notificationclick` posts the
+            // message before its cache write has finished. Left there, a reload inside the window
+            // would take somebody back to a session they have already read and moved on from.
             if (record.id === settledWant) {
                 Diagnostics.note("page.want", { found: true, settled: true,
+                                                pending: pendingWant === record.id,
                                                 age: Math.round(age / 1000) });
+                if (pendingWant !== record.id) forgetWant();
                 return "settled";
             }
             if (!(age <= WORKER_WANT_MAX_AGE_MS)) {

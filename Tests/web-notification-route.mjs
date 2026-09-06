@@ -558,6 +558,9 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
         "a record that outlived its deletion is recognised, not obeyed again");
   equal(world.opened.length, 1, "so waking twice still opens one session, once");
   equal(world.notesFor("route.to").length, 1, "and routes once");
+  await world.settle();
+  equal(world.wantRecord(), null,
+        "and the deletion is tried again, because the session it names is already open");
 }
 
 /* ---- the two roads meeting, which is the ordinary case ----------------------------------------
