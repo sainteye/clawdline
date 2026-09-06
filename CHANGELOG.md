@@ -9,6 +9,28 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: something finally says so when a delivery lands and nobody writes it down
+
+Clawdline has always been able to tell whether a delivery reached its target branch — the broker
+runs `merge-base --is-ancestor` inside the task's own repository and refuses a landing record that
+does not check out. It only ever ran that check when somebody asked it to, by hand, one task at a
+time. In one evening on the machine this was found on, that produced 22 landing records typed in at
+the end, 14 of them for work that had been in `main` for days, and five of them for a different
+repository entirely.
+
+`./test.sh` now runs `tools/check-landing-records.py` in its guards phase. It reads the machine's
+task registry rather than the checkout it is standing in — which is how it sees the other
+repositories — and prints, per repository, every delivery that is already in the target branch with
+its landing record still open, every delivery that is not, and every shared-checkout task git
+cannot be asked about. The three are kept apart and labelled as what they are: the first count is a
+lower bound (a squashed landing shares no commit with its branch), the second an upper bound, and
+the third neither.
+
+It fails the run only for landings after its own cutoff date and outside a six-hour grace, because
+the documented order writes the record *after* the integrated-tree run and this guard runs inside
+it. Older debt is printed in full on every run instead, with the `curl` that settles each row.
+`--strict` fails on everything, which is what a sweep wants.
+
 ## 0.8.0 — 2026-09-06
 
 ### Added: the sentence you type several times a day, one press away

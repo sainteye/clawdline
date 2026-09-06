@@ -691,6 +691,16 @@ tools/check-web-ids.py
 # would otherwise pass the tree in silence. docs/curl-status.md has the rule.
 tools/check-curl-status.py --self-test
 tools/check-curl-status.py
+# `landed` has exactly one entrance and a person is standing in it. The broker verifies a landing
+# properly — the same `merge-base --is-ancestor` this guard runs — but only when somebody calls the
+# route, so a delivery that reaches `main` while nobody writes its record is finished and silent.
+# On 2026-09-05/06 that produced 22 hand-written records in one evening, 14 of them for work that
+# had been in `main` for days, five of them for a different repository; this reads the machine's
+# task registry rather than this tree, which is how it sees those five. It fails only on landings
+# after its own cutoff and outside a six-hour grace, because `docs/landing.md` writes the record
+# *after* this suite; everything older is printed in full on every run. docs/landing.md has the
+# rule. Measured standalone at 1.2 s over 298 terminal tasks in 8 repositories.
+tools/check-landing-records.py
 # And every guard above has to have been seen to fail. Two checks that could not go red arrived on
 # 2026-09-05 — a claims comparison that is identically true inside a linked worktree, and a
 # `stale > worst` that was an identity — and both were green the way a working guard is green. This
