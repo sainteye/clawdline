@@ -1,5 +1,6 @@
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
+import { BoardControls } from "./board-settings.js";
 
 /* ---- the way to the other pages ------------------------------------------
  *
@@ -25,6 +26,7 @@ export var Sidebar = (function () {
 
     return {
         open: function () {
+            BoardControls.refresh();
             els.sidebar.hidden = false;
             mark(true);
             // The current page's row, so a keyboard arrives on the thing it is

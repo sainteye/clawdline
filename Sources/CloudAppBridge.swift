@@ -27,6 +27,7 @@ struct CloudAppIdentity: @unchecked Sendable {
 }
 
 enum CloudHeadlessCommand: Equatable, Sendable {
+    case board(body: Data)
     case send(session: String, text: String, images: [String])
     case answer(session: String, key: String)
     case start(place: String, assistant: String, model: String)
@@ -52,6 +53,7 @@ enum CloudHeadlessCommand: Equatable, Sendable {
 ///
 /// The vocabulary is closed on purpose: a viewer names one of these, never a route.
 enum CloudHeadlessRead: Equatable, Sendable {
+    case board(session: String, request: String, project: String, item: String)
     case transcript(session: String, limit: Int)
     case info(session: String, parts: String)
     case agent(session: String, agent: String, limit: Int)
@@ -78,6 +80,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
     /// The session this read is about — also the channel its answer is published on.
     var session: String {
         switch self {
+        case .board(let session, _, _, _): return session
         case .transcript(let session, _): return session
         case .info(let session, _): return session
         case .agent(let session, _, _): return session
@@ -122,7 +125,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .skills: return "skills"
         case .git: return "git"
         case .image(_, let id): return "image." + id
-        case .places(_, let request), .projectWorktrees(_, let request, _),
+        case .board(_, let request, _, _), .places(_, let request), .projectWorktrees(_, let request, _),
              .pastSessions(_, let request, _, _), .schedule(_, let request, _),
              .schedules(_, let request), .snippets(_, let request),
              .pushKey(_, let request): return "read:" + request
@@ -642,6 +645,21 @@ actor CloudAppBridge {
             command = .end(session: session, acceptLoss: acceptLoss,
                            closeabilityVersion: closeability.isEmpty ? nil : closeability)
             commandReply = (session, "action:" + request)
+        case "board-command":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "command"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let object = body["command"] as? [String: Any],
+                  let data = try? JSONSerialization.data(withJSONObject: object),
+                  data.count <= 64 * 1024
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .board(body: data)
+            commandReply = (session, "action:" + request)
         case "schedule-create", "schedule-update":
             let wanted: Set<String> = type == "schedule-create"
                 ? ["type", "session", "request", "schedule"]
@@ -770,7 +788,7 @@ actor CloudAppBridge {
     /// member for a well-formed body, so the two cannot come apart quietly.
     static let readTypes: Set<String> = [
         "transcript", "info", "agent", "shell", "skills", "git", "image",
-        "places", "project-worktrees", "past-sessions", "schedules", "snippets", "schedule",
+        "board", "places", "project-worktrees", "past-sessions", "schedules", "snippets", "schedule",
         "push-key",
     ]
 
@@ -907,6 +925,18 @@ actor CloudAppBridge {
                 return
             }
             read = .image(session: session, id: id)
+        case "board":
+            guard Set(body.keys) == ["type", "session", "request", "project", "item"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let project = body["project"] as? String, project.count <= 200,
+                  let item = body["item"] as? String, item.count <= 200
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .board(session: session, request: request, project: project, item: item)
         case "places":
             guard Set(body.keys) == ["type", "session", "request"],
                   let session = body["session"] as? String,

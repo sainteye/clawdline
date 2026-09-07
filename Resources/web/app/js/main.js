@@ -41,6 +41,8 @@ import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
 import { bindProjectsPage } from "./view/projects.js";
 import { bindLedgerPage } from "./view/ledger.js";
+import { bindBoardPage, resolveBoardSession } from "./view/board.js";
+import { BoardControls } from "./input/board-settings.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import { bindPlanPage } from "./view/plan.js";
 import "./view/markdown.js";
@@ -296,6 +298,28 @@ var ledger = bindLedgerPage({
     navigate: function (name) { Pages.go(name); }
 });
 
+var boardElements = {};
+["board", "board-projects", "board-items", "board-detail", "board-status", "board-new",
+ "board-search", "board-layout", "board-type", "board-state", "board-back", "board-refresh"].forEach(function (id) {
+    boardElements[id] = byId(id);
+});
+var board = bindBoardPage(boardElements, {
+    read: function (project, item) { return api.board(project, item); },
+    command: function (body) { return api.boardCommand(body); },
+    navigate: function (name) { Pages.go(name); },
+    openSession: function (id) {
+        var destination = resolveBoardSession(S.sessions, id);
+        if (destination.id) openSession(destination.id);
+        return destination;
+    },
+    onMode: function (snapshot) { BoardControls.apply(snapshot); }
+});
+BoardControls.escape = function () { return board.escape(); };
+BoardControls.open = function (project, item) {
+    board.open(project, item);
+    Pages.go("board");
+};
+
 var usage = bindUsagePortfolio({
     "usage-analytics": byId("usage-analytics"),
     "usage-close": byId("usage-close"), "usage-overview": byId("usage-overview"),
@@ -381,6 +405,8 @@ Pages.bind({
     focusFallback: "brand",
     pages: [
         { name: "sessions", element: byId("app") },
+        { name: "board", element: byId("board"), focus: "board-title",
+          enter: function () { board.enter(); }, leave: function () { board.leave(); } },
         { name: "projects", element: byId("projects"), focus: "projects-title",
           enter: function () { projects.enter(); }, leave: function () { projects.leave(); } },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",
@@ -479,6 +505,7 @@ function boot(data) {
     // it, and a URL can carry both.
     routeTo(location.hash);
     api.start();
+    BoardControls.refresh();
     Schedules.start();
     Push.start();
     watchForStaleness();

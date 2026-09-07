@@ -22,6 +22,9 @@
     background: var(--bg);
 }
 .page[hidden] { display: none; }
+/* The Session grid is also a registered page. Its display:grid rule otherwise
+   overrides the user-agent hidden rule and leaks off-page controls to focus/AX. */
+.app[hidden] { display: none; }
 
 /* The settings page keeps the sheet's furniture — `.sheet .block` is what gives
    its rows their type, and the alternative was a second set of rules saying the
@@ -85,6 +88,7 @@
        this sheet's to change, and it is what `Tests/web-pages.mjs` calibrates the guard against. */
 }
 .sidebar[hidden] { display: none; }
+.sidebar [hidden] { display: none; }
 .sidebar-panel {
     position: absolute;
     inset: 0 auto 0 0;

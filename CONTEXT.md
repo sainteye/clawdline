@@ -36,6 +36,13 @@ quietly becoming part of the destination.
 One bounded execution attempt owned by one assistant session. A task may deliver evidence for one
 graph node, but task success alone does not mean the graph is complete.
 
+## Work item and board mode
+
+A durable Project-level objective, spanning execution attempts, Sessions, worktrees, evidence and
+handoffs. Its type, lifecycle and token activity phase are distinct axes. Board mode is enabled by
+default and currently free; disabling it preserves history and removes board-only workflow gates,
+not ordinary dispatch or safety rules. See `docs/project-board.md`.
+
 ## Claim
 
 A task's declared write path, relative to its project. Claims prevent conflicting dispatch trees

@@ -443,6 +443,9 @@ extension Orchestrator {
         /// a usable answer and an essay.
         var plan: String?
         var graph: PlanningGraph?
+        /// Durable work identity is independent of this execution attempt's kind.
+        var workItemID: String? = nil
+        var workPhase: String? = nil
         /// Present only for work created from a schedule file. The public registry exposes the
         /// id; the two policy values stay internal so an edit to the source file cannot rewrite
         /// what should happen to a task already in flight.

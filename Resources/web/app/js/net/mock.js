@@ -2,6 +2,7 @@ import { MOCK_DOOR, MOCK_FLAKY, MOCK_WRITE, params } from "../core/env.js";
 import { ASK_MARK, uuid } from "../core/util.js";
 import { handlers } from "./handlers.js";
 import { Door } from "../door/door.js";
+import { createBoardMock } from "./board-mock.js";
 
 /* ---- fixtures ------------------------------------------------------------
    Enough of a machine to see every state, every animation and the reconnect —
@@ -68,6 +69,7 @@ function mockLedgerDetail(graphID) {
 }
 
 export var Mock = (function () {
+    var boardPreview = createBoardMock();
     var C = "#d97757", O = "#141416", BG = "#33201a";          // the clawdline mark
     var W = "#eef6f4", TEAL = "#2f6b5e";                        // atrium
     var BODY = "#5aa6d8", LIMB = "#2f6b95";                     // a generated creature
@@ -1392,6 +1394,8 @@ export var Mock = (function () {
             });
         },
 
+        board: boardPreview.board,
+        boardCommand: boardPreview.boardCommand,
         places: function () {
             return new Promise(function (done) {
                 setTimeout(function () {

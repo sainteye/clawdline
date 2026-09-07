@@ -945,7 +945,7 @@ final class RemoteServer: @unchecked Sendable {
         // reads from. The credential it takes is the same one, so the predicate that recognises
         // it has to be the same one too — a route gated only inside its handler would answer 401
         // here before it ever reached the 403 it means.
-        let orchestratorAuthed = (orchestrated
+        let orchestratorAuthed = (orchestrated || request.path == "/v1/board"
             || (request.method == "POST" && request.path == "/v1/artifacts/images"))
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
         let taskSecretRoute = orchestrated
@@ -964,6 +964,8 @@ final class RemoteServer: @unchecked Sendable {
             }
         }
         if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) { return response }
+        if let response = ProjectBoardHTTP.route(request, machine: orchestratorAuthed,
+                                                 permission: permission(for: request)) { return response }
 
         switch (request.method, request.path) {
 
@@ -4302,6 +4304,7 @@ final class RemoteServer: @unchecked Sendable {
             // And the verification ledger is a third: the same interval scan, plus four receipt
             // tables the same size order. Same worker, same budget.
             || path == "/v1/orchestrator/usage/verification-ledger"
+            || path == "/v1/board"
     }
 
     /// The slow optional reads that may be refused before they enter their worker queue.

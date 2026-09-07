@@ -2858,6 +2858,7 @@ enum Orchestrator {
     /// only the last of the three would show an obligation that had been given up as an open one.
     static func recordLandingInLedger(_ task: Task) {
         UsageLedger.shared.collect(taskRecord: ledgerRecord(of: task))
+        ProjectBoardIntegration.observe(ledgerRecord(of: task))
     }
 
     /// Under the lock.
@@ -3976,6 +3977,8 @@ enum Orchestrator {
                         secretHash: hash(ofSecret: secret))
         task.repositoryCommonDir = preparedWorktree?.repositoryCommonDir
             ?? OrchestratorDraft.gitCommonDirectory(at: made.projectDir)
+        task.workItemID = made.workItemID
+        task.workPhase = made.workPhase
         task.scheduleID = schedule?.id
         task.scheduleCloseTab = schedule?.closeTab ?? .onSuccess
         task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
@@ -4027,6 +4030,7 @@ enum Orchestrator {
         tasks[taskID] = task
         secrets[taskID] = secret
         lock.unlock()
+        ProjectBoardIntegration.observe(ledgerRecord(of: task))
         RemoteAuth.audit("orchestrator.dispatch", ["task": taskID, "assistant": made.assistant.rawValue,
                                                    "cwd": made.projectDir, "kind": made.kind,
                                                    "depth": String(depth),
@@ -6357,6 +6361,7 @@ enum Orchestrator {
             let backfill = ledgerBackfillRecords()
             DispatchQueue.global(qos: .utility).async {
                 UsageLedger.shared.importTaskRecords(backfill)
+                for record in backfill { ProjectBoardIntegration.observe(record) }
             }
             cleanup()
             scheduleQueue.async { scheduleBeat() }
@@ -8000,6 +8005,7 @@ enum Orchestrator {
         // repeat a no-op rather than a second charge; that is the property being relied on, not
         // an accident of ordering.
         UsageLedger.shared.collect(taskRecord: ledgerRecord(of: task))
+        ProjectBoardIntegration.observe(ledgerRecord(of: task))
         task.workCleanupAt = reclaimDeadline(
             minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: outcome)
         // Only a task with its own disposable checkout has build output of its own to reclaim. A
@@ -9716,6 +9722,8 @@ enum Orchestrator {
             "dir": "/tmp/.clawdline/\(task.id)",
         ]
         if let model = task.model { out["model"] = model }
+        if let item = task.workItemID { out["workItemId"] = item }
+        if let phase = task.workPhase { out["workPhase"] = phase }
         if let effort = task.reasoningEffort { out["reasoning_effort"] = effort.rawValue }
         if let scheduleID = task.scheduleID { out["schedule_id"] = scheduleID }
         out["permission"] = task.permission.rawValue

@@ -786,8 +786,10 @@ const registryBlock = /Pages\.bind\(\{[\s\S]*?pages:\s*\[([\s\S]*?)\n {4}\],/.ex
 check(registryBlock, "main.js declares the page registry");
 const registered = [...(registryBlock ? registryBlock[1] : "").matchAll(/name:\s*"([^"]+)"/g)]
     .map((m) => m[1]);
-equal(registered.indexOf("projects"), 1,
-      "Projects is registered between Sessions and Usage: it is a way into the sessions rather than a reading about them");
+check(registered.indexOf("sessions") >= 0 &&
+      registered.indexOf("sessions") < registered.indexOf("projects") &&
+      registered.indexOf("projects") < registered.indexOf("usage"),
+      "Projects remains between Sessions and Usage, allowing the Project Board entry alongside it");
 check(/id="nav-projects"[^>]*data-page-to="projects"/.test(page),
       "the drawer names it, with the same attribute every other row uses");
 check(/id="projects"[\s\S]{0,200}?data-page-view="projects"/.test(page),

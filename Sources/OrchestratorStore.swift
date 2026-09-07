@@ -109,6 +109,8 @@ enum OrchestratorStore {
         out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
         if let v = task.graph { out["graph"] = Orchestrator.storedPlanningGraph(v) }
+        if let v = task.workItemID { out["work_item_id"] = v }
+        if let v = task.workPhase { out["work_phase"] = v }
         if let v = task.scheduleID {
             out["schedule_id"] = v
             out["schedule_close_tab"] = task.scheduleCloseTab.rawValue
@@ -734,6 +736,8 @@ enum OrchestratorStore {
             : nil
         task.permission = (obj["permission"] as? String).flatMap(Permission.init(rawValue:)) ?? .ask
         task.plan = obj["plan"] as? String
+        task.workItemID = obj["work_item_id"] as? String
+        task.workPhase = obj["work_phase"] as? String
         if let rawGraph = obj["graph"] {
             task.graph = Orchestrator.planningGraph(from: rawGraph).graph
         }

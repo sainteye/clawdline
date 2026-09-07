@@ -586,6 +586,13 @@ export var LocalClient = {
     },
 
     places: function () { return jsonFetch("/v1/places"); },
+    board: function (project, item) {
+        var query = new URLSearchParams();
+        if (project) query.set("project", project);
+        if (item) query.set("item", item);
+        return jsonFetch("/v1/board" + (query.size ? "?" + query.toString() : ""));
+    },
+    boardCommand: function (body) { return jsonFetch("/v1/board", post(body)); },
 
     /// Which worktrees under one Project finished a Feature, and whether that delivery reached
     /// the branch. Not `git worktree list`: that answers a different question, and most of the

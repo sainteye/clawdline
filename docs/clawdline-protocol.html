@@ -243,6 +243,24 @@
   </nav>
 
   <!-- 01 -->
+  <aside class="note" id="project-board">
+    <h2>Project Board: an objective above execution attempts</h2>
+    <p>The board is enabled by default and currently free. Settings can disable its workflow while
+    retaining read-only history; this never cancels tasks or removes claims, permissions, review,
+    landing or machine-lock safeguards. A work item belongs to a Project and may span several
+    tasks, Sessions and worktrees. Task success is delivery, not item closure.</p>
+    <p>The owning root supplies optional <code>work_item_id</code> and <code>work_phase</code> in
+    <code>task.json</code>. Phases are <code>planning</code>, <code>output</code>,
+    <code>review_testing</code>, <code>correction</code> and <code>integration</code>.
+    Children report progress and evidence through the existing task files; they do not obtain
+    the machine credential to update the board. The root records checklist progress, artifacts
+    and obligations. Only declared task boundaries classify token usage; historical unknowns
+    remain unknown. Handoff requires receiver acceptance and is not completion.</p>
+    <p><code>GET /v1/board</code> and revision-checked <code>POST /v1/board</code> use the same
+    service locally and through encrypted Cloud. Root verification attestations are separate
+    from broker-verified landing and administrative artifact acceptance. See
+    <a href="project-board.md">the Project Board contract</a> for lifecycle and authority.</p>
+  </aside>
   <h2 id="parties"><span class="n">01</span>Three parties, and the middle one is the app</h2>
   <p class="sub">A session you are talking to is a session you are waiting on.</p>
 

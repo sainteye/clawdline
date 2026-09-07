@@ -201,7 +201,9 @@ main_lines=$(line_count Tests/main.swift)
 # `Sources/CloseabilityIndex.swift`. The broker retains only mutation tracking, fingerprint
 # settlement and the snapshot door, and no longer writes the same full registry twice per save;
 # the 93-line reduction is measured on this tree, not headroom.
-orchestrator_ceiling=10733
+# Project Board adds eight broker call-site/metadata lines; domain and adapters
+# live in separate owners. Measured 2026-09-08 on this candidate, without headroom.
+orchestrator_ceiling=10741
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -396,7 +398,9 @@ fi
 #                                          handler itself is `Sources/VerificationLedgerRoute.swift`,
 #                                          which is where a route that grows may grow. Measured:
 #                                          `wc -l` on this tree says 5,898.
-remote_server_ceiling=5898
+# Board auth, routing and bounded-read wiring add three net lines to HEAD's 5,882;
+# take the previously unused headroom down to this candidate's measured size.
+remote_server_ceiling=5885
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -454,7 +458,8 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # message: the next person to add a runner would have been told to write 38 back over the 39 that
 # is right. A guard exists to tell somebody what to do, so the expected count and the sentence
 # that reports it read the same variable.
-runner_count_expected=39
+# Project Board domain and integration each have a focused runner.
+runner_count_expected=41
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -649,7 +654,7 @@ done
 # groups that answer for one route are their own file rather than four more in a suite eighty-six
 # lines from the limit.
 # One owner for the number, for the reason written above the runner count.
-suite_count_expected=52
+suite_count_expected=54
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts

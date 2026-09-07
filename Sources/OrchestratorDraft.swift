@@ -53,6 +53,8 @@ enum OrchestratorDraft {
         var pollOnly = false
         var plan: String?
         var graph: Orchestrator.PlanningGraph?
+        var workItemID: String?
+        var workPhase: String?
         var serialize: [String] = []
         var claims: [String] = []
         var claimsDeclared = false
@@ -482,6 +484,19 @@ enum OrchestratorDraft {
             return text.isEmpty ? nil : text
         }
         made.graph = graph
+        if let raw = obj["work_item_id"] {
+            guard let id = raw as? String, !id.isEmpty, id.count <= 200,
+                  !id.contains(where: { $0.isWhitespace }) else {
+                return .bad("work_item_id must be a non-empty opaque item id")
+            }
+            made.workItemID = id
+        }
+        if let raw = obj["work_phase"] {
+            guard let phase = raw as? String,
+                  ["planning", "output", "review_testing", "correction", "integration"].contains(phase)
+            else { return .bad("work_phase must name a supported board activity") }
+            made.workPhase = phase
+        }
         made.projectDir = dir
         made.instructions = instructions
         made.kind = (obj["kind"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(40)) } ?? "custom"

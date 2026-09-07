@@ -635,6 +635,16 @@ export class CloudClient {
             "read");
     }
 
+    board(project, item) {
+        return this._machineRequest(this._onlyMachine("Project Board"), "board",
+            { project: project || "", item: item || "" }, "read");
+    }
+
+    boardCommand(body) {
+        return this._machineRequest(this._onlyMachine("Project Board"), "board-command",
+            { command: body }, "action");
+    }
+
     pastSessions(place, assistant) {
         var route = this._place(place);
         return this._machineRequest(route.machine, "past-sessions",

@@ -18,6 +18,9 @@ struct CloudLocalRoute: Sendable {
         var object: [String: Any] = [:]
         var encodedBody: Data?
         switch command {
+        case .board(let data):
+            route = "/v1/board"
+            encodedBody = data
         case .send(let session, let text, let images):
             route = "/v1/sessions/\(Self.segment(session))/send"
             object = ["text": text, "images": images]
@@ -74,6 +77,10 @@ struct CloudLocalRoute: Sendable {
         var route: String
         var parameters: [String: String] = [:]
         switch read {
+        case .board(_, _, let project, let item):
+            route = "/v1/board"
+            if !project.isEmpty { parameters["project"] = project }
+            if !item.isEmpty { parameters["item"] = item }
         case .transcript(let session, let limit):
             route = "/v1/sessions/\(Self.segment(session))/transcript"
             parameters = ["limit": String(limit)]

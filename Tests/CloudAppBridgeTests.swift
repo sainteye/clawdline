@@ -1278,6 +1278,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         // that is parsed and then refused has answered that question. The picture's own answer,
         // its byte bound and its refusals are checked further down with a real PNG.
         "image": #"{"type":"image","session":"typed","id":"img-1"}"#,
+        "board": #"{"type":"board","session":"__clawdline_machine__","request":"p-board","project":"project-1","item":"item-1"}"#,
         "places": #"{"type":"places","session":"__clawdline_machine__","request":"p-1"}"#,
         "project-worktrees": #"{"type":"project-worktrees","session":"__clawdline_machine__","request":"p-2","project":"/code/app"}"#,
         "past-sessions": #"{"type":"past-sessions","session":"__clawdline_machine__","request":"p-3","place":"portfolio","assistant":"claude"}"#,
@@ -1308,7 +1309,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(typedNames
                     == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git",
                         "image.img-1", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
-                        "read:p-5", "read:p-list", "read:p-snippets"],
+                        "read:p-5", "read:p-list", "read:p-snippets", "read:p-board"],
                 "and each parses into the read it names rather than into the switch's last case")
 
     // Strictness, in the same shape the commands already have: an exact key set, a bounded

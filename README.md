@@ -833,6 +833,8 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 
 ## Documentation
 
+[Project Board](docs/project-board.md) organizes work items, Sessions, usage and delivery under each Project. Enabled by default and currently free; Settings can restore the standard workflow. See the [API contract](docs/project-board-contract.md) for integration.
+
 The **[public manual](https://clawdline.com/docs)** is the canonical task-oriented guide for a
 person installing and using Clawdline. The pages below are the open-source technical contracts and
 deep implementation references; they remain public because source, tests, skills, and integrations
@@ -870,7 +872,7 @@ link to them.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 10134 checks, minutes rather than seconds
+./test.sh     # 10337 checks, minutes rather than seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```

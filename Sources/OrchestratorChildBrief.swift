@@ -305,6 +305,8 @@ extension Orchestrator {
         return """
         # Clawdline child briefing — task \(task.id)
 
+        \(ProjectBoardIntegration.workflowContext(itemID: task.workItemID, phase: task.workPhase))
+
         You are a CHILD session working for a Clawdline root session. Your one job is the task
         described in \(dir)/task.json — read that file now.
         \(planningSection(for: task))\(attachedSection)

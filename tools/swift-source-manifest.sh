@@ -82,6 +82,9 @@ clawdline_production_sources=(
   Sources/Planner.swift
   Sources/Project.swift
   Sources/ProjectArtifact.swift
+  Sources/ProjectBoardStore.swift
+  Sources/ProjectBoardIntegration.swift
+  Sources/ProjectBoardHTTP.swift
   Sources/ProjectIcon.swift
   Sources/ProjectStatus.swift
   Sources/ReadingFreshness.swift
@@ -187,6 +190,8 @@ clawdline_test_sources=(
   Tests/UsageLedgerTests.swift
   Tests/UsagePortfolioAndLifecycleTests.swift
   Tests/UsageProjectWorktreeTests.swift
+  Tests/ProjectBoardTests.swift
+  Tests/ProjectBoardIntegrationTests.swift
   Tests/VerificationLedgerTests.swift
   Tests/main.swift
 )

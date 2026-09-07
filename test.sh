@@ -398,7 +398,10 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `CLAWDLINE_RESEAL=1` reached all 10,134 checks and all twelve Cloud suites. The two new checks
 # preserve the first non-empty output line and prove the scan stops before a 1.7 MB discarded tail.
 # The same run measured the 8,156-site witness below.
-expected_swift_receipt='10134 checks passed'
+# Project Board's exact candidate e02f8762 completed 10,337 checks and all twelve Cloud
+# suites on 2026-09-08. The same run measured 8,362 assertion sites; the count is its
+# emitted receipt, not the sum of the earlier interrupted run and focused confirmation.
+expected_swift_receipt='10337 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -411,7 +414,7 @@ expected_swift_receipt='10134 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8156
+expected_swift_receipt_witness=8362
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -1042,6 +1045,8 @@ node Tests/web-waiting-card.mjs
 # defect the whole feature exists to end, arriving through the front door. Registered on a line of
 # its own so `browser_contract_suites`' sealed count stays the landing root's to move.
 node Tests/web-ledger.mjs
+node Tests/web-board.mjs
+node Tests/web-board-transport.mjs
 node Resources/web/app/js/net/client.test.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05

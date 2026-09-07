@@ -15,6 +15,11 @@ answer `write_disabled` — which is what a correct client has to handle anyway.
 
 ## The token
 
+The Project Board service is documented in [Project Board](project-board.md) and its
+[closed command contract](project-board-contract.md). It adds authenticated `GET /v1/board` and
+revision-checked `POST /v1/board`, using the same service through local HTTP and encrypted Cloud.
+It is enabled by default, currently free, and optional; disabling it preserves records.
+
 ```console
 $ TOKEN=$(cat ~/.config/clawdline/remote-token)
 ```

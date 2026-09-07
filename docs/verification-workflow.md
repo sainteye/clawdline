@@ -10,6 +10,11 @@ the direction the tuple would extend in.
 
 ## Phase 0–1 repository guards
 
+Project Board adds a durable work-item lifecycle above these attempt-level receipts; it does not
+reinterpret a task's verification summary as exact-tree proof. Board mode defaults on and may be
+disabled without removing the safeguards below. Root attestations, artifact acceptance and
+broker-verified landing remain separate evidence kinds. See [Project Board](project-board.md).
+
 The refactor foundation implements three local guards. **This section deliberately names no
 counts.** It carried five of them — a check target, a runner count, a group count, a suite-file
 count and two source-manifest partition sizes — and every one had drifted by the time anybody read

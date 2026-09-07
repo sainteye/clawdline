@@ -38,6 +38,10 @@ let liveDropDirectory = (FileManager.default.urls(for: .cachesDirectory, in: .us
 let noSessionNames: (TargetSession) -> SessionNaming.Name = { _ in .none }
 
 func configureTestIsolation() {
+    guard setenv("CLAWDLINE_BOARD_STORE", isolatedTestStoreDirectory
+        .appendingPathComponent("board.json").path, 1) == 0 else {
+        fatalError("could not isolate the test board store")
+    }
     // **Line buffering, so that where the output stops is where the suite stopped.**
     //
     // `print` is block buffered at this process's `fstat(1).st_blksize`, and under `test.sh` that is

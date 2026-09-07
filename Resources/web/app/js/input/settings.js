@@ -8,6 +8,7 @@ import { api } from "../net/api.js";
 import { renderTranscript } from "../view/transcript.js";
 import { toggleOrder } from "./keys.js";
 import { Push } from "./push.js";
+import { BoardControls } from "./board-settings.js";
 
 /* ---- the settings page --------------------------------------------------- */
 
@@ -85,6 +86,7 @@ export var Settings = (function () {
 
         /** Drawn on arrival, however the arrival happened. */
         enter: function () {
+            BoardControls.refresh();
             say("");
             var version = settingsBuildVersion(S.version, window.__clawdlineCloud);
             els["settings-version"].textContent =
