@@ -1081,8 +1081,26 @@ enum RemotePage {
                 // Nothing here writes to Cache Storage, so normally there is nothing to delete.
                 // It is done anyway, because "nothing wrote to it" is a claim about every version
                 // of this file that has ever run on somebody's phone, and this is two lines.
+                // **Everything except the three this worker keeps.** This used to delete every
+                // cache, and that was right for exactly as long as nothing wrote to Cache
+                // Storage — it was two lines against the possibility that some older version of
+                // this file had left something behind. Three things write there now: the trace,
+                // the record a tap leaves for the page, and the mark saying which worker this
+                // is. A blanket purge takes all three, and the one it can least afford to take
+                // is the record: the tap that writes it is the tap the record exists for.
+                //
+                // Measured on 2026-09-07, on a phone, in the reading that finally named it: the
+                // worker posted (`workerPosted` 3 → 4) and wrote a record, the page read the
+                // store 151 times and found nothing, and the mark row said 4 reads and 3 finds
+                // — one read landing in the window where a purge had run and the rewrite had
+                // not. The cost was written down as "an update loses one tap"; it was every tap
+                // this worker was restarted under.
                 caches.keys()
-                    .then(function (names) { return Promise.all(names.map(function (n) { return caches.delete(n); })); })
+                    .then(function (names) {
+                        var mine = [TRACE_CACHE, WANT_CACHE, MARK_CACHE];
+                        var others = names.filter(function (n) { return mine.indexOf(n) < 0; });
+                        return Promise.all(others.map(function (n) { return caches.delete(n); }));
+                    })
                     .catch(function () {})
                     // **And then say which worker this is**, in the one direction that works:
                     // a page can read Cache Storage and a worker cannot be asked a question

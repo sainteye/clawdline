@@ -9,6 +9,20 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: taking over deleted the record the tap had just left
+
+The worker cleared every cache when it took over. That was two defensive lines from a time when
+nothing wrote to Cache Storage, and it stayed correct exactly until a tap started leaving a record
+there for the page to find. The cost was written down as "a worker update loses one tap", and it
+was every tap the worker was restarted under.
+
+Measured on a phone on 2026-09-07: the worker posted its message and wrote its record, and the page
+then read that store 151 times and found nothing, with the worker's own mark reading four looks and
+three finds — one of them landing in the window where the purge had run and the rewrite had not.
+
+Taking over now sweeps only what this worker does not own. The three stores it does keep — the
+trace, the record a tap leaves, and the mark saying which worker this is — outlive it.
+
 ### Fixed: the page and the service worker could be a build apart with nothing able to say so
 
 A report from a phone said the second road had looked for the worker's record 116 times and never

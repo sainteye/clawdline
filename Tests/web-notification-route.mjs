@@ -330,6 +330,8 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     // The worker's own note about itself, and the ability to plant one — a page whose worker
     // never wrote one is exactly the state this reading exists to name.
     activate,
+    putForeign: (name) => stores.set(name, new Map()),
+    hasStore: (name) => stores.has(name),
     readMark: () => page.readWorkerMark(),
     putMark: (value) => stores.set(page.WORKER_MARK_CACHE, new Map(
       [[page.WORKER_MARK_URL, new Res(JSON.stringify(value))]])),
@@ -531,6 +533,28 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
         blind.declared.includes("notificationMessage")
         && blind.declared.includes("notificationWant")
         && blind.declared.includes("notificationOpen"));
+}
+
+/* ---- what taking over is allowed to destroy ---------------------------------------------------
+ *
+ * `activate` used to delete every cache, which was right while nothing wrote to Cache Storage and
+ * wrong from the moment a tap started leaving a record there. On 2026-09-07 a phone posted a
+ * message, wrote a record, and the page then read that store 151 times and found nothing: the
+ * purge had run under it. The cost had been written down as "an update loses one tap" and was in
+ * fact every tap the worker was restarted under.
+ */
+{
+  const kept = await makeWorld({ deliver: false, listed: [PANE] });
+  await kept.tap(sessionURL(PANE));
+  check("a tap leaves a record", !!(await kept.wantRecord()));
+  kept.putForeign("some-older-cache-nobody-owns");
+  await kept.activate();
+  check("and taking over does not take it away — the record outlives the worker that wrote it",
+        !!(await kept.wantRecord()));
+  check("while a cache this worker does not own is still swept",
+        !kept.hasStore("some-older-cache-nobody-owns"));
+  equal(await kept.readMark(), "wants",
+        "and the mark it writes on the way past is there to be read");
 }
 
 /* ---- which worker wrote any of this -----------------------------------------------------------
