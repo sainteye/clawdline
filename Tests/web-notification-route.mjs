@@ -288,6 +288,14 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     Promise, console, setTimeout, Date, JSON, Array,
   }));
 
+  // Taking over, which is where the worker says which worker it is. Driven rather than asserted
+  // as source: a check that plants the mark itself cannot tell whether the worker writes one.
+  const activate = async () => {
+    const waited = [];
+    handlers.activate[0]({ waitUntil: (p) => { waited.push(p); return p; } });
+    await Promise.all(waited);
+  };
+
   const tap = async (url) => {
     const waited = [];
     handlers.notificationclick[0]({
@@ -319,6 +327,12 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     // same message *afterwards* — a client message queued while iOS had the page suspended, and
     // dispatched behind the read that woke it.
     deliverMessage: (message) => { messageListeners.forEach((fn) => fn({ data: message })); },
+    // The worker's own note about itself, and the ability to plant one — a page whose worker
+    // never wrote one is exactly the state this reading exists to name.
+    activate,
+    readMark: () => page.readWorkerMark(),
+    putMark: (value) => stores.set(page.WORKER_MARK_CACHE, new Map(
+      [[page.WORKER_MARK_URL, new Res(JSON.stringify(value))]])),
     wantRecord, putWant,
     // A record written that many milliseconds ago. Rewriting the stored `at` rather than moving
     // the clock: the clock is `Date.now()` in two contexts and a fake one would prove something
@@ -517,6 +531,48 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
         blind.declared.includes("notificationMessage")
         && blind.declared.includes("notificationWant")
         && blind.declared.includes("notificationOpen"));
+}
+
+/* ---- which worker wrote any of this -----------------------------------------------------------
+ *
+ * On 2026-09-07 a report from a real phone said the record road had looked 116 times and found
+ * nothing, while the worker's own trace was arriving normally. Two faults produce that picture and
+ * they have opposite fixes: a road that does not work, and a worker that has not updated and does
+ * not know how to write a record at all. Nothing on either side could tell them apart.
+ */
+{
+  const fresh = await makeWorld({ deliver: false, listed: [PANE] });
+  // The worker itself, taking over — not a mark this test wrote. A check that plants what it
+  // then reads back is a check about the test.
+  await fresh.activate();
+  equal(await fresh.readMark(), "wants",
+        "a worker that left its mark is reported as one that knows how to leave a record");
+  const row = fresh.reads.filter((r) => r.name === "serviceWorkerMark").slice(-1)[0] || {};
+  equal(row.state, "wants", "and the row says so where a flood cannot reach it");
+}
+
+{
+  // The reading this exists for: the worker under this page is older than the page.
+  const old = await makeWorld({ deliver: false, listed: [PANE] });
+  equal(await old.readMark(), "absent",
+        "a worker that never wrote one is named as absent, not left to look like a broken road");
+  const row = old.reads.filter((r) => r.name === "serviceWorkerMark").slice(-1)[0] || {};
+  equal(row.state, "absent",
+        "and that is the difference between a stale worker and a road that does not work");
+  equal(row.entries, 0, "and nothing is counted, because nothing was current");
+}
+
+{
+  // What the worker says it posted, against what arrived. Neither number is the drop; the pair is.
+  const counted = await makeWorld({ deliver: false, listed: [PANE] });
+  await counted.tap(sessionURL(PANE));
+  await counted.tap(sessionURL(OTHER));
+  await counted.wake();
+  const posted = counted.reads.filter((r) => r.name === "workerPosted")
+                              .reduce((n, r) => n + (r.entries || 0), 0);
+  const arrived = counted.reads.filter((r) => r.name === "notificationMessage").length;
+  equal(posted, 2, "the worker's own count of the taps it handed to a window");
+  equal(arrived, 0, "and none of them arrived, which is the drop stated as two numbers");
 }
 
 /* ---- the three rows a flood cannot reach -----------------------------------------------------
@@ -1046,6 +1102,10 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
    same two the trace is read at, and a road nothing calls is a road that does not exist. Read as
    source rather than driven, because driving `main.js` means booting the whole app. */
 {
+  check("main.js reads which worker it is running over, at both wake-ups",
+        occurrences(mainSource, "readWorkerMark()") === 2);
+  check("and asks the browser for a newer worker at both of them",
+        occurrences(mainSource, "Push.recheck()") === 2);
   check("main.js imports the reader from route.js",
         /import \{[^}]*\breadWorkerWant\b[^}]*\} from "\.\/input\/route\.js";/.test(mainSource));
   equal(occurrences(mainSource, "readWorkerWant()"), 2,

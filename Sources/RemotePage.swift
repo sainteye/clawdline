@@ -1070,6 +1070,10 @@ enum RemotePage {
         // installs, `skipWaiting` stops it queuing behind open tabs, `clients.claim` takes those
         // tabs over, and from that moment the handler below fetches the page itself instead of
         // the cache. **One more reload after that and the device is out.**
+        // What this worker can do, left where the page can read it back. See `activate`.
+        var MARK_CACHE = "clawdline-worker-mark";
+        var MARK_URL = "/__clawdline/worker-mark";
+
         self.addEventListener("install", function () { self.skipWaiting(); });
 
         self.addEventListener("activate", function (event) {
@@ -1080,6 +1084,27 @@ enum RemotePage {
                 caches.keys()
                     .then(function (names) { return Promise.all(names.map(function (n) { return caches.delete(n); })); })
                     .catch(function () {})
+                    // **And then say which worker this is**, in the one direction that works:
+                    // a page can read Cache Storage and a worker cannot be asked a question
+                    // without a sixth listener. What it writes is a capability and not a
+                    // version — the reader's question is never "which build" but "does the
+                    // worker running on this phone know how to leave a record", and a version
+                    // string would need somebody to remember to bump it.
+                    //
+                    // **A worker from before this line writes nothing, and that absence is the
+                    // reading.** On 2026-09-07 a page reported 116 reads of a record that was
+                    // never there while the worker's own trace was arriving normally, and there
+                    // was no way to tell a worker that had not updated from a road that was
+                    // broken. This is that difference, written down where a flood cannot reach.
+                    .then(function () {
+                        try {
+                            return caches.open(MARK_CACHE).then(function (cache) {
+                                return cache.put(MARK_URL, new Response(
+                                    JSON.stringify({ wants: true, at: Date.now() }),
+                                    { headers: { "Content-Type": "application/json" } }));
+                            }).catch(function () {});
+                        } catch (e) { return undefined; }
+                    })
                     .then(function () { return self.clients.claim(); })
             );
         });

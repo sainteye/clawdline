@@ -298,6 +298,55 @@ Diagnostics.source(MESSAGE_SOURCE);
 Diagnostics.source(WANT_SOURCE);
 Diagnostics.source(OPEN_SOURCE);
 
+/* **Which worker is running, and what it says it did.**
+ *
+ * A page and the worker under it are two builds that can drift apart, and until 2026-09-07 nothing
+ * could see the gap: a report showed 116 reads of a record that was never written while the
+ * worker's own trace arrived normally, and "the worker has not updated" and "the second road is
+ * broken" were the same picture. They are different faults and only one of them is in this file.
+ *
+ * `serviceWorkerMark` answers the first. The worker writes a capability — not a version, because a
+ * version is a number somebody has to remember to bump — into a cache of its own when it takes
+ * over. A worker from before that line writes nothing, so `absent` here means the phone is running
+ * an older worker and every reading below it is about that worker rather than about this build.
+ *
+ * `workerPosted` answers the second half of the message question. The worker records
+ * `sw.postMessage` each time it hands a tap to a window; `notificationMessage` counts the ones
+ * that arrived. **The two numbers side by side are the drop**, and neither alone is.
+ */
+export var WORKER_MARK_CACHE = "clawdline-worker-mark";
+export var WORKER_MARK_URL = "/__clawdline/worker-mark";
+export var MARK_SOURCE = "serviceWorkerMark";
+export var POSTED_SOURCE = "workerPosted";
+Diagnostics.source(MARK_SOURCE);
+Diagnostics.source(POSTED_SOURCE);
+
+/** Read the worker's own note about itself. Never rejects: a browser with no Cache Storage is a
+ *  page that cannot be told, which is `unavailable` and not a fault of the road. */
+export function readWorkerMark() {
+    try {
+        if (typeof caches === "undefined" || !caches || !caches.open) {
+            Diagnostics.sourceRead(MARK_SOURCE, "unavailable", 0);
+            return Promise.resolve("unavailable");
+        }
+    } catch (e) {
+        Diagnostics.sourceRead(MARK_SOURCE, "unavailable", 0);
+        return Promise.resolve("unavailable");
+    }
+    return caches.open(WORKER_MARK_CACHE)
+        .then(function (cache) { return cache.match(WORKER_MARK_URL); })
+        .then(function (found) { return found ? found.json() : null; })
+        .then(function (mark) {
+            var answer = mark && mark.wants ? "wants" : "absent";
+            Diagnostics.sourceRead(MARK_SOURCE, answer, answer === "wants" ? 1 : 0);
+            return answer;
+        })
+        .catch(function () {
+            Diagnostics.sourceRead(MARK_SOURCE, "failed", 0);
+            return "failed";
+        });
+}
+
 /** The newest entry already read into the trace, so that waking up twice does not report twice.
  *
  *  The worker's own counter rather than its clock: a click and the message it sends are written
@@ -335,14 +384,21 @@ export function readWorkerTrace() {
             var newest = list.length ? (list[list.length - 1].seq || 0) : 0;
             if (newest < readThrough) readThrough = 0;
             var fresh = 0;
+            var posted = 0;
             for (var i = 0; i < list.length; i++) {
                 var entry = list[i];
                 if (!entry || typeof entry.seq !== "number" || entry.seq <= readThrough) continue;
                 readThrough = entry.seq;
                 fresh += 1;
+                if (entry.event === "sw.postMessage") posted += 1;
                 Diagnostics.note(entry.event, entry.data);
             }
             Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "merged", fresh);
+            // What the worker says it did, counted where a flood cannot reach it. Held against
+            // `notificationMessage` — one is how many taps the worker handed to a window, the
+            // other how many of them arrived — and the difference is the drop this whole line
+            // has been chasing without ever being able to measure.
+            if (posted) Diagnostics.sourceRead(POSTED_SOURCE, "posted", posted);
             return fresh;
         })
         .catch(function () {

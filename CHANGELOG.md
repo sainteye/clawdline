@@ -9,6 +9,21 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: the page and the service worker could be a build apart with nothing able to say so
+
+A report from a phone said the second road had looked for the worker's record 116 times and never
+found one, while that same worker's trace was arriving normally. Two faults make that picture — a
+road that does not work, and a worker that has not updated and does not know how to leave a record
+at all — and they have opposite fixes. Nothing on either side could tell them apart, so two rounds
+of work went into the wrong one.
+
+The worker now writes down what it can do when it takes over, and the page reads it back and reports
+it: `absent` names a worker older than the page rather than leaving it to look like a broken road.
+The page also counts what the worker says it posted against what actually arrived, which is the drop
+stated as two numbers instead of inferred from one. And it asks the browser outright for a newer
+worker at both moments it wakes up — registering on every load is supposed to be enough and on that
+phone it was not.
+
 ### Added: the notification road is now read from counts, not from a trace that overflows
 
 Two reports came back from a phone with the evidence already gone. The trace is eighty entries

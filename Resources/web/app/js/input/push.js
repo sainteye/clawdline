@@ -192,6 +192,22 @@ export var Push = (function () {
                 draw();
             });
         },
+        /// Ask the browser to look for a newer worker.
+        ///
+        /// **`register()` on every load is supposed to be this**, and on 2026-09-07 it was not:
+        /// a phone ran a page from one build over a worker from an earlier one for long enough
+        /// to produce 116 reads of a record that worker did not know how to write. Whatever the
+        /// browser's own schedule is, this asks. It is one conditional request against a route
+        /// served `no-cache`, it never reloads anything by itself, and a browser with no worker
+        /// or no registration yet simply has nothing to do.
+        recheck: function () {
+            try {
+                if (!registration || typeof registration.update !== "function") return;
+                var asked = registration.update();
+                if (asked && typeof asked.catch === "function") asked.catch(function () {});
+            } catch (e) { /* an update check is never worth an exception on this path */ }
+        },
+
         toggle: function () {
             if (busy) return;
             if (state === "off") enable();

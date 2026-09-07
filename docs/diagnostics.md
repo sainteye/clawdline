@@ -127,11 +127,23 @@ reports intact. So the notification road is read from four rows rather than from
 | `notificationMessage` | messages that actually arrived | the last one's `type` | same as `reads` |
 | `notificationWant` | reads of the worker's record | the last answer: `routed`, `stale`, `settled`, `declined`, `none`, `unavailable` | times it routed |
 | `notificationOpen` | decisions by `openWanted` | `found` or `missing` | sessions actually opened |
+| `serviceWorkerMark` | times the worker's own note was read | `wants` — the worker knows how to leave a record — or `absent` | 1 when current |
+| `workerPosted` | reads that folded in worker entries | `posted` | taps the worker says it handed to a window |
 
 **`notificationMessage.reads` is the number the road could not produce before.** Zero means no
 message was ever delivered to the page; one with no routing behind it means a message arrived and
 was declined. Those are different faults with opposite fixes, and until these rows existed both of
 them looked like an empty trace.
+
+**`serviceWorkerMark: absent` means the phone is running a worker older than the page**, and every
+row under it is then about that worker rather than about the build you are reading the source of.
+A page and the worker beneath it are two builds that can drift apart, and on 2026-09-07 they did:
+116 reads of a record that the worker on the device did not know how to write, with nothing on
+either side able to say so. The worker writes a capability rather than a version, because a version
+is a number somebody has to remember to bump.
+
+**`workerPosted` against `notificationMessage` is the drop, and neither alone is.** One is how many
+taps the worker says it handed to a window; the other how many of them the page received.
 
 **Zero is only a reading when the recorder could have said otherwise.** A row at zero because
 nothing happened and a row at zero because the reporting was removed look identical, so read them
