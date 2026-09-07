@@ -1074,6 +1074,19 @@ enum RemotePage {
         var MARK_CACHE = "clawdline-worker-mark";
         var MARK_URL = "/__clawdline/worker-mark";
 
+        // **Which build this script came from**, prepended by the route rather than interpolated
+        // into the literal below it: this file is read as text by the suite that drives it, and a
+        // Swift interpolation in the middle of it is not JavaScript. Absent under that suite and
+        // under any older server, which is why every read of it is guarded.
+        //
+        // A capability said "this worker knows how to leave a record" and two consecutive builds
+        // both answered it the same way — one that kept the record and one that swept it away on
+        // the next activation. That is a reading that cannot separate the two things it was being
+        // asked to separate, and on 2026-09-07 that cost a round: the trace was empty and there
+        // was no way to tell a worker that had not run from a worker that had run and then
+        // cleared up after itself. The stamp is the answer that a capability could not give.
+        var BUILD = (typeof CLAWDLINE_BUILD === "string") ? CLAWDLINE_BUILD : "";
+
         self.addEventListener("install", function () { self.skipWaiting(); });
 
         self.addEventListener("activate", function (event) {
@@ -1118,7 +1131,8 @@ enum RemotePage {
                         try {
                             return caches.open(MARK_CACHE).then(function (cache) {
                                 return cache.put(MARK_URL, new Response(
-                                    JSON.stringify({ wants: true, at: Date.now() }),
+                                    JSON.stringify({ wants: true, keeps: true,
+                                                     build: BUILD, at: Date.now() }),
                                     { headers: { "Content-Type": "application/json" } }));
                             }).catch(function () {});
                         } catch (e) { return undefined; }
@@ -1351,6 +1365,9 @@ enum RemotePage {
             // name: the message still goes first and still does the work when it arrives. What
             // the record removes is the part where a dropped message ended the tap in silence.
             var noted = [];
+            // How many windows were told, and whether one has been brought forward yet.
+            var delivered = 0;
+            var focused = false;
             // Whichever road is taken below, and before any of them: on iOS the system opens the
             // web app at `start_url` itself before this handler runs, so `openWindow` is usually
             // not reached and the URL it would have carried is not the one the app came up on.
@@ -1373,31 +1390,51 @@ enum RemotePage {
                                 visibility: client.visibilityState || "",
                                 focused: !!client.focused
                             }));
+                            delivered += 1;
                         }
-                        return client.focus().then(function () {
-                            // Only for a client we control, and only when the message could not
-                            // have done it. `catch` because navigating an uncontrolled client
-                            // rejects, and an unhandled rejection here would take the whole
-                            // handler down with it.
-                            if (!client.postMessage && client.navigate) {
-                                noted.push(traceNote("sw.navigate", { url: url }));
-                                return client.navigate(url).catch(function () {});
-                            }
-                        });
+                        // **Every window, not the first one that will take a message.** This
+                        // used to return here, and a phone that is holding a client the reader
+                        // cannot see — a suspended copy, a window the system kept — got the tap
+                        // and the one on screen did not. There is nothing to lose by telling all
+                        // of them: the page answers a tap once by its id, so the second copy of
+                        // one message is declined by the same guard that declines the record
+                        // when the message has already been acted on.
+                        if (!focused) {
+                            focused = true;
+                            noted.push(client.focus().then(function () {
+                                if (!client.postMessage && client.navigate) {
+                                    noted.push(traceNote("sw.navigate", { url: url }));
+                                    return client.navigate(url).catch(function () {});
+                                }
+                            }).catch(function () {}));
+                        }
                     }
+                    if (delivered) { return undefined; }
                     noted.push(traceNote("sw.openWindow", { url: url }));
                     return clients.openWindow(url);
                 })
-                // The trace is kept alive with the handler rather than in front of it: awaiting a
-                // cache write before `focus()` or `openWindow()` would put an asynchronous hop
-                // between the tap and the thing the tap is for.
-                .then(function () { return Promise.all(noted); }));
+                // **Nothing above may stop this line being reached.** `focus()` rejects on iOS
+                // often enough to matter, and it used to sit in the middle of this chain: one
+                // rejection and the tail never ran, `waitUntil` settled early, and the worker was
+                // shut down with its own record of the tap still unwritten. That is exactly the
+                // reading taken from a phone on 2026-09-07 — a worker that had plainly woken and
+                // left nothing at all behind — and it is why `catch` comes before the wait rather
+                // than after it.
+                .catch(function () {})
+                .then(function () { return Promise.all(noted.map(function (p) {
+                    return Promise.resolve(p).catch(function () { return false; });
+                })); }));
         });
         """#
+        // The build, in front of the script rather than inside it. `Tests/web-notification-route.mjs`
+        // reads the literal above as text and runs it, so an interpolation inside it would be a
+        // syntax error in the one place this script is exercised; the worker reads this global
+        // defensively and works without it.
+        let stamped = "var CLAWDLINE_BUILD = \"\(RemoteServer.buildStamp)\";\n" + js
         return RemoteServer.Response(status: 200,
                                      headers: ["Content-Type": "text/javascript; charset=utf-8",
                                                "Cache-Control": "no-cache"],
-                                     body: Data(js.utf8))
+                                     body: Data(stamped.utf8))
     }
 
     static func manifest() -> RemoteServer.Response {

@@ -9,6 +9,28 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: three more ways a tap was lost after the worker had already woken
+
+A phone produced a reading no round before this could have: a worker that had plainly run and left
+nothing at all — no trace of the tap, no message, no record. Three mechanisms make that, and rather
+than test them one at a time against one rebuild each, all three are closed here.
+
+`focus()` sat in the middle of the promise the handler gave `waitUntil`, and a device that refuses
+it — iOS does — skipped the tail, settled the wait, and let the worker be stopped with the tap's own
+record still in flight. The wait now always reaches the writes.
+
+The message went to the first window that would take one and returned. A phone holding a copy the
+reader cannot see gave that copy the tap and the window on screen nothing. Every window is told now;
+answering twice was already impossible, because a tap is answered once by its id.
+
+And a record that lands behind the read that went looking for it had nothing to bring anybody back:
+a banner tapped over an app already in front of you produces no list, no focus and no visibility
+change. Three bounded looks follow each wake-up, then it stops.
+
+The worker also stamps the build it came from into the mark it leaves, because a capability said
+"knows how to leave a record" and two consecutive builds answered it identically — one that kept the
+record and one that swept it away.
+
 ### Fixed: taking over deleted the record the tap had just left
 
 The worker cleared every cache when it took over. That was two defensive lines from a time when

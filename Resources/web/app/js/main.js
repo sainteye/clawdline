@@ -58,7 +58,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { routeTo, readWorkerTrace, readWorkerWant, readWorkerMark } from "./input/route.js";
+import { routeTo, readWorkerTrace, readWorkerWant, readWorkerMark, lookAgainForWant } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import "./input/start.js";
@@ -494,6 +494,9 @@ function boot(data) {
     // that a report taken from a phone shows the worker's entries and then the routing they
     // caused, in the order they happened.
     readWorkerWant();
+    // And again shortly, because the worker does not hold the tap up for its own write and this
+    // read can be in front of it. Bounded; see `WANT_LOOK_AGAIN_MS`.
+    lookAgainForWant();
     // And which worker wrote any of it. A page and the worker under it are two builds, and on
     // 2026-09-07 they were a build apart on a real phone with nothing on either side able to say
     // so. Read after the two above, so a report lists what happened and then who it happened in.
@@ -527,6 +530,7 @@ function watchForStaleness() {
         // moment anything can be done about it.
         readWorkerTrace();
         readWorkerWant();
+        lookAgainForWant();
         readWorkerMark();
         // Coming back is the other moment a worker update can land, and the moment somebody is
         // most likely to be looking at a screen that is a build behind.

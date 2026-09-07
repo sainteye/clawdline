@@ -576,6 +576,42 @@ export function retryWorkerWant() {
     return readWorkerWant();
 }
 
+/** How long after a wake-up to look again, when the first look found nothing.
+ *
+ *  **The worker does not hold the tap up for its own write**, so `boot` can read a store the
+ *  record has not landed in yet — and the two other ways back here are a session list and the
+ *  window taking focus, neither of which a phone owes anybody. A tap on a banner over an app that
+ *  is already in front of you produces no list, no focus and no `visibilitychange`, and on
+ *  2026-09-07 that was a tap that went nowhere with the record sitting on the device.
+ *
+ *  Three looks, then it stops. Bounded because an unbounded poll is a background loop nobody
+ *  asked for, and this far apart because the thing being waited for is a cache write that has
+ *  already started. */
+export var WANT_LOOK_AGAIN_MS = [400, 1200, 3000];
+
+var lookingAgain = false;
+
+/** Look again, a few times, after a wake-up that found nothing. Answers nothing; the reads report
+ *  themselves. Never schedules a second series while one is running. */
+export function lookAgainForWant() {
+    if (lookingAgain) return;
+    lookingAgain = true;
+    var left = WANT_LOOK_AGAIN_MS.slice();
+    var step = function () {
+        if (!left.length) { lookingAgain = false; return; }
+        var wait = left.shift();
+        setTimeout(function () {
+            readWorkerWant().then(function (answer) {
+                // Anything but "nothing there yet" ends the series: the record has been read and
+                // whatever was to be done about it has been done.
+                if (answer === "none") { step(); return; }
+                lookingAgain = false;
+            }, function () { lookingAgain = false; });
+        }, wait);
+    };
+    step();
+}
+
 /**
  * The fourth read point, and the one a tap made *in front of the app* can actually reach.
  *

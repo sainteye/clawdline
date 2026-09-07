@@ -137,8 +137,13 @@ check("the fixture this suite rests on is a tmux id — the only shape this faul
    Both are real behaviours of real browsers, and this suite's job is that they look different. */
 let worlds = 0;
 
-async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches = false } = {}) {
+async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches = false,
+                           focusFails = false, windowsOpen = 1 } = {}) {
   worlds += 1;
+
+  // Set once the promise handed to `waitUntil` has settled: after that a device is free to stop
+  // the worker, and a write still in flight never lands.
+  const workerStopped = { value: false };
 
   // Cache Storage, shared by both contexts, because on a device it is one origin's storage.
   const stores = new Map();
@@ -151,7 +156,15 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     const entries = stores.get(name);
     return {
       match: (url) => Promise.resolve(entries.get(url) || undefined),
-      put: (url, res) => { entries.set(url, res); return Promise.resolve(); },
+      // **A write that takes a turn to land, and a worker that can be shut down under it.**
+      // A device stops a service worker as soon as the promise it gave `waitUntil` settles, and
+      // anything still in flight is simply gone. Node has no such thing, so a handler that
+      // abandons its own writes looks identical to one that awaits them — which is a test with
+      // no power to disagree, and this suite has been caught by exactly that shape before.
+      put: (url, res) => new Promise((done) => setTimeout(() => {
+        if (!workerStopped.value) entries.set(url, res);
+        done();
+      }, 0)),
     };
   };
   // What the worker left in the second store, read the way a person would read it off a device
@@ -264,14 +277,29 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
   const client = {
     id: "window-1", type: "window", url: "https://clawdline.example/",
     focused: false, visibilityState: "hidden",
-    focus() { focused.push(true); this.focused = true; return Promise.resolve(); },
+    focus() {
+      focused.push(true); this.focused = true;
+      // **iOS rejects this often enough to matter.** It used to sit in the middle of the chain
+      // `waitUntil` was given, so one rejection ended the handler with the record unwritten.
+      return focusFails ? Promise.reject(new Error("focus refused")) : Promise.resolve();
+    },
     postMessage(message) {
       posted.push(message);
       if (deliver) messageListeners.forEach((fn) => fn({ data: message }));
     },
     navigate(url) { navigated.push(url); return Promise.resolve(); },
   };
-  const windows = { list: [client] };
+  const postedSecond = [];
+  // A second window the reader cannot see — a copy the system kept, suspended. The tap used to
+  // go to whichever of these `matchAll` returned first and to no other.
+  const second = {
+    id: "window-2", type: "window", url: "https://clawdline.example/",
+    focused: false, visibilityState: "hidden",
+    focus() { return Promise.resolve(); },
+    postMessage(message) { postedSecond.push(message); },
+    navigate() { return Promise.resolve(); },
+  };
+  const windows = { list: windowsOpen > 1 ? [second, client] : [client] };
   const self = {
     addEventListener: (type, fn) => { (handlers[type] = handlers[type] || []).push(fn); },
     skipWaiting: () => {},
@@ -296,13 +324,16 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     await Promise.all(waited);
   };
 
-  const tap = async (url) => {
+  const tap = async (url, { stopAfter = false } = {}) => {
     const waited = [];
     handlers.notificationclick[0]({
       notification: { close: () => {}, data: url === undefined ? undefined : { url } },
       waitUntil: (p) => { waited.push(p); return p; },
     });
-    await Promise.all(waited);
+    await Promise.all(waited.map((p) => Promise.resolve(p).catch(() => {})));
+    // The device's half of the bargain: what `waitUntil` was given has settled, so the worker may
+    // now be stopped. A handler that let go of its own writes loses them here and only here.
+    if (stopAfter) { workerStopped.value = true; await new Promise((d) => setTimeout(d, 5)); }
   };
 
   return {
@@ -330,6 +361,8 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     // The worker's own note about itself, and the ability to plant one — a page whose worker
     // never wrote one is exactly the state this reading exists to name.
     activate,
+    postedSecond: () => postedSecond.slice(),
+    lookAgain: () => page.lookAgainForWant(),
     putForeign: (name) => stores.set(name, new Map()),
     hasStore: (name) => stores.has(name),
     readMark: () => page.readWorkerMark(),
@@ -533,6 +566,47 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
         blind.declared.includes("notificationMessage")
         && blind.declared.includes("notificationWant")
         && blind.declared.includes("notificationOpen"));
+}
+
+/* ---- the three ways a tap was lost after the worker had already woken ---------------------------
+ *
+ * Read from a phone on 2026-09-07: a worker that had plainly run and left nothing at all — no
+ * trace, no message, no record. These are the three mechanisms that produce it.
+ */
+{
+  // **`focus()` rejecting used to end the handler.** It sat in the middle of the chain given to
+  // `waitUntil`, so one rejection skipped the tail, the wait settled, and the worker was shut
+  // down with the tap's own record still unwritten.
+  const refused = await makeWorld({ deliver: false, listed: [PANE], focusFails: true });
+  await refused.tap(sessionURL(PANE), { stopAfter: true });
+  check("a focus this device refuses does not take the record with it",
+        !!(await refused.wantRecord()));
+  await refused.wake();
+  check("nor the worker's own account of the tap",
+        refused.notes.some((e) => e.event === "sw.notificationclick"));
+  check("and the message was still handed over before any of that",
+        refused.posted.length === 1);
+}
+
+{
+  // **Every window, not the first one that will take a message.**
+  const twoWindows = await makeWorld({ deliver: false, listed: [PANE], windowsOpen: 2 });
+  await twoWindows.tap(sessionURL(PANE));
+  equal(twoWindows.postedSecond().length, 1, "the window the loop reaches first is told");
+  equal(twoWindows.posted.length, 1,
+        "and so is the one behind it, which used to be skipped");
+}
+
+{
+  // **A record that lands after the read that went looking for it.** No list, no focus, no
+  // visibility change — the shape a banner tapped over an app already in front of you produces.
+  const late = await makeWorld({ deliver: false, listed: [PANE] });
+  equal(await late.readWant(), "none", "the first look is in front of the write");
+  await late.tap(sessionURL(PANE));
+  late.lookAgain();
+  await new Promise((done) => setTimeout(done, 700));
+  equal(late.opened.join(","), PANE,
+        "and a bounded look-again finds it, which is the tap that used to go nowhere");
 }
 
 /* ---- what taking over is allowed to destroy ---------------------------------------------------
@@ -983,9 +1057,17 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
   check("and the message carried the id of the record that tap left behind",
         world.posted.length === 1 && typeof world.posted[0].want === "string"
         && world.posted[0].want.length > 0);
-  equal(world.wantRecord(), null,
-        "and the record is already spent, because the session it named is open");
-  equal(await world.readWant(), "none", "so a wake-up behind it finds nothing to do");
+  // **The worker's write can land behind the page that has already acted**, because the handler
+  // does not hold the tap up for it — so what is asserted here is not that the record is gone by
+  // now but that it can never be obeyed twice. The read below recognises it by the id the message
+  // carried, and collects it on the way past.
+  equal(await world.readWant(), "settled",
+        "a record that outlived the deletion started for it is recognised, not obeyed");
+  equal(world.opened.length, 1, "and nobody is moved twice by it");
+  // The collection is started, not awaited, by the read that recognises it — one turn later it
+  // has landed.
+  await new Promise((done) => setTimeout(done, 0));
+  equal(await world.readWant(), "none", "and the read that recognised it also collected it");
   // The deletion is a write to a store that can refuse one, and the id is what holds when it
   // does: a copy of that record put back by hand is recognised as the tap that has been answered.
   world.putWant({ at: Date.now(), url: sessionURL(PANE), id: world.posted[0].want });
