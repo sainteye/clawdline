@@ -595,11 +595,10 @@ export var LocalClient = {
     /// this page holds — the route also takes the Portfolio's opaque id and the Project's final
     /// name, and refuses rather than guessing when a name is carried by two of them.
     ///
-    /// **There is no such method on the Cloud client and that is deliberate**: every read a
-    /// paired viewer may name carries a session, and this one's subject is a Project. The page
-    /// asks `typeof api.projectWorktrees === "function"` and says so rather than drawing a
-    /// control the transport cannot answer — see `docs/api.md`.
+    /// Cloud carries the same closed read on a reserved machine answer channel; this local
+    /// implementation still receives the whole place row so both transports share the view seam.
     projectWorktrees: function (project) {
+        if (project && typeof project === "object") project = project.path;
         return jsonFetch("/v1/orchestrator/usage/project-worktrees?project="
                          + encodeURIComponent(project));
     },

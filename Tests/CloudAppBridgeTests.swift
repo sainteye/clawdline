@@ -196,7 +196,8 @@ private actor CloudAppBridgeTestRouter: CloudCommandRouting {
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult {
         calls.append(Call(command: command, sender: sender, idempotencyKey: idempotencyKey))
-        return CloudCommandResult(status: 200, code: nil)
+        return CloudCommandResult(status: 200, code: nil,
+                                  body: Data(#"{"ok":true,"id":"opened"}"#.utf8))
     }
 
     func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
@@ -394,18 +395,37 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
     try require(routed.first?.idempotencyKey == "cloud:viewer:11",
                 "verified sender and sequence supply HTTP-equivalent idempotency")
 
-    transport.yield("not json", sequence: 12)
-    transport.yield(#"{"type":"erase","session":"plain"}"#, sequence: 13)
+    let envelopesBeforeStart = transport.envelopes().count
+    transport.yield(#"{"type":"start","session":"__clawdline_machine__","request":"r-1","place":"portfolio","assistant":"claude","model":"sonnet"}"#,
+                    sequence: 12)
+    try await waitForCloudAppBridge("start command answer") {
+        transport.envelopes().count == envelopesBeforeStart + 1
+    }
+    let startCalls = await router.recorded()
+    let startAnswer = try transport.envelopes().last?.open(
+        masterSecret: masterSecret,
+        publicKeyForSender: { $0 == "machine-device" ? signingKey.publicKeyRaw : nil }
+    )
+    let startPayload = startAnswer.flatMap {
+        (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+    }
+
+    transport.yield("not json", sequence: 13)
+    transport.yield(#"{"type":"erase","session":"plain"}"#, sequence: 14)
     transport.yield(#"{"type":"dispatch","task":{"title":"not pinned"}}"#,
-                    sequence: 14, commandClass: .dispatch)
+                    sequence: 15, commandClass: .dispatch)
     try await waitForCloudAppBridge("typed command refusals") {
         let codes = results.all().compactMap(\.code)
         return codes.contains("malformed_command") && codes.contains("unknown_command")
             && codes.contains("cloud_dispatch_unpinned")
     }
     let refusedCalls = await router.recorded()
-    try require(refusedCalls.count == 1,
-                "malformed, unknown, and unpinned dispatch commands never reach execution")
+    try require(refusedCalls.count == 2
+                    && startCalls.last?.command
+                        == .start(place: "portfolio", assistant: "claude", model: "sonnet")
+                    && startPayload?["read"] as? String == "action:r-1"
+                    && (startPayload?["body"] as? [String: Any])?["id"] as? String == "opened",
+                "only the answer and start reach execution, and start returns its new session id")
 
     await bridge.stop()
     try require(transport.state().stopped, "bridge shutdown stops the transport")
@@ -1209,6 +1229,9 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         // that is parsed and then refused has answered that question. The picture's own answer,
         // its byte bound and its refusals are checked further down with a real PNG.
         "image": #"{"type":"image","session":"typed","id":"img-1"}"#,
+        "places": #"{"type":"places","session":"__clawdline_machine__","request":"p-1"}"#,
+        "project-worktrees": #"{"type":"project-worktrees","session":"__clawdline_machine__","request":"p-2","project":"/code/app"}"#,
+        "past-sessions": #"{"type":"past-sessions","session":"__clawdline_machine__","request":"p-3","place":"portfolio","assistant":"claude"}"#,
     ]
     try require(Set(wellFormed.keys) == CloudAppBridge.readTypes,
                 "every read type this bridge admits has a body written for it here")
@@ -1231,7 +1254,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let typedNames = Set(typedReads.map(\.read.name))
     try require(typedNames
                     == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git",
-                        "image.img-1"],
+                        "image.img-1", "read:p-1", "read:p-2", "read:p-3"],
                 "and each parses into the read it names rather than into the switch's last case")
 
     // Strictness, in the same shape the commands already have: an exact key set, a bounded

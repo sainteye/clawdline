@@ -25,7 +25,9 @@ import {
 } from "./cloud-pairing.js";
 
 /** Capabilities this console asks for. The four-way split is PROTOCOL §12's, unmerged. */
-export const VIEWER_CAPABILITIES = ["read_sessions", "read_transcript", "send_prompt"];
+export const VIEWER_CAPABILITIES = [
+    "read_sessions", "read_transcript", "send_prompt", "start_session"
+];
 
 const DEVICE_KEY = "clawdline.viewer.device";
 const DEVICE_PUBLIC_KEY = "clawdline.viewer.public";
@@ -66,12 +68,45 @@ export function readCloudConfig(scope) {
     if (relay.protocol !== "wss:") {
         throw bootError("bad_cloud_config", "the relay URL must be wss");
     }
+    var strings = {};
+    if (raw.strings !== undefined) {
+        if (!raw.strings || typeof raw.strings !== "object" || Array.isArray(raw.strings)) {
+            throw bootError("bad_cloud_config", "the cloud string catalog is malformed");
+        }
+        Object.keys(raw.strings).forEach(function (alias) {
+            var tag = raw.strings[alias];
+            if (!/^[A-Za-z0-9-]+$/.test(alias) || typeof tag !== "string" ||
+                !/^[A-Za-z0-9-]+$/.test(tag)) {
+                throw bootError("bad_cloud_config", "the cloud string catalog is malformed");
+            }
+            strings[alias] = tag;
+        });
+    }
     return {
         appOrigin: app.origin,
         apiOrigin: api.origin,
         relayURL: relay.toString(),
-        build: typeof raw.build === "string" ? raw.build : ""
+        build: typeof raw.build === "string" ? raw.build : "",
+        strings: strings
     };
+}
+
+/** The immutable static catalog for this browser, or null when English HTML is the fallback. */
+export function cloudStringsURL(config, languages) {
+    if (!config || !config.build || !config.strings) return null;
+    var aliases = Object.keys(config.strings).sort(function (a, b) { return b.length - a.length; });
+    var wanted = Array.isArray(languages) ? languages : [];
+    for (var i = 0; i < wanted.length; i += 1) {
+        var language = String(wanted[i]).toLowerCase();
+        for (var j = 0; j < aliases.length; j += 1) {
+            var alias = aliases[j];
+            if (language.indexOf(alias.toLowerCase()) === 0) {
+                return "/app/" + encodeURIComponent(config.build) + "/strings/"
+                    + encodeURIComponent(config.strings[alias]) + ".json";
+            }
+        }
+    }
+    return null;
 }
 
 /**

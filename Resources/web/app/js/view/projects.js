@@ -505,7 +505,7 @@ export function bindProjectsPage(elements, environment) {
         }
         var ticket = ++state.loading;
         elements["project-status"].textContent = T.webProjectReading;
-        return readWorktrees(place.path).then(function (data) {
+        return readWorktrees(place).then(function (data) {
             if (ticket !== state.loading) return;
             renderAnswer(context, data && data.projectWorktrees);
         }).catch(function (error) {

@@ -20,6 +20,7 @@ clawdline_production_sources=(
   Sources/CloudEnvelope.swift
   Sources/CloudHandover.swift
   Sources/CloudKeys.swift
+  Sources/CloudLocalRoute.swift
   Sources/CloudOutboundSpool.swift
   Sources/CloudPairing.swift
   Sources/CloudSettings.swift

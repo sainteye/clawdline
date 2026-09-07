@@ -29,6 +29,8 @@ struct CloudAppIdentity: @unchecked Sendable {
 enum CloudHeadlessCommand: Equatable, Sendable {
     case send(session: String, text: String, images: [String])
     case answer(session: String, key: String)
+    case start(place: String, assistant: String, model: String)
+    case resume(place: String, session: String, assistant: String)
 }
 
 /// The reads a paired viewer may ask this Mac for over the relay.
@@ -57,6 +59,9 @@ enum CloudHeadlessRead: Equatable, Sendable {
     /// console serves no such route, so every image in every transcript was a broken-image icon —
     /// the one failure in this transport that looked like the reader's own fault.
     case image(session: String, id: String)
+    case places(session: String, request: String)
+    case projectWorktrees(session: String, request: String, project: String)
+    case pastSessions(session: String, request: String, place: String, assistant: String)
 
     /// The session this read is about — also the channel its answer is published on.
     var session: String {
@@ -68,6 +73,9 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .skills(let session): return session
         case .git(let session): return session
         case .image(let session, _): return session
+        case .places(let session, _): return session
+        case .projectWorktrees(let session, _, _): return session
+        case .pastSessions(let session, _, _, _): return session
         }
     }
 
@@ -98,6 +106,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .skills: return "skills"
         case .git: return "git"
         case .image(_, let id): return "image." + id
+        case .places(_, let request), .projectWorktrees(_, let request, _),
+             .pastSessions(_, let request, _, _): return "read:" + request
         }
     }
 }
@@ -105,6 +115,13 @@ enum CloudHeadlessRead: Equatable, Sendable {
 struct CloudCommandResult: Equatable, Sendable {
     let status: Int
     let code: String?
+    let body: Data
+
+    init(status: Int, code: String?, body: Data = Data()) {
+        self.status = status
+        self.code = code
+        self.body = body
+    }
 }
 
 /// A read's answer, kept as the route's own bytes rather than a parsed object: a refusal is an
@@ -153,7 +170,8 @@ struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable 
         )
         let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
         let error = object?["error"] as? [String: Any]
-        return CloudCommandResult(status: response.status, code: error?["code"] as? String)
+        return CloudCommandResult(status: response.status, code: error?["code"] as? String,
+                                  body: response.body)
     }
 
     func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
@@ -184,6 +202,7 @@ enum CloudAppBridgeError: Error, LocalizedError, Equatable {
 /// Construction has no side effects. `start()` is the explicit attachment/configuration point,
 /// and inbound commands have a second, separately injected gate whose default is always false.
 actor CloudAppBridge {
+    static let machineReplySession = "__clawdline_machine__"
     typealias CommandGate = @Sendable () -> Bool
     typealias Milliseconds = @Sendable () -> UInt64
     typealias CommandResultObserver = @Sendable (CloudCommandResult) -> Void
@@ -517,6 +536,7 @@ actor CloudAppBridge {
         }
 
         let command: CloudHeadlessCommand
+        var commandReply: (session: String, name: String)?
         switch type {
         case "send":
             guard inbound.commandClass == .ctl, Set(body.keys) == ["type", "session", "text", "images"],
@@ -538,6 +558,36 @@ actor CloudAppBridge {
                 return
             }
             command = .answer(session: session, key: key)
+        case "start":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "place", "assistant", "model"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let place = body["place"] as? String, !place.isEmpty,
+                  let assistant = body["assistant"] as? String,
+                  let model = body["model"] as? String
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .start(place: place, assistant: assistant, model: model)
+            commandReply = (session, "action:" + request)
+        case "resume":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "place", "past", "assistant"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let place = body["place"] as? String, !place.isEmpty,
+                  let past = body["past"] as? String, !past.isEmpty,
+                  let assistant = body["assistant"] as? String
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .resume(place: place, session: past, assistant: assistant)
+            commandReply = (session, "action:" + request)
         case "dispatch":
             // cloud-client.js sends only `{task}`. The local broker protocol requires a materialized
             // task.json plus task_id and secret, and no pinned wire shape says how those are carried
@@ -554,6 +604,11 @@ actor CloudAppBridge {
             idempotencyKey: "cloud:\(inbound.sender):\(inbound.sequence)"
         )
         commandResult(result)
+        if let reply = commandReply {
+            await publishJSONAnswer(name: reply.name, session: reply.session,
+                                    status: result.status, body: result.body,
+                                    lifecycleGeneration: ownedGeneration)
+        }
     }
 
     /// The reads a viewer may name. A closed set, checked before the write gate, so that adding
@@ -566,7 +621,15 @@ actor CloudAppBridge {
     /// member for a well-formed body, so the two cannot come apart quietly.
     static let readTypes: Set<String> = [
         "transcript", "info", "agent", "shell", "skills", "git", "image",
+        "places", "project-worktrees", "past-sessions",
     ]
+
+    private static func requestName(_ value: Any?) -> String? {
+        guard let value = value as? String, !value.isEmpty, value.count <= 128,
+              value.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f })
+        else { return nil }
+        return value
+    }
 
     /// The relay's per-account ciphertext cap, which every tier shares (`max_envelope_bytes`).
     static let cloudEnvelopeCiphertextLimit = 16 << 20
@@ -694,6 +757,40 @@ actor CloudAppBridge {
                 return
             }
             read = .image(session: session, id: id)
+        case "places":
+            guard Set(body.keys) == ["type", "session", "request"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .places(session: session, request: request)
+        case "project-worktrees":
+            guard Set(body.keys) == ["type", "session", "request", "project"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let project = body["project"] as? String, !project.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .projectWorktrees(session: session, request: request, project: project)
+        case "past-sessions":
+            guard Set(body.keys) == ["type", "session", "request", "place", "assistant"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let place = body["place"] as? String, !place.isEmpty,
+                  let assistant = body["assistant"] as? String
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .pastSessions(session: session, request: request,
+                                 place: place, assistant: assistant)
         default:
             // `readTypes` admitted a word this switch does not know, which means the two lists
             // have come apart. Fail closed rather than reading it as whichever case sits last —
@@ -734,6 +831,34 @@ actor CloudAppBridge {
             // cannot leave has nothing to report with. It is recorded here and the viewer's read
             // ages out at its end, which is the honest end state for a bridge that is going down.
             commandResult(CloudCommandResult(status: 503, code: "read_answer_undeliverable"))
+        }
+    }
+
+    private func publishJSONAnswer(
+        name: String, session: String, status: Int, body: Data,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        let parsed = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        var payload: [String: Any] = ["read": name, "status": status]
+        if (200..<300).contains(status), let parsed {
+            payload["body"] = parsed
+        } else {
+            payload["error"] = (parsed?["error"] as? [String: Any])
+                ?? ["code": "command_failed", "message": "This command could not be completed."]
+        }
+        guard running, lifecycleGeneration == ownedGeneration,
+              JSONSerialization.isValidJSONObject(payload),
+              let bytes = try? JSONSerialization.data(
+                withJSONObject: payload, options: [.withoutEscapingSlashes])
+        else { return }
+        do {
+            try await runPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publish(bytes, channel: transcriptChannel(session),
+                                       lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            commandResult(CloudCommandResult(status: 503, code: "command_answer_undeliverable"))
         }
     }
 

@@ -693,7 +693,7 @@ Everything above is the direct path: a browser on this Mac's own network, or thr
 Cloudflare tunnel, holding a paired-device token. A browser on the **Cloud** path holds no such
 token and speaks no HTTP to this Mac at all — it publishes one encrypted envelope to the relay,
 and the Mac publishes one back. So the routes above are not reachable from there by definition,
-and what is reachable is a closed list of seven, named in `CloudHeadlessRead`:
+and what is reachable is a closed list named in `CloudHeadlessRead`:
 
 | asked as | answered by | the direct route it stands for |
 |---|---|---|
@@ -705,6 +705,9 @@ and what is reachable is a closed list of seven, named in `CloudHeadlessRead`:
 | `{"type":"skills","session":"…"}` | `read: "skills"` | [`GET /v1/sessions/:id/skills`](#get-v1sessionsidskills) |
 | `{"type":"git","session":"…"}` | `read: "git"` | [`GET /v1/sessions/:id/git`](#get-v1sessionsidgit) |
 | `{"type":"image","session":"…","id":"…"}` | `read: "image.<id>"` | `GET /v1/artifacts/images/:id` |
+| `{"type":"places","session":"__clawdline_machine__","request":"…"}` | `read: "read:<request>"` | `GET /v1/places` |
+| `{"type":"project-worktrees","session":"__clawdline_machine__","request":"…","project":"…"}` | `read: "read:<request>"` | `GET /v1/orchestrator/usage/project-worktrees?project=…` |
+| `{"type":"past-sessions","session":"__clawdline_machine__","request":"…","place":"…","assistant":"…"}` | `read: "read:<request>"` | `GET /v1/places/:id/sessions/:assistant` |
 
 **An agent, a shell and an image name themselves in the answer; the other four do not have to.** A
 session has one transcript, one Info, one skills menu and one Git panel, but many agents, many
@@ -732,6 +735,13 @@ already subscribes to when it opens a session. Neither is new. What is new is th
 all is published on the second one: the relay and both clients have carried `t/` since the
 protocol was written and no Mac had ever sent a transcript envelope, so a phone that asked for one
 waited behind a skeleton until somebody closed the tab.
+
+Machine-scoped reads use the reserved `__clawdline_machine__` session segment and an opaque request
+name. That keeps concurrent tabs apart without putting a filesystem path in a channel, and avoids
+using `orch/<machine>`: the relay retains the latest stream envelope there, so a one-off Projects
+answer would otherwise replace the durable task, schedule and snippet snapshot. `start` and
+`resume` use the same answer channel with `read: "action:<request>"`; the body is the local route's
+own response, including the new session id.
 
 **The key set is exact and the answer names itself.** A body with a missing, extra or wrongly typed
 field is `400 malformed_read` and never reaches a route; so is a read that arrives with class
@@ -814,8 +824,8 @@ and see `cloud_read_timeout` sixty seconds later. That is bounded and typed rath
 skeleton, but it is a minute, and closing it needs the build stamp the Cloud path still does not
 carry — see [`docs/cloud.md`](cloud.md).
 
-Every other read the Web UI performs — `/v1/places`, `/v1/places/:id/sessions`,
-`GET /v1/orchestrator/schedules/:id`, `/v1/orchestrator/coordinator/bearings`, `/v1/push/key` —
+Every other read the Web UI performs — `GET /v1/orchestrator/schedules/:id`,
+`/v1/orchestrator/coordinator/bearings`, `/v1/push/key` —
 is absent on the Cloud path and is guarded at its call site by `typeof api.X === "function"`, so
 the control it belongs to is not drawn at all. That is a quieter answer than a button that fails
 when pressed, and it is the deliberate one for a feature that is missing rather than refused.

@@ -85,6 +85,27 @@ const SHELL_BYTES = 64 * 1024;
  * nothing needs saying in the interface — the fourth picture waits, it does not fail.
  */
 const IMAGE_READS_IN_FLIGHT = 3;
+const MACHINE_REPLY_SESSION = "__clawdline_machine__";
+
+function requestID() {
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+        return globalThis.crypto.randomUUID();
+    }
+    // Only old browsers reach this branch. Random bytes, not a counter: two tabs share one Mac
+    // answer channel and a reload must not make one tab accept the other's answer.
+    var bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    var hex = Array.from(bytes, function (byte) { return byte.toString(16).padStart(2, "0"); }).join("");
+    return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16),
+        hex.slice(16, 20), hex.slice(20)].join("-");
+}
+
+function cloudPlaceID(machine, place) {
+    return "cloud." + bytesToBase64(textEncoder.encode(JSON.stringify([machine, place])))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 /**
  * The bytes of one picture, checked before anything renders them.
@@ -195,6 +216,7 @@ export class CloudClient {
         this.sessionSnapshots = new Map();
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
+        this.placeRoutes = new Map();
         this.readWaiters = new Map();
         this.imageReadsInFlight = options.imageReadsInFlight || IMAGE_READS_IN_FLIGHT;
         this.imageReadQueue = [];
@@ -419,6 +441,96 @@ export class CloudClient {
     }
 
     sessions() { return Promise.resolve(this._sessionResponse(0)); }
+
+    _knownMachines() {
+        var found = new Set(this.orchestratorSnapshots.keys());
+        this.sessionSnapshots.forEach(function (row) {
+            if (row && typeof row.machine === "string" && row.machine) found.add(row.machine);
+        });
+        return Array.from(found).sort();
+    }
+
+    _machineRequest(machine, type, extra, kind) {
+        if (typeof machine !== "string" || !machine) {
+            return Promise.reject(cloudError("cloud_read_unavailable",
+                "no Mac has published an inventory to this account yet"));
+        }
+        var request = requestID();
+        return this._read({ machine: machine, session: MACHINE_REPLY_SESSION }, type,
+            Object.assign({ request: request }, extra || {}), (kind || "read") + ":" + request);
+    }
+
+    /** Projects and the start sheet are account views, so each Mac answers its own inventory. */
+    places() {
+        var machines = this._knownMachines();
+        if (!machines.length) {
+            return Promise.reject(cloudError("cloud_read_unavailable",
+                "no Mac has published an inventory to this account yet"));
+        }
+        var self = this;
+        self.placeRoutes.clear();
+        return Promise.all(machines.map(function (machine) {
+            return self._machineRequest(machine, "places", {}, "read").then(function (answer) {
+                var places = answer && Array.isArray(answer.places) ? answer.places : [];
+                var assistants = answer && Array.isArray(answer.assistants) ? answer.assistants : [];
+                return { machine: machine, places: places, assistants: assistants };
+            });
+        })).then(function (answers) {
+            var places = [];
+            var assistants = [];
+            var assistantIDs = new Set();
+            answers.forEach(function (answer) {
+                answer.places.forEach(function (place) {
+                    if (!place || typeof place.id !== "string" || !place.id) return;
+                    var id = cloudPlaceID(answer.machine, place.id);
+                    self.placeRoutes.set(id, { machine: answer.machine, id: place.id,
+                        path: place.path || "" });
+                    places.push(Object.assign({}, place, { id: id, machine: answer.machine }));
+                });
+                answer.assistants.forEach(function (assistant) {
+                    var id = assistant && assistant.id;
+                    if (typeof id !== "string" || !id || assistantIDs.has(id)) return;
+                    assistantIDs.add(id);
+                    assistants.push(assistant);
+                });
+            });
+            return { places: places, assistants: assistants };
+        });
+    }
+
+    _place(value) {
+        var id = value && typeof value === "object" ? value.id : value;
+        var route = this.placeRoutes.get(String(id || ""));
+        if (!route) throw cloudError("not_found", "this Project has not been read from a Mac");
+        return route;
+    }
+
+    projectWorktrees(project) {
+        var route = this._place(project);
+        return this._machineRequest(route.machine, "project-worktrees",
+            { project: (project && typeof project === "object" && project.path) || route.path },
+            "read");
+    }
+
+    pastSessions(place, assistant) {
+        var route = this._place(place);
+        return this._machineRequest(route.machine, "past-sessions",
+            { place: route.id, assistant: assistant || "" }, "read");
+    }
+
+    startPlace(place, assistant, model) {
+        var route = this._place(place);
+        return this._machineRequest(route.machine, "start", {
+            place: route.id, assistant: assistant || "", model: model || ""
+        }, "action");
+    }
+
+    resumePlace(place, past, assistant) {
+        var route = this._place(place);
+        return this._machineRequest(route.machine, "resume", {
+            place: route.id, past: String(past || ""), assistant: assistant || ""
+        }, "action");
+    }
 
     /**
      * This session's messages.

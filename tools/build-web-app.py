@@ -39,6 +39,13 @@ WEB = ROOT / "Resources" / "web"
 APP = WEB / "app"
 INDEX = WEB / "index.html"
 ICNS = ROOT / "Resources" / "Clawdline.icns"
+STRINGS = WEB / "strings"
+
+# More-specific aliases win in the browser. The canonical file is generated from the same
+# TraditionalChinese Copy that RemotePage serves; Pages only supplies the request-time seam.
+STRING_ALIASES = {
+    "zh-Hant": "zh-Hant", "zh-TW": "zh-Hant", "zh-HK": "zh-Hant", "zh-MO": "zh-Hant",
+}
 
 CLOUD_SLOT = "<!-- clawdline:cloud -->"
 MODULES_SLOT = "<!-- clawdline:modules -->"
@@ -104,6 +111,7 @@ def cloud_declaration(app_origin, api_origin, relay_url, stamp):
         "api_origin": api_origin,
         "relay_url": relay_url,
         "build": stamp,
+        "strings": STRING_ALIASES,
     }, sort_keys=True, separators=(",", ":"))
     # `<` escaped throughout for the reason `RemoteServer.stringsScript` gives: a `</script>`
     # anywhere inside would end the element early, and `<` is legal in both languages.
@@ -121,6 +129,7 @@ def module_preloads(assets, stamp):
 
 def build(out, app_origin, api_origin, relay_url):
     assets = collect_assets()
+    string_catalogs = [(path.stem, path.read_bytes()) for path in sorted(STRINGS.glob("*.json"))]
     if not assets:
         return fail("no console assets were found under Resources/web/app")
     index_source = INDEX.read_text()
@@ -133,6 +142,11 @@ def build(out, app_origin, api_origin, relay_url):
     digest = hashlib.sha256()
     for name, body in assets:
         digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+    for tag, body in string_catalogs:
+        digest.update(("strings/" + tag + ".json").encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(sha256_hex(body).encode("ascii"))
         digest.update(b"\0")
         digest.update(sha256_hex(body).encode("ascii"))
         digest.update(b"\0")
@@ -164,6 +178,8 @@ def build(out, app_origin, api_origin, relay_url):
 
     for name, body in assets:
         write(f"app/{stamp}/{name}", body)
+    for tag, body in string_catalogs:
+        write(f"app/{stamp}/strings/{tag}.json", body)
 
     icons = icns_pngs(ICNS.read_bytes())
     for size, body in icons.items():

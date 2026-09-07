@@ -349,8 +349,8 @@ const ok = {
     await flush();
     elements["projects-rows"].querySelectorAll(".project-row")[0].click();
     await flush();
-    equal(asked[1], "/Users/you/code/clawdline",
-          "a Project is named to the route by its absolute path, which is the identity a place has");
+    equal(asked[1].path, "/Users/you/code/clawdline",
+          "the whole Project row reaches the transport, so Cloud retains which Mac owns it");
     equal(elements["projects-list-view"].hidden, true, "the list steps aside");
     equal(elements["projects-detail-view"].hidden, false, "and the Project is on screen");
     equal(elements["project-name"].textContent, "clawdline", "under its own name");
@@ -846,8 +846,8 @@ const liveSource = read("Resources/web/app/js/net/live.js");
 check(liveSource.includes("/v1/orchestrator/usage/project-worktrees?project="),
       "the local transport carries the read this page is about");
 const cloudSource = read("Resources/web/app/js/net/cloud-client.js");
-check(!/projectWorktrees/.test(cloudSource),
-      "and the Cloud one deliberately does not: every read a paired viewer may name carries a session, and this one's subject is a Project");
+check(/projectWorktrees\(project\)/.test(cloudSource),
+      "and the Cloud transport asks the owning Mac on its reserved machine answer channel");
 check(/typeof api\.projectWorktrees === "function"/.test(mainSource),
       "so the page asks before it draws, rather than offering a control that fails when pressed");
 check(read("Resources/web/app/js/net/mock.js").includes("projectWorktrees:"),

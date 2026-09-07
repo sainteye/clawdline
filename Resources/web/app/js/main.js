@@ -23,7 +23,8 @@ import { Schedules } from "./net/schedules.js";
 import { Live } from "./net/live.js";
 import { Mock } from "./net/mock.js";
 import {
-    CloudViewerSession, chooseTransport, idleClient, keepConnected, readCloudConfig
+    CloudViewerSession, chooseTransport, cloudStringsURL, idleClient, keepConnected,
+    readCloudConfig
 } from "./net/cloud-boot.js";
 import { handlers } from "./net/handlers.js";
 import { createBillingClient } from "./net/billing.js";
@@ -267,7 +268,7 @@ var projects = bindProjectsPage({
         return typeof api.places === "function" && typeof api.projectWorktrees === "function";
     },
     places: function () { return api.places(); },
-    projectWorktrees: function (path) { return api.projectWorktrees(path); },
+    projectWorktrees: function (place) { return api.projectWorktrees(place); },
     // The same seam the Feature table uses, and for the same reason: `view/projects.js` imports
     // nothing but the words, because `core/pixels.js` reaches `window` while it is being
     // evaluated and this module is exercised whole in Node by Tests/web-projects.mjs.
@@ -585,7 +586,9 @@ if (window.__strings) {
     // Not through `jsonFetch`: its own "could not reach Clawdline" is one of the strings being
     // fetched here, and a page cannot explain a failure in words it has not been given yet.
     // `no-store` because the answer depends on a header no cache is keyed on.
-    fetch("/v1/strings", { cache: "no-store" })
+    var hostedStrings = cloudStringsURL(cloudConfig,
+        typeof navigator !== "undefined" ? navigator.languages : []);
+    fetch(hostedStrings || "/v1/strings", { cache: hostedStrings ? "force-cache" : "no-store" })
         .then(function (res) { return res.ok ? res.json() : null; })
         .catch(function () { return null; })
         .then(boot);

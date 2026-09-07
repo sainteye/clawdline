@@ -87,6 +87,13 @@ try {
         "and its offline decoder worker is in the same immutable bundle");
     assert.ok(files.includes("app/" + stamp + "/js/vendor/qr-scanner.LICENSE.txt"),
         "the distributed third-party decoder carries its license");
+    assert.equal(config.strings["zh-TW"], "zh-Hant",
+        "the declaration routes a Taiwan device to Traditional Chinese");
+    const traditional = JSON.parse(readFileSync(
+        join(first, "app", stamp, "strings", "zh-Hant.json"), "utf8"));
+    assert.equal(traditional.lang, "zh-Hant");
+    assert.notEqual(traditional.webProjects, "Projects",
+        "the hosted bundle contains translated UI strings rather than the English fallback");
 
     /* ---- the headers the stamp earns, and the policy it allows ----------- */
 

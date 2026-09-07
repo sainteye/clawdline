@@ -5735,22 +5735,12 @@ extension RemoteServer {
         init(verifiedCloud command: CloudHeadlessCommand, sender: String,
              idempotencyKey: String) {
             source = .verifiedCloud(sender: sender)
-            method = "POST"
             headers = ["idempotency-key": idempotencyKey]
-            let segment: String
-            let object: [String: Any]
-            switch command {
-            case .send(let session, let text, let images):
-                segment = CloudAppBridge.channelSegment(session)
-                path = "/v1/sessions/\(segment)/send"
-                object = ["text": text, "images": images]
-            case .answer(let session, let key):
-                segment = CloudAppBridge.channelSegment(session)
-                path = "/v1/sessions/\(segment)/key"
-                object = ["key": key]
-            }
-            body = (try? JSONSerialization.data(withJSONObject: object,
-                                                 options: [.withoutEscapingSlashes])) ?? Data()
+            let route = CloudLocalRoute(command: command)
+            method = route.method
+            path = route.path
+            query = route.query
+            body = route.body
             contentLength = body.count
         }
 
@@ -5766,33 +5756,11 @@ extension RemoteServer {
         /// takes its `removingPercentEncoding` back off.
         init(verifiedCloudRead read: CloudHeadlessRead, sender: String) {
             source = .verifiedCloud(sender: sender)
-            method = "GET"
-            let segment = CloudAppBridge.channelSegment(read.session)
-            switch read {
-            case .transcript(_, let limit):
-                path = "/v1/sessions/\(segment)/transcript"
-                query = ["limit": String(limit)]
-            case .info(_, let parts):
-                path = "/v1/sessions/\(segment)/info"
-                if parts == "summary" { query = ["parts": "summary"] }
-            case .agent(_, let agent, let limit):
-                path = "/v1/sessions/\(segment)/agents/"
-                    + CloudAppBridge.channelSegment(agent)
-                query = ["limit": String(limit)]
-            case .shell(_, let shell, let bytes):
-                path = "/v1/sessions/\(segment)/shells/"
-                    + CloudAppBridge.channelSegment(shell)
-                query = ["bytes": String(bytes)]
-            case .skills:
-                path = "/v1/sessions/\(segment)/skills"
-            case .git:
-                path = "/v1/sessions/\(segment)/git"
-            case .image(_, let id):
-                // The same route the direct path's `<img>` asks for, and the same encoding a URL
-                // would have carried, so an id that is not an opaque artifact name meets the
-                // store's own refusal rather than a second spelling of it.
-                path = "/v1/artifacts/images/\(CloudAppBridge.channelSegment(id))"
-            }
+            let route = CloudLocalRoute(read: read)
+            method = route.method
+            path = route.path
+            query = route.query
+            body = route.body
         }
 
         /// Parse a request head. Deliberately strict about the shape and uninterested in most of

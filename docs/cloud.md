@@ -290,6 +290,12 @@ emitted — no `'unsafe-inline'`, and `connect-src` limited to the declared API 
 bundled MIT-licensed QR decoder and worker are content-stamped with the rest of the app; its
 license is shipped beside it.
 
+Pages also carries a generated Traditional Chinese string catalog under the same immutable stamp.
+`tools/export-hosted-strings.py` exports it from the Mac's existing `RemotePage.strings` response,
+so the words remain authored in `Copy+Chinese.swift`; `navigator.languages` selects it for
+`zh-Hant`, Taiwan, Hong Kong and Macau, while the English already in the document remains the
+fallback. A string change participates in the build stamp exactly like a JavaScript change.
+
 Upload `dist/app-console` as the Pages deployment for `app.clawdline.com` and follow §4 of the
 cloud repository's `RUNBOOK-DEPLOY.md` for the DNS cutover. Deploy is owned by the operator, not
 by anything in this repository.
@@ -430,10 +436,9 @@ SecurityTool invocation.
 
 ## What is deliberately not here yet
 
-- **Copy.** The hosted pairing screen borrows the local door's strings, and three lines in
-  `index.html` are English in every language. The string table is served by
-  `Sources/RemoteServer.swift`, which this change does not own; adding proper names to `T` and to
-  `/v1/strings` is a follow-up that must touch that file.
+- **Other hosted locales.** Traditional Chinese is bundled from the same catalog as the Mac.
+  Other non-English catalogs still fall back to the English document until they are exported and
+  named in the build declaration.
 - **Push.** Web push needs the Mac's VAPID keys and does not work through the relay, so the hosted
   console registers no service worker.
 - **The reads that still do not cross.** Seven do now: a session's messages, both tiers of its
@@ -449,8 +454,12 @@ SecurityTool invocation.
   route and this Mac is not reachable from it; the bound on one is the relay's 16 MiB envelope cap
   turned into 12,582,132 bytes of PNG, and a picture over it is drawn as a stated size rather than
   as the broken-image icon it used to be.
-  Everything else the Web UI reads is guarded by `typeof api.X === "function"` and draws no
-  control at all. `CloudClient.schedules()` was the one exception and is no longer a defect: the
+  Machine-scoped Projects, place inventory and past-session reads now use one reserved transcript
+  answer channel with a per-request name; opening and resuming a session returns its local route's
+  body on that channel. The durable `orch/` snapshot is not reused for these one-off answers, so
+  asking for Projects cannot replace the task/schedule inventory. Everything else the Web UI reads
+  remains guarded by `typeof api.X === "function"` and draws no control at all.
+  `CloudClient.schedules()` was the one earlier exception and is no longer a defect: the
   `orch/` snapshot now carries `schedules` beside `tasks`, and an unpublished field is refused
   rather than drawn as an empty list — the two paragraphs above **The `orch/` snapshot carries
   three things** say how, and why an empty inventory and a missing one had to be different answers.
@@ -464,8 +473,5 @@ SecurityTool invocation.
   `handlers.hello`. That is the only place it could come from out here: the comparison on the
   direct path is a health request on every reconnect, and the relay's `ready` frame is the
   *relay's* and has never heard of a Mac's build.
-- **`/v1/strings` for the hosted console.** There is no such route on the control plane, so the
-  fetch fails and the page falls back to English inside its two-second budget. It is a 404 in the
-  console and nothing else.
 - **Handoff over `ho/`.** The channel and the envelope class exist; nothing in this repository
   publishes or consumes one.

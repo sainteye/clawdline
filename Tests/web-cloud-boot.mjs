@@ -102,7 +102,10 @@ const CONFIG = {
     v: 1,
     app_origin: "https://app.clawdline.com",
     api_origin: "https://api.clawdline.com",
-    relay_url: "wss://relay.clawdline.com/v1/connect"
+    relay_url: "wss://relay.clawdline.com/v1/connect",
+    build: "b1234567890abcdef12345678",
+    strings: { "en": "en", "zh": "zh-Hans", "zh-TW": "zh-Hant", "zh-HK": "zh-Hant",
+        "zh-Hant": "zh-Hant" }
 };
 
 /* ---- the build declaration ------------------------------------------------ */
@@ -112,6 +115,14 @@ const config = boot.readCloudConfig({ __clawdlineCloud: CONFIG });
 assert.equal(config.appOrigin, "https://app.clawdline.com");
 assert.equal(config.apiOrigin, "https://api.clawdline.com");
 assert.equal(config.relayURL, "wss://relay.clawdline.com/v1/connect");
+assert.equal(boot.cloudStringsURL(config, ["zh-TW"]),
+    "/app/b1234567890abcdef12345678/strings/zh-Hant.json",
+    "a Traditional Chinese device selects the bundled Traditional Chinese catalog");
+assert.equal(boot.cloudStringsURL(config, ["zh-HK", "en-US"]),
+    "/app/b1234567890abcdef12345678/strings/zh-Hant.json",
+    "a specific Chinese alias wins over the generic zh alias");
+assert.ok(boot.VIEWER_CAPABILITIES.includes("start_session"),
+    "new cloud devices ask for the protocol's separate session-start capability");
 
 for (const [field, value, why] of [
     ["v", 2, "an unknown declaration version"],

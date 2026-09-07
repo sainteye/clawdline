@@ -886,6 +886,62 @@ await assert.rejects(orphaned, function (error) { return error.code === "offline
     "stopping the socket fails the reads that were waiting on it");
 assert.equal(readingCloud.readWaiters.size, 0, "no read waiter outlives its transport");
 
+// Machine-scoped reads and actions use one reserved transcript channel. They cannot ride the
+// orchestrator channel: that channel is a durable latest snapshot, and a one-off answer would
+// replace the inventory every other cloud view is reading.
+const projectCloud = makeReadingCloud();
+const projectSocket = await becomeReady(projectCloud);
+projectCloud.orchestratorSnapshots.set("mac-01", { tasks: [] });
+const placesAnswer = projectCloud.places();
+await until(function () { return publishedReads(projectSocket).length === 1; },
+    "the places read to leave");
+let projectRequest = JSON.parse(new TextDecoder().decode(await openEnvelope(
+    publishedReads(projectSocket)[0].envelope, masterKey, senderKey)));
+assert.equal(projectRequest.type, "places");
+assert.equal(projectRequest.session, "__clawdline_machine__");
+assert.match(projectRequest.request, /^[0-9a-f-]{36}$/,
+    "a machine read has an opaque answer name rather than putting a path in the channel");
+await answerRead(projectCloud, projectSocket, {
+    read: "read:" + projectRequest.request, status: 200,
+    body: { places: [{ id: "portfolio", path: "/code/app", label: "App" }],
+        assistants: [{ id: "claude" }] }
+}, "__clawdline_machine__");
+const cloudPlaces = await placesAnswer;
+assert.equal(cloudPlaces.places[0].machine, "mac-01");
+assert.notEqual(cloudPlaces.places[0].id, "portfolio",
+    "the UI receives an account-wide place id that retains which Mac owns it");
+
+const worktreesAnswer = projectCloud.projectWorktrees(cloudPlaces.places[0]);
+await until(function () { return publishedReads(projectSocket).length === 2; },
+    "the project worktree read to leave");
+projectRequest = JSON.parse(new TextDecoder().decode(await openEnvelope(
+    publishedReads(projectSocket)[1].envelope, masterKey, senderKey)));
+assert.deepEqual({ type: projectRequest.type, project: projectRequest.project },
+    { type: "project-worktrees", project: "/code/app" },
+    "Projects asks the owning Mac for the same absolute path as the local transport");
+await answerRead(projectCloud, projectSocket, {
+    read: "read:" + projectRequest.request, status: 200,
+    body: { projectWorktrees: [{ path: "/code/app/.worktrees/one" }] }
+}, "__clawdline_machine__");
+assert.equal((await worktreesAnswer).projectWorktrees.length, 1,
+    "the Projects view receives the local route's body unchanged");
+
+const startedAnswer = projectCloud.startPlace(cloudPlaces.places[0].id, "claude", "sonnet");
+await until(function () { return publishedReads(projectSocket).length === 3; },
+    "the start action to leave");
+projectRequest = JSON.parse(new TextDecoder().decode(await openEnvelope(
+    publishedReads(projectSocket)[2].envelope, masterKey, senderKey)));
+assert.deepEqual({ type: projectRequest.type, place: projectRequest.place,
+    assistant: projectRequest.assistant, model: projectRequest.model },
+{ type: "start", place: "portfolio", assistant: "claude", model: "sonnet" },
+"starting routes the opaque UI place back to its owning Mac and local place id");
+await answerRead(projectCloud, projectSocket, {
+    read: "action:" + projectRequest.request, status: 200,
+    body: { ok: true, id: "new-session" }
+}, "__clawdline_machine__");
+assert.equal((await startedAnswer).id, "new-session",
+    "the sheet receives the new session id instead of merely an outbound envelope receipt");
+
 // And a socket that goes on its own, which is the ordinary case rather than the deliberate one.
 // `stop()` and `onclose` are two paths and each has to sweep: with the sweep left only in
 // `stop()`, every check above still passed while a dropped connection stranded its reads.
